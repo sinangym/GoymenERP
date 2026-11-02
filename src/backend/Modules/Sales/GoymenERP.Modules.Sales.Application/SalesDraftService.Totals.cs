@@ -15,10 +15,11 @@ namespace GoymenERP.Modules.Sales.Application;
 /// before the draft is read (no draft is touched for a caller who may not see its prices) and again after it, as the final
 /// await; the draft read is re-measured after the store read (the fence of every Sales read).</item>
 /// <item><b>Company:</b> another company's draft is null under the tenant filter: 404, never 403.</item>
-/// <item><b>Tax:</b> the rate sources are decided but do not exist on main — SAT-D73 (VAT: product card + Settings exception by
-/// transaction/customer type), SAT-D74 (withholding: product withholding code + buyer subject to withholding, rates in Settings);
-/// No 15 keeps them as versioned data, never a code constant. So every line's and the document's tax is <c>NoSource</c> and no
-/// VAT, withholding, gross or payable amount is shown — the net amounts that CAN be computed are. Nothing is defaulted.</item>
+/// <item><b>Tax (MOD-03 → Sales):</b> each line's tax snapshot as the Settings line tax port resolved it (SAT-D139 item type default,
+/// SAT-D140/D147/D158 the order's buyer situation, SAT-D93/D97 a reasoned line change) — the calculator applies it per line
+/// (SAT-D75 withholding from the rounded line VAT; SAT-D76 the unit price never rounded). A line without a usable snapshot is
+/// <c>NoSource</c> with its reason (e.g. <c>item_type_default_missing</c>, <c>tax_snapshot_missing</c>) and the document's VAT,
+/// withholding, gross and payable stay empty — the net amounts that CAN be computed are. Nothing is defaulted.</item>
 /// </list>
 /// </summary>
 public sealed partial class SalesDraftService
@@ -36,8 +37,8 @@ public sealed partial class SalesDraftService
         var draft = await LoadDraftAsync(scope, bindings.ReadPermission, draftId, cancellationToken);
         await RequirePriceDisclosureAsync(scope, cancellationToken);
 
-        // No VAT master is composed (MOD-03): no rate source is passed, so the calculator answers the tax as NoSource.
-        return Wire(draft, SalesOrderTotalsCalculator.Calculate(draft));
+        // MOD-03 → Sales: the lines' own tax snapshots through the one calculator (never a rate of this read's own).
+        return Wire(draft, SalesOrderTotalsCalculator.CalculateWithLineTax(draft));
     }
 
     private async Task RequirePriceDisclosureAsync(Scope scope, CancellationToken cancellationToken)
@@ -69,7 +70,8 @@ public sealed partial class SalesDraftService
                 Amount(document.VatAmount),
                 Amount(document.WithheldVatAmount),
                 Amount(document.GrossAmount),
-                Amount(document.PayableAmount)),
+                Amount(document.PayableAmount),
+                document.TaxUnavailableLineCount),
             [.. totals.Lines.Select(line => new SalesDraftLineTotalV1(
                 line.LineId,
                 line.LineNo,
@@ -84,7 +86,8 @@ public sealed partial class SalesDraftService
                 line.TaxRate?.WithholdingShare is { } share ? SalesLinePriceCalculator.Format(share) : null,
                 Amount(line.WithheldVatAmount),
                 Amount(line.GrossAmount),
-                Amount(line.PayableAmount)))]);
+                Amount(line.PayableAmount),
+                line.TaxState == SalesTaxState.NoSource ? line.TaxReason : null))]);
     }
 
     /// <summary>The amount padded to its scale in the invariant culture ("1250.00" at 2); null stays null.</summary>

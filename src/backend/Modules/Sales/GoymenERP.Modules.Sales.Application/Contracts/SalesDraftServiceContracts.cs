@@ -10,6 +10,12 @@ public static class SalesDraftProblemCodesV1
     /// <summary>400: the Idempotency-Key header is missing, repeated, blank, non-canonical, over 128 characters or malformed.</summary>
     public const string CommandMetadataInvalid = "command_metadata_invalid";
 
+    /// <summary>
+    /// 503 (MOD-03 → Sales): the Settings line tax port is not composed or cannot answer (<c>settings_provider_unavailable</c>)
+    /// while the command needs it (an explicit buyer situation, a line tax change, a re-resolution) — never a guessed tax.
+    /// </summary>
+    public const string TaxProviderUnavailable = "sales_tax_provider_unavailable";
+
     /// <summary>400: the list cursor is malformed, another company's or another ordering's (#257).</summary>
     public const string InvalidCursor = "invalid_cursor";
 

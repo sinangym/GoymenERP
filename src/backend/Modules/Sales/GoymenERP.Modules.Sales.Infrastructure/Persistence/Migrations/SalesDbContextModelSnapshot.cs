@@ -695,6 +695,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("TaxJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("UnitPrice")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -718,6 +721,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DraftLines_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0");
 
                             t.HasCheckConstraint("CK_DraftLines_Scale", "[OrderUnitProfileScale] >= 0 AND [OrderUnitScale] >= 0 AND [OrderUnitScale] <= [OrderUnitProfileScale] AND [OrderUnitScale] <= 3");
+
+                            t.HasCheckConstraint("CK_DraftLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
 
                             t.HasCheckConstraint("CK_DraftLines_Window", "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
                         });
@@ -916,6 +921,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<int>("Revision")
                         .HasColumnType("int");
 
+                    b.Property<string>("BuyerTaxJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("CompanyAccountId")
                         .HasColumnType("uniqueidentifier");
 
@@ -949,6 +957,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                     b.ToTable("DraftRevisionHeaders", "sales", t =>
                         {
+                            t.HasCheckConstraint("CK_DraftRevisionHeaders_BuyerTax", "[BuyerTaxJson] IS NULL OR ISJSON([BuyerTaxJson]) = 1");
+
                             t.HasCheckConstraint("CK_DraftRevisionHeaders_HeaderRevision", "([SalesOwnerUserId] IS NULL OR [SalesOwnerUserId] <> '00000000-0000-0000-0000-000000000000') AND ([DueTermsJson] IS NULL OR ISJSON([DueTermsJson]) = 1)");
 
                             t.HasCheckConstraint("CK_DraftRevisionHeaders_Identity", "[PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
@@ -1000,6 +1010,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("TaxJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("UnitPrice")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -1017,6 +1030,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DraftRevisionLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_DraftRevisionLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
+
+                            t.HasCheckConstraint("CK_DraftRevisionLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
                         });
                 });
 
@@ -1097,6 +1112,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                     b.Property<DateOnly>("BusinessDate")
                         .HasColumnType("date");
+
+                    b.Property<string>("BuyerTaxJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("CompanyAccountId")
                         .HasColumnType("uniqueidentifier");
@@ -1290,6 +1308,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.ToTable("Drafts", "sales", t =>
                         {
                             t.HasCheckConstraint("CK_Drafts_Approval", "([ApprovalState] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0)) OR ([ApprovalState] = 5 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND (([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL)) AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))");
+
+                            t.HasCheckConstraint("CK_Drafts_BuyerTax", "[BuyerTaxJson] IS NULL OR ISJSON([BuyerTaxJson]) = 1");
 
                             t.HasCheckConstraint("CK_Drafts_CustomerAcceptance", "([CustomerAcceptanceRequired] = 0 AND [CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptanceRequired] = 1 AND (([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] >= 0 AND [CustomerAcceptedRevision] <= [Revision] AND ([CustomerAcceptedRevision] < [Revision] OR [ApprovalState] = 3) AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)))");
 

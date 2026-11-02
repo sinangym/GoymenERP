@@ -4,6 +4,9 @@ namespace GoymenERP.Modules.Sales.Domain.Drafts;
 /// API-04: the header values a header revision sets — every member is the NEW value (a full replacement; an unchanged member
 /// repeats the current one). <see cref="Money"/> is the Settings money profile of <see cref="CurrencyId"/> on the order's
 /// business date, given exactly when the currency changes. A null reference / owner / terms clears it.
+/// MOD-03 → Sales (SAT-D140/D147/D158): <see cref="BuyerTax"/> is the order's buyer tax situation after the revision (null = keep
+/// the current one; it is never cleared) and <see cref="LineTaxes"/> every line's tax snapshot re-resolved for it (each current line
+/// exactly once; null = the lines keep theirs), given by the caller exactly when the buyer tax changes.
 /// </summary>
 public sealed record SalesHeaderRevisionInput(
     Guid PartyId,
@@ -13,7 +16,9 @@ public sealed record SalesHeaderRevisionInput(
     OwnerReference? DeliveryAddress,
     OwnerReference? Contact,
     Guid? SalesOwnerUserId,
-    SalesDueTerms? DueTerms);
+    SalesDueTerms? DueTerms,
+    SalesBuyerTax? BuyerTax = null,
+    IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?>? LineTaxes = null);
 
 public sealed partial class SalesOrderDraft
 {
@@ -109,7 +114,22 @@ public sealed partial class SalesOrderDraft
             throw new ArgumentException("Para birimi değişmeden para profili verilmez.", nameof(input));
         }
 
-        var unchanged = !customerChanged && !currencyChanged
+        var buyerTax = input.BuyerTax ?? Header.BuyerTax;
+        // SAT-D185 (EK27): entering ONLY the buyer's document (no, date) under the same situation and exemption code changes no
+        // line's VAT or withholding: it is recorded in place (no archive, no Rev+1, no re-approval, no customer acceptance, no line
+        // re-resolution) with the reason and the audit, like a SAT-D126 change. Anything else of the buyer tax re-resolves the
+        // lines and re-enters approval (SAT-D105).
+        var buyerTaxChanged = buyerTax is not null && Header.BuyerTax is not null
+            ? !SameBuyerTaxBasis(buyerTax, Header.BuyerTax)
+            : buyerTax != Header.BuyerTax;
+        var documentChanged = !buyerTaxChanged && buyerTax != Header.BuyerTax;
+        if (buyerTaxChanged != (input.LineTaxes is not null))
+        {
+            throw new ArgumentException("Alıcı vergi durumu değişince (yalnız o zaman) satırların yeniden çözülmüş vergisi verilir.", nameof(input));
+        }
+
+        RequireLineTaxes(input.LineTaxes);
+        var unchanged = !buyerTaxChanged && !documentChanged && !customerChanged && !currencyChanged
             && input.DeliveryAddress == Header.DeliveryAddress && input.Contact == Header.Contact
             && input.SalesOwnerUserId == Header.SalesOwnerUserId
             && SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms);
@@ -122,16 +142,16 @@ public sealed partial class SalesOrderDraft
         // SAT-D126 (EK18): a change of ONLY the sales owner and/or the delivery address / contact does not re-enter approval and
         // opens no commercial revision — the order keeps its revision and approval axis; the reason and the audit record it. Any
         // change of the due terms, the customer or the currency re-enters approval (DEC-SAL-002).
-        var commercialChange = customerChanged || currencyChanged || !SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms);
+        // SAT-D105 by the same token: a change of the buyer tax situation changes the lines' VAT/withholding, so it re-enters
+        // approval like any tax change of an approved order (its approval is the order's, SAT-D97).
+        var commercialChange = customerChanged || currencyChanged || buyerTaxChanged
+            || !SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms);
         ApprovedRevisionSnapshot? archived = null;
         if (commercialChange && ApprovalState == InternalApprovalState.Approved)
         {
             // The approved revision as it stands — its header included — archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
-                now.ToUniversalTime(), actor,
-                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
-                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
-                trimmedReason, CurrentHeaderSnapshot());
+                now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;
@@ -149,8 +169,17 @@ public sealed partial class SalesOrderDraft
             Contact = input.Contact,
             SalesOwnerUserId = input.SalesOwnerUserId,
             DueTerms = dueTerms,
+            BuyerTax = buyerTax,
         };
         Money = money;
+        if (input.LineTaxes is { } lineTaxes)
+        {
+            foreach (var line in lines)
+            {
+                line.ReplaceTax(lineTaxes[line.Id]);
+            }
+        }
+
         Touch(now);
         return archived;
     }
@@ -210,10 +239,15 @@ public sealed partial class SalesOrderDraft
         && archivedRevisions.Count > 0
         && HeaderDiffersFrom(Header, CustomerAcceptedFallback ?? archivedRevisions[^1]);
 
+    /// <summary>SAT-D185: the same buyer tax situation and exemption code (the basis the lines are resolved for); the document aside.</summary>
+    public static bool SameBuyerTaxBasis(SalesBuyerTax left, SalesBuyerTax right) =>
+        string.Equals(left.Situation, right.Situation, StringComparison.Ordinal)
+        && string.Equals(left.ExemptionCode, right.ExemptionCode, StringComparison.Ordinal);
+
     /// <summary>The header as it stands, for an archive (API-04).</summary>
     private RevisionHeaderSnapshot CurrentHeaderSnapshot() =>
         new(Header.PartyId, Header.CompanyAccountId, Header.CurrencyId, Header.DeliveryAddress, Header.Contact,
-            Header.SalesOwnerUserId, Header.DueTerms);
+            Header.SalesOwnerUserId, Header.DueTerms, Header.BuyerTax);
 
     /// <summary>The create's money-profile rules for the revised currency on the order's business date.</summary>
     private MoneyProfileSnapshot RequireRevisedMoney(MoneyProfileSnapshot money, Guid currencyId)

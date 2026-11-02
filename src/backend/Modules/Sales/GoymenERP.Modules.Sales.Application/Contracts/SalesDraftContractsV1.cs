@@ -17,14 +17,22 @@ public sealed record CreateSalesOrderDraftRequest(
     // SAT-D123 / SAT-D127 (EK18): the due terms the salesperson enters by hand (optional at create; never defaulted; required
     // before approval). Omitted from the canonical replay content when absent, so an older create's attempt identity is unchanged.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    SalesDueTermsV1? DueTerms = null);
+    SalesDueTermsV1? DueTerms = null,
+    // MOD-03 → Sales (SAT-D140/D147/D158): the buyer tax situation chosen for this order (omitted = "Normal", SAT-D140's start
+    // value). Omitted from the canonical replay content when absent, so an older create's attempt identity is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesDraftBuyerTaxV1? BuyerTax = null);
 
 public sealed record SalesOrderDraftLineRequest(
     Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid OrderUnitId,
     string Quantity, string? UnitPrice = null, Guid? PriceUnitId = null,
     DateOnly? RequestedDeliveryDate = null, string? Note = null,
     IReadOnlyList<SalesDraftDeliverySliceV1>? RequestedDeliverySlices = null,
-    string? DiscountPercent = null);
+    string? DiscountPercent = null,
+    // MOD-03 → Sales (SAT-D93/D97): the line's tax basis changed with a reason (omitted = the Settings default). It changes the
+    // line's amounts, so it needs the price-write name like a price. Omitted from the replay content when absent.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesDraftLineTaxOverrideV1? TaxOverride = null);
 
 // A supplied owner reference must be authorized and snapshotted by that owner
 // at command time. This wire reference is not an eligibility result.
@@ -98,9 +106,12 @@ public sealed record SalesDraftStateCommandRequest(string ExpectedVersion, strin
 /// discount as an amount (instead of <c>discountPercent</c>), and <c>surchargePercent</c> / <c>surchargeAmount</c> the maturity
 /// surcharge (vade farkı). The unit price stays the line's own: the reference's price by default, or the person's overwrite.
 /// </summary>
+/// <remarks>MOD-03 → Sales (SAT-D93/D97/D105): <c>tax</c> is the line's tax choice (<see cref="SalesDraftLineTaxChoiceV1"/>); omitted = keep
+/// the current choice, re-resolved for this revision.</remarks>
 public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice = null, Guid? PriceUnitId = null, string? DiscountPercent = null,
     SalesDraftPriceReferenceRequestV1? PriceReference = null, string? DiscountAmount = null, string? SurchargePercent = null,
-    string? SurchargeAmount = null);
+    string? SurchargeAmount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SalesDraftLineTaxChoiceV1? Tax = null);
 
 /// <summary>AT-018: the Product price list version a line is priced from (list id + version number); the price is the owner's.</summary>
 public sealed record SalesDraftPriceReferenceRequestV1(Guid PriceListId, int VersionNo);
@@ -447,9 +458,13 @@ public static class SalesDraftJson
             RequireDecimalShape(line.Quantity, positive: true);
             if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+            if (line.TaxOverride is { } tax)
+                SalesDraftTaxApiV1.RequireOverrideShape(tax.BuyerSituation, tax.Reason, tax.ItemType, tax.ExemptionCode, tax.VatRateCode,
+                    tax.WithholdingRatioCode);
             SalesDraftDeliveryPlanV1.GetUnscheduledQuantity(line);
         }
         if (request.DueTerms is not null) SalesDraftHeaderApiV1.RequireDueTermsShape(request.DueTerms);
+        if (request.BuyerTax is not null) SalesDraftTaxApiV1.RequireBuyerTaxShape(request.BuyerTax);
         return request;
     }
 
@@ -482,6 +497,7 @@ public static class SalesDraftJson
             if (line.DiscountAmount is not null) RequireDecimalShape(line.DiscountAmount, positive: false);
             if (line.SurchargePercent is not null) RequireDecimalShape(line.SurchargePercent, positive: false);
             if (line.SurchargeAmount is not null) RequireDecimalShape(line.SurchargeAmount, positive: false);
+            if (line.Tax is not null) SalesDraftTaxApiV1.RequireChoiceShape(line.Tax);
         }
 
         return request;

@@ -266,6 +266,10 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             services.RemoveAll<IProductSalesEligibilityV1>();
             services.AddSingleton<SyntheticGate>();
             services.AddScoped<IProductSalesEligibilityV1, SyntheticProducts>();
+            // MOD-03 → Sales (review B P1): the real Settings tax port asks the Product owner for the item type; the synthetic
+            // product has none there, so the item type source answers "not set" (the line's tax is "kaynak yok", never a 503).
+            services.RemoveAll<ISettingsProductItemTypeSourceV1>();
+            services.AddScoped<ISettingsProductItemTypeSourceV1, SyntheticItemTypes>();
         });
         var saver = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
         using var client = run.Factory.CreateClientFor(saver, CompanyA);
@@ -376,6 +380,10 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             services.RemoveAll<IProductSalesEligibilityV1>();
             services.AddSingleton<SyntheticGate>();
             services.AddScoped<IProductSalesEligibilityV1, SyntheticProducts>();
+            // MOD-03 → Sales (review B P1): the real Settings tax port asks the Product owner for the item type; the synthetic
+            // product has none there, so the item type source answers "not set" (the line's tax is "kaynak yok", never a 503).
+            services.RemoveAll<ISettingsProductItemTypeSourceV1>();
+            services.AddScoped<ISettingsProductItemTypeSourceV1, SyntheticItemTypes>();
         });
         var saver = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
         using var client = run.Factory.CreateClientFor(saver, CompanyA);
@@ -751,4 +759,11 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         string Code,
         string LegalName,
         string? TradeName);
+
+    /// <summary>MOD-03 → Sales: the synthetic products have no item type in the Product owner (SAT-D134): "not set".</summary>
+    private sealed class SyntheticItemTypes : ISettingsProductItemTypeSourceV1
+    {
+        public Task<SettingsProductItemTypeAnswerV1> GetAsync(Guid companyId, Guid productId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SettingsProductItemTypeAnswerV1(SettingsProductItemTypeOutcomeV1.NotSet, null));
+    }
 }
