@@ -72,15 +72,20 @@ public sealed class PurchaseRequestTests
     }
 
     [Fact]
-    public void An_order_is_sourced_only_from_a_submitted_request_and_stays_in_its_company_with_its_units()
+    public void An_order_is_sourced_only_from_an_approved_request_and_stays_in_its_company_with_its_units()
     {
-        var request = PurchaseRequest.Create(Guid.NewGuid(), Company, T0);
+        // A1-1 (ALS-D2, ALS-D16): Draft and Submitted are refused; only the approved need is sourced.
+        var request = PurchaseRequest.Create(Guid.NewGuid(), Company, "SENTETIK-preparer", T0);
         var productId = Guid.NewGuid();
         var requestLine = request.AddLine(1, Guid.NewGuid(), productId, KgUnit, Kg(1000), T0);
-        Assert.Equal(PurchasingRuleCodes.RequestNotSubmitted, Assert.Throws<PurchasingRuleException>(() =>
+        Assert.Equal(PurchasingRuleCodes.RequestNotApproved, Assert.Throws<PurchasingRuleException>(() =>
             PurchaseOrder.FromRequest(Guid.NewGuid(), request, Supplier, Guid.NewGuid, T0)).Code);
 
-        request.Submit(2, T0);
+        request.Submit(2, "SENTETIK-preparer", T0);
+        Assert.Equal(PurchasingRuleCodes.RequestNotApproved, Assert.Throws<PurchasingRuleException>(() =>
+            PurchaseOrder.FromRequest(Guid.NewGuid(), request, Supplier, Guid.NewGuid, T0)).Code);
+
+        request.Approve(3, "SENTETIK-manager", T0);
         var order = PurchaseOrder.FromRequest(Guid.NewGuid(), request, Supplier, Guid.NewGuid, T0);
 
         Assert.Equal(Company, order.CompanyId);
@@ -92,18 +97,18 @@ public sealed class PurchaseRequestTests
     }
 
     [Fact]
-    public void Sourcing_the_same_submitted_request_twice_is_not_refused_today_pinned_until_business_decides()
+    public void Sourcing_the_same_approved_request_twice_is_not_refused_by_the_domain()
     {
-        // Open Business question (#66): a request can source several full-quantity orders. The
-        // behaviour is pinned so a later decision changes it on purpose, not by accident.
-        var request = PurchaseRequest.Create(Guid.NewGuid(), Company, T0);
+        // The domain builds both drafts; the Σ-shares rule (Sinan 5738113623 §1) is the store's, measured at approval.
+        var request = PurchaseRequest.Create(Guid.NewGuid(), Company, "SENTETIK-preparer", T0);
         request.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(1000), T0);
-        request.Submit(2, T0);
+        request.Submit(2, "SENTETIK-preparer", T0);
+        request.Approve(3, "SENTETIK-manager", T0);
 
         var first = PurchaseOrder.FromRequest(Guid.NewGuid(), request, Supplier, Guid.NewGuid, T0);
         var second = PurchaseOrder.FromRequest(Guid.NewGuid(), request, Guid.NewGuid(), Guid.NewGuid, T0);
 
-        Assert.Equal(PurchaseRequestStatus.Submitted, request.Status);
+        Assert.Equal(PurchaseRequestStatus.Approved, request.Status);
         Assert.Equal(Kg(1000), Assert.Single(first.Lines).Quantity);
         Assert.Equal(Kg(1000), Assert.Single(second.Lines).Quantity);
     }

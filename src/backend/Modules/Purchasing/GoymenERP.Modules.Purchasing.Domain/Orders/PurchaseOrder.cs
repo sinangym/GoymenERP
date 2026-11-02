@@ -61,7 +61,7 @@ public sealed class PurchaseOrder
         new(id, companyId, supplierPartyId, null, now);
 
     /// <summary>
-    /// PUR-4a: an order opened towards a supplier for ONE submitted request, whose lines bind to that request's
+    /// PUR-4a: an order opened towards a supplier for ONE request (A1-1: an APPROVED one, read by the service), whose lines bind to that request's
     /// lines at the quantity this supplier takes (multi-sourcing, Sinan #66 5738113623 §1: a request line may
     /// split across several orders; the sum of the shares never exceeds the line's need — the store enforces the
     /// sum across orders at approval, this record enforces the binding shape).
@@ -70,19 +70,20 @@ public sealed class PurchaseOrder
         new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now);
 
     /// <summary>
-    /// Sources an order from a SUBMITTED request of the SAME company, copying its lines as
-    /// general lines with their units. The request stays what it is; the order is the commitment.
-    /// Sourcing the same request again is not refused today (open Business question, README).
+    /// Sources an order from an APPROVED request of the SAME company (A1-1, ALS-D2/ALS-D16: an order is opened only
+    /// for an approved need), copying its lines as general lines with their units. The request stays what it is; the
+    /// order is the commitment. Sourcing the same request again is not refused here (the Σ-shares rule is the store's,
+    /// at approval).
     /// </summary>
     public static PurchaseOrder FromRequest(Guid id, PurchaseRequest request, Guid supplierPartyId,
         Func<Guid> lineIds, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(lineIds);
-        if (request.Status != PurchaseRequestStatus.Submitted)
+        if (request.Status != PurchaseRequestStatus.Approved)
         {
-            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotSubmitted,
-                "Yalnız gönderilmiş talepten sipariş açılabilir.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotApproved,
+                "Yalnız onaylı talepten sipariş açılabilir.");
         }
 
         var order = new PurchaseOrder(id, request.CompanyId, supplierPartyId, request.Id, now);

@@ -11,7 +11,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 
 /// <summary>
 /// PUR-4a service without a database or a host: the fences, the replay, the owners in order (Cari supplier
-/// account → SUBMITTED source request → Product purchase eligibility → Settings kg profile), the domain's
+/// account → APPROVED source request (A1-1) → Product purchase eligibility → Settings kg profile), the domain's
 /// decision, the terminal refusals (§7, incl. the store's Σ-shares rule) and the mapping. SENTETIK / NOT_ENV.
 /// Registered platform names stand in for the Purchasing names until the central catalogue knows them (the
 /// Sales / Logistics tests' way).
@@ -26,6 +26,7 @@ public sealed partial class PurchasingServiceTests
     private static readonly Guid Product = Guid.Parse("99999999-9999-4999-8999-999999999999");
     private static readonly DateOnly Day = new(2026, 9, 19);
     private const string Actor = "synthetic-actor";
+    private const string Approver = "synthetic-approver";
     private const string CreatePermission = ErpPermissions.CounterpartyPartiesCreate;
     private const string ReadPermission = ErpPermissions.CounterpartyPartiesRead;
     private const string ApprovePermission = ErpPermissions.CounterpartyAccountsCreate;
@@ -44,6 +45,7 @@ public sealed partial class PurchasingServiceTests
 
         var submitted = await world.Service().SubmitRequestAsync(request.Detail.Request.Id, new SubmitPurchaseRequestRequest("2"), Metadata("k-submit"));
         Assert.Equal(("Submitted", "3"), (submitted.Detail.Request.Status, submitted.Detail.Request.Version));
+        await world.ApproveRequestAsApprover(request.Detail.Request.Id, "3");
 
         var order = await world.Service().CreateOrderAsync(OrderOf(request.Detail.Request.Id, requestLine.LineId, "60"), Metadata("k-order"));
         Assert.False(order.IsReplay);
@@ -56,7 +58,7 @@ public sealed partial class PurchasingServiceTests
         var envelope = world.Store.Envelopes.Last();
         Assert.Equal((Actor, CreatePermission, "synthetic-correlation", "k-order"), (envelope.ActorId, envelope.PermissionCode, envelope.CorrelationId, envelope.IdempotencyKey));
         Assert.True(world.Authority.Calls >= 10, $"measured {world.Authority.Calls} times");
-        Assert.Equal(3, world.Store.Envelopes.Count);
+        Assert.Equal(4, world.Store.Envelopes.Count);
     }
 
     [Fact]
@@ -148,13 +150,16 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Theory]
-    [InlineData("draft", "sourceRequestId", "not_submitted")]
+    [InlineData("draft", "sourceRequestId", "not_approved")]
+    [InlineData("submitted", "sourceRequestId", "not_approved")]
+    [InlineData("rejected", "sourceRequestId", "not_approved")]
     [InlineData("missing", "sourceRequestId", "invalid_reference")]
     [InlineData("unknown-line", "lines[0].sourceRequestLineId", "invalid_reference")]
     [InlineData("other-product", "lines[0].productId", "source_line_mismatch")]
     [InlineData("other-unit", "lines[0].unitId", "source_line_mismatch")]
-    public async Task Only_a_submitted_request_of_this_company_is_sourced_and_a_bound_line_keeps_the_request_lines_product_and_unit(string fault, string field, string fieldCode)
+    public async Task Only_an_approved_request_of_this_company_is_sourced_and_a_bound_line_keeps_the_request_lines_product_and_unit(string fault, string field, string fieldCode)
     {
+        // A1-1 (ALS-D2 / ALS-D16): an order is opened only for an APPROVED request; Draft, Submitted and Rejected are refused.
         var world = new World();
         var created = await world.Service().CreateRequestAsync(RequestOf("100"), Metadata("k-req"));
         var requestId = created.Detail.Request.Id;
@@ -162,6 +167,15 @@ public sealed partial class PurchasingServiceTests
         if (fault != "draft")
         {
             await world.Service().SubmitRequestAsync(requestId, new SubmitPurchaseRequestRequest("2"), Metadata("k-submit"));
+        }
+
+        if (fault == "rejected")
+        {
+            await world.AsApprover(() => world.Service().RejectRequestAsync(requestId, new RejectPurchaseRequestRequest("3", "SENTETIK gerekçe"), Metadata("k-reject")));
+        }
+        else if (fault is not ("draft" or "submitted"))
+        {
+            await world.ApproveRequestAsApprover(requestId, "3");
         }
 
         var order = fault switch
@@ -179,7 +193,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal((409, PurchasingProblemCodesV1.RequestState, field, fieldCode), (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
         // The request is read after the supplier and before any product or unit: nothing of the line owners was asked.
         Assert.Equal((1, 0, 0), (world.Accounts.Calls, world.Products.Calls, world.Settings.Calls));
-        Assert.Equal(fault == "draft" ? 1 : 2, world.Store.Envelopes.Count);
+        Assert.Equal(fault switch { "draft" => 1, "submitted" => 2, _ => 3 }, world.Store.Envelopes.Count);
     }
 
     [Theory]
@@ -415,7 +429,10 @@ public sealed partial class PurchasingServiceTests
         Assert.Empty((await world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Submitted"))).Items);
         var bad = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().GetOrderListAsync(new PurchaseOrderListQuery(Status: "draft")));
         Assert.Equal((400, "validation_failed"), (bad.Status, bad.Code));
-        var wrongKind = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Approved")));
+        // A1-1: Approved and Rejected are request statuses now; an order-only name is still refused.
+        Assert.Empty((await world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Approved"))).Items);
+        Assert.Empty((await world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Rejected"))).Items);
+        var wrongKind = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Closed")));
         Assert.Equal(400, wrongKind.Status);
         var emptySupplier = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().GetOrderListAsync(new PurchaseOrderListQuery(SupplierPartyId: Guid.Empty)));
@@ -469,6 +486,23 @@ public sealed partial class PurchasingServiceTests
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
                 new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads);
         }
+
+        /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
+        public async Task<T> AsApprover<T>(Func<Task<T>> call)
+        {
+            User.CurrentActor = Approver;
+            try
+            {
+                return await call();
+            }
+            finally
+            {
+                User.CurrentActor = Actor;
+            }
+        }
+
+        public Task<PurchaseRequestResponse> ApproveRequestAsApprover(Guid requestId, string version) =>
+            AsApprover(() => Service().ApproveRequestAsync(requestId, new ApprovePurchaseRequestRequest(version), Metadata($"k-approve-request-{requestId:N}")));
 
         public void ResetOwnerCalls()
         {
@@ -641,8 +675,10 @@ public sealed partial class PurchasingServiceTests
             return Task.FromResult(new PurchasingRequestStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
+        public List<PurchasingMutationAudit> Audits { get; } = [];
+
         public Task<PurchasingRequestStoreResult?> MutateRequestAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid requestId,
-            Action<PurchaseRequest, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+            Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
         {
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
             {
@@ -655,9 +691,13 @@ public sealed partial class PurchasingServiceTests
             if (stored is null) return Task.FromResult<PurchasingRequestStoreResult?>(null);
             BeforeMutation?.Invoke();
             var before = stored.Request.Version;
-            mutate(stored.Request, TimeProvider.System.GetUtcNow());
+            // The SQL store measures the bound approved orders inside the same save (No.161 §1).
+            var facts = new PurchaseRequestBindingFacts(_orders.Any(order =>
+                order.Order.SourceRequestId == requestId && order.Order.Status == PurchaseOrderStatus.Approved));
+            mutate(stored.Request, facts, TimeProvider.System.GetUtcNow());
             _attempts[(commandName, envelope.IdempotencyKey)] = new Attempt(envelope.ActorId, requestHash, stored, null, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
+            Audits.Add(audit);
             Transitions.Add((commandName, requestId, before, stored.Request.Version));
             return Task.FromResult<PurchasingRequestStoreResult?>(new PurchasingRequestStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId));
         }
@@ -703,6 +743,14 @@ public sealed partial class PurchasingServiceTests
                 // The SQL store measures the Σ-shares rule inside the save and leaves nothing tracked.
                 throw new PurchasingStoreException(PurchasingStoreCodes.RequestLineOverSourced, "synthetic over-sourcing", null,
                     [new PurchasingFieldError("lines[0].sourceRequestLineId", PurchasingStoreCodes.RequestLineOverSourced)]);
+            }
+
+            if (commandName == PurchasingCommands.OrderApproveV1 && stored.Order.SourceRequestId is { } source
+                && _requests.Single(candidate => candidate.Request.Id == source).Request.Status != PurchaseRequestStatus.Approved)
+            {
+                // A1-1: the SQL store refuses the approval of an order whose source request is not APPROVED, inside the save.
+                throw new PurchasingStoreException(PurchasingStoreCodes.SourceRequestNotApproved, "synthetic source request state", null,
+                    [new PurchasingFieldError("sourceRequestId", "not_approved")]);
             }
 
             mutate(stored.Order, TimeProvider.System.GetUtcNow());
