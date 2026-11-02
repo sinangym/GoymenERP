@@ -123,7 +123,7 @@ const LIFECYCLE_TONE: Record<LifecycleAxisState, StatusTone> = {
   Cancelled: 'neutral',
   Closed: 'neutral',
 }
-const ACCEPTANCE_TONE: Record<AcceptanceAxisState, StatusTone> = { NotRequired: 'neutral', Pending: 'warning', Accepted: 'success' }
+const ACCEPTANCE_TONE: Record<AcceptanceAxisState, StatusTone> = { NotRequired: 'neutral', Pending: 'warning', Accepted: 'success', Rejected: 'neutral' }
 const REALIZATION_TONE: Record<RealizationState, StatusTone> = {
   NotStarted: 'neutral',
   Partial: 'info',

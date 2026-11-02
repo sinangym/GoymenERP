@@ -124,6 +124,10 @@ public sealed partial class SalesDraftService
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("reason", exception.Code)]);
         }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.HeaderRevisionQuoteCustomer)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("companyAccountId", exception.Code)]);
+        }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.HeaderRevisionPricedLines)
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("header", exception.Code)]);
@@ -240,6 +244,13 @@ public sealed partial class SalesDraftService
         var header = draft.Header;
         var customerChanged = request.PartyId != header.PartyId || request.CompanyAccountId != header.CompanyAccountId;
         var currencyChanged = request.CurrencyId != header.CurrencyId;
+        if (customerChanged && draft.SourceQuoteId is not null)
+        {
+            // SAT-D152 (EK21): the domain's own rule, asked before any owner (it runs again in ReviseHeader). Not recorded.
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [new("companyAccountId", SalesRuleCodes.HeaderRevisionQuoteCustomer)]);
+        }
+
         if ((customerChanged || currencyChanged) && draft.Lines.Any(line => line.Commercial.UnitPrice is not null))
         {
             // The domain's own rule, asked before any owner (it runs again in ReviseHeader), naming the members that changed.

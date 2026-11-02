@@ -163,6 +163,12 @@ public static class SalesRuleCodes
     /// </summary>
     public const string HeaderRevisionPricedLines = "sales_header_revision_priced_lines";
 
+    /// <summary>
+    /// SAT-D152 (EK21): the customer of an order converted from a quote is never changed — for another customer the order is
+    /// cancelled and a new quote or order is opened (the quote-to-order trail stays intact). The currency follows SAT-D128.
+    /// </summary>
+    public const string HeaderRevisionQuoteCustomer = "sales_header_revision_quote_customer";
+
     /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
     public const string DueTermsRequired = "sales_due_terms_required";
 

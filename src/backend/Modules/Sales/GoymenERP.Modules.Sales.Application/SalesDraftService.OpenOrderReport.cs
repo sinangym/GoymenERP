@@ -575,6 +575,9 @@ public sealed partial class SalesDraftService
         }
 
         var acceptedRevision = draft.CustomerAcceptance?.Revision;
+        // SAT-D115 (EK14): an approved revision the customer REJECTED awaits nothing — the open quantity stays on the accepted
+        // revision and nothing is shown as "müşteri onayı bekliyor" for it.
+        var rejected = draft.IsCustomerRejected(approvedRevision);
         ApprovedRevisionSnapshot? acceptedArchive = null;
         if (acceptedRevision is { } accepted && accepted != approvedRevision)
         {
@@ -613,7 +616,7 @@ public sealed partial class SalesDraftService
             }
 
             var approvedQuantity = approved ?? zero;
-            var awaiting = acceptedRevision == approvedRevision || !approvedQuantity.IsGreaterThan(acceptedQuantity)
+            var awaiting = rejected || acceptedRevision == approvedRevision || !approvedQuantity.IsGreaterThan(acceptedQuantity)
                 ? zero
                 : approvedQuantity.Subtract(acceptedQuantity);
             lines[line.Id] = (acceptedQuantity, awaiting);
@@ -621,7 +624,7 @@ public sealed partial class SalesDraftService
 
         return new OpenBasis(
             acceptedRevision is { } revision ? SalesDraftApiV1.RevisionText(revision) : null,
-            acceptedRevision == approvedRevision ? null : SalesDraftApiV1.RevisionText(approvedRevision),
+            rejected || acceptedRevision == approvedRevision ? null : SalesDraftApiV1.RevisionText(approvedRevision),
             lines);
     }
 
