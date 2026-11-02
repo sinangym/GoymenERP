@@ -130,6 +130,19 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task SAT_D201_a_fason_order_with_an_unpriced_service_line_is_not_submitted()
+    {
+        var world = new World { ItemTypes = new FakeItemTypes() };
+        var created = (await world.Service().CreateDraftAsync(Subcontract(), Metadata("k-201"))).Detail;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
+            Command(created.Draft.Version), Metadata("k-201-submit")));
+
+        Assert.Equal((422, "draft", SalesRuleCodes.SubcontractPriceRequired), (refused.Status, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+        Assert.Equal("Preparing", Assert.Single(world.Store.Drafts).ApprovalState.ToString());
+    }
+
+    [Fact]
     public async Task A_typed_price_on_a_service_line_still_needs_the_price_write_permission()
     {
         var world = new World { ItemTypes = new FakeItemTypes() };

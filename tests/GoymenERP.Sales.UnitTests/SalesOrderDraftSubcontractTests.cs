@@ -38,7 +38,7 @@ public sealed class SalesOrderDraftSubcontractTests
     public void K3_review_B_P2_2_the_read_port_says_rejected_and_answers_the_customer_accepted_revisions_lines()
     {
         var draft = Draft(acceptance: true);
-        var line = draft.AddLine(draft.Version, Line(), T0);
+        var line = draft.AddLine(draft.Version, Line(commercial: PerKg()), T0);
         draft.Submit(draft.Version, "SENTETIK-writer", T0);
         draft.Approve(draft.Version, "SENTETIK-approver", T0);
         var pending = SalesSubcontractServiceOrderReadPort.Order(draft);
@@ -63,25 +63,44 @@ public sealed class SalesOrderDraftSubcontractTests
     [Fact]
     public void K3_review_A_P3_1_a_rejected_revision_whose_accepted_fallback_names_another_currency_has_no_basis()
     {
+        // A fason order's customer is locked and its priced lines lock its currency (SAT-D128, SAT-D201), so this history cannot be
+        // made through the commands today; it is rebuilt the way the store restores a stored order (defence in depth).
         var draft = Draft(acceptance: true);
-        draft.AddLine(draft.Version, Line(), T0);
-        draft.Submit(draft.Version, "SENTETIK-writer", T0);
-        draft.Approve(draft.Version, "SENTETIK-approver", T0);
-        draft.RecordCustomerAcceptance(draft.Version, "SENTETIK-sales", T0);
-
-        // Rev.1 changes the currency (unpriced line), is approved and REJECTED: the accepted Rev.0 names another currency.
+        var line = draft.AddLine(draft.Version, Line(commercial: PerKg()), T0);
+        draft.RestoreCreator("SENTETIK-writer");
+        draft.RestoreRevision(1);
         var otherCurrency = Guid.Parse("5d5d5d5d-5d5d-45d5-85d5-5d5d5d5d5d5d");
-        var money = new MoneyProfileSnapshot(Company, otherCurrency, SalesOrderDraft.MoneyOperation, Guid.Parse("acacacac-acac-4cac-8cac-acacacacacac"),
-            "1", Day, true, new DateOnly(2026, 9, 1), null, 2);
-        draft.ReviseHeader(draft.Version, new SalesHeaderRevisionInput(Party, Account, otherCurrency, money, null, null, null, TestDueTerms.PointDue30),
-            "SENTETIK-writer", "SENTETIK para birimi", T0);
-        draft.Submit(draft.Version, "SENTETIK-writer", T0);
-        draft.Approve(draft.Version, "SENTETIK-approver", T0);
-        draft.RecordCustomerRejection(draft.Version, "SENTETIK-sales", "SENTETIK müşteri reddetti", T0);
+        draft.RestoreArchivedRevision(new ApprovedRevisionSnapshot(0,
+            new ApprovalFacts("SENTETIK-writer", T0, "SENTETIK-approver", T0, null), Guid.Parse("acacacac-acac-4cac-8cac-acacacacacac"), "1", 2,
+            T0, "SENTETIK-writer", [new RevisionLineSnapshot(line.Id, 1, Product, "7", KgUnit, "250", PerKg())], "SENTETIK para birimi",
+            new RevisionHeaderSnapshot(Party, Account, otherCurrency, null, null, null, TestDueTerms.PointDue30, null, IsSubcontractService: true)));
+        draft.RestoreCustomerAcceptance(new CustomerAcceptanceFacts(0, "SENTETIK-sales", T0));
+        draft.RestoreCustomerRejection(new CustomerRejectionFacts(1, "SENTETIK-sales", T0, "SENTETIK müşteri reddetti"));
+        draft.RestoreApproval(InternalApprovalState.Approved, new ApprovalFacts("SENTETIK-writer", T0, "SENTETIK-approver", T0, null), 20, T0);
+        Assert.NotNull(draft.CustomerAcceptedFallback);
 
         var answer = SalesSubcontractServiceOrderReadPort.Answer(draft);
         Assert.Equal((SalesSubcontractServiceOrderOutcomeV1.Unreadable, (SalesSubcontractServiceOrderV1?)null,
             SalesSubcontractServiceOrderUnreadableReasonsV1.NoBasis), (answer.Outcome, answer.Order, answer.Reason));
+    }
+
+    [Fact]
+    public void SAT_D201_a_fason_order_with_a_service_line_without_a_per_kg_price_is_not_sent_for_approval()
+    {
+        var draft = Draft();
+        var line = draft.AddLine(draft.Version, Line(), T0);
+        Assert.Equal(SalesRuleCodes.SubcontractPriceRequired, CodeOf(() => draft.Submit(draft.Version, "SENTETIK-writer", T0)));
+        Assert.Equal(InternalApprovalState.Preparing, draft.ApprovalState);
+
+        draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, PerKg())], "SENTETIK-writer", T0);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        Assert.Equal(InternalApprovalState.PendingApproval, draft.ApprovalState);
+
+        // A normal order's unpriced submission is unchanged.
+        var normal = Draft(subcontract: false);
+        normal.AddLine(normal.Version, Line(itemType: null), T0);
+        normal.Submit(normal.Version, "SENTETIK-writer", T0);
+        Assert.Equal(InternalApprovalState.PendingApproval, normal.ApprovalState);
     }
 
     private static readonly Guid PieceUnit = Guid.Parse("88888888-8888-4888-8888-888888888888");

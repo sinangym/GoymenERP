@@ -647,7 +647,8 @@ dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj
   discount-limit or floor exception routing exists for these lines (no list to measure against), so they carry no discount check
   and the discount-exception gate does not apply to a fason order. Writing it still needs the price-write permission (SAT-D151);
   the create's audit records the typed per-kg price (`subcontractUnitPrice`) with the actor and time, a revision's audit records
-  the commercial picture as for every order. A normal order's price rules are unchanged.
+  the commercial picture as for every order. A normal order's price rules are unchanged. SAT-D201 (EK31): a fason order with a
+  service line that has no per-kg price is not sent for approval (submit → 422 `draft` `sales_subcontract_price_required`).
 - **Customer lock (SAT-D175):** a customer change of a fason order asks `ISalesSubcontractOrderBindingReadPortV1` (production plan /
   customer-goods allocation); not composed or unreadable → 503 `subcontract_binding_unavailable`; bound → 422 `companyAccountId`
   `sales_subcontract_customer_locked`. **No host adapter exists yet (the Production lane's), so until it is composed the customer

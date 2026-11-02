@@ -419,6 +419,9 @@ export const ORDER_DETAIL_TEXT = {
       'Bir satırın sipariş miktarı Lojistik\'te yüklenmiş miktarın altında; önce miktar revize edilmeli ya da yükleme düzeltilmelidir.',
     /** SAT-D123 (EK18): the approval refuses an order without due terms. */
     dueTermsRequired: 'Siparişin vadesi girilmemiş; vade girilmeden sipariş onaylanamaz. Vadeyi "Başlığı revize et" ile girin.',
+    /** SAT-D201 (EK31). */
+    subcontractPriceRequired:
+      'Fason siparişte kg fiyatı girilmemiş hizmet satırı var; sipariş onaya gönderilemez. Fiyatı "Fiyat revizyonu" ile kg başına girin.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',

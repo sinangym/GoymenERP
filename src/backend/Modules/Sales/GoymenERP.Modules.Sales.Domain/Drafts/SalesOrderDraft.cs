@@ -415,6 +415,19 @@ public sealed partial class SalesOrderDraft
     }
 
     /// <summary>
+    /// SAT-D201 (EK31): a subcontract service order is not sent for approval while any service line has no per-kg price entered
+    /// (<see cref="SalesRuleCodes.SubcontractPriceRequired"/>). A normal order's submission is unchanged.
+    /// </summary>
+    private void RequireSubcontractPricesEntered()
+    {
+        if (IsSubcontractService && lines.Any(line => line.Commercial.UnitPrice is null))
+        {
+            throw new SalesRuleException(SalesRuleCodes.SubcontractPriceRequired,
+                "Fason siparişte kg fiyatı girilmemiş hizmet satırı varken sipariş onaya gönderilemez (SAT-D201).");
+        }
+    }
+
+    /// <summary>
     /// SAT-D195 (EK29, Sinan: "Fason için fiyat olmasın elle yazılsın her kg için buda onaya gitsin"): a subcontract service line's
     /// price is NEVER taken from a price list — no list reference, no floor exception — and is typed by hand PER KILOGRAM (the price
     /// unit is the line's kilogram order unit). It goes to approval through the order's normal internal approval (SAT-D175); there is
@@ -691,6 +704,7 @@ public sealed partial class SalesOrderDraft
         RequireStorable();
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
+        RequireSubcontractPricesEntered();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");

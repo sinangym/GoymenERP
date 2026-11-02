@@ -329,6 +329,9 @@ public static class SalesRuleCodes
     /// </summary>
     public const string SubcontractPriceListNotUsed = "sales_subcontract_price_list_not_used";
 
+    /// <summary>SAT-D201 (EK31): a subcontract service order is not submitted while a service line has no per-kg price entered.</summary>
+    public const string SubcontractPriceRequired = "sales_subcontract_price_required";
+
     /// <summary>SAT-D195 (EK29): a subcontract service is sold per kilogram — its order unit and its price unit are kilograms.</summary>
     public const string SubcontractUnitNotKilogram = "sales_subcontract_unit_not_kilogram";
 
