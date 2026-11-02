@@ -591,3 +591,37 @@ VUK 280 satırı genel muhasebe bilgisidir; kaynakla doğrulanamadı, mali müş
 | R-6 | K seviyesi düzeltmesi (v4 tanımı: yeni tablo/migration, para, yetki, modüller arası sözleşme = K3): API-30 (kasa master), API-76 (kart master), API-13 (numara serisi, Ayarlar sözleşmesi) **K3**; API-90…92 ve API-97 yeni tablo içerdiğinden **K3**; API-04 salt okuma, migration ve yeni yetki yok → **K2** kalır; MOD-02/03 Alış ile sözleşme → **K3**. Tablolar (§5, §6) buna göre güncellendi |
 | R-7 | §2.4'teki "hubvogal'e erişilemiyor" ifadesi güncellendi (§15'e atıf) |
 | R-8 | API-04'ün gerçek yolu: `GET /api/v1/finance/party-balance?partyId&companyAccountId` (PR #912, taslak) |
+
+---
+
+## 18. Modül bağlantıları (2026-11-02, FNS-D14)
+
+Kural: bir modül başka modülün tablosuna yazmaz; bağ yalnız sürümlü port veya outbox/inbox ile kurulur. Her yeni Finans
+dilimi PR açıklamasına bir **"Modül bağlantıları"** satırı yazar: ürettiği/tükettiği port veya olay ve karşı modülde
+bağlı olup olmadığı. Sinan'ın 2 Kasım kararıyla Ürün, Lojistik/Stok, Ayarlar ve Cari modüllerine şimdi yeni
+port/tablo/ekran açılmaz; o bağlar mevcut portlarla kurulur, yoksa fail-closed kalır ve "ertelendi: <modül> başlayınca"
+olarak işaretlenir.
+
+Durum: ✅ main'de implementasyon + DI + gerçek-SQL/contract testi · 🟡 kısmi · ❌ yok.
+
+| Bağ | Üretici → tüketici | Port / olay | Durum | Dilim |
+|---|---|---|---|---|
+| Satış faturası → alacak kalemi | Satış → Finans | `IFinanceInvoiceOpenItemAdmissionPortV1` (Producer=Sales); dispatcher sonrası `sales.invoice.finalized.v1` | ❌ — Finans portu F2a PR'ında (host kaydı yok); Satış üreticisi fatura dalgasında | F2a + Satış API-32…37 |
+| Gelen fatura → borç kalemi | Alış → Finans | aynı port (Producer=Purchasing); sonra `purchasing.invoice.finalized.v1` | ❌ — F1 (#902) yönü, F2a portu; Alış A5 | F2a + Alış A5 |
+| Fatura iptali/iadesi → ters kalem | Satış/Alış → Finans | iptal portu / olayı (SAT-D96) | ❌ | F2b |
+| Satış risk okuması | Finans → Satış | `ISalesPartyRiskReadPortV1` (`FinanceSalesPartyRiskReadPortV1`) | ✅ (yalnız alacak, F1); limit/teminat NoSource (OPEN-010) | API-06, API-85 (F6) |
+| Tedarikçi ödemesi → borç kalemi | Finans içi; Alış okur | elle banka ödemesi + dağıtım | 🟡 ödeme var, borç kalemine dağıtım yok; TEK-02 | F3 (API-20) |
+| Ödendi/kısmi ödendi, avans | Finans → Satış/Alış | `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | ❌ — Finans'ta outbox yok | F2 outbox dilimi (ERP-000F sonrası) |
+| Muhasebe fişi (120/320) | Finans → Accounting | aynı kaynak olay, Accounting inbox (FNS-D14) | ❌ — outbox yok | Outbox dilimi + MOD-07 |
+| Kur → döviz değerleme | Ayarlar → Finans | `ISettingsExchangeRateResolverV1` (#906, main'de) | ❌ — Finans okumuyor | F7 (API-95) |
+| Cari ana veri / uygunluk | Cari → Finans | `IFinancePartyAccountPort` | ✅ mevcut port; yeni alan **ertelendi: Cari başlayınca** (MOD-06) | — |
+| Onay kutusu | Finans → Work | mevcut Work gözlem portu | 🟡 ters kayıt önerisi var; ödeme/mahsup kuyrukları yok | MOD-09 |
+| Üretim | — | doğrudan bağ yok (MOD-12); maliyet OPEN-008 | — | — |
+
+Eklenen dilim: **F2-OB (Finans outbox).** Açık kalem, tahsilat ve ödeme olayları Finans'ın kendi outbox'ından
+yayınlanır; tüketiciler Accounting (fiş), Satış ve Alış (ödeme durumu). Ön şart platform dağıtıcısı ERP-000F (MOD-11);
+dağıtıcı yokken olaylar yazılmaz, bağ senkron sürümlü porttur (SINAN 10-21 No 55). K3.
+
+Ekran: cari ekstresi (UI-02) ve bakiye özeti (API-04, #912) "Muhasebe > Cari Hesaplar" girişinden açılır (FNS-D14).
+
+Devir notları: `docs/handoffs/FINANS_SATIS_DEVIR_v1.md`, `docs/handoffs/FINANS_ALIS_DEVIR_v1.md`.

@@ -88,6 +88,14 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
   (Excel/CSV) ve **MT940** yalnız **kontrol** içindir: içe aktarılan ekstre satırı hareket üretmez, mevcut elle
   kayıtlarla eşleştirilir (mutabakat); eşleşmeyen satır "elle kaydedilmemiş hareket" uyarısı olur.
 
+- **FNS-D14 (Sinan 2 Kasım; koordinatör oturumu aracılığıyla):** tek kayıt cari ekranında; sahibi Finans açık kalem
+  alt defteri; Cari kartı yalnız ana veri; muhasebe fişi kaynak olaydan Accounting'de. Üç katman: (1) Cari kartı
+  (Counterparty) yalnız ana veridir, hareket taşımaz; (2) cari hareket ve açık kalem alt defteri Finans'ın açık kalem
+  motorudur: fatura taksiti, tahsilat/ödeme, kısmi kapama, bakiye ve risk tek kayıt olarak burada tutulur; (3) muhasebe
+  fişi (120/320) Accounting modülünde aynı kaynak olaydan inbox ile üretilir, elle ikinci kayıt yapılmaz. Kullanıcı
+  borç/alacağı "Muhasebe > Cari Hesaplar" girişinden cari ekstresi ve bakiye özeti olarak görür (ana rapor §7.10,
+  DEC-FIN-005/006).
+
 ## 3. Değişmeyenler
 
 `DEC-FIN-001…016`, `DEC-INT-001` (ilk sürümde banka/Mikro entegrasyonu yok; dosya ile içe aktarma serbest), No 22, 34,
