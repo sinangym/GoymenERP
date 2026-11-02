@@ -143,6 +143,8 @@ public sealed class FinanceOpenItemSourceAdmissionService(
                     Id = row.OpenItemId,
                     CompanyId = context.CompanyId,
                     SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
+                    // MOD-15: an approved official (sales) invoice installment is a receivable; never caller-chosen.
+                    Direction = FinanceOpenItemDirectionCodes.Receivable,
                     SourceId = row.SourceDocumentId,
                     SourceLineId = row.SourceInstallmentId,
                     SourceVersion = row.SourceVersion,

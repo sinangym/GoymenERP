@@ -91,6 +91,22 @@ describe('party ledger decoder', () => {
     currencies(duplicate).push(currencies(duplicate)[0])
     expect(decodePartyLedgerAnswer(duplicate, COMPANY_A).ok).toBe(false)
   })
+
+  it('accepts a payable open item only in the credit column, with its invoice document (MOD-15)', () => {
+    const payable = () => {
+      const body = ledger({ withUsd: true })
+      const usd = currencies(body)[1].entries as Record<string, unknown>[]
+      Object.assign(usd[0], { kind: 'PayableOpenItem', documentId: IDS.document, dueOn: '2026-10-12' })
+      return { body, usd }
+    }
+    expect(decodePartyLedgerAnswer(payable().body, COMPANY_A).ok).toBe(true)
+    const debit = payable()
+    debit.usd[0].side = 'Debit'
+    expect(decodePartyLedgerAnswer(debit.body, COMPANY_A).ok).toBe(false)
+    const noDocument = payable()
+    noDocument.usd[0].documentId = null
+    expect(decodePartyLedgerAnswer(noDocument.body, COMPANY_A).ok).toBe(false)
+  })
 })
 
 function renderLedger(reply: ReturnType<typeof found>, onRange = vi.fn()) {

@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Finance.Contracts;
+
 namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 
 /// <summary>
@@ -11,6 +13,12 @@ internal sealed class FinanceOpenItemRow : IFinanceTenantRow
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public string SourceKind { get; set; } = string.Empty;
+
+    /// <summary>
+    /// MOD-15: <see cref="FinanceOpenItemDirectionCodes.Receivable"/> or <see cref="FinanceOpenItemDirectionCodes.Payable"/>,
+    /// always the one its <see cref="SourceKind"/> maps to (the database checks the pair, CK_OpenItems_Direction).
+    /// </summary>
+    public int Direction { get; set; } = FinanceOpenItemDirectionCodes.Receivable;
     public Guid SourceId { get; set; }
     public Guid SourceLineId { get; set; }
     public string SourceVersion { get; set; } = string.Empty;
@@ -29,6 +37,16 @@ internal sealed class FinanceOpenItemRow : IFinanceTenantRow
     public DateTimeOffset CreatedAtUtc { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal static class FinanceOpenItemDirectionCodes
+{
+    public const int Receivable = (int)FinanceOpenItemDirectionV1.Receivable;
+    public const int Payable = (int)FinanceOpenItemDirectionV1.Payable;
+
+    /// <summary>The stored value for a source kind, or <c>null</c> for a kind Finance does not know.</summary>
+    public static int? ForSourceKind(string? sourceKind) =>
+        Contracts.FinanceOpenItemDirections.FromSourceKind(sourceKind) is { } direction ? (int)direction : null;
 }
 
 internal static class FinanceOpenItemStatuses

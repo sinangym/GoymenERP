@@ -14,6 +14,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -120,6 +121,52 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
                 CancellationToken.None)).Ledger!;
             AssertRedacted(Serialize(redacted), expectedAmountViews: 5 * 2 + 3 + 1 * 2 + 3);
         }
+    }
+
+    /// <summary>
+    /// MOD-15 (FNS-D7) in SQL: a payable open item (a purchase invoice installment of the same party, who is also a
+    /// supplier) is a credit row beside the receivable's debit, the database ties each official kind to its own
+    /// direction, and the Sales risk read counts only the receivable.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_payable_open_item_is_a_credit_row_its_direction_is_tied_to_its_kind_and_the_risk_counts_only_receivables()
+    {
+        await using var run = await Run.StartAsync();
+        var receivable = await run.SeedOpenItemAsync();
+        var payable = await run.SeedOpenItemAsync(FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment,
+            FinanceOpenItemDirectionCodes.Payable, "400.00", new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero));
+
+        await using (var reader = run.Ledger(CompanyA))
+        {
+            var result = await reader.Service.ReadAuthorizedAsync(reader.Context, new PartyLedgerRequest(Party, Account, From, To),
+                CancellationToken.None);
+            Assert.Equal(PartyLedgerOutcome.Found, result.Outcome);
+            var tl = result.Ledger!.Currencies.Single(currency => currency.CurrencyId == Lira);
+            Assert.Equal(
+                [
+                    (PartyLedgerEntryKind.OpenItem, PartyLedgerSide.Debit, "1000.00", PartyLedgerBalanceSide.Debit, "1000.00", receivable),
+                    (PartyLedgerEntryKind.PayableOpenItem, PartyLedgerSide.Credit, "400.00", PartyLedgerBalanceSide.Debit, "600.00", payable),
+                ],
+                tl.Entries.Select(entry => (entry.Kind, entry.Side, entry.Amount.Money!.Amount, entry.RunningBalance.Side!.Value,
+                    entry.RunningBalance.Amount.Money!.Amount, entry.SourceId)).ToArray());
+        }
+
+        // The pair is the database's rule too, not only the admission code's.
+        foreach (var (kind, direction) in new[]
+                 {
+                     (FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment, FinanceOpenItemDirectionCodes.Receivable),
+                     (FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment, FinanceOpenItemDirectionCodes.Payable),
+                     ("synthetic.receivable.v1", 3),
+                 })
+        {
+            var refused = await Assert.ThrowsAsync<DbUpdateException>(() =>
+                run.SeedOpenItemAsync(kind, direction, "1.00", new DateTimeOffset(2026, 9, 12, 8, 0, 0, TimeSpan.Zero)));
+            Assert.Contains("CK_OpenItems_Direction", refused.InnerException!.Message, StringComparison.Ordinal);
+        }
+
+        var risk = await run.SalesRiskAsync(CompanyA);
+        Assert.Equal(SalesPartyRiskFigureStateV1.Available, risk.OpenReceivables.State);
+        Assert.Equal([new SalesPartyRiskAmountV1(Lira, 1000.00m)], risk.OpenReceivables.Amounts);
     }
 
     [SqlServerFact]
@@ -411,11 +458,23 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             return saved.Resource.Source.Id;
         }
 
-        private async Task<Guid> SeedOpenItemAsync()
+        public async Task<SalesPartyRiskReadAnswerV1> SalesRiskAsync(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            await using var dbContext = new FinanceDbContext(Options(companyContext, null), companyContext);
+            return await new FinanceSalesPartyRiskReadPortV1(dbContext, companyContext)
+                .ReadPartyRiskAsync(Party, Account, CancellationToken.None);
+        }
+
+        public Task<Guid> SeedOpenItemAsync() =>
+            SeedOpenItemAsync(FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
+                FinanceOpenItemDirectionCodes.Receivable, "1000.00", new DateTimeOffset(2026, 9, 10, 23, 30, 0, TimeSpan.Zero));
+
+        public async Task<Guid> SeedOpenItemAsync(string sourceKind, int direction, string amount, DateTimeOffset admitted)
         {
             await using var dbContext = Context(CompanyA, null);
             var batchId = Guid.NewGuid();
-            var admitted = new DateTimeOffset(2026, 9, 10, 23, 30, 0, TimeSpan.Zero);
             dbContext.OpenItemSourceBatches.Add(new FinanceOpenItemSourceBatchRow
             {
                 Id = batchId, CompanyId = CompanyA, SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
@@ -427,11 +486,11 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             });
             var row = new FinanceOpenItemRow
             {
-                Id = Guid.NewGuid(), CompanyId = CompanyA, SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
+                Id = Guid.NewGuid(), CompanyId = CompanyA, SourceKind = sourceKind, Direction = direction,
                 SourceId = Guid.NewGuid(), SourceLineId = Guid.NewGuid(), SourceVersion = "1",
                 SourceBatchId = batchId, SourceBatchVersion = "synthetic-v1", SourceBatchChecksum = new string('f', 64),
                 PartyId = Party, CompanyAccountId = Account, CurrencyId = Lira,
-                OriginalAmountText = "1000.00", OutstandingAmountText = "1000.00", DueOn = new DateOnly(2026, 10, 10),
+                OriginalAmountText = amount, OutstandingAmountText = amount, DueOn = new DateOnly(2026, 10, 10),
                 Status = FinanceOpenItemStatuses.Open, Version = 1,
                 CreatedBy = "synthetic-finance-open-item-fixture", CreatedAtUtc = admitted,
                 UpdatedBy = "synthetic-finance-open-item-fixture", UpdatedAtUtc = admitted,

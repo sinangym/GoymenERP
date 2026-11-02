@@ -27,10 +27,10 @@ internal sealed record PartyLedgerFact(
 /// floating point, no rounding, no local digit limit; currencies are never converted or added (OPEN-012). Every
 /// amount of a currency, a zero included, is written at the widest scale that currency's facts carry.
 /// <para>
-/// The side of a row follows its kind, from the company's view of the party's account: an open item (the party's
-/// invoice installment) and a payment to the party are debit (borç); a receipt and a cheque / note collection are
-/// credit (alacak); a reversal is the reverse side of the receipt it reverses (debit), as its own row — the original
-/// row stays as it was recorded.
+/// The side of a row follows its kind, from the company's view of the party's account: a receivable open item (the
+/// party's sales invoice installment) and a payment to the party are debit (borç); a receipt, a cheque / note collection
+/// and a payable open item (the party's purchase invoice installment, MOD-15) are credit (alacak); a reversal is the
+/// reverse side of the receipt it reverses (debit), as its own row — the original row stays as it was recorded.
 /// </para>
 /// </summary>
 internal static class PartyLedgerPolicy
@@ -42,6 +42,7 @@ internal static class PartyLedgerPolicy
         PartyLedgerEntryKind.ManualReceiptReversal => PartyLedgerSide.Debit,
         PartyLedgerEntryKind.CustomerInstrumentCollection => PartyLedgerSide.Credit,
         PartyLedgerEntryKind.ManualBankPayment => PartyLedgerSide.Debit,
+        PartyLedgerEntryKind.PayableOpenItem => PartyLedgerSide.Credit,
         _ => throw new InvalidOperationException("Cari ekstre satır türü tanınmadı; ekstre hesaplanmaz."),
     };
 

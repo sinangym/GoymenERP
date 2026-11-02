@@ -128,6 +128,7 @@ function SourceLinks({ entry }: { readonly entry: PartyLedgerEntry }) {
     case 'ManualBankPayment':
       return <Link to={manualBankPaymentDetailPath(entry.sourceId)}>{`${OPEN_PAYMENT} · ${reference(entry.sourceId)}`}</Link>
     case 'OpenItem':
+    case 'PayableOpenItem':
       return <span>{`${OPEN_ITEM_NO_SCREEN} · ${reference(entry.documentId ?? entry.sourceId)}`}</span>
   }
 }

@@ -40,11 +40,12 @@ export const TOTALS = 'Toplam'
 export const CLOSING_BALANCE = 'Aralık sonu bakiyesi'
 
 export const KIND_LABEL: Readonly<Record<PartyLedgerEntryKind, string>> = {
-  OpenItem: 'Fatura taksiti (açık kalem)',
+  OpenItem: 'Satış faturası taksiti (alacak)',
   ManualReceipt: 'Tahsilat',
   ManualReceiptReversal: 'Tahsilat ters kaydı',
   CustomerInstrumentCollection: 'Çek/senet tahsili',
   ManualBankPayment: 'Ödeme',
+  PayableOpenItem: 'Alış faturası taksiti (borç)',
 }
 
 /** Borçlu / alacaklı from the company's view of the party's account. */

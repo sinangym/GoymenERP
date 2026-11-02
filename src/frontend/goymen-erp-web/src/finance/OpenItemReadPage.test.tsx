@@ -42,7 +42,7 @@ const openItem = (n: number, patch: Record<string, unknown> = {}) => ({
   id: id(n), companyId: COMPANY, sourceKind: 'official.invoice-installment.v1', sourceId: SOURCE, sourceLineId: SOURCE_LINE,
   sourceVersion: '4', partyId: PARTY, companyAccountId: ACCOUNT, currencyId: CURRENCY, version: '1', dueOn: '2026-10-31',
   status: 'Open', createdAtUtc: '2026-10-13T08:00:00+00:00', initialAmount: visible('1000.51'),
-  outstandingAmount: visible('400.50'), ...patch,
+  outstandingAmount: visible('400.50'), direction: 'Receivable', ...patch,
 })
 const hidden = (n: number, patch: Record<string, unknown> = {}) =>
   openItem(n, { status: null, initialAmount: redacted, outstandingAmount: redacted, ...patch })
@@ -112,7 +112,7 @@ describe('FI04 open item list', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: T.heading })).toBeTruthy()
     await waitFor(() => expect(rowLink(1)).not.toBeNull())
-    expect(headers()).toEqual([T.record, T.sourceKind, T.dueOn, T.createdAt])
+    expect(headers()).toEqual([T.record, T.sourceKind, T.direction, T.dueOn, T.createdAt])
     expect(screen.getByText(new RegExp(T.amountsHidden.replace('.', '\\.')))).toBeTruthy()
     expect(screen.queryByText(T.statusOpen, { exact: true })).toBeNull()
     expect(screen.queryByText(T.statusClosed, { exact: true })).toBeNull()
@@ -133,7 +133,7 @@ describe('FI04 open item list', () => {
     screens(FINANCE_ROUTE.openItemsList)
 
     await waitFor(() => expect(rowLink(1)).not.toBeNull())
-    expect(headers()).toEqual([T.record, T.sourceKind, T.dueOn, T.status, T.initialAmount, T.outstandingAmount, T.currency, T.createdAt])
+    expect(headers()).toEqual([T.record, T.sourceKind, T.direction, T.dueOn, T.status, T.initialAmount, T.outstandingAmount, T.currency, T.createdAt])
     const first = within(rowLink(1)!.closest('tr')!)
     expect(first.getByText(T.statusOpen, { exact: true })).toBeTruthy()
     expect(first.getByText('1.000,51')).toBeTruthy()
@@ -330,7 +330,7 @@ describe('FI04 open item list', () => {
 
     releaseFresh(json(page([hidden(1), hidden(2)], 'cursor-2')))
     await waitFor(() => expect(rowLink(1)).not.toBeNull())
-    expect(headers()).toEqual([T.record, T.sourceKind, T.dueOn, T.createdAt])
+    expect(headers()).toEqual([T.record, T.sourceKind, T.direction, T.dueOn, T.createdAt])
     expectNoMoney(container.innerHTML)
   })
 
@@ -347,7 +347,7 @@ describe('FI04 open item list', () => {
     expect(screen.getAllByText(T.statusOpen, { exact: true })).toHaveLength(2)
 
     await act(async () => { await client.refetchQueries() })
-    await waitFor(() => expect(headers()).toEqual([T.record, T.sourceKind, T.dueOn, T.createdAt]))
+    await waitFor(() => expect(headers()).toEqual([T.record, T.sourceKind, T.direction, T.dueOn, T.createdAt]))
     expect(rowLink(1)).not.toBeNull()
     expect(rowLink(51)).toBeNull()
     expectNoMoney(container.innerHTML)
@@ -367,7 +367,7 @@ describe('FI04 open item list', () => {
     await userEvent.click(await screen.findByRole('button', { name: T.loadMore }))
 
     await act(async () => { await client.refetchQueries() })
-    await waitFor(() => expect(headers()).toEqual([T.record, T.sourceKind, T.dueOn, T.createdAt]))
+    await waitFor(() => expect(headers()).toEqual([T.record, T.sourceKind, T.direction, T.dueOn, T.createdAt]))
     await act(async () => {
       releaseNext(json(page([openItem(51)], null)))
       await new Promise((resolve) => setTimeout(resolve, 0))

@@ -401,3 +401,23 @@ read measures `sales.drafts.read` and discloses amounts only with `sales.orders.
 - **Credit limit / collateral:** Finance owns them (SAT-D51; the Cari card only shows them), but no master exists on main
   (W4-RISK); both are `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
   input and never enters the gross risk.
+
+## MOD-15: open-item direction (borç / alacak) — FNS-D2, FNS-D7
+
+Plan: `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §3 (F1). Decisions: FNS-D7 ("Evet alacak say, alış ile satış ayrı
+olacak biri borç biri alacak sayacak"), ALS-D42 (supplier debt is not netted off sales risk), ALS-D44 (this is the
+Finance conversation's work; Purchasing's incoming-invoice finalisation, Purchasing API-54, waits for it).
+
+| Part | What |
+|---|---|
+| `FinanceOpenItemDirectionV1` | `Receivable` (the party owes the company — a sales invoice installment, THP 120) / `Payable` (the company owes the party — a purchase invoice installment, THP 320). Never caller-chosen: `FinanceOpenItemDirections.FromSourceKind` is the one mapping |
+| Source kinds | `official.invoice-installment.v1` → receivable (unchanged); `official.incoming-invoice-installment.v1` → payable, **reserved**: its producer is the Purchasing invoice-finalisation port (MOD-04, F2). The CSV import still admits sales installments only |
+| Migration `20261102134844_AddOpenItemDirection` | Adds `OpenItems.Direction`, fills 1 on every stored row (FNS-D7), then NOT NULL with no database default. `CK_OpenItems_Direction`: 1 or 2, and each official kind only with its own direction. `Down` refuses with `THROW 51051` while any payable exists (forward fix) |
+| Read (FI04) | `FinanceOpenItemViewV1.Direction` (stored metadata, shown without the amount grant); an unknown stored value fails closed |
+| Party ledger | A payable is its own kind `PayableOpenItem` in the **credit** column; a receivable stays `OpenItem` in the debit column. Both rows stay; nothing is netted |
+| Sales risk (MOD-01) | Reads only receivables; a payable of the same party is neither added nor makes the figure unavailable |
+| Allocation (F-03) | A receipt closes only a receivable: `finance_allocation_direction_mismatch` otherwise. Closing a payable with a receipt is an offset (plan API-07), its own approved operation |
+
+Not in this slice (plan F1b/F2/F3): the balance summary read (API-04), the direction quarantine for direction-less
+imports (No 22, with a CSV v2), payable allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the
+risk read still nets every recorded outgoing payment to the account as a refund), and the MOD-04 admission port.

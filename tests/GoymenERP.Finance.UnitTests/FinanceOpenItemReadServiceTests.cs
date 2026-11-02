@@ -51,6 +51,7 @@ public sealed class FinanceOpenItemReadServiceTests
         Assert.Equal(AmountDisclosure.Visible, reopened.InitialAmount.Disclosure);
         Assert.Equal(new MoneyText("125.50", Currency), reopened.InitialAmount.Money);
         Assert.Equal(new MoneyText("75.25", Currency), reopened.OutstandingAmount.Money);
+        Assert.Equal(FinanceOpenItemDirectionV1.Receivable, reopened.Direction);
         Assert.Equal(
             new (FinanceAction Action, Guid? SourceId)[]
             {
@@ -189,6 +190,30 @@ public sealed class FinanceOpenItemReadServiceTests
         Assert.Equal(ReadOutcome.Unavailable, result.Outcome);
         Assert.Null(result.Resource);
         Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task A_payable_reads_as_a_payable_and_an_unknown_stored_direction_fails_closed()
+    {
+        var payable = Row();
+        payable.SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment;
+        payable.Direction = FinanceOpenItemDirectionCodes.Payable;
+        await using (var run = await Run.CreateAsync(payable))
+        {
+            var result = await run.Service(Company, "reader", Allowed(4))
+                .DetailAuthorizedAsync(Context(Company, "reader"), OpenItem, CancellationToken.None);
+            Assert.Equal(FinanceOpenItemDirectionV1.Payable, Assert.IsType<FinanceOpenItemViewV1>(result.Resource).Direction);
+        }
+
+        var unknown = Row();
+        unknown.Direction = 3;
+        await using (var run = await Run.CreateAsync(unknown))
+        {
+            var result = await run.Service(Company, "reader", Allowed(4))
+                .DetailAuthorizedAsync(Context(Company, "reader"), OpenItem, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Unavailable, result.Outcome);
+            Assert.Null(result.Resource);
+        }
     }
 
     [Fact]

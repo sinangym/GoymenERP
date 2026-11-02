@@ -15,7 +15,7 @@ const wire = (patch: Record<string, unknown> = {}) => ({
   id: id(1), companyId: COMPANY, sourceKind: 'official.invoice-installment.v1', sourceId: id(2), sourceLineId: id(3),
   sourceVersion: '4', partyId: id(4), companyAccountId: id(5), currencyId: CURRENCY, version: '1', dueOn: '2026-10-31',
   status: 'Open', createdAtUtc: '2026-10-13T08:00:00+00:00', initialAmount: visible('1000.51'),
-  outstandingAmount: visible('1000.51'), ...patch,
+  outstandingAmount: visible('1000.51'), direction: 'Receivable', ...patch,
 })
 const metadataOnly = (patch: Record<string, unknown> = {}) =>
   wire({ status: null, initialAmount: redacted, outstandingAmount: redacted, ...patch })
@@ -43,6 +43,12 @@ describe('FI04 open item decoder', () => {
       .toEqual({ disclosure: 'Unavailable', money: null })
   })
 
+  it('keeps the stored direction: a receivable and a payable (MOD-15)', () => {
+    expect(decodeOpenItem(wire(), COMPANY)?.direction).toBe('Receivable')
+    expect(decodeOpenItem(wire({ direction: 'Payable', sourceKind: 'official.incoming-invoice-installment.v1' }), COMPANY)
+      ?.direction).toBe('Payable')
+  })
+
   it('keeps an unknown source kind as the server sent it', () => {
     expect(decodeOpenItem(wire({ sourceKind: 'future.kind.v9' }), COMPANY)?.sourceKind).toBe('future.kind.v9')
   })
@@ -52,6 +58,9 @@ describe('FI04 open item decoder', () => {
     ['an extra field', wire({ total: '1' })],
     ['a missing status', without('status')],
     ['a missing due date', without('dueOn')],
+    ['a missing direction', without('direction')],
+    ['an unknown direction', wire({ direction: 'Both' })],
+    ['a numeric direction', wire({ direction: 1 })],
     ['an unknown status', wire({ status: 'Overdue' })],
     ['a numeric status', wire({ status: 1 })],
     ['a status without amounts', wire({ initialAmount: redacted, outstandingAmount: redacted })],

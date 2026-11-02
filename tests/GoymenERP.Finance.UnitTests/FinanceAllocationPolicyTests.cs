@@ -42,6 +42,22 @@ public sealed class FinanceAllocationPolicyTests
     }
 
     [Fact]
+    public void Create_refuses_a_payable_open_item_because_a_receipt_closes_only_a_receivable()
+    {
+        // MOD-15 / ALS-D42: closing a supplier debt with a customer's money would be an offset, never an allocation.
+        var source = Source("1000");
+        var payable = OpenItem("1000");
+        payable.SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment;
+        payable.Direction = FinanceOpenItemDirectionCodes.Payable;
+
+        var failure = Assert.Throws<FinanceAllocationPolicyException>(() =>
+            FinanceAllocationPolicy.Create(source, payable, null, CreateRequest(source, payable, "1")));
+
+        Assert.Equal("finance_allocation_direction_mismatch", failure.Code);
+        Assert.Equal("openItemId", failure.Field);
+    }
+
+    [Fact]
     public void Create_refuses_another_account_currency_or_stale_version()
     {
         var source = Source("1000");
