@@ -203,6 +203,20 @@ describe('S-04 detail', () => {
     expect(acceptedBy.querySelector('[title]')?.getAttribute('title')).toBe(acceptor)
   })
 
+  it('SAT-D175: badges a fason order on Order 360; a normal order carries no badge', async () => {
+    const flagged = JSON.parse(detailResponseRaw)
+    flagged.draft.subcontractService = true
+    installFetch({ onDetail: () => json(JSON.stringify(flagged)) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    expect((await screen.findByTestId('sales-draft-subcontract')).textContent).toBe(ORDER_DRAFT_TEXT.subcontract.summary)
+    cleanup()
+
+    installFetch({ onDetail: () => json(detailResponseRaw) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    expect(await screen.findByRole('heading', { name: 'SO-2026-0001' })).toBeTruthy()
+    expect(screen.queryByTestId('sales-draft-subcontract')).toBeNull()
+  })
+
   it('keeps commercial revision and record version apart, and shows the 400 + 600 plan', async () => {
     installFetch({ onDetail: () => json(detailResponseRaw) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)

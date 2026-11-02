@@ -1,6 +1,7 @@
 using System.Globalization;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -55,6 +56,12 @@ public sealed partial class SalesDraftService
         var draft = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
         var line = draft.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
             ?? throw new SalesDraftServiceException(404, "not_found");
+        if (draft.IsSubcontractService)
+        {
+            // SAT-D195 (EK29): a subcontract service price never comes from the price list; it is typed per kg (no owner is asked).
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [new("lineId", SalesRuleCodes.SubcontractPriceListNotUsed)]);
+        }
         var currencyCode = await CurrencyCodeAsync(scope, permission, draft, cancellationToken);
         // The Product owner does not convert quantities. The current accepted Sales path prices in the exact order unit;
         // future cross-unit pricing needs an owner-approved conversion contract rather than reusing this quantity.
@@ -123,8 +130,15 @@ public sealed partial class SalesDraftService
             return (new Dictionary<Guid, PriceReferenceSnapshot>(), scope);
         }
 
-        var reader = priceReferences ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PriceListProviderUnavailable);
         var draft = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
+        if (draft.IsSubcontractService)
+        {
+            // SAT-D195 (EK29): a subcontract service line never names a list version; refused before the price owner is asked.
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [.. named.Select(pair => new SalesDraftFieldError($"lines[{pair.index}].priceReference", SalesRuleCodes.SubcontractPriceListNotUsed))]);
+        }
+
+        var reader = priceReferences ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PriceListProviderUnavailable);
         var currencyCode = await CurrencyCodeAsync(scope, permission, draft, cancellationToken);
         var references = new Dictionary<Guid, PriceReferenceSnapshot>();
         var errors = new List<SalesDraftFieldError>();

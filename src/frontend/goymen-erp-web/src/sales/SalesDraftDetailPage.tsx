@@ -575,6 +575,12 @@ export function DraftView({
               {lifecycleText} · {APPROVAL_STATE_TEXT[draft.approvalState]}
             </span>
           </StatusIndicator>
+          {draft.subcontractService === true ? (
+            // SAT-D175 (EK25): an incoming subcontract service ("fason hizmet") order — a normal order otherwise, so neutral.
+            <StatusIndicator tone="neutral" className={styles.badge}>
+              <span data-testid="sales-draft-subcontract">{ORDER_DRAFT_TEXT.subcontract.summary}</span>
+            </StatusIndicator>
+          ) : null}
           {pdfAction}
         </div>
       </header>
@@ -1188,6 +1194,8 @@ function commandNotice(attempt: CommandAttempt): string | null {
           : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded
             // SAT-D123 (EK18): no approval without due terms.
             : error.code === 'sales_due_terms_required' ? T.approval.dueTermsRequired
+              // SAT-D201 (EK31): a fason order is not sent for approval while a service line has no per-kg price.
+              : error.code === 'sales_subcontract_price_required' ? T.approval.subcontractPriceRequired
               // SAT-D115: the customer rejection's required reason (422).
               : error.code === 'sales_revision_reason_required' ? T.approval.customerRejectionReasonRequired : null)
         .filter((part) => part !== null)

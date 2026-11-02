@@ -21,7 +21,12 @@ public sealed record CreateSalesOrderDraftRequest(
     // MOD-03 → Sales (SAT-D140/D147/D158): the buyer tax situation chosen for this order (omitted = "Normal", SAT-D140's start
     // value). Omitted from the canonical replay content when absent, so an older create's attempt identity is unchanged.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    SalesDraftBuyerTaxV1? BuyerTax = null);
+    SalesDraftBuyerTaxV1? BuyerTax = null,
+    // SAT-D175 (EK25): true opens an incoming subcontract service ("fason hizmet") order — only service lines (SAT-D176), fixed at
+    // create. Omitted (or false) = a normal order; omitted from the canonical replay content when absent, so an older create's
+    // attempt identity is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    bool? SubcontractService = null);
 
 public sealed record SalesOrderDraftLineRequest(
     Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid OrderUnitId,
@@ -60,7 +65,10 @@ public sealed record SalesOrderDraftSummaryView(
     string ApprovalState,
     SalesCommercialStageV1? CommercialStage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null);
+    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null,
+    // SAT-D175 (EK25): true for an incoming subcontract service ("fason") order; omitted for every other order.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    bool? SubcontractService = null);
 
 /// <summary>
 /// Product presentation already accepted from the Product owner and stored on the order line.

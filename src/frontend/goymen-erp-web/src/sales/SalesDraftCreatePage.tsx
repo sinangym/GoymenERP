@@ -185,7 +185,9 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const [productSearchInput, setProductSearchInput] = useState('')
   const [productSearch, setProductSearch] = useState('')
   const [chosenProducts, setChosenProducts] = useState<readonly { readonly effectiveOn: string; readonly option: ProductOption }[]>([])
-  const source = useOptions(companyId, values.businessDate, accountSearch, productSearch)
+  // SAT-D175/D176 (EK25): a subcontract service ("fason") order offers only the service products (the server narrows the list).
+  const subcontract = values.subcontractService === true
+  const source = useOptions(companyId, values.businessDate, accountSearch, productSearch, subcontract ? 'Service' : undefined)
   // MOD-03 → Sales (SAT-D140/D158): the Settings buyer situation list in force on the order's business date.
   const taxOptionsRead = useTaxOptions(shell, companyId, values.businessDate === '' ? null : values.businessDate)
   const buyerTaxValue = values.buyerTax ?? EMPTY_BUYER_TAX_INPUT
@@ -783,6 +785,11 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
 
             <section className={styles.section} aria-labelledby="sales-create-lines">
               <h2 id="sales-create-lines">{T.field.lines}</h2>
+              <SubcontractToggle
+                checked={subcontract}
+                locked={values.lines.some((line) => line.productId !== '')}
+                onChange={(checked) => setValues((v) => ({ ...v, subcontractService: checked }))}
+              />
               <Field id="sales-product-search" label={T.references.productSearch} help={T.references.productSearchHint}>
                 {(control) => (
                   <div className={styles.searchRow}>
@@ -853,6 +860,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                       options={options}
                       errors={errors}
                       priceWrite={priceWrite}
+                      subcontract={subcontract}
                       onChange={setValues}
                       onProductChange={(productId) => {
                         const candidate = options.products.find((product) => product.productId === productId)
@@ -941,6 +949,42 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
 }
 
 /** UI-14: whether the lines carry a typed price — a count of filled fields, never an amount. */
+/**
+ * SAT-D175/D176 (EK25): the "fason hizmet" flag of the order being opened. It is fixed at create (no later screen changes it) and
+ * cannot change while a line holds a chosen product — a goods line never sits on a subcontract order; the server refuses it too.
+ */
+function SubcontractToggle({
+  checked,
+  locked,
+  onChange,
+}: {
+  readonly checked: boolean
+  readonly locked: boolean
+  readonly onChange: (checked: boolean) => void
+}) {
+  const helpId = 'sales-create-subcontract-help'
+  return (
+    <div className={styles.readStatus} data-testid="sales-create-subcontract">
+      <label>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={locked}
+          aria-describedby={helpId}
+          onChange={(event) => onChange(event.target.checked)}
+          data-testid="sales-create-subcontract-toggle"
+        />
+        <span>{T.subcontract.toggle}</span>
+      </label>
+      <p id={helpId}>
+        {T.subcontract.help}
+        {locked ? <span data-testid="sales-create-subcontract-locked"> {T.subcontract.lockedByLines}</span> : null}
+        {checked ? <span data-testid="sales-create-subcontract-picker"> {T.subcontract.pickerNote}</span> : null}
+      </p>
+    </div>
+  )
+}
+
 function PriceBadge({ priceWrite, lines }: { readonly priceWrite: boolean; readonly lines: readonly LineValues[] }) {
   const priced = priceWrite ? lines.filter((line) => line.unitPriceText.trim() !== '').length : 0
   if (priced > 0 && priced === lines.length) return <StatusIndicator>{T.summary.pricesEntered}</StatusIndicator>
@@ -1048,6 +1092,7 @@ function LineEditor({
   options,
   errors,
   priceWrite,
+  subcontract,
   onChange,
   onProductChange,
 }: {
@@ -1057,6 +1102,8 @@ function LineEditor({
   readonly errors: OrderDraftErrors
   /** UI-14: render the price group only for an actor the shell published the price-write control to. */
   readonly priceWrite: boolean
+  /** SAT-D195 (EK29): a subcontract service order's per-kg manual price rule is explained beside the price fields. */
+  readonly subcontract: boolean
   readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
   readonly onProductChange: (productId: string) => void
 }) {
@@ -1127,7 +1174,9 @@ function LineEditor({
         </Field>
       </div>
 
-      {priceWrite ? <LinePrice line={line} index={index} product={product} errors={errors} onChange={onChange} /> : null}
+      {priceWrite ? (
+        <LinePrice line={line} index={index} product={product} errors={errors} subcontract={subcontract} onChange={onChange} />
+      ) : null}
 
       <More
         label={PAGE.lineMore}
@@ -1255,12 +1304,14 @@ function LinePrice({
   index,
   product,
   errors,
+  subcontract,
   onChange,
 }: {
   readonly line: LineValues
   readonly index: number
   readonly product: OrderDraftOptions['products'][number] | undefined
   readonly errors: OrderDraftErrors
+  readonly subcontract: boolean
   readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
 }) {
   const id = (field: Parameters<typeof lineFieldId>[1]) => lineFieldId(line.lineId, field)
@@ -1270,6 +1321,7 @@ function LinePrice({
       <legend>{T.pricing.legend}</legend>
       <p id={helpId} className={styles.readStatus}>
         {T.pricing.help} {T.pricing.referenceLater}
+        {subcontract ? <span data-testid={`sales-line-editor-${index + 1}-subcontract-price`}> {T.pricing.subcontractFree}</span> : null}
       </p>
       <div className={styles.priceFields}>
         <Field id={id('unitPrice')} label={T.field.unitPrice} error={errors[id('unitPrice')]}>

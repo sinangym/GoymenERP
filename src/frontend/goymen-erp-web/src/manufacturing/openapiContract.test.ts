@@ -33,6 +33,7 @@ import {
   order,
   orderList,
   orderSummary,
+  parameterSnapshot,
   plan,
   plannedInput,
   planList,
@@ -140,7 +141,8 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
       names('PlanViewV1').filter(
-        (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH,
+        (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH
+          && name !== 'parameterSnapshot',
       ),
     )
     expectOptionalCutToLength('PlanViewV1', 'CutToLengthSpecViewV1')
@@ -171,6 +173,36 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
         approvedAtUtc: '2026-09-18T09:00:00.000Z',
       })),
     ).not.toBeNull()
+  })
+
+  it('reads the additive U1-b parameter snapshot exactly and refuses a snapshot on a draft', () => {
+    expect(schema('PlanViewV1').properties?.parameterSnapshot).toEqual({
+      oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/PlanParameterSnapshotViewV1' }],
+    })
+    expect(Object.keys(parameterSnapshot()).sort()).toEqual(names('PlanParameterSnapshotViewV1'))
+    expect(Object.keys(parameterSnapshot().values[0]).sort()).toEqual(names('PlanParameterValueViewV1'))
+    const approved = {
+      status: 'Approved',
+      version: 2,
+      approvedByUserId: '99999999-9999-9999-9999-999999999999',
+      approvedAtUtc: '2026-11-02T09:00:00.000Z',
+    }
+    expect(decodePlan(plan({ ...approved, parameterSnapshot: parameterSnapshot() }))?.parameterSnapshot)
+      .toEqual(parameterSnapshot())
+    const { parameterSnapshot: _omitted, ...legacyPlan } = plan(approved)
+    expect(decodePlan(legacyPlan)?.parameterSnapshot).toBeNull()
+    expect(decodePlan(plan({ parameterSnapshot: parameterSnapshot() }))).toBeNull()
+    for (const broken of [
+      parameterSnapshot({ profileVersion: '1' }),
+      parameterSnapshot({ source: 'Settings' }),
+      parameterSnapshot({ selectedForDate: '2026-10-31' }),
+      parameterSnapshot({ values: [] }),
+      parameterSnapshot({ values: [{ key: 'a', unit: 'mm', number: '1.50', choice: null }] }),
+      parameterSnapshot({ values: [{ key: 'a', unit: 'mm', number: '1', choice: 'x' }] }),
+      parameterSnapshot({ extra: true }),
+    ]) {
+      expect(decodePlan(plan({ ...approved, parameterSnapshot: broken }))).toBeNull()
+    }
   })
 
   it('declares the additive ordered slitting request and stored view without adding it to revisions', () => {

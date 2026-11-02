@@ -633,7 +633,9 @@ describe('GOY-DS layout (SALES-DS-CREATE-01)', () => {
     expect(labelsInOrder()).toEqual([
       T.references.accountSearch, T.field.customer, T.field.businessDate, T.field.currency,
       // MOD-03 → Sales (SAT-D140): the buyer tax situation follows the due terms in the order section.
-      T.field.deliveryAddress, T.field.deliveryContact, ORDER_TAX_TEXT.buyerSituationLabel, T.references.productSearch,
+      T.field.deliveryAddress, T.field.deliveryContact, ORDER_TAX_TEXT.buyerSituationLabel,
+      // SAT-D175 (EK25): the "fason hizmet" flag opens the lines section (before the product search it narrows).
+      T.subcontract.toggle, T.references.productSearch,
       T.field.product, T.field.quantity, T.field.orderUnit,
     ])
     expect(screen.queryByLabelText(T.field.requestedDeliveryDate)).toBeNull()

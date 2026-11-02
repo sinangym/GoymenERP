@@ -12,8 +12,8 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Plans;
 /// What is known from OUTSIDE the plan for its calculation, by the engines' own parameter names (for example
 /// <c>densityKgPerCubicMetre</c>, <c>thicknessMm</c>, <c>lineSpeedMetresPerMinute</c>). A roll's own value wins over the
 /// plan-wide one. A name that is absent is UNKNOWN — never 0 and never a default: the engine then answers
-/// <see cref="EngineOutcome.Unavailable"/> and names it (OPEN-007: density, speed, kerf, tolerance and the other values
-/// are not decided; DEC-SET-001: their source is the Settings / Policy Registry, which is not built yet).
+/// <see cref="EngineOutcome.Unavailable"/> and names it. Sources: Product's captured dimensions per roll and, since U1-b,
+/// the Settings parameter profile (DEC-SET-001, URT-D9) plan-wide.
 /// </summary>
 public sealed record PlanCalculationParameters(
     IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, decimal>>? Rolls = null,
@@ -27,7 +27,29 @@ public sealed record PlanCalculationParameters(
     /// names. Every roll keeps its own dimensions: values are never taken from the first roll,
     /// averaged or promoted to plan-wide defaults. Legacy inputs without a snapshot stay unknown.
     /// </summary>
-    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs)
+    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs) =>
+        FromCapturedSnapshots(inputs, parameterProfile: null);
+
+    /// <summary>
+    /// Üretim U1-b (URT-D9, DEC-PRDCT-008): each roll's Product snapshot as above, plus the plan-wide numeric values of the
+    /// Settings parameter profile — captured at approval for an approved plan, read live for a draft or a preview. The
+    /// Settings keys are the engines' own parameter names, so nothing is mapped or renamed; a key the profile does not
+    /// carry stays unknown and is named by the engine. A roll's own (Product) value wins over the profile's.
+    /// </summary>
+    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs,
+        PlanParameterSnapshotV1? parameterProfile)
+    {
+        var products = FromProductSnapshots(inputs);
+        if (parameterProfile is null)
+        {
+            return products;
+        }
+
+        var plan = parameterProfile.Numbers();
+        return plan.Count == 0 ? products : new PlanCalculationParameters(products.Rolls, plan);
+    }
+
+    private static PlanCalculationParameters FromProductSnapshots(IEnumerable<PlannedInput> inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         var rolls = new Dictionary<Guid, IReadOnlyDictionary<string, decimal>>();

@@ -122,6 +122,8 @@ export interface OrderDraftFormValues {
   readonly instalments: readonly InstalmentRow[] | null
   /** MOD-03 → Sales (SAT-D140): the buyer tax inputs; absent (an older remembered form) = the start value "Normal". */
   readonly buyerTax?: BuyerTaxInput
+  /** SAT-D175 (EK25): an incoming subcontract service ("fason") order; absent (an older remembered form) = a normal order. */
+  readonly subcontractService?: boolean
 }
 
 /** SALES-A2a: what the Cari owner lists for the chosen account; null while nothing is offered (not read, or failed). */
@@ -543,6 +545,7 @@ export function validateOrderDraft(
       package: null,
       dueTerms: terms.ok ? terms.dueTerms : null,
       ...(sendBuyerTax && buyerTax.ok ? { buyerTax: buyerTax.buyerTax } : {}),
+      ...(values.subcontractService === true ? { subcontractService: true as const } : {}),
     },
   }
 }

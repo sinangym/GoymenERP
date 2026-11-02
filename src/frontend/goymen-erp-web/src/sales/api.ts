@@ -667,10 +667,13 @@ export async function fetchProductOptions(
   companyId: string,
   signal?: AbortSignal,
   q = '',
+  itemType?: 'Service',
 ): Promise<ProductOptionsOutcome> {
   const params = new URLSearchParams({ effectiveOn, limit: String(PRODUCT_CANDIDATE_LIMIT) })
   const search = q.trim()
   if (search !== '') params.set('q', search)
+  // SAT-D176 (EK25): a subcontract service order's picker — the server keeps only the products whose card is a service.
+  if (itemType !== undefined) params.set('itemType', itemType)
   const raw = await request(
     `${SALES_REFERENCE_PRODUCTS_PATH}?${params.toString()}`,
     { headers: headers(companyId), cache: 'no-store' },
