@@ -172,6 +172,21 @@ export interface PlanRejectionView {
 }
 
 /** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
+/**
+ * Üretim U2-b1 (API-12): the values a Tube / Profile, Paint or Cold Rolling plan entered itself. Measures are lossless
+ * positive decimal text; counts are whole numbers from 1. The paint is free text until Product carries paint products.
+ */
+export interface PlanProcessSpecView {
+  readonly packageCount: number | null
+  readonly piecesPerPackage: number | null
+  readonly pieceLengthMm: string | null
+  readonly unitKg: string | null
+  readonly perimeterMm: string | null
+  readonly targetThicknessMm: string | null
+  readonly paintDescription: string | null
+  readonly paintColorCode: string | null
+}
+
 export interface PlanCancellationView {
   readonly reason: string
   readonly cancelledByUserId: string
@@ -227,6 +242,8 @@ export interface ProductionPlanView {
   readonly rejections: readonly PlanRejectionView[]
   /** U2-a: the cancellation of a Cancelled plan; null otherwise. */
   readonly cancellation: PlanCancellationView | null
+  /** U2-b1: the plan-entered process values; null when none or legacy JSON. */
+  readonly processSpec: PlanProcessSpecView | null
 }
 
 export interface ProductionOrderView {
@@ -720,6 +737,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   const orderId = body.orderId === undefined ? null : nullableGuid(body.orderId)
   const rejections = decodeRejections(body.rejections)
   const cancellation = decodeCancellation(body.cancellation)
+  const processSpec = decodePlanProcessSpec(body.processSpec)
   if (
     planId === null ||
     companyId === null ||
@@ -735,6 +753,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     orderId === undefined ||
     rejections === undefined ||
     cancellation === undefined ||
+    processSpec === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved' && body.status !== 'Cancelled') ||
@@ -790,7 +809,51 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     orderId,
     rejections,
     cancellation,
+    processSpec,
   }
+}
+
+const PROCESS_SPEC_KEYS = [
+  'packageCount',
+  'piecesPerPackage',
+  'pieceLengthMm',
+  'unitKg',
+  'perimeterMm',
+  'targetThicknessMm',
+  'paintDescription',
+  'paintColorCode',
+] as const
+
+/**
+ * Üretim U2-b1: the plan-entered process values. An omitted member or null is none (legacy JSON); any other shape, a
+ * non-positive count or measure, or a spec without a single value is not this contract.
+ */
+export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, PROCESS_SPEC_KEYS)) return undefined
+  const count = (raw: unknown): number | null | undefined =>
+    raw === null ? null : typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 1 ? raw : undefined
+  const measure = (raw: unknown): string | null | undefined =>
+    raw === null
+      ? null
+      : typeof raw === 'string' && CANONICAL_DECIMAL.test(raw) && !raw.startsWith('-') && raw !== '0' ? raw : undefined
+  const text = (raw: unknown, maximum: number): string | null | undefined =>
+    raw === null
+      ? null
+      : typeof raw === 'string' && raw.trim() === raw && raw.length > 0 && raw.length <= maximum ? raw : undefined
+  const spec = {
+    packageCount: count(value.packageCount),
+    piecesPerPackage: count(value.piecesPerPackage),
+    pieceLengthMm: measure(value.pieceLengthMm),
+    unitKg: measure(value.unitKg),
+    perimeterMm: measure(value.perimeterMm),
+    targetThicknessMm: measure(value.targetThicknessMm),
+    paintDescription: text(value.paintDescription, 128),
+    paintColorCode: text(value.paintColorCode, 32),
+  }
+  const values = Object.values(spec)
+  if (values.some((member) => member === undefined) || values.every((member) => member === null)) return undefined
+  return spec as PlanProcessSpecView
 }
 
 const REJECTION_KEYS = ['number', 'reason', 'rejectedByUserId', 'rejectedAtUtc', 'planVersion'] as const
