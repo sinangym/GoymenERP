@@ -1713,6 +1713,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 6
                         }),
+                // Üretim U1-b: Up re-creates the tolerance registry trigger (windows per line scope; a published row changes
+                // only by closing its open-ended window) and the lifecycle guard with the line; Down refuses (51185) while any
+                // profile exists, then restores the U1-a trigger and guard.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261102121332_AddManufacturingToleranceLineScope.cs"] =
+                    new(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 5
+                        }),
+                // Üretim U1-b: Down's only raw SQL refuses (51186) while a plan parameter snapshot or a source-bearing close
+                // decision exists (forward fix), before any table or column is dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261102121844_AddManufacturingPlanParameterSnapshots.cs"] =
+                    new(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261101143556_AddTaxBuyerSituationLists.cs"] =

@@ -162,6 +162,26 @@ export function plan(overrides: Record<string, unknown> = {}) {
     slittingSpec: null,
     // M01.2: the current server always emits the member, explicit null when the plan carries no cut lines.
     cutToLengthSpec: null,
+    // U1-b: the profile captured at approval; a draft never carries one.
+    parameterSnapshot: null,
+    ...overrides,
+  }
+}
+
+/** A synthetic `PlanParameterSnapshotViewV1` (Üretim U1-b): the reviewed catalog version 0 of a slitting line. */
+export function parameterSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    profileId: 'e0000000-0000-4000-8000-000000000001',
+    profileVersion: '0',
+    source: 'Catalog',
+    workCenterId: null,
+    effectiveFrom: '2026-11-01',
+    effectiveThrough: null,
+    selectedForDate: '2026-11-02',
+    values: [
+      { key: 'densityKgPerCubicMetre', unit: 'kg/m3', number: '7850', choice: null },
+      { key: 'edgeTrimMm', unit: 'mm', number: '0', choice: null },
+    ],
     ...overrides,
   }
 }

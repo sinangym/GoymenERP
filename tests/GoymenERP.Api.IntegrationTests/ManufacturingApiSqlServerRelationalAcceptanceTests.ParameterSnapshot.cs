@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.Api.Security;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;

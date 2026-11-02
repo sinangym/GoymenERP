@@ -102,8 +102,8 @@ public sealed class PlanParameterSnapshotAndToleranceCloseTests
         var captured = SlittingPlanParameters.FromCaptured(plan.Inputs, profile, new Dictionary<Guid, bool> { [Roll] = true });
         var missing = Assert.Throws<ManufacturingRuleException>(() => SlittingApprovalGate.Require(plan, captured));
         // Only the net usable width (entered on the plan, not built yet) is missing; nothing else is defaulted.
-        Assert.Equal((ManufacturingRuleCodes.PlanParametersUnavailable, new[] { "netUsableWidthMm" }),
-            (missing.Code, missing.Parameters.ToArray()));
+        Assert.Equal(ManufacturingRuleCodes.PlanParametersUnavailable, missing.Code);
+        Assert.Equal(["netUsableWidthMm"], missing.Parameters);
 
         var withWidth = captured with
         {

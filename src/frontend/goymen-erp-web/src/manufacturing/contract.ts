@@ -149,6 +149,29 @@ export interface CutToLengthSpecView {
   readonly lines: readonly CutToLengthLineView[]
 }
 
+/** One captured parameter value (`PlanParameterValueViewV1`): a canonical decimal number or a choice, never both. */
+export interface PlanParameterValueView {
+  readonly key: string
+  readonly unit: string
+  readonly number: string | null
+  readonly choice: string | null
+}
+
+/**
+ * The Settings parameter profile captured at plan approval (`PlanParameterSnapshotViewV1`, Üretim U1-b). `Catalog` is the
+ * reviewed version 0; `Settings` a published version. The screen shows it; it never recomputes anything from it.
+ */
+export interface PlanParameterSnapshotView {
+  readonly profileId: string
+  readonly profileVersion: string
+  readonly source: 'Catalog' | 'Settings'
+  readonly workCenterId: string | null
+  readonly effectiveFrom: string
+  readonly effectiveThrough: string | null
+  readonly selectedForDate: string
+  readonly values: readonly PlanParameterValueView[]
+}
+
 /**
  * Wire contract of `GET /api/v1/manufacturing/plans/{planId}` (`PlanViewV1`).
  *
@@ -173,6 +196,8 @@ export interface ProductionPlanView {
   readonly slittingSpec: SlittingSpecView | null
   /** M01.2: null for plans without cut lines and for legacy JSON that omitted the additive member. */
   readonly cutToLengthSpec: CutToLengthSpecView | null
+  /** U1-b: the profile captured at approval; null for a draft, a pre-U1-b plan or legacy JSON without the member. */
+  readonly parameterSnapshot: PlanParameterSnapshotView | null
 }
 
 export interface ProductionOrderView {
@@ -483,6 +508,65 @@ export function decodeCutToLengthSpec(value: unknown): CutToLengthSpecView | nul
   return { lines }
 }
 
+const PARAMETER_SNAPSHOT_KEYS = [
+  'profileId', 'profileVersion', 'source', 'workCenterId', 'effectiveFrom', 'effectiveThrough', 'selectedForDate', 'values',
+] as const
+const PARAMETER_VALUE_KEYS = ['key', 'unit', 'number', 'choice'] as const
+const PARAMETER_KEY = /^[A-Za-z0-9]{1,64}$/
+const CANONICAL_DECIMAL = /^-?(0|[1-9]\d*)(\.\d*[1-9])?$/
+const PROFILE_VERSION = /^(0|[1-9]\d{0,31})$/
+
+/**
+ * Strict `PlanParameterSnapshotViewV1` decoding. `null` is the contract's absence (omitted legacy member or explicit null);
+ * `undefined` is not this contract and fails the whole plan read. The server's rules bound what is trusted: catalog is
+ * version 0 and a Settings version is positive, the window covers the selected date, at least one value, each key once,
+ * each value either a canonical number or a choice.
+ */
+export function decodeParameterSnapshot(value: unknown): PlanParameterSnapshotView | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, PARAMETER_SNAPSHOT_KEYS)) return undefined
+  const profileId = nonNilGuid(value.profileId)
+  const workCenterId = value.workCenterId === null ? null : nonNilGuid(value.workCenterId) ?? undefined
+  if (profileId === null || workCenterId === undefined
+    || typeof value.profileVersion !== 'string' || !PROFILE_VERSION.test(value.profileVersion)
+    || (value.source !== 'Catalog' && value.source !== 'Settings')
+    || (value.source === 'Catalog') !== (value.profileVersion === '0')
+    || !calendarDate(value.effectiveFrom) || !calendarDate(value.selectedForDate)
+    || (value.effectiveThrough !== null && !calendarDate(value.effectiveThrough))
+    || value.selectedForDate < value.effectiveFrom
+    || (value.effectiveThrough !== null && (value.effectiveThrough < value.effectiveFrom
+      || value.selectedForDate > value.effectiveThrough))
+    || !Array.isArray(value.values) || value.values.length === 0) return undefined
+  const values: PlanParameterValueView[] = []
+  const keys = new Set<string>()
+  for (const raw of value.values) {
+    if (!isObject(raw) || !hasExactKeys(raw, PARAMETER_VALUE_KEYS)
+      || typeof raw.key !== 'string' || !PARAMETER_KEY.test(raw.key) || keys.has(raw.key)
+      || typeof raw.unit !== 'string' || raw.unit.length === 0 || raw.unit.length > 16) return undefined
+    const isNumber = typeof raw.number === 'string' && CANONICAL_DECIMAL.test(raw.number) && raw.choice === null
+    const isChoice = raw.number === null && typeof raw.choice === 'string' && raw.choice.length > 0
+      && raw.choice.length <= 32
+    if (!isNumber && !isChoice) return undefined
+    keys.add(raw.key)
+    values.push({
+      key: raw.key,
+      unit: raw.unit,
+      number: isNumber ? raw.number as string : null,
+      choice: isChoice ? raw.choice as string : null,
+    })
+  }
+  return {
+    profileId,
+    profileVersion: value.profileVersion as string,
+    source: value.source as 'Catalog' | 'Settings',
+    workCenterId,
+    effectiveFrom: value.effectiveFrom as string,
+    effectiveThrough: value.effectiveThrough as string | null,
+    selectedForDate: value.selectedForDate as string,
+    values,
+  }
+}
+
 /** A positive safe integer: the version is compared and sent back, never computed. */
 function version(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
@@ -583,6 +667,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     : decodePlanPreview(body.calculation)
   const slittingSpec = decodeSlittingSpec(body.slittingSpec)
   const cutToLengthSpec = decodeCutToLengthSpec(body.cutToLengthSpec)
+  const parameterSnapshot = decodeParameterSnapshot(body.parameterSnapshot)
   if (
     planId === null ||
     companyId === null ||
@@ -593,6 +678,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     approvedAtUtc === undefined ||
     slittingSpec === undefined ||
     cutToLengthSpec === undefined ||
+    parameterSnapshot === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved') ||
@@ -602,7 +688,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   }
   // CK_Plans_Approval: Draft has neither value; Approved has both. No other combination is trusted.
   if (body.status === 'Draft') {
-    if (approvedByUserId !== null || approvedAtUtc !== null) return null
+    // A snapshot is captured only by the approval.
+    if (approvedByUserId !== null || approvedAtUtc !== null || parameterSnapshot !== null) return null
   } else if (approvedByUserId === null || approvedAtUtc === null) {
     return null
   }
@@ -641,6 +728,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     calculation,
     slittingSpec,
     cutToLengthSpec,
+    parameterSnapshot,
   }
 }
 
