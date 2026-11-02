@@ -365,6 +365,11 @@ public static class SalesCustomerRiskCalculator
         }
     }
 
+    /// <summary>
+    /// One amount as money in the total's currency. Another currency is converted here, per amount (SAT-D207: each converted
+    /// amount is rounded on its own by <see cref="SalesRiskCurrencyConversion"/> under SAT-D206, and the caller sums the rounded
+    /// amounts without rounding the sum again).
+    /// </summary>
     private static Money? ToMoney(string component, SalesRiskAmount? amount, Guid currencyId, int scale, List<SalesRiskReason> reasons,
         SalesRiskExchangeRates rates)
     {
@@ -481,10 +486,11 @@ public static class SalesRiskCurrencyConversion
     }
 
     /// <summary>
-    /// SAT-D206 (EK34; the rounding EK31 SAT-D200 / EK32 SAT-D203 left open): the intermediate TL value is NOT rounded; only the
-    /// final limit-currency amount is rounded, half-up (<see cref="Money.Round"/>, away from zero), to the target scale — the
-    /// limit currency's approved money profile scale (2 decimals per SAT-D206), never a literal here. Multiplication is exact;
-    /// the division is System.Decimal's (28-29 significant digits). The one place to change if the rule changes.
+    /// SAT-D206/D207 (EK34; the rounding EK31 SAT-D200 / EK32 SAT-D203 left open): the intermediate TL value is NOT rounded; only
+    /// the final limit-currency amount is rounded, half-up (<see cref="Money.Round"/>, away from zero), to the target scale — the
+    /// currency's approved Settings money-profile scale (kuruş, 2 decimals, for TL/USD/EUR), never a literal here (SAT-D206).
+    /// Each converted amount is rounded on its own and the rounded amounts are then summed; the sum is not rounded again
+    /// (SAT-D207). Multiplication is exact; the division is System.Decimal's (28-29 significant digits). The one place to change.
     /// </summary>
     internal static Money RoundForRisk(decimal exact, Guid currencyId, int scale) => Money.Round(exact, currencyId, scale);
 }

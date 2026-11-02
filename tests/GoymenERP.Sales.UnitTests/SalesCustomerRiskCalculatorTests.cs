@@ -232,7 +232,7 @@ public sealed class SalesCustomerRiskCalculatorTests
     [Fact]
     public void SAT_D203_another_foreign_currency_goes_through_TL_with_both_check_day_rates()
     {
-        // 100 USD × 41.6 = 4160 TL; 4160 ÷ 48.3 = 86.1283643… EUR → 86.13 (SAT-D206: the TL value unrounded, the EUR amount rounded once, half-up).
+        // 100 USD × 41.6 = 4160 TL; 4160 ÷ 48.3 = 86.1283643… EUR → 86.13 (SAT-D206/D207: the TL value unrounded, the EUR amount rounded once, half-up).
         var rates = Rates((Usd, 41.6m), (Eur, 48.3m));
         var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, In(Usd, 100m), In(Eur), In(Eur), In(Eur),
             Limit(1000m, Eur), rates);
@@ -255,10 +255,34 @@ public sealed class SalesCustomerRiskCalculatorTests
     {
         // SAT-D206 half-up: 1 TL ÷ 0.8 = 1.25 at scale 1 → 1.3 (away from zero, never banker's 1.2).
         Assert.Equal(1.3m, SalesRiskCurrencyConversion.Convert(1m, Try, Eur, 1, Rates((Eur, 0.8m)))!.Value.Amount);
-        // 1 TL ÷ 3 EUR-rate = 0.333… → 0.33 (SAT-D206: no intermediate rounding; one half-up rounding at the end).
+        // 1 TL ÷ 3 EUR-rate = 0.333… → 0.33 (SAT-D206/D207: no intermediate rounding; one half-up rounding at the end).
         Assert.Equal(0.33m, SalesRiskCurrencyConversion.Convert(1m, Try, Eur, 2, Rates((Eur, 3m)))!.Value.Amount);
         Assert.Equal(2m, SalesRiskCurrencyConversion.Convert(2m, Try, Try, 2, Rates())!.Value.Amount);
         Assert.Null(SalesRiskCurrencyConversion.Convert(1m, Usd, Eur, 2, Rates((Usd, 41m))));
+    }
+
+    [Fact]
+    public void SAT_D206_golden_the_intermediate_TL_value_is_not_rounded()
+    {
+        // SYNTHETIC rates: 1 USD = 1.004 TL, 1 EUR = 0.5 TL. 1 USD → 1.004 TL (kept, not 1.00) → 1.004 ÷ 0.5 = 2.008 EUR → 2.01.
+        // Rounding the TL value first would give 1.00 ÷ 0.5 = 2.00 EUR.
+        var rates = Rates((Usd, 1.004m), (Eur, 0.5m));
+        Assert.Equal(2.01m, SalesRiskCurrencyConversion.Convert(1m, Usd, Eur, 2, rates)!.Value.Amount);
+        var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, In(Usd, 1m), In(Eur), In(Eur), In(Eur),
+            Limit(1000m, Eur), rates);
+        Assert.Equal(2.01m, evaluation.InLimitCurrency!.GrossRisk!.Value.Amount);
+    }
+
+    [Fact]
+    public void SAT_D207_golden_each_converted_amount_is_rounded_then_the_rounded_amounts_are_summed()
+    {
+        // SYNTHETIC: two receivables of 1 TL against a EUR limit, 1 EUR = 3 TL. Each 0.333… EUR → 0.33; the total is 0.33 + 0.33 =
+        // 0.66 and is not rounded again. Rounding the exact sum (0.666…) would give 0.67.
+        var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, Taxed(1m, 1m), Taxed(), Taxed(), Taxed(),
+            Limit(1000m, Eur), Rates((Eur, 3m)));
+        Assert.Empty(evaluation.Reasons);
+        Assert.Equal(0.66m, evaluation.InLimitCurrency!.GrossRisk!.Value.Amount);
+        Assert.Equal(0.66m, evaluation.InLimitCurrency.GrossRiskWithThisOrder!.Value.Amount);
     }
 
     public static TheoryData<string, SalesRiskOutcome> UsdDecisions => new()

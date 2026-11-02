@@ -632,8 +632,9 @@ answer is reported as `Conflict` and nothing is written; one audit event per run
 **Follow-ups:**
 - **SAT-D199** (EK31): who reads the rates (Satış Uzmanı, Satış Müdürü, Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin, Finans
   Uzmanı, Finans Müdürü) — the persona card for `settings.exchange-rates.read`; the real grant stays a human gate.
-- **Rounding of risk conversions**: decided by SAT-D206 (EK34) — the intermediate TL value unrounded, the final
-  limit-currency amount rounded half-up; implemented in one place (`SalesRiskCurrencyConversion.RoundForRisk`).
+- **Rounding of risk conversions**: decided by SAT-D206/D207 (EK34) — the intermediate TL value unrounded, each final
+  limit-currency amount rounded half-up to the currency's approved scale, then the rounded amounts summed (the sum is not
+  rounded again); implemented in one place (`SalesRiskCurrencyConversion.RoundForRisk`).
 - The invoice snapshot (API-32) and the Ayarlar > Kurlar screen.
 
 **Consumers.**
