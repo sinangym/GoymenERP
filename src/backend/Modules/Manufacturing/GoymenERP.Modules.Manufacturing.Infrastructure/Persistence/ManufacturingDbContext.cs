@@ -87,6 +87,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<PlanRevisionCutLineRow> PlanRevisionCutLines => Set<PlanRevisionCutLineRow>();
 
+    /// <summary>Üretim U2-a: the recorded rejections of Draft plans (append-only).</summary>
+    internal DbSet<PlanRejectionRow> PlanRejections => Set<PlanRejectionRow>();
+
     /// <summary>Üretim U1-b: the parameter profile captured at plan approval (append-only).</summary>
     internal DbSet<PlanParameterSnapshotRow> PlanParameterSnapshots => Set<PlanParameterSnapshotRow>();
 
@@ -116,6 +119,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanSlitLines(modelBuilder);
         ConfigurePlanCutLines(modelBuilder);
         ConfigurePlanRevisions(modelBuilder);
+        ConfigurePlanRejections(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
@@ -159,20 +163,37 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_Plans_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Plans_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
+            // U2-a: 3 = Cancelled.
+            table.HasCheckConstraint("CK_Plans_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_Plans_Target",
                 "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
+            // U2-a: a cancelled plan keeps its approval trace when it was approved before, and none otherwise.
             table.HasCheckConstraint("CK_Plans_Approval",
                 "([Status] = 1 AND [ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL) "
-                + "OR ([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)");
+                + "OR ([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL) "
+                + "OR ([Status] = 3 AND (([ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL) "
+                + "OR ([ApprovedByUserId] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)))");
+            table.HasCheckConstraint("CK_Plans_Cancellation",
+                "([Status] = 3 AND [CancelledByUserId] IS NOT NULL "
+                + "AND [CancelledByUserId] <> '00000000-0000-0000-0000-000000000000' AND [CancelledAtUtc] IS NOT NULL "
+                + "AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) "
+                + "OR ([Status] <> 3 AND [CancelledByUserId] IS NULL AND [CancelledAtUtc] IS NULL "
+                + "AND [CancellationReason] IS NULL)");
             table.HasCheckConstraint("CK_Plans_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Plans_WindingTarget", "[WindingTargetKg] IS NULL OR [WindingTargetKg] > 0");
+            table.HasCheckConstraint("CK_Plans_NetUsableWidth",
+                "[NetUsableWidthMm] IS NULL OR ([NetUsableWidthMm] > 0 AND [Process] = 1)");
+            table.HasCheckConstraint("CK_Plans_LineSpeed",
+                "[LineSpeedMetresPerMinute] IS NULL OR ([LineSpeedMetresPerMinute] > 0 AND [Process] IN (1, 3))");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.TargetKg).HasPrecision(18, 3);
         entity.Property(x => x.WindingTargetKg).HasPrecision(18, 3);
+        entity.Property(x => x.NetUsableWidthMm).HasPrecision(18, 3);
+        entity.Property(x => x.LineSpeedMetresPerMinute).HasPrecision(18, 6);
+        entity.Property(x => x.CancellationReason).HasMaxLength(ProductionPlan.DecisionReasonMaximumLength);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
@@ -262,9 +283,12 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
             table.HasCheckConstraint("CK_PlanRevisions_Text",
                 "LEN([Reason]) > 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_PlanRevisions_LineSpeed",
+                "[LineSpeedMetresPerMinute] IS NULL OR [LineSpeedMetresPerMinute] > 0");
         });
         revision.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo });
         revision.Property(x => x.TargetKg).HasPrecision(18, 3);
+        revision.Property(x => x.LineSpeedMetresPerMinute).HasPrecision(18, 6);
         revision.Property(x => x.Reason).HasMaxLength(ManufacturingStoreCodes.PlanRevisionReasonMaximumLength).IsRequired();
         revision.Property(x => x.RevisedBy).HasMaxLength(128).IsRequired();
         revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
@@ -311,6 +335,32 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             .HasPrincipalKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
             .OnDelete(DeleteBehavior.Restrict);
         cutLine.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// Üretim U2-a (URT-D2, API-10): a plan's recorded rejections, bound by (company, plan) like its revisions; numbered
+    /// 1..n per plan. Append-only: the write guard admits no column of the table.
+    /// </summary>
+    private void ConfigurePlanRejections(ModelBuilder modelBuilder)
+    {
+        var rejection = modelBuilder.Entity<PlanRejectionRow>();
+        rejection.ToTable("PlanRejections", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanRejections_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [RejectedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [RejectionNo] >= 1 "
+                + "AND [PlanVersion] >= 2");
+            table.HasCheckConstraint("CK_PlanRejections_Text", "LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        rejection.HasKey(x => new { x.CompanyId, x.PlanId, x.RejectionNo });
+        rejection.HasIndex(x => new { x.CompanyId, x.PlanId, x.PlanVersion }).IsUnique();
+        rejection.Property(x => x.Reason).HasMaxLength(ProductionPlan.DecisionReasonMaximumLength).IsRequired();
+        rejection.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        rejection.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        rejection.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void ConfigureTechnicalSnapshot<TRow>(EntityTypeBuilder<TRow> entity)
@@ -361,7 +411,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.TargetKg).HasPrecision(18, 3);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
-        entity.HasIndex(x => new { x.CompanyId, x.PlanId });
+        // U2-a (URT-D1): one plan opens exactly one order — held by SQL too, so racing writers cannot open two.
+        entity.HasIndex(x => new { x.CompanyId, x.PlanId }).IsUnique();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<PlanRow>().WithMany()
@@ -430,6 +481,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanParameterSnapshotValues_Shape",
                 "([NumericValue] IS NOT NULL AND [ChoiceValue] IS NULL) "
                 + "OR ([NumericValue] IS NULL AND [ChoiceValue] IS NOT NULL AND LEN([ChoiceValue]) > 0)");
+            // U2-a (URT-D9): a plan-entered value is a number.
+            table.HasCheckConstraint("CK_PlanParameterSnapshotValues_Source",
+                "[ValueSource] IS NULL OR ([ValueSource] = 'Plan' AND [NumericValue] IS NOT NULL)");
         });
         value.HasKey(x => new { x.CompanyId, x.PlanId, x.ParameterKey });
         value.Property(x => x.ParameterKey).HasMaxLength(PlanParameterValueV1.MaximumKeyLength).IsUnicode(false)
@@ -437,6 +491,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         value.Property(x => x.Unit).HasMaxLength(PlanParameterValueV1.MaximumUnitLength).IsUnicode(false);
         value.Property(x => x.NumericValue).HasPrecision(18, 6);
         value.Property(x => x.ChoiceValue).HasMaxLength(PlanParameterValueV1.MaximumChoiceLength).IsUnicode(false);
+        value.Property(x => x.ValueSource).HasMaxLength(PlanParameterValueV1.MaximumSourceLength).IsUnicode(false);
         value.HasOne<PlanParameterSnapshotRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.PlanId })
             .HasPrincipalKey(x => new { x.CompanyId, x.PlanId })
@@ -591,8 +646,10 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             {
                 string[] allowed = entry.Entity switch
                 {
+                    // U2-a: the cancellation moves the status and sets its three columns; the content never changes.
                     PlanRow => [nameof(PlanRow.Status), nameof(PlanRow.ApprovedByUserId), nameof(PlanRow.ApprovedAtUtc),
-                        nameof(PlanRow.Version), nameof(PlanRow.UpdatedAtUtc)],
+                        nameof(PlanRow.CancelledByUserId), nameof(PlanRow.CancelledAtUtc),
+                        nameof(PlanRow.CancellationReason), nameof(PlanRow.Version), nameof(PlanRow.UpdatedAtUtc)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
                         nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc)],
                     // MFG-PLAN-EDIT: a revision is APPEND-ONLY — it adds its rows and moves only the plan's version and
@@ -601,6 +658,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                     PlanRevisionInputRow => [],
                     PlanCutLineRow => [],
                     PlanRevisionCutLineRow => [],
+                    // U2-a: a rejection is append-only too.
+                    PlanRejectionRow => [],
                     _ => [],
                 };
                 var changed = entry.Properties

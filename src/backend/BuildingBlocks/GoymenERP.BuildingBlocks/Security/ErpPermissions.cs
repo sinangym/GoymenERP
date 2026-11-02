@@ -237,6 +237,14 @@ public static class ErpPermissions
         "manufacturing.orders.close-exception.approve";
 
     /// <summary>
+    /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
+    /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
+    /// nor approving one. Registered, not granted: no role and no user receives it here; the grant is a human gate.
+    /// Company-wide only for the reason above (K-1: the route filters by no work center). Not Critical.
+    /// </summary>
+    public const string ManufacturingPlansCancel = "manufacturing.plans.cancel";
+
+    /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
     /// reading one, and because until now a plan could be created and approved but **never read
     /// again** — there was no plan read at any layer above the store. Registered, not granted.
@@ -843,6 +851,7 @@ public static class ErpPermissions
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
+            ManufacturingPlansCancel,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -990,6 +999,7 @@ public static class ErpPermissions
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
+            ManufacturingPlansCancel,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
