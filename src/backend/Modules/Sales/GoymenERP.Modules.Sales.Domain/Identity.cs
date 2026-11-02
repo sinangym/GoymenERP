@@ -324,6 +324,15 @@ public static class SalesRuleCodes
     public const string SubcontractLineNotService = "sales_subcontract_line_not_service";
 
     /// <summary>
+    /// SAT-D195 (EK29): a subcontract service line never uses the price list (no list reference, no floor exception); its price is
+    /// typed per kilogram and approved by the order's internal approval.
+    /// </summary>
+    public const string SubcontractPriceListNotUsed = "sales_subcontract_price_list_not_used";
+
+    /// <summary>SAT-D195 (EK29): a subcontract service is sold per kilogram — its order unit and its price unit are kilograms.</summary>
+    public const string SubcontractUnitNotKilogram = "sales_subcontract_unit_not_kilogram";
+
+    /// <summary>
     /// SAT-D175 (EK25): the customer of a subcontract service order does not change while a production plan or a customer-goods
     /// allocation is linked to it — or while that cannot be read (fail-closed).
     /// </summary>

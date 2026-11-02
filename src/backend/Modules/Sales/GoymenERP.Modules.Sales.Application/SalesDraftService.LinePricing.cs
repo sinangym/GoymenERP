@@ -1,6 +1,7 @@
 using System.Globalization;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -55,6 +56,12 @@ public sealed partial class SalesDraftService
         var draft = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
         var line = draft.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
             ?? throw new SalesDraftServiceException(404, "not_found");
+        if (draft.IsSubcontractService)
+        {
+            // SAT-D195 (EK29): a subcontract service price never comes from the price list; it is typed per kg (no owner is asked).
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [new("lineId", SalesRuleCodes.SubcontractPriceListNotUsed)]);
+        }
         var currencyCode = await CurrencyCodeAsync(scope, permission, draft, cancellationToken);
         // The Product owner does not convert quantities. The current accepted Sales path prices in the exact order unit;
         // future cross-unit pricing needs an owner-approved conversion contract rather than reusing this quantity.
@@ -77,21 +84,13 @@ public sealed partial class SalesDraftService
     /// currency, channel, VAT basis, date or quantity; the commercial revision checks those per line as field refusals.
     /// </summary>
     private async Task<ProductPriceResolutionV2> ResolveLineAsync(Scope scope, string? permission, IProductQuantityPriceReferenceReaderV2 reader,
-        SalesOrderDraft draft, SalesOrderDraftLine line, Guid priceUnitId, string currencyCode, bool strict, CancellationToken cancellationToken) =>
-        await ResolvePriceAsync(scope, permission, reader, draft.Header.PartyId, draft.Header.CompanyAccountId, line.Product.ProductId,
-            priceUnitId, line.Quantity.Value, currencyCode, draft.Money.EffectiveOn, strict, cancellationToken);
-
-    /// <summary>
-    /// The owner's tier chain for one product / unit / quantity of a customer on a date, checked against the contract exactly as
-    /// <see cref="ResolveLineAsync"/> describes — shared by a stored line and (SAT-D178) a create line that is not stored yet.
-    /// </summary>
-    private async Task<ProductPriceResolutionV2> ResolvePriceAsync(Scope scope, string? permission, IProductQuantityPriceReferenceReaderV2 reader,
-        Guid partyId, Guid companyAccountId, Guid productId, Guid priceUnitId, decimal quantity, string currencyCode, DateOnly on, bool strict,
-        CancellationToken cancellationToken)
+        SalesOrderDraft draft, SalesOrderDraftLine line, Guid priceUnitId, string currencyCode, bool strict, CancellationToken cancellationToken)
     {
+        var on = draft.Money.EffectiveOn;
+        var quantity = line.Quantity.Value;
         var resolution = await GuardedAsync(scope, permission,
-            () => reader.ResolveAsync(new ProductPriceResolutionRequestV2(productId, priceUnitId, quantity, currencyCode, on,
-                new ProductPriceCustomerV2(partyId, companyAccountId)), cancellationToken), cancellationToken);
+            () => reader.ResolveAsync(new ProductPriceResolutionRequestV2(line.Product.ProductId, priceUnitId, quantity, currencyCode, on,
+                new ProductPriceCustomerV2(draft.Header.PartyId, draft.Header.CompanyAccountId)), cancellationToken), cancellationToken);
         var consistent = resolution is not null
             && resolution.EffectiveOn == on
             && resolution.Candidates is not null && resolution.Tiers is not null && resolution.PackageStandard is not null
@@ -106,7 +105,7 @@ public sealed partial class SalesDraftService
                 _ => false,
             }
             && resolution.Candidates.All(answer => answer is not null && answer.Tier == resolution.MatchedTier)
-            && (!strict || resolution.Candidates.All(answer => answer.ProductId == productId && answer.PriceUnitId == priceUnitId
+            && (!strict || resolution.Candidates.All(answer => answer.ProductId == line.Product.ProductId && answer.PriceUnitId == priceUnitId
                 && string.Equals(answer.CurrencyCode, currencyCode, StringComparison.Ordinal)
                 && string.Equals(answer.Channel, "Sales", StringComparison.Ordinal)
                 && string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal)
@@ -131,8 +130,15 @@ public sealed partial class SalesDraftService
             return (new Dictionary<Guid, PriceReferenceSnapshot>(), scope);
         }
 
-        var reader = priceReferences ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PriceListProviderUnavailable);
         var draft = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
+        if (draft.IsSubcontractService)
+        {
+            // SAT-D195 (EK29): a subcontract service line never names a list version; refused before the price owner is asked.
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [.. named.Select(pair => new SalesDraftFieldError($"lines[{pair.index}].priceReference", SalesRuleCodes.SubcontractPriceListNotUsed))]);
+        }
+
+        var reader = priceReferences ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PriceListProviderUnavailable);
         var currencyCode = await CurrencyCodeAsync(scope, permission, draft, cancellationToken);
         var references = new Dictionary<Guid, PriceReferenceSnapshot>();
         var errors = new List<SalesDraftFieldError>();
@@ -205,24 +211,21 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>The draft currency's ISO code, from the Settings money profile the draft was created under (same operation, same date).</summary>
-    private Task<string> CurrencyCodeAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken) =>
-        CurrencyCodeAsync(scope, permission, draft.Money.CurrencyId, draft.Money.EffectiveOn, cancellationToken);
-
-    /// <summary>A currency's ISO code from the Settings money profile of the Sales order operation on a date (same rules as above).</summary>
-    private async Task<string> CurrencyCodeAsync(Scope scope, string? permission, Guid currencyId, DateOnly on, CancellationToken cancellationToken)
+    private async Task<string> CurrencyCodeAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         MoneyProfileV1 profile;
         try
         {
             profile = await GuardedAsync(scope, permission,
-                () => settings.GetMoneyProfileAsync(currencyId, SalesMoneyOperations.OrderDraftV1, on, cancellationToken), cancellationToken);
+                () => settings.GetMoneyProfileAsync(draft.Money.CurrencyId, SalesMoneyOperations.OrderDraftV1, draft.Money.EffectiveOn,
+                    cancellationToken), cancellationToken);
         }
         catch (SettingsPrerequisiteException exception)
         {
             throw Settings(exception, "currencyId", SettingsPrerequisiteCodesV1.MoneyProfileNotFound, SalesDraftProblemCodesV1.UnsupportedCurrency);
         }
 
-        if (profile.CompanyId != scope.CompanyId || profile.CurrencyId != currencyId || string.IsNullOrWhiteSpace(profile.CurrencyCode))
+        if (profile.CompanyId != scope.CompanyId || profile.CurrencyId != draft.Money.CurrencyId || string.IsNullOrWhiteSpace(profile.CurrencyCode))
         {
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
         }
@@ -254,9 +257,5 @@ public sealed partial class SalesDraftService
                 ? new SalesDraftDiscountLimitCheckV1(check.CheckedBy, check.CheckedAtUtc, check.ListUnitPrice, check.LimitPercent,
                     check.RequiresApproval,
                     check.ApprovedBy, check.ApprovedAtUtc, check.Reason)
-                : null,
-            commercial.IsFreeSubcontractPrice && commercial.ListAbsence is { } absence
-                ? new SalesDraftPriceListAbsenceV1(absence.CurrencyCode, absence.EffectiveOn, absence.UnitPrice, absence.WrittenBy,
-                    absence.WrittenAtUtc, absence.Quantity)
                 : null);
 }

@@ -26,12 +26,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// SAT-D175…D178 (EK25; handoff S-3) against a REAL SQL Server and the REAL host composition: a subcontract service ("fason") order
+/// SAT-D175/D176 (EK25) and SAT-D195 (EK29; handoff S-3) against a REAL SQL Server and the REAL host composition: a subcontract service ("fason") order
 /// keeps its flag (<c>sales.Drafts.IsSubcontractService</c>, and on every archived header), its lines' confirmed item type
-/// (<c>DraftLines.ItemType</c>, only "Service" — <c>CK_DraftLines_ItemType</c>) and a free price's price-list absence (in
-/// <c>PricingJson</c>); the write guard never moves the flag; the Sales-owned read port answers the order to the Production consumer
+/// (<c>DraftLines.ItemType</c>, only "Service" — <c>CK_DraftLines_ItemType</c>) and its per-kg manual price (no list
+/// reference, no discount check, SAT-D195); the write guard never moves the flag; the Sales-owned read port answers the order to the Production consumer
 /// for its own company only (another company: not found; a company other than the context: unreadable); the detail and line-pricing
-/// routes show the flag and the absence; the migration refuses to roll back over a subcontract order (51141).
+/// routes show the flag and the manual price; the migration refuses to roll back over a subcontract order (51141).
 /// <para>
 /// The drafts are stored through the real Sales store from ISOLATED SYNTHETIC owner snapshots (the API-03 / MOD-03 precedent); no
 /// price here is a policy. SENTETIK / NOT_ENV.
@@ -56,7 +56,7 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
     private static readonly SalesDraftStateAudit QuantityRevised = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK miktar");
 
     [SqlServerFact]
-    public async Task A_subcontract_order_keeps_its_flag_item_type_and_free_price_and_the_read_port_answers_it_for_its_company_only_on_real_sql()
+    public async Task A_subcontract_order_keeps_its_flag_item_type_and_per_kg_price_and_the_read_port_answers_it_for_its_company_only_on_real_sql()
     {
         await using var run = await Run.StartAsync();
         var draft = await run.StoredDraftAsync(CompanyA, "f");
@@ -66,11 +66,11 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [Id] = @id AND [IsSubcontractService] = 1", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [ItemType] = N'Service'", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id "
-                + "AND JSON_VALUE([PricingJson], '$.listAbsence.writtenBy') = N'SENTETIK-writer' AND JSON_VALUE([PricingJson], '$.listAbsence.unitPrice') = N'37.5'",
+                + "AND [UnitPrice] = N'37.5' AND [PricingJson] IS NULL",
                 ("@id", draft.Id))));
-        // SAT-D178: the create's audit record names who wrote which free price.
+        // SAT-D195: the create's audit record carries the typed per-kg price (the event names who typed it, when).
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId] = @id "
-            + "AND [AfterJson] LIKE N'%\"subcontractService\":true%' AND [AfterJson] LIKE N'%\"listAbsence\":{%SENTETIK-writer%'", ("@id", draft.Id.ToString("D"))));
+            + "AND [AfterJson] LIKE N'%\"subcontractService\":true%' AND [AfterJson] LIKE N'%\"subcontractUnitPrice\":\"37.5\"%'", ("@id", draft.Id.ToString("D"))));
 
         await using (var scope = run.SalesStore(CompanyA))
         {
@@ -118,7 +118,7 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
             Assert.Equal(SalesSubcontractServiceOrderOutcomeV1.Unreadable, (await hosted.GetAsync(CompanyA, draft.Id)).Outcome);
         }
 
-        // Approved: the port says so; a free-price revision archives the approved header WITH the flag (SAT-D175: part of the snapshot).
+        // Approved: the port says so; a per-kg price revision archives the approved header WITH the flag (SAT-D175: part of the snapshot).
         await using (var scope = run.SalesStore(CompanyA))
         {
             await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("f-submit"), Hash("f-submit"), SalesDraftCommands.SubmitV1, draft.Id,
@@ -134,7 +134,7 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
         {
             var revised = await scope.Store.ReviseDraftCommercialAsync(run.SalesEnvelope("f-rev"), Hash("f-rev"),
                 SalesDraftCommands.ReviseCommercialV1, draft.Id,
-                (d, now) => d.ReviseCommercial(4, [new LineCommercialInput(line.Id, Free("41", now))], "SENTETIK-writer", now), Revised,
+                (d, now) => d.ReviseCommercial(4, [new LineCommercialInput(line.Id, PerKg("41"))], "SENTETIK-writer", now), Revised,
                 _ => Task.CompletedTask);
             Assert.Equal((1, "Preparing"), (revised!.Draft.Revision, revised.Draft.ApprovalState.ToString()));
         }
@@ -143,15 +143,15 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionHeaders] WHERE [DraftId] = @id AND [IsSubcontractService] = 1",
                 ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id "
-                + "AND JSON_VALUE([PricingJson], '$.listAbsence.unitPrice') = N'37.5'", ("@id", draft.Id))));
+                + "AND [UnitPrice] = N'37.5'", ("@id", draft.Id))));
         await using (var scope = run.SalesStore(CompanyA))
         {
             var stored = (await scope.Store.FindDraftAsync(draft.Id))!;
             Assert.True(Assert.Single(stored.ArchivedRevisions).Header!.IsSubcontractService);
-            Assert.Equal("41", stored.Lines[0].Commercial.ListAbsence!.UnitPrice);
+            Assert.Equal(("41", (DiscountLimitCheckSnapshot?)null), (stored.Lines[0].Commercial.UnitPrice, stored.Lines[0].Commercial.DiscountCheck));
         }
 
-        // The routes: the detail carries the flag (draft read); the line pricing carries the absence (price read).
+        // The routes: the detail carries the flag (draft read); the line pricing carries the manual price, no list, no check (price read).
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceRead);
         using var client = run.Client(reader, CompanyA);
@@ -166,9 +166,9 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
         {
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var pricing = Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("lines").EnumerateArray());
-            Assert.Equal(("41", "SENTETIK-writer"), (pricing.GetProperty("listAbsence").GetProperty("unitPrice").GetString(),
-                pricing.GetProperty("listAbsence").GetProperty("writtenBy").GetString()));
-            Assert.Equal(JsonValueKind.Null, pricing.GetProperty("discountCheck").ValueKind);
+            Assert.Equal(("41", "Manual"), (pricing.GetProperty("unitPrice").GetString(), pricing.GetProperty("priceSource").GetString()));
+            Assert.Equal((JsonValueKind.Null, JsonValueKind.Null), (pricing.GetProperty("discountCheck").ValueKind,
+                pricing.GetProperty("priceReference").ValueKind));
         }
 
         using (var response = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{normal.Id:D}"))
@@ -178,15 +178,13 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
-    public async Task A_quantity_revision_drops_the_free_price_and_stores_the_line_back_on_the_approval_path_on_real_sql()
+    public async Task A_quantity_revision_of_an_approved_subcontract_order_re_enters_its_internal_approval_with_no_discount_check_on_real_sql()
     {
-        // K3 review A/B P2-1: the lists are quantity-banded — "no price" measured at 250 kg says nothing about 5000 kg. The approved
-        // order's quantity revision drops the absence; the stored line carries an approval-requiring discount check instead.
+        // SAT-D195 (EK29): the per-kg price has no list behind it; a quantity change (e.g. 250 -> 5000 kg) is a normal revision that
+        // re-enters the order's internal approval (DEC-SAL-002) — no discount check is stored and no exception is required.
         await using var run = await Run.StartAsync();
         var draft = await run.StoredDraftAsync(CompanyA, "q");
         var line = Assert.Single(draft.Lines);
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id "
-            + "AND JSON_VALUE([PricingJson], '$.listAbsence.quantity') = N'250'", ("@id", draft.Id)));
 
         await using (var scope = run.SalesStore(CompanyA))
         {
@@ -201,20 +199,16 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
             Assert.Equal((1, "Preparing"), (revised!.Draft.Revision, revised.Draft.ApprovalState.ToString()));
         }
 
-        Assert.Equal((0, 1, 1), (
-            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id "
-                + "AND JSON_QUERY([PricingJson], '$.listAbsence') IS NOT NULL", ("@id", draft.Id)),
-            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [QuantityText] = N'5000' "
-                + "AND CAST(JSON_VALUE([PricingJson], '$.discountCheck.requiresApproval') AS bit) = 1", ("@id", draft.Id)),
-            // The approved revision keeps its free price as it was approved (history is never rewritten).
-            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id "
-                + "AND JSON_VALUE([PricingJson], '$.listAbsence.quantity') = N'250'", ("@id", draft.Id))));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [QuantityText] = N'5000' "
+            + "AND [UnitPrice] = N'37.5' AND [PricingJson] IS NULL", ("@id", draft.Id)));
         await using (var scope = run.SalesStore(CompanyA))
         {
-            var stored = (await scope.Store.FindDraftAsync(draft.Id))!;
-            Assert.Null(stored.Lines[0].Commercial.ListAbsence);
-            Assert.Equal(SalesRuleCodes.DiscountExceptionPending,
-                Assert.Throws<SalesRuleException>(() => stored.Submit(stored.Version, run.Actor, T0)).Code);
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("q-resubmit"), Hash("q-resubmit"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(5, run.Actor, now), Submitted);
+            var approved = await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("q-reapprove", "SENTETIK-approver"), Hash("q-reapprove"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(6, "SENTETIK-approver", now), Approved);
+            Assert.Equal(("Approved", "5000", (DiscountLimitCheckSnapshot?)null), (approved!.Draft.ApprovalState.ToString(),
+                approved.Draft.Lines[0].QuantityText, approved.Draft.Lines[0].Commercial.DiscountCheck));
         }
     }
 
@@ -253,11 +247,10 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A SENTETIK free subcontract price: the list held neither a price nor a floor when SENTETIK-writer typed it.</summary>
-    private static CommercialDraftFields Free(string price, DateTimeOffset at) =>
-        new(price, KgUnit, null, ListAbsence: new PriceListAbsenceSnapshot(KgUnit, "TRY", Day, price, "SENTETIK-writer", at, "250"));
+    /// <summary>A SENTETIK per-kg manual subcontract price (SAT-D195): the kg order unit is the price unit; no list, no check.</summary>
+    private static CommercialDraftFields PerKg(string price) => new(price, KgUnit, null);
 
-    /// <summary>A draft with one 250 kg service line (free price on a subcontract order, unpriced otherwise) from SYNTHETIC owner snapshots.</summary>
+    /// <summary>A draft with one 250 kg service line (per-kg price on a subcontract order, unpriced otherwise) from SYNTHETIC owner snapshots.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo, bool subcontract)
     {
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30,
@@ -268,7 +261,7 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "HZM-001", "Sentetik işçilik", Day, binding, binding, binding);
         draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "250", 250m, Day.AddDays(3),
-            Commercial: subcontract ? Free("37.5", T0) : null, ItemType: subcontract ? SalesOrderDraft.ServiceItemType : null), T0);
+            Commercial: subcontract ? PerKg("37.5") : null, ItemType: subcontract ? SalesOrderDraft.ServiceItemType : null), T0);
         return draft;
     }
 

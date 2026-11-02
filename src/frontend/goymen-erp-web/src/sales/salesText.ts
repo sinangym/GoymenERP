@@ -48,9 +48,9 @@ export const ORDER_DRAFT_TEXT = {
     help: 'Siparişin para biriminde, isteğe bağlı. Ondalık basamak sınırını ve iskonto aralığını sunucu denetler; satır tutarını ve toplamı yalnız sunucu hesaplar.',
     /** Shown beside a line's price fields: a list-price reference is chosen on the saved order, not here. */
     referenceLater: 'Liste fiyatı referansı ve taban fiyat kontrolü kaydedilen siparişin fiyat revizyonunda seçilir.',
-    /** SAT-D177/D178 (EK25): the price rule of a subcontract service line, shown on a "fason" order's price fields. */
+    /** SAT-D195 (EK29): the price rule of a subcontract service line, shown on a "fason" order's price fields. */
     subcontractFree:
-      'Fason hizmet: fiyat listeden gelebilir ya da elle yazılabilir. Listede bu hizmetin fiyatı da tabanı da yoksa elle yazılan fiyat serbesttir (iskonto onayına gitmez, kim yazdığıyla kayda geçer); listede fiyat veya taban varsa iskonto ve taban kuralları uygulanır.',
+      'Fason hizmet: fiyat listesi kullanılmaz. Fiyatı kg başına elle yazın (fiyat birimi kg); fiyat siparişin iç onayına gider, ayrıca iskonto onayı istenmez.',
   },
   /** SAT-D175/D176 (EK25): the incoming subcontract service ("fason hizmet") order flag at create. */
   subcontract: {
@@ -264,6 +264,9 @@ export function problemCodeText(code: string | null): string | null {
  * `draft` when the domain refuses). The same codes as the commercial revision; the texts describe the server's rule.
  */
 const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
+  // SAT-D195 (EK29): a subcontract service is priced and sold per kg, never from the price list.
+  sales_subcontract_unit_not_kilogram: 'Fason hizmet satırının birimi ve fiyat birimi kg olmalıdır; fiyat kg başına yazılır.',
+  sales_subcontract_price_list_not_used: 'Fason hizmet satırında fiyat listesi kullanılmaz; fiyatı kg başına elle yazın.',
   // SAT-D176 (EK25): a subcontract service order's line must be a service product (the Product owner's item type).
   sales_subcontract_line_not_service:
     'Fason hizmet siparişinde yalnız kalem tipi "Hizmet" olan ürün seçilebilir; mal satışı ayrı, normal siparişle yapılır.',
@@ -805,10 +808,6 @@ export const LINE_PRICING_TEXT = {
   unreadable: 'Satır fiyat ayrıntıları okunamadı.',
   reference: 'Referans liste fiyatı',
   noReference: 'Referans yok (elle fiyat)',
-  /** SAT-D178 (EK25): a free subcontract service price — the list held neither a price nor a floor when it was written. */
-  freeSubcontractPrice: 'Serbest fason fiyatı (listede fiyat ve taban yok; iskonto onayı gerekmez)',
-  freeSubcontractPriceWriter: (writer: string, at: string, quantity: string) =>
-    `Elle yazan: ${writer} · ${at} · ${quantity} miktar için ölçüldü (miktar değişirse onay yoluna döner)`,
   referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
   floorText: (floor: string) => `alt fiyat ${floor}`,
   vatExclusive: 'KDV hariç net',

@@ -1,5 +1,5 @@
 /**
- * SAT-D175…D178 (EK25): the "fason hizmet" flag on the create screen — the picker asks the server for service products only, the
+ * SAT-D175/D176 (EK25), SAT-D195 (EK29): the "fason hizmet" flag on the create screen — the picker asks the server for service products only, the
  * flag cannot change while a line holds a product, the price rule is explained on the price fields, the server's refusal of a
  * goods line is shown in Turkish on the line, and a normal order's request is unchanged. Component evidence, NOT_ENV.
  */
@@ -120,7 +120,7 @@ describe('SAT-D175/D176 — the fason flag at create', () => {
     expect(toggle().checked).toBe(true)
   })
 
-  it('SAT-D177/D178: explains the fason price rule on the price fields of a price writer', async () => {
+  it('SAT-D195: explains the per-kg manual fason price rule on the price fields of a price writer', async () => {
     installFetch({ capabilities: [...ALL_SALES, SALES_PRICE_WRITE_CAPABILITY] })
     renderSalesApp(PATH)
     await formVisible()

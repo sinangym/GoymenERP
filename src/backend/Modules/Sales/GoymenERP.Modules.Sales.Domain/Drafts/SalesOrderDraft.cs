@@ -364,6 +364,14 @@ public sealed partial class SalesOrderDraft
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
         RequireTaxSnapshot(input.Tax, input.Product);
         RequireLineItemType(input.ItemType);
+        // SAT-D195: a subcontract service is sold per kilogram — its order (and price) unit is a kilogram unit.
+        if (IsSubcontractService && !input.OrderUnit.IsKilogram)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SubcontractUnitNotKilogram,
+                "Fason hizmet satırının birimi kg olmalıdır (fiyat kg başına yazılır).", input.LineId);
+        }
+
+        RequireSubcontractCommercial(commercial, input.OrderUnit, input.LineId);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
             input.QuantityText, input.RequestedDeliveryDate, input.Note, commercial, slices, input.Tax, input.ItemType);
         lines.Add(line);
@@ -371,7 +379,7 @@ public sealed partial class SalesOrderDraft
         return line;
     }
 
-    // ---- subcontract service order (SAT-D175…D178, EK25) -------------------------------------------
+    // ---- subcontract service order (SAT-D175/D176, EK25; SAT-D195, EK29) ---------------------------
 
     /// <summary>
     /// SAT-D176 / SAT-D149: the item type of a service product as the Product owner's shared card names it (the same wire value as
@@ -407,27 +415,34 @@ public sealed partial class SalesOrderDraft
     }
 
     /// <summary>
-    /// SAT-D178: a price-list absence is admitted only on the manually priced line of a subcontract service order, with no list
-    /// reference and no floor exception, bound to the line's exact unit price and price unit, on the draft's business date, with
-    /// the writer recorded. Anything else is an internal invariant (the caller builds it only from the owner's "no price" answer).
+    /// SAT-D195 (EK29, Sinan: "Fason için fiyat olmasın elle yazılsın her kg için buda onaya gitsin"): a subcontract service line's
+    /// price is NEVER taken from a price list — no list reference, no floor exception — and is typed by hand PER KILOGRAM (the price
+    /// unit is the line's kilogram order unit). It goes to approval through the order's normal internal approval (SAT-D175); there is
+    /// no discount-limit or floor exception routing for it (nothing to measure against), so the line carries no discount check.
     /// </summary>
-    private void RequireListAbsence(CommercialDraftFields commercial, Guid lineId)
+    private void RequireSubcontractCommercial(CommercialDraftFields commercial, UnitProfileSnapshot orderUnit, Guid lineId)
     {
-        if (commercial.ListAbsence is not { } absence)
+        if (!IsSubcontractService)
         {
             return;
         }
 
-        if (!IsSubcontractService || commercial.UnitPrice is null || commercial.Reference is not null || commercial.FloorException is not null
-            || !string.Equals(absence.UnitPrice, commercial.UnitPrice, StringComparison.Ordinal)
-            || absence.PriceUnitId != commercial.PriceUnitId || absence.EffectiveOn != Money.EffectiveOn
-            || string.IsNullOrWhiteSpace(absence.CurrencyCode) || string.IsNullOrWhiteSpace(absence.WrittenBy)
-            || absence.WrittenBy.Length > MaximumActorLength
-            || !SalesLinePriceCalculator.TryParseExact(absence.Quantity, out var measured) || measured <= 0m)
+        if (commercial.Reference is not null || commercial.FloorException is not null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SubcontractPriceListNotUsed,
+                "Fason hizmet satırında fiyat listesi kullanılmaz; fiyat kg başına elle yazılır ve siparişin onayına gider.", lineId);
+        }
+
+        if (commercial.UnitPrice is not null && commercial.PriceUnitId != orderUnit.UnitId)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SubcontractUnitNotKilogram,
+                "Fason hizmet fiyatı kg başına yazılır; fiyat birimi satırın kg sipariş birimidir.", lineId);
+        }
+
+        if (commercial.DiscountCheck is not null)
         {
             throw new SalesRuleException(SalesRuleCodes.InternalInvariant,
-                "Fiyat listesi yokluğu yalnız fason hizmet siparişinin elle fiyatlanan satırına, o fiyata bağlı olarak verilir (iç değişmez).",
-                lineId);
+                "Fason hizmet satırı iskonto limit kontrolü taşımaz; fiyatı siparişin iç onayıyla onaylanır (iç değişmez).", lineId);
         }
     }
 
@@ -447,7 +462,6 @@ public sealed partial class SalesOrderDraft
     {
         RequireLineCommercialFields(commercial, product, Money.Scale);
         RequirePricingDetail(commercial, lineId);
-        RequireListAbsence(commercial, lineId);
         ValidateDiscountCheck(commercial, lineId);
     }
 
@@ -1000,12 +1014,7 @@ public sealed partial class SalesOrderDraft
             try
             {
                 RequireCommercial(fields, line.Product, line.Id);
-                // K3 review B P2-1: a new absence is measured at the line's current quantity (the lists are quantity-banded).
-                if (fields.ListAbsence is not null && !fields.IsFreeSubcontractPriceAt(line.Quantity.Value))
-                {
-                    throw new SalesRuleException(SalesRuleCodes.InternalInvariant,
-                        "Fiyat listesi yokluğu satırın güncel miktarında ölçülmemiş (iç değişmez).", line.Id);
-                }
+                RequireSubcontractCommercial(fields with { DiscountCheck = null }, line.OrderUnit, line.Id);
             }
             catch (SalesRuleException exception)
             {
@@ -1013,14 +1022,16 @@ public sealed partial class SalesOrderDraft
                 throw new SalesRuleException(exception.Code, exception.Message, line.Id);
             }
 
-            replacements.Add((line, WithDiscountLimitCheck(PrepareFloorException(fields, actor, now), limit, actor, now)));
+            // SAT-D195: a subcontract service price is approved by the order's internal approval, never through a discount check.
+            replacements.Add((line, IsSubcontractService
+                ? fields with { DiscountCheck = null }
+                : WithDiscountLimitCheck(PrepareFloorException(fields, actor, now), limit, actor, now)));
         }
 
         RequireLineTaxes(taxes);
 
-        // The discount check is the revision's own record (who checked, when), not a value the person changed; so is who wrote a
-        // free subcontract price and when (SAT-D178) — only whether the list holds no price for the line is compared.
-        if (replacements.All(pair => Comparable(pair.Line.Commercial) == Comparable(pair.Fields))
+        // The discount check is the revision's own record (who checked, when), not a value the person changed.
+        if (replacements.All(pair => pair.Line.Commercial with { DiscountCheck = null } == pair.Fields with { DiscountCheck = null })
             && (taxes is null || lines.All(line => line.Tax == taxes[line.Id])))
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
@@ -1051,13 +1062,6 @@ public sealed partial class SalesOrderDraft
         Touch(now);
         return archived;
     }
-
-    /// <summary>The commercial values a person changes: without the revision's own records (the check, the absence's writer and time).</summary>
-    private static CommercialDraftFields Comparable(CommercialDraftFields fields) => fields with
-    {
-        DiscountCheck = null,
-        ListAbsence = fields.ListAbsence is { } absence ? absence with { WrittenBy = string.Empty, WrittenAtUtc = default } : null,
-    };
 
     /// <summary>The lines of the revision being archived, as they stand: identity, quantity, commercial fields and tax snapshot.</summary>
     private IReadOnlyList<RevisionLineSnapshot> ArchiveLines() =>
@@ -1285,14 +1289,6 @@ public sealed partial class SalesOrderDraft
             if (line.Quantity.Value != quantity.Value)
             {
                 line.ReplaceQuantity(quantity, text);
-                // K3 review B P2-1 (SAT-D178): "no price, no floor" was measured at the old quantity only (the lists are
-                // quantity-banded). The absence is dropped and the line goes back to the approval path (SAT-D43, fail-closed); a
-                // commercial revision may measure it again at the new quantity.
-                if (line.Commercial.ListAbsence is not null)
-                {
-                    line.ReplaceCommercial(WithDiscountLimitCheck(line.Commercial with { ListAbsence = null }, SalesDiscountLimit.Undefined,
-                        actor, now));
-                }
             }
         }
 

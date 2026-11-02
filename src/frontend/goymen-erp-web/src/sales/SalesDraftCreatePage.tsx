@@ -1102,7 +1102,7 @@ function LineEditor({
   readonly errors: OrderDraftErrors
   /** UI-14: render the price group only for an actor the shell published the price-write control to. */
   readonly priceWrite: boolean
-  /** SAT-D177/D178 (EK25): a subcontract service order's price rule is explained beside the price fields. */
+  /** SAT-D195 (EK29): a subcontract service order's per-kg manual price rule is explained beside the price fields. */
   readonly subcontract: boolean
   readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
   readonly onProductChange: (productId: string) => void

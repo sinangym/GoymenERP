@@ -381,13 +381,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // columns; the real Settings tax options and the 51135 rollback refusal), kept ordinal-sorted (a921318d… -> 1c5c3996…).
             // SAT-D184 (EK26): +1 SalesOrderTax fact (the BackfillDraftBuyerTax migration writes "Normal" once on a legacy order),
             // kept ordinal-sorted (1c5c3996… -> 4fa6ad29…).
-            // SAT-D175…D178 (EK25): +2 SalesSubcontractServiceOrder facts (the flag, item type and free price persisted and the read
+            // SAT-D175/D176 (EK25): +2 SalesSubcontractServiceOrder facts (the flag, item type and price persisted and the read
             // port answered for its company only; the write guard, CK_DraftLines_ItemType and the 51141 rollback refusal), kept
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
-            // K3 review A/B P2-1: +1 SalesSubcontractServiceOrder fact (a quantity revision drops the free price and stores the line
-            // back on the approval path), kept ordinal-sorted (0886d9ff… -> d1c5bb55…).
+            // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
+            // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
             ["tools/relational_inventory/sales.txt"] =
-                "d1c5bb558b2464ad958072b7a328f309983c5297b38ba62ef5b88ed44ff73be6",
+                "1f679068e55e0a30d83cf29e6497cedc6eb1efd7ce3b079bc80f05ccc3aa9b62",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1471,10 +1471,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
                     // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
-                    // Re-fingerprinted for K3 review A/B P2-1: a quantity revision writes the line's PricingJson when it dropped a
-                    // free subcontract price (the only commercial change it admits); SqlClient count unchanged.
                     new(
-                        "29791a98164c7adad3561f6fec4d733dcb6fa9a9ed7e4809cb12d71bedd12372",
+                        "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2017,11 +2015,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("fd822bd630315a4f8b78b9e948073c74ce01b289f5823f30f0718f01ca6f946d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
-                // SAT-D175…D178 (EK25): the Down's only raw SQL is Sales' refusal (51141, used by no other migration) while any
-                // subcontract order, archived "fason" header, line item type or stored price-list absence exists; the THROW precedes
+                // SAT-D175/D176 (EK25): the Down's only raw SQL is Sales' refusal (51141, used by no other migration) while any
+                // subcontract order, archived "fason" header or line item type exists; the THROW precedes
                 // every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
-                    new("cf5c8ab9c7600cc04f935364d71c295148d543c0179cebf97d2dffbc9698ac11",
+                    new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

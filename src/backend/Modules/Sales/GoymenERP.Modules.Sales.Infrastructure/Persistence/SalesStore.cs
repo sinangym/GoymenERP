@@ -488,12 +488,8 @@ public sealed partial class SalesStore(
         }
 
         // Each command moves only its own columns: a price revision never a quantity, a quantity revision never a price.
-        // K3 review A/B P2-1 (SAT-D178) — a DELIBERATE, narrow exception declared here and in the PR: a quantity revision that moves
-        // the quantity of a free subcontract service line drops its price-list absence (measured at the old quantity) and puts the line
-        // back on the approval path (a discount check); nothing else of the commercial fields moves.
         var quantityCommand = commandName == SalesDraftCommands.ReviseQuantityV1;
-        if (quantityCommand ? !draft.Lines.Select((line, index) => line.Commercial == commercialBefore[index]
-                    || DroppedListAbsence(commercialBefore[index], line.Commercial, quantitiesBefore[index], line.QuantityText)).All(ok => ok)
+        if (quantityCommand ? !draft.Lines.Select(line => line.Commercial).SequenceEqual(commercialBefore)
                 : !draft.Lines.Select(line => line.QuantityText).SequenceEqual(quantitiesBefore, StringComparer.Ordinal))
         {
             throw new InvalidOperationException("Satır revizyonu yalnız kendi komutunun alanlarını değiştirir.");
@@ -523,13 +519,6 @@ public sealed partial class SalesStore(
                 {
                     lineRow.Quantity = line.Quantity.Value;
                     lineRow.QuantityText = line.QuantityText;
-                }
-
-                // K3 review A/B P2-1: the dropped price-list absence (checked above) is written with the line's new discount check.
-                var pricingJson = SalesLinePricingJson.Serialize(line.Commercial);
-                if (!string.Equals(lineRow.PricingJson, pricingJson, StringComparison.Ordinal))
-                {
-                    lineRow.PricingJson = pricingJson;
                 }
             }
             else
@@ -1452,15 +1441,6 @@ public sealed partial class SalesStore(
         lines = draft.Lines.Select(line => new { line.LineNo, line.Id, quantity = line.QuantityText }).ToArray(),
     };
 
-    /// <summary>
-    /// K3 review A/B P2-1: the only commercial change a quantity revision may make — a line whose quantity moved and which carried a
-    /// price-list absence keeps every commercial value but loses the absence and gains a discount check (the approval path).
-    /// </summary>
-    private static bool DroppedListAbsence(CommercialDraftFields before, CommercialDraftFields after, string quantityBefore, string quantityAfter) =>
-        before.ListAbsence is not null && after.ListAbsence is null && after.DiscountCheck is not null
-        && !string.Equals(quantityBefore, quantityAfter, StringComparison.Ordinal)
-        && after == before with { ListAbsence = null, DiscountCheck = after.DiscountCheck };
-
     /// <summary>The audit picture of a draft's commercial surface: revision, approval axis and every line's fields.</summary>
     private static object Commercial(SalesOrderDraft draft) => new
     {
@@ -1475,8 +1455,6 @@ public sealed partial class SalesStore(
             line.Commercial.FloorException,
             // SAT-D2 / API-12: the discount-limit check (who set the discount, the limit applied, the approval).
             line.Commercial.DiscountCheck,
-            // SAT-D178 (EK25): who wrote which free subcontract service price (the list held neither a price nor a floor).
-            line.Commercial.ListAbsence,
             netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
             // MOD-03 → Sales (SAT-D93/D97): the line's tax snapshot, with the override's reason when the salesperson changed it.
             tax = line.Tax,
@@ -1966,9 +1944,11 @@ public sealed partial class SalesStore(
             line.OrderUnit.UnitId,
             quantity = line.QuantityText,
             slices = line.RequestedDeliverySlices.Count,
-            // SAT-D176 / SAT-D178: the confirmed item type, and who wrote which free subcontract price (null otherwise).
+            // SAT-D176: the confirmed item type. SAT-D195: the manually typed per-kg subcontract price and its unit are in the create's
+            // audit (the event names who typed it and when); null on every other line (their price audit is unchanged).
             itemType = line.ItemType,
-            listAbsence = line.Commercial.ListAbsence,
+            subcontractUnitPrice = draft.IsSubcontractService ? line.Commercial.UnitPrice : null,
+            subcontractPriceUnitId = draft.IsSubcontractService ? line.Commercial.PriceUnitId : null,
         }),
     }, Json);
 

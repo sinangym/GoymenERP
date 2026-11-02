@@ -10,9 +10,9 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// SAT-D175…D178 (EK25): the subcontract service ("fason hizmet") order in the aggregate — the flag fixed at create and kept in every
-/// archived header, only service lines (SAT-D176), the free price only for a service line whose list held neither a price nor a floor
-/// (SAT-D178; bound to the exact typed price and its writer), and the customer lock (fail-closed). Synthetic identities, NOT_ENV.
+/// SAT-D175/D176 (EK25), SAT-D195 (EK29) in the aggregate: the "fason hizmet" flag fixed at create and kept in every archived header, only service lines
+/// sold and priced per kilogram, no price list and no discount check (the order's internal approval decides the price), the read
+/// port's accepted-revision basis (SAT-D115), and the customer lock (fail-closed). Synthetic identities, NOT_ENV.
 /// </summary>
 public sealed class SalesOrderDraftSubcontractTests
 {
@@ -60,19 +60,24 @@ public sealed class SalesOrderDraftSubcontractTests
         Assert.Equal((line.Id, "250", 250m, "Service"), (basisLine.LineId, basisLine.QuantityText, basisLine.Quantity, basisLine.ItemType));
     }
 
+    private static readonly Guid PieceUnit = Guid.Parse("88888888-8888-4888-8888-888888888888");
+    private static readonly Guid PieceProfile = Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+
+    /// <summary>A service line of 250 in the order unit (kg by default, piece when <paramref name="kilogram"/> is false); the stock unit is a piece.</summary>
     private static SalesDraftLineInput Line(string? itemType = SalesOrderDraft.ServiceItemType, CommercialDraftFields? commercial = null,
-        Guid? lineId = null)
+        Guid? lineId = null, bool kilogram = true)
     {
-        var unit = new UnitProfileSnapshot(Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, new DateOnly(2026, 9, 1), null);
-        var binding = new UnitBindingSnapshot(Company, KgUnit, KgProfile, "4");
+        var unit = kilogram
+            ? new UnitProfileSnapshot(Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, new DateOnly(2026, 9, 1), null)
+            : new UnitProfileSnapshot(Company, PieceUnit, "adet", "count", PieceProfile, "1", false, 0, 0, true, new DateOnly(2026, 9, 1), null);
+        var binding = new UnitBindingSnapshot(Company, unit.UnitId, unit.ProfileId, unit.ProfileVersion);
+        var piece = new UnitBindingSnapshot(Company, PieceUnit, PieceProfile, "1");
         return new SalesDraftLineInput(lineId ?? Guid.NewGuid(), new ProductSnapshot(Product, "7", "HZM-001", "Sentetik işçilik", Day,
-            binding, binding, binding), unit, "250", 250m, Commercial: commercial, ItemType: itemType);
+            piece, binding, binding), unit, "250", 250m, Commercial: commercial, ItemType: itemType);
     }
 
-    private static PriceListAbsenceSnapshot Absence(string price = "37.5", string quantity = "250") =>
-        new(KgUnit, "TRY", Day, price, "SENTETIK-writer", T0, quantity);
-
-    private static CommercialDraftFields Free(string price = "37.5") => new(price, KgUnit, null, ListAbsence: Absence(price));
+    /// <summary>SAT-D195: a per-kg manual price (the price unit is the line's kg order unit); no list, no check.</summary>
+    private static CommercialDraftFields PerKg(string price = "37.5") => new(price, KgUnit, null);
 
     [Fact]
     public void The_service_item_type_is_the_product_and_settings_wire_value()
@@ -98,95 +103,64 @@ public sealed class SalesOrderDraftSubcontractTests
     }
 
     [Fact]
-    public void A_free_price_needs_no_discount_check_and_the_order_is_submitted_and_approved_like_an_unpriced_one()
+    public void SAT_D195_a_per_kg_manual_price_carries_no_discount_check_and_is_approved_by_the_orders_internal_approval()
     {
-        var free = Free();
-        Assert.True(free.IsFreeSubcontractPrice);
-        Assert.False(SalesLinePriceCalculator.NeedsDiscountCheck(free));
-        Assert.Null(SalesOrderDraft.WithDiscountLimitCheck(free, SalesDiscountLimit.Undefined, "SENTETIK-writer", T0).DiscountCheck);
-        // A typed price WITHOUT the absence keeps SAT-D43: every such line goes to approval.
-        Assert.True(SalesLinePriceCalculator.NeedsDiscountCheck(new CommercialDraftFields("37.5", KgUnit, null)));
-
         var draft = Draft();
-        draft.AddLine(draft.Version, Line(commercial: free), T0);
+        var line = draft.AddLine(draft.Version, Line(commercial: PerKg()), T0);
+        Assert.Null(line.Commercial.DiscountCheck);
+        // A normal order's typed price without a list reference still goes to the discount exception (SAT-D43, unchanged).
+        Assert.True(SalesLinePriceCalculator.NeedsDiscountCheck(PerKg()));
+
         draft.Submit(draft.Version, "SENTETIK-writer", T0);
         draft.Approve(draft.Version, "SENTETIK-approver", T0);
         Assert.Equal(InternalApprovalState.Approved, draft.ApprovalState);
-    }
 
-    [Fact]
-    public void A_price_list_absence_is_admitted_only_on_a_subcontract_line_bound_to_its_exact_typed_price()
-    {
-        var normal = Draft(subcontract: false);
-        Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => normal.AddLine(normal.Version, Line(itemType: null, commercial: Free()), T0)));
-
-        var draft = Draft();
-        Assert.Equal(SalesRuleCodes.InternalInvariant,
-            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { UnitPrice = "38" }), T0)));
-        Assert.Equal(SalesRuleCodes.InternalInvariant,
-            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { ListAbsence = Absence() with { EffectiveOn = Day.AddDays(1) } }), T0)));
-        Assert.Equal(SalesRuleCodes.InternalInvariant,
-            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { ListAbsence = Absence() with { WrittenBy = " " } }), T0)));
-        Assert.Equal(SalesRuleCodes.InternalInvariant,
-            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { ListAbsence = Absence(quantity: "beş") }), T0)));
-        var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK liste", 1, Day, null, "TRY", KgUnit, "40", "35", "ExcludingVat", "0", null);
-        Assert.Equal(SalesRuleCodes.InternalInvariant,
-            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { Reference = reference }), T0)));
-        Assert.Empty(draft.Lines);
-    }
-
-    [Fact]
-    public void A_revision_resending_the_same_free_price_changes_nothing_and_a_new_price_is_bound_again()
-    {
-        var draft = Draft();
-        var line = draft.AddLine(draft.Version, Line(commercial: Free()), T0);
-        var later = T0.AddMinutes(5);
-        var again = new CommercialDraftFields("37.5", KgUnit, null, ListAbsence: Absence() with { WrittenBy = "SENTETIK-other", WrittenAtUtc = later });
-
+        // A quantity or price change re-enters the internal approval like any order (DEC-SAL-002); still no discount routing.
+        draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "5000", 5000m)], "SENTETIK-writer", "SENTETIK 5000 kg", T0);
+        draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, PerKg("41"))], "SENTETIK-writer", T0);
+        Assert.Equal(("41", (DiscountLimitCheckSnapshot?)null), (draft.Lines[0].Commercial.UnitPrice, draft.Lines[0].Commercial.DiscountCheck));
         Assert.Equal(SalesRuleCodes.RevisionNoChange,
-            CodeOf(() => draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, again)], "SENTETIK-other", later)));
-
-        draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, Free("41"))], "SENTETIK-writer", later);
-        Assert.Equal(("41", (DiscountLimitCheckSnapshot?)null), (draft.Lines[0].Commercial.ListAbsence!.UnitPrice, draft.Lines[0].Commercial.DiscountCheck));
-    }
-
-    [Fact]
-    public void K3_review_B_P2_1_a_quantity_revision_drops_the_free_price_and_the_line_goes_back_to_the_approval_path()
-    {
-        // The probe: 250 kg free at 37.5 (the list held no price for 250 kg) → approved → the list now prices another band →
-        // a quantity revision to 500 kg → submit: refused until the discount exception is approved (never free at 500 kg).
-        var draft = Draft();
-        var line = draft.AddLine(draft.Version, Line(commercial: Free()), T0);
-        Assert.True(line.Commercial.IsFreeSubcontractPriceAt(250m));
-        Assert.False(line.Commercial.IsFreeSubcontractPriceAt(500m));
-        draft.Submit(draft.Version, "SENTETIK-writer", T0);
-        draft.Approve(draft.Version, "SENTETIK-approver", T0);
-
-        draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "500", 500m)], "SENTETIK-writer", "SENTETIK 500 kg", T0);
-
-        var commercial = draft.Lines[0].Commercial;
-        Assert.Null(commercial.ListAbsence);
-        Assert.Equal(("37.5", true, (string?)null), (commercial.UnitPrice, commercial.DiscountCheck!.RequiresApproval, commercial.DiscountCheck.ApprovedBy));
-        Assert.Equal(SalesRuleCodes.DiscountExceptionPending, CodeOf(() => draft.Submit(draft.Version, "SENTETIK-writer", T0)));
-
-        // A commercial revision can measure it again, but only at the line's CURRENT quantity.
-        Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => draft.ReviseCommercial(draft.Version,
-            [new LineCommercialInput(line.Id, Free() with { ListAbsence = Absence(quantity: "250") })], "SENTETIK-writer", T0)));
-        draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, Free() with { ListAbsence = Absence(quantity: "500") })],
-            "SENTETIK-writer", T0);
-        Assert.True(draft.Lines[0].Commercial.IsFreeSubcontractPriceAt(500m));
+            CodeOf(() => draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, PerKg("41"))], "SENTETIK-writer", T0)));
         draft.Submit(draft.Version, "SENTETIK-writer", T0);
         Assert.Equal(InternalApprovalState.PendingApproval, draft.ApprovalState);
+    }
+
+    [Fact]
+    public void SAT_D195_a_subcontract_line_never_uses_the_price_list_and_is_priced_and_sold_per_kilogram()
+    {
+        var draft = Draft();
+        var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK liste", 1, Day, null, "TRY", KgUnit, "40", "35", "ExcludingVat", "0", null);
+        Assert.Equal(SalesRuleCodes.SubcontractPriceListNotUsed,
+            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: PerKg() with { Reference = reference }), T0)));
+        Assert.Equal(SalesRuleCodes.SubcontractUnitNotKilogram,
+            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: PerKg() with { PriceUnitId = PieceUnit }), T0)));
+        Assert.Equal(SalesRuleCodes.SubcontractUnitNotKilogram,
+            CodeOf(() => draft.AddLine(draft.Version, Line(kilogram: false), T0)));
+        Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => draft.AddLine(draft.Version, Line(commercial:
+            SalesOrderDraft.WithDiscountLimitCheck(PerKg(), SalesDiscountLimit.Undefined, "SENTETIK-writer", T0)), T0)));
+        Assert.Empty(draft.Lines);
+
+        var line = draft.AddLine(draft.Version, Line(commercial: PerKg()), T0);
+        Assert.Equal(SalesRuleCodes.SubcontractPriceListNotUsed, CodeOf(() => draft.ReviseCommercial(draft.Version,
+            [new LineCommercialInput(line.Id, PerKg("40") with { Reference = reference })], "SENTETIK-writer", T0)));
+        // No discount exception exists to approve on a subcontract order.
+        Assert.Equal(SalesRuleCodes.DiscountExceptionLinesMismatch, CodeOf(() => draft.ApproveDiscountExceptions(draft.Version,
+            [new LineDiscountExceptionApprovalInput(line.Id, "SENTETIK")], "SENTETIK-approver", T0)));
+
+        // A normal order's rules are unchanged: a piece unit and a list reference are its own business.
+        var normal = Draft(subcontract: false);
+        normal.AddLine(normal.Version, Line(itemType: null, kilogram: false), T0);
+        Assert.Single(normal.Lines);
     }
 
     [Fact]
     public void The_flag_is_kept_in_the_archived_header_and_a_stored_history_naming_another_flag_is_refused()
     {
         var draft = Draft();
-        var line = draft.AddLine(draft.Version, Line(commercial: Free()), T0);
+        var line = draft.AddLine(draft.Version, Line(commercial: PerKg()), T0);
         draft.Submit(draft.Version, "SENTETIK-writer", T0);
         draft.Approve(draft.Version, "SENTETIK-approver", T0);
-        var archived = draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, Free("41"))], "SENTETIK-writer", T0)!;
+        var archived = draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, PerKg("41"))], "SENTETIK-writer", T0)!;
 
         Assert.True(archived.Header!.IsSubcontractService);
         Assert.True(draft.IsSubcontractService);
@@ -218,18 +192,6 @@ public sealed class SalesOrderDraftSubcontractTests
     }
 
     [Fact]
-    public void The_pricing_json_keeps_the_absence_and_a_line_without_one_keeps_its_exact_older_json()
-    {
-        var free = Free();
-        var json = SalesLinePricingJson.Serialize(free)!;
-        Assert.Contains("\"listAbsence\":{", json, StringComparison.Ordinal);
-        Assert.Equal(free, SalesLinePricingJson.Restore(free.UnitPrice, free.PriceUnitId, free.DiscountPercent, json));
-
-        var plain = new CommercialDraftFields("37.5", KgUnit, null, DiscountAmount: "1");
-        Assert.DoesNotContain("listAbsence", SalesLinePricingJson.Serialize(plain)!, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void The_subcontract_migration_down_refuses_with_51141_before_it_drops_anything()
     {
         var migration = new AddDraftSubcontractService();
@@ -238,8 +200,7 @@ public sealed class SalesOrderDraftSubcontractTests
         foreach (var condition in new[]
                  {
                      "[sales].[Drafts] WHERE [IsSubcontractService] = 1", "[sales].[DraftRevisionHeaders] WHERE [IsSubcontractService] = 1",
-                     "[sales].[DraftLines] WHERE [ItemType] IS NOT NULL", "[sales].[DraftLines] WHERE JSON_QUERY([PricingJson], '$.listAbsence') IS NOT NULL",
-                     "[sales].[DraftRevisionLines] WHERE JSON_QUERY([PricingJson], '$.listAbsence') IS NOT NULL",
+                     "[sales].[DraftLines] WHERE [ItemType] IS NOT NULL",
                  })
         {
             Assert.Contains(condition, guard.Sql, StringComparison.Ordinal);

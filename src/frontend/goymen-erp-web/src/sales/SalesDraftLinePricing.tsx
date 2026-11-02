@@ -1,7 +1,6 @@
 import type { DraftDetail } from './contract'
 import type { LinePricing } from './linePricing'
 import { LINE_PRICING_TEXT as T } from './salesText'
-import { formatInstant } from './format'
 import type { ShellState } from '../shell/shellState'
 import { useDraftLinePricing } from './useDraftLinePricing'
 import styles from './SalesPages.module.css'
@@ -76,15 +75,6 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
         <dt>{T.net}</dt>
         <dd data-testid={`sales-line-${line.lineNo}-net`}>{line.netUnitPrice ?? T.none}</dd>
       </div>
-      {line.listAbsence === null ? null : (
-        // SAT-D178 (EK25): the list held neither a price nor a floor — the typed price is free, recorded with who wrote it.
-        <div>
-          <dt>{T.freeSubcontractPrice}</dt>
-          <dd data-testid={`sales-line-${line.lineNo}-free-subcontract-price`}>
-            {T.freeSubcontractPriceWriter(line.listAbsence.writtenBy, formatInstant(line.listAbsence.writtenAtUtc), line.listAbsence.quantity)}
-          </dd>
-        </div>
-      )}
       {line.floorException === null ? null : (
         <div>
           <dt>{T.floorException}</dt>

@@ -156,19 +156,7 @@ public sealed record SalesDraftPriceResolutionV1(string Outcome, DateOnly Effect
 public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? UnitPrice, Guid? PriceUnitId, string? PriceSource,
     SalesDraftPriceReferenceV1? PriceReference, string? DiscountPercent, string? DiscountAmount, string? SurchargePercent,
     string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException,
-    SalesDraftDiscountLimitCheckV1? DiscountCheck = null,
-    // SAT-D178 (EK25): the free manual price of a subcontract service line — the list held neither a price nor a floor when it
-    // was written (who wrote it, when); omitted on every other line.
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    SalesDraftPriceListAbsenceV1? ListAbsence = null);
-
-/// <summary>
-/// SAT-D178 (EK25): the Product price list chain held NEITHER a price NOR a floor for this subcontract service line when its manual
-/// price was written, so that price needs no discount-limit approval; who wrote it and when (the audit detail), and the line
-/// quantity the list was measured at (the lists are quantity-banded; a quantity revision drops the absence).
-/// </summary>
-public sealed record SalesDraftPriceListAbsenceV1(string CurrencyCode, DateOnly EffectiveOn, string UnitPrice, string WrittenBy,
-    DateTimeOffset WrittenAtUtc, string Quantity);
+    SalesDraftDiscountLimitCheckV1? DiscountCheck = null);
 
 public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
     string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);

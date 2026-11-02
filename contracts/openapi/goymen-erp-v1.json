@@ -103742,16 +103742,6 @@
                 "$ref": "#/components/schemas/SalesDraftDiscountLimitCheckV1"
               }
             ]
-          },
-          "listAbsence": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/SalesDraftPriceListAbsenceV1"
-              }
-            ]
           }
         }
       },
@@ -104476,39 +104466,6 @@
               "null",
               "string"
             ]
-          }
-        }
-      },
-      "SalesDraftPriceListAbsenceV1": {
-        "required": [
-          "currencyCode",
-          "effectiveOn",
-          "unitPrice",
-          "writtenBy",
-          "writtenAtUtc",
-          "quantity"
-        ],
-        "type": "object",
-        "properties": {
-          "currencyCode": {
-            "type": "string"
-          },
-          "effectiveOn": {
-            "type": "string",
-            "format": "date"
-          },
-          "unitPrice": {
-            "type": "string"
-          },
-          "writtenBy": {
-            "type": "string"
-          },
-          "writtenAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "quantity": {
-            "type": "string"
           }
         }
       },

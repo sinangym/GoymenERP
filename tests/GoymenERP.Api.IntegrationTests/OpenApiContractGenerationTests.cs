@@ -4780,15 +4780,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("surchargePercent", "type:null|string"), ("surchargeAmount", "type:null|string"),
                     ("netUnitPrice", "type:null|string"), ("floorException", "oneOf:ref:SalesDraftPriceFloorExceptionV1|type:null"),
                     // SAT-D2 / API-12 (additive, optional): the line's discount-limit check.
-                    ("discountCheck", "oneOf:ref:SalesDraftDiscountLimitCheckV1|type:null"),
-                    // SAT-D178 (EK25, additive, optional): the free price of a subcontract service line.
-                    ("listAbsence", "oneOf:ref:SalesDraftPriceListAbsenceV1|type:null")),
-                ["SalesDraftPriceListAbsenceV1"] = ObjectSchema(
-                    ["currencyCode", "effectiveOn", "unitPrice", "writtenBy", "writtenAtUtc", "quantity"],
-                    ("currencyCode", "type:string"), ("effectiveOn", "type:string;format:date"), ("unitPrice", "type:string"),
-                    ("writtenBy", "type:string"), ("writtenAtUtc", "type:string;format:date-time"),
-                    // K3 review B P2-1: the line quantity the list was measured at (the lists are quantity-banded).
-                    ("quantity", "type:string")),
+                    ("discountCheck", "oneOf:ref:SalesDraftDiscountLimitCheckV1|type:null")),
                 ["SalesDraftDiscountLimitCheckV1"] = ObjectSchema(
                     ["checkedBy", "checkedAtUtc", "listUnitPrice", "limitPercent", "requiresApproval", "approvedBy", "approvedAtUtc", "reason"],
                     ("checkedBy", "type:string"), ("checkedAtUtc", "type:string;format:date-time"), ("listUnitPrice", "type:null|string"),

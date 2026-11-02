@@ -148,8 +148,6 @@ public sealed partial class SalesDraftService(
         CreateTax tax;
         // SAT-D175 (EK25): an incoming subcontract service ("fason") order; fixed here, never changed afterwards.
         var subcontract = request.SubcontractService == true;
-        IReadOnlySet<Guid> freePrices = new HashSet<Guid>();
-        string? freePriceCurrency = null;
         var lineInputs = new List<SalesDraftLineInput>(request.Lines.Count);
         try
         {
@@ -168,11 +166,9 @@ public sealed partial class SalesDraftService(
 
             if (subcontract)
             {
-                // SAT-D176: only service lines (the Product owner's item type); SAT-D178: a typed price the list has no price or
-                // floor for is free of the discount-limit routing.
+                // SAT-D176: only service lines (the Product owner's item type). SAT-D195: the price is typed per kg and is approved
+                // by the order's internal approval — no price list is read and no discount check is made for these lines.
                 lineInputs = await ConfirmServiceLinesAsync(scope, bindings.CreatePermission, lineInputs, cancellationToken);
-                (freePrices, freePriceCurrency) = await FindFreeSubcontractPricesAsync(scope, bindings.CreatePermission, request.PartyId,
-                    request.CompanyAccountId, request.CurrencyId, request.BusinessDate, lineInputs, cancellationToken);
             }
         }
         catch (RaceWon won)
@@ -212,10 +208,8 @@ public sealed partial class SalesDraftService(
                     customerAcceptanceRequired: true);
                 foreach (var input in lineInputs)
                 {
-                    var commercial = input.Commercial is { } typed && freePrices.Contains(input.LineId)
-                        ? WithListAbsence(typed, freePriceCurrency!, request.BusinessDate, input.Quantity, scope.ActorId, now)
-                        : input.Commercial;
-                    draft.AddLine(draft.Version, commercial is not null
+                    // SAT-D195: a subcontract service price carries no discount check (the order's internal approval decides it).
+                    draft.AddLine(draft.Version, input.Commercial is { } commercial && !subcontract
                         ? input with { Commercial = SalesOrderDraft.WithDiscountLimitCheck(commercial, discountLimit, scope.ActorId, now) }
                         : input, now);
                 }
@@ -572,9 +566,6 @@ public sealed partial class SalesDraftService(
         var resolved = await ResolvePriceReferencesAsync(scope, permission!, draftId, request, cancellationToken);
         scope = resolved.Scope;
 
-        // SAT-D178 (EK25): on a subcontract service order, a typed price whose list chain holds neither a price nor a floor is free.
-        var free = await FindRevisionFreeSubcontractPricesAsync(scope, permission!, draftId, request, cancellationToken);
-
         var inputs = request.Lines
             .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent,
                 resolved.References.TryGetValue(line.LineId, out var reference) ? reference : null, line.DiscountAmount, line.SurchargePercent,
@@ -607,10 +598,7 @@ public sealed partial class SalesDraftService(
                         throw new SalesVersionConflictException(expectedVersion, draft.Version);
                     }
 
-                    var priced = free.Lines.Count == 0 ? inputs : [.. inputs.Select(input => free.Lines.TryGetValue(input.LineId, out var measured)
-                        ? input with { Commercial = WithListAbsence(input.Commercial, free.CurrencyCode!, free.On, measured, scope.ActorId, now) }
-                        : input)];
-                    return draft.ReviseCommercial(expectedVersion, priced, scope.ActorId, now, discountLimit, taxes?.Lines);
+                    return draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now, discountLimit, taxes?.Lines);
                 }, audit,
                 async writeCancellationToken =>
                 {

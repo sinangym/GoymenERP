@@ -100,47 +100,18 @@ public sealed record OwnerReference(Guid Id, string ExpectedVersion);
 public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent,
     PriceReferenceSnapshot? Reference = null, string? DiscountAmount = null, string? SurchargePercent = null,
     string? SurchargeAmount = null, PriceFloorExceptionSnapshot? FloorException = null,
-    DiscountLimitCheckSnapshot? DiscountCheck = null, PriceListAbsenceSnapshot? ListAbsence = null)
+    DiscountLimitCheckSnapshot? DiscountCheck = null)
 {
     public static CommercialDraftFields None { get; } = new(null, null, null);
 
-    /// <summary>Whether anything beyond K3's three fields is present (the reference, an AT-018 adjustment, a check or an absence).</summary>
+    /// <summary>Whether anything beyond K3's three fields is present (the reference, an AT-018 adjustment or a check).</summary>
     public bool HasPricingDetail => Reference is not null || DiscountAmount is not null || SurchargePercent is not null
-        || SurchargeAmount is not null || FloorException is not null || DiscountCheck is not null || ListAbsence is not null;
-
-    /// <summary>
-    /// SAT-D178 (EK25): whether this is the manually priced service line of a subcontract service order whose price list was
-    /// found to hold NEITHER a price NOR a floor for it — the one line whose price is free of the discount-limit routing
-    /// (<see cref="SalesLinePriceCalculator.NeedsDiscountCheck"/>). The aggregate admits the absence only on such an order.
-    /// </summary>
-    public bool IsFreeSubcontractPrice => UnitPrice is not null && Reference is null && ListAbsence is not null;
-
-    /// <summary>
-    /// K3 review B P2-1: the free price holds ONLY at the quantity the list was measured at — price lists are quantity-banded, so
-    /// "no price" for 5 kg says nothing about 20 kg. False for any other line quantity (or an unreadable recorded quantity).
-    /// </summary>
-    public bool IsFreeSubcontractPriceAt(decimal lineQuantity) =>
-        IsFreeSubcontractPrice && SalesLinePriceCalculator.TryParseExact(ListAbsence!.Quantity, out var measured)
-        && measured == lineQuantity;
+        || SurchargeAmount is not null || FloorException is not null || DiscountCheck is not null;
 
     /// <summary>"Reference" when the unit price is the reference's list price, "Manual" when it was overwritten; null without a price.</summary>
     public string? PriceSource => UnitPrice is null ? null
         : Reference is not null && SalesLinePriceCalculator.SameValue(Reference.UnitPrice, UnitPrice) ? "Reference" : "Manual";
 }
-
-/// <summary>
-/// SAT-D177/D178 (EK25): the Product owner's answer, at the time the price was written, that the price list chain holds NEITHER a
-/// price NOR a floor for this subcontract service line (outcome "no price") — in the line's price unit, in the draft's currency
-/// code, on its business date. It binds the exact unit price that was written and who wrote it when (SAT-D178's audit detail:
-/// "kimin hangi değeri yazdığı"). Only with it is a manual price on such a line free of the discount-limit routing (it lifts
-/// SAT-D36/D43's fail-closed approval for that line alone); writing it still needs the price-write permission (SAT-D151). Any
-/// commercial revision replaces it (re-read from the owner); an unreadable owner never produces one (fail-closed).
-/// K3 review B P2-1: <see cref="Quantity"/> is the line quantity (in the order unit, exact text) the owner was asked at — the
-/// lists are quantity-banded, so a quantity revision drops the absence (the line goes back to the approval path) and a line whose
-/// quantity differs from it is never free (<see cref="CommercialDraftFields.IsFreeSubcontractPriceAt"/>).
-/// </summary>
-public sealed record PriceListAbsenceSnapshot(Guid PriceUnitId, string CurrencyCode, DateOnly EffectiveOn, string UnitPrice,
-    string WrittenBy, DateTimeOffset WrittenAtUtc, string Quantity);
 
 /// <summary>
 /// AT-018 / AT-021: the Product price list price a line was priced from, copied at the revision (a later version of the list
