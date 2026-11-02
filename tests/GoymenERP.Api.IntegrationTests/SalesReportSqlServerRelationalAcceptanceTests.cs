@@ -210,6 +210,36 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task SAT_D115_a_revision_the_customer_rejected_awaits_nothing_and_the_order_stays_open_on_the_accepted_revision_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var customer = await run.CustomerAsync(CompanyA, "SENTETIK Ret Müşterisi A.Ş.");
+        // Rev.0 10 kg accepted, Rev.1 15 kg approved inside and awaiting acceptance (version 8): 10 open, 5 awaiting.
+        var revised = await run.RevisedAwaitingAcceptanceAsync(CompanyA, customer, "r1", "10", "15");
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead, SalesPermissionManifestV1.OrdersPriceRead);
+        using var client = run.Client(reader, CompanyA);
+        (string Approved, string Remaining, string Awaiting, string? Basis, string? AwaitingRevision) Line(JsonElement report)
+        {
+            var line = Assert.Single(Assert.Single(report.GetProperty("groups").EnumerateArray()).GetProperty("lines").EnumerateArray());
+            return (line.GetProperty("approvedQuantity").GetString()!, line.GetProperty("remainingQuantity").GetString()!,
+                line.GetProperty("awaitingAcceptanceQuantity").GetString()!, line.GetProperty("basisRevision").GetString(),
+                line.GetProperty("awaitingAcceptanceRevision").GetString());
+        }
+
+        Assert.Equal(("10", "10", "5", "Rev.0", "Rev.1"), Line(await run.ReadAsync(client, SalesEndpoints.ReportOpenOrdersPath)));
+
+        // SAT-D115: the customer rejects Rev.1 — the order stays open on Rev.0 and nothing awaits the customer any more.
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("r1-reject"), Hash("r1-reject"), SalesDraftCommands.RecordCustomerRejectionV1,
+                revised.Id, (d, now) => d.RecordCustomerRejection(revised.Version, "SENTETIK-recorder", "SENTETIK müşteri reddetti", now),
+                new SalesDraftStateAudit("sales.order-draft.customer-rejection-recorded.v1", "RecordCustomerRejection", "SENTETIK müşteri reddetti"));
+        }
+
+        Assert.Equal(("10", "10", "0", "Rev.0", (string?)null), Line(await run.ReadAsync(client, SalesEndpoints.ReportOpenOrdersPath)));
+    }
+
+    [SqlServerFact]
     public async Task Another_companys_orders_and_quotes_never_appear_and_an_ungranted_user_reads_no_report_on_real_sql()
     {
         await using var run = await Run.StartAsync();

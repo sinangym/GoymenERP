@@ -69,12 +69,20 @@ public sealed record SalesDraftApprovalV1(
     string? DecidedBy, DateTimeOffset? DecidedAtUtc,
     string? RejectionReason);
 
+/// <summary>
+/// Q9: the customer acceptance facts of the detail. SAT-D115 (EK14): <c>rejections</c> — every revision the customer REJECTED,
+/// oldest first (who recorded it, when, why); never deleted. The order continues on the revision the customer last accepted.
+/// </summary>
 public sealed record SalesDraftCustomerAcceptanceV1(
     bool Required,
     string? AcceptedRevision,
     string? AcceptedBy,
     DateTimeOffset? AcceptedAtUtc,
-    bool IsCurrentRevisionAccepted);
+    bool IsCurrentRevisionAccepted,
+    IReadOnlyList<SalesDraftCustomerRejectionV1>? Rejections = null);
+
+/// <summary>SAT-D115: one recorded customer rejection — the revision ("Rev.N"), the recorder, the time and the required reason.</summary>
+public sealed record SalesDraftCustomerRejectionV1(string Revision, string RejectedBy, DateTimeOffset RejectedAtUtc, string Reason);
 
 /// <summary>
 /// SALES-A1: the body of a state command (submission / approval / rejection): the expected
@@ -312,6 +320,9 @@ public static class SalesDraftApiV1
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
     public const string CustomerAcceptancePath = "/api/v1/sales/drafts/{id}/customer-acceptance";
+
+    /// <summary>SAT-D115: the customer-rejection command.</summary>
+    public const string CustomerRejectionPath = "/api/v1/sales/drafts/{id}/customer-rejection";
 
     /// <summary>D2: POST …/{id}/withdrawal — the preparer takes back their own not-yet-approved draft (own state, own trail, no deletion).</summary>
     public const string WithdrawalPath = "/api/v1/sales/drafts/{id}/withdrawal";

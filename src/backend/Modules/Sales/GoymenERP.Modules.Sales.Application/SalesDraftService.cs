@@ -461,6 +461,20 @@ public sealed partial class SalesDraftService(
                 "Satış siparişinin güncel revizyonu için müşteri kabulü kaydedildi"),
             cancellationToken);
 
+    /// <summary>
+    /// SAT-D115 (EK14): records the customer's rejection of the current approved revision awaiting acceptance, with a required
+    /// reason, under the customer-acceptance name (the same authority records the customer's answer either way). The order
+    /// continues on the revision the customer last accepted; nothing is deleted.
+    /// </summary>
+    public Task<SalesOrderDraftResponse> RecordCustomerRejectionAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        StateCommandAsync(draftId, request, metadata, SalesDraftCommands.RecordCustomerRejectionV1,
+            bindings.CustomerAcceptancePermission,
+            (draft, actor, expected, now) => draft.RecordCustomerRejection(expected, actor, request?.Reason, now),
+            new SalesDraftStateAudit("sales.order-draft.customer-rejection-recorded.v1", "RecordCustomerRejection",
+                "Satış siparişinin güncel revizyonu müşteri tarafından reddedildi (SAT-D115)"),
+            cancellationToken);
+
     public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
         StateCommandAsync(draftId, request, metadata, SalesDraftCommands.RejectV1, bindings.ApprovePermission,
@@ -979,6 +993,11 @@ public sealed partial class SalesDraftService(
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
         {
             throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code is SalesRuleCodes.RevisionReasonRequired or SalesRuleCodes.RevisionReasonTooLong)
+        {
+            // SAT-D115: the customer rejection's required reason; not recorded (the same key may carry a reason next time).
+            throw new SalesDraftServiceException(422, "validation_failed", [new("reason", exception.Code)]);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.DueTermsRequired)
         {
@@ -1710,7 +1729,8 @@ public sealed partial class SalesDraftService(
             .Distinct()];
 
     private static SalesCommercialStageV1 CommercialStage(SalesOrderDraft draft) =>
-        draft.CustomerAcceptanceRequired && !draft.IsCustomerAccepted
+        // SAT-D115: an order the customer accepted earlier stays an order after rejecting a newer revision (it goes on as accepted).
+        draft.CustomerAcceptanceRequired && !draft.IsCustomerAccepted && draft.CustomerAcceptedFallback is null
             ? SalesCommercialStageV1.Quote
             : SalesCommercialStageV1.Order;
 
@@ -1735,7 +1755,9 @@ public sealed partial class SalesDraftService(
                 draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason),
             new SalesDraftCustomerAcceptanceV1(draft.CustomerAcceptanceRequired,
                 draft.CustomerAcceptance is null ? null : SalesDraftApiV1.RevisionText(draft.CustomerAcceptance.Revision),
-                draft.CustomerAcceptance?.AcceptedBy, draft.CustomerAcceptance?.AcceptedAtUtc, draft.IsCustomerAccepted),
+                draft.CustomerAcceptance?.AcceptedBy, draft.CustomerAcceptance?.AcceptedAtUtc, draft.IsCustomerAccepted,
+                [.. draft.CustomerRejections.Select(rejection => new SalesDraftCustomerRejectionV1(
+                    SalesDraftApiV1.RevisionText(rejection.Revision), rejection.RejectedBy, rejection.RejectedAtUtc, rejection.Reason))]),
             isOwnDraft, isOwnDecisionRestricted);
 
     private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>

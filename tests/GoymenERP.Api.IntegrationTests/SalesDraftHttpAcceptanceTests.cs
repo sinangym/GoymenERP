@@ -598,6 +598,10 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             StateAsync("customer-acceptance", draftId, request, metadata);
 
+        public Task<SalesOrderDraftResponse> RecordCustomerRejectionAsync(Guid draftId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            StateAsync("customer-rejection", draftId, request, metadata);
+
         public Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("withdraw", draftId, request, metadata);
 
