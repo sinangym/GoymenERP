@@ -1,6 +1,12 @@
+using System.Runtime.CompilerServices;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
+
+// FZL-01: the Inventory-less fact methods of ManufacturingCommandService are internal and reachable only from these
+// test projects (the same two the Infrastructure assembly already opens to).
+[assembly: InternalsVisibleTo("GoymenERP.Manufacturing.UnitTests")]
+[assembly: InternalsVisibleTo("GoymenERP.Api.IntegrationTests")]
 
 namespace GoymenERP.Modules.Manufacturing.Application;
 
