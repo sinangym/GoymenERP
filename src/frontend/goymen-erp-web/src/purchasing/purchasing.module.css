@@ -17,14 +17,13 @@
 .rejected { background: #fde2e1; color: #a51d2d; }
 .draft { background: #fff0cf; color: #77500c; }
 .approved { background: #dff2e4; color: #176336; }
-.secondary, .actionCard button, .createForm button, .warningCard button, .primaryLink { border: 1px solid #236442; border-radius: .45rem; background: #236442; color: #fff; padding: .55rem .9rem; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
-.secondary:focus-visible, .actionCard button:focus-visible, .header select:focus-visible { outline: 3px solid #e19a42; outline-offset: 2px; }
+.secondary, .primaryLink { border: 1px solid #236442; border-radius: .45rem; background: #236442; color: #fff; padding: .55rem .9rem; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+.secondary:focus-visible, .header select:focus-visible { outline: 3px solid #e19a42; outline-offset: 2px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); margin: 0; border: 1px solid #d7ddd8; border-radius: .8rem; overflow: hidden; background: #d7ddd8; gap: 1px; }
 .facts div { min-width: 0; padding: .85rem 1rem; background: #fff; }
 .facts dt { color: #607267; font-size: .78rem; margin-bottom: .3rem; }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .actionCard { max-width: 48rem; border: 1px solid #b8c8bb; border-radius: .8rem; background: linear-gradient(135deg, #f4f8f0, #fff9eb); padding: 1rem; }
-.actionCard button:disabled { cursor: progress; opacity: .65; }
 .success { color: #176336; font-weight: 700; }
 .warning { color: #77500c; font-weight: 700; }
 .error { color: #a51d2d; font-weight: 700; }

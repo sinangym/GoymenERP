@@ -8,7 +8,7 @@ import {
   reservePendingPurchaseRequestDecision,
   type PendingPurchaseRequestDecision,
 } from './pendingRequestStore'
-import { PURCHASE_REQUEST_DECISION_PROBLEM_TEXT, PURCHASE_REQUEST_DECISION_TEXT as T } from './purchaseRequestDecisionText'
+import { REQUEST_DECISION_PROBLEM_TEXT, REQUEST_DECISION_TEXT as T } from './purchasingText'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
 import styles from './purchasing.module.css'
@@ -92,7 +92,7 @@ export function PurchaseRequestDecisionPanel({ sessionEpoch, fenceKey, actorId, 
   const notice = attempt.phase === 'applied'
     ? <p role="status" className={styles.success}>{attempt.replayed ? T.replayed : attempt.kind === 'approval' ? T.approved : T.rejected}</p>
     : attempt.phase === 'failed'
-      ? <p role="alert" className={styles.error}>{T.failed} ({attempt.code ?? attempt.status}). {attempt.code !== null && PURCHASE_REQUEST_DECISION_PROBLEM_TEXT[attempt.code] !== undefined ? `${PURCHASE_REQUEST_DECISION_PROBLEM_TEXT[attempt.code]} ` : ''}{attempt.status === 409 ? T.reread : ''}</p>
+      ? <p role="alert" className={styles.error}>{T.failed} ({attempt.code ?? attempt.status}). {attempt.code !== null && REQUEST_DECISION_PROBLEM_TEXT[attempt.code] !== undefined ? `${REQUEST_DECISION_PROBLEM_TEXT[attempt.code]} ` : ''}{attempt.status === 409 ? T.reread : ''}</p>
       : null
   const canApprove = request.status === 'Submitted'
   const canReject = request.status === 'Submitted' || request.status === 'Approved'
