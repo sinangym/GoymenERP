@@ -18,12 +18,18 @@ Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_A
 `SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md`, plan `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md`.
 **Mevcut** satırlar kodda çalışır; **Hedef** satırlar karara bağlanmış ama uygulanmamıştır.
 
-**Mevcut (2026-11-02, A1-1 dahil):**
+**Mevcut (2026-11-02, A1-1 ve A1-1b dahil):**
 
 - Talep: Taslak → Gönderildi → Onaylı / Reddedildi (`PurchaseRequestStatus` Draft / Submitted / Approved / Rejected;
   A1-1). Talep taahhüt değildir. Onay yalnız Gönderildi talepte; ret Gönderildi veya Onaylı talepte, gerekçe zorunlu,
-  talebe bağlı Onaylı sipariş varken reddedilir (No.161 §1). Hazırlayan (oluşturan) ve gönderen karar veremez;
+  talebe bağlı Onaylı sipariş varken reddedilmez (No.161 §1). Hazırlayan (oluşturan) ve gönderen karar veremez;
   gönderen kaydı yoksa karar verilemez (fail-closed). Yetki `purchasing.requests.approve` (ALS-D2); audit aynı kayıtta.
+- Talep geri çekme (A1-1b, ALS-D46): Gönderildi → Geri çekildi (`Withdrawn`; Reddedildi'den ayrı, kapanış durumu,
+  siparişe dönüşmez). Yalnız talebi **gönderen** kişi, gerekçeyle (zorunlu, en fazla 4000 karakter) geri çeker; EK5
+  notundaki "oluşturan/gönderen" ifadesi uygulamada en dar okumayla "gönderen" alınmıştır (oluşturan başka biriyse geri
+  çekemez). Taslak, Onaylı, Reddedildi talep geri çekilmez; gönderen kaydı yoksa kimse geri çekemez (fail-closed);
+  talebe bağlı Onaylı sipariş varken geri çekilmez (No.161 §1 koruması). Yetki `purchasing.requests.withdraw` (öneri;
+  gerçek kullanıcıya grant insan kapısında); audit aynı kayıtta. Stok veya para olayı yok.
 - Sipariş: Taslak → Onaylı (`PurchaseOrderStatus` Draft / Approved). Satır yalnız taslağa eklenir; onay tek adımlı
   geçiştir (onay politikası yok). Talebe bağlı sipariş yalnız Onaylı talepten açılır (ALS-D2, ALS-D16) ve talep Onaylı
   kaldığı sürece onaylanır; Σ-pay onay anında ölçülür.

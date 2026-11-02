@@ -15,8 +15,9 @@ namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
 /// The purchasing routes (PUR-4a; the Sales draft / Logistics routes' shape): purchase requests
-/// (POST create → 201 + Location, GET list, GET detail, POST submission → 200, and A1-1's POST approval / rejection
-/// → 200 under <c>purchasing.requests.approve</c>) and purchase orders (POST
+/// (POST create → 201 + Location, GET list, GET detail, POST submission → 200, A1-1's POST approval / rejection
+/// → 200 under <c>purchasing.requests.approve</c>, and A1-1b's POST withdrawal → 200 under
+/// <c>purchasing.requests.withdraw</c>) and purchase orders (POST
 /// create → 201 + Location, GET list, GET detail, POST approval → 200). The route reads nothing but the
 /// server context and the wire body; <see cref="IPurchasingService"/> decides, with a fresh central
 /// measurement of the Purchasing permission at every fence (#276). The same attempt again answers the same
@@ -167,6 +168,27 @@ public static class PurchasingEndpoints
                 PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.RequestRejectionReasonRequired,
                 PurchasingProblemCodesV1.RequestRejectionReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/withdrawal", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadWithdrawRequest,
+                (body, metadata) => service.WithdrawRequestAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("WithdrawPurchaseRequestV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<WithdrawPurchaseRequestRequest>("application/json")
+            .Produces<PurchaseRequestResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.RequestDecisionState,
+                PurchasingProblemCodesV1.RequestNotSubmitter, PurchasingProblemCodesV1.RequestMakerUnknown,
+                PurchasingProblemCodesV1.RequestHasApprovedOrder, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
+                PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.RequestWithdrawalReasonRequired,
+                PurchasingProblemCodesV1.RequestWithdrawalReasonTooLong)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }

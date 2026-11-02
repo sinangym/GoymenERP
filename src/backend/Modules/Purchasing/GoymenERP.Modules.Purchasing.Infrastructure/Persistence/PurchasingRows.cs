@@ -12,10 +12,12 @@ internal sealed class OrganizationCompanyReference
 
 /// <summary>
 /// The request header (talep, §7.2); only Status, Version, UpdatedAtUtc, SourcingVersion and the A1-1 decision facts
-/// (SubmittedBy, Approved*, Rejected*, RejectionReason) move after the first commit. SourcingVersion moves with every
+/// (SubmittedBy, Approved*, Rejected*, RejectionReason) and the A1-1b withdrawal facts (Withdrawn*, WithdrawalReason) move
+/// after the first commit. SourcingVersion moves with every
 /// order approval that binds to this request, so two approvals against the same request — or an approval and a
 /// rejection (No.161 §1) — collide on the row version and the loser measures again. CreatedBy is the preparer and
-/// SubmittedBy the submitter: the makers no decision may come from (ALS-D2).
+/// SubmittedBy the submitter: the makers no decision may come from (ALS-D2); SubmittedBy is also the only actor a
+/// withdrawal may come from (ALS-D46).
 /// </summary>
 internal sealed class PurchaseRequestRow : IPurchasingTenantRow
 {
@@ -36,6 +38,9 @@ internal sealed class PurchaseRequestRow : IPurchasingTenantRow
     public string? RejectedBy { get; set; }
     public DateTimeOffset? RejectedAtUtc { get; set; }
     public string? RejectionReason { get; set; }
+    public string? WithdrawnBy { get; set; }
+    public DateTimeOffset? WithdrawnAtUtc { get; set; }
+    public string? WithdrawalReason { get; set; }
 }
 
 /// <summary>One request line: the product (with the Product owner's answered version), the Settings unit and the exact quantity.</summary>

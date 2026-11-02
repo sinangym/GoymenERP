@@ -34,5 +34,14 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string RequestsApprove = "purchasing.requests.approve";
 
-    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove];
+    /// <summary>
+    /// A1-1b (ALS-D46): the submitter withdraws their own Submitted purchase request with a reason — apart from entering
+    /// (<see cref="OrdersCreate"/>) and from the manager's decision (<see cref="RequestsApprove"/>); neither confers the
+    /// other. "Only the submitter" is the service's rule on the command, not this name's. Company-wide, not critical.
+    /// Registered only: the grant is a human gate (only SENTETIK browser-suite personas in disposable stacks hold it).
+    /// </summary>
+    public const string RequestsWithdraw = "purchasing.requests.withdraw";
+
+    public static readonly IReadOnlyList<string> Names =
+        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw];
 }

@@ -226,7 +226,7 @@ eklenir. İzin adları öneridir; sahip modül koyar (No P5).
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
 | API-01 | `POST requests/{id}/approval` · `/rejection` | Talep onayı/reddi; ret yalnız Submitted/Approved iken ve bağlı onaylı sipariş yokken; gerekçe zorunlu | `purchasing.requests.approve` (yeni) | No.161 §1, N-02 | K3 |
-| API-01b | `POST requests/{id}/withdrawal` | Hazırlayan, Submitted (Gönderildi) durumundaki kendi talebini gerekçeyle geri çeker; onaylı talep geri çekilemez; bağlı onaylı sipariş varken geri çekilemez (No.161 §1 ile aynı koruma) | `purchasing.requests.withdraw` (yeni, öneri) — yalnız talebi gönderen | ALS-D46 | K3 |
+| API-01b | `POST requests/{id}/withdrawal` | Talebi gönderen kişi, Submitted (Gönderildi) durumundaki kendi talebini gerekçeyle geri çeker (A1-1b'de EK5'teki "oluşturan/gönderen" en dar okumayla "gönderen" uygulandı); onaylı talep geri çekilemez; bağlı onaylı sipariş varken geri çekilemez (No.161 §1 ile aynı koruma) | `purchasing.requests.withdraw` (yeni, öneri) — yalnız talebi gönderen | ALS-D46 | K3 |
 | API-02 | `POST requests` genişlemesi | Satır kaynağı (stok / satış / üretim / manuel) + kaynak kimliği, istenen tarih | mevcut | A-2 | K3 |
 | API-03 | `GET requests/pool` | İhtiyaç havuzu: onaylı, siparişe bağlanmamış kalanlar; kaynak ve tarih filtresi | `purchasing.orders.read` | §7.3 | K2 |
 
@@ -498,9 +498,10 @@ Bu bölüm iş takibidir; karar değildir.
 | Hubvogal incelemesi (§13.6/§13.7) + EK2 ALS-D21…D28 | #889 | merge edildi (`f7ec453e`) |
 | Kalan sorular (§13.8) + EK3 ALS-D29…D43 | #891 | taslak PR |
 | A0 belgeleri: FZL-01 (Purchasing README kodla eşit), `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Satın Alma satırları | – | taslak PR |
-| A1-1 (K3): API-01 talep onay/ret + TEK-09 talep ekseni; `purchasing.requests.approve` (yalnız kayıt, grant insan kapısı); siparişin kaynak talebi Onaylı olmalı (ALS-D2/D16); migration `AddPurchaseRequestDecisions`; P-01-DETAIL karar paneli | – | dal `claude/alis-a1-talep-onay` |
+| A1-1 (K3): API-01 talep onay/ret + TEK-09 talep ekseni; `purchasing.requests.approve` (yalnız kayıt, grant insan kapısı); siparişin kaynak talebi Onaylı olmalı (ALS-D2/D16); migration `AddPurchaseRequestDecisions`; P-01-DETAIL karar paneli | #900 | merge edildi (`5d569df3`) |
+| A1-1b (K3): API-01b gönderenin geri çekmesi (ALS-D46, `Withdrawn` ayrı kapanış durumu) + #900 review P3'leri (maker-checker CHECK ikili karşılaştırma, `maker_unknown` README notu, PUR01 403 açıklaması, UI/HTTP testleri); `purchasing.requests.withdraw` (yalnız kayıt; grant yalnız SENTETIK browser-suite personasında); migration `AddPurchaseRequestWithdrawal`; P-01-DETAIL "Geri çek" | – | dal `claude/alis-a1-1b-geri-cekme` (taslak PR) |
 
-Sıradaki: A1 — talep onay/ret (A1-1, PR hazırlanıyor), hazırlayanın geri çekmesi (A1-1b, ALS-D46; DURUM_MAKINELERI hedef satırı da o dilimde), talep kaynağı, No.161 iptali, PRS-01. Açık sorular §8
+Sıradaki: A1 — talep kaynağı, No.161 iptali, PRS-01 (A1-1 #900 ile merge edildi; A1-1b gönderenin geri çekmesi taslak PR'da, DURUM_MAKINELERI satırı o dilimde güncellendi). Açık sorular §8
 sonundaki tabloda.
 
 ---

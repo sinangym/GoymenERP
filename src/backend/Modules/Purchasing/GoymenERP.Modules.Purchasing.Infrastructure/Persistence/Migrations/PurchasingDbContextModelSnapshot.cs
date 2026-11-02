@@ -599,6 +599,17 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<string>("WithdrawalReason")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset?>("WithdrawnAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WithdrawnBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CompanyId", "CreatedAtUtc", "Id")
@@ -609,17 +620,19 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PurchaseRequests", "purchasing", t =>
                         {
-                            t.HasCheckConstraint("CK_PurchaseRequests_Decision", "([Status] = 1 AND [SubmittedBy] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL)))");
+                            t.HasCheckConstraint("CK_PurchaseRequests_Decision", "([Status] = 1 AND [SubmittedBy] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL))) OR ([Status] = 5 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)");
 
                             t.HasCheckConstraint("CK_PurchaseRequests_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_PurchaseRequests_MakerChecker", "([ApprovedBy] IS NULL OR ([ApprovedBy] <> [CreatedBy] AND [SubmittedBy] IS NOT NULL AND [ApprovedBy] <> [SubmittedBy])) AND ([RejectedBy] IS NULL OR ([RejectedBy] <> [CreatedBy] AND [SubmittedBy] IS NOT NULL AND [RejectedBy] <> [SubmittedBy]))");
+                            t.HasCheckConstraint("CK_PurchaseRequests_MakerChecker", "([ApprovedBy] IS NULL OR ([ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 AND [SubmittedBy] IS NOT NULL AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)) AND ([RejectedBy] IS NULL OR ([RejectedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 AND [SubmittedBy] IS NOT NULL AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2))");
 
-                            t.HasCheckConstraint("CK_PurchaseRequests_Status", "[Status] IN (1, 2, 3, 4)");
+                            t.HasCheckConstraint("CK_PurchaseRequests_Status", "[Status] IN (1, 2, 3, 4, 5)");
 
                             t.HasCheckConstraint("CK_PurchaseRequests_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
                             t.HasCheckConstraint("CK_PurchaseRequests_Version", "[Version] >= 1 AND [SourcingVersion] >= 0");
+
+                            t.HasCheckConstraint("CK_PurchaseRequests_Withdrawal", "([Status] = 5 AND [WithdrawnBy] IS NOT NULL AND LEN([WithdrawnBy]) > 0 AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawalReason] IS NOT NULL AND LEN([WithdrawalReason]) > 0 AND [SubmittedBy] IS NOT NULL AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [SubmittedBy] COLLATE Latin1_General_100_BIN2) OR ([Status] <> 5 AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawalReason] IS NULL)");
                         });
                 });
 

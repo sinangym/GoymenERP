@@ -45,7 +45,7 @@ interface ApprovalResponse {
 interface RequestSummary {
   readonly id: string
   readonly companyId: string
-  readonly status: 'Draft' | 'Submitted'
+  readonly status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Withdrawn'
   readonly version: string
   readonly effectiveOn: string
 }
@@ -59,6 +59,11 @@ interface RequestDetail {
     readonly unitId: string
     readonly quantity: string
   }>
+}
+
+interface RequestWithdrawalDetail extends RequestDetail {
+  readonly withdrawal: { readonly decidedBy: string; readonly decidedAtUtc: string; readonly reason: string } | null
+  readonly submittedBy: string | null
 }
 
 interface RequestResponse {
@@ -228,7 +233,7 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
   expect([403, 404]).toContain(elsewhere.status())
 
   // A1-1 (ALS-D2 / ALS-D16): an order is opened only for an APPROVED request. The Submitted request is refused first,
-  // the creator (its maker) cannot decide it, and the disposable approver approves it at the submitted version.
+  // the creator's own approval call is refused, and the disposable approver approves it at the submitted version.
   const linkedLine = {
     lineId: '7b1c0f2e-0000-4a00-8000-000000000098', productId,
     expectedProductVersion: productVersion, unitId: productUnitId, quantity: '5',
@@ -252,6 +257,9 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
     },
     data: { expectedVersion: submittedVersion },
   })
+  // #900 review P3: this 403 is the permission fence — the creator does not hold purchasing.requests.approve — and it
+  // answers before maker ≠ checker is measured. No disposable actor both holds the decision name and made a request, so
+  // the same-actor 409 (purchasing_request_same_actor) is proved by the Purchasing unit, HTTP and real-SQL tests.
   expect(makerApproval.status()).toBe(403)
 
   const requestApproval = await page.request.post(`${env.apiBaseUrl}${approvalPath}`, {
@@ -577,4 +585,94 @@ test('PUR01 approves through the real API, reopens the same record and replays t
   } else {
     expect([403, 404]).toContain(capabilities.status())
   }
+})
+
+
+test('P01-WD the submitter withdraws its own submitted request from the detail with a reason; other actors are fenced (A1-1b)', async ({ page }) => {
+  // A1-1b (plan API-01b, ALS-D46): only the submitter withdraws a still Submitted request, with a reason; the result is
+  // Withdrawn, a separate outcome from Rejected. The creator prepares and submits; it alone holds purchasing.requests.withdraw.
+  await signInAs(page, creatorActor)
+  const creatorHeaders = { [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json' }
+  const create = await page.request.post(`${env.apiBaseUrl}${REQUESTS_PATH}`, {
+    headers: { ...creatorHeaders, 'Idempotency-Key': 'browser-suite:pur01:withdrawal-request-create' },
+    data: {
+      effectiveOn: '2026-09-18',
+      lines: [{
+        lineId: '7b1c0f2e-0000-4a00-8000-0000000000a1', productId, expectedProductVersion: productVersion,
+        unitId: productUnitId, quantity: '3',
+      }],
+    },
+  })
+  expect(create.status()).toBe(201)
+  const draft = (await create.json()) as RequestResponse
+  const requestId = draft.detail.request.id
+  const submit = await page.request.post(`${env.apiBaseUrl}${REQUESTS_PATH}/${requestId}/submission`, {
+    headers: { ...creatorHeaders, 'Idempotency-Key': `browser-suite:pur01:withdrawal-request-submit:${requestId}` },
+    data: { expectedVersion: draft.detail.request.version },
+  })
+  expect(submit.status()).toBe(200)
+  const submittedVersion = ((await submit.json()) as RequestResponse).detail.request.version
+  const withdrawalPath = `${REQUESTS_PATH}/${requestId}/withdrawal`
+
+  // Neither the approver nor the reader holds the withdrawal name: both are refused at the permission fence.
+  for (const [actor, key] of [[approverActor, 'approver'], [readerActor, 'reader']] as const) {
+    const denied = await page.request.post(`${env.apiBaseUrl}${withdrawalPath}`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+        'Idempotency-Key': `browser-suite:pur01:${key}-withdrawal-denied:${requestId}`,
+      },
+      data: { expectedVersion: submittedVersion, reason: 'SENTETIK browser-suite:pur01 başkası' },
+    })
+    expect(denied.status()).toBe(403)
+  }
+  expect((await readRequest(page, creatorActor, requestId)).request).toMatchObject({ status: 'Submitted', version: submittedVersion })
+
+  // The submitter opens the request detail and withdraws it through the real control.
+  await page.goto(`${REQUEST_LIST_ROUTE}/${requestId}`)
+  await expect(page.getByText(requestId, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { level: 2, name: 'Talebi geri çek' })).toBeVisible()
+  await page.getByRole('button', { name: 'Geri çek', exact: true }).click()
+  await expect(page.getByText('Geri çekme gerekçesi boş olamaz.')).toBeVisible()
+  const reason = 'SENTETIK browser-suite:pur01 yanlış ürün seçildi'
+  await page.getByLabel('Geri çekme gerekçesi').fill(reason)
+  const withdrawAnswer = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === withdrawalPath)
+  await page.getByRole('button', { name: 'Geri çek', exact: true }).click()
+  const withdrawResponse = await withdrawAnswer
+  expect(withdrawResponse.status()).toBe(200)
+  const withdrawn = (await withdrawResponse.json()) as { readonly detail: RequestWithdrawalDetail; readonly isReplay: boolean }
+  const withdrawnVersion = (BigInt(submittedVersion) + 1n).toString()
+  expect([withdrawn.detail.request.id, withdrawn.detail.request.status, withdrawn.detail.request.version, withdrawn.isReplay])
+    .toEqual([requestId, 'Withdrawn', withdrawnVersion, false])
+  expect(withdrawn.detail.withdrawal?.reason).toBe(reason)
+  expect(withdrawn.detail.withdrawal?.decidedBy).toBe(withdrawn.detail.submittedBy)
+  await expect(page.getByText('Talep geri çekildi ve yeniden okundu.')).toBeVisible()
+  await expect(page.getByText('Geri çekildi', { exact: true })).toBeVisible()
+  await expect(page.getByText(reason, { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Geri çek', exact: true })).toHaveCount(0)
+
+  // The same key and body replay the first answer; nothing new is written.
+  const sent = withdrawResponse.request()
+  const replay = await page.request.post(`${env.apiBaseUrl}${withdrawalPath}`, {
+    headers: { ...creatorHeaders, 'Idempotency-Key': sent.headers()['idempotency-key'] ?? '' },
+    data: sent.postDataJSON() as unknown,
+  })
+  expect(replay.status()).toBe(200)
+  expect(replay.headers()['idempotency-replayed']).toBe('true')
+  expect(((await replay.json()) as RequestResponse).detail.request.version).toBe(withdrawnVersion)
+
+  // A withdrawn request is closed: the manager's decision no longer applies.
+  const lateApproval = await page.request.post(`${env.apiBaseUrl}${REQUESTS_PATH}/${requestId}/approval`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: approverActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+      'Idempotency-Key': `browser-suite:pur01:withdrawn-request-approval:${requestId}`,
+    },
+    data: { expectedVersion: withdrawnVersion },
+  })
+  expect(lateApproval.status()).toBe(409)
+  expect(((await lateApproval.json()) as { code?: string }).code).toBe('purchasing_request_decision_state')
+  expect((await readRequest(page, readerActor, requestId)).request).toMatchObject({ status: 'Withdrawn', version: withdrawnVersion })
+
+  await page.goto(REQUEST_LIST_ROUTE)
+  await expect(page.getByRole('row').filter({ hasText: `…${requestId.slice(-8)}` })).toContainText('Geri çekildi')
 })

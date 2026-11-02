@@ -25,11 +25,16 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// request detail, measured with its own name <see cref="PurchasingPermissionManifestV1.RequestsApprove"/>; one control
 /// carries both the approval and the rejection, the same manager decision (ALS-D2, No.161 §1).
 /// </para>
+/// <para>
+/// 1.6 (A1-1b, plan API-01b; ALS-D46): the request withdrawal control (<see cref="RequestWithdrawCapabilityId"/>) is a
+/// child of the request detail, measured with its own name <see cref="PurchasingPermissionManifestV1.RequestsWithdraw"/>;
+/// "only the submitter" is the service's rule on the command (the screen shows it only to the recorded submitter).
+/// </para>
 /// </summary>
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.5";
+    public const string OwnerContractVersion = "1.6";
 
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -40,6 +45,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string RequestDetailCapabilityId = "purchasing.requests.detail";
     public const string RequestSubmitCapabilityId = "purchasing.requests.submit";
     public const string RequestApproveCapabilityId = "purchasing.requests.approve";
+    public const string RequestWithdrawCapabilityId = "purchasing.requests.withdraw";
     public const string RequestDetailRoutePath = "/satinalma/talepler/:requestId";
     public const string RequestDetailScreenId = "P-01-DETAIL";
 
@@ -89,6 +95,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = RequestApproveCapabilityId,
                 ParentCapabilityId = RequestDetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsApprove],
+            },
+            requestDetail with
+            {
+                CapabilityId = RequestWithdrawCapabilityId,
+                ParentCapabilityId = RequestDetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsWithdraw],
             },
             new ShellCapabilityDeclaration(ListCapabilityId, ListCapabilityId, ListRoutePath, ListScreenId,
                 ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,

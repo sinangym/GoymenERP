@@ -12,6 +12,12 @@ public enum PurchaseRequestStatus
 
     /// <summary>A1-1 (ALS-D2, No.161 §1): rejected from Submitted or Approved with a reason; terminal, nothing is deleted.</summary>
     Rejected = 4,
+
+    /// <summary>
+    /// A1-1b (ALS-D46): the submitter withdrew the still Submitted request with a reason; terminal, a separate outcome from
+    /// <see cref="Rejected"/> (a manager's refusal) so reports never mix the two. Nothing is deleted.
+    /// </summary>
+    Withdrawn = 5,
 }
 
 /// <summary>
@@ -31,10 +37,16 @@ public enum PurchaseRequestStatus
 /// refused, never assumed (fail-closed). A rejection is refused while an APPROVED order is bound to the request; the
 /// caller measures that fact inside the same save.
 /// </para>
+/// <para>
+/// A1-1b (ALS-D46): <c>Submitted → Withdrawn</c> (<see cref="Withdraw"/>, reason required) by the request's submitter only
+/// (the most restrictive reading of EK5's "oluşturan/gönderen": the actor who sent it for approval). A request whose
+/// submitter is not recorded cannot be withdrawn (fail-closed); an Approved request is never withdrawn (its rejection
+/// stays a manager's decision), and a bound APPROVED order refuses the withdrawal as it refuses a rejection (No.161 §1).
+/// </para>
 /// </summary>
 public sealed class PurchaseRequest
 {
-    /// <summary>The longest rejection reason; a longer one is refused, never cut (the Sales request's bound).</summary>
+    /// <summary>The longest rejection or withdrawal reason; a longer one is refused, never cut (the Sales request's bound).</summary>
     public const int MaximumReasonLength = 4000;
 
     /// <summary>The longest actor identity (the stored actor columns).</summary>
@@ -68,6 +80,9 @@ public sealed class PurchaseRequest
 
     /// <summary>The rejection (No.161 §1), if any, with its reason.</summary>
     public PurchaseRequestDecision? Rejection { get; private set; }
+
+    /// <summary>A1-1b (ALS-D46): the submitter's withdrawal, if any, with its reason.</summary>
+    public PurchaseRequestDecision? Withdrawal { get; private set; }
 
     /// <summary>A read-only view; the list behind it never leaves this record.</summary>
     public IReadOnlyList<PurchaseRequestLine> Lines => lines.AsReadOnly();
@@ -157,6 +172,45 @@ public sealed class PurchaseRequest
         Touch(now);
     }
 
+    /// <summary>
+    /// ALS-D46: the submitter withdraws their own SUBMITTED request with a reason (required, never defaulted or cut; the
+    /// rejection's bound and blank rule). Any other state is <see cref="PurchasingRuleCodes.RequestNotWithdrawable"/>;
+    /// an unrecorded submitter is <see cref="PurchasingRuleCodes.RequestMakerUnknown"/>; anyone but the submitter
+    /// (ordinal) is <see cref="PurchasingRuleCodes.RequestNotSubmitter"/>; a bound APPROVED order
+    /// (<paramref name="hasApprovedOrder"/>, measured by the caller inside the same save) is
+    /// <see cref="PurchasingRuleCodes.RequestHasApprovedOrder"/>.
+    /// </summary>
+    public void Withdraw(long expectedVersion, string withdrawnBy, string? reason, bool hasApprovedOrder, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(withdrawnBy, nameof(withdrawnBy));
+        if (Status != PurchaseRequestStatus.Submitted)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotWithdrawable, "Yalnız gönderilmiş (henüz karar verilmemiş) talep geri çekilir.");
+        }
+
+        var text = RequireWithdrawalReason(reason);
+        if (SubmittedBy is null)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestMakerUnknown, "Talebi gönderen bilinmiyor; talep geri çekilemez.");
+        }
+
+        if (!string.Equals(actor, SubmittedBy, StringComparison.Ordinal))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotSubmitter, "Talebi yalnız gönderen kişi geri çekebilir.");
+        }
+
+        if (hasApprovedOrder)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestHasApprovedOrder,
+                "Talebe bağlı onaylı sipariş varken talep geri çekilemez; önce bağlı sipariş iptal edilmelidir.");
+        }
+
+        Withdrawal = new PurchaseRequestDecision(actor, now.ToUniversalTime(), text);
+        Status = PurchaseRequestStatus.Withdrawn;
+        Touch(now);
+    }
+
     private void SubmitCore(long expectedVersion, string? submittedBy, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
@@ -200,6 +254,19 @@ public sealed class PurchaseRequest
                 $"Ret gerekçesi en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
     }
 
+    private static string RequireWithdrawalReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestWithdrawalReasonRequired, "Talebin geri çekilmesi gerekçe ister.");
+        }
+
+        return reason.Length <= MaximumReasonLength
+            ? reason
+            : throw new PurchasingRuleException(PurchasingRuleCodes.RequestWithdrawalReasonTooLong,
+                $"Geri çekme gerekçesi en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+    }
+
     private static string RequireActor(string actor, string parameterName) =>
         string.IsNullOrWhiteSpace(actor) || actor.Length > MaximumActorLength || !string.Equals(actor, actor.Trim(), StringComparison.Ordinal)
             ? throw new ArgumentException("Aktör kimliği boş, kenar boşluklu veya çok uzun olamaz.", parameterName)
@@ -228,7 +295,7 @@ public sealed class PurchaseRequest
     }
 }
 
-/// <summary>One decision on a request: who, when and (for a rejection) why.</summary>
+/// <summary>One decision on a request: who, when and (for a rejection or a withdrawal) why.</summary>
 public sealed record PurchaseRequestDecision(string DecidedBy, DateTimeOffset DecidedAtUtc, string? Reason);
 
 public sealed class PurchaseRequestLine

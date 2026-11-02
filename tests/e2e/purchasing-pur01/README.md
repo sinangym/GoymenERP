@@ -12,8 +12,15 @@ This suite proves the normal Purchasing user path against the disposable real st
 - the API returns the idempotent replay and the screen reports it;
 - a reader can list/read but cannot create or approve, and the other-company context cannot create or expose records/screens;
 - A1-1: the creator's submitted request cannot source an order until it is approved (409 `purchasing_request_state`);
-  the creator (its maker) has no `purchasing.requests.approve` (403) and the disposable approver approves it before
-  the linked order is created and approved.
+  the creator's direct approval call is refused with 403 at the permission fence, because the creator does not hold
+  `purchasing.requests.approve` (that 403 is the permission fence, not the maker ≠ checker rule: no disposable actor
+  both holds the decision name and prepared/submitted a request, so the same-actor 409
+  `purchasing_request_same_actor` is proved by the Purchasing unit, HTTP and real-SQL tests instead); the disposable
+  approver approves it before the linked order is created and approved.
+- A1-1b (ALS-D46): the creator — the request's submitter, the only persona holding `purchasing.requests.withdraw` —
+  submits a second request and withdraws it from the request detail with a reason ("Geri çek"); the request reads
+  "Geri çekildi" with the reason, the same key replays, the approver's and the reader's direct withdrawal calls are
+  403 (neither holds the name), and the withdrawn request cannot be approved (409 `purchasing_request_decision_state`).
 
 The goods-receipt journey (`pur01-goods-receipt-journey.spec.ts`, #478 PUR-HOST) proves the receiver path on the
 same stack:

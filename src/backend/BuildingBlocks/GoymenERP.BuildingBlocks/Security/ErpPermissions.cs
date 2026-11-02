@@ -656,6 +656,15 @@ public static class ErpPermissions
     public const string PurchasingRequestsApprove = "purchasing.requests.approve";
 
     /// <summary>
+    /// A1-1b (plan API-01b; ALS-D46): the submitter withdraws their own Submitted purchase request with a reason — the
+    /// Purchasing owner's name (PurchasingPermissionManifestV1.RequestsWithdraw), apart from entering and from the
+    /// manager's decision; neither confers the other. "Only the submitter" is enforced by the Purchasing service on the
+    /// command, not through this catalogue. Registered, not granted: no role, seed or user receives it here (only SENTETIK
+    /// browser-suite personas in disposable stacks). Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingRequestsWithdraw = "purchasing.requests.withdraw";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -838,6 +847,7 @@ public static class ErpPermissions
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
             PurchasingRequestsApprove,
+            PurchasingRequestsWithdraw,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -977,6 +987,7 @@ public static class ErpPermissions
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
             PurchasingRequestsApprove,
+            PurchasingRequestsWithdraw,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

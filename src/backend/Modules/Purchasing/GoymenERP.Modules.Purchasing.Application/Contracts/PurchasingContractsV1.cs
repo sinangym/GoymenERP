@@ -30,6 +30,13 @@ public sealed record ApprovePurchaseRequestRequest(string ExpectedVersion);
 public sealed record RejectPurchaseRequestRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
+/// A1-1b (ALS-D46): POST …/requests/{id}/withdrawal — Submitted → Withdrawn at the expected version, by the request's
+/// submitter only, with the reason (required, at most 4000 characters, never cut), refused while an APPROVED order is
+/// bound to the request (No.161 §1).
+/// </summary>
+public sealed record WithdrawPurchaseRequestRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
 /// POST /api/v1/purchasing/orders: a commitment towards ONE supplier (the Cari party + its company account
 /// with the Supplier role), a Draft with general lines. With <paramref name="SourceRequestId"/> the order is
 /// opened for one APPROVED request of this company (A1-1, ALS-D2/ALS-D16) and every line MAY bind to one of that request's lines
@@ -58,25 +65,31 @@ public sealed record PurchaseRequestSummaryView(
 
 public sealed record PurchaseRequestLineView(Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid UnitId, string Quantity);
 
-/// <summary>A1-1: one decision on a request — who decided, when, and (a rejection only) why.</summary>
+/// <summary>A1-1: one decision on a request — who decided, when, and (a rejection or a withdrawal, A1-1b) why.</summary>
 public sealed record PurchaseRequestDecisionView(string DecidedBy, DateTimeOffset DecidedAtUtc, string? Reason);
 
 /// <summary>
-/// The request with its lines; <see cref="Approval"/> and <see cref="Rejection"/> (A1-1) are the recorded decisions,
-/// null until made. An approval stays visible after a later rejection.
+/// The request with its lines; <see cref="Approval"/> and <see cref="Rejection"/> (A1-1) and <see cref="Withdrawal"/>
+/// (A1-1b) are the recorded decisions, null until made. An approval stays visible after a later rejection.
+/// <see cref="SubmittedBy"/> (A1-1b) is the recorded submitter — the only actor who may withdraw — or null (a Draft, or
+/// a submission recorded without its actor).
 /// </summary>
 public sealed record PurchaseRequestDetailView(PurchaseRequestSummaryView Request, IReadOnlyList<PurchaseRequestLineView> Lines)
 {
     public PurchaseRequestDecisionView? Approval { get; init; }
 
     public PurchaseRequestDecisionView? Rejection { get; init; }
+
+    public PurchaseRequestDecisionView? Withdrawal { get; init; }
+
+    public string? SubmittedBy { get; init; }
 }
 
 public sealed record PurchaseRequestResponse(PurchaseRequestDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record PurchaseRequestListResponse(IReadOnlyList<PurchaseRequestSummaryView> Items, string? NextCursor);
 
-/// <param name="Status">An exact status name ("Draft" | "Submitted" | "Approved" | "Rejected") to narrow the list to, or null.</param>
+/// <param name="Status">An exact status name ("Draft" | "Submitted" | "Approved" | "Rejected" | "Withdrawn") to narrow the list to, or null.</param>
 public sealed record PurchaseRequestListQuery(int PageSize = 50, string? Cursor = null, string? Status = null);
 
 public sealed record PurchaseOrderSummaryView(
@@ -152,16 +165,22 @@ public static class PurchasingProblemCodesV1
     /// </summary>
     public const string RequestState = "purchasing_request_state";
 
-    /// <summary>409, terminal (§7; A1-1): the request is not in the state the decision needs (approve: Submitted; reject: Submitted or Approved).</summary>
+    /// <summary>
+    /// 409, terminal (§7; A1-1): the request is not in the state the decision needs (approve: Submitted; reject: Submitted
+    /// or Approved; withdraw, A1-1b: Submitted).
+    /// </summary>
     public const string RequestDecisionState = "purchasing_request_decision_state";
 
     /// <summary>409, terminal (§7; ALS-D2): the actor prepared or submitted this request and cannot decide it (hazırlayan ≠ onaylayan).</summary>
     public const string RequestSameActor = "purchasing_request_same_actor";
 
-    /// <summary>409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it.</summary>
+    /// <summary>
+    /// 409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it
+    /// (A1-1b: and an unrecorded submitter means no one may withdraw it).
+    /// </summary>
     public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
 
-    /// <summary>409, terminal (§7; No.161 §1): an APPROVED order is bound to the request; the order is cancelled first.</summary>
+    /// <summary>409, terminal (§7; No.161 §1): an APPROVED order is bound to the request; the order is cancelled first (rejection and A1-1b withdrawal).</summary>
     public const string RequestHasApprovedOrder = "purchasing_request_has_approved_order";
 
     /// <summary>422: the rejection reason is missing or blank.</summary>
@@ -169,6 +188,15 @@ public static class PurchasingProblemCodesV1
 
     /// <summary>422: the rejection reason is longer than 4000 characters (refused, never cut).</summary>
     public const string RequestRejectionReasonTooLong = "purchasing_request_rejection_reason_too_long";
+
+    /// <summary>409, terminal (§7; A1-1b, ALS-D46): the actor is not the request's submitter; only the submitter withdraws it.</summary>
+    public const string RequestNotSubmitter = "purchasing_request_not_submitter";
+
+    /// <summary>422 (A1-1b): the withdrawal reason is missing or blank.</summary>
+    public const string RequestWithdrawalReasonRequired = "purchasing_request_withdrawal_reason_required";
+
+    /// <summary>422 (A1-1b): the withdrawal reason is longer than 4000 characters (refused, never cut).</summary>
+    public const string RequestWithdrawalReasonTooLong = "purchasing_request_withdrawal_reason_too_long";
 
     /// <summary>409, terminal (§7): the expected version is stale.</summary>
     public const string VersionConflict = "version_conflict";
@@ -221,7 +249,8 @@ public sealed record PurchasingServiceBindings(
     string? ReadPermission = PurchasingPermissionManifestV1.OrdersRead,
     string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove,
     string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord,
-    string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove);
+    string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove,
+    string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -233,6 +262,7 @@ public static class PurchasingApiV1
     public const string RequestSubmissionPath = "/api/v1/purchasing/requests/{id}/submission";
     public const string RequestApprovalPath = "/api/v1/purchasing/requests/{id}/approval";
     public const string RequestRejectionPath = "/api/v1/purchasing/requests/{id}/rejection";
+    public const string RequestWithdrawalPath = "/api/v1/purchasing/requests/{id}/withdrawal";
     public const string OrdersPath = "/api/v1/purchasing/orders";
     public const string OrderDetailPath = "/api/v1/purchasing/orders/{id}";
     public const string OrderApprovalPath = "/api/v1/purchasing/orders/{id}/approval";
@@ -314,6 +344,20 @@ public static class PurchasingJson
     public static RejectPurchaseRequestRequest ReadRejectRequest(string json)
     {
         var request = JsonSerializer.Deserialize<RejectPurchaseRequestRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>A1-1b: the reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
+    public static WithdrawPurchaseRequestRequest ReadWithdrawRequest(string json)
+    {
+        var request = JsonSerializer.Deserialize<WithdrawPurchaseRequestRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersionShape(request.ExpectedVersion);
         if (request.Reason is null)

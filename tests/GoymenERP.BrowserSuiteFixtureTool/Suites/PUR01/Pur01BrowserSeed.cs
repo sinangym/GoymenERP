@@ -45,6 +45,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string GoodsReceiptCapability = "purchasing.goods-receipts.record";
     // A1-1 (plan API-01, ALS-D2): the request decision control; only the disposable approver holds it (maker != checker).
     private const string RequestApproveCapability = "purchasing.requests.approve";
+    // A1-1b (plan API-01b, ALS-D46): the request withdrawal control; only the disposable creator (the submitter) holds it.
+    private const string RequestWithdrawCapability = "purchasing.requests.withdraw";
     private const string StockLabelCapability = "inventory.stock-positions.list";
     private const string SupplierLegalName =
         "Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi";
@@ -184,9 +186,11 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !creator.Contains(CreateCapability, StringComparer.Ordinal)
             || creator.Contains(ApproveCapability, StringComparer.Ordinal)
             || creator.Contains(RequestApproveCapability, StringComparer.Ordinal)
+            || !creator.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
             || creator.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The creator needs list/detail/create and must not receive order or request approval or goods receipt.");
+            throw new InvalidOperationException(
+                "The creator needs list/detail/create and the request withdrawal, and must not receive order or request approval or goods receipt.");
         }
 
         string[] approver = await CapabilitiesAsync(context, ApproverActor, cancellationToken);
@@ -194,6 +198,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !approver.Contains(DetailCapability, StringComparer.Ordinal)
             || !approver.Contains(ApproveCapability, StringComparer.Ordinal)
             || !approver.Contains(RequestApproveCapability, StringComparer.Ordinal)
+            || approver.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
             || approver.Contains(CreateCapability, StringComparer.Ordinal)
             || approver.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
@@ -205,6 +210,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !reader.Contains(DetailCapability, StringComparer.Ordinal)
             || reader.Contains(ApproveCapability, StringComparer.Ordinal)
             || reader.Contains(RequestApproveCapability, StringComparer.Ordinal)
+            || reader.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
             || reader.Contains(CreateCapability, StringComparer.Ordinal)
             || reader.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
@@ -219,6 +225,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !receiver.Contains(GoodsReceiptCapability, StringComparer.Ordinal)
             || receiver.Contains(ApproveCapability, StringComparer.Ordinal)
             || receiver.Contains(RequestApproveCapability, StringComparer.Ordinal)
+            || receiver.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
             || receiver.Contains(CreateCapability, StringComparer.Ordinal)
             || receiver.Contains(StockLabelCapability, StringComparer.Ordinal))
         {

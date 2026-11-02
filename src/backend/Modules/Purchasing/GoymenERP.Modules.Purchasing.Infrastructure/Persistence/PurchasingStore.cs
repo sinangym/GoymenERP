@@ -183,6 +183,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         row.RejectedBy = request.Rejection?.DecidedBy;
         row.RejectedAtUtc = request.Rejection?.DecidedAtUtc;
         row.RejectionReason = request.Rejection?.Reason;
+        row.WithdrawnBy = request.Withdrawal?.DecidedBy;
+        row.WithdrawnAtUtc = request.Withdrawal?.DecidedAtUtc;
+        row.WithdrawalReason = request.Withdrawal?.Reason;
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, request.Id, null, now));
         Audit(envelope, companyId, RequestEntityType, request.Id, audit.EventType, audit.Operation, versionBefore, request.Version, before, Snapshot(request), audit.Reason);
         await SaveAsync(cancellationToken);
@@ -599,7 +602,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     }
 
     /// <summary>
-    /// Rebuilds the request through the domain in recording order (lines, submission, approval, rejection); the stored
+    /// Rebuilds the request through the domain in recording order (lines, submission, approval, rejection or withdrawal); the stored
     /// version and status must be the ones the rebuild reaches. A submission recorded without its actor (before A1-1) is
     /// rebuilt without one, so the domain refuses any decision on it (fail-closed).
     /// </summary>
@@ -635,6 +638,14 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             request.Reject(request.Version, row.RejectedBy ?? throw new InvalidOperationException("Kayıtlı talep reddinin aktörü yok."),
                 row.RejectionReason, hasApprovedOrder: false,
                 row.RejectedAtUtc ?? throw new InvalidOperationException("Kayıtlı talep reddinin zamanı yok."));
+        }
+
+        if (row.Status == (int)PurchaseRequestStatus.Withdrawn)
+        {
+            // A1-1b: the bound-order rule held when the withdrawal was recorded; the rebuild does not measure it again.
+            request.Withdraw(request.Version, row.WithdrawnBy ?? throw new InvalidOperationException("Kayıtlı talep geri çekmesinin aktörü yok."),
+                row.WithdrawalReason, hasApprovedOrder: false,
+                row.WithdrawnAtUtc ?? throw new InvalidOperationException("Kayıtlı talep geri çekmesinin zamanı yok."));
         }
 
         if (request.Version != row.Version || request.Status != (PurchaseRequestStatus)row.Status)
@@ -789,6 +800,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         approval = request.Approval is { } approval ? new { decidedBy = approval.DecidedBy, decidedAtUtc = approval.DecidedAtUtc } : null,
         rejection = request.Rejection is { } rejection
             ? new { decidedBy = rejection.DecidedBy, decidedAtUtc = rejection.DecidedAtUtc, reason = rejection.Reason }
+            : null,
+        withdrawal = request.Withdrawal is { } withdrawal
+            ? new { decidedBy = withdrawal.DecidedBy, decidedAtUtc = withdrawal.DecidedAtUtc, reason = withdrawal.Reason }
             : null,
         lines = request.Lines.Select(line => new { lineId = line.Id, productId = line.ProductId, quantity = line.Quantity.Value }),
     }, Json);

@@ -890,6 +890,8 @@ public sealed partial class PurchasingService(
         {
             Approval = Decision(stored.Request.Approval),
             Rejection = Decision(stored.Request.Rejection),
+            Withdrawal = Decision(stored.Request.Withdrawal),
+            SubmittedBy = stored.Request.SubmittedBy,
         };
 
     private static PurchaseRequestDecisionView? Decision(PurchaseRequestDecision? decision) =>

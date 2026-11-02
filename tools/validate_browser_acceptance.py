@@ -397,11 +397,13 @@ SUITE_IDENTITY_PERMISSIONS = {
     # combines those existing reads with orders.read; it owns no receipt command.
     # A1-1 (plan API-01): the disposable approver alone adds purchasing.requests.approve (maker != checker: the
     # creator who prepares and submits the request never holds it).
+    # A1-1b (plan API-01b, ALS-D46): the disposable creator alone adds purchasing.requests.withdraw (only the
+    # submitter withdraws its own submitted request; the approver never holds it).
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read",
               "documents.files.read", "documents.files.upload",
               "purchasing.goods-receipts.record", "inventory.labels.read", "inventory.balances.read",
-              "purchasing.requests.approve"),
+              "purchasing.requests.approve", "purchasing.requests.withdraw"),
     # R14: one Inventory recorder with opening/detail reads plus the disposable location-card read,
     # one owner-read-only denied actor, and one dedicated Organization owner-row reader.
     # R19 (user decision 2026-09-27): the disposable r14-transformer adds only the split/merge command name
@@ -664,7 +666,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                 "BROWSER_PUR01_CREATOR",
                 ("purchasing.orders.create", "purchasing.orders.read",
                  "counterparty.parties.read", "product.operational-selection.read",
-                 "documents.files.read", "documents.files.upload"),
+                 "documents.files.read", "documents.files.upload",
+                 "purchasing.requests.withdraw"),
             ),
             "pur01-receiver": ("BROWSER_PUR01_RECEIVER",
                                ("purchasing.orders.read", "purchasing.goods-receipts.record")),
