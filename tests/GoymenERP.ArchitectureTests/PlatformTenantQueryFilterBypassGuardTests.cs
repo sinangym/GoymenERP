@@ -472,7 +472,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for DEC-FIN-010 / KUR_GUNU / SAT-D169…D171: the company-filtered exchange-rate record (day fence,
                 // append-only records and their rate lines; company inside every key and foreign key) joins the write fence
                 // (records and rate lines immutable, every row in the context company).
-                "4c558a477888627dffdfacc253aa659a98bba06a68bc867e5e10a699d04437f3",
+                // Re-fingerprinted for review B P2 / EK31 SAT-D198: the record state check admits the official NotFound bulletin
+                // state and the reasoned manual half-day mark; the write fence is unchanged.
+                "91e5f6643ba97019862dddd3b491ddd2125ba67c6166b68dfe9248cba0996c6e",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1450,8 +1452,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
                     // Re-fingerprinted for SAT-D47 (DEC-FIN-010): the draft service also receives the optional Settings rate-day port
                     // (DI-only); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D90 / SAT-D101: the dispatch read service also receives the optional Settings
+                    // rate-day port (DI-only); provider branch and token counts unchanged.
                     new(
-                        "be018ffa11b612b2dbe0e1216546f1095594e4cdff586b89f36a68fc1e90d565",
+                        "e17ecf293ca19a91fa47a2b338c6777121024a34934a02eb13c8f3eda1f7cae6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1750,6 +1754,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
+                        }),
+                // Review B P2 / EK31 SAT-D198: Down refuses (51202) while a NotFound or manual half-day record exists (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261102192125_AmendExchangeRateRecordStates.cs"] =
+                    new(
+                        "bd0810226629d0334ff06ba2844363b837bf86e72a1c733b8b098d45150da156",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
                         }),
                 // DEC-FIN-010 / SAT-D169…D171: Down refuses (51201) while any exchange-rate record exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"

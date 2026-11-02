@@ -17,11 +17,13 @@ namespace GoymenERP.Api.Endpoints;
 /// <item><c>GET …/resolution?rateDay=yyyy-MM-dd&amp;currencyCode=USD</c> (read) — the one calculator's answer for a rate day,
 /// with its provenance (SAT-D172 snapshot shape), or the "kur bulunamadı/belirlenemedi" code.</item>
 /// <item><c>POST …/days/{date}/corrections</c> (correct, 204) — SAT-D169 reasoned manual rate.</item>
+/// <item><c>POST …/days/{date}/half-day-marks</c> (mark, 204) — SAT-D198 reasoned full / half-day mark of an undetermined day.</item>
+/// <item><c>POST …/days/{date}/reverification</c> (import, 204) — reopen a day's final TCMB answer for the next import.</item>
 /// <item><c>POST …/imports</c> (import, 200 with a per-day summary) — the official sources; 503 while disabled (the default;
 /// enabling them is a human gate). Every 503 is the platform's code-less <c>service_unavailable</c> on the wire; the list read
 /// tells the screen whether the sources are enabled.</item>
 /// </list>
-/// The three names are company-wide, not Critical and granted to no role here. Commands carry one Idempotency-Key (stored
+/// The four names are company-wide, not Critical and granted to no role here. Commands carry one Idempotency-Key (stored
 /// terminal answers replay with <c>Idempotency-Replayed</c>).
 /// </summary>
 public static class SettingsExchangeRateEndpoints
@@ -127,6 +129,77 @@ public static class SettingsExchangeRateEndpoints
                 ExchangeRateProblemCodesV1.IdempotencyConflict,
                 ExchangeRateProblemCodesV1.VersionConflict)
             .ProducesErpUnprocessableEntity(ExchangeRateProblemCodesV1.DayNotPublished)
+            .ProducesErpServiceUnavailable(ExchangeRateProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        // EK31 SAT-D198: a reasoned manual full / half-day mark for a day the automatic source left undetermined.
+        group.MapPost("/days/{date}/half-day-marks", async (
+                string date,
+                MarkExchangeRateHalfDayRequestV1 request,
+                ISettingsExchangeRateAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                if (!TryDate(date, out var day))
+                {
+                    return Invalid(httpContext, "Gün yyyy-MM-dd biçiminde olmalıdır.");
+                }
+
+                return await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                    metadata => service.MarkHalfDayAsync(day, request, metadata, cancellationToken));
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsExchangeRatePermissionManifestV1.MarkHalfDay)
+            .WithName("MarkSettingsExchangeRateHalfDayV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict)
+            .Accepts<MarkExchangeRateHalfDayRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(
+                ExchangeRateProblemCodesV1.IdempotencyConflict,
+                ExchangeRateProblemCodesV1.VersionConflict,
+                ExchangeRateProblemCodesV1.HalfDayDetermined)
+            .ProducesErpServiceUnavailable(ExchangeRateProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        // Review B P2: reopen a day's final TCMB answer so the next import asks again (fail-closed meanwhile).
+        group.MapPost("/days/{date}/reverification", async (
+                string date,
+                ReverifyExchangeRateDayRequestV1 request,
+                ISettingsExchangeRateAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                if (!TryDate(date, out var day))
+                {
+                    return Invalid(httpContext, "Gün yyyy-MM-dd biçiminde olmalıdır.");
+                }
+
+                return await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                    metadata => service.ReverifyAsync(day, request, metadata, cancellationToken));
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsExchangeRatePermissionManifestV1.Import)
+            .WithName("ReverifySettingsExchangeRateDayV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ReverifyExchangeRateDayRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(
+                ExchangeRateProblemCodesV1.IdempotencyConflict,
+                ExchangeRateProblemCodesV1.VersionConflict)
+            .ProducesErpUnprocessableEntity(ExchangeRateProblemCodesV1.DayNotFinal)
             .ProducesErpServiceUnavailable(ExchangeRateProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 

@@ -170,11 +170,17 @@ public sealed class SalesCustomerRiskCalculatorTests
         Assert.Null(evaluation.InLocalCurrency!.GrossRisk);
     }
 
+    private static readonly Guid Eur = Guid.Parse("c0000000-0000-4000-8000-000000000003");
+    private static readonly SalesRiskCurrency EurLimit = new(Eur, Scale);
+
+    private static SalesRiskExchangeRates Rates(params (Guid Currency, decimal Rate)[] rates) =>
+        new(Try, rates.ToDictionary(rate => rate.Currency, rate => ExchangeRate.Of(rate.Currency, Try, rate.Rate)));
+
     [Fact]
-    public void SAT_D47_a_foreign_amount_is_converted_into_a_TRY_total_only_by_the_check_day_rate_of_exactly_that_pair()
+    public void SAT_D47_a_foreign_amount_is_converted_into_a_TRY_total_by_the_check_day_rate()
     {
         // SYNTHETIC rate: 1 USD = 41.6543 TRY. 10.25 USD → 426.956575 → 426.96 at the TL scale (one rounding, SAT-D11).
-        var rates = new Dictionary<(Guid, Guid), ExchangeRate> { [(Usd, Try)] = ExchangeRate.Of(Usd, Try, 41.6543m) };
+        var rates = Rates((Usd, 41.6543m));
         var mixed = SalesRiskInput.Available([new SalesRiskAmount(Try, 100m), new SalesRiskAmount(Usd, 10.25m)],
             SalesRiskTaxBasis.IncludingTax);
 
@@ -187,22 +193,70 @@ public sealed class SalesCustomerRiskCalculatorTests
         Assert.Equal(SalesRiskOutcome.Over,
             SalesCustomerRiskCalculator.Evaluate(Local, Local, mixed, Taxed(), Taxed(), Taxed(1.01m), Limit(527.96m), rates).Outcome);
 
-        // No inverse is derived: a TRY amount against a USD limit stays unavailable even with the USD → TRY rate.
-        var usdLimit = SalesCustomerRiskCalculator.Evaluate(Local, UsdLimit, Taxed(10m), Taxed(), Taxed(), Taxed(), Limit(1000m, Usd),
-            rates);
-        Assert.Equal(SalesRiskOutcome.Unavailable, usdLimit.Outcome);
-        Assert.Equal([new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable)],
-            usdLimit.Reasons);
-
-        // A rate filed under the wrong pair is never used; without a rate the amount stays unavailable (fail-closed).
-        var misfiled = new Dictionary<(Guid, Guid), ExchangeRate> { [(Usd, Try)] = ExchangeRate.Of(Try, Usd, 0.024m) };
-        foreach (var candidate in new IReadOnlyDictionary<(Guid, Guid), ExchangeRate>?[] { null, misfiled, new Dictionary<(Guid, Guid), ExchangeRate>() })
+        // A rate filed for another pair is never used; without a rate the amount stays unavailable (fail-closed, SAT-D80).
+        var misfiled = new SalesRiskExchangeRates(Try, new Dictionary<Guid, ExchangeRate> { [Usd] = ExchangeRate.Of(Eur, Try, 41m) });
+        foreach (var candidate in new SalesRiskExchangeRates?[] { null, misfiled, Rates() })
         {
             var refused = SalesCustomerRiskCalculator.Evaluate(Local, Local, mixed, Taxed(), Taxed(), Taxed(), Limit(1000m), candidate);
             Assert.Equal(SalesRiskOutcome.Unavailable, refused.Outcome);
             Assert.Equal([new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable)],
                 refused.Reasons);
         }
+    }
+
+    [Fact]
+    public void SAT_D200_a_TL_amount_against_a_foreign_limit_is_divided_by_the_limit_currency_check_day_rate()
+    {
+        // Sinan's example (EK31): 43.000 TL ÷ 43 = 1.000 EUR — exactly the EUR limit, so within; one cent more TL is over.
+        var rates = Rates((Eur, 43m));
+        var within = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, Taxed(43000m), Taxed(), Taxed(), Taxed(),
+            Limit(1000m, Eur), rates);
+        Assert.Empty(within.Reasons);
+        Assert.Equal((Eur, 1000m), (within.InLimitCurrency!.Currency.CurrencyId, within.InLimitCurrency.GrossRiskWithThisOrder!.Value.Amount));
+        Assert.Equal(SalesRiskOutcome.Within, within.Outcome);
+        // The TL total is the amount as it is (information, SAT-D53).
+        Assert.Equal(43000m, within.InLocalCurrency!.GrossRisk!.Value.Amount);
+
+        var over = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, Taxed(43000.43m), Taxed(), Taxed(), Taxed(),
+            Limit(1000m, Eur), rates);
+        Assert.Equal((1000.01m, SalesRiskOutcome.Over), (over.InLimitCurrency!.GrossRiskWithThisOrder!.Value.Amount, over.Outcome));
+
+        // No EUR rate on the check day: the limit-currency total is not made — "hesaplanamadı", never decided on the rest.
+        var missing = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, Taxed(43000m), Taxed(), Taxed(), Taxed(),
+            Limit(1000m, Eur), Rates());
+        Assert.Equal(SalesRiskOutcome.Unavailable, missing.Outcome);
+        Assert.Contains(new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable),
+            missing.Reasons);
+    }
+
+    [Fact]
+    public void SAT_D203_another_foreign_currency_goes_through_TL_with_both_check_day_rates()
+    {
+        // 100 USD × 41.6 = 4160 TL; 4160 ÷ 48.3 = 86.1283643… EUR → 86.13 (NEEDS-SINAN interim rounding: once, at the end).
+        var rates = Rates((Usd, 41.6m), (Eur, 48.3m));
+        var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, In(Usd, 100m), In(Eur), In(Eur), In(Eur),
+            Limit(1000m, Eur), rates);
+        Assert.Empty(evaluation.Reasons);
+        Assert.Equal(86.13m, evaluation.InLimitCurrency!.GrossRisk!.Value.Amount);
+        Assert.Equal(4160m, evaluation.InLocalCurrency!.GrossRisk!.Value.Amount);
+
+        // Either rate missing: the limit-currency total is not made.
+        foreach (var partial in new[] { Rates((Usd, 41.6m)), Rates((Eur, 48.3m)) })
+        {
+            var refused = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, In(Usd, 100m), In(Eur), In(Eur), In(Eur),
+                Limit(1000m, Eur), partial);
+            Assert.Equal(SalesRiskOutcome.Unavailable, refused.Outcome);
+            Assert.Null(refused.InLimitCurrency!.GrossRisk);
+        }
+    }
+
+    [Fact]
+    public void The_conversion_rounds_once_at_the_end_to_the_target_scale()
+    {
+        // 1 TL ÷ 3 EUR-rate = 0.333… → 0.33 (no intermediate rounding; the single NEEDS-SINAN rounding hook).
+        Assert.Equal(0.33m, SalesRiskCurrencyConversion.Convert(1m, Try, Eur, 2, Rates((Eur, 3m)))!.Value.Amount);
+        Assert.Equal(2m, SalesRiskCurrencyConversion.Convert(2m, Try, Try, 2, Rates())!.Value.Amount);
+        Assert.Null(SalesRiskCurrencyConversion.Convert(1m, Usd, Eur, 2, Rates((Usd, 41m))));
     }
 
     public static TheoryData<string, SalesRiskOutcome> UsdDecisions => new()

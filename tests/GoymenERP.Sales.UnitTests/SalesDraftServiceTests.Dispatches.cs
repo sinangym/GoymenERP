@@ -228,12 +228,12 @@ public sealed partial class SalesDraftServiceTests
         Assert.All(main.Shares, share => Assert.Equal(SalesInvoicedStateView.NoSource, share.Invoicing));
 
         // The foreign-currency order: one group per shipment day (the late-evening shipment is 21 October in Istanbul and meets the
-        // next-day one), each with its rate value unresolved by the SAT-D54/D55 resolver's own code.
+        // next-day one), each with its rate value unresolved: no Settings rate-day port is composed here.
         var day20 = answer.Groups[1];
         var day21 = answer.Groups[2];
         Assert.Equal((DispatchOtherCurrency, SalesInvoiceRateStateView.Unresolved, new DateOnly(2026, 10, 20)),
             (day20.Key.CurrencyId, day20.Key.ExchangeRate.State, day20.Key.ExchangeRate.ShipmentDate));
-        Assert.Equal(PreviousBusinessDayExchangeRateCodes.DayUnconfirmed, day20.Key.ExchangeRate.ReasonCode);
+        Assert.Equal(ExchangeRateProblemCodesV1.ProviderUnavailable, day20.Key.ExchangeRate.ReasonCode);
         Assert.Equal((new DateOnly(2026, 10, 21), 2), (day21.Key.ExchangeRate.ShipmentDate, day21.Shares.Count));
         Assert.Equal([new DateOnly(2026, 10, 21), new DateOnly(2026, 10, 21)], day21.Shares.Select(share => share.ShipmentDate));
         Assert.All([day20, day21], group =>
@@ -253,6 +253,77 @@ public sealed partial class SalesDraftServiceTests
                 || property.Name.Contains("Tax", StringComparison.Ordinal));
         // SAT-D102: the e-document status is the customer's (Cari card), never a key part of its own.
         Assert.Equal(["ExchangeRate", "InvoiceType"], Enum.GetNames<SalesInvoiceGroupKeyPart>());
+    }
+
+    [Fact]
+    public async Task SAT_D90_D101_the_invoice_rate_comes_from_the_settings_rate_day_port_and_groups_by_rate_day_and_value()
+    {
+        var dispatch = new DispatchWorld();
+        var foreign = dispatch.AddOrder("SO-2026-000003", Party, Account, DispatchOtherCurrency, (KgUnit, true));
+        var note = Guid.NewGuid();
+        var nextDay = Shipped.AddDays(1);
+        var twoDaysLater = Shipped.AddDays(2);
+        dispatch.Shipments.Answer = _ => new(SalesDispatchReadOutcomeV1.Found, Company,
+            [
+                dispatch.Share(note, 1, foreign, 0, 2m),
+                dispatch.Share(note, 2, foreign, 0, 1m, nextDay),
+                dispatch.Share(note, 3, foreign, 0, 3m, twoDaysLater),
+            ],
+            HasMore: false, SalesInvoicedStateSourceV1.NoSource);
+        // SYNTHETIC rate days: shipments on 20 and 21 October both use the 19 October bulletin (same value: one group); 22
+        // October is "kur belirlenemedi" (an undetermined half day) and keeps its shipment day.
+        var rates = new FakeInvoiceRates(day => day.Day == 22
+            ? (null, null, RateDayExchangeRateCodes.HalfDayUndetermined)
+            : (new DateOnly(2026, 10, 19), "41.6", null));
+        dispatch.ExchangeRates = rates;
+        dispatch.Authority.Measured.Clear();
+
+        var answer = await dispatch.Service().GetInvoiceCandidatesAsync(new SalesInvoiceCandidateQuery(null));
+
+        Assert.Equal(2, answer.Groups.Count);
+        var resolved = answer.Groups.Single(group => group.Key.ExchangeRate.State == SalesInvoiceRateStateView.Resolved);
+        Assert.Equal((new DateOnly(2026, 10, 19), "41.6", (DateOnly?)null, 2),
+            (resolved.Key.ExchangeRate.BulletinDate, resolved.Key.ExchangeRate.Rate, resolved.Key.ExchangeRate.ShipmentDate,
+                resolved.Shares.Count));
+        Assert.DoesNotContain(SalesInvoiceGroupKeyPart.ExchangeRate, resolved.UnresolvedKeyParts);
+        var undetermined = answer.Groups.Single(group => group.Key.ExchangeRate.State == SalesInvoiceRateStateView.Unresolved);
+        Assert.Equal((new DateOnly(2026, 10, 22), RateDayExchangeRateCodes.HalfDayUndetermined),
+            (undetermined.Key.ExchangeRate.ShipmentDate, undetermined.Key.ExchangeRate.ReasonCode));
+        // Each (currency, shipment day) is asked once, for the TRY pair; the read is measured again after the port.
+        Assert.Equal([new DateOnly(2026, 10, 20), new DateOnly(2026, 10, 21), new DateOnly(2026, 10, 22)],
+            rates.Asked.Select(asked => asked.Day).Order());
+        Assert.All(rates.Asked, asked => Assert.Equal((DispatchOtherCurrency, SettingsCurrencyIdentitiesV1.TurkishLira),
+            (asked.Source, asked.Target)));
+        Assert.Equal([InvoiceRead, InvoiceRead, InvoiceRead, InvoiceRead, InvoiceRead, InvoiceRead], dispatch.Authority.Measured);
+
+        // A failing port: unresolved, never a guessed rate.
+        rates.Fail = true;
+        var failing = await dispatch.Service().GetInvoiceCandidatesAsync(new SalesInvoiceCandidateQuery(null));
+        Assert.All(failing.Groups, group => Assert.Equal((SalesInvoiceRateStateView.Unresolved, ExchangeRateProblemCodesV1.ProviderUnavailable),
+            (group.Key.ExchangeRate.State, group.Key.ExchangeRate.ReasonCode)));
+    }
+
+    private sealed class FakeInvoiceRates(Func<DateOnly, (DateOnly? Bulletin, string? Rate, string? Code)> answer)
+        : ISettingsExchangeRateResolverV1
+    {
+        public bool Fail { get; set; }
+        public List<(DateOnly Day, Guid Source, Guid Target)> Asked { get; } = [];
+
+        public Task<ExchangeRateResolutionV1> ResolveAsync(DateOnly rateDay, Guid sourceCurrencyId, Guid targetCurrencyId,
+            CancellationToken cancellationToken = default)
+        {
+            Asked.Add((rateDay, sourceCurrencyId, targetCurrencyId));
+            if (Fail)
+            {
+                throw new SettingsPrerequisiteException(ExchangeRateProblemCodesV1.ProviderUnavailable);
+            }
+
+            var (bulletin, rate, code) = answer(rateDay);
+            return Task.FromResult(new ExchangeRateResolutionV1(rateDay, sourceCurrencyId, targetCurrencyId, null,
+                code is null ? ExchangeRateResolutionStatesV1.Resolved : ExchangeRateResolutionStatesV1.Unavailable,
+                ExchangeRateSourcesV1.Tcmb, false, null, bulletin, rate, code is null ? ExchangeRateProvenancesV1.Official : null,
+                code is null ? Guid.NewGuid() : null, code is null ? "1" : null, code, code is null ? null : rateDay));
+        }
     }
 
     [Fact]
@@ -344,13 +415,14 @@ public sealed partial class SalesDraftServiceTests
         public bool NoNotes { get; set; }
         public bool NoShipments { get; set; }
         public bool NoDisplays { get; set; }
+        public ISettingsExchangeRateResolverV1? ExchangeRates { get; set; }
 
         public SalesDispatchReadService Service()
         {
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDispatchReadService(company, User, Authority, new SalesDispatchReadBindings(DispatchRead, InvoiceRead), Orders,
-                NoDisplays ? null : Displays, NoNotes ? null : Notes, NoShipments ? null : Shipments);
+                NoDisplays ? null : Displays, NoNotes ? null : Notes, NoShipments ? null : Shipments, ExchangeRates);
         }
 
         public SalesOrderDispatchReference AddOrder(string documentNo, Guid party, Guid account, Guid currency,

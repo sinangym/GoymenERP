@@ -35,7 +35,8 @@ public sealed class SalesDispatchReadService(
     ISalesOrderDispatchReferenceReader orders,
     ISalesPartyDisplaySourceV1? partyDisplays = null,
     ISalesDispatchNoteReadPortV1? dispatchNotes = null,
-    ISalesInvoiceableShipmentReadPortV1? invoiceableShipments = null) : ISalesDispatchReadService
+    ISalesInvoiceableShipmentReadPortV1? invoiceableShipments = null,
+    ISettingsExchangeRateResolverV1? exchangeRates = null) : ISalesDispatchReadService
 {
     private const int MaximumCursorLength = 8192;
 
@@ -205,6 +206,9 @@ public sealed class SalesDispatchReadService(
         // date, invoice type) — the largest compatible group per customer (SAT-D87). The customer covers the e-Fatura / e-Arşiv
         // status (SAT-D102). A part without a source never merges what it might separate: an unresolved rate value keeps the
         // shipment days apart, a missing due date makes the group "vade eksik" (not invoiceable), the invoice type stays unresolved.
+        var rates = await InvoiceRatesAsync(scope, permission, answer.Shares
+            .Select(share => (references.TryGetValue(share.SalesOrderId, out var reference) ? reference.CurrencyId : Guid.Empty,
+                BusinessDateOf(share.ShippedAtUtc))), cancellationToken);
         var groups = new List<(SalesInvoiceGroupKeyView Key, List<(SalesInvoiceableShipmentV1 Share, SalesInvoiceCandidateShareView View, bool Kilogram)> Shares)>();
         var index = new Dictionary<SalesInvoiceGroupKeyView, int>();
         foreach (var share in answer.Shares)
@@ -215,7 +219,7 @@ public sealed class SalesDispatchReadService(
             // No due-date source: the order holds no vade model yet (API-04), so DueDate is null and the group is "vade eksik".
             // No invoice-type source until the line tax decision (SAT-D93) exists.
             var key = new SalesInvoiceGroupKeyView(scope.CompanyId, order.PartyId, order.CompanyAccountId, order.CurrencyId,
-                InvoiceRate(order.CurrencyId, shipmentDate), DueDate: null, InvoiceType: null);
+                InvoiceRate(rates, order.CurrencyId, shipmentDate), DueDate: null, InvoiceType: null);
             var view = new SalesInvoiceCandidateShareView(share.DispatchNoteId, share.SystemNumber, share.EDispatchNumber,
                 share.ApprovedAtUtc, share.NoteLineNo, share.ShipmentId, share.ShippedAtUtc, shipmentDate, order.OrderId, order.DocumentNo,
                 orderLine.LineId, orderLine.LineNo, orderLine.ProductId, orderLine.ProductCode, orderLine.ProductName, orderLine.OrderUnitId,
@@ -281,28 +285,64 @@ public sealed class SalesDispatchReadService(
     }
 
     /// <summary>
-    /// SAT-D90 / SAT-D101 (b): the invoice rate of a share — none for a Turkish-lira order; otherwise the DEC-FIN-010 (TCMB) rate of
-    /// the business day before the shipment day, resolved by the SAT-D54/D55 resolver against the TRY pair. No rate-record owner
-    /// exists on main, so the resolver walks no record and answers unavailable (its own stable code): the value is unresolved and
-    /// the group keeps the shipment day (never merging two shipment days whose rate days are unknown). When a record owner exists,
-    /// its records replace the empty set and a resolved rate groups by its bulletin day and value.
+    /// SAT-D90 / SAT-D101 (b) / SAT-D170: the invoice rate of every (currency, shipment day) the shares need, from the Settings
+    /// rate-day port (the one calculator: the business day before the shipment day, the arife rule, fail-closed). Asked once per
+    /// distinct pair, then the read's authority is measured again. Without a port every foreign pair is unresolved with
+    /// <c>settings_provider_unavailable</c>; a failing port the same; "kur bulunamadı/belirlenemedi" keeps the port's own code.
     /// </summary>
-    private static SalesInvoiceGroupRateView InvoiceRate(Guid currencyId, DateOnly shipmentDate)
+    private async Task<IReadOnlyDictionary<(Guid Currency, DateOnly Day), SalesInvoiceGroupRateView>> InvoiceRatesAsync(ReadScope scope,
+        string? permission, IEnumerable<(Guid Currency, DateOnly Day)> pairs, CancellationToken cancellationToken)
     {
-        if (currencyId == SettingsCurrencyIdentitiesV1.TurkishLira)
+        var result = new Dictionary<(Guid Currency, DateOnly Day), SalesInvoiceGroupRateView>();
+        var needed = pairs.Where(pair => pair.Currency != Guid.Empty && pair.Currency != SettingsCurrencyIdentitiesV1.TurkishLira)
+            .Distinct().ToArray();
+        if (needed.Length == 0 || exchangeRates is null)
         {
-            return new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.NotApplicable, null, null, null, null);
+            return result;
         }
 
-        var result = PreviousBusinessDayExchangeRate.Resolve(
-            new PreviousBusinessDayExchangeRateRequest(shipmentDate, ExchangeRateBulletinSource.Tcmb, currencyId,
-                SettingsCurrencyIdentitiesV1.TurkishLira),
-            []);
-        return result is { IsResolved: true, BulletinDate: { } bulletinDate, Rate: { } rate }
-            ? new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Resolved, null, bulletinDate,
-                rate.Rate.ToString(CultureInfo.InvariantCulture), null)
-            : new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Unresolved, shipmentDate, null, null, result.Code);
+        foreach (var (currency, day) in needed)
+        {
+            SalesInvoiceGroupRateView view;
+            try
+            {
+                var resolution = await exchangeRates.ResolveAsync(day, currency, SettingsCurrencyIdentitiesV1.TurkishLira, cancellationToken);
+                view = resolution is { State: ExchangeRateResolutionStatesV1.Resolved, BulletinDate: { } bulletinDate, SellingRate: { } rate }
+                       && resolution.SourceCurrencyId == currency && resolution.RateDay == day
+                    ? new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Resolved, null, bulletinDate, rate, null)
+                    : new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Unresolved, day, null, null,
+                        resolution.Code ?? ExchangeRateProblemCodesV1.ProviderUnavailable);
+            }
+            catch (SettingsPrerequisiteException exception) when (exception.Code == ExchangeRateProblemCodesV1.AccessDenied)
+            {
+                throw new SalesDraftServiceException(403, "forbidden");
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+            {
+                view = new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Unresolved, day, null, null,
+                    ExchangeRateProblemCodesV1.ProviderUnavailable);
+            }
+
+            result[(currency, day)] = view;
+        }
+
+        await RequireStillAsync(scope, permission, cancellationToken);
+        return result;
     }
+
+    /// <summary>
+    /// The share's invoice rate: none for a Turkish-lira order; otherwise the port's answer for (currency, shipment day), resolved
+    /// groups by its bulletin day and value, unresolved keeps the shipment day (never merging two shipment days whose rate days
+    /// are unknown).
+    /// </summary>
+    private static SalesInvoiceGroupRateView InvoiceRate(
+        IReadOnlyDictionary<(Guid Currency, DateOnly Day), SalesInvoiceGroupRateView> rates, Guid currencyId, DateOnly shipmentDate) =>
+        currencyId == SettingsCurrencyIdentitiesV1.TurkishLira
+            ? new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.NotApplicable, null, null, null, null)
+            : rates.TryGetValue((currencyId, shipmentDate), out var rate)
+                ? rate
+                : new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Unresolved, shipmentDate, null, null,
+                    ExchangeRateProblemCodesV1.ProviderUnavailable);
 
     /// <summary>SAT-D10: the Europe/Istanbul calendar day of an instant; without the zone nothing is guessed (503, never UTC).</summary>
     private static DateOnly BusinessDateOf(DateTimeOffset instant)

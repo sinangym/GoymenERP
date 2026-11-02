@@ -23,6 +23,12 @@ public static class SettingsExchangeRatePermissionManifestV1
     /// the outbound connection in any environment is a human gate (KUR_GUNU, EK24).
     /// </summary>
     public const string Import = "settings.exchange-rates.import";
+
+    /// <summary>
+    /// EK31 SAT-D198: marking a day full or half day with a reason when the automatic official source could not determine it.
+    /// Intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin; the grant is a human gate.
+    /// </summary>
+    public const string MarkHalfDay = "settings.exchange-rates.half-day.mark";
 }
 
 public static class ExchangeRateProblemCodesV1
@@ -36,6 +42,12 @@ public static class ExchangeRateProblemCodesV1
 
     /// <summary>SAT-D55 / KUR_GUNU: a manual rate is only a value change on a day TCMB officially published.</summary>
     public const string DayNotPublished = "exchange_rate_day_not_published";
+
+    /// <summary>SAT-D198: the automatic source already gave the day a definite half-day answer; a manual mark never overrides it.</summary>
+    public const string HalfDayDetermined = "exchange_rate_half_day_determined";
+
+    /// <summary>Re-verification reopens only a day whose official bulletin answer is final (Published / NoBulletin).</summary>
+    public const string DayNotFinal = "exchange_rate_day_not_final";
 
     /// <summary>A rate with more decimals or digits than the record stores (a storage limit, never rounded).</summary>
     public const string ValueDoesNotFit = "exchange_rate_value_does_not_fit";
@@ -61,13 +73,25 @@ public static class ExchangeRateBulletinStatesV1
     /// <summary>TCMB's own source definitely says there is no bulletin (e.g. the dated file does not exist).</summary>
     public const string NoBulletin = "NoBulletin";
 
-    /// <summary>An attempt without a definite answer (network error, timeout, unexpected answer).</summary>
+    /// <summary>An attempt without a definite answer (network error, timeout, unexpected answer), or a day an authorized
+    /// person asked to re-verify.</summary>
     public const string Unverified = "Unverified";
+
+    /// <summary>
+    /// TCMB answered "the dated file does not exist" (404) once. Not final: a 404 becomes <see cref="NoBulletin"/> only when it
+    /// is seen again in a LATER run while a later bulletin exists (one transient 404 never turns a business day into a
+    /// holiday). The resolver treats it like <see cref="Unverified"/> (fail-closed).
+    /// </summary>
+    public const string NotFound = "NotFound";
 
     /// <summary>Nothing recorded for the day.</summary>
     public const string NotRecorded = "NotRecorded";
 
+    /// <summary>The answers a bulletin source may give (a 404 is <see cref="NoBulletin"/> at the source; the record decides).</summary>
     public static bool IsRecordable(string? state) => state is Published or NoBulletin or Unverified;
+
+    /// <summary>A final official answer: never asked again by an import, reopened only by an audited re-verification.</summary>
+    public static bool IsFinal(string? state) => state is Published or NoBulletin;
 }
 
 /// <summary>What the record knows about whether a day is an arife or half day (SAT-D170/D171).</summary>
@@ -80,6 +104,9 @@ public static class ExchangeRateHalfDayStatesV1
     public const string Undetermined = "Undetermined";
 
     public static bool IsKnown(string? state) => state is FullDay or HalfDay or Undetermined;
+
+    /// <summary>A definite answer (official or, SAT-D198, a manual mark).</summary>
+    public static bool IsDefinite(string? state) => state is FullDay or HalfDay;
 }
 
 public static class ExchangeRateProvenancesV1
@@ -181,6 +208,7 @@ public sealed record ExchangeRateDayViewV1(
     string Version,
     string BulletinState,
     string HalfDayState,
+    string? HalfDayProvenance,
     IReadOnlyList<ExchangeRateValueViewV1> Rates,
     IReadOnlyList<ExchangeRateRecordViewV1> Records);
 
@@ -198,13 +226,18 @@ public sealed record ExchangeRateLineV1(string CurrencyCode, string SellingRate)
 /// <summary>SAT-D169: a reasoned manual rate for one currency on a day TCMB published (later documents only, SAT-D172).</summary>
 public sealed record CorrectExchangeRateRequestV1(string? ExpectedVersion, string? CurrencyCode, string? SellingRate, string? Reason);
 
+/// <summary>SAT-D198: a reasoned manual half-day mark (<c>FullDay</c> / <c>HalfDay</c>) for a day the automatic source left undetermined.</summary>
+public sealed record MarkExchangeRateHalfDayRequestV1(string? ExpectedVersion, string? State, string? Reason);
+
+/// <summary>Reopen a day's final official bulletin answer so the next import asks TCMB again (fail-closed until then).</summary>
+public sealed record ReverifyExchangeRateDayRequestV1(string? ExpectedVersion, string? Reason);
+
 /// <summary>Import the official answers for an inclusive day range.</summary>
 public sealed record ImportExchangeRatesRequestV1(DateOnly? From, DateOnly? To);
 
 /// <summary>
-/// What one import run did per day: <c>Recorded</c> (a new official answer appended), <c>Unchanged</c> (the same definite
-/// answer already recorded, or a still unverified one), <c>Conflict</c> (a different definite answer is already recorded;
-/// nothing is overwritten) or <c>SourceDisabled</c>.
+/// What one import run did per day: <c>Recorded</c> (a new official answer appended), <c>Unchanged</c> (a final answer already
+/// recorded and not asked again, or nothing new) or <c>SourceDisabled</c>.
 /// </summary>
 public sealed record ExchangeRateImportDayV1(DateOnly Date, string BulletinOutcome, string HalfDayOutcome);
 
@@ -212,7 +245,6 @@ public static class ExchangeRateImportOutcomesV1
 {
     public const string Recorded = "Recorded";
     public const string Unchanged = "Unchanged";
-    public const string Conflict = "Conflict";
     public const string SourceDisabled = "SourceDisabled";
 }
 
@@ -264,6 +296,12 @@ public interface ISettingsExchangeRateAdministrationV1
 
     Task<ExchangeRateCommandResultV1> ImportAsync(ImportExchangeRatesRequestV1 request, SettingsCommandMetadataV1 metadata,
         CancellationToken cancellationToken = default);
+
+    Task<ExchangeRateCommandResultV1> MarkHalfDayAsync(DateOnly date, MarkExchangeRateHalfDayRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<ExchangeRateCommandResultV1> ReverifyAsync(DateOnly date, ReverifyExchangeRateDayRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
