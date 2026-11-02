@@ -105,6 +105,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './OrderDetailPage.module.css'
+import { Button } from '../ui/Button'
 
 /** Registered with the shell so a company switch with an unsent fact warns first. */
 const DIRTY_SCOPE = 'manufacturing.order.fact'
@@ -411,15 +412,15 @@ function CloseSection({
       ) : attempt.phase === 'confirming' ? (
         <div className={styles.actions}>
           <p role="alert">{CLOSE_TEXT.confirmQuestion}</p>
-          <button
+          <Button
             type="button"
             onClick={() => void send({ idempotencyKey: newId(), expectedVersion: order.version })}
           >
             {CLOSE_TEXT.confirm}
-          </button>
-          <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>
+          </Button>
+          <Button type="button" onClick={() => setAttempt({ phase: 'idle' })}>
             {CLOSE_TEXT.cancel}
-          </button>
+          </Button>
         </div>
       ) : attempt.phase === 'approval-required' ? (
         <div className={styles.section} data-testid="close-exception-approval">
@@ -442,26 +443,26 @@ function CloseSection({
           </div>
           {exceptionError === null ? null : <p role="alert">{exceptionError}</p>}
           <div className={styles.actions}>
-            <button type="button" onClick={approveException}>{CLOSE_TEXT.exceptionConfirm}</button>
-            <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>{CLOSE_TEXT.cancel}</button>
+            <Button type="button" onClick={approveException}>{CLOSE_TEXT.exceptionConfirm}</Button>
+            <Button type="button" onClick={() => setAttempt({ phase: 'idle' })}>{CLOSE_TEXT.cancel}</Button>
           </div>
         </div>
       ) : attempt.phase === 'unknown' ? (
         <div className={styles.actions}>
-          <button type="button" onClick={() => void send(attempt.snapshot)}>
+          <Button type="button" onClick={() => void send(attempt.snapshot)}>
             {CLOSE_TEXT.resend}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className={styles.actions}>
-          <button
+          <Button
             type="button"
             onClick={() => setAttempt({ phase: 'confirming' })}
             disabled={attempt.phase === 'sending'}
             aria-busy={attempt.phase === 'sending'}
           >
             {attempt.phase === 'sending' ? CLOSE_TEXT.sending : CLOSE_TEXT.action}
-          </button>
+          </Button>
         </div>
       )}
       {attempt.phase === 'applied' ? (
@@ -1268,17 +1269,17 @@ function FactSection({
         ) : null}
         <div className={styles.actions}>
           {attempt.phase === 'unknown' ? (
-            <button type="button" onClick={resend}>
+            <Button type="button" onClick={resend}>
               Aynı olguyu yeniden gönder
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button variant="primary"
               type="submit"
               disabled={frozen || (needsInventoryState && labelState?.kind !== 'ready') ||
                 (outputSelected && outputOwnership === null)}
             >
               {busy ? 'Gönderiliyor…' : 'Kaydet'}
-            </button>
+            </Button>
           )}
         </div>
       </form>

@@ -134,18 +134,8 @@
 
 .secondaryButton {
   align-self: flex-start;
-  padding: 0.45rem 1rem;
-  border: 1px solid var(--color-border, #9aa5b1);
-  border-radius: 0.25rem;
-  background: var(--color-surface, #fff);
-  color: inherit;
-  cursor: pointer;
 }
 
-.secondaryButton:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
 
 .inlineError {
   display: flex;

@@ -30,6 +30,7 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './PlanPage.module.css'
+import { Button } from '../ui/Button'
 
 type Attempt =
   | { readonly phase: 'idle' }
@@ -445,18 +446,18 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           <>
             <p role="alert" className={styles.error}>{attempt.message}</p>
             <div className={styles.actions}>
-              <button type="button" onClick={() => void send(attempt.pending)}>
+              <Button type="button" onClick={() => void send(attempt.pending)}>
                 Aynı istek ve anahtarla yeniden gönder
-              </button>
+              </Button>
             </div>
           </>
         ) : attempt.phase === 'refresh-needed' ? (
           <>
             <p role="alert" className={styles.error}>{attempt.message}</p>
             <div className={styles.actions}>
-              <button type="button" onClick={() => void refreshPlan(attempt.refresh)}>
+              <Button type="button" onClick={() => void refreshPlan(attempt.refresh)}>
                 Güncel planı yeniden oku
-              </button>
+              </Button>
             </div>
           </>
         ) : (
@@ -470,9 +471,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {editable && !editing ? (
               editReady ? (
                 <div className={styles.actions}>
-                  <button type="button" disabled={busy} onClick={() => setEditing(true)}>
+                  <Button type="button" disabled={busy} onClick={() => setEditing(true)}>
                     {PLAN_EDIT_TEXT.editButton}
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <p className={styles.note}>
@@ -484,26 +485,26 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {plan.status === 'Draft' && canEdit && plan.slittingSpec !== null ? <p className={styles.note}>{PLAN_EDIT_TEXT.specNote}</p> : null}
             {plan.status === 'Draft' && canApprove && !editing ? (
               <div className={styles.actions}>
-                <button
+                <Button
                   type="button"
                   disabled={busy}
                   aria-busy={busy}
                   onClick={() => start({ kind: 'approve', idempotencyKey: newId(), expectedVersion: plan.version })}
                 >
                   {busy ? 'Plan onaylanıyor…' : 'Planı onayla'}
-                </button>
+                </Button>
               </div>
             ) : null}
             {plan.status === 'Approved' && canCreateOrder ? (
               <div className={styles.actions}>
-                <button
+                <Button
                   type="button"
                   disabled={busy}
                   aria-busy={busy}
                   onClick={() => start({ kind: 'create-order', idempotencyKey: newId(), orderId: newId() })}
                 >
                   {busy ? 'Üretim emri oluşturuluyor…' : 'Üretim emri oluştur'}
-                </button>
+                </Button>
               </div>
             ) : null}
             {plan.status === 'Approved' && !canCreateOrder ? (
