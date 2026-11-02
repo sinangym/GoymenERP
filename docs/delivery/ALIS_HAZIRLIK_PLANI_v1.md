@@ -490,6 +490,7 @@ Bu bölüm iş takibidir; karar değildir.
 | §13 yeniden analiz (v1.1) + EK1 ALS-D14…D20 | #887 | merge edildi (`4475e89b`) |
 | Hubvogal incelemesi (§13.6/§13.7) + EK2 ALS-D21…D28 | #889 | merge edildi (`f7ec453e`) |
 | Kalan sorular (§13.8) + EK3 ALS-D29…D43 | #891 | taslak PR |
+| A0 belgeleri: FZL-01 (Purchasing README kodla eşit), `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Satın Alma satırları | – | taslak PR |
 
 Sıradaki: A0 (belge ve temizlik), ardından A1 (PRS-01, talep onay/ret, kaynak alanı, No.161 iptali). Açık sorular §8
 sonundaki tabloda.

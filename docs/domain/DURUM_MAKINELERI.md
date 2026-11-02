@@ -12,6 +12,36 @@ Durum geçişleri backend’de tanımlanır; UI renkleri kural değildir.
 - Finansal kapanış: Açık / Kısmi / Kapalı
 - Müşteri onayı: Bekleniyor / Alındı / Vazgeçildi
 
+## Satın Alma
+
+Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_ALIS*.md`,
+`SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md`, plan `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md`.
+**Mevcut** satırlar kodda çalışır; **Hedef** satırlar karara bağlanmış ama uygulanmamıştır.
+
+**Mevcut (2026-11-02):**
+
+- Talep: Taslak → Gönderildi (`PurchaseRequestStatus` Draft / Submitted). Talep taahhüt değildir.
+- Sipariş: Taslak → Onaylı (`PurchaseOrderStatus` Draft / Approved). Satır yalnız taslağa eklenir; onay tek adımlı
+  geçiştir (onay politikası yok). Talebe bağlı sipariş yalnız Gönderildi talepten açılır; Σ-pay onay anında ölçülür.
+- Kabul payı: yalnız Onaylı siparişin satırına; kalan = taahhüt − kabul; kalanı aşan kabul reddedilir (tolerans yok).
+  Yeni kabul stoğa `Free` blokla girer. Genel/teknik kırılım Taslak ve Onaylı'da açıktır (yalnız domain).
+
+**Hedef (karar var, kod yok):**
+
+- Talep: Gönderildi → Onaylı / Reddedildi; hazırlayan ≠ onaylayan; sipariş yalnız onaylı talepten (ALS-D2). Ret
+  yalnız Gönderildi veya Onaylı talepte ve bağlı Onaylı sipariş kalmamışsa; gerekçe + audit (No.161).
+- Sipariş kalanı iptali: Onaylı siparişte, kısmi kabul olsa bile yalnız kabul edilmemiş kalanın **tamamı** iptal
+  edilir; fiziksel stok veya para olayı yok; `Alış Kalan = Onaylı − İptal − KabulNet − KesinRed/İade` (No.161, INV-006).
+- Satır kapanışı / yeniden açma: tolerans içi eksikte sistem kapatmayı önerir ve sorar (ALS-D10); tolerans dışı eksiği
+  satın alma sorumlusu gerekçeyle kapatır (ALS-D12); kapanan satır gerekçeyle yeniden açılır. Stok/para olayı yok.
+- Revizyon: onaylı siparişte değişiklik Rev+1 + yeniden onay; eski revizyon geçmişte; kabul edilmiş miktarın altına
+  inilmez (ALS-D9). Sipariş onayında hazırlayan ≠ onaylayan, tutar eşiği Ayarlar'da başlangıçta kapalı (ALS-D3).
+- Tedarikçi teyidi (ayrı eksen): Teyit bekliyor / Teyit edildi; isteğe bağlı, teyitsiz sipariş yine işler (ALS-D13).
+  Ayrı "Rezerve" durumu açılmaz (ALS-D17).
+- Tedarik ilerlemesi (satır): termin dilimi → tedarikçide hazır → yolda (sevk bildirimi) → kabul. Tedarikçide hazır
+  ve yolda miktar gelecek arzdır, fiziksel stok değildir; kabul tamamlanana kadar gerekçe + audit ile düzeltilir
+  (ALS-D22, ALS-D25, ALS-D33).
+
 ## Diğer yaşam döngüleri
 
 - Tahsis: Öneri → Taslak → Aktif → Kısmi Kullanıldı → Kullanıldı/Serbest/İptal
