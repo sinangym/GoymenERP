@@ -164,10 +164,11 @@ public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? Un
 
 /// <summary>
 /// SAT-D178 (EK25): the Product price list chain held NEITHER a price NOR a floor for this subcontract service line when its manual
-/// price was written, so that price needs no discount-limit approval; who wrote it and when (the audit detail).
+/// price was written, so that price needs no discount-limit approval; who wrote it and when (the audit detail), and the line
+/// quantity the list was measured at (the lists are quantity-banded; a quantity revision drops the absence).
 /// </summary>
 public sealed record SalesDraftPriceListAbsenceV1(string CurrencyCode, DateOnly EffectiveOn, string UnitPrice, string WrittenBy,
-    DateTimeOffset WrittenAtUtc);
+    DateTimeOffset WrittenAtUtc, string Quantity);
 
 public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
     string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);

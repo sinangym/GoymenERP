@@ -95,6 +95,33 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task K3_review_B_P2_1_a_quantity_revision_into_a_listed_band_puts_the_free_price_back_on_the_approval_path()
+    {
+        // The probe: 5 kg free at 10 (no list price for 5 kg) → the list prices 20+ kg (40, floor 35) → quantity 5 → 20 → submit.
+        var references = new FakePriceReferences { Missing = true };
+        var world = new World { ItemTypes = new FakeItemTypes(), PriceReferences = references };
+        var created = (await world.Service().CreateDraftAsync(Subcontract("10"), Metadata("k-band"))).Detail;
+        var free = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).ListAbsence!;
+        Assert.Equal(("10", "5"), (free.UnitPrice, free.Quantity));
+
+        Owners(world); // the quantity revision reads the loading owner (nothing loaded)
+        references.Missing = false;
+        references.Price = 40m;
+        references.Floor = 35m;
+        references.LowerQuantity = 20m;
+        references.UpperQuantity = null;
+        var revised = await world.Service().ReviseQuantityAsync(created.Draft.Id, new SalesDraftQuantityRevisionRequest(created.Draft.Version,
+            "SENTETIK 20 kg", [new SalesDraftLineQuantityV1(created.Lines[0].LineId, "20")]), Metadata("k-band-qty"));
+
+        var pricing = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines);
+        Assert.Null(pricing.ListAbsence);
+        Assert.True(pricing.DiscountCheck!.RequiresApproval);
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
+            Command(revised.Detail.Draft.Version), Metadata("k-band-submit")));
+        Assert.Equal(SalesRuleCodes.DiscountExceptionPending, Assert.Single(blocked.Errors).Code);
+    }
+
+    [Fact]
     public async Task A_typed_price_on_a_service_line_still_needs_the_price_write_permission()
     {
         var world = new World { ItemTypes = new FakeItemTypes(), PriceReferences = new FakePriceReferences { Missing = true } };

@@ -807,7 +807,8 @@ export const LINE_PRICING_TEXT = {
   noReference: 'Referans yok (elle fiyat)',
   /** SAT-D178 (EK25): a free subcontract service price — the list held neither a price nor a floor when it was written. */
   freeSubcontractPrice: 'Serbest fason fiyatı (listede fiyat ve taban yok; iskonto onayı gerekmez)',
-  freeSubcontractPriceWriter: (writer: string, at: string) => `Elle yazan: ${writer} · ${at}`,
+  freeSubcontractPriceWriter: (writer: string, at: string, quantity: string) =>
+    `Elle yazan: ${writer} · ${at} · ${quantity} miktar için ölçüldü (miktar değişirse onay yoluna döner)`,
   referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
   floorText: (floor: string) => `alt fiyat ${floor}`,
   vatExclusive: 'KDV hariç net',

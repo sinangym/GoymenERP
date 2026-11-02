@@ -64,19 +64,56 @@ public sealed class SalesSubcontractServiceOrderReadPort(ISalesOrderDraftStore s
         }
     }
 
-    internal static SalesSubcontractServiceOrderV1 Order(SalesOrderDraft draft) =>
-        new(draft.CompanyId, draft.Id, draft.DocumentNo, draft.Revision, draft.Version, draft.ApprovalState.ToString(),
-            draft.ApprovalState == InternalApprovalState.Approved,
-            !draft.CustomerAcceptanceRequired
-                ? SalesSubcontractCustomerAcceptanceStatesV1.NotRequired
-                : draft.IsCustomerAccepted
-                    ? SalesSubcontractCustomerAcceptanceStatesV1.Accepted
-                    : SalesSubcontractCustomerAcceptanceStatesV1.Pending,
-            draft.State.ToString(), draft.State == SalesDraftState.Draft, draft.Header.PartyId, draft.Header.CompanyAccountId,
-            [.. draft.Lines.Select(line => new SalesSubcontractServiceLineV1(line.Id, line.LineNo, line.Product.ProductId,
-                line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.QuantityText, line.Quantity.Value,
-                line.OrderUnit.UnitId, line.OrderUnit.UnitCode,
-                line.ItemType ?? throw new InvalidOperationException("Fason hizmet satırının kalem tipi kayıtlı değil.")))]);
+    /// <summary>
+    /// The order's facts. K3 review B P2-2 (SAT-D115): a customer-rejected current revision is <c>Rejected</c> (never "Pending"),
+    /// and the lines are those of the revision the order continues on — the customer-accepted fallback under the same customer and
+    /// currency (the shipping line port's rule), else the current revision.
+    /// </summary>
+    internal static SalesSubcontractServiceOrderV1 Order(SalesOrderDraft draft)
+    {
+        var acceptance = !draft.CustomerAcceptanceRequired
+            ? SalesSubcontractCustomerAcceptanceStatesV1.NotRequired
+            : draft.IsCustomerAccepted
+                ? SalesSubcontractCustomerAcceptanceStatesV1.Accepted
+                : draft.CurrentRevisionCustomerRejection is not null
+                    ? SalesSubcontractCustomerAcceptanceStatesV1.Rejected
+                    : SalesSubcontractCustomerAcceptanceStatesV1.Pending;
+        var fallback = draft.CustomerAcceptedFallback;
+        var onFallback = fallback is not null && !SalesOrderDraft.HeaderDiffersFrom(draft.Header, fallback);
+        IReadOnlyList<SalesSubcontractServiceLineV1> lines = onFallback
+            ? [.. fallback!.Lines.Select(archived => ArchivedLine(draft, archived))]
+            : [.. draft.Lines.Select(Line)];
+        return new(draft.CompanyId, draft.Id, draft.DocumentNo, draft.Revision, draft.Version, draft.ApprovalState.ToString(),
+            draft.ApprovalState == InternalApprovalState.Approved, acceptance, draft.State.ToString(), draft.State == SalesDraftState.Draft,
+            draft.Header.PartyId, draft.Header.CompanyAccountId, onFallback ? fallback!.Revision : draft.Revision,
+            onFallback ? SalesSubcontractServiceOrderBasesV1.CustomerAcceptedRevision : SalesSubcontractServiceOrderBasesV1.CurrentRevision,
+            lines);
+    }
+
+    private static SalesSubcontractServiceLineV1 Line(SalesOrderDraftLine line) =>
+        new(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion, line.Product.Code, line.Product.Name,
+            line.QuantityText, line.Quantity.Value, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, ItemType(line));
+
+    /// <summary>
+    /// An archived line of the accepted revision: its own identity, product version, unit and approved quantity; the display texts and
+    /// the confirmed item type of the same line (no line is added or re-producted by a revision). Anything that does not fit is
+    /// unreadable (fail-closed), never repaired.
+    /// </summary>
+    private static SalesSubcontractServiceLineV1 ArchivedLine(SalesOrderDraft draft, RevisionLineSnapshot archived)
+    {
+        var line = draft.Lines.SingleOrDefault(candidate => candidate.Id == archived.LineId);
+        if (line is null || line.Product.ProductId != archived.ProductId || line.OrderUnit.UnitId != archived.OrderUnitId
+            || !SalesLinePriceCalculator.TryParseExact(archived.QuantityText, out var quantity) || quantity <= 0m)
+        {
+            throw new InvalidOperationException("Kabul edilen revizyonun satırı siparişin satırıyla uyuşmuyor.");
+        }
+
+        return new(archived.LineId, archived.LineNo, archived.ProductId, archived.ProductVersion, line.Product.Code, line.Product.Name,
+            archived.QuantityText, quantity, archived.OrderUnitId, line.OrderUnit.UnitCode, ItemType(line));
+    }
+
+    private static string ItemType(SalesOrderDraftLine line) =>
+        line.ItemType ?? throw new InvalidOperationException("Fason hizmet satırının kalem tipi kayıtlı değil.");
 
     private static SalesSubcontractServiceOrderAnswerV1 Unreadable(string reason) =>
         new(SalesSubcontractServiceOrderOutcomeV1.Unreadable, null, reason);

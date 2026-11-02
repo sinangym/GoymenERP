@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -27,10 +28,37 @@ public sealed class SalesOrderDraftSubcontractTests
 
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
 
-    private static SalesOrderDraft Draft(bool subcontract = true) => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001",
+    private static SalesOrderDraft Draft(bool subcontract = true, bool acceptance = false) => SalesOrderDraft.Create(Guid.NewGuid(), Company,
+        "SO-2026-000001",
         new SalesDraftHeader(Party, Account, Currency, Day, DueTerms: TestDueTerms.PointDue30, IsSubcontractService: subcontract),
         new MoneyProfileSnapshot(Company, Currency, SalesOrderDraft.MoneyOperation, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3",
-            Day, true, new DateOnly(2026, 9, 1), null, 2), T0);
+            Day, true, new DateOnly(2026, 9, 1), null, 2), T0, customerAcceptanceRequired: acceptance);
+
+    [Fact]
+    public void K3_review_B_P2_2_the_read_port_says_rejected_and_answers_the_customer_accepted_revisions_lines()
+    {
+        var draft = Draft(acceptance: true);
+        var line = draft.AddLine(draft.Version, Line(), T0);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+        var pending = SalesSubcontractServiceOrderReadPort.Order(draft);
+        Assert.Equal((SalesSubcontractCustomerAcceptanceStatesV1.Pending, SalesSubcontractServiceOrderBasesV1.CurrentRevision, 0),
+            (pending.CustomerAcceptanceState, pending.Basis, pending.BasisRevision));
+        draft.RecordCustomerAcceptance(draft.Version, "SENTETIK-sales", T0);
+        Assert.Equal(SalesSubcontractCustomerAcceptanceStatesV1.Accepted, SalesSubcontractServiceOrderReadPort.Order(draft).CustomerAcceptanceState);
+
+        // Rev.1 raises the quantity, is approved internally and REJECTED by the customer (SAT-D115): the order goes on as Rev.0.
+        draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "300", 300m)], "SENTETIK-writer", "SENTETIK 300 kg", T0);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+        draft.RecordCustomerRejection(draft.Version, "SENTETIK-sales", "SENTETIK müşteri reddetti", T0);
+
+        var order = SalesSubcontractServiceOrderReadPort.Order(draft);
+        Assert.Equal((1, true, SalesSubcontractCustomerAcceptanceStatesV1.Rejected, SalesSubcontractServiceOrderBasesV1.CustomerAcceptedRevision, 0),
+            (order.Revision, order.IsApproved, order.CustomerAcceptanceState, order.Basis, order.BasisRevision));
+        var basisLine = Assert.Single(order.Lines);
+        Assert.Equal((line.Id, "250", 250m, "Service"), (basisLine.LineId, basisLine.QuantityText, basisLine.Quantity, basisLine.ItemType));
+    }
 
     private static SalesDraftLineInput Line(string? itemType = SalesOrderDraft.ServiceItemType, CommercialDraftFields? commercial = null,
         Guid? lineId = null)
@@ -41,7 +69,8 @@ public sealed class SalesOrderDraftSubcontractTests
             binding, binding, binding), unit, "250", 250m, Commercial: commercial, ItemType: itemType);
     }
 
-    private static PriceListAbsenceSnapshot Absence(string price = "37.5") => new(KgUnit, "TRY", Day, price, "SENTETIK-writer", T0);
+    private static PriceListAbsenceSnapshot Absence(string price = "37.5", string quantity = "250") =>
+        new(KgUnit, "TRY", Day, price, "SENTETIK-writer", T0, quantity);
 
     private static CommercialDraftFields Free(string price = "37.5") => new(price, KgUnit, null, ListAbsence: Absence(price));
 
@@ -98,6 +127,8 @@ public sealed class SalesOrderDraftSubcontractTests
             CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { ListAbsence = Absence() with { EffectiveOn = Day.AddDays(1) } }), T0)));
         Assert.Equal(SalesRuleCodes.InternalInvariant,
             CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { ListAbsence = Absence() with { WrittenBy = " " } }), T0)));
+        Assert.Equal(SalesRuleCodes.InternalInvariant,
+            CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { ListAbsence = Absence(quantity: "beş") }), T0)));
         var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK liste", 1, Day, null, "TRY", KgUnit, "40", "35", "ExcludingVat", "0", null);
         Assert.Equal(SalesRuleCodes.InternalInvariant,
             CodeOf(() => draft.AddLine(draft.Version, Line(commercial: Free() with { Reference = reference }), T0)));
@@ -117,6 +148,35 @@ public sealed class SalesOrderDraftSubcontractTests
 
         draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, Free("41"))], "SENTETIK-writer", later);
         Assert.Equal(("41", (DiscountLimitCheckSnapshot?)null), (draft.Lines[0].Commercial.ListAbsence!.UnitPrice, draft.Lines[0].Commercial.DiscountCheck));
+    }
+
+    [Fact]
+    public void K3_review_B_P2_1_a_quantity_revision_drops_the_free_price_and_the_line_goes_back_to_the_approval_path()
+    {
+        // The probe: 250 kg free at 37.5 (the list held no price for 250 kg) → approved → the list now prices another band →
+        // a quantity revision to 500 kg → submit: refused until the discount exception is approved (never free at 500 kg).
+        var draft = Draft();
+        var line = draft.AddLine(draft.Version, Line(commercial: Free()), T0);
+        Assert.True(line.Commercial.IsFreeSubcontractPriceAt(250m));
+        Assert.False(line.Commercial.IsFreeSubcontractPriceAt(500m));
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+
+        draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "500", 500m)], "SENTETIK-writer", "SENTETIK 500 kg", T0);
+
+        var commercial = draft.Lines[0].Commercial;
+        Assert.Null(commercial.ListAbsence);
+        Assert.Equal(("37.5", true, (string?)null), (commercial.UnitPrice, commercial.DiscountCheck!.RequiresApproval, commercial.DiscountCheck.ApprovedBy));
+        Assert.Equal(SalesRuleCodes.DiscountExceptionPending, CodeOf(() => draft.Submit(draft.Version, "SENTETIK-writer", T0)));
+
+        // A commercial revision can measure it again, but only at the line's CURRENT quantity.
+        Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => draft.ReviseCommercial(draft.Version,
+            [new LineCommercialInput(line.Id, Free() with { ListAbsence = Absence(quantity: "250") })], "SENTETIK-writer", T0)));
+        draft.ReviseCommercial(draft.Version, [new LineCommercialInput(line.Id, Free() with { ListAbsence = Absence(quantity: "500") })],
+            "SENTETIK-writer", T0);
+        Assert.True(draft.Lines[0].Commercial.IsFreeSubcontractPriceAt(500m));
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        Assert.Equal(InternalApprovalState.PendingApproval, draft.ApprovalState);
     }
 
     [Fact]

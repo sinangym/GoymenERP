@@ -41,6 +41,12 @@ Arayüz adları öneridir; Satış şeridi kendi adlandırmasını seçebilir, �
   okunduğunda kaydedilir ve onaylanır (URT-D22). Çıktı, fire ve hurda müşterinin malı kalır (URT-D16).
   Faturalama Satış'ın mevcut fatura akışıdır; Üretim fatura üretmez.
 
+- **Satış tarafı durumu (PR #898):** `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`) Satış
+  modülünde kayıtlı; Üretim tüketici adaptörünü kendi şeridinde bağlar. Fason siparişin carisi, bağlı üretim planı / müşteri malı
+  tahsisi kancası `ISalesSubcontractOrderBindingReadPortV1` bağlanana kadar **değiştirilemez** (503, fail-closed) — takip: Üretim
+  host adaptörü. Müşteri malı eşleşme anahtarı Stok şeridiyle koordinasyon konusudur (Stok'ta "müşteri adına" anahtarı tanımlanınca
+  sabitlenir; o zamana kadar port cariyi — PartyId + CompanyAccountId — yayımlar).
+
 ## Sıra önerisi
 
 S-3 (fason) Üretim'in U5 dalgasını, S-1 iptal güvenliğini etkiler. S-2 Satış S6 dalgasıyla aynı yerdedir.

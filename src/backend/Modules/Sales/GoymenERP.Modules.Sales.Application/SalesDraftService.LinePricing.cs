@@ -257,6 +257,6 @@ public sealed partial class SalesDraftService
                 : null,
             commercial.IsFreeSubcontractPrice && commercial.ListAbsence is { } absence
                 ? new SalesDraftPriceListAbsenceV1(absence.CurrencyCode, absence.EffectiveOn, absence.UnitPrice, absence.WrittenBy,
-                    absence.WrittenAtUtc)
+                    absence.WrittenAtUtc, absence.Quantity)
                 : null);
 }

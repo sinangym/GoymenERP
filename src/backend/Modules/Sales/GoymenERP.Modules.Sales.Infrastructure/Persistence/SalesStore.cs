@@ -488,8 +488,12 @@ public sealed partial class SalesStore(
         }
 
         // Each command moves only its own columns: a price revision never a quantity, a quantity revision never a price.
+        // K3 review A/B P2-1 (SAT-D178) — a DELIBERATE, narrow exception declared here and in the PR: a quantity revision that moves
+        // the quantity of a free subcontract service line drops its price-list absence (measured at the old quantity) and puts the line
+        // back on the approval path (a discount check); nothing else of the commercial fields moves.
         var quantityCommand = commandName == SalesDraftCommands.ReviseQuantityV1;
-        if (quantityCommand ? !draft.Lines.Select(line => line.Commercial).SequenceEqual(commercialBefore)
+        if (quantityCommand ? !draft.Lines.Select((line, index) => line.Commercial == commercialBefore[index]
+                    || DroppedListAbsence(commercialBefore[index], line.Commercial, quantitiesBefore[index], line.QuantityText)).All(ok => ok)
                 : !draft.Lines.Select(line => line.QuantityText).SequenceEqual(quantitiesBefore, StringComparer.Ordinal))
         {
             throw new InvalidOperationException("Satır revizyonu yalnız kendi komutunun alanlarını değiştirir.");
@@ -519,6 +523,13 @@ public sealed partial class SalesStore(
                 {
                     lineRow.Quantity = line.Quantity.Value;
                     lineRow.QuantityText = line.QuantityText;
+                }
+
+                // K3 review A/B P2-1: the dropped price-list absence (checked above) is written with the line's new discount check.
+                var pricingJson = SalesLinePricingJson.Serialize(line.Commercial);
+                if (!string.Equals(lineRow.PricingJson, pricingJson, StringComparison.Ordinal))
+                {
+                    lineRow.PricingJson = pricingJson;
                 }
             }
             else
@@ -1440,6 +1451,15 @@ public sealed partial class SalesStore(
         supersededReason = draft.ArchivedRevisions.Count == 0 ? null : draft.ArchivedRevisions[^1].Reason,
         lines = draft.Lines.Select(line => new { line.LineNo, line.Id, quantity = line.QuantityText }).ToArray(),
     };
+
+    /// <summary>
+    /// K3 review A/B P2-1: the only commercial change a quantity revision may make — a line whose quantity moved and which carried a
+    /// price-list absence keeps every commercial value but loses the absence and gains a discount check (the approval path).
+    /// </summary>
+    private static bool DroppedListAbsence(CommercialDraftFields before, CommercialDraftFields after, string quantityBefore, string quantityAfter) =>
+        before.ListAbsence is not null && after.ListAbsence is null && after.DiscountCheck is not null
+        && !string.Equals(quantityBefore, quantityAfter, StringComparison.Ordinal)
+        && after == before with { ListAbsence = null, DiscountCheck = after.DiscountCheck };
 
     /// <summary>The audit picture of a draft's commercial surface: revision, approval axis and every line's fields.</summary>
     private static object Commercial(SalesOrderDraft draft) => new

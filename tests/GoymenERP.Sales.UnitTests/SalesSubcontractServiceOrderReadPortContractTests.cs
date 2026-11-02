@@ -22,14 +22,17 @@ public sealed class SalesSubcontractServiceOrderReadPortContractTests
         Assert.Equal(["companyId", "orderId", "cancellationToken"], method.GetParameters().Select(parameter => parameter.Name!));
 
         Assert.Equal(["ContractVersion", "Order", "Outcome", "Reason"], Members(typeof(SalesSubcontractServiceOrderAnswerV1)));
-        Assert.Equal(["ApprovalState", "CompanyAccountId", "CompanyId", "CustomerAcceptanceState", "DocumentNo", "IsApproved", "IsOpen",
-            "LifecycleState", "Lines", "OrderId", "PartyId", "Revision", "Version"], Members(typeof(SalesSubcontractServiceOrderV1)));
+        Assert.Equal(["ApprovalState", "Basis", "BasisRevision", "CompanyAccountId", "CompanyId", "CustomerAcceptanceState", "DocumentNo",
+            "IsApproved", "IsOpen", "LifecycleState", "Lines", "OrderId", "PartyId", "Revision", "Version"], Members(typeof(SalesSubcontractServiceOrderV1)));
         Assert.Equal(["ItemType", "LineId", "LineNo", "OrderUnitCode", "OrderUnitId", "ProductCode", "ProductId", "ProductName",
             "ProductVersion", "Quantity", "QuantityText"], Members(typeof(SalesSubcontractServiceLineV1)));
         Assert.Equal(["Unreadable", "NotFound", "NotSubcontractService", "Found"], Enum.GetNames<SalesSubcontractServiceOrderOutcomeV1>());
         Assert.Equal(0, (int)SalesSubcontractServiceOrderOutcomeV1.Unreadable);
-        Assert.Equal(("NotRequired", "Accepted", "Pending"), (SalesSubcontractCustomerAcceptanceStatesV1.NotRequired,
-            SalesSubcontractCustomerAcceptanceStatesV1.Accepted, SalesSubcontractCustomerAcceptanceStatesV1.Pending));
+        Assert.Equal(("NotRequired", "Accepted", "Pending", "Rejected"), (SalesSubcontractCustomerAcceptanceStatesV1.NotRequired,
+            SalesSubcontractCustomerAcceptanceStatesV1.Accepted, SalesSubcontractCustomerAcceptanceStatesV1.Pending,
+            SalesSubcontractCustomerAcceptanceStatesV1.Rejected));
+        Assert.Equal(("CurrentRevision", "CustomerAcceptedRevision"), (SalesSubcontractServiceOrderBasesV1.CurrentRevision,
+            SalesSubcontractServiceOrderBasesV1.CustomerAcceptedRevision));
     }
 
     [Fact]

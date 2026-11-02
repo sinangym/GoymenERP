@@ -95,24 +95,24 @@ public sealed partial class SalesDraftService
     /// WITHOUT naming a list version, whose list chain holds neither a price nor a floor — keyed by line id. Nothing is read when no
     /// such line is in the request; a normal order answers none.
     /// </summary>
-    private async Task<(IReadOnlySet<Guid> Lines, string? CurrencyCode, DateOnly On)> FindRevisionFreeSubcontractPricesAsync(Scope scope,
+    private async Task<(IReadOnlyDictionary<Guid, decimal> Lines, string? CurrencyCode, DateOnly On)> FindRevisionFreeSubcontractPricesAsync(Scope scope,
         string permission, Guid draftId, SalesDraftCommercialRevisionRequest request, CancellationToken cancellationToken)
     {
         var typed = request.Lines.Where(line => line.UnitPrice is not null && line.PriceUnitId is not null && line.PriceReference is null)
             .ToArray();
         if (typed.Length == 0 || priceReferences is not { } reader)
         {
-            return (new HashSet<Guid>(), null, default);
+            return (new Dictionary<Guid, decimal>(), null, default);
         }
 
         var draft = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
         if (!draft.IsSubcontractService)
         {
-            return (new HashSet<Guid>(), null, default);
+            return (new Dictionary<Guid, decimal>(), null, default);
         }
 
         var currencyCode = await CurrencyCodeAsync(scope, permission, draft, cancellationToken);
-        var free = new HashSet<Guid>();
+        var free = new Dictionary<Guid, decimal>();
         foreach (var line in typed)
         {
             var draftLine = draft.Lines.SingleOrDefault(candidate => candidate.Id == line.LineId);
@@ -125,7 +125,8 @@ public sealed partial class SalesDraftService
                     draftLine.Product.ProductId, draftLine.OrderUnit.UnitId, draftLine.Quantity.Value, currencyCode, draft.Money.EffectiveOn,
                     cancellationToken))
             {
-                free.Add(line.LineId);
+                // The quantity the owner was asked at; the domain refuses it if the line moved meanwhile (a stale measurement).
+                free.Add(line.LineId, draftLine.Quantity.Value);
             }
         }
 
@@ -150,13 +151,16 @@ public sealed partial class SalesDraftService
         }
     }
 
-    /// <summary>The line's commercial fields with the SAT-D178 absence bound to its exact typed price, the writer and the time.</summary>
-    private static CommercialDraftFields WithListAbsence(CommercialDraftFields commercial, string currencyCode, DateOnly on, string actorId,
-        DateTimeOffset now) =>
+    /// <summary>
+    /// The line's commercial fields with the SAT-D178 absence bound to its exact typed price, the line quantity the owner was asked at
+    /// (K3 review B P2-1: the lists are quantity-banded), the writer and the time.
+    /// </summary>
+    private static CommercialDraftFields WithListAbsence(CommercialDraftFields commercial, string currencyCode, DateOnly on,
+        decimal measuredQuantity, string actorId, DateTimeOffset now) =>
         commercial with
         {
             ListAbsence = new PriceListAbsenceSnapshot(commercial.PriceUnitId!.Value, currencyCode, on, commercial.UnitPrice!, actorId,
-                now.ToUniversalTime()),
+                now.ToUniversalTime(), SalesLinePriceCalculator.Format(measuredQuantity)),
         };
 
     /// <summary>

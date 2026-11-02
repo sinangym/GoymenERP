@@ -434,13 +434,14 @@ describe('AT-018 list price on the order line', () => {
   it('SAT-D178: decodes a free fason price as an additive member bound to the typed price, and fails closed otherwise', () => {
     const base = { unitPrice: '37.5', priceUnitId: KG, priceSource: 'Manual', netUnitPrice: '37.5', discountCheck: null }
     const absence = { currencyCode: 'TRY', effectiveOn: '2026-11-02', unitPrice: '37.5', writtenBy: 'SENTETIK-writer',
-      writtenAtUtc: '2026-11-02T09:00:00Z' }
+      writtenAtUtc: '2026-11-02T09:00:00Z', quantity: '250' }
     expect(decodeDraftLinePricing(pricing('4', base))?.lines[0].listAbsence).toBeNull()
     expect(decodeDraftLinePricing(pricing('4', { ...base, listAbsence: absence }))?.lines[0].listAbsence).toEqual(absence)
     for (const malformed of [
       { ...base, listAbsence: { ...absence, unitPrice: '38' } },
       { ...base, listAbsence: { ...absence, extra: true } },
       { ...base, listAbsence: { ...absence, writtenAtUtc: 'dün' } },
+      { ...base, listAbsence: { ...absence, quantity: undefined } },
       { ...base, priceReference: reference, listAbsence: absence },
       { ...base, discountCheck: { checkedBy: 'maker', checkedAtUtc: '2026-10-27T08:00:00Z', listUnitPrice: null, limitPercent: null,
         requiresApproval: true, approvedBy: null, approvedAtUtc: null, reason: null }, listAbsence: absence },
@@ -455,7 +456,7 @@ describe('AT-018 list price on the order line', () => {
       onDetail: () => json(detail('4', { unitPrice: '37.5', priceUnitId: KG })),
       onLinePricing: () => json(pricing('4', { unitPrice: '37.5', priceUnitId: KG, priceSource: 'Manual', netUnitPrice: '37.5',
         discountCheck: null, listAbsence: { currencyCode: 'TRY', effectiveOn: '2026-11-02', unitPrice: '37.5',
-          writtenBy: 'SENTETIK-writer', writtenAtUtc: '2026-11-02T09:00:00Z' } })),
+          writtenBy: 'SENTETIK-writer', writtenAtUtc: '2026-11-02T09:00:00Z', quantity: '250' } })),
     })
     renderSalesApp(path)
     const free = await screen.findByTestId('sales-line-1-free-subcontract-price')

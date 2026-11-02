@@ -141,7 +141,10 @@ public sealed partial class SalesOrderDraft
 
     private void RequireDiscountExceptionsApproved()
     {
-        if (lines.Any(line => NeedsDiscountApproval(line.Commercial) && line.Commercial.DiscountCheck?.IsApproved != true))
+        // K3 review B P2-1: a free subcontract price whose recorded quantity is not the line's (only possible after a remainder change)
+        // is not free: it waits for a commercial revision that measures it again (fail-closed).
+        if (lines.Any(line => (NeedsDiscountApproval(line.Commercial) && line.Commercial.DiscountCheck?.IsApproved != true)
+            || (line.Commercial.IsFreeSubcontractPrice && !line.Commercial.IsFreeSubcontractPriceAt(line.Quantity.Value))))
         {
             throw new SalesRuleException(SalesRuleCodes.DiscountExceptionPending,
                 "Limiti aşan (ya da limiti tanımlı olmayan) her iskonto farklı yetkili tarafından gerekçeli onaylanmalıdır.");

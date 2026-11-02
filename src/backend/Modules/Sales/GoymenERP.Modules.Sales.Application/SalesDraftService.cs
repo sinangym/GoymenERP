@@ -213,7 +213,7 @@ public sealed partial class SalesDraftService(
                 foreach (var input in lineInputs)
                 {
                     var commercial = input.Commercial is { } typed && freePrices.Contains(input.LineId)
-                        ? WithListAbsence(typed, freePriceCurrency!, request.BusinessDate, scope.ActorId, now)
+                        ? WithListAbsence(typed, freePriceCurrency!, request.BusinessDate, input.Quantity, scope.ActorId, now)
                         : input.Commercial;
                     draft.AddLine(draft.Version, commercial is not null
                         ? input with { Commercial = SalesOrderDraft.WithDiscountLimitCheck(commercial, discountLimit, scope.ActorId, now) }
@@ -607,8 +607,8 @@ public sealed partial class SalesDraftService(
                         throw new SalesVersionConflictException(expectedVersion, draft.Version);
                     }
 
-                    var priced = free.Lines.Count == 0 ? inputs : [.. inputs.Select(input => free.Lines.Contains(input.LineId)
-                        ? input with { Commercial = WithListAbsence(input.Commercial, free.CurrencyCode!, free.On, scope.ActorId, now) }
+                    var priced = free.Lines.Count == 0 ? inputs : [.. inputs.Select(input => free.Lines.TryGetValue(input.LineId, out var measured)
+                        ? input with { Commercial = WithListAbsence(input.Commercial, free.CurrencyCode!, free.On, measured, scope.ActorId, now) }
                         : input)];
                     return draft.ReviseCommercial(expectedVersion, priced, scope.ActorId, now, discountLimit, taxes?.Lines);
                 }, audit,

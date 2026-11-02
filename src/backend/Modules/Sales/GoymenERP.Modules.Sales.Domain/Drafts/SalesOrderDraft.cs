@@ -422,7 +422,8 @@ public sealed partial class SalesOrderDraft
             || !string.Equals(absence.UnitPrice, commercial.UnitPrice, StringComparison.Ordinal)
             || absence.PriceUnitId != commercial.PriceUnitId || absence.EffectiveOn != Money.EffectiveOn
             || string.IsNullOrWhiteSpace(absence.CurrencyCode) || string.IsNullOrWhiteSpace(absence.WrittenBy)
-            || absence.WrittenBy.Length > MaximumActorLength)
+            || absence.WrittenBy.Length > MaximumActorLength
+            || !SalesLinePriceCalculator.TryParseExact(absence.Quantity, out var measured) || measured <= 0m)
         {
             throw new SalesRuleException(SalesRuleCodes.InternalInvariant,
                 "Fiyat listesi yokluğu yalnız fason hizmet siparişinin elle fiyatlanan satırına, o fiyata bağlı olarak verilir (iç değişmez).",
@@ -999,6 +1000,12 @@ public sealed partial class SalesOrderDraft
             try
             {
                 RequireCommercial(fields, line.Product, line.Id);
+                // K3 review B P2-1: a new absence is measured at the line's current quantity (the lists are quantity-banded).
+                if (fields.ListAbsence is not null && !fields.IsFreeSubcontractPriceAt(line.Quantity.Value))
+                {
+                    throw new SalesRuleException(SalesRuleCodes.InternalInvariant,
+                        "Fiyat listesi yokluğu satırın güncel miktarında ölçülmemiş (iç değişmez).", line.Id);
+                }
             }
             catch (SalesRuleException exception)
             {
@@ -1278,6 +1285,14 @@ public sealed partial class SalesOrderDraft
             if (line.Quantity.Value != quantity.Value)
             {
                 line.ReplaceQuantity(quantity, text);
+                // K3 review B P2-1 (SAT-D178): "no price, no floor" was measured at the old quantity only (the lists are
+                // quantity-banded). The absence is dropped and the line goes back to the approval path (SAT-D43, fail-closed); a
+                // commercial revision may measure it again at the new quantity.
+                if (line.Commercial.ListAbsence is not null)
+                {
+                    line.ReplaceCommercial(WithDiscountLimitCheck(line.Commercial with { ListAbsence = null }, SalesDiscountLimit.Undefined,
+                        actor, now));
+                }
             }
         }
 

@@ -81,7 +81,7 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
         <div>
           <dt>{T.freeSubcontractPrice}</dt>
           <dd data-testid={`sales-line-${line.lineNo}-free-subcontract-price`}>
-            {T.freeSubcontractPriceWriter(line.listAbsence.writtenBy, formatInstant(line.listAbsence.writtenAtUtc))}
+            {T.freeSubcontractPriceWriter(line.listAbsence.writtenBy, formatInstant(line.listAbsence.writtenAtUtc), line.listAbsence.quantity)}
           </dd>
         </div>
       )}

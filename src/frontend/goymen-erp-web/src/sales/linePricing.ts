@@ -96,13 +96,15 @@ export interface PriceListAbsence {
   readonly unitPrice: string
   readonly writtenBy: string
   readonly writtenAtUtc: string
+  /** K3 review B P2-1: the line quantity the list was measured at (the lists are quantity-banded). */
+  readonly quantity: string
 }
 
 function decodeListAbsence(value: unknown): PriceListAbsence | null {
-  const o = exact(value, ['currencyCode', 'effectiveOn', 'unitPrice', 'writtenBy', 'writtenAtUtc'])
+  const o = exact(value, ['currencyCode', 'effectiveOn', 'unitPrice', 'writtenBy', 'writtenAtUtc', 'quantity'])
   if (o === null || !isText(o.currencyCode) || typeof o.effectiveOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.effectiveOn)
     || !isNullableDecimal(o.unitPrice) || o.unitPrice === null || !isText(o.writtenBy) || typeof o.writtenAtUtc !== 'string'
-    || Number.isNaN(Date.parse(o.writtenAtUtc))) return null
+    || Number.isNaN(Date.parse(o.writtenAtUtc)) || !isNullableDecimal(o.quantity) || o.quantity === null) return null
   return o as unknown as PriceListAbsence
 }
 

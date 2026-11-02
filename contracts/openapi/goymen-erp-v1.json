@@ -104485,7 +104485,8 @@
           "effectiveOn",
           "unitPrice",
           "writtenBy",
-          "writtenAtUtc"
+          "writtenAtUtc",
+          "quantity"
         ],
         "type": "object",
         "properties": {
@@ -104505,6 +104506,9 @@
           "writtenAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "quantity": {
+            "type": "string"
           }
         }
       },

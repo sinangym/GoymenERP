@@ -11,7 +11,10 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// and, separately, its customer acceptance (<see cref="SalesSubcontractServiceOrderV1.CustomerAcceptanceState"/>);</item>
 /// <item>the customer (party + company account) — the owner of the processed goods (SAT-D175: no separate owner field; URT-D22
 /// matches the customer goods by this customer);</item>
-/// <item>the service lines (product, quantity as exact text and value, order unit) of the current revision;</item>
+/// <item>the service lines (product, quantity as exact text and value, order unit) of the revision the order CONTINUES ON
+/// (<see cref="SalesSubcontractServiceOrderV1.BasisRevision"/>, <see cref="SalesSubcontractServiceOrderV1.Basis"/>): the current
+/// revision, or — SAT-D115 (EK14), the line port's rule — when the customer REJECTED the last approved revision, the revision the
+/// customer last accepted (never the rejected quantities);</item>
 /// <item>whether the order is open (lifecycle Draft) or closed (cancelled / force-closed).</item>
 /// </list>
 /// Fail-closed: a company other than the server's resolved company, a missing company context, or any read fault answers
@@ -56,9 +59,12 @@ public sealed record SalesSubcontractServiceOrderAnswerV1(
 
 /// <summary>
 /// One subcontract service order: identity, the approval axis (<see cref="ApprovalState"/> as the Sales name;
-/// <see cref="IsApproved"/> = the current revision is internally approved), the customer acceptance
-/// (<see cref="SalesSubcontractCustomerAcceptanceStatesV1"/>), the lifecycle (<see cref="LifecycleState"/>; <see cref="IsOpen"/> =
-/// neither cancelled nor force-closed), the customer, the commercial revision and concurrency version, and the service lines.
+/// <see cref="IsApproved"/> = the CURRENT revision <see cref="Revision"/> is internally approved), the customer acceptance of the
+/// current revision (<see cref="SalesSubcontractCustomerAcceptanceStatesV1"/>), the lifecycle (<see cref="LifecycleState"/>;
+/// <see cref="IsOpen"/> = neither cancelled nor force-closed), the customer, the concurrency version, and the service
+/// <see cref="Lines"/> of revision <see cref="BasisRevision"/> (<see cref="Basis"/>: <see cref="SalesSubcontractServiceOrderBasesV1"/>).
+/// A consumer plans on the basis lines only when the basis is usable: the current revision approved and accepted (or acceptance not
+/// required), or the customer-accepted revision the order continues on after a rejection (SAT-D115).
 /// </summary>
 public sealed record SalesSubcontractServiceOrderV1(
     Guid CompanyId,
@@ -73,7 +79,22 @@ public sealed record SalesSubcontractServiceOrderV1(
     bool IsOpen,
     Guid PartyId,
     Guid CompanyAccountId,
+    int BasisRevision,
+    string Basis,
     IReadOnlyList<SalesSubcontractServiceLineV1> Lines);
+
+/// <summary>Which revision <see cref="SalesSubcontractServiceOrderV1.Lines"/> describe.</summary>
+public static class SalesSubcontractServiceOrderBasesV1
+{
+    /// <summary>The order's current revision (<see cref="SalesSubcontractServiceOrderV1.Revision"/>).</summary>
+    public const string CurrentRevision = "CurrentRevision";
+
+    /// <summary>
+    /// SAT-D115 (EK14): the customer rejected the last approved revision; the order continues on the revision the customer last
+    /// accepted (an archived revision under the same customer and currency), as the shipping line port does.
+    /// </summary>
+    public const string CustomerAcceptedRevision = "CustomerAcceptedRevision";
+}
 
 /// <summary>One service line: identity, the product as the Product owner answered it, the exact quantity (text and value) and the order unit.</summary>
 public sealed record SalesSubcontractServiceLineV1(
@@ -98,8 +119,14 @@ public static class SalesSubcontractCustomerAcceptanceStatesV1
     /// <summary>The customer accepted the current revision.</summary>
     public const string Accepted = "Accepted";
 
-    /// <summary>The current revision waits for (or lost) the customer's acceptance.</summary>
+    /// <summary>The current revision waits for the customer's acceptance (neither accepted nor rejected).</summary>
     public const string Pending = "Pending";
+
+    /// <summary>
+    /// SAT-D115 (EK14): the customer rejected the current revision (the order status axis' "Rejected"); the order continues on the
+    /// revision the customer last accepted, when one exists (<see cref="SalesSubcontractServiceOrderBasesV1.CustomerAcceptedRevision"/>).
+    /// </summary>
+    public const string Rejected = "Rejected";
 }
 
 /// <summary>Why a read answered <see cref="SalesSubcontractServiceOrderOutcomeV1.Unreadable"/>.</summary>

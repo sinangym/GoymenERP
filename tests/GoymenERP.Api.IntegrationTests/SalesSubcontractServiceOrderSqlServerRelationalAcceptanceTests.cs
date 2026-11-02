@@ -13,6 +13,7 @@ using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -52,6 +53,7 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Revised = new("sales.order-draft.commercial-revised.v1", "ReviseCommercial", "SENTETIK revize");
+    private static readonly SalesDraftStateAudit QuantityRevised = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK miktar");
 
     [SqlServerFact]
     public async Task A_subcontract_order_keeps_its_flag_item_type_and_free_price_and_the_read_port_answers_it_for_its_company_only_on_real_sql()
@@ -176,6 +178,47 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
+    public async Task A_quantity_revision_drops_the_free_price_and_stores_the_line_back_on_the_approval_path_on_real_sql()
+    {
+        // K3 review A/B P2-1: the lists are quantity-banded — "no price" measured at 250 kg says nothing about 5000 kg. The approved
+        // order's quantity revision drops the absence; the stored line carries an approval-requiring discount check instead.
+        await using var run = await Run.StartAsync();
+        var draft = await run.StoredDraftAsync(CompanyA, "q");
+        var line = Assert.Single(draft.Lines);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id "
+            + "AND JSON_VALUE([PricingJson], '$.listAbsence.quantity') = N'250'", ("@id", draft.Id)));
+
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("q-submit"), Hash("q-submit"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(2, run.Actor, now), Submitted);
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("q-approve", "SENTETIK-approver"), Hash("q-approve"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
+            var revised = await scope.Store.ReviseDraftQuantityAsync(run.SalesEnvelope("q-quantity"), Hash("q-quantity"),
+                SalesDraftCommands.ReviseQuantityV1, draft.Id,
+                (d, now) => d.ReviseQuantities(4, [new LineQuantityInput(line.Id, "5000", 5000m)], "SENTETIK-reviser", "SENTETIK 5000 kg", now),
+                QuantityRevised, (_, _) => Task.CompletedTask);
+            Assert.Equal((1, "Preparing"), (revised!.Draft.Revision, revised.Draft.ApprovalState.ToString()));
+        }
+
+        Assert.Equal((0, 1, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id "
+                + "AND JSON_QUERY([PricingJson], '$.listAbsence') IS NOT NULL", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [QuantityText] = N'5000' "
+                + "AND CAST(JSON_VALUE([PricingJson], '$.discountCheck.requiresApproval') AS bit) = 1", ("@id", draft.Id)),
+            // The approved revision keeps its free price as it was approved (history is never rewritten).
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id "
+                + "AND JSON_VALUE([PricingJson], '$.listAbsence.quantity') = N'250'", ("@id", draft.Id))));
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var stored = (await scope.Store.FindDraftAsync(draft.Id))!;
+            Assert.Null(stored.Lines[0].Commercial.ListAbsence);
+            Assert.Equal(SalesRuleCodes.DiscountExceptionPending,
+                Assert.Throws<SalesRuleException>(() => stored.Submit(stored.Version, run.Actor, T0)).Code);
+        }
+    }
+
+    [SqlServerFact]
     public async Task The_write_guard_never_moves_the_flag_and_the_database_refuses_another_item_type_and_the_rollback_on_real_sql()
     {
         await using var run = await Run.StartAsync();
@@ -212,7 +255,7 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
 
     /// <summary>A SENTETIK free subcontract price: the list held neither a price nor a floor when SENTETIK-writer typed it.</summary>
     private static CommercialDraftFields Free(string price, DateTimeOffset at) =>
-        new(price, KgUnit, null, ListAbsence: new PriceListAbsenceSnapshot(KgUnit, "TRY", Day, price, "SENTETIK-writer", at));
+        new(price, KgUnit, null, ListAbsence: new PriceListAbsenceSnapshot(KgUnit, "TRY", Day, price, "SENTETIK-writer", at, "250"));
 
     /// <summary>A draft with one 250 kg service line (free price on a subcontract order, unpriced otherwise) from SYNTHETIC owner snapshots.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo, bool subcontract)

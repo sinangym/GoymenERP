@@ -636,22 +636,35 @@ dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj
   (`IProductItemTypeReaderV1`); a goods / unset / unknown type is 422 `lines[i].productId` `sales_subcontract_line_not_service`;
   an unreadable owner is 503 `product_item_type_unavailable` (never assumed a service). The confirmed type is stored in
   `DraftLines.ItemType` (`CK_DraftLines_ItemType`: null or `Service`). A normal order asks nothing new. SAT-D167 line add / product
-  change does not exist yet; when it does, it must run the same check. The product picker narrows with
+  change does not exist yet; when it does, it must call `ConfirmServiceLinesAsync` and apply the absence rule below (the domain's
+  `AddLine` already refuses a fason line without the confirmed `Service` item type, so a new add path that forgets the read fails
+  closed). The rule "every line of a fason order carries an item type" is held by the single writer (domain + restore); there is
+  no cross-row database trigger (K3 review B P3-1, deliberately not added). The product picker narrows with
   `GET /api/v1/sales/references/products?itemType=Service` (an unreadable item type is 503).
 - **Price (SAT-D177/D178):** a typed price on a service line whose Product tier chain answers `NoPrice` (neither a price nor a
   floor) carries a `PriceListAbsenceSnapshot` (in `PricingJson.listAbsence`: price unit, currency code, date, the exact price,
-  who wrote it, when) and needs no discount-limit approval — SAT-D36/D43's fail-closed routing is lifted for that line only. The
+  who wrote it, when, and the line quantity it was measured at) and needs no discount-limit approval — SAT-D36/D43's fail-closed
+  routing is lifted for that line only. The lists are quantity-banded (K3 review A/B P2-1): a quantity revision drops the absence
+  and the line gets an approval-requiring discount check (the store admits exactly that PricingJson change under a quantity
+  revision); a later commercial revision may measure it again at the new quantity; a line whose quantity differs from the recorded
+  one is never free (`IsFreeSubcontractPriceAt`), so the submit gate refuses it. The
   price-write permission (SAT-D151) is still required; the audit records the absence. A list with a price or floor keeps every
   existing rule; an absent or out-of-contract price owner leaves the line on the existing approval routing (fail-closed).
 - **Customer lock (SAT-D175):** a customer change of a subcontract order asks `ISalesSubcontractOrderBindingReadPortV1`
   (production plan / customer-goods allocation); not composed or unreadable → 503 `subcontract_binding_unavailable`; bound → 422
-  `companyAccountId` `sales_subcontract_customer_locked`. No host adapter exists yet (the Production lane's), so today the customer
-  of a subcontract order does not change.
+  `companyAccountId` `sales_subcontract_customer_locked`. **No host adapter exists yet (the Production lane's), so until it is
+  composed the customer of a fason order cannot change** (always 503) — tracked as an S-3 follow-up.
 - **Tax:** the service line resolves through the existing line tax snapshot (Settings, by item type); the subcontract withholding
   stays whatever Settings answers — fail-closed until the advisor's codes exist (SAT-D110).
 - **Read port for Production (S-3):** `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`,
-  `SalesSubcontractServiceOrderReadPort`): company + order id → `Found` (approval state, `IsApproved`, customer acceptance state,
-  lifecycle / `IsOpen`, party + company account, service lines with product, quantity text/value, order unit) | `NotSubcontractService`
+  `SalesSubcontractServiceOrderReadPort`): company + order id → `Found` (approval state, `IsApproved` of the current revision, customer
+  acceptance `NotRequired`/`Accepted`/`Pending`/`Rejected`, lifecycle / `IsOpen`, party + company account, and the service lines
+  (product, quantity text/value, order unit) of `BasisRevision` — `Basis` `CurrentRevision`, or `CustomerAcceptedRevision` when the
+  customer rejected the last approved revision and the order continues on the accepted one, SAT-D115, the line port's rule) | `NotSubcontractService`
   | `NotFound` | `Unreadable` (a company other than the server context, or a read fault). Price-free. Registered by
   `AddSalesModule`; the Production consumer binds to it in its own lane.
 - **Migration:** `AddDraftSubcontractService`; its Down refuses with 51141 while any subcontract data exists (forward fix).
+- **Follow-ups (other lanes):** (1) Production host adapter for `ISalesSubcontractServiceOrderReadPortV1` and the binding hook
+  `ISalesSubcontractOrderBindingReadPortV1`; (2) Stock-lane coordination: SAT-D175's customer-goods match key must equal Stock's
+  "müşteri adına" record key, which does not exist on main yet — the port publishes the customer (PartyId + CompanyAccountId) until
+  Stock names it; (3) SAT-D167 line add / product change must reuse the service-line check and the absence rule.
