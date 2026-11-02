@@ -459,7 +459,8 @@ public static class SalesDraftJson
             if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
             if (line.TaxOverride is { } tax)
-                SalesDraftTaxApiV1.RequireOverrideShape(tax.BuyerSituation, tax.Reason, tax.ItemType, tax.ExemptionCode);
+                SalesDraftTaxApiV1.RequireOverrideShape(tax.BuyerSituation, tax.Reason, tax.ItemType, tax.ExemptionCode, tax.VatRateCode,
+                    tax.WithholdingRatioCode);
             SalesDraftDeliveryPlanV1.GetUnscheduledQuantity(line);
         }
         if (request.DueTerms is not null) SalesDraftHeaderApiV1.RequireDueTermsShape(request.DueTerms);

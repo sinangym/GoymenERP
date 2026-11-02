@@ -28,11 +28,15 @@ public sealed record SalesDraftBuyerTaxV1(
 /// (<c>Steel</c> / <c>Scrap</c> / <c>Service</c>; omitted = the product's own), an exemption code from the exemption list (only for a
 /// "KDV %0 with an exemption code" situation) and the required reason. A free rate or code is never accepted.
 /// </summary>
+/// <remarks>SAT-D181 (EK26): <c>vatRateCode</c> / <c>withholdingRatioCode</c> pick an entry (by its code) of the Settings VAT rate
+/// list and withholding ratio list in force; the percent is the list's.</remarks>
 public sealed record SalesDraftLineTaxOverrideV1(
     string BuyerSituation,
     string Reason,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ItemType = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExemptionCode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExemptionCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VatRateCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WithholdingRatioCode = null);
 
 /// <summary>
 /// SAT-D93 / SAT-D97 / SAT-D105: a line's tax choice in a commercial revision. <c>mode</c> <c>Default</c>: the Settings default for
@@ -45,7 +49,9 @@ public sealed record SalesDraftLineTaxChoiceV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BuyerSituation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ItemType = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExemptionCode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExemptionCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VatRateCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WithholdingRatioCode = null);
 
 /// <summary>The modes of <see cref="SalesDraftLineTaxChoiceV1"/>.</summary>
 public static class SalesDraftLineTaxModesV1
@@ -56,7 +62,8 @@ public static class SalesDraftLineTaxModesV1
 
 /// <summary>Who changed a line's tax basis, when and why (SAT-D97: audited; approved with the order's normal approval).</summary>
 public sealed record SalesDraftLineTaxOverrideViewV1(
-    string? ItemType, string BuyerSituation, string? ExemptionCode, string Reason, string ChangedBy, DateTimeOffset ChangedAtUtc);
+    string? ItemType, string BuyerSituation, string? ExemptionCode, string Reason, string ChangedBy, DateTimeOffset ChangedAtUtc,
+    string? VatRateCode, string? WithholdingRatioCode);
 
 /// <summary>
 /// One line's tax as stored: <c>hasSnapshot</c> false (written before the tax wiring, or no Settings tax port answered) with
@@ -117,6 +124,12 @@ public sealed record SalesTaxBuyerSituationOptionV1(string Code, string Name, bo
 public sealed record SalesTaxCodeOptionV1(string Code, string Name);
 
 /// <summary>
+/// SAT-D181: one entry of a Settings rate list in force — its code, name and exact percent (invariant text) and, for a withholding
+/// ratio, the GİB withholding code it is invoiced under (null = not mapped yet; the invoice waits).
+/// </summary>
+public sealed record SalesTaxRateOptionV1(string Code, string Name, string Percent, string? TaxCode);
+
+/// <summary>
 /// <c>GET /api/v1/sales/tax-options?on=yyyy-MM-dd</c> under the draft read: the choices the order screens offer for <c>on</c> (the
 /// order's business date) — the Settings buyer situation list in force, the exemption code list in force and the item types (each
 /// list <c>Resolved</c>, or <c>Unresolved</c> with the Settings reason — empty until Sinan / the müşavir enter it, SAT-D148: then the
@@ -131,7 +144,15 @@ public sealed record SalesTaxOptionsResponse(
     string ExemptionCodesState,
     string? ExemptionCodesReason,
     IReadOnlyList<SalesTaxCodeOptionV1> ExemptionCodes,
-    IReadOnlyList<string> ItemTypes);
+    IReadOnlyList<string> ItemTypes,
+    // SAT-D181 (EK26): the VAT rate and withholding ratio lists a line change picks from (each Resolved, or Unresolved with the
+    // Settings reason — empty until entered, SAT-D148).
+    string VatRatesState,
+    string? VatRatesReason,
+    IReadOnlyList<SalesTaxRateOptionV1> VatRates,
+    string WithholdingRatiosState,
+    string? WithholdingRatiosReason,
+    IReadOnlyList<SalesTaxRateOptionV1> WithholdingRatios);
 
 public static class SalesDraftTaxApiV1
 {
@@ -151,10 +172,12 @@ public static class SalesDraftTaxApiV1
     }
 
     /// <summary>A line override's wire shape: a non-empty situation and reason, bounded codes.</summary>
-    internal static void RequireOverrideShape(string? buyerSituation, string? reason, string? itemType, string? exemptionCode)
+    internal static void RequireOverrideShape(string? buyerSituation, string? reason, string? itemType, string? exemptionCode,
+        string? vatRateCode = null, string? withholdingRatioCode = null)
     {
         if (string.IsNullOrEmpty(buyerSituation) || buyerSituation.Length > 64 || reason is null || reason.Length > 4000
-            || itemType is { Length: 0 or > 32 } || exemptionCode is { Length: 0 or > 16 })
+            || itemType is { Length: 0 or > 32 } || exemptionCode is { Length: 0 or > 16 }
+            || vatRateCode is { Length: 0 or > 32 } || withholdingRatioCode is { Length: 0 or > 32 })
             throw new JsonException("Invalid line tax override.");
     }
 
@@ -165,11 +188,12 @@ public static class SalesDraftTaxApiV1
         {
             case SalesDraftLineTaxModesV1.Default:
                 if (choice.BuyerSituation is not null || choice.Reason is not null || choice.ItemType is not null
-                    || choice.ExemptionCode is not null)
+                    || choice.ExemptionCode is not null || choice.VatRateCode is not null || choice.WithholdingRatioCode is not null)
                     throw new JsonException("A default tax choice carries no basis.");
                 break;
             case SalesDraftLineTaxModesV1.Override:
-                RequireOverrideShape(choice.BuyerSituation, choice.Reason, choice.ItemType, choice.ExemptionCode);
+                RequireOverrideShape(choice.BuyerSituation, choice.Reason, choice.ItemType, choice.ExemptionCode, choice.VatRateCode,
+                    choice.WithholdingRatioCode);
                 break;
             default:
                 throw new JsonException("Unknown tax choice mode.");

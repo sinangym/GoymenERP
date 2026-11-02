@@ -104,13 +104,17 @@ public sealed class SalesLineTaxTests
     public void The_stored_tax_round_trips_exactly_and_a_corrupt_row_is_refused_never_repaired()
     {
         var change = new SalesLineTaxOverride("Service", "FinalConsumer", null, "SENTETIK gerekçe", "synthetic-actor",
-            new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero), VatRateCode: "10", WithholdingRatioCode: "2/10");
         var snapshot = Snapshot(change: change);
         var buyer = SalesBuyerTax.Create("ExportRegistered", "701", "SENTETIK-1", Day);
 
         Assert.Equal(snapshot, SalesTaxJson.RestoreLine(SalesTaxJson.SerializeLine(snapshot)));
         Assert.Equal(buyer, SalesTaxJson.RestoreBuyer(SalesTaxJson.SerializeBuyer(buyer)));
         Assert.Null(SalesTaxJson.SerializeLine(null));
+        // SAT-D181: a change without list picks keeps the JSON written before them (no new members).
+        var plain = Snapshot(change: change with { VatRateCode = null, WithholdingRatioCode = null });
+        Assert.DoesNotContain("vatRateCode", SalesTaxJson.SerializeLine(plain), StringComparison.Ordinal);
+        Assert.Equal(plain, SalesTaxJson.RestoreLine(SalesTaxJson.SerializeLine(plain)));
         Assert.Null(SalesTaxJson.RestoreBuyer(null));
         Assert.Throws<InvalidOperationException>(() => SalesTaxJson.RestoreLine("{\"unknown\":1}"));
         Assert.Throws<InvalidOperationException>(() => SalesTaxJson.RestoreBuyer("{\"situation\":\"not a code\",\"exemptionCode\":null,"
@@ -135,5 +139,15 @@ public sealed class SalesLineTaxTests
         Assert.All(migration.DownOperations.Skip(1), operation => Assert.IsNotType<SqlOperation>(operation));
         Assert.Equal(4, migration.UpOperations.OfType<AddColumnOperation>().Count(column => column.IsNullable
             && column.Name is "BuyerTaxJson" or "TaxJson"));
+    }
+
+    [Fact]
+    public void The_buyer_tax_backfill_writes_normal_once_in_the_stores_exact_json_and_its_down_is_a_documented_no_op()
+    {
+        var migration = new BackfillDraftBuyerTax();
+        var backfill = Assert.IsType<SqlOperation>(Assert.Single(migration.UpOperations));
+        Assert.Contains($"SET [BuyerTaxJson] = N'{SalesTaxJson.SerializeBuyer(SalesBuyerTax.Create("Normal"))}'", backfill.Sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE [BuyerTaxJson] IS NULL", backfill.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.DownOperations);
     }
 }

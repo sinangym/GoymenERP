@@ -207,7 +207,42 @@ public sealed class SalesOrderTaxSqlServerRelationalAcceptanceTests
         Assert.True(tax > 0);
         var refused = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[tax - 1]));
         Assert.Equal(51135, refused.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        // SAT-D184: BackfillDraftBuyerTax (a no-op Down) rolled back first; AddDraftOrderTax stands.
+        Assert.Equal(applied[..(tax + 1)], await context.Database.GetAppliedMigrationsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task A_legacy_order_without_buyer_tax_is_backfilled_normal_once_by_the_migration_and_its_lines_wait_for_a_resolve_point_on_real_sql()
+    {
+        // SAT-D184 (EK26): the schema as it stood before the backfill, a legacy order written then (no buyer tax, no line tax), and
+        // the backfill applied: the order reads "Normal" in the store's exact JSON; its lines stay "kaynak yok" until resolved.
+        await using var run = await Run.StartAsync();
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var backfill = Array.FindIndex(applied, migration => migration.EndsWith("_BackfillDraftBuyerTax", StringComparison.Ordinal));
+        Assert.True(backfill > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[backfill - 1]);
+
+        Guid legacyId;
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            legacyId = (await scope.Store.StoreDraftAsync(run.SalesEnvelope("l-create"), Hash("l-create"),
+                documentNo => Draft(CompanyA, documentNo, legacy: true))).Draft.Id;
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [Id] = @id AND [BuyerTaxJson] IS NULL",
+            ("@id", legacyId)));
+        await migrator.MigrateAsync();
+
+        Assert.Equal(SalesTaxJson.SerializeBuyer(SalesBuyerTax.Create(TaxBuyerSituationsV1.Normal)),
+            await run.ScalarAsync<string>("SELECT [BuyerTaxJson] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", legacyId)));
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var restored = (await scope.Store.FindDraftAsync(legacyId))!;
+            Assert.Equal((SalesBuyerTax.Create(TaxBuyerSituationsV1.Normal), (SalesLineTaxSnapshot?)null),
+                (restored.Header.BuyerTax, Assert.Single(restored.Lines).Tax));
+        }
     }
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -221,17 +256,17 @@ public sealed class SalesOrderTaxSqlServerRelationalAcceptanceTests
             "Unresolved", null, TaxResolutionReasonsV1.WithholdingCodeMissing, null, 0, TaxBuyerSituationVatModesV1.Normal, false);
 
     /// <summary>A draft with one (unpriced) 10 kg line and its tax snapshot, for the normal buyer, from SYNTHETIC owner snapshots.</summary>
-    private static SalesOrderDraft Draft(Guid company, string documentNo)
+    private static SalesOrderDraft Draft(Guid company, string documentNo, bool legacy = false)
     {
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30,
-            BuyerTax: SalesBuyerTax.Create(TaxBuyerSituationsV1.Normal));
+            BuyerTax: legacy ? null : SalesBuyerTax.Create(TaxBuyerSituationsV1.Normal));
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
         draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "10", 10m, Day.AddDays(3),
-            Tax: Tax()), T0);
+            Tax: legacy ? null : Tax()), T0);
         return draft;
     }
 

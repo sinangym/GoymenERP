@@ -128,7 +128,23 @@ export function LineTaxFields({
             <option value="">{T.lineTaxItemTypeProduct}</option>
             {(options?.itemTypes ?? []).map((itemType) => <option key={itemType} value={itemType}>{T.itemType[itemType] ?? itemType}</option>)}
           </select>
-          {situation?.vatMode === VAT_MODE.zeroWithExemptionCode ? (
+          {/* SAT-D181 (EK26): only the entries of the Settings VAT rate / withholding ratio lists; a percent is never typed. */}
+          <label htmlFor={`${idPrefix}-tax-vat-rate`}>{T.lineTaxVatRate}</label>
+          <select id={`${idPrefix}-tax-vat-rate`} value={value.vatRateCode ?? ''}
+            onChange={(event) => onChange({ ...value, vatRateCode: event.target.value })}>
+            <option value="">{T.lineTaxRateDefault}</option>
+            {(options?.vatRates ?? []).map((rate) => <option key={rate.code} value={rate.code}>{`%${rate.percent} — ${rate.name}`}</option>)}
+          </select>
+          {options !== null && options.vatRates.length === 0
+            ? <p className={styles.muted} data-testid={`${idPrefix}-tax-vat-rates-empty`}>{T.rateListEmpty}</p> : null}
+          <label htmlFor={`${idPrefix}-tax-withholding`}>{T.lineTaxWithholdingRatio}</label>
+          <select id={`${idPrefix}-tax-withholding`} value={value.withholdingRatioCode ?? ''}
+            onChange={(event) => onChange({ ...value, withholdingRatioCode: event.target.value })}>
+            <option value="">{T.lineTaxRateDefault}</option>
+            {(options?.withholdingRatios ?? []).map((rate) => <option key={rate.code} value={rate.code}>{`${rate.code} — ${rate.name}`}</option>)}
+          </select>
+          {situation?.vatMode === VAT_MODE.zeroWithExemptionCode
+            || options?.vatRates.find((rate) => rate.code === value.vatRateCode)?.percent === '0' ? (
             <>
               <label htmlFor={`${idPrefix}-tax-exemption`}>{T.exemptionCodeLabel}</label>
               <select id={`${idPrefix}-tax-exemption`} value={value.exemptionCode} onChange={(event) => onChange({ ...value, exemptionCode: event.target.value })}>

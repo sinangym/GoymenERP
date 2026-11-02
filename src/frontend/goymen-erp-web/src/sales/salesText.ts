@@ -873,6 +873,10 @@ export const LINE_PRICING_TEXT = {
     sales_tax_item_type_unknown: 'Kalem tipi Ayarlar listesinde yok.',
     sales_tax_override_reason_required: 'Satır vergisi değişikliği için gerekçe zorunludur.',
     sales_tax_override_reason_too_long: 'Gerekçe en fazla 4000 karakter olabilir.',
+    sales_tax_vat_rate_unknown: "KDV oranı Ayarlar'daki geçerli listede yok.",
+    sales_tax_withholding_ratio_unknown: "Tevkifat oranı Ayarlar'daki geçerli listede yok.",
+    sales_tax_withholding_not_applicable: '%0 KDV ya da KDV yok olan satırda tevkifat seçilmez.',
+    sales_tax_exemption_code_required: '%0 KDV seçimi istisna kodu ister.',
   } as Record<string, string>,
   lineError: (lineNo: number, text: string) => `${lineNo}. satır: ${text}`,
 } as const
@@ -1290,8 +1294,16 @@ export const ORDER_TAX_TEXT = {
   lineTaxItemTypeProduct: 'Ürünün kendi kalem tipi',
   lineTaxReason: 'Değişiklik gerekçesi',
   lineTaxHint:
-    "Yalnız Ayarlar'daki değerler seçilir (SAT-D93); gerekçe zorunludur ve sipariş onayıyla birlikte onaylanır (SAT-D97). Onaylı " +
-    'siparişte değişiklik yeni revizyon açar (SAT-D105).',
+    "Yalnız Ayarlar'daki değerler seçilir (SAT-D93, SAT-D181: KDV oranı ve tevkifat oranı listeleri; %0 KDV istisna kodu ister); " +
+    'gerekçe zorunludur ve sipariş onayıyla birlikte onaylanır (SAT-D97). Onaylı siparişte değişiklik yeni revizyon açar (SAT-D105).',
+  lineTaxVatRate: 'KDV oranı (Ayarlar listesinden)',
+  lineTaxWithholdingRatio: 'Tevkifat oranı (Ayarlar listesinden)',
+  lineTaxRateDefault: 'Varsayılandaki oran',
+  rateListEmpty: "Ayarlar'da oran listesi henüz girilmemiş; yalnız varsayılan oran kullanılabilir.",
+  /** Review A P3: a price revision re-reads every line's tax from Settings, also the lines whose tax choice is not touched. */
+  reresolveHint:
+    "Kaydedince satırların vergisi Ayarlar'dan yeniden okunur — vergisi değiştirilmeyen satırlar da (o güne kadar Ayarlar'da bir " +
+    'değer değiştiyse yeni değer gelir).',
   buildError: {
     'situation-required': 'Alıcı vergi durumu seçin.',
     'document-incomplete': 'Belge numarası ve tarihi birlikte girilir.',

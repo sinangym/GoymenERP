@@ -16,7 +16,7 @@ import {
   type OrderAttemptState,
 } from './orderAttempt'
 import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
-import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
+import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT as T, ORDER_TAX_TEXT, problemCodeText } from './salesText'
 import { recallCommercialRevisionAttempt, rememberCommercialRevisionAttempt } from './pendingCommercialRevisions'
 import { useDraftLinePricing } from './useDraftLinePricing'
 import { useTaxOptions } from './useTaxOptions'
@@ -174,6 +174,7 @@ export function SalesDraftCommercialRevisionForm({
     <div className={styles.actions} data-testid="sales-price-revision-form">
       <h3>{text.heading}</h3>
       <p className={styles.muted}>{detail.draft.approvalState === APPROVAL_STATE.approved ? text.approvedWarning : text.description}</p>
+      <p className={styles.muted} data-testid="sales-price-tax-reresolve">{ORDER_TAX_TEXT.reresolveHint}</p>
       {!stateAllowsRevision ? <p className={styles.muted}>{text.stateUnavailable}</p> : null}
       {freshRows === null ? <p className={styles.notice} data-testid="sales-price-pricing-unavailable">{text.pricingUnavailable}</p> : null}
       {localError === null ? null : <p role="alert" className={styles.notice}>{localError}</p>}

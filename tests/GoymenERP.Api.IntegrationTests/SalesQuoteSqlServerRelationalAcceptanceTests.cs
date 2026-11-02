@@ -846,7 +846,9 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Quotes WHERE Id = @q AND State = 2 AND Version = 3", ("@q", quoteId)));
 
-        // Rollback refuses while an approval exists (forward fix); nothing is dropped.
+        // Rollback refuses while an approval exists (forward fix); nothing is dropped. Review A P1: the converted order carries
+        // MOD-03 tax, so the pre-tax state is reproduced first (the tax migrations roll back before 51117 answers).
+        await run.ScalarAsync<int>(SalesOrderTaxRollback.ClearSql);
         await using var context = run.Context(CompanyA);
         var refusal = await Assert.ThrowsAsync<SqlException>(() =>
             context.GetService<IMigrator>().MigrateAsync("20261027134109_AddSalesDiscountExceptionApprovalReplayResults"));

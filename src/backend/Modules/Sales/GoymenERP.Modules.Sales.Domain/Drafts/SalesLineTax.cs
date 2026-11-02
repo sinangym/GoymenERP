@@ -96,11 +96,14 @@ public static class SalesLineTaxOrigins
 /// <summary>
 /// SAT-D93 / SAT-D97: a line's changed tax basis — chosen ONLY from Settings lists: an item type default (demir / hurda / hizmet,
 /// SAT-D139; null = the product's own item type), a buyer situation of the list in force (SAT-D158) and, for a situation whose
-/// effect is "KDV %0 with an exemption code", the exemption code from the exemption list (SAT-D147). A free-typed rate or code is
-/// never accepted. The reason is required (SAT-D97, audit); who changed it and when are the command's.
+/// effect is "KDV %0 with an exemption code" or a picked VAT rate of 0, the exemption code from the exemption list (SAT-D147).
+/// SAT-D181 (EK26): it may also pick an entry of the Settings VAT rate list (<see cref="VatRateCode"/>) and of the withholding
+/// ratio list (<see cref="WithholdingRatioCode"/>) — by the entry's code; the percent is the list's, never typed. A free-typed rate
+/// or code is never accepted. The reason is required (SAT-D97, audit); who changed it and when are the command's.
 /// </summary>
 public sealed record SalesLineTaxOverride(
-    string? ItemType, string BuyerSituation, string? ExemptionCode, string Reason, string ChangedBy, DateTimeOffset ChangedAtUtc)
+    string? ItemType, string BuyerSituation, string? ExemptionCode, string Reason, string ChangedBy, DateTimeOffset ChangedAtUtc,
+    string? VatRateCode = null, string? WithholdingRatioCode = null)
 {
     /// <summary>The reason's technical bound (the Settings tax master's, SAT-D68 precedent).</summary>
     public const int MaximumReasonLength = 4000;
@@ -108,7 +111,8 @@ public sealed record SalesLineTaxOverride(
     /// <summary>Whether <paramref name="other"/> names the same basis and reason (who/when aside).</summary>
     public bool SameChoice(SalesLineTaxOverride? other) =>
         other is not null && ItemType == other.ItemType && BuyerSituation == other.BuyerSituation
-        && ExemptionCode == other.ExemptionCode && Reason == other.Reason;
+        && ExemptionCode == other.ExemptionCode && Reason == other.Reason && VatRateCode == other.VatRateCode
+        && WithholdingRatioCode == other.WithholdingRatioCode;
 }
 
 /// <summary>The resolution states the Settings line tax port answers (<c>TaxResolutionStatesV1</c>), kept as the snapshot's text.</summary>
@@ -136,6 +140,12 @@ public static class SalesLineTaxReasons
 
     /// <summary>SAT-D147: the buyer situation requires the buyer's document and the order carries none (the invoice waits).</summary>
     public const string BuyerDocumentMissing = "buyer_document_missing";
+
+    /// <summary>SAT-D181: the line's chosen VAT rate is no longer in the Settings VAT rate list in force (re-resolution; fail-closed).</summary>
+    public const string VatRateNotInList = "vat_rate_not_in_list";
+
+    /// <summary>SAT-D181: the line's chosen withholding ratio is no longer in the Settings list in force (re-resolution; fail-closed).</summary>
+    public const string WithholdingRatioNotInList = "withholding_ratio_not_in_list";
 }
 
 /// <summary>

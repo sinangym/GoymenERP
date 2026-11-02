@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -199,6 +200,34 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task Entering_only_the_buyer_document_of_an_approved_accepted_order_is_recorded_in_place_never_a_revision()
+    {
+        // Review B probe / SAT-D185 (EK27): approved and accepted on ExportRegistered/701, then the document (no, date) alone.
+        var world = new World { LineTaxes = new FakeLineTaxes { ExemptionCodes = ["701"] } };
+        Owners(world);
+        var buyer = new SalesDraftBuyerTaxV1(TaxBuyerSituationsV1.ExportRegistered, "701");
+        var created = (await world.Service().CreateDraftAsync(Request() with { BuyerTax = buyer }, Metadata("k-doc-create"))).Detail.Draft;
+        await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-doc-submit"));
+        await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-doc-approve"));
+        await world.Service().RecordCustomerAcceptanceAsync(created.Id, Command("4"), Metadata("k-doc-accept"));
+        var before = await world.Service().GetDraftTaxAsync(created.Id);
+        Assert.Contains("buyer_document_missing", before.Lines[0].InvoiceBlockers);
+
+        var revised = await world.Service().ReviseHeaderAsync(created.Id, HeaderRevision("5", reason: "SENTETIK ihraç kayıtlı belge geldi") with
+        {
+            BuyerTax = buyer with { DocumentNo = "IK-2026-1", DocumentDate = Day },
+        }, Metadata("k-doc"));
+
+        // In place: the same revision, still approved, no archive; the lines are not re-resolved; the document is on the order.
+        Assert.Equal(("Rev.0", "Approved", "6"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version));
+        Assert.Empty(world.Store.Archived);
+        var after = await world.Service().GetDraftTaxAsync(created.Id);
+        Assert.Equal(("IK-2026-1", Day), (after.BuyerTax!.DocumentNo, after.BuyerTax.DocumentDate));
+        Assert.Equal(before.Lines[0] with { InvoiceBlockers = after.Lines[0].InvoiceBlockers }, after.Lines[0]);
+        Assert.DoesNotContain("buyer_document_missing", after.Lines[0].InvoiceBlockers);
+    }
+
+    [Fact]
     public async Task The_tax_read_needs_the_price_read_and_a_port_fault_is_503_or_403_never_a_guessed_tax()
     {
         var taxes = new FakeLineTaxes();
@@ -236,6 +265,84 @@ public sealed partial class SalesDraftServiceTests
             (options.BuyerSituationsState, options.BuyerSituations.Count, options.ExemptionCodesState, options.ExemptionCodesReason,
                 options.ExemptionCodes.Count));
         Assert.Equal(TaxItemTypesV1.All, options.ItemTypes);
+        // SAT-D181: without the rate list port the lists are offered as "kaynak yok", never a default list.
+        Assert.Equal(("Unresolved", TaxMasterProblemCodesV1.ProviderUnavailable, 0), (options.VatRatesState, options.VatRatesReason,
+            options.VatRates.Count));
+
+        world.RateLists = new FakeRateLists();
+        var empty = await world.Service().GetTaxOptionsAsync(Day);
+        Assert.Equal(("Unresolved", TaxRateListReasonsV1.RateListMissing, "Unresolved"), (empty.VatRatesState, empty.VatRatesReason,
+            empty.WithholdingRatiosState));
+    }
+
+    [Fact]
+    public async Task A_line_change_picks_a_vat_rate_and_a_withholding_ratio_only_from_the_settings_lists()
+    {
+        var rates = new FakeRateLists
+        {
+            Vat = [new("10", "SENTETIK %10", 10m), new("0", "SENTETIK %0", 0m)],
+            Withholding = [new("2/10", "SENTETIK 2/10", 20m), new("9/10", "SENTETIK 9/10", 90m, "625")],
+        };
+        var world = new World { LineTaxes = new FakeLineTaxes { ExemptionCodes = ["701"], WithholdingCodes = ["625"] }, RateLists = rates };
+        var change = new SalesDraftLineTaxOverrideV1(TaxBuyerSituationsV1.Normal, "SENTETIK indirimli oran", VatRateCode: "10",
+            WithholdingRatioCode: "2/10");
+
+        var created = (await world.Service().CreateDraftAsync(WithLineTax(PricedRequest("10", "100"), change), Metadata("k-rate"))).Detail;
+
+        var line = Assert.Single((await world.Service().GetDraftTaxAsync(created.Draft.Id)).Lines);
+        Assert.Equal(("10", "20", "Unresolved", "10", "2/10"), (line.VatPercent, line.WithholdingPercent, line.WithholdingCodeState,
+            line.Override!.VatRateCode, line.Override.WithholdingRatioCode));
+        // 1000.00 net; VAT 10 % = 100.00; withheld 2/10 of it = 20.00; payable 1080.00 — the list's percents, the one calculator.
+        var totals = await world.Service().GetDraftTotalsAsync(created.Draft.Id);
+        Assert.Equal(("100.00", "20.00", "1080.00"), (totals.Totals.VatAmount, totals.Totals.WithheldVatAmount, totals.Totals.PayableAmount));
+
+        // A code the list does not carry, a withholding over a 0 rate, and an empty list are refused (422), never typed or guessed.
+        var unknown = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            WithLineTax(PricedRequest("1", "1"), change with { VatRateCode = "18" }), Metadata("k-rate-unknown")));
+        Assert.Equal(("lines[0].taxOverride.vatRateCode", SalesRuleCodes.TaxVatRateUnknown), (unknown.Errors[0].Field, unknown.Errors[0].Code));
+        // SAT-D181 (EK26): a 0 rate names its exemption code; no withholding over it.
+        var noCode = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            WithLineTax(PricedRequest("1", "1"), change with { VatRateCode = "0", WithholdingRatioCode = null }), Metadata("k-rate-no-code")));
+        Assert.Equal(("lines[0].taxOverride.exemptionCode", SalesRuleCodes.TaxExemptionCodeRequired), (noCode.Errors[0].Field, noCode.Errors[0].Code));
+        var zero = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            WithLineTax(PricedRequest("1", "1"), change with { VatRateCode = "0", ExemptionCode = "701" }), Metadata("k-rate-zero")));
+        Assert.Equal(("lines[0].taxOverride.withholdingRatioCode", SalesRuleCodes.TaxWithholdingNotApplicable),
+            (zero.Errors[0].Field, zero.Errors[0].Code));
+        var zeroLine = (await world.Service().CreateDraftAsync(WithLineTax(PricedRequest("1", "1"),
+            change with { VatRateCode = "0", WithholdingRatioCode = null, ExemptionCode = "701" }), Metadata("k-rate-zero-ok"))).Detail;
+        var zeroTax = Assert.Single((await world.Service().GetDraftTaxAsync(zeroLine.Draft.Id)).Lines);
+        Assert.Equal(("0", "Resolved", "701", "NotApplied"), (zeroTax.VatPercent, zeroTax.ExemptionCodeState, zeroTax.ExemptionCode,
+            zeroTax.WithholdingState));
+
+        // SAT-D181 (EK26): a ratio mapped to a GİB code of the withholding code list is invoiced under it.
+        var mapped = (await world.Service().CreateDraftAsync(WithLineTax(PricedRequest("1", "1"), change with { WithholdingRatioCode = "9/10" }),
+            Metadata("k-rate-mapped"))).Detail;
+        var mappedTax = Assert.Single((await world.Service().GetDraftTaxAsync(mapped.Draft.Id)).Lines);
+        Assert.Equal(("90", "Resolved", "625"), (mappedTax.WithholdingPercent, mappedTax.WithholdingCodeState, mappedTax.WithholdingCode));
+
+        world.RateLists = new FakeRateLists();
+        var none = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            WithLineTax(PricedRequest("1", "1"), change with { WithholdingRatioCode = null }), Metadata("k-rate-none")));
+        Assert.Equal(SalesRuleCodes.TaxVatRateUnknown, none.Errors[0].Code);
+        world.RateLists = null;
+        Assert.Equal(503, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            WithLineTax(PricedRequest("1", "1"), change with { WithholdingRatioCode = null }), Metadata("k-rate-port")))).Status);
+    }
+
+    [Fact]
+    public async Task A_kept_rate_pick_no_longer_listed_leaves_the_line_unresolved_at_the_next_revision_never_the_old_rate()
+    {
+        var rates = new FakeRateLists { Vat = [new("10", "SENTETIK %10", 10m)] };
+        var world = new World { LineTaxes = new FakeLineTaxes(), RateLists = rates };
+        var created = (await world.Service().CreateDraftAsync(WithLineTax(PricedRequest("10", "100"),
+            new SalesDraftLineTaxOverrideV1(TaxBuyerSituationsV1.Normal, "SENTETIK", VatRateCode: "10")), Metadata("k-kept"))).Detail;
+        rates.Vat = [];
+
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(created.Lines[0].LineId, "90", KgUnit, null)), Metadata("k-kept-rev"));
+
+        var line = Assert.Single((await world.Service().GetDraftTaxAsync(created.Draft.Id)).Lines);
+        Assert.Equal(("Unresolved", SalesLineTaxReasons.VatRateNotInList, "NoSource"), (line.State, line.Reason, line.RateState));
     }
 
     [Fact]
@@ -246,9 +353,13 @@ public sealed partial class SalesDraftServiceTests
 
         var check = await world.Service().GetDraftRiskCheckAsync(created.Draft.Id);
 
-        // SAT-D46 / SAT-D48: this order's gross (KDV dahil) amount — 1000.00 + 200.00 VAT — not the net.
+        // SAT-D46 / SAT-D183: this order's PAYABLE amount — 1000.00 + 200.00 VAT − 100.00 withheld — never the net or the gross.
         Assert.Equal(("Available", "IncludingTax"), (check.ThisOrder.State, check.ThisOrder.TaxBasis));
-        Assert.Equal("1200.00", Assert.Single(check.ThisOrder.Amounts!).Amount);
+        Assert.Equal("1100.00", Assert.Single(check.ThisOrder.Amounts!).Amount);
+
+        // SAT-D183's own example: 100.000 + %20 KDV = 120.000; with 5/10 withheld the customer owes 110.000.
+        var large = (await world.Service().CreateDraftAsync(PricedRequest("1000", "100"), Metadata("k-tax-risk-large"))).Detail;
+        Assert.Equal("110000.00", Assert.Single((await world.Service().GetDraftRiskCheckAsync(large.Draft.Id)).ThisOrder.Amounts!).Amount);
 
         // A line without a usable tax keeps it "hesaplanamıyor" (never the net in its place).
         var empty = new World { LineTaxes = new FakeLineTaxes { Defaults = [] }, PartyRisk = new FakePartyRisk(FinanceLike([new(Lira, 100m)])) };
@@ -256,6 +367,23 @@ public sealed partial class SalesDraftServiceTests
         var unavailable = await empty.Service().GetDraftRiskCheckAsync(unresolved.Draft.Id);
         Assert.Equal(("Unavailable", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
             (unavailable.ThisOrder.State, unavailable.ThisOrder.ReasonCode));
+    }
+
+    /// <summary>A SYNTHETIC Settings rate list port: the lists the test gives (empty = "kaynak yok"), in force on every date.</summary>
+    private sealed class FakeRateLists : ISettingsTaxRateListReaderV1
+    {
+        public IReadOnlyList<TaxRateListEntryViewV1> Vat { get; set; } = [];
+
+        public IReadOnlyList<TaxRateListEntryViewV1> Withholding { get; set; } = [];
+
+        public Task<SettingsTaxRateListResolutionV1> GetRateListAsync(string kind, DateOnly on, CancellationToken cancellationToken = default)
+        {
+            var entries = kind == TaxRateListKindsV1.VatRate ? Vat : Withholding;
+            return Task.FromResult(entries.Count == 0
+                ? new SettingsTaxRateListResolutionV1(Company, kind, on, TaxResolutionStatesV1.Unresolved, null, null, [],
+                    TaxRateListReasonsV1.RateListMissing)
+                : new SettingsTaxRateListResolutionV1(Company, kind, on, TaxResolutionStatesV1.Resolved, 1, Day, entries, null));
+        }
     }
 
     private static CreateSalesOrderDraftRequest PricedRequest(string quantity, string price) =>
@@ -282,11 +410,17 @@ public sealed partial class SalesDraftServiceTests
 
         public IReadOnlyList<string> ExemptionCodes { get; init; } = [];
 
+        public IReadOnlyList<string> WithholdingCodes { get; init; } = [];
+
         public string? Fault { get; set; }
 
         private TaxMasterDataV1 Data => new(Defaults,
-            ExemptionCodes.Count == 0 ? [] : [new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Exemption, 1, Day,
-                [.. ExemptionCodes.Select(code => new TaxCodeListEntryViewV1(code, "SENTETIK istisna"))])],
+            [
+                .. ExemptionCodes.Count == 0 ? [] : new[] { new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Exemption, 1, Day,
+                    [.. ExemptionCodes.Select(code => new TaxCodeListEntryViewV1(code, "SENTETIK istisna"))]) },
+                .. WithholdingCodes.Count == 0 ? [] : new[] { new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Withholding, 1, Day,
+                    [.. WithholdingCodes.Select(code => new TaxCodeListEntryViewV1(code, "SENTETIK tevkifat"))]) },
+            ],
             [],
             [new TaxBuyerSituationListVersionDataV1(0, Day, TaxDefaultSourcesV1.Catalog, ApprovedTaxBuyerSituationCatalog.Entries)]);
 

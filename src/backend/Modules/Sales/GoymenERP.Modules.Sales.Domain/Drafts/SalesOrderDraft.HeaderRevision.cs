@@ -115,14 +115,21 @@ public sealed partial class SalesOrderDraft
         }
 
         var buyerTax = input.BuyerTax ?? Header.BuyerTax;
-        var buyerTaxChanged = buyerTax != Header.BuyerTax;
+        // SAT-D185 (EK27): entering ONLY the buyer's document (no, date) under the same situation and exemption code changes no
+        // line's VAT or withholding: it is recorded in place (no archive, no Rev+1, no re-approval, no customer acceptance, no line
+        // re-resolution) with the reason and the audit, like a SAT-D126 change. Anything else of the buyer tax re-resolves the
+        // lines and re-enters approval (SAT-D105).
+        var buyerTaxChanged = buyerTax is not null && Header.BuyerTax is not null
+            ? !SameBuyerTaxBasis(buyerTax, Header.BuyerTax)
+            : buyerTax != Header.BuyerTax;
+        var documentChanged = !buyerTaxChanged && buyerTax != Header.BuyerTax;
         if (buyerTaxChanged != (input.LineTaxes is not null))
         {
             throw new ArgumentException("Alıcı vergi durumu değişince (yalnız o zaman) satırların yeniden çözülmüş vergisi verilir.", nameof(input));
         }
 
         RequireLineTaxes(input.LineTaxes);
-        var unchanged = !buyerTaxChanged && !customerChanged && !currencyChanged
+        var unchanged = !buyerTaxChanged && !documentChanged && !customerChanged && !currencyChanged
             && input.DeliveryAddress == Header.DeliveryAddress && input.Contact == Header.Contact
             && input.SalesOwnerUserId == Header.SalesOwnerUserId
             && SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms);
@@ -231,6 +238,11 @@ public sealed partial class SalesOrderDraft
         && ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected
         && archivedRevisions.Count > 0
         && HeaderDiffersFrom(Header, CustomerAcceptedFallback ?? archivedRevisions[^1]);
+
+    /// <summary>SAT-D185: the same buyer tax situation and exemption code (the basis the lines are resolved for); the document aside.</summary>
+    public static bool SameBuyerTaxBasis(SalesBuyerTax left, SalesBuyerTax right) =>
+        string.Equals(left.Situation, right.Situation, StringComparison.Ordinal)
+        && string.Equals(left.ExemptionCode, right.ExemptionCode, StringComparison.Ordinal);
 
     /// <summary>The header as it stands, for an archive (API-04).</summary>
     private RevisionHeaderSnapshot CurrentHeaderSnapshot() =>

@@ -77,6 +77,8 @@ const optionsBody = (): Body => ({
   on: '2026-11-02', buyerSituationsState: 'Resolved', buyerSituationsReason: null, buyerSituationListVersion: 0,
   buyerSituations: SITUATIONS.map((s) => ({ ...s })), exemptionCodesState: 'Unresolved', exemptionCodesReason: 'code_list_missing',
   exemptionCodes: [], itemTypes: ['Steel', 'Scrap', 'Service'],
+  vatRatesState: 'Resolved', vatRatesReason: null, vatRates: [{ code: '10', name: 'SENTETIK %10', percent: '10', taxCode: null }],
+  withholdingRatiosState: 'Unresolved', withholdingRatiosReason: 'rate_list_missing', withholdingRatios: [],
 })
 
 describe('decodeOrderTax', () => {
@@ -98,10 +100,12 @@ describe('decodeOrderTax', () => {
     const body = taxBody()
     body.buyerTax = null
     body.lines[0] = { ...body.lines[0], origin: 'Override', override: { itemType: null, buyerSituation: 'Normal', exemptionCode: null,
-      reason: 'SENTETIK gerekçe', changedBy: 'synthetic-actor', changedAtUtc: '2026-11-02T09:00:00Z' } }
+      reason: 'SENTETIK gerekçe', changedBy: 'synthetic-actor', changedAtUtc: '2026-11-02T09:00:00Z', vatRateCode: '10',
+      withholdingRatioCode: null } }
     const decoded = decodeOrderTax(body, detail)
     expect(decoded?.buyerTax).toBeNull()
     expect(decoded?.lines[0].override?.reason).toBe('SENTETIK gerekçe')
+    expect(decoded?.lines[0].override?.vatRateCode).toBe('10')
   })
 
   const refusals: readonly [string, (body: Body) => void][] = [
@@ -140,6 +144,9 @@ describe('decodeTaxOptions', () => {
     expect([decoded?.exemptionCodesState, decoded?.exemptionCodesReason, decoded?.exemptionCodes]).toEqual(['Unresolved', 'code_list_missing', []])
     expect(readOptions({ type: 'ok-single', data: decoded! }).notice).toBeNull()
     expect(readOptions(undefined).options).toBeNull()
+    // SAT-D181: the rate lists — a resolved one with its exact percents, an empty one with its Settings reason.
+    expect(decoded?.vatRates).toEqual([{ code: '10', name: 'SENTETIK %10', percent: '10', taxCode: null }])
+    expect([decoded?.withholdingRatiosState, decoded?.withholdingRatiosReason, decoded?.withholdingRatios]).toEqual(['Unresolved', 'rate_list_missing', []])
     expect(readOptions({ type: 'http', status: 503 }).options).toBeNull()
   })
 
@@ -148,6 +155,8 @@ describe('decodeTaxOptions', () => {
     ['a resolved list with a reason', (b: Body) => { b.buyerSituationsReason = 'x' }],
     ['an unresolved list with entries', (b: Body) => { b.exemptionCodes = [{ code: '701', name: 'x' }] }],
     ['an extra entry member', (b: Body) => { b.buyerSituations[0].rate = '0' }],
+    ['a number for a listed percent', (b: Body) => { b.vatRates[0].percent = 10 }],
+    ['an unresolved rate list with entries', (b: Body) => { b.withholdingRatios = [{ code: '5/10', name: 'x', percent: '50', taxCode: null }] }],
   ])('refuses %s', (_, mutate) => {
     const body = optionsBody()
     mutate(body)
@@ -176,6 +185,9 @@ describe('tax builders', () => {
     expect(buildLineTaxChoice({ ...KEEP_LINE_TAX, mode: 'override', reason: 'r' })).toEqual({ ok: false, error: 'tax-situation-required' })
     expect(buildLineTaxChoice({ mode: 'override', buyerSituation: 'Normal', itemType: 'Scrap', exemptionCode: '', reason: ' r ' }))
       .toEqual({ ok: true, tax: { mode: 'Override', buyerSituation: 'Normal', reason: 'r', itemType: 'Scrap' } })
+    // SAT-D181: a listed VAT rate / withholding ratio travels by its code only (the percent is the server's list).
+    expect(buildLineTaxChoice({ ...KEEP_LINE_TAX, mode: 'override', buyerSituation: 'Normal', reason: 'r', vatRateCode: '10', withholdingRatioCode: '2/10' }))
+      .toEqual({ ok: true, tax: { mode: 'Override', buyerSituation: 'Normal', reason: 'r', vatRateCode: '10', withholdingRatioCode: '2/10' } })
   })
 
   it('puts the line tax choice on the commercial revision only when the person chose one', () => {
@@ -237,12 +249,15 @@ describe('MOD-03 → Sales OpenAPI pin', () => {
   it.each([
     ['SalesOrderDraftTaxResponse', ['businessDate', 'buyerTax', 'draftVersion', 'lines', 'revision'], []],
     ['SalesDraftBuyerTaxV1', ['situation'], ['documentDate', 'documentNo', 'exemptionCode']],
-    ['SalesDraftLineTaxOverrideViewV1', ['buyerSituation', 'changedAtUtc', 'changedBy', 'exemptionCode', 'itemType', 'reason'], []],
+    ['SalesDraftLineTaxOverrideViewV1', ['buyerSituation', 'changedAtUtc', 'changedBy', 'exemptionCode', 'itemType', 'reason', 'vatRateCode',
+      'withholdingRatioCode'], []],
+    ['SalesTaxRateOptionV1', ['code', 'name', 'percent', 'taxCode'], []],
     ['SalesTaxBuyerSituationOptionV1', ['code', 'documentRequired', 'name', 'vatMode', 'withholdingApplies'], []],
     ['SalesTaxCodeOptionV1', ['code', 'name'], []],
     ['SalesTaxOptionsResponse', ['buyerSituationListVersion', 'buyerSituations', 'buyerSituationsReason', 'buyerSituationsState', 'exemptionCodes',
-      'exemptionCodesReason', 'exemptionCodesState', 'itemTypes', 'on'], []],
-    ['SalesDraftLineTaxChoiceV1', ['mode'], ['buyerSituation', 'exemptionCode', 'itemType', 'reason']],
+      'exemptionCodesReason', 'exemptionCodesState', 'itemTypes', 'on', 'vatRates', 'vatRatesReason', 'vatRatesState', 'withholdingRatios',
+      'withholdingRatiosReason', 'withholdingRatiosState'], []],
+    ['SalesDraftLineTaxChoiceV1', ['mode'], ['buyerSituation', 'exemptionCode', 'itemType', 'reason', 'vatRateCode', 'withholdingRatioCode']],
   ])('%s: the decoder and builders use exactly the members the contract declares', (name, required, optional) => {
     expect([...(schema(name).required ?? [])].sort()).toEqual([...required].sort())
     expect(Object.keys(schema(name).properties ?? {}).sort()).toEqual([...required, ...optional].sort())

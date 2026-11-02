@@ -52,7 +52,7 @@ internal static class SalesTaxJson
             tax.WithholdingCodeReason, tax.BuyerAdjustment, tax.BuyerSituationListVersion, tax.BuyerVatMode, tax.BuyerDocumentRequired,
             tax.Override is { } change
                 ? new StoredOverride(change.ItemType, change.BuyerSituation, change.ExemptionCode, change.Reason, change.ChangedBy,
-                    change.ChangedAtUtc)
+                    change.ChangedAtUtc, change.VatRateCode, change.WithholdingRatioCode)
                 : null), Json);
 
     public static SalesLineTaxSnapshot? RestoreLine(string? json)
@@ -87,14 +87,17 @@ internal static class SalesTaxJson
             stored.BuyerAdjustment, stored.BuyerSituationListVersion, stored.BuyerVatMode, stored.BuyerDocumentRequired,
             stored.Override is { } kept
                 ? new SalesLineTaxOverride(kept.ItemType, kept.BuyerSituation, kept.ExemptionCode, kept.Reason, kept.ChangedBy,
-                    kept.ChangedAtUtc)
+                    kept.ChangedAtUtc, kept.VatRateCode, kept.WithholdingRatioCode)
                 : null);
     }
 
     private sealed record StoredBuyerTax(string Situation, string? ExemptionCode, string? DocumentNo, DateOnly? DocumentDate);
 
+    // SAT-D181: the two list picks are omitted when absent, so a change written before them keeps its exact JSON.
     private sealed record StoredOverride(string? ItemType, string BuyerSituation, string? ExemptionCode, string Reason,
-        string ChangedBy, DateTimeOffset ChangedAtUtc);
+        string ChangedBy, DateTimeOffset ChangedAtUtc,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VatRateCode = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WithholdingRatioCode = null);
 
     private sealed record StoredLineTax(
         Guid ProductId, DateOnly ResolvedOn, string BuyerSituation, string? ItemType, string State, string? Reason, string? Source,

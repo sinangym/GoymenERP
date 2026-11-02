@@ -305,6 +305,18 @@ public static class SalesRuleCodes
     /// <summary>SAT-D97: the reason of a line's tax override is at most 4000 characters.</summary>
     public const string TaxOverrideReasonTooLong = "sales_tax_override_reason_too_long";
 
+    /// <summary>SAT-D181: the picked VAT rate is not an entry of the Settings VAT rate list in force (or no list is entered).</summary>
+    public const string TaxVatRateUnknown = "sales_tax_vat_rate_unknown";
+
+    /// <summary>SAT-D181 (EK26) / SAT-D93 / SAT-D147: a picked VAT rate of 0 needs an exemption code from the exemption list.</summary>
+    public const string TaxExemptionCodeRequired = "sales_tax_exemption_code_required";
+
+    /// <summary>SAT-D181: the picked withholding ratio is not an entry of the Settings withholding ratio list in force (or none entered).</summary>
+    public const string TaxWithholdingRatioUnknown = "sales_tax_withholding_ratio_unknown";
+
+    /// <summary>SAT-D147/D181: a withholding ratio is picked only for a line that carries VAT (never KDV %0 or an exempt default).</summary>
+    public const string TaxWithholdingNotApplicable = "sales_tax_withholding_not_applicable";
+
     /// <summary>A line's tax snapshot names another product than the line (a stale or crossed resolution; internal).</summary>
     public const string TaxSnapshotMismatch = "sales_tax_snapshot_mismatch";
 

@@ -53,6 +53,9 @@ export interface LineTaxOverride {
   readonly reason: string
   readonly changedBy: string
   readonly changedAtUtc: string
+  /** SAT-D181: the picked entries of the Settings VAT rate / withholding ratio lists (by code). */
+  readonly vatRateCode: string | null
+  readonly withholdingRatioCode: string | null
 }
 
 export interface LineTax {
@@ -104,6 +107,14 @@ export interface TaxCodeOption {
   readonly name: string
 }
 
+/** SAT-D181: one entry of a Settings rate list — its percent is the list's (exact text); a ratio names its GİB code. */
+export interface TaxRateOption {
+  readonly code: string
+  readonly name: string
+  readonly percent: string
+  readonly taxCode: string | null
+}
+
 export interface TaxOptions {
   readonly on: string
   readonly buyerSituationsState: 'Resolved' | 'Unresolved'
@@ -113,6 +124,12 @@ export interface TaxOptions {
   readonly exemptionCodesReason: string | null
   readonly exemptionCodes: readonly TaxCodeOption[]
   readonly itemTypes: readonly string[]
+  readonly vatRatesState: 'Resolved' | 'Unresolved'
+  readonly vatRatesReason: string | null
+  readonly vatRates: readonly TaxRateOption[]
+  readonly withholdingRatiosState: 'Resolved' | 'Unresolved'
+  readonly withholdingRatiosReason: string | null
+  readonly withholdingRatios: readonly TaxRateOption[]
 }
 
 type Obj = Record<string, unknown>
@@ -151,16 +168,18 @@ export function decodeBuyerTax(value: unknown): BuyerTax | null {
   return { situation: o.situation, exemptionCode, documentNo, documentDate: documentDate as string | null }
 }
 
-const OVERRIDE_KEYS = ['itemType', 'buyerSituation', 'exemptionCode', 'reason', 'changedBy', 'changedAtUtc'] as const
+const OVERRIDE_KEYS = ['itemType', 'buyerSituation', 'exemptionCode', 'reason', 'changedBy', 'changedAtUtc', 'vatRateCode',
+  'withholdingRatioCode'] as const
 
 function decodeOverride(value: unknown): LineTaxOverride | null | undefined {
   if (value === null) return null
   const o = exact(value, OVERRIDE_KEYS)
   if (o === null || !textOrNull(o.itemType) || !text(o.buyerSituation) || !textOrNull(o.exemptionCode) || !text(o.reason)
-    || !text(o.changedBy) || typeof o.changedAtUtc !== 'string' || Number.isNaN(Date.parse(o.changedAtUtc))) return undefined
+    || !text(o.changedBy) || typeof o.changedAtUtc !== 'string' || Number.isNaN(Date.parse(o.changedAtUtc))
+    || !textOrNull(o.vatRateCode) || !textOrNull(o.withholdingRatioCode)) return undefined
   return {
     itemType: o.itemType, buyerSituation: o.buyerSituation, exemptionCode: o.exemptionCode, reason: o.reason, changedBy: o.changedBy,
-    changedAtUtc: o.changedAtUtc,
+    changedAtUtc: o.changedAtUtc, vatRateCode: o.vatRateCode, withholdingRatioCode: o.withholdingRatioCode,
   }
 }
 
@@ -232,7 +251,21 @@ export function decodeOrderTax(value: unknown, detail: DraftDetail): OrderTax | 
 }
 
 const OPTIONS_KEYS = ['on', 'buyerSituationsState', 'buyerSituationsReason', 'buyerSituationListVersion', 'buyerSituations',
-  'exemptionCodesState', 'exemptionCodesReason', 'exemptionCodes', 'itemTypes'] as const
+  'exemptionCodesState', 'exemptionCodesReason', 'exemptionCodes', 'itemTypes', 'vatRatesState', 'vatRatesReason', 'vatRates',
+  'withholdingRatiosState', 'withholdingRatiosReason', 'withholdingRatios'] as const
+const RATE_KEYS = ['code', 'name', 'percent', 'taxCode'] as const
+
+/** A rate list of the options: entries with exact percents; Resolved ⇔ no reason; Unresolved ⇔ empty. Undefined = malformed. */
+function decodeRateList(state: unknown, reason: unknown, entries: unknown): readonly TaxRateOption[] | undefined {
+  if (!resolution(state) || !textOrNull(reason) || !Array.isArray(entries) || (state === 'Resolved') !== (reason === null)) return undefined
+  const rates: TaxRateOption[] = []
+  for (const raw of entries) {
+    const r = exact(raw, RATE_KEYS)
+    if (r === null || !text(r.code) || !text(r.name) || !percentOrNull(r.percent) || r.percent === null || !textOrNull(r.taxCode)) return undefined
+    rates.push({ code: r.code, name: r.name, percent: r.percent as string, taxCode: r.taxCode })
+  }
+  return state === 'Unresolved' && rates.length > 0 ? undefined : rates
+}
 const SITUATION_KEYS = ['code', 'name', 'withholdingApplies', 'vatMode', 'documentRequired'] as const
 const CODE_KEYS = ['code', 'name'] as const
 
@@ -261,10 +294,16 @@ export function decodeTaxOptions(value: unknown, on: string): TaxOptions | null 
     || (o.buyerSituationsState === 'Unresolved' && situations.length > 0)
     || (o.exemptionCodesState === 'Resolved') !== (o.exemptionCodesReason === null)
     || (o.exemptionCodesState === 'Unresolved' && codes.length > 0)) return null
+  const vatRates = decodeRateList(o.vatRatesState, o.vatRatesReason, o.vatRates)
+  const withholdingRatios = decodeRateList(o.withholdingRatiosState, o.withholdingRatiosReason, o.withholdingRatios)
+  if (vatRates === undefined || withholdingRatios === undefined) return null
   return {
     on: o.on, buyerSituationsState: o.buyerSituationsState, buyerSituationsReason: o.buyerSituationsReason,
     buyerSituations: situations, exemptionCodesState: o.exemptionCodesState, exemptionCodesReason: o.exemptionCodesReason,
     exemptionCodes: codes, itemTypes: o.itemTypes as string[],
+    vatRatesState: o.vatRatesState as 'Resolved' | 'Unresolved', vatRatesReason: o.vatRatesReason as string | null, vatRates,
+    withholdingRatiosState: o.withholdingRatiosState as 'Resolved' | 'Unresolved',
+    withholdingRatiosReason: o.withholdingRatiosReason as string | null, withholdingRatios,
   }
 }
 
@@ -318,9 +357,15 @@ export interface LineTaxChoiceInput {
   readonly itemType: string
   readonly exemptionCode: string
   readonly reason: string
+  /** SAT-D181: a code of the Settings VAT rate list ('' = the default's rate). */
+  readonly vatRateCode?: string
+  /** SAT-D181: a code of the Settings withholding ratio list ('' = the default's ratio). */
+  readonly withholdingRatioCode?: string
 }
 
-export const KEEP_LINE_TAX: LineTaxChoiceInput = { mode: 'keep', buyerSituation: '', itemType: '', exemptionCode: '', reason: '' }
+export const KEEP_LINE_TAX: LineTaxChoiceInput = {
+  mode: 'keep', buyerSituation: '', itemType: '', exemptionCode: '', reason: '', vatRateCode: '', withholdingRatioCode: '',
+}
 
 /** `SalesDraftLineTaxChoiceV1` on the wire; null keeps the line's current choice. */
 export interface LineTaxChoiceRequest {
@@ -329,6 +374,8 @@ export interface LineTaxChoiceRequest {
   readonly reason?: string
   readonly itemType?: string
   readonly exemptionCode?: string
+  readonly vatRateCode?: string
+  readonly withholdingRatioCode?: string
 }
 
 export type LineTaxChoiceBuild =
@@ -345,6 +392,8 @@ export function buildLineTaxChoice(input: LineTaxChoiceInput): LineTaxChoiceBuil
   if (reason === '') return { ok: false, error: 'tax-reason-required' }
   const itemType = input.itemType.trim()
   const exemptionCode = input.exemptionCode.trim()
+  const vatRateCode = (input.vatRateCode ?? '').trim()
+  const withholdingRatioCode = (input.withholdingRatioCode ?? '').trim()
   return {
     ok: true,
     tax: {
@@ -353,6 +402,8 @@ export function buildLineTaxChoice(input: LineTaxChoiceInput): LineTaxChoiceBuil
       reason,
       ...(itemType === '' ? {} : { itemType }),
       ...(exemptionCode === '' ? {} : { exemptionCode }),
+      ...(vatRateCode === '' ? {} : { vatRateCode }),
+      ...(withholdingRatioCode === '' ? {} : { withholdingRatioCode }),
     },
   }
 }

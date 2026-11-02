@@ -377,8 +377,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-03 → Sales (SAT-D93/D97/D105/D140/D147): +3 SalesOrderTax facts (an approved order's tax change archives the
             // approved tax and the tax/totals routes answer the stored snapshots; a buyer tax change moves the header and line tax
             // columns; the real Settings tax options and the 51135 rollback refusal), kept ordinal-sorted (a921318d… -> 1c5c3996…).
+            // SAT-D184 (EK26): +1 SalesOrderTax fact (the BackfillDraftBuyerTax migration writes "Normal" once on a legacy order),
+            // kept ordinal-sorted (1c5c3996… -> 4fa6ad29…).
             ["tools/relational_inventory/sales.txt"] =
-                "1c5c39968628bc6adc3d4ea7d3f6ba9ff2f7c6d6e70bc384cd1c45405c1827aa",
+                "4fa6ad296d5c8787ee3ed7de27ae4eccf4cb48def7031d8a5d87586d9c0061f2",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

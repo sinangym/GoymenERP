@@ -158,7 +158,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesPartyDisplaySourceV1>(),
         // MOD-03 → Sales (SAT-D93/D139/D140): the Settings line tax port, registered by the Settings owner's module; until it is,
         // a create stores no tax snapshot ("kaynak yok") and a command naming a tax choice is 503, never a guessed rate.
-        serviceProvider.GetService<ISettingsLineTaxResolverV1>());
+        serviceProvider.GetService<ISettingsLineTaxResolverV1>(),
+        // SAT-D181 (EK26): the Settings VAT rate / withholding ratio lists a line change picks from (empty until entered).
+        serviceProvider.GetService<ISettingsTaxRateListReaderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

@@ -653,6 +653,13 @@ export function taxOptionsOf(on: string): Response {
     exemptionCodesReason: 'code_list_missing',
     exemptionCodes: [],
     itemTypes: ['Steel', 'Scrap', 'Service'],
+    // SAT-D181: the rate lists are not entered yet (SAT-D148).
+    vatRatesState: 'Unresolved',
+    vatRatesReason: 'rate_list_missing',
+    vatRates: [],
+    withholdingRatiosState: 'Unresolved',
+    withholdingRatiosReason: 'rate_list_missing',
+    withholdingRatios: [],
   })
 }
 

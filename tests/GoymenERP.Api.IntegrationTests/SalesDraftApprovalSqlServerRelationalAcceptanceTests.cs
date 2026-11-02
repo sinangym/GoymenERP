@@ -1430,7 +1430,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         /// SAT-D123: the drafts here carry due terms, and the header-revision migration refuses to roll back over them (51133); a
         /// test that rolls back to an older schema clears them first (this run's own database only).
         /// </summary>
-        public Task<int> ClearDueTermsAsync() => ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL; SELECT @@ROWCOUNT");
+        // The pre-API-04 state (no due terms) and, since MOD-03 → Sales, the pre-tax state (SalesOrderTaxRollback): both later
+        // migrations' columns cleared, so their Downs pass and the older migration's own guard answers.
+        public Task<int> ClearDueTermsAsync() =>
+            ScalarAsync<int>(SalesOrderTaxRollback.ClearSql + "UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL; SELECT @@ROWCOUNT");
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {

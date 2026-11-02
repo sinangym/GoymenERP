@@ -102946,7 +102946,8 @@
           "vatAmount",
           "withheldVatAmount",
           "grossAmount",
-          "payableAmount"
+          "payableAmount",
+          "taxUnavailableLineCount"
         ],
         "type": "object",
         "properties": {
@@ -103016,8 +103017,7 @@
               "integer",
               "string"
             ],
-            "format": "int32",
-            "default": 0
+            "format": "int32"
           }
         }
       },
@@ -103934,6 +103934,18 @@
               "null",
               "string"
             ]
+          },
+          "vatRateCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingRatioCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -103961,6 +103973,18 @@
               "null",
               "string"
             ]
+          },
+          "vatRateCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingRatioCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -103971,7 +103995,9 @@
           "exemptionCode",
           "reason",
           "changedBy",
-          "changedAtUtc"
+          "changedAtUtc",
+          "vatRateCode",
+          "withholdingRatioCode"
         ],
         "type": "object",
         "properties": {
@@ -103999,6 +104025,18 @@
           "changedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "vatRateCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingRatioCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -108625,7 +108663,13 @@
           "exemptionCodesState",
           "exemptionCodesReason",
           "exemptionCodes",
-          "itemTypes"
+          "itemTypes",
+          "vatRatesState",
+          "vatRatesReason",
+          "vatRates",
+          "withholdingRatiosState",
+          "withholdingRatiosReason",
+          "withholdingRatios"
         ],
         "type": "object",
         "properties": {
@@ -108677,6 +108721,62 @@
             "items": {
               "type": "string"
             }
+          },
+          "vatRatesState": {
+            "type": "string"
+          },
+          "vatRatesReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatRates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesTaxRateOptionV1"
+            }
+          },
+          "withholdingRatiosState": {
+            "type": "string"
+          },
+          "withholdingRatiosReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingRatios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesTaxRateOptionV1"
+            }
+          }
+        }
+      },
+      "SalesTaxRateOptionV1": {
+        "required": [
+          "code",
+          "name",
+          "percent",
+          "taxCode"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "percent": {
+            "type": "string"
+          },
+          "taxCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

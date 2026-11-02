@@ -50,7 +50,7 @@ function tax(): Body {
         settingsRecordId: 'dddddddd-1111-4111-8111-000000000009', settingsRecordVersion: 1, buyerSituationListVersion: 0,
         rateState: 'Computed', unavailableReason: null, invoiceBlockers: ['exemption_code_missing'],
         override: { itemType: null, buyerSituation: 'ExportRegistered', exemptionCode: null, reason: 'SENTETIK ihraç kayıtlı',
-          changedBy: 'synthetic-actor', changedAtUtc: '2026-11-02T09:00:00Z' },
+          changedBy: 'synthetic-actor', changedAtUtc: '2026-11-02T09:00:00Z', vatRateCode: null, withholdingRatioCode: null },
       },
       {
         lineId: LINE_2, lineNo: 2, hasSnapshot: true, origin: 'Default', resolvedOn: '2026-11-02', buyerSituation: 'ExportRegistered',

@@ -68,14 +68,35 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.TaxProviderUnavailable);
         }
 
+        var vatRates = await RateListOptionAsync(scope, permission, TaxRateListKindsV1.VatRate, on, cancellationToken);
+        var ratios = await RateListOptionAsync(scope, permission, TaxRateListKindsV1.WithholdingRatio, on, cancellationToken);
         return new SalesTaxOptionsResponse(on,
             situations.State, situations.Reason, situations.ListVersion,
             [.. situations.Entries.Select(entry => new SalesTaxBuyerSituationOptionV1(entry.Code, entry.Name, entry.WithholdingApplies,
                 entry.VatMode, entry.DocumentRequired))],
             exemptions.State, exemptions.Reason,
             [.. exemptions.Entries.Select(entry => new SalesTaxCodeOptionV1(entry.Code, entry.Name))],
-            TaxItemTypesV1.All);
+            TaxItemTypesV1.All,
+            vatRates.State, vatRates.Reason, RateOptions(vatRates),
+            ratios.State, ratios.Reason, RateOptions(ratios));
     }
+
+    /// <summary>SAT-D181: a rate list for the options read; a port not composed is "Unresolved" with the provider reason (no list offered).</summary>
+    private async Task<SettingsTaxRateListResolutionV1> RateListOptionAsync(Scope scope, string? permission, string kind, DateOnly on,
+        CancellationToken cancellationToken)
+    {
+        if (rateLists is null)
+        {
+            return new SettingsTaxRateListResolutionV1(scope.CompanyId, kind, on, TaxResolutionStatesV1.Unresolved, null, null, [],
+                TaxMasterProblemCodesV1.ProviderUnavailable);
+        }
+
+        var list = await RateListPortAsync(scope, permission, kind, on, cancellationToken);
+        return list;
+    }
+
+    private static IReadOnlyList<SalesTaxRateOptionV1> RateOptions(SettingsTaxRateListResolutionV1 list) =>
+        [.. list.Entries.Select(entry => new SalesTaxRateOptionV1(entry.Code, entry.Name, SalesLinePriceCalculator.Format(entry.Percent), entry.TaxCode))];
 
     // ---- create -------------------------------------------------------------------------------------------------------------
 
@@ -115,10 +136,11 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
             var line = request.Lines[index];
             var change = line.TaxOverride is { } requested
                 ? await RequireLineTaxChangeAsync(scope, permission, requested.ItemType, requested.BuyerSituation, requested.ExemptionCode,
-                    requested.Reason, lists, $"lines[{index}].taxOverride", now, cancellationToken)
+                    requested.Reason, lists, $"lines[{index}].taxOverride", now, cancellationToken, requested.VatRateCode,
+                    requested.WithholdingRatioCode)
                 : null;
             snapshots[line.LineId] = await ResolveLineTaxAsync(scope, permission, line.ProductId, buyer, change, request.BusinessDate,
-                cancellationToken);
+                cancellationToken, lists, $"lines[{index}].taxOverride");
         }
 
         return new CreateTax(buyer, snapshots);
@@ -177,16 +199,22 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
                 else
                 {
                     var requested = await RequireLineTaxChangeAsync(scope, permission, choice.ItemType, choice.BuyerSituation!,
-                        choice.ExemptionCode, choice.Reason!, lists, $"lines[{named.index}].tax", now, cancellationToken);
+                        choice.ExemptionCode, choice.Reason!, lists, $"lines[{named.index}].tax", now, cancellationToken,
+                        choice.VatRateCode, choice.WithholdingRatioCode);
                     // The same basis and reason again is no new change: who/when stay (so a value-equal revision is no change).
                     change = requested.SameChoice(change) ? change : requested;
                 }
             }
 
+            // A change named in THIS request is checked against the lists (a refusal names its field); a kept one is re-resolved
+            // fail-closed (a pick no longer listed leaves the line unresolved, never a guessed rate).
+            var field = indexes.TryGetValue(line.Id, out var asked) && asked.line.Tax is { Mode: SalesDraftLineTaxModesV1.Override }
+                ? $"lines[{asked.index}].tax"
+                : null;
             snapshots[line.Id] = draft.Header.BuyerTax is null && change is null
                 ? null
                 : await ResolveLineTaxAsync(scope, permission, line.Product.ProductId,
-                    draft.Header.BuyerTax ?? SalesBuyerTax.Create(StartBuyerSituation), change, on, cancellationToken);
+                    draft.Header.BuyerTax ?? SalesBuyerTax.Create(StartBuyerSituation), change, on, cancellationToken, lists, field);
         }
 
         return new RevisionTax(draft.Version, snapshots);
@@ -199,7 +227,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
     /// otherwise the new buyer tax (checked against the Settings lists) and every line's snapshot: a line without a change
     /// re-resolved for it, a line with a reasoned change kept as it is (SAT-D140: "satırlar yine tek tek değiştirilebilir").
     /// </summary>
-    private async Task<(SalesBuyerTax Buyer, IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?> Lines)?> ResolveHeaderTaxAsync(Scope scope,
+    private async Task<(SalesBuyerTax Buyer, IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?>? Lines)?> ResolveHeaderTaxAsync(Scope scope,
         string? permission, SalesOrderDraft draft, SalesDraftHeaderRevisionRequest request, CancellationToken cancellationToken)
     {
         var buyer = BuyerTaxOf(request.BuyerTax, "buyerTax");
@@ -215,6 +243,12 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
 
         var on = draft.Header.BusinessDate;
         await RequireBuyerTaxAllowedAsync(scope, permission, buyer, new TaxLists(on), "buyerTax", cancellationToken);
+        if (draft.Header.BuyerTax is { } current && SalesOrderDraft.SameBuyerTaxBasis(buyer, current))
+        {
+            // SAT-D185 (EK27): only the buyer's document changed — recorded in place, the lines are not re-resolved.
+            return (buyer, null);
+        }
+
         var snapshots = new Dictionary<Guid, SalesLineTaxSnapshot?>();
         foreach (var line in draft.Lines)
         {
@@ -236,6 +270,12 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
         public SettingsTaxBuyerSituationListResolutionV1? Situations { get; set; }
 
         public SettingsTaxCodeListResolutionV1? Exemptions { get; set; }
+
+        /// <summary>SAT-D181: the withholding (GİB) code list a picked ratio's code is checked against.</summary>
+        public SettingsTaxCodeListResolutionV1? WithholdingCodes { get; set; }
+
+        /// <summary>SAT-D181: the VAT rate and withholding ratio lists, by kind.</summary>
+        public Dictionary<string, SettingsTaxRateListResolutionV1> RateLists { get; } = new(StringComparer.Ordinal);
     }
 
     /// <summary>The domain's buyer tax of the wire's (null stays null); a shape refusal is 422 on <paramref name="field"/>.</summary>
@@ -282,7 +322,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
     /// <summary>SAT-D93/D97: a line's reasoned change of its tax basis, every value checked against the Settings lists.</summary>
     private async Task<SalesLineTaxOverride> RequireLineTaxChangeAsync(Scope scope, string? permission, string? itemType,
         string buyerSituation, string? exemptionCode, string reason, TaxLists lists, string field, DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? vatRateCode = null, string? withholdingRatioCode = null)
     {
         var trimmed = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         if (trimmed is null)
@@ -303,12 +343,86 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
         // The situation and the code follow the order header's shape rules and the same Settings lists.
         var basis = BuyerTaxOf(new SalesDraftBuyerTaxV1(buyerSituation, exemptionCode), field)!;
         var entry = await RequireSituationAsync(scope, permission, basis.Situation, lists, $"{field}.buyerSituation", cancellationToken);
+        // SAT-D181: a picked VAT rate / withholding ratio must be an entry of the Settings list in force (no list → nothing to pick).
+        var vatRate = vatRateCode is null
+            ? null
+            : await RequireRateEntryAsync(scope, permission, TaxRateListKindsV1.VatRate, vatRateCode, lists, $"{field}.vatRateCode",
+                SalesRuleCodes.TaxVatRateUnknown, cancellationToken);
+        var zeroRated = entry.VatMode == TaxBuyerSituationVatModesV1.ZeroWithExemptionCode || vatRate?.Percent == 0m;
+        if (vatRate?.Percent == 0m && basis.ExemptionCode is null)
+        {
+            // SAT-D181 (EK26): "%0 KDV seçimi istisna kodu ister" — a picked 0 rate names its exemption code from the list.
+            throw new SalesDraftServiceException(422, "validation_failed", [new($"{field}.exemptionCode", SalesRuleCodes.TaxExemptionCodeRequired)]);
+        }
         if (basis.ExemptionCode is { } code)
         {
-            await RequireExemptionCodeAsync(scope, permission, entry, code, lists, $"{field}.exemptionCode", cancellationToken);
+            await RequireExemptionCodeAsync(scope, permission, entry, code, lists, $"{field}.exemptionCode", cancellationToken,
+                allowed: zeroRated);
         }
 
-        return new SalesLineTaxOverride(itemType, basis.Situation, basis.ExemptionCode, trimmed, scope.ActorId, now.ToUniversalTime());
+        if (withholdingRatioCode is not null)
+        {
+            // SAT-D147: no withholding where the VAT is 0 (a KDV %0 situation or a picked 0 rate).
+            if (zeroRated)
+            {
+                throw new SalesDraftServiceException(422, "validation_failed",
+                    [new($"{field}.withholdingRatioCode", SalesRuleCodes.TaxWithholdingNotApplicable)]);
+            }
+
+            await RequireRateEntryAsync(scope, permission, TaxRateListKindsV1.WithholdingRatio, withholdingRatioCode, lists,
+                $"{field}.withholdingRatioCode", SalesRuleCodes.TaxWithholdingRatioUnknown, cancellationToken);
+        }
+
+        return new SalesLineTaxOverride(itemType, basis.Situation, basis.ExemptionCode, trimmed, scope.ActorId, now.ToUniversalTime(),
+            vatRateCode, withholdingRatioCode);
+    }
+
+    /// <summary>The entry of a rate list in force with <paramref name="code"/>; else 422 on <paramref name="field"/>.</summary>
+    private async Task<TaxRateListEntryViewV1> RequireRateEntryAsync(Scope scope, string? permission, string kind, string code,
+        TaxLists lists, string field, string refusal, CancellationToken cancellationToken) =>
+        await RateEntryAsync(scope, permission, kind, code, lists, cancellationToken)
+        ?? throw new SalesDraftServiceException(422, "validation_failed", [new(field, refusal)]);
+
+    /// <summary>The entry of a rate list in force with <paramref name="code"/>, or null (not listed, or no list entered).</summary>
+    private async Task<TaxRateListEntryViewV1?> RateEntryAsync(Scope scope, string? permission, string kind, string code,
+        TaxLists lists, CancellationToken cancellationToken)
+    {
+        if (!lists.RateLists.TryGetValue(kind, out var list))
+        {
+            list = await RateListPortAsync(scope, permission, kind, lists.On, cancellationToken);
+            lists.RateLists[kind] = list;
+        }
+
+        return list.State == TaxResolutionStatesV1.Resolved
+            ? list.Entries.SingleOrDefault(entry => string.Equals(entry.Code, code, StringComparison.Ordinal))
+            : null;
+    }
+
+    /// <summary>One rate list read under the fence; checked for this company and date (else 503).</summary>
+    private async Task<SettingsTaxRateListResolutionV1> RateListPortAsync(Scope scope, string? permission, string kind, DateOnly on,
+        CancellationToken cancellationToken)
+    {
+        var port = rateLists ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.TaxProviderUnavailable);
+        SettingsTaxRateListResolutionV1 list;
+        try
+        {
+            list = await GuardedAsync(scope, permission, () => port.GetRateListAsync(kind, on, cancellationToken), cancellationToken);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == TaxMasterProblemCodesV1.AccessDenied)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.TaxProviderUnavailable);
+        }
+
+        return list is not null && list.CompanyId == scope.CompanyId && list.On == on && list.Entries is not null
+            && string.Equals(list.Kind, kind, StringComparison.Ordinal)
+            && list.Entries.All(entry => entry is not null && entry.Percent is >= 0m and <= 100m
+                && (kind != TaxRateListKindsV1.WithholdingRatio || entry.Percent > 0m))
+            ? list
+            : throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.TaxProviderUnavailable);
     }
 
     private async Task<TaxBuyerSituationEntryViewV1> RequireSituationAsync(Scope scope, string? permission, string situation,
@@ -328,9 +442,9 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
     }
 
     private async Task RequireExemptionCodeAsync(Scope scope, string? permission, TaxBuyerSituationEntryViewV1 situation, string code,
-        TaxLists lists, string field, CancellationToken cancellationToken)
+        TaxLists lists, string field, CancellationToken cancellationToken, bool? allowed = null)
     {
-        if (situation.VatMode != TaxBuyerSituationVatModesV1.ZeroWithExemptionCode)
+        if (!(allowed ?? situation.VatMode == TaxBuyerSituationVatModesV1.ZeroWithExemptionCode))
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new(field, SalesRuleCodes.TaxExemptionCodeNotApplicable)]);
         }
@@ -355,7 +469,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
     /// date, situation (and product): anything else is the port's fault (503), never stored.
     /// </summary>
     private async Task<SalesLineTaxSnapshot> ResolveLineTaxAsync(Scope scope, string? permission, Guid productId, SalesBuyerTax buyer,
-        SalesLineTaxOverride? change, DateOnly on, CancellationToken cancellationToken)
+        SalesLineTaxOverride? change, DateOnly on, CancellationToken cancellationToken, TaxLists? lists = null, string? field = null)
     {
         var situation = change?.BuyerSituation ?? buyer.Situation;
         var exemptionCode = change is null ? buyer.ExemptionCode : change.ExemptionCode;
@@ -372,11 +486,131 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.TaxProviderUnavailable);
         }
 
-        return new SalesLineTaxSnapshot(productId, on, situation, answer.ItemType, answer.State, answer.Reason, answer.Source,
+        var snapshot = new SalesLineTaxSnapshot(productId, on, situation, answer.ItemType, answer.State, answer.Reason, answer.Source,
             answer.RecordId, answer.RecordVersion, answer.VatState, answer.VatPercent, answer.ExemptionCodeState, answer.ExemptionCode,
             answer.ExemptionCodeReason, answer.WithholdingState, answer.WithholdingPercent, answer.WithholdingCodeState,
             answer.WithholdingCode, answer.WithholdingCodeReason, answer.BuyerAdjustment, answer.BuyerSituationListVersion,
             answer.BuyerVatMode, answer.BuyerDocumentRequired, change);
+        return change is { VatRateCode: null, WithholdingRatioCode: null } or null
+            ? snapshot
+            : await ApplyListedRatesAsync(scope, permission, snapshot, change, lists ?? new TaxLists(on), field, cancellationToken);
+    }
+
+    /// <summary>
+    /// SAT-D181: the line change's picks from the Settings rate lists applied over the resolved default — the VAT percent and/or
+    /// the withheld share are the list entry's. A picked VAT rate of 0 needs the exemption code (the change's, from the list, else
+    /// "kaynak yok" and the invoice waits); a picked VAT above 0 needs none. A picked withholding ratio keeps the default's code
+    /// part only when the default withheld the same share, else its code is "kaynak yok". Fail-closed: an unresolved default stays
+    /// unresolved (nothing is computed over it); a pick no longer in the list in force, or a withholding over a VAT of 0, leaves the
+    /// line unresolved with its reason — and a change named in this request is refused on <paramref name="field"/> instead.
+    /// </summary>
+    private async Task<SalesLineTaxSnapshot> ApplyListedRatesAsync(Scope scope, string? permission, SalesLineTaxSnapshot snapshot,
+        SalesLineTaxOverride change, TaxLists lists, string? field, CancellationToken cancellationToken)
+    {
+        if (snapshot.State != SalesLineTaxStates.Resolved)
+        {
+            return snapshot;
+        }
+
+        SalesLineTaxSnapshot Unresolved(string reason) => snapshot with
+        {
+            State = SalesLineTaxStates.Unresolved, Reason = reason, VatState = null, VatPercent = null, ExemptionCodeState = null,
+            ExemptionCode = null, ExemptionCodeReason = null, WithholdingState = null, WithholdingPercent = null,
+            WithholdingCodeState = null, WithholdingCode = null, WithholdingCodeReason = null,
+        };
+
+        var result = snapshot;
+        if (change.VatRateCode is { } vatCode)
+        {
+            if (await RateEntryAsync(scope, permission, TaxRateListKindsV1.VatRate, vatCode, lists, cancellationToken) is not { } vat)
+            {
+                return field is null
+                    ? Unresolved(SalesLineTaxReasons.VatRateNotInList)
+                    : throw new SalesDraftServiceException(422, "validation_failed", [new($"{field}.vatRateCode", SalesRuleCodes.TaxVatRateUnknown)]);
+            }
+
+            var codeListed = vat.Percent == 0m && change.ExemptionCode is { } exemption
+                && (await ExemptionListAsync(scope, permission, lists, cancellationToken))
+                    .Any(entry => string.Equals(entry.Code, exemption, StringComparison.Ordinal));
+            result = result with
+            {
+                VatState = SalesLineTaxStates.Resolved,
+                VatPercent = vat.Percent,
+                ExemptionCodeState = vat.Percent > 0m ? SalesLineTaxStates.NotRequired
+                    : codeListed ? SalesLineTaxStates.Resolved : SalesLineTaxStates.Unresolved,
+                ExemptionCode = vat.Percent > 0m ? null : codeListed ? change.ExemptionCode : null,
+                ExemptionCodeReason = vat.Percent > 0m || codeListed ? null
+                    : change.ExemptionCode is null ? TaxResolutionReasonsV1.ExemptionCodeMissing : TaxResolutionReasonsV1.CodeNotInList,
+            };
+            if (vat.Percent == 0m)
+            {
+                // No withholding over a VAT of 0 (SAT-D147's rule, here for a picked 0 rate).
+                result = result with
+                {
+                    WithholdingState = SalesLineTaxStates.NotApplied, WithholdingPercent = null,
+                    WithholdingCodeState = SalesLineTaxStates.NotRequired, WithholdingCode = null, WithholdingCodeReason = null,
+                };
+            }
+        }
+
+        if (change.WithholdingRatioCode is { } ratioCode)
+        {
+            var vatCarried = result.VatState == SalesLineTaxStates.Resolved && result.VatPercent is > 0m;
+            if (!vatCarried)
+            {
+                return field is null
+                    ? Unresolved(SalesRuleCodes.TaxWithholdingNotApplicable)
+                    : throw new SalesDraftServiceException(422, "validation_failed",
+                        [new($"{field}.withholdingRatioCode", SalesRuleCodes.TaxWithholdingNotApplicable)]);
+            }
+
+            if (await RateEntryAsync(scope, permission, TaxRateListKindsV1.WithholdingRatio, ratioCode, lists, cancellationToken) is not { } ratio)
+            {
+                return field is null
+                    ? Unresolved(SalesLineTaxReasons.WithholdingRatioNotInList)
+                    : throw new SalesDraftServiceException(422, "validation_failed",
+                        [new($"{field}.withholdingRatioCode", SalesRuleCodes.TaxWithholdingRatioUnknown)]);
+            }
+
+            // SAT-D181 (EK26): the ratio is invoiced under the GİB code its entry maps to, checked against the SAT-D148 withholding
+            // code list in force; no mapping or a code not listed is "kaynak yok" (the invoice waits; the rate stays usable).
+            var codeListed = ratio.TaxCode is { } taxCode
+                && (await WithholdingCodeListAsync(scope, permission, lists, cancellationToken))
+                    .Any(entry => string.Equals(entry.Code, taxCode, StringComparison.Ordinal));
+            result = result with
+            {
+                WithholdingState = SalesLineTaxStates.Resolved,
+                WithholdingPercent = ratio.Percent,
+                WithholdingCodeState = codeListed ? SalesLineTaxStates.Resolved : SalesLineTaxStates.Unresolved,
+                WithholdingCode = codeListed ? ratio.TaxCode : null,
+                WithholdingCodeReason = codeListed ? null
+                    : ratio.TaxCode is null ? TaxResolutionReasonsV1.WithholdingCodeMissing : TaxResolutionReasonsV1.CodeNotInList,
+            };
+        }
+
+        return result;
+    }
+
+    private async Task<IReadOnlyList<TaxCodeListEntryViewV1>> WithholdingCodeListAsync(Scope scope, string? permission, TaxLists lists,
+        CancellationToken cancellationToken)
+    {
+        lists.WithholdingCodes ??= await TaxPortAsync(scope, permission,
+            port => port.GetCodeListAsync(TaxCodeListKindsV1.Withholding, lists.On, cancellationToken), cancellationToken);
+        return lists.WithholdingCodes.CompanyId == scope.CompanyId && lists.WithholdingCodes.On == lists.On
+            && lists.WithholdingCodes.State == TaxResolutionStatesV1.Resolved && lists.WithholdingCodes.Entries is not null
+            ? lists.WithholdingCodes.Entries
+            : [];
+    }
+
+    private async Task<IReadOnlyList<TaxCodeListEntryViewV1>> ExemptionListAsync(Scope scope, string? permission, TaxLists lists,
+        CancellationToken cancellationToken)
+    {
+        lists.Exemptions ??= await TaxPortAsync(scope, permission,
+            port => port.GetCodeListAsync(TaxCodeListKindsV1.Exemption, lists.On, cancellationToken), cancellationToken);
+        return lists.Exemptions.CompanyId == scope.CompanyId && lists.Exemptions.On == lists.On
+            && lists.Exemptions.State == TaxResolutionStatesV1.Resolved && lists.Exemptions.Entries is not null
+            ? lists.Exemptions.Entries
+            : [];
     }
 
     /// <summary>One read of the port under the fence: denied → 403; not composed or unreadable → 503 (never a guessed answer).</summary>
@@ -419,7 +653,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
             tax.UnavailableReason, tax.InvoiceBlockers(buyer),
             tax.Override is { } change
                 ? new SalesDraftLineTaxOverrideViewV1(change.ItemType, change.BuyerSituation, change.ExemptionCode, change.Reason,
-                    change.ChangedBy, change.ChangedAtUtc)
+                    change.ChangedBy, change.ChangedAtUtc, change.VatRateCode, change.WithholdingRatioCode)
                 : null);
     }
 

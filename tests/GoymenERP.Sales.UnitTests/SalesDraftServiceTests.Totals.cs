@@ -53,7 +53,7 @@ public sealed partial class SalesDraftServiceTests
 
         var line = Assert.Single(totals.Lines);
         Assert.Equal(("Unpriced", null, null, "NotComputed"), (line.State, line.NetUnitPrice, line.NetAmount, line.TaxState));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null, 0), totals.Totals);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed partial class SalesDraftServiceTests
 
         Assert.Equal(new SalesDraftLineTotalV1(lineId, 1, KgUnit, "999999999999999.999", "AmountOutOfRange", null, null, "NotComputed",
             null, null, null, null, null, null), Assert.Single(totals.Lines));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 0, 0, 1, null, "NotComputed", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 0, 0, 1, null, "NotComputed", null, null, null, null, 0), totals.Totals);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed partial class SalesDraftServiceTests
         var totals = await world.Service().GetDraftTotalsAsync(created.Draft.Id);
 
         Assert.All(totals.Lines, line => Assert.Equal(("Computed", "600000000000000000000000000.01"), (line.State, line.NetAmount)));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("AmountOutOfRange", 0, 0, 0, null, "NotComputed", null, null, null, null),
+        Assert.Equal(new SalesDraftDocumentTotalsV1("AmountOutOfRange", 0, 0, 0, null, "NotComputed", null, null, null, null, 0),
             totals.Totals);
     }
 

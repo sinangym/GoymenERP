@@ -1524,10 +1524,10 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var service = new StubDraftService
         {
             Totals = _ => Task.FromResult(new SalesOrderDraftTotalsResponse("4", "Rev.1", currencyId, 2, "NoSource",
-                new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null),
+                new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null, 0),
                 [
                     new SalesDraftLineTotalV1(lineId, 1, unitId, "12.5", "Computed", "11.475", "143.44", "NoSource",
-                        null, null, null, null, null, null),
+                        null, null, null, null, null, null, "tax_snapshot_missing"),
                     new SalesDraftLineTotalV1(unpricedLineId, 2, unitId, "3", "Unpriced", null, null, "NotComputed",
                         null, null, null, null, null, null),
                 ])),
@@ -1548,16 +1548,19 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 body.GetProperty("revision").GetString(), body.GetProperty("currencyId").GetString(),
                 body.GetProperty("amountScale").GetInt32(), body.GetProperty("taxState").GetString()));
             var totals = body.GetProperty("totals");
+            // MOD-03 → Sales: the document always names how many lines have no usable tax.
             Assert.Equal(["state", "unpricedLineCount", "priceUnitNotOrderUnitLineCount", "amountOutOfRangeLineCount", "netAmount", "taxState", "vatAmount",
-                "withheldVatAmount", "grossAmount", "payableAmount"], totals.EnumerateObject().Select(member => member.Name));
+                "withheldVatAmount", "grossAmount", "payableAmount", "taxUnavailableLineCount"], totals.EnumerateObject().Select(member => member.Name));
             Assert.Equal(("Incomplete", 1, JsonValueKind.Null, "NotComputed"), (totals.GetProperty("state").GetString(),
                 totals.GetProperty("unpricedLineCount").GetInt32(), totals.GetProperty("netAmount").ValueKind,
                 totals.GetProperty("taxState").GetString()));
             var lines = body.GetProperty("lines").EnumerateArray().ToList();
             Assert.Equal(2, lines.Count);
+            // MOD-03 → Sales: a NoSource line names its reason; a line without an amount carries none (omitted).
             Assert.Equal(["lineId", "lineNo", "orderUnitId", "quantity", "state", "netUnitPrice", "netAmount", "taxState", "vatPercent",
-                "vatAmount", "withholdingShare", "withheldVatAmount", "grossAmount", "payableAmount"],
+                "vatAmount", "withholdingShare", "withheldVatAmount", "grossAmount", "payableAmount", "taxReason"],
                 lines[0].EnumerateObject().Select(member => member.Name));
+            Assert.Equal(14, lines[1].EnumerateObject().Count());
             Assert.Equal((lineId.ToString("D"), "12.5", "Computed", "11.475", "143.44", "NoSource", JsonValueKind.Null),
                 (lines[0].GetProperty("lineId").GetString(), lines[0].GetProperty("quantity").GetString(),
                     lines[0].GetProperty("state").GetString(), lines[0].GetProperty("netUnitPrice").GetString(),

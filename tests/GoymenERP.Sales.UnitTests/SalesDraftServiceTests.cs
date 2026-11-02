@@ -1663,6 +1663,8 @@ public sealed partial class SalesDraftServiceTests
         public FakeReportStore? Reports { get; set; } = new();
         /// <summary>MOD-03 → Sales: the Settings line tax port; null = not composed (no snapshot at create, 503 on a tax choice).</summary>
         public GoymenERP.Modules.Settings.Application.Contracts.V1.ISettingsLineTaxResolverV1? LineTaxes { get; set; }
+        /// <summary>SAT-D181: the Settings VAT rate / withholding ratio lists; null = not composed.</summary>
+        public GoymenERP.Modules.Settings.Application.Contracts.V1.ISettingsTaxRateListReaderV1? RateLists { get; set; }
         /// <summary>The server clock of the service and of the in-memory quote store (SAT-D24: the business day comes from it).</summary>
         public TimeProvider Clock { get; set; } = QuoteClock(); // SAT-D71: a fixed server day (Day, Europe/Istanbul) — orders open on or after it.
 
@@ -1687,7 +1689,7 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes);
+                LineTaxes, RateLists);
         }
 
         public SalesDraftReadServiceV1 ReadService()

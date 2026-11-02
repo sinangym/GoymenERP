@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// approved order of the same customer account (the store's <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per
 /// line the approved quantity − the delivery owner's shipped total, not below zero. The approved basis is the current lines while
 /// the current revision is approved, else the last approved revision's (never unapproved quantities). SAT-D46: the amount of what
-/// remains enters VAT-INCLUDED (gross, KDV dahil), from API-03's calculator (<see cref="SalesOrderTotalsCalculator"/>) with each
+/// remains enters as the PAYABLE amount (SAT-D183: VAT included, withheld VAT deducted), from API-03's calculator (<see cref="SalesOrderTotalsCalculator"/>) with each
 /// basis line's own tax snapshot (MOD-03 → Sales; an archived revision's lines with the tax they were approved with); a line
 /// without a usable tax makes the remainder "Unavailable" (<c>vat_inclusive_amount_unavailable</c>) — the VAT-excluded net is never
 /// substituted. One amount per order in its own currency (another currency than the check's is SAT-D47's). Nothing left (or no
@@ -293,16 +293,17 @@ public sealed partial class SalesDraftService
                 continue;
             }
 
-            // SAT-D46: what remains enters VAT-included, from the one totals calculator with the basis lines' own tax snapshots
-            // (MOD-03 → Sales) — never the VAT-excluded net; a line without a usable tax makes the remainder unavailable.
-            if (RemainingGross(basis, recorded) is not { } gross)
+            // SAT-D46 / SAT-D183: what remains enters as the payable amount (VAT included, withheld VAT deducted), from the one
+            // totals calculator with the basis lines' own tax snapshots — never the VAT-excluded net; a line without a usable tax
+            // makes the remainder unavailable.
+            if (RemainingPayable(basis, recorded) is not { } payable)
             {
                 return SalesRiskInput.Unavailable(basis.Reason!);
             }
 
-            if (gross.Amount > 0m)
+            if (payable.Amount > 0m)
             {
-                amounts.Add(gross);
+                amounts.Add(payable);
             }
         }
 
@@ -343,13 +344,14 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
-    /// SAT-D46: the VAT-included (gross, KDV dahil) amount of what of <paramref name="basis"/> is left to ship — each line's approved
+    /// SAT-D46 / SAT-D183: the PAYABLE amount (VAT included, the withheld VAT deducted — what the customer owes us) of what of
+    /// <paramref name="basis"/> is left to ship — each line's approved
     /// quantity − shipped, above zero — from <see cref="SalesOrderTotalsCalculator.CalculateWithLineTax(IReadOnlyList{SalesTotalsLineInput}, Guid, int)"/>
     /// with each basis line's own tax snapshot, in the basis' currency at its money scale. Null with the reason set when it cannot be
     /// computed: an unpriced line, a price in another unit, a line without a usable tax (<c>vat_inclusive_amount_unavailable</c>) or
     /// an amount beyond the exact range.
     /// </summary>
-    private static SalesRiskAmount? RemainingGross(RiskOrderBasis basis, IReadOnlyDictionary<Guid, (decimal Shipped, decimal Delivered)> recorded)
+    private static SalesRiskAmount? RemainingPayable(RiskOrderBasis basis, IReadOnlyDictionary<Guid, (decimal Shipped, decimal Delivered)> recorded)
     {
         var inputs = new List<SalesTotalsLineInput>(basis.Lines.Count);
         foreach (var line in basis.Lines)
@@ -390,13 +392,15 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        if (document.TaxState != SalesTaxState.Computed || document.GrossAmount is not { } gross)
+        if (document.TaxState != SalesTaxState.Computed || document.PayableAmount is not { } payable)
         {
             basis.Reason = SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable;
             return null;
         }
 
-        return new SalesRiskAmount(basis.CurrencyId, gross.Amount);
+        // SAT-D183 (EK26): the amount the customer pays US — VAT included, the withheld VAT deducted (e.g. 100.000 + %20 with 5/10
+        // → 110.000); without withholding it is the gross (SAT-D46 unchanged).
+        return new SalesRiskAmount(basis.CurrencyId, payable.Amount);
     }
 
     /// <summary>
@@ -418,7 +422,7 @@ public sealed partial class SalesDraftService
         if (draft.ArchivedRevisions.Count == 0)
         {
             // Never approved: nothing of it shipped (the line port refused it), so the whole order is what it adds.
-            return RemainingGross(current, new Dictionary<Guid, (decimal Shipped, decimal Delivered)>()) is { } whole
+            return RemainingPayable(current, new Dictionary<Guid, (decimal Shipped, decimal Delivered)>()) is { } whole
                 ? SalesRiskInput.Available(whole.Amount > 0m ? [whole] : [], SalesRiskTaxBasis.IncludingTax)
                 : SalesRiskInput.Unavailable(current.Reason!);
         }
@@ -434,12 +438,12 @@ public sealed partial class SalesDraftService
             return SalesRiskInput.Unavailable(unread!);
         }
 
-        if (RemainingGross(current, recorded) is not { } revised)
+        if (RemainingPayable(current, recorded) is not { } revised)
         {
             return SalesRiskInput.Unavailable(current.Reason!);
         }
 
-        if (RemainingGross(approved, recorded) is not { } counted)
+        if (RemainingPayable(approved, recorded) is not { } counted)
         {
             return SalesRiskInput.Unavailable(approved.Reason!);
         }
@@ -461,7 +465,7 @@ public sealed partial class SalesDraftService
 
     /// <summary>
     /// The approved commitment's lines with the currency and money scale they are valued in; <see cref="Reason"/> is set by
-    /// <see cref="OrderRemains"/> / <see cref="RemainingGross"/> on refusal.
+    /// <see cref="OrderRemains"/> / <see cref="RemainingPayable"/> on refusal.
     /// </summary>
     private sealed class RiskOrderBasis(IReadOnlyList<RiskBasisLine> lines, Guid currencyId, int moneyScale)
     {

@@ -220,7 +220,7 @@ describe('API-03 OpenAPI pin', () => {
   it.each([
     ['SalesOrderDraftTotalsResponse', ['amountScale', 'currencyId', 'draftVersion', 'lines', 'revision', 'taxState', 'totals'], []],
     ['SalesDraftDocumentTotalsV1', ['amountOutOfRangeLineCount', 'grossAmount', 'netAmount', 'payableAmount', 'priceUnitNotOrderUnitLineCount', 'state', 'taxState',
-      'unpricedLineCount', 'vatAmount', 'withheldVatAmount'], ['taxUnavailableLineCount']],
+      'taxUnavailableLineCount', 'unpricedLineCount', 'vatAmount', 'withheldVatAmount'], []],
     ['SalesDraftLineTotalV1', ['grossAmount', 'lineId', 'lineNo', 'netAmount', 'netUnitPrice', 'orderUnitId', 'payableAmount', 'quantity',
       'state', 'taxState', 'vatAmount', 'vatPercent', 'withheldVatAmount', 'withholdingShare'], ['taxReason']],
   ])('%s: the decoder reads exactly the members the contract declares (MOD-03 → Sales members not required)', (name, keys, added) => {

@@ -99,5 +99,5 @@ public sealed record SalesDraftDocumentTotalsV1(
     string? WithheldVatAmount,
     string? GrossAmount,
     string? PayableAmount,
-    // MOD-03 → Sales: how many lines have no usable tax when the document's tax is NoSource (0 otherwise).
-    int TaxUnavailableLineCount = 0);
+    // MOD-03 → Sales: how many lines have no usable tax when the document's tax is NoSource (0 otherwise). Always written (required).
+    int TaxUnavailableLineCount);
