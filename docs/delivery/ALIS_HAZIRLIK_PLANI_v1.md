@@ -1,6 +1,6 @@
 # Alış (Satın Alma) Modülü Hazırlık Planı v1
 
-Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**
+Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**, **`_ALIS_EK4.md` (ALS-D44…D45)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.3, §8.2, §10.3, §25.5, §27.3, §28.12, §28.16, §29.3
 (AT-025…028); `docs/decisions/KARAR_SICILI.md` `DEC-PUR-001`, `DEC-CAR-001`, `DEC-STK-002/003/006/008/009`,
@@ -27,6 +27,10 @@ kolaylığı referansıdır (§2.4).
 - URT-D20 (2026-11-02): "Alış tarafını başka bir konuşma yapar." Bu oturum o konuşmadır.
 - **ALS-D1 (2026-11-02):** Satış ve Üretim emsaliyle Alış'ın bütün geliştirmesi (backend, migration, OpenAPI,
   ekranlar) Claude'dadır. Kayıt: `SINAN_KARARLARI_2026-11-02_ALIS.md` §0.
+- **ALS-D44/D45 (2026-11-02):** planın tamamı sırasıyla bu konuşmada uygulanır. Alış'ın ihtiyaç duyduğu olay kaydı ve
+  gelen fatura çekirdeği burada yazılır; Satış'ınki Satış konuşmasında; Finans'taki borç/alacak ayrımı (MOD-15)
+  açılacak Finans konuşmasında. Ayarlar, Cari ve Stok'taki küçük eklemeleri bu konuşma yapar (iki review);
+  Satış ve Üretim dosyalarına dokunmaz.
 - Modül sınırları: Satış dosyalarını "proje modülleri" konuşması, Üretim ve Stok dosyalarını Üretim şeridi değiştirir.
   Bu şerit onların dosyalarını değiştirmez; gereken işi görev notuyla bırakır: `ALIS_SATIS_DEVIR_v1.md` (TEK-03/04
   geçişi, MOD-03), `ALIS_URETIM_DEVIR_v1.md` (MOD-01/02/06/14), `ALIS_FINANS_DEVIR_v1.md` (MOD-04),
