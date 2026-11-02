@@ -2102,6 +2102,20 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        public async Task<SalesDraftStateResult?> ReviseDraftLinesAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ReviseLinesV1) throw new ArgumentException("wrong command", nameof(commandName));
+            ApprovedRevisionSnapshot? archived = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => archived = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (archived is not null) Archived.Add(archived);
+            return result;
+        }
+
         /// <summary>The reason each recorded header revision handed the store (SAT-D126), in order.</summary>
         public List<string> HeaderRevisionReasons { get; } = [];
 

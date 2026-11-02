@@ -404,8 +404,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
+            // SAT-D167 (EK24): +2 SalesOrderLineRevision facts (an approved order's line revision adds a row, passivates a line,
+            // archives Rev.0 and rebuilds; the write guard, CK_DraftLines_LineRevision and the 51142 rollback refusal), kept
+            // ordinal-sorted (1f679068… -> 3d350bea…).
             ["tools/relational_inventory/sales.txt"] =
-                "1f679068e55e0a30d83cf29e6497cedc6eb1efd7ce3b079bc80f05ccc3aa9b62",
+                "3d350bea955da41a56b2d450ef18ebc5f641715eb7c52b310d7eb266c1610272",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -514,9 +517,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Drafts.BuyerTaxJson and DraftLines.TaxJson; no query-filter bypass or direct database surface.
             // Re-fingerprinted for SAT-D175/D176 (EK25): Drafts / DraftRevisionHeaders.IsSubcontractService and DraftLines.ItemType
             // (CK_DraftLines_ItemType); the write guard is NOT widened (the flag and the item type never change after the insert).
+            // Re-fingerprinted for SAT-D167 (EK24): DraftLines.AddedInRevision / RemovedInRevision / ReplacedByLineId
+            // (CK_DraftLines_LineRevision); the write guard is widened by exactly DraftLines.RemovedInRevision and ReplacedByLineId,
+            // and a removal is never undone or changed (a passive line never comes back).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "c9363c0337d70bec52dd5111ea2e8513e242a9f55386ee73e79e6ed89678d9e1",
+                "d3ee54a7d5e77b183437a2267cd7f5961aa2851b85cc6ed0faf656bc530e665a",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1507,8 +1513,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
                     // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D167 (EK24): the line revision passivates removed line rows (RemovedInRevision /
+                    // ReplacedByLineId) and inserts added line rows, and the restore rebuilds both, through the same filtered context;
+                    // SqlClient count unchanged.
                     new(
-                        "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
+                        "48b8c09c2ba7ca719d0f4c5be5c27e4f8014e40c0dbf206a8c43e05ff0a852f0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2115,6 +2124,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
                     new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D167 (EK24): the Down's only raw SQL is Sales' refusal (51142, used by no other migration) while any line was
+                // added or removed by a line revision; the THROW precedes every drop. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102212525_AddDraftLineRevisions.cs"] =
+                    new("b71ee58cbefcfe8fdc1a1dbeaf9da51107b2c167d7342aaa3bb57d3d1382d91c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

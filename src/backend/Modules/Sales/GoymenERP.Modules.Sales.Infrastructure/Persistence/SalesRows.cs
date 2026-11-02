@@ -161,6 +161,15 @@ internal sealed class DraftLineRow : ISalesTenantRow
 
     /// <summary>SAT-D176 (EK25): the Product owner's item type confirmed for a subcontract service order's line ("Service"); null otherwise.</summary>
     public string? ItemType { get; set; }
+
+    /// <summary>SAT-D167 (EK24): the revision a line revision added this line in; null = the line came with the create. Written once.</summary>
+    public int? AddedInRevision { get; set; }
+
+    /// <summary>SAT-D167: the revision a line revision removed (passivated) this line in; null while active. Null → value once.</summary>
+    public int? RemovedInRevision { get; set; }
+
+    /// <summary>SAT-D167: for a line removed by a product change, the replacing line's id; set together with the removal only.</summary>
+    public Guid? ReplacedByLineId { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>

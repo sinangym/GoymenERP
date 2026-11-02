@@ -65,6 +65,13 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    // SAT-D167 (EK24) — the line revision under `sales.orders.quantity.write`: lines added, unshipped lines removed (passive) or
+    // given another product, with a reason; an APPROVED order archives its approved revision first and advances to the next one
+    // for re-approval and customer acceptance. A line with a shipment (allocation, loading instruction, dispatch) is refused.
+    Task<SalesOrderDraftResponse> ReviseLinesAsync(Guid draftId, SalesDraftLineRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Satır revizyonu bu serviste yok.");
+
     // API-04 (DEC-SAL-002, DEC-SAL-008) — the header revision under `sales.orders.header.write`: customer account, currency,
     // due terms, sales owner and delivery references replaced with a reason; an APPROVED order archives its approved revision
     // (with its header) first and advances to the next one for re-approval. The read of the revisable header is

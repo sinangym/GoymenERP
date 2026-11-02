@@ -36,7 +36,7 @@ public sealed class SalesDraftReadServiceV1(
             detail.Draft, detail.RequestedDeliveryDate, detail.Note, detail.Lines,
             detail.DeliveryAddress, detail.Contact, detail.Responsible, detail.PaymentTerms,
             detail.SourceStrategy, detail.Package, detail.Approval, detail.CustomerAcceptance,
-            detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display, users);
+            detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display, users, detail.RemovedLines);
     }
 
     public async Task<SalesOrderDraftReadListResponseV1> GetDraftListAsync(

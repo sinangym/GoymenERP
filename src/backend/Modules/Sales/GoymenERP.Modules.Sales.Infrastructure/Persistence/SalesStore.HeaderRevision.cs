@@ -126,7 +126,8 @@ public sealed partial class SalesStore
 
         foreach (var lineRow in lineRows)
         {
-            var line = draft.Lines.Single(candidate => candidate.LineNo == lineRow.LineNo);
+            // SAT-D167: a removed (passive) line's row stays as it is (its tax is history, not re-resolved).
+            var line = draft.AllLines.Single(candidate => candidate.LineNo == lineRow.LineNo);
             if (!Equals(SalesTaxJson.RestoreLine(lineRow.TaxJson), line.Tax))
             {
                 lineRow.TaxJson = SalesTaxJson.SerializeLine(line.Tax);

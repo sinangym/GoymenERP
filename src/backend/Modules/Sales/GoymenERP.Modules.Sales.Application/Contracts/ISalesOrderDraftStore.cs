@@ -70,6 +70,12 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-002: POST /api/v1/sales/drafts/{id}/quantity-revision — the ordered quantity of every line replaced with a reason; an approved draft is archived and advances a revision.</summary>
     public const string ReviseQuantityV1 = "sales.order-draft.revise-quantity.v1";
 
+    /// <summary>
+    /// SAT-D167 (EK24): POST /api/v1/sales/drafts/{id}/line-revision — lines added, unshipped lines removed (passive) or given another
+    /// product (a removal replaced by an added line), with a reason; an approved draft is archived and advances a revision.
+    /// </summary>
+    public const string ReviseLinesV1 = "sales.order-draft.revise-lines.v1";
+
     /// <summary>API-04 (DEC-SAL-002, DEC-SAL-008): POST /api/v1/sales/drafts/{id}/header-revision — the header (customer, currency, due terms, sales owner, delivery references) replaced with a reason; an approved draft is archived and advances a revision.</summary>
     public const string ReviseHeaderV1 = "sales.order-draft.revise-header.v1";
 
@@ -305,6 +311,17 @@ public interface ISalesOrderDraftStore
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// SAT-D167 (EK24): the line revision, one save — the quantity revision's key rules and shape (§3/§4/§7/§8). <paramref name="mutate"/>
+    /// is the domain's <c>ReviseLines</c>; the store writes the archived snapshot's rows, the header axis, the removed lines'
+    /// passivation and the added lines' rows, with the attempt and the audit, or nothing. No existing line value changes (checked).
+    /// The command name must be <see cref="SalesDraftCommands.ReviseLinesV1"/>. (A default body refuses for older test doubles.)
+    /// </summary>
+    Task<SalesDraftStateResult?> ReviseDraftLinesAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Bu taslak deposu satır revizyonunu desteklemiyor.");
+
+    /// <summary>
     /// API-04: the header revision, one save — the quantity revision's key rules and shape (§3/§4/§7/§8). <paramref name="beforeWrite"/>
     /// receives the draft as read and is the caller's last word before the mutation (fences, the domain's own preconditions, the
     /// owners read afresh) and returns what the mutation needs (e.g. the new currency's money profile); any refusal it throws
@@ -426,6 +443,16 @@ public static class SalesDraftRequestHash
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(
             new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.Lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>SAT-D167: the canonical content of a line revision — the command, the draft and every member as sent, in order.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftLineRevisionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.Added, request.Removed },
+            SalesDraftJson.Options));
     }
 
     /// <summary>API-04: the canonical content of a header revision — the command, the draft and every member as sent, in order.</summary>

@@ -329,6 +329,21 @@ public static class SalesRuleCodes
     /// </summary>
     public const string SubcontractPriceListNotUsed = "sales_subcontract_price_list_not_used";
 
+    /// <summary>
+    /// SAT-D167 (EK24): a line with any shipment — a dispatch note, a loading instruction or a stock allocation (or a recorded
+    /// remainder change) — is neither removed nor given another product.
+    /// </summary>
+    public const string LineRevisionLineShipped = "sales_line_revision_line_shipped";
+
+    /// <summary>SAT-D167: a product change names a line added in the same revision, and each added line replaces at most one line.</summary>
+    public const string LineReplacementInvalid = "sales_line_replacement_invalid";
+
+    /// <summary>SAT-D167: a product change must name another product (the same product's quantity or price has its own revision).</summary>
+    public const string LineReplacementSameProduct = "sales_line_replacement_same_product";
+
+    /// <summary>SAT-D167: a line revision keeps at least one active line on the order (a wrong order is cancelled, DEC-SAL-005).</summary>
+    public const string LineRevisionNoLinesLeft = "sales_line_revision_no_lines_left";
+
     /// <summary>SAT-D201 (EK31): a subcontract service order is not submitted while a service line has no per-kg price entered.</summary>
     public const string SubcontractPriceRequired = "sales_subcontract_price_required";
 
