@@ -10,7 +10,9 @@ kartından varsayılan, siparişte değiştirilebilir). Alış şeridi Ürün do
 tablosu veya ekranı açmaz; çevrim gerektiren sonuçlar "hesaplanamıyor" kalır (fail-closed). Fiyat birimini siparişi
 düzenleyen değiştirir (ALS-D60); port gelene kadar varsayılan fiyat birimi okunamaz.
 
-## U-A1 · kg ↔ adet ↔ metre çevrimi ve varsayılan fiyat birimi (ALS-D51, DEC-PRD-006)
+## U-A1 · kg ↔ adet ↔ metre çevrimi ve varsayılan fiyat birimi (ALS-D51, DEC-PRD-006) — ertelendi: Ürün başlayınca (ALS-D58)
+
+Aşağıdaki "İstenen (Ürün)" maddelerinin tamamı Ürün modülü çalışması başlayana kadar ertelenmiştir (ALS-D58, EK9).
 
 - **Bugün:** Ürün modülü çevrim varsaymıyor (README: "There is no assumed conversion"; U-08 çevrim politikası
   kabul edilmedi). Alış satırı yalnız Ayarlar profiliyle doğrulanan tek birimle çalışıyor (`PurchaseUnitVerifier`).

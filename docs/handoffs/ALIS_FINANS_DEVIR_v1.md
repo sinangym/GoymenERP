@@ -3,7 +3,9 @@
 Tarih: 2026-11-02 · Yazan: Alış şeridi (Claude) · Alıcı: Finans modülünü yürüten konuşma
 Kararlar: `docs/decisions/SINAN_KARARLARI_2026-11-02_ALIS_EK3.md` ALS-D41 (TL borç tedarikçi faturasındaki kurla),
 ALS-D42 (tedarikçi borcu satış riskinden düşülmez); `_ALIS.md` ALS-D6 (kur); `_ALIS_EK4.md` ALS-D44 (borç/alacak
-ayrımı Finans konuşmasında); `_ALIS_EK7.md` ALS-D50 (avans Finans'ta ödeme olarak). Alış şeridi Finans dosyalarını
+ayrımı Finans konuşmasında); `_ALIS_EK7.md` ALS-D50 (avans Finans'ta ödeme olarak); `_ALIS_EK9.md` ALS-D59 (borç Finans'ta tek kayıt; Cari
+kartına hareket yok; 320 fişi aynı olaydan Muhasebe'de), ALS-D62 (dağıtıcı gelene kadar doğrudan kabul portu, sonra
+olay), ALS-D64 (önce kaydet, sonra idempotent çağrı; tek DB işlemi yok). Alış şeridi Finans dosyalarını
 değiştirmez. Bu not iş tanımıdır; Finans'ın kendi karar, review ve merge kapıları geçerlidir. Arayüz ve olay adları
 öneridir. Bağlam: `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` §6 MOD-04/MOD-15, §14; Finans planı
 `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` F1/F2/F3.
@@ -26,12 +28,22 @@ değiştirmez. Bu not iş tanımıdır; Finans'ın kendi karar, review ve merge 
   1. şirket (`CompanyId`), tedarikçi taraf/hesap kimliği (Cari);
   2. fatura kimliği + fatura sürümü;
   3. para birimi ve **ödenecek tutar** (KDV dahil, tevkifat düşülmüş);
-  4. TL karşılığı + **tedarikçi faturasındaki kur** (ALS-D41; TL borç bu kurla); ayrı ve isteğe bağlı alan olarak ERP
-     kontrol kuru (ALS-D6/D14; yalnız farkı yakalamak için, borcu belirlemez);
+  4. TL karşılığı (`FunctionalAmount`, Alış calculator'ından) + **tedarikçi faturasındaki kur** (`ExchangeRate`;
+     ALS-D41; TL borç bu kurla). ERP kontrol kuru (ALS-D6/D14) açık kaleme **alan olarak gönderilmez**; Alış'ın
+     fatura snapshot'ında (A5-KUR) ve olay payload'unda kalır (EK9 ALS-D62 yorumu);
   5. taksitler: sıra no, vade tarihi, tutar (Σ taksit = ödenecek tutar).
-- **Idempotency:** fatura kimliği + sürüm üzerinden; aynı olay ikinci kez gelirse ikinci kalem açılmaz (inbox/dedup).
+- **Taşıma ve işlem sınırı (ALS-D62, ALS-D64):** ERP-000F gelene kadar **doğrudan port**: Alış faturayı önce kendi
+  işleminde **"Finans kabulü bekliyor"** durumuyla kaydeder, sonra `IFinanceInvoiceOpenItemAdmissionPortV1.AdmitAsync`'i
+  hemen çağırır; Finans kendi işleminde (ayrı veritabanı bağlamı) yazar. Hata/zaman aşımında aynı anahtarla yeniden
+  denenir. İki modül tek DB işleminde bağlanmaz (ADR-CARI-001). Dağıtıcı gelince aynı içerik
+  `purchasing.invoice.finalized.v1` olayıyla gider (bire bir eşleme). Ayrıntılar A5 sözleşmesinde Finans ile yazılır.
+- **Idempotency:** fatura kimliği + sürüm üzerinden; anahtar önerisi `purchasing-invoice:{invoiceId}:{invoiceVersion}`
+  (Finans FS-1 `sales-invoice:` deseni; teknik ayrıntı). Aynı anahtar ikinci kez gelirse ikinci kalem açılmaz
+  (inbox/dedup); bu yüzden yeniden denemede çifte borç oluşmaz.
   Faturanın iptali/ters kaydı ayrı sürümlü olayla gelir (Alış A5'te ayrıca önerilir).
-- **Alış tarafı:** olay Alış outbox'ından çıkar (MOD-12, plan §14.1 A5-0); Finans tablosuna Alış yazmaz.
+- **Alış tarafı:** dağıtıcıya kadar doğrudan port çağrısı, sonra olay Alış outbox'ından çıkar (MOD-12, plan §14.1
+  A5-0); Finans tablosuna Alış yazmaz. Borç Finans'ta tek kayıttır; Cari kartına ayrıca hareket yazılmaz; 320 fişi
+  aynı kaynak olaydan Muhasebe'de üretilir (ALS-D59).
 
 ## F-A3 · Ödeme amacı (Finans planı TEK-02, F1) ve tedarikçi ödemesinin borca dağıtımı (API-20, F3)
 
