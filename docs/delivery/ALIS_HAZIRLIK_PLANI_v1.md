@@ -402,7 +402,7 @@ eşlemesi EK8 §3 "Kart için not"tadır; kart PRS-01 PR'ında güncellenir. **P
 
 2026-11-02'de dört turda on beş soru soruldu; cevaplar `SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13). Sonraki iki
 karar dosyası: `_ALIS_EK1.md` (ALS-D14…D20, §13.4) ve `_ALIS_EK2.md` (ALS-D21…D28, §13.7); kalan sorular `_ALIS_EK3.md` (ALS-D29…D43, §13.8); uygulama sırasındaki turlar `_ALIS_EK4.md`, `_ALIS_EK5.md` ve
-`_ALIS_EK7.md` (ALS-D48…D52; ALS-D47/EK6 PR #907 ile eklenecek). Sonraki
+`_ALIS_EK7.md` (ALS-D48…D52; ALS-D47/EK6 PR #907 ile eklenecek) ve `_ALIS_EK8.md` (ALS-D53…D56; personalar, talep açanlar, N-38, kur düzeltme). Sonraki
 turlar `_ALIS_EKn.md` olur. Zaten karara bağlanmış konular yeniden sorulmaz: tolerans bantları ve onaycılar (No 40,
 41, 62, 63), iade faturası (No 20), fatura para birimi (No 26; kur günü ALS-D6 ile kabul günü), talep reddi ve sipariş iptali (No.161), siparişsiz
 kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-003), fason yönü (URT-D15/D17).
@@ -438,7 +438,7 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | – | Sipariş numarası algoritmasının parçaları (ALS-D36) | MIG-01 alan eşlemesinde hubvogal kayıtlarından çıkarılır |
 | – | N-19: hubvogal erişimi göç (MIG-01) için yeniden gerekecek (karar değil, bağımlılık) | MIG-01'den önce |
 
-Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43); uygulama sırasında gelen kararlar EK4 (ALS-D44/D45), EK5 (ALS-D46) ve EK7 (ALS-D48…D52; N-18, N-36, N-27 kalan, N-28 kalan kapandı).
+Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43); uygulama sırasında gelen kararlar EK4 (ALS-D44/D45), EK5 (ALS-D46) ve EK7 (ALS-D48…D52; N-18, N-36, N-27 kalan, N-28 kalan kapandı); EK8 (ALS-D53…D56; N-38 kapandı).
 
 ---
 

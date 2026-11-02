@@ -23,8 +23,8 @@ ALS-D48…D52 EK7'dedir. Bu dosya ALS-D53'ten başlar; EK6 bu dosyanın parças�
 - Bu dosya hiçbir `OPEN-*` kimliğini kapatmaz; tolerans yüzdeleri kod sabiti olmaz, Ayarlar politika kaydında kalır
   (`DEC-SET-001`, ALS-D43). İnsan kapıları (grant/rol, production aktivasyonu, deployment, secret, `OPEN-*` kapatma)
   değişmez.
-- **Sürekli talimat (Sinan, 2026-11-02, aynen):** **"satış tarafı ile benzer konularda verdiğim kararları ordan da
-  alabilirsin"**. Uygulama biçimi: Satış'a benzeyen bir Alış konusunda Satış kararı **benzetmeyle** uygulanabilir;
+- **Sürekli talimat (Sinan, 2026-11-02, aynen):** **"Bana soruları sorabilirsin, satış tarafı ile benzer konularda
+  verdiğim kararları ordan da alabilirsin"**. Uygulama biçimi: Satış'a benzeyen bir Alış konusunda Satış kararı **benzetmeyle** uygulanabilir;
   ancak her böyle uygulama **geri alınabilir yorum** olarak etiketlenir ve dayandığı SAT-D kaynağını anar. Benzetme
   yeni politika değildir; Alış karar numarası almaz; Sinan aksini söylerse o yorum düşer. Para/stok/formül/yetki
   politikasında benzetme yine fail-closed uygulanır ve grant açmaz.
@@ -90,14 +90,25 @@ manifest'te yok.
 
 | İzin adı | Satın Alma Uzmanı | Satın Alma Müdürü | Satış Destek | Satış Uzmanı | Genel Müdür | Admin | Muhasebe / Muhasebe Müdürü | Dayanak |
 |---|---|---|---|---|---|---|---|---|
-| `purchasing.requests.create` (ad bekliyor; bugün `purchasing.orders.create` ile ölçülür) | + | + | + | + | ? *(yorum, SAT-D194 benzetmesi; seçenekte yok)* | + | — | ALS-D54 |
-| `purchasing.requests.withdraw` (PR #907 ile ekleniyor) | + | + | + | + | ? *(talep açarsa; yukarıdaki satıra bağlı)* | + | — | ALS-D54 soru metni, ALS-D47 (PR #907); kayıt düzeyinde yalnız oluşturan/gönderen |
-| `purchasing.requests.approve` | — | + | — | — | + | + | — | ALS-D2, ALS-D53; SAT-D188 soru 9, SAT-D190 |
-| `purchasing.orders.create` | + | + *(yorum: SAT-D191 ara dönem hücresinin geçişi; SAT-D194 benzetmesi)* | + *(kart §4)* | + *(kart, SAT-D141)* | + *(kartta ara dönem; SAT-D188 soru 9)* | + | — | ALS-D3, ALS-D53, kart §4 |
-| `purchasing.orders.read` | + *(yorum: hazırlamanın gerektirdiği okuma)* | + *(SAT-D191 ara dönem hücresinin geçişi)* | + *(kart)* | + *(kart)* | + | + | kartta olduğu gibi | ALS-D53, kart |
-| `purchasing.orders.approve` | — | + | — | — | + | + | — | ALS-D3, ALS-D53; SAT-D187/D188 |
+| `purchasing.requests.create` (ad bekliyor; bugün `purchasing.orders.create` ile ölçülür) | + | + | + | + | ? *(yorum, SAT-D194 benzetmesi; seçenekte yok)* | + *(kart "tüm ERP işlevleri", kart Admin satırı)* | — / — *(ALS-D54: seçilen seçenek talep açanları sayar, Muhasebe yok)* | ALS-D54 |
+| `purchasing.requests.withdraw` (PR #907 ile ekleniyor) | + | + | + | + | ? *(talep açarsa; yukarıdaki satıra bağlı)* | + *(kart "tüm ERP işlevleri", kart Admin satırı)* | — / — *(ALS-D54; talep açmayan geri çekemez)* | ALS-D54 soru metni, ALS-D47 (PR #907); kayıt düzeyinde yalnız oluşturan/gönderen |
+| `purchasing.requests.approve` | — | + | — | — | + | + | — / — *(ALS-D53: seçilen seçenek onaylayanları sayar: Müdür, Genel Müdür, Admin)* | ALS-D2, ALS-D53; SAT-D188 soru 9, SAT-D190 |
+| `purchasing.orders.create` | + | + *(yorum: SAT-D191 ara dönem hücresinin geçişi; SAT-D194 benzetmesi)* | + *(kart §4)* | + *(kart, SAT-D141)* | + *(kartta ara dönem; SAT-D188 soru 9)* | + | kartta olduğu gibi (`?` / `—`) — bu turdaki hiçbir cevap kapsamıyor | ALS-D3, ALS-D53, kart §4 |
+| `purchasing.orders.read` | + *(yorum: hazırlamanın gerektirdiği okuma)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi)* | + *(kart)* | + *(kart)* | + | + | kartta olduğu gibi (`?` / `—`) | ALS-D53, kart |
+| `purchasing.orders.approve` | — | + | — | — | + | + | — / — *(ALS-D53: seçilen seçenek onaylayanları sayar)* | ALS-D3, ALS-D53; SAT-D187/D188 |
 | Alış faturası kur düzeltmesi (`settings.exchange-rates.correct` veya alışa özgü ad, ad bekliyor) | — | — | — | — | + | + | + / + | ALS-D6, ALS-D56; SAT-D169, SAT-D188 |
 | `purchasing.goods-receipts.record` | ? | ? | kartta olduğu gibi | kartta olduğu gibi | kartta olduğu gibi | + | kartta olduğu gibi | Bu turda sorulmadı (Depo kabul, PRS-02) |
+
+Muhasebe sütununda kartta `?`, Muhasebe Müdürü sütununda `—` (SAT-D191) olan hücreler, bu turdaki bir cevap onları
+açıkça dışarıda bırakmadıkça kartta olduğu gibi kalır; `—` yazılan her Muhasebe hücresi dayandığı kararı anar.
+
+**Satış Müdürü ve Sevkiyatçı** alış yazma ve onay hücrelerinde (`purchasing.orders.create`, `.approve`, talep açma,
+geri çekme ve onay) `—` kalır (kart `purchasing.*` satırları, SAT-D191). ALS-D54 seçeneğindeki "Satış", seçenek
+açıklamasına göre yalnız **Satış Destek ve Satış Uzmanı**'dır; Satış Müdürü'nü kapsamaz.
+
+**Genel Müdür `?` (talep açma) ne zaman etkili olur:** bu hücre yalnız talep açma `purchasing.requests.create` olarak
+`purchasing.orders.create`'ten ayrıldığında (ASSUMPTION-PUR4-1 kaldırıldığında) bir şey ifade eder. Ayrılana kadar
+Genel Müdür ve Admin, kartta taşıdıkları `purchasing.orders.create` ile fiilen talep açabilir.
 
 Satın Alma Uzmanı ve Müdürü'nün Alış dışı hücreleri: yalnız SAT-D191 temel okumaları (yorum, yukarıda); öteki her
 hücre `—`. Critical adlar her sütunda `—` (insan kapısı).
