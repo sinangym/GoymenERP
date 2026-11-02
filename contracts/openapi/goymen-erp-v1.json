@@ -97964,6 +97964,13 @@
               "null",
               "string"
             ]
+          },
+          "workCenterId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -99912,6 +99919,88 @@
           }
         }
       },
+      "PlanParameterSnapshotViewV1": {
+        "required": [
+          "profileId",
+          "profileVersion",
+          "source",
+          "workCenterId",
+          "effectiveFrom",
+          "effectiveThrough",
+          "selectedForDate",
+          "values"
+        ],
+        "type": "object",
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileVersion": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "effectiveThrough": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "selectedForDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanParameterValueViewV1"
+            }
+          }
+        }
+      },
+      "PlanParameterValueViewV1": {
+        "required": [
+          "key",
+          "unit",
+          "number",
+          "choice"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "number": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "choice": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PlanPreviewRequestV1": {
         "required": [
           "workCenterId",
@@ -100400,6 +100489,16 @@
                 "$ref": "#/components/schemas/CutToLengthSpecViewV1"
               }
             ]
+          },
+          "parameterSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanParameterSnapshotViewV1"
+              }
+            ]
           }
         }
       },
@@ -100640,6 +100739,13 @@
               "string"
             ],
             "format": "date"
+          },
+          "workCenterId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
