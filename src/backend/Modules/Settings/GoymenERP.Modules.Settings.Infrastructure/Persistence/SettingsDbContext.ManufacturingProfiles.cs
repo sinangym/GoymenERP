@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -106,6 +107,41 @@ public sealed partial class SettingsDbContext
         tolerance.Property(x => x.MassBalanceDifferenceTolerancePercent).HasPrecision(9, 6);
         ConfigureLifecycleColumns(tolerance);
         tolerance.HasQueryFilter(x => CompanyContext.IsResolved && x.CompanyId == CompanyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// A registry row may only be ADDED, and only beside its own lifecycle version (same company and profile id) moving from
+    /// Approved to Published in the same save; any other write of the registry is refused before SQL.
+    /// </summary>
+    private bool IsToleranceRegistryPublication(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, ManufacturingTolerancePolicyRow policy) =>
+        entry.State == EntityState.Added
+        && ChangeTracker.Entries<ManufacturingToleranceProfileVersionRow>().Any(version =>
+            version.State == EntityState.Modified
+            && version.Entity.CompanyId == policy.CompanyId && version.Entity.ProfileId == policy.ProfileId
+            && version.Entity.ProfileVersion == policy.Version
+            && version.Entity.Status == ManufacturingProfileStatusesV1.Published
+            && Equals(version.Property(row => row.Status).OriginalValue, ManufacturingProfileStatusesV1.Approved));
+
+    /// <summary>Values are insert-only; a published header or tolerance version never changes (the DB triggers agree).</summary>
+    private static void ApplyManufacturingProfileWriteGuard(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry)
+    {
+        if (entry.State != EntityState.Modified)
+        {
+            return;
+        }
+
+        var published = entry.Entity switch
+        {
+            ManufacturingParameterProfileValueRow => true,
+            ManufacturingParameterProfileRow or ManufacturingToleranceProfileVersionRow =>
+                Equals(entry.Property("Status").OriginalValue, ManufacturingProfileStatusesV1.Published),
+            _ => false,
+        };
+        if (published)
+        {
+            throw new InvalidOperationException("Yayımlanmış üretim profili ve değerleri değiştirilemez; yeni sürüm hazırlanır.");
+        }
     }
 
     /// <summary>

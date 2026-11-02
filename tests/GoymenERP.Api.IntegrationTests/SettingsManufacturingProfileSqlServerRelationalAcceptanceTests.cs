@@ -295,6 +295,18 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             + "AND [EntityId] = @p AND [PermissionCode] = N'settings.manufacturing-tolerance-profiles.publish'",
             ("@p", v1.ProfileId.ToString("D"))));
 
+        // Outside the lifecycle publication the context refuses any registry write before SQL (the approved workflow only).
+        await using (var direct = run.SettingsContext(CompanyA))
+        {
+            direct.ManufacturingTolerancePolicies.Add(new ManufacturingTolerancePolicyRow
+            {
+                CompanyId = CompanyA, ProfileId = Guid.NewGuid(), Process = SettingsManufacturingProcessesV1.Paint, Version = 1,
+                MaximumFirePercent = 5m, IsActive = true, EffectiveFrom = today.AddDays(400), ApprovalStatus = "Approved",
+                ApprovedBy = "SENTETIK", ApprovedAtUtc = DateTimeOffset.UtcNow, ApprovalReason = "SENTETIK",
+            });
+            await Assert.ThrowsAsync<InvalidOperationException>(() => direct.SaveChangesAsync());
+        }
+
         await run.AssertRollbackRefusedAsync();
     }
 

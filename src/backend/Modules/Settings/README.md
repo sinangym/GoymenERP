@@ -527,3 +527,37 @@ Sales refuses a loss (fail-closed) and suggests no validity. A malformed catalog
 long for the consumer's snapshot, repeated id or code, a list without entries, a non-positive day count, overlapping windows) is
 refused as a whole with `settings_profile_invalid`. Host registration: `Program.cs`, scoped. Evidence:
 `tests/GoymenERP.Settings.UnitTests/ApprovedSalesQuotePolicyProviderTests.cs`.
+
+## Manufacturing parameter and tolerance profiles (Üretim U1-a: API-01/02, MOD-01)
+
+Decisions: URT-D6, URT-D7, URT-D9, URT-D10 (`docs/decisions/SINAN_KARARLARI_2026-11-01_URETIM.md`), delegation No 86,
+D-MFG-PROFILE-AUTH-01=A (the existing `ManufacturingToleranceProfileLifecyclePolicyV1`, reused for both families).
+
+- **Parameter profiles** — `settings.ManufacturingParameterProfiles` (one header per version of a company × process ×
+  optional work center; lifecycle Draft → Approved → Published, `StateVersion` fence) and
+  `settings.ManufacturingParameterProfileValues` (one typed row per key: number `decimal(18,6)` or choice, with the unit). The
+  keys are the engines' own input names, declared in `ManufacturingParameterKeysV1` with unit, kind (Positive, NonNegative,
+  RatioUpToOne, WholeCount, Choice), scale and allowed processes; a new key needs no migration.
+- **Read port** — `ISettingsManufacturingParameterProviderV1.GetManufacturingParametersAsync(process, workCenterId?, on)`
+  serves only published versions and the reviewed version-0 catalog: a work center's own covering version wins, else the
+  process version; within a scope the latest `EffectiveFrom`, then the highest version. Codes: `settings_access_denied`,
+  `settings_manufacturing_parameter_request_invalid`, `settings_provider_unavailable`,
+  `settings_manufacturing_parameter_profile_not_found`, `settings_profile_invalid`. Manufacturing does not consume it yet.
+- **Catalog** — `ApprovedManufacturingProfileCatalog` (GDC/GSP/GIN, from 2026-11-01, version 0): density 7850 kg/m³
+  (Slitting, ColdRolling, CutToLength), Paint line speed 20 m/min, 80 µm, solids 0.55, loss factor 1.10, 3 simultaneous
+  profiles; kerf 0 mm (CutToLength) and edge trim 0 mm (Slitting). Not shipped (undecided, unknown — never 0): kerf mode,
+  head/tail trim, coil diameters, metre tolerance, slitting/tube line speeds (entered on the plan).
+- **Tolerance write path** — `settings.ManufacturingToleranceProfileVersions` holds the lifecycle; publication inserts the
+  immutable `settings.ManufacturingTolerancePolicies` row (gains nullable `MassBalanceDifferenceTolerancePercent`, URT-D6)
+  in the same transaction. The registry keeps windows of one process from overlapping, so a profile to be replaced later
+  needs an end date. The URT-D6/D7 starting values (fire 5 %, mass balance ± 2 %) are listed as `StartingValue` and are NOT
+  read by the close path, which accepts published versions ≥ 1 only (`OrderClosureAssessment`): until a version 1 is
+  published by two people, close stays fail-closed.
+- **Routes** — `GET/POST /api/v1/settings/manufacturing-parameter-profiles`, `GET …/{id}`, `POST …/{id}/approval`,
+  `POST …/{id}/publication`; the same under `/api/v1/settings/manufacturing-tolerance-profiles`. Names (registered, granted to
+  no role, company-wide, not Critical): `settings.manufacturing-parameter-profiles.read|prepare|approve|publish`,
+  `settings.manufacturing-tolerance-profiles.read|prepare|approve|publish`. Approver ≠ preparer, publisher ≠ preparer; no
+  version may take effect before today. Idempotency-Key, expected version text, reason ≤ 500, one audit event per change.
+- **Migration** `AddManufacturingParameterProfiles` (dotnet ef + hand-written SQL): guard triggers (51181 header, 51182 values,
+  51184 tolerance versions), the registry trigger re-created with the new column, `Down` refuses with `THROW 51183` while any
+  profile or mass-balance value exists (forward fix).
