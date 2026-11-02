@@ -11,7 +11,7 @@ const item = (patch: Record<string, unknown> = {}) => ({
   id: ITEM, companyId: COMPANY, sourceKind: 'official.invoice-installment.v1', sourceId: OTHER, sourceLineId: OTHER,
   sourceVersion: '4', partyId: OTHER, companyAccountId: OTHER, currencyId: CURRENCY, version: '1', dueOn: '2026-10-31',
   status: null, createdAtUtc: '2026-10-13T08:00:00+00:00', initialAmount: { disclosure: 'Redacted', money: null },
-  outstandingAmount: { disclosure: 'Redacted', money: null }, ...patch,
+  outstandingAmount: { disclosure: 'Redacted', money: null }, direction: 'Receivable', ...patch,
 })
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 

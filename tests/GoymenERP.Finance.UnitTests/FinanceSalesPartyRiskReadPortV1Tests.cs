@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -180,6 +181,22 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         }
     }
 
+    [Fact]
+    public async Task A_payable_of_the_same_party_is_neither_added_to_its_receivables_nor_netted_off_them()
+    {
+        // MOD-15 / ALS-D42: the party is also a supplier (DEC-CAR-001). Its purchase invoice installment is the company's
+        // own debt: the risk read ignores it — it neither raises the receivable nor makes the figure unavailable.
+        var payable = Row("500.00", "500.00");
+        payable.SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment;
+        payable.Direction = FinanceOpenItemDirectionCodes.Payable;
+        await using var run = await Run.CreateAsync(Row("125.50", "75.25"), payable);
+
+        var answer = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+
+        Assert.Equal(SalesPartyRiskFigureStateV1.Available, answer.OpenReceivables.State);
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 75.25m)], answer.OpenReceivables.Amounts);
+    }
+
     [Theory]
     [InlineData("-1.00", "official.invoice-installment.v1")]
     [InlineData("1,00", "official.invoice-installment.v1")]
@@ -227,7 +244,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
 
     private static FinanceOpenItemRow Row(string original, string outstanding, int status = FinanceOpenItemStatuses.Open,
         Guid? currency = null, Guid? party = null, Guid? account = null, Guid? company = null) => new()
-    {
+    { Direction = FinanceOpenItemDirectionCodes.Receivable,
         Id = Guid.NewGuid(),
         CompanyId = company ?? Company,
         SourceKind = "official.invoice-installment.v1",

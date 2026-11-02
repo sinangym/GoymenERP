@@ -38,7 +38,7 @@ import { isBoundUuid, type AmountView } from './contract'
 import { formatDecimalTextTr } from './decimalText'
 import type { OpenItem, OpenItemStatus } from './openItemReadContract'
 import { fetchOpenItem, fetchOpenItems } from './openItemReadHttp'
-import { OPEN_ITEM_TEXT as T, shortReference, sourceKindLabel } from './openItemReadText'
+import { DIRECTION_LABEL, OPEN_ITEM_TEXT as T, shortReference, sourceKindLabel } from './openItemReadText'
 import styles from './openItemRead.module.css'
 
 const LIST_HEADING_ID = 'finance-open-item-list-heading'
@@ -269,6 +269,7 @@ function OpenItemTable({ rows, canOpen, withheld }: RowsProps) {
   const columns: readonly DataTableColumn<OpenItem>[] = [
     { key: 'record', header: T.record, cell: (item) => <RecordCell item={item} canOpen={canOpen} />, pin: 'start', className: styles.nowrap },
     { key: 'sourceKind', header: T.sourceKind, cell: (item) => sourceKindLabel(item.sourceKind), className: styles.kind },
+    { key: 'direction', header: T.direction, cell: (item) => DIRECTION_LABEL[item.direction], className: styles.nowrap },
     { key: 'dueOn', header: T.dueOn, cell: dueOnText, className: styles.nowrap },
     ...(withheld ? [] : [
       { key: 'status', header: T.status, cell: (item: OpenItem) => <Status item={item} /> },
@@ -292,6 +293,7 @@ function OpenItemCards({ rows, canOpen, withheld }: RowsProps) {
         </div>
         <dl className={`${styles.facts} ${styles.cardFacts}`}>
           <div className={styles.wide}><dt>{T.sourceKind}</dt><dd>{sourceKindLabel(item.sourceKind)}</dd></div>
+          <div><dt>{T.direction}</dt><dd>{DIRECTION_LABEL[item.direction]}</dd></div>
           <div><dt>{T.dueOn}</dt><dd>{dueOnText(item)}</dd></div>
           <div><dt>{T.createdAt}</dt><dd><Instant value={item.createdAtUtc} /></dd></div>
           {withheld ? null : <>
@@ -354,6 +356,7 @@ function OpenItemFacts({ item }: { readonly item: OpenItem }) {
   return <>
     <dl className={`${styles.facts} ${styles.detailFacts}`}>
       <div className={styles.wide}><dt>{T.sourceKind}</dt><dd>{sourceKindLabel(item.sourceKind)}</dd></div>
+      <div><dt>{T.direction}</dt><dd>{DIRECTION_LABEL[item.direction]}</dd></div>
       <div><dt>{T.dueOn}</dt><dd>{dueOnText(item)}</dd></div>
       <div><dt>{T.createdAt}</dt><dd><Instant value={item.createdAtUtc} /></dd></div>
       {withheld ? null : <>

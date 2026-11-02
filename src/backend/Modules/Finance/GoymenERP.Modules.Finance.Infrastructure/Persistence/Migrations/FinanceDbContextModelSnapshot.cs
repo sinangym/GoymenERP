@@ -650,6 +650,9 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid>("CurrencyId")
                     .HasColumnType("uniqueidentifier");
 
+                b.Property<int>("Direction")
+                    .HasColumnType("int");
+
                 b.Property<DateOnly?>("DueOn")
                     .HasColumnType("date");
 
@@ -727,6 +730,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                 b.ToTable("OpenItems", "finance", t =>
                     {
+                        t.HasCheckConstraint("CK_OpenItems_Direction", "[Direction] IN (1, 2) AND ([SourceKind] <> 'official.invoice-installment.v1' OR [Direction] = 1) AND ([SourceKind] <> 'official.incoming-invoice-installment.v1' OR [Direction] = 2)");
+
                         t.HasCheckConstraint("CK_OpenItems_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceBatchId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 
                         t.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");

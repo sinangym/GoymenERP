@@ -13,6 +13,9 @@ import { isNonNegativeDecimalText, isPositiveDecimalText, positiveDifference, sa
 
 export type OpenItemStatus = 'Open' | 'Closed'
 
+/** MOD-15: a receivable (the party owes the company) or a payable (the company owes the party); stored metadata. */
+export type OpenItemDirection = 'Receivable' | 'Payable'
+
 export interface OpenItem {
   readonly id: string
   readonly companyId: string
@@ -30,6 +33,7 @@ export interface OpenItem {
   readonly createdAtUtc: string
   readonly initialAmount: AmountView
   readonly outstandingAmount: AmountView
+  readonly direction: OpenItemDirection
 }
 
 export interface OpenItemPage {
@@ -45,8 +49,14 @@ export const OPEN_ITEM_CURSOR_MAX_LENGTH = 8192
 const SOURCE_KIND_MAX_LENGTH = 128
 
 const ITEM_KEYS = ['id', 'companyId', 'sourceKind', 'sourceId', 'sourceLineId', 'sourceVersion', 'partyId',
-  'companyAccountId', 'currencyId', 'version', 'dueOn', 'status', 'createdAtUtc', 'initialAmount', 'outstandingAmount']
+  'companyAccountId', 'currencyId', 'version', 'dueOn', 'status', 'createdAtUtc', 'initialAmount', 'outstandingAmount',
+  'direction']
 const PAGE_KEYS = ['companyId', 'items', 'nextCursor']
+/** The two official source kinds and the one direction each may carry (MOD-15). */
+const KNOWN_KIND_DIRECTION: Readonly<Record<string, OpenItemDirection>> = {
+  'official.invoice-installment.v1': 'Receivable',
+  'official.incoming-invoice-installment.v1': 'Payable',
+}
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -83,14 +93,18 @@ export function decodeOpenItem(value: unknown, companyId: string): OpenItem | nu
   const body = record(value)
   if (body === null || !hasExactly(body, ITEM_KEYS)) return null
   const { id, sourceKind, sourceId, sourceLineId, sourceVersion, partyId, companyAccountId, currencyId, version,
-    dueOn, status, createdAtUtc } = body
+    dueOn, status, createdAtUtc, direction } = body
   if (!isBoundUuid(id) || !isBoundUuid(body.companyId) || !sameId(body.companyId, companyId)
     || !isBoundUuid(sourceId) || !isBoundUuid(sourceLineId) || !isBoundUuid(partyId)
     || !isBoundUuid(companyAccountId) || !isBoundUuid(currencyId)
     || !canonicalText(sourceKind, SOURCE_KIND_MAX_LENGTH) || !canonicalText(sourceVersion, Number.MAX_SAFE_INTEGER)
     || !isPositiveInt64Text(version) || !isInstant(createdAtUtc)
     || !(dueOn === null || (typeof dueOn === 'string' && isDateOnly(dueOn)))
-    || !(status === null || status === 'Open' || status === 'Closed')) return null
+    || !(status === null || status === 'Open' || status === 'Closed')
+    || !(direction === 'Receivable' || direction === 'Payable')) return null
+  // A known official kind carries only its own direction (the server's CK_OpenItems_Direction); defence in depth.
+  const expected = KNOWN_KIND_DIRECTION[sourceKind as string]
+  if (expected !== undefined && expected !== direction) return null
   const initialAmount = decodeAmount(body.initialAmount, currencyId, false)
   const outstandingAmount = decodeAmount(body.outstandingAmount, currencyId, true)
   if (initialAmount === null || outstandingAmount === null) return null
@@ -103,7 +117,7 @@ export function decodeOpenItem(value: unknown, companyId: string): OpenItem | nu
     if (!sameDecimal(initial, outstanding) && positiveDifference(initial, outstanding) === null) return null
   }
   return { id, companyId: body.companyId, sourceKind, sourceId, sourceLineId, sourceVersion, partyId, companyAccountId,
-    currencyId, version, dueOn, status, createdAtUtc, initialAmount, outstandingAmount }
+    currencyId, version, dueOn, status, createdAtUtc, initialAmount, outstandingAmount, direction }
 }
 
 /** The detail read's answer: the item asked for, of the company asked in. */

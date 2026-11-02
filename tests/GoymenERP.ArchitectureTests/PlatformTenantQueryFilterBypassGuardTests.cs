@@ -251,8 +251,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
             // MOD-01 / SAT-D52: +2 Sales risk-port facts (unallocated payments deducted, reversed ones never; a refunded advance
             // no longer deducted — review A P2-1), ordinal-sorted (cb46a836… -> 7dc420a3…).
+            // MOD-15 / FNS-D7: +1 party-ledger direction fact (payable credit row, CK_OpenItems_Direction, receivable-only
+            // risk), ordinal-sorted (7dc420a3… -> cf9cecf6…).
+            // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
             ["tools/relational_inventory/finance.txt"] =
-                "7dc420a35ef402dcddf4461a5818301cfffcacb923b354db076a158789bbd156",
+                "c7ce4f0fb5bb6eb6745b65182dd012504f7aaf197f73ffb523702c3922bcce87",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -573,7 +576,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // batch/receipt relationships and an immutable-write guard.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "9494932a29039ec089b47a09f4b5a16aa6290da9130dd5f3d2204cc037239009",
+            "0f2336ecf5f3013f21cea0f19275459139d9a7eff818fe4cd8e23c498ff0bf39",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1126,7 +1129,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // connection, command, raw SQL or query-filter bypass surface.
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
                     new(
-                        "6811c3396e99bf54f0a686c11b1f6436df8df46bf004eacdc4e29e421b7b5250",
+                        "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1134,7 +1137,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // FI04 adds a separate read-only scoped service. No raw SQL, connection, save or filter bypass.
                 [ReviewedFinanceOpenItemReadServicePath] =
                     new(
-                        "72dac8509838056308bba451ece7686f4caa0d891ae8eda432d7d4006e582f53",
+                        "2f7afd0e30cb8cfdb5f919ff72bea2435a37c06ea90767ee8e97e85865ee9159",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
                 // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
@@ -2209,6 +2212,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9741c5fbb341827f77056fa578b0ec8403144990066b40c38d5bcdd48d1da23e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // MOD-15 (FNS-D7): Up's one raw SQL fills Direction = 1 (receivable) on every stored row before the column
+                // becomes NOT NULL; the Down's other raw SQL is Finance's module refusal (51051) while any payable is
+                // stored, before the constraint and column drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261102134844_AddOpenItemDirection.cs"] =
+                    new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
                 // DEC-FIN-016: the Down's only raw SQL is Finance's module refusal (51051) while any customer
                 // instrument, instrument command or collection money event is stored; the THROW is the Down's first
                 // statement, before every drop. Forward fix.

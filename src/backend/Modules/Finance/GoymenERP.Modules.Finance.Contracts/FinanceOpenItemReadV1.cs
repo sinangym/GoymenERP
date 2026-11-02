@@ -15,6 +15,7 @@ public enum FinanceOpenItemStatusV1
 /// <paramref name="Status"/> is derived from the remaining amount by the Finance allocation policy, so it and
 /// the money in <paramref name="InitialAmount"/> and <paramref name="OutstandingAmount"/> are returned only when
 /// the caller holds the separate open-item amount-read authority. No total, difference or converted amount is derived.
+/// <paramref name="Direction"/> (MOD-15) is stored metadata: a receivable or a payable, never derived from money.
 /// </summary>
 public sealed record FinanceOpenItemViewV1(
     Guid Id,
@@ -31,7 +32,8 @@ public sealed record FinanceOpenItemViewV1(
     FinanceOpenItemStatusV1? Status,
     DateTimeOffset CreatedAtUtc,
     AmountView InitialAmount,
-    AmountView OutstandingAmount);
+    AmountView OutstandingAmount,
+    FinanceOpenItemDirectionV1 Direction);
 
 /// <summary>One stable page, newest admitted item first.</summary>
 public sealed record FinanceOpenItemPageV1(
