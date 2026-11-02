@@ -63,8 +63,9 @@ public sealed class SalesOrderDraftSubcontractTests
     [Fact]
     public void K3_review_A_P3_1_a_rejected_revision_whose_accepted_fallback_names_another_currency_has_no_basis()
     {
-        // A fason order's customer is locked and its priced lines lock its currency (SAT-D128, SAT-D201), so this history cannot be
-        // made through the commands today; it is rebuilt the way the store restores a stored order (defence in depth).
+        // This history can also be made through the commands (SAT-D128's path: a commercial revision clears the prices → a currency
+        // change → a new per-kg price → approval → the customer's rejection); the test builds it directly the way the store restores a
+        // stored order, which is shorter and pins the port's answer to exactly this state.
         var draft = Draft(acceptance: true);
         var line = draft.AddLine(draft.Version, Line(commercial: PerKg()), T0);
         draft.RestoreCreator("SENTETIK-writer");
