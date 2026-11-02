@@ -278,11 +278,6 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
-    /// <summary>
-    /// MFG-PLAN-EDIT: a plan's recorded Draft revisions and their complete inputs, bound by (company, plan) like the
-    /// plan's own inputs; the revision's work center by (company, work center) to Organization's alternate key, as the
-    /// plan's. Append-only: the write guard admits no column of either table.
-    /// </summary>
     /// <summary>Üretim U2-b1: the process spec values' own checks, alike on the plan and each revision.</summary>
     private static void ProcessSpecValueChecks<TRow>(TableBuilder<TRow> table, string tableName)
         where TRow : class
@@ -306,6 +301,11 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.PaintColorCode).HasMaxLength(PlanProcessSpec.PaintColorCodeMaximumLength);
     }
 
+    /// <summary>
+    /// MFG-PLAN-EDIT: a plan's recorded Draft revisions and their complete inputs, bound by (company, plan) like the
+    /// plan's own inputs; the revision's work center by (company, work center) to Organization's alternate key, as the
+    /// plan's. Append-only: the write guard admits no column of either table.
+    /// </summary>
     private void ConfigurePlanRevisions(ModelBuilder modelBuilder)
     {
         var revision = modelBuilder.Entity<PlanRevisionRow>();
