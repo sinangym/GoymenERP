@@ -1,4 +1,69 @@
-# Purchasing (PUR-1 … PUR-4a — first independent slices of T08)
+# Purchasing (PUR-1 … PUR-4a, goods receipt and AT-025 — the implemented slices of T08)
+
+## Current state (2026-11-02)
+
+This section is the current summary; the sections below it are the slice history and are kept as written, with
+superseded statements marked **Superseded (2026-11-02)**. Where they disagree, this section and the code win.
+
+- **Plan and decisions:** the module's roadmap is `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` (waves A0…A6); the
+  business decisions are `docs/decisions/SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13), `_ALIS_EK1.md`
+  (ALS-D14…D20), `_ALIS_EK2.md` (ALS-D21…D28), `_ALIS_EK3.md` (ALS-D29…D43) and
+  `SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md` (request rejection, cancellation of an approved
+  order's unaccepted remainder). Those decisions are **not implemented yet** unless a line below says so; the target
+  states are listed in `docs/domain/DURUM_MAKINELERI.md` ("Satın Alma") and the ownership split in
+  `docs/domain/SISTEM_OF_RECORD_MATRISI.md`.
+- **Statuses in code:** `PurchaseRequestStatus` = Draft, Submitted (`Domain/Requests/PurchaseRequest.cs`);
+  `PurchaseOrderStatus` = Draft, Approved (`Domain/Orders/PurchaseOrder.cs`). There is no request approval or
+  rejection, no order cancellation, closure, revision or supplier confirmation yet.
+- **Order creation:** an order is created with or without a source request (`CreatePurchaseOrderRequest.SourceRequestId`
+  is optional); when given, the request must be Submitted and of the same company
+  (`PurchasingService.ReadSourceRequestAsync`).
+- **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
+  (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
+  (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
+  fail-closed (Denied / Refused / Unavailable), never a positive answer. The service still answers 503
+  `product_eligibility_unavailable` when no port is registered (`PurchasingModuleExtensions` resolves it with
+  `GetService`). Product candidates for the order form are read through
+  `GET /api/v1/purchasing/references/products` (`PurchasingProductCandidateEndpoints.cs`, measured with
+  `purchasing.orders.create`).
+- **Goods receipt exists** (lines of an APPROVED order): `PurchasingService.GoodsReceipt.cs` +
+  `GoymenERP.Api/PurchasingRuntime/PurchaseGoodsReceiptHost.cs`. One host database transaction enlists Purchasing's
+  `IPurchaseAcceptanceParticipantV1` (`PurchaseAcceptanceParticipant`: the domain `RecordAcceptance`, the line's
+  accepted total, a `PurchaseAcceptanceShares` row with idempotency and an audit event) and Inventory's
+  `InventoryGoodsReceiptParticipant` (lot, label, location, stock movement — Inventory's rows, not Purchasing's).
+  The request carries accepted quantity, measured kg, location, lot, label, optional heat/coil and movement id
+  (`RecordPurchaseGoodsReceiptV1`). New receipts enter stock with `InitialBlock = "Free"`
+  (`PurchaseGoodsReceiptApiV1.InitialBlock`; Sinan #66/5829087145, ALS-D4); replays keep the stored original block.
+  An acceptance above the line's remaining commitment is refused (`purchasing_acceptance_quantity_exceeds_remaining`):
+  there is **no delivery tolerance band yet** (OPEN-004, ALS-D10/D12, plan A3). Migration
+  `20260924102017_AddPurchaseAcceptanceParticipant` adds the shares table.
+- **Receipt reads:** options (locations), list, detail and the read-only accepted-vs-measured kg comparison
+  (`PurchaseGoodsReceiptComparisonContractsV1.cs`: `SameKilogramUnit` / `Unavailable` are emitted; `ApprovedConversion`
+  is declared but intentionally not emitted; no tolerance, approval or stock effect).
+- **HTTP (14 routes):** requests — create, list, detail, `submission`; orders — create, list, detail, `approval`;
+  goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
+  quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
+- **Permissions (4):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`
+  (`PurchasingPermissionManifestV1`, `ErpPermissions`).
+- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.4`) declares P-01 request
+  list/new/detail (+ submit child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve and goods-receipt
+  children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
+  `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage`, `PurchaseOrderListPage`,
+  `PurchaseOrderCreatePage`, `PurchaseOrderDetailPage`, `GoodsReceiptPanel`, `GoodsReceiptDetail`,
+  `GoodsReceiptQuantityComparison` (routes in `purchasingRoutes.tsx`).
+- **Ports out:** `IPurchaseSupplyReferencePortV1` (expected supply, never stock), `IPurchaseOpenLineReadPortV1`
+  (AT-025, below), `IPurchaseAcceptanceSourceV1`; the Document Vault reads purchase-order ownership through the host
+  adapter `GoymenERP.Api/DocumentsRuntime/PurchasingDocumentOwnerLinkPort.cs`.
+- **Still absent:** price/tax/currency (T28; ALS-D5/D6), approval policy and preparer ≠ approver rule (ALS-D3),
+  revision, cancellation/closure, delivery schedule and "in transit", service lines and service acceptance, outgoing
+  subcontracting (A-1), incoming invoice and three-way match, supplier return, outbox events, breakdown over the API
+  (domain only), count/metre units (Settings approves kilograms only).
+- **Known stale comments outside this README:** in `GoymenERP.Api/Program.cs` the PUR-4a comment above the
+  Purchasing registrations still says no purchase-eligibility port is registered (the next line registers it), and a
+  later comment still calls Purchasing's order screens "staged". They are code comments and are left to a code PR
+  (plan FZL-03).
+
+## History
 
 Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md`), read at exact head `a5b8143b`; the approved GDC kg unit profile (#279, #284) for unit verification.
 
@@ -29,9 +94,9 @@ Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-
 - A request line may split across several orders at partial quantities; **the sum of the approved shares never exceeds the line's need**. PUR-4a binds an order line to at most one line of the order's source request (`PurchaseOrder.CreateForRequest` + `AddLine(..., sourceRequestLineId, now)`; codes `purchasing_source_line_without_request`, `purchasing_duplicate_source_line`) and the store measures the sum at approval (below). `FromRequest` (full quantities) stays as the older shape; the README's former "several full-quantity orders" question is settled as a mistake by that decision.
 
 ## What this module is not
-- No physical effect: no lot, label, location or stock movement; not a second allocation engine (Inventory T09).
-- No price, tax or currency (T28); no approval policy (`Approve` is a transition; §8).
-- No offers, delivery schedules, invoice matching, HTTP, DI, persistence or permissions.
+- No physical effect: no lot, label, location or stock movement; not a second allocation engine (Inventory T09). **Superseded in part (2026-11-02):** Purchasing itself still writes no lot, label, location or stock movement; a goods receipt now stages Inventory's lot/label/movement in the same host transaction, through Inventory's own participant (`PurchaseGoodsReceiptHost`); those rows remain Inventory's.
+- No price, tax or currency (T28); no approval policy (`Approve` is a transition; §8). *(Still true 2026-11-02; decided as ALS-D3/D5/D6, not implemented.)*
+- No offers, delivery schedules, invoice matching, HTTP, DI, persistence or permissions. **Superseded (2026-11-02):** HTTP, DI, persistence and permissions exist since PUR-4a (see below and "Current state"); offers, delivery schedules and invoice matching are still absent.
 
 
 ## PUR-4a — purchase order persistence + authorized API + the supply port
@@ -40,30 +105,30 @@ Card: SİPARİŞ PUR card (coordinator-approved 2026-09-19; chain link "satış 
 
 | Layer | What |
 |---|---|
-| Application (`Contracts/`) | `PurchasingContractsV1` (strict wire shapes, `PurchasingJson`, `PurchasingProblemCodesV1`, `PurchasingApiV1` paths), `PurchasingStoreContracts` (`IPurchasingStore`, ADR-011 envelope, commands `purchasing.purchase-request.create.v1` / `.submit.v1`, `purchasing.purchase-order.create.v1` / `.approve.v1`), `IPurchasingService`, `PurchasingPermissionManifestV1` (`purchasing.orders.create` / `.read` / `.approve`; company-wide, not critical; two personas — enter vs approve), `IPurchasingPartyAccountPortV1` (Cari supplier: party + account + the account's **Supplier role**; host adapter proposal `CounterpartyPurchasingPartyAccountPortV1`), `IProductPurchaseEligibilityPortV1` (the Product owner's purchase eligibility — **not published yet (ÜRÜN #288 P3-3)**: the host registers nothing, the service answers 503 `product_eligibility_unavailable` fail-closed, exactly as Sales before `IProductSalesEligibilityV1`), `IPurchaseSupplyReferencePortV1` (published for INV-AL-1: an APPROVED line's remaining commitment = **expected supply, never stock**). |
+| Application (`Contracts/`) | `PurchasingContractsV1` (strict wire shapes, `PurchasingJson`, `PurchasingProblemCodesV1`, `PurchasingApiV1` paths), `PurchasingStoreContracts` (`IPurchasingStore`, ADR-011 envelope, commands `purchasing.purchase-request.create.v1` / `.submit.v1`, `purchasing.purchase-order.create.v1` / `.approve.v1`), `IPurchasingService`, `PurchasingPermissionManifestV1` (`purchasing.orders.create` / `.read` / `.approve` — **superseded (2026-11-02):** plus `purchasing.goods-receipts.record`; company-wide, not critical; two personas — enter vs approve), `IPurchasingPartyAccountPortV1` (Cari supplier: party + account + the account's **Supplier role**; host adapter proposal `CounterpartyPurchasingPartyAccountPortV1`), `IProductPurchaseEligibilityPortV1` (the Product owner's purchase eligibility — **not published yet (ÜRÜN #288 P3-3)**: the host registers nothing, the service answers 503 `product_eligibility_unavailable` fail-closed, exactly as Sales before `IProductSalesEligibilityV1`; **Superseded (2026-11-02):** the host now registers `ProductPurchaseEligibilityPort`, see "Current state"), `IPurchaseSupplyReferencePortV1` (published for INV-AL-1: an APPROVED line's remaining commitment = **expected supply, never stock**). |
 | Application (`PurchasingService`) | The first command handler: #276 fences (before anything, after every awaited owner read, right before the single save, none after the commit); replay first (ADR-011 §2–§5); owners in order — Cari supplier account (409 `account_state`: company_mismatch / passive_company_account / **not_supplier** / invalid_reference) → the SUBMITTED source request of this company, whose line a bound line must match in product and unit (409 `purchasing_request_state`: invalid_reference / not_submitted / source_line_mismatch) → Product purchase eligibility (503 unavailable, 403 denied, 422 `unsupported_product`, stale version = terminal 409 `version_conflict`) → `PurchaseUnitVerifier` (422 `unsupported_unit`; the verifier-before-line contract is now an invariant, PUR-3 dependency_wait closed). The quantity TEXT is validated first with Settings' `ExactPositiveDecimalV1` at the kg cap of 3 decimals and at most 15 integer digits, and only the validated text is converted — a text longer than a decimal holds is refused, never rounded (FİNANS #350 P2-1/P3-2 applied here too); a same-key race lost on a terminal path answers the winner's stored record as a replay (§8, P3-1). Terminal refusals (§7): stale version, wrong state (`purchasing_order_state`, `purchasing_request_not_draft`), stale product version, **Σ-shares** (`purchasing_request_line_over_sourced`). |
-| Infrastructure (new project) | Schema `purchasing`: `PurchaseRequests`, `PurchaseRequestLines`, `PurchaseOrders`, `PurchaseOrderLines` (kind general/technical, parent, source request line, ordered/technical/accepted totals; CK technical + accepted ≤ ordered), `PurchaseAttempts` (ADR-011: (company, command, key hash) PK under BIN2; **two create-only filtered unique indexes** `UX_PurchaseAttempts_RequestId` / `UX_PurchaseAttempts_OrderId` — the #338 lesson: state commands share the aggregate id). Company query filters and write guards (no delete, no company change, only Status/UpdatedAtUtc(/SourcingVersion) on headers and Technical/Accepted on lines). `PurchasingStore`: one save per command, rebuild through the domain in recording order, replay/refusal records, opaque company-bound cursor, 2601/2627 → `concurrent_change`. **Σ-shares at approval:** for every general line bound to a request line, Σ ordered of the APPROVED orders' bound general lines + this line ≤ the request line's quantity, measured inside the approval's save; the request row's `SourcingVersion` moves with each binding approval so two approvals against one request collide on its row version (the loser measures again). `PurchaseSupplyReferencePort` over the store. Hand-written migration `20260919170000_InitialPurchasing` + snapshot (no dotnet locally). Shell provider **STAGED**, master v3 §27.3: list **P-03** `/satinalma/siparisler`, new **P-04** `/satinalma/siparisler/yeni`, detail **P-03-DETAIL** `/satinalma/siparisler/:orderId` (the read view of one P-03 row; the F-02-DETAIL precedent; P-01 Talep Havuzu unused — requests have no screen in 4a). Approval is a server-measured command on the detail. |
+| Infrastructure (new project) | Schema `purchasing`: `PurchaseRequests`, `PurchaseRequestLines`, `PurchaseOrders`, `PurchaseOrderLines` (kind general/technical, parent, source request line, ordered/technical/accepted totals; CK technical + accepted ≤ ordered), `PurchaseAttempts` (ADR-011: (company, command, key hash) PK under BIN2; **two create-only filtered unique indexes** `UX_PurchaseAttempts_RequestId` / `UX_PurchaseAttempts_OrderId` — the #338 lesson: state commands share the aggregate id). Company query filters and write guards (no delete, no company change, only Status/UpdatedAtUtc(/SourcingVersion) on headers and Technical/Accepted on lines). `PurchasingStore`: one save per command, rebuild through the domain in recording order, replay/refusal records, opaque company-bound cursor, 2601/2627 → `concurrent_change`. **Σ-shares at approval:** for every general line bound to a request line, Σ ordered of the APPROVED orders' bound general lines + this line ≤ the request line's quantity, measured inside the approval's save; the request row's `SourcingVersion` moves with each binding approval so two approvals against one request collide on its row version (the loser measures again). `PurchaseSupplyReferencePort` over the store. Hand-written migration `20260919170000_InitialPurchasing` + snapshot (no dotnet locally). Shell provider **STAGED** (**Superseded (2026-11-02):** every declaration is `ImplementationAvailable`, owner contract 1.4), master v3 §27.3: list **P-03** `/satinalma/siparisler`, new **P-04** `/satinalma/siparisler/yeni`, detail **P-03-DETAIL** `/satinalma/siparisler/:orderId` (the read view of one P-03 row; the F-02-DETAIL precedent; P-01 Talep Havuzu unused — requests have no screen in 4a; **Superseded (2026-11-02):** P-01 list/new/detail exist). Approval is a server-measured command on the detail. |
 | API | `Api/Endpoints/PurchasingEndpoints.cs`: `POST /api/v1/purchasing/requests` (201 + Location; replay 201 + headers), `GET` list/detail, `POST {id}/submission` (200); `POST /api/v1/purchasing/orders` (201), `GET` list/detail, `POST {id}/approval` (200). Platform 401/403/404 and every 503 code-less. |
 | Tests | Unit: `PurchaseOrderSourceBindingTests`, `PurchasingServiceTests` (fences, replay, owner refusals, terminal refusals), `PurchasingPersistenceModelTests` (model, filtered indexes, guards, shell rows). Real SQL ×4 (`tools/relational_inventory/purchasing.txt`): one save each + same-key replay; Σ-shares across orders terminal + the supply port answers only the approved line's remaining; stale version terminal + same-key race one record; company B sees nothing + a second create attempt refused by the filtered index. HTTP acceptance over a stub service. |
 
 **Assumptions (reversible, stated for the coordinator/ChatGPT):** ASSUMPTION-PUR4-1 — purchase requests are created, submitted and read under the three approved order names (same persona), no fourth name. ASSUMPTION-PUR4-2 — Draft orders reserve nothing; the Σ-shares rule is measured at approval across APPROVED orders.
 
-**PUR-4a-FE owner slice:** P-03 list and P-03-DETAIL are implemented over the existing reads; the detail exposes the existing approve command only through its own `purchasing.orders.approve` child capability. The added declaration makes the owner contract `PURCHASING/1.1`; the child keeps the parent's route/context/scope and the backend still re-authorizes every company-bound mutation. It keeps an unresolved actor/company/order/key/expected-version snapshot for an explicit same-payload resend and re-reads the order after a definite success or conflict. P-04 creation remains staged: the Product-owned purchase eligibility/candidate source is still absent, and Sales E1 is not an alias for Purchasing. Central router/capability publication remains the Cari owner's single-writer handoff.
+**PUR-4a-FE owner slice:** P-03 list and P-03-DETAIL are implemented over the existing reads; the detail exposes the existing approve command only through its own `purchasing.orders.approve` child capability. The added declaration makes the owner contract `PURCHASING/1.1`; the child keeps the parent's route/context/scope and the backend still re-authorizes every company-bound mutation. It keeps an unresolved actor/company/order/key/expected-version snapshot for an explicit same-payload resend and re-reads the order after a definite success or conflict. P-04 creation remains staged: the Product-owned purchase eligibility/candidate source is still absent, and Sales E1 is not an alias for Purchasing. **Superseded (2026-11-02):** P-04 is published (`PurchaseOrderCreatePage.tsx`, `ImplementationAvailable: true`) over the product candidate read and the Cari supplier read. Central router/capability publication remains the Cari owner's single-writer handoff.
 
 The published P-03 reads and approval control are currently `SingleCompany`: the HTTP contract requires an explicit company context and has no authorized group-read endpoint. A future group view is a backend predecessor plus its own acceptance evidence; shell metadata alone must not imply that behavior.
 
-**Not in PUR-4a:** goods receipt, kantar/irsaliye kg, tolerance (OPEN-004 → profile/Unavailable), stock-in (PUR-4b + Inventory T09 + the D3 seam decision shared with LOG-5), price/tax/currency (T28), approval policy (§8), breakdown/acceptance commands over the API (domain only), P-04 creation publication, a Product purchase-eligibility implementation (ÜRÜN).
+**Not in PUR-4a** (**Superseded in part (2026-11-02):** goods receipt, stock-in through the goods-receipt host transaction, the acceptance command over the API (`POST …/goods-receipts`), P-04 creation and the Product eligibility implementation have since landed — see "Current state"; the breakdown command over the API, kantar/irsaliye kg, tolerance, price/tax/currency and approval policy are still absent)**:** goods receipt, kantar/irsaliye kg, tolerance (OPEN-004 → profile/Unavailable), stock-in (PUR-4b + Inventory T09 + the D3 seam decision shared with LOG-5), price/tax/currency (T28), approval policy (§8), breakdown/acceptance commands over the API (domain only), P-04 creation publication, a Product purchase-eligibility implementation (ÜRÜN).
 
-**Central (CARİ):** Program.cs wiring, the three `ErpPermissions` names, the shell authority, OpenAPI, `INVENTORY_MODULES += purchasing`, Api csproj, guard pins, adoption of the party port proposal.
+**Central (CARİ):** Program.cs wiring, the three `ErpPermissions` names (**Superseded (2026-11-02):** four — `purchasing.goods-receipts.record` added), the shell authority, OpenAPI, `INVENTORY_MODULES += purchasing`, Api csproj, guard pins, adoption of the party port proposal.
 
 ## dependency_wait
-- Acceptance → stock/label: Inventory T09 on main.
+- ~~Acceptance → stock/label: Inventory T09 on main.~~ **Superseded (2026-11-02):** done through the goods-receipt host transaction (see "Current state").
 - Price/commercial snapshot: T28.
 - Persistence: central writer (CARİ); the verifier's result is retained with the line at that point.
 - ~~First command handler (Application)~~: `PurchasingService` (PUR-4a) takes every line's quantity from `VerifiedPurchaseUnit` only and the company from `ICompanyContext`; "verifier before line" is an invariant there (ORG #288 INFO-1 closed).
-- Product purchase eligibility (Purchasable role + Active lifecycle + the unit being that product's purchase unit): a Product-owned implementation of `IProductPurchaseEligibilityPortV1`, not yet published (ÜRÜN #288 P3-3). Until it is, every create answers 503 `product_eligibility_unavailable` (fail-closed).
+- ~~Product purchase eligibility (Purchasable role + Active lifecycle + the unit being that product's purchase unit): a Product-owned implementation of `IProductPurchaseEligibilityPortV1`, not yet published (ÜRÜN #288 P3-3).~~ **Superseded (2026-11-02):** the host adapter `ProductPurchaseEligibilityPort` translates Product's `IProductPurchaseEligibilityV1`; the 503 `product_eligibility_unavailable` answer remains only for a host without the port.
 - Count/piece units: a Settings-approved count dimension. Until then the domain's `Piece` arithmetic exists but no verified path produces it.
-- Goods receipt → stock (PUR-4b): Inventory T09 receipt write (ÜRÜN), the D3 seam decision (with LOG-5), NEEDS-BUSINESS #66 5743483383 (received stock blocked until quality release?).
+- ~~Goods receipt → stock (PUR-4b): Inventory T09 receipt write (ÜRÜN), the D3 seam decision (with LOG-5), NEEDS-BUSINESS #66 5743483383 (received stock blocked until quality release?).~~ **Superseded (2026-11-02):** the goods receipt writes Purchasing's share and Inventory's receipt in one host transaction; new receipts are `Free` (Sinan #66/5829087145, ALS-D4). Delivery tolerance and the weighbridge slip number remain open (OPEN-004, plan A3).
 
 ## AT-025 — the open-line read for the operations work list
 
