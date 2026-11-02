@@ -113,6 +113,12 @@ public sealed class ProductionPlan
 
     public DateTimeOffset? ApprovedAtUtc { get; private set; }
 
+    /// <summary>
+    /// Üretim U1-b (DEC-PRDCT-008): the Settings parameter profile captured at approval, or null — a draft, a plan approved
+    /// before U1-b, or an approval for which Settings had no profile of the process. Never refreshed after approval.
+    /// </summary>
+    public PlanParameterSnapshotV1? ParameterSnapshot { get; private set; }
+
     public IReadOnlyList<PlannedInput> Inputs => _inputs.AsReadOnly();
 
     /// <summary>
@@ -135,7 +141,8 @@ public sealed class ProductionPlan
         long version,
         SlittingSpec? spec = null,
         IEnumerable<PlanRevisionContent>? revisions = null,
-        CutToLengthSpec? cutToLengthSpec = null)
+        CutToLengthSpec? cutToLengthSpec = null,
+        PlanParameterSnapshotV1? parameterSnapshot = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -185,6 +192,17 @@ public sealed class ProductionPlan
                 ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı plan sürümü planın kendi değişiklikleriyle uyuşmuyor.");
         }
 
+        if (parameterSnapshot is not null)
+        {
+            if (plan.Status != PlanStatus.Approved || parameterSnapshot.Process != process)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı parametre snapshot'ı yalnız aynı süreçteki onaylı plana ait olabilir.");
+            }
+
+            plan.ParameterSnapshot = parameterSnapshot;
+        }
+
         return plan;
     }
 
@@ -197,11 +215,26 @@ public sealed class ProductionPlan
     /// the MFG-6 approval gate (<see cref="SlittingApprovalGate"/>): nothing is approved with gaps.
     /// </summary>
     public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc,
-        SlittingPlanParameters? parameters)
+        SlittingPlanParameters? parameters) =>
+        Approve(expectedVersion, approvedByUserId, approvedAtUtc, parameters, parameterSnapshot: null);
+
+    /// <summary>
+    /// Üretim U1-b: the approval with the Settings parameter profile it captures (DEC-PRDCT-008). The snapshot must be of
+    /// the plan's own process; the slitting gate runs on the parameters the caller derived from it. Nothing is applied
+    /// on a refusal.
+    /// </summary>
+    public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc,
+        SlittingPlanParameters? parameters, PlanParameterSnapshotV1? parameterSnapshot)
     {
         RequireApprovable(expectedVersion);
+        if (parameterSnapshot is not null && parameterSnapshot.Process != Process)
+        {
+            throw new ArgumentException("Parametre profili planın sürecine ait olmalıdır.", nameof(parameterSnapshot));
+        }
+
         SlittingApprovalGate.Require(this, parameters);
         ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
+        ParameterSnapshot = parameterSnapshot;
     }
 
     /// <summary>
