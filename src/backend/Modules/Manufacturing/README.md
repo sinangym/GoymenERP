@@ -2,6 +2,19 @@
 
 Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md` (Ö2, Ö7), read at exact head `a5b8143b`; coordinator decisions of 2026-09-18; the approved GDC kg unit profile (#279, #284) and `Settings.Application.Contracts.V1` for mass verification.
 
+## Current state (2026-11-01)
+
+The slice sections below are kept as written when each slice landed. Where they say a capability is missing, this
+table is the current truth (plan: `docs/delivery/URETIM_HAZIRLIK_PLANI_v1.md`):
+
+| Earlier note | Now |
+|---|---|
+| MFG-5 "No HTTP, permission, host DI or UI" | The host maps 19 endpoints under `/api/v1/manufacturing` (`ManufacturingEndpoints.cs`), eight `manufacturing.*` permissions are registered, and five screens are routed (`/uretim/...`). |
+| MFG-5 "No Inventory integration (T15)", "Not here: Inventory movements", "No stock movement" | Input issue, unused-input return and output receipt are staged in Inventory in the same SQL transaction as the fact (`IInventoryManufacturingRealizationParticipantV1`, `ManufacturingRuntime/*Host.cs`). Output genealogy edges and input allocation are not written yet. WIP and process loss stay Manufacturing facts with no stock effect. |
+| MFG-4 / MFG-ORD "no Ö7 tolerance", "No tolerance and no write-off" | Close reads the Settings tolerance profile for the order's process (`ISettingsManufacturingToleranceProviderV1`) and assesses BAL-004 fire % against it. An out-of-tolerance close needs a reason plus `manufacturing.orders.close-exception.approve` and is stored in `OrderClosureDecisions`. The Settings table has no write path yet, so outside the browser fixture the close answers 503 or profile-not-found. |
+| Not documented below | Process-loss facts (`POST orders/{id}/process-losses`), output product/location references, cut-to-length lines, technical and commercial snapshots on plan inputs. |
+| "One approved plan can open more than one order" | Sinan decided one plan = one order (URT-D1, `SINAN_KARARLARI_2026-11-01_URETIM.md`); the change lands with the plan lifecycle slice (U2). |
+
 ## What is here
 
 ### Domain (`GoymenERP.Modules.Manufacturing.Domain`)
@@ -156,7 +169,7 @@ Readiness, from the registries at `9ebb9916`: no locked decision forbids editing
       - a site-scoped grant → nothing, since the declarations are company-wide (K-1).
     - Publishing grants nothing: every grant is a human gate.
   - `MFG-01` is a technical sub-view id. The canonical production screens (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`, and this is not their locked reference.
-  - The host registers the provider in the central writer's round (`src/frontend/goymen-erp-web/src/manufacturing/SHARED_MOUNT_HANDOFF.md`).
+  - The host registers the provider (`Program.cs`); the frontend routes are spread into `shell/router.tsx`.
 - **Frontend** `src/frontend/goymen-erp-web/src/manufacturing/`:
   - The order's roll balances, as read from the server. The unexplained difference is signed; cost shows as a status.
   - Four fact forms, drawn only with the facts capability.

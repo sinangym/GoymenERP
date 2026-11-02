@@ -58,9 +58,10 @@ public sealed partial class ManufacturingCommandService
     /// the work center; Settings' kilogram profile for every mass and Inventory's exact label version for every roll;
     /// the fresh fence again; the plan's own domain rules (at least one roll, no roll twice). Any refusal is the save's
     /// own answer for the same content (status, code, field), so the screen can say why and on which field.
-    /// Then the ONE plan calculator on the would-be plan with the outside parameters that are known today: none
-    /// (<see cref="PlanCalculationParameters.Unknown"/> — the registry, Product and Inventory sources are not wired), so
-    /// every engine that needs one answers <c>Unavailable</c> and names it. No command record, no audit, no store write.
+    /// Then the ONE plan calculator on the would-be plan with the outside parameters known today: the Product
+    /// dimensions captured on each input (<see cref="PlanCalculationParameters.FromCapturedSnapshots"/>). Every engine
+    /// parameter without a source yet (density, speed, kerf, …) answers <c>Unavailable</c> and is named. No command
+    /// record, no audit, no store write.
     /// </summary>
     public async Task<ManufacturingApiResult<PlanPreviewViewV1>> PreviewPlanAsync(PlanPreviewRequestV1? request,
         string permission, CancellationToken cancellationToken)
