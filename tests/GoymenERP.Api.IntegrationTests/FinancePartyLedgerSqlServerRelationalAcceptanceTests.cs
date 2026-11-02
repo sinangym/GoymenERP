@@ -167,6 +167,18 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
         var risk = await run.SalesRiskAsync(CompanyA);
         Assert.Equal(SalesPartyRiskFigureStateV1.Available, risk.OpenReceivables.State);
         Assert.Equal([new SalesPartyRiskAmountV1(Lira, 1000.00m)], risk.OpenReceivables.Amounts);
+
+        // F1b / API-04: the all-time balance summary — hubvogal's Toplam Borç / Toplam Alacak / Bakiye — keeps both sides.
+        await using (var reader = run.Ledger(CompanyA))
+        {
+            var summary = await reader.Service.SummarizeAuthorizedAsync(reader.Context, new PartyBalanceRequest(Party, Account),
+                CancellationToken.None);
+            Assert.Equal(PartyBalanceOutcome.Found, summary.Outcome);
+            var tl = Assert.Single(summary.Balance!.Currencies);
+            Assert.Equal((Lira, "1000.00", "400.00", PartyLedgerBalanceSide.Debit, "600.00", "1000.00", "400.00"),
+                (tl.CurrencyId, tl.DebitTotal.Money!.Amount, tl.CreditTotal.Money!.Amount, tl.Balance.Side!.Value,
+                    tl.Balance.Amount.Money!.Amount, tl.OpenReceivable.Money!.Amount, tl.OpenPayable.Money!.Amount));
+        }
     }
 
     [SqlServerFact]

@@ -421,3 +421,13 @@ Finance conversation's work; Purchasing's incoming-invoice finalisation, Purchas
 Not in this slice (plan F1b/F2/F3): the balance summary read (API-04), the direction quarantine for direction-less
 imports (No 22, with a CSV v2), payable allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the
 risk read still nets every recorded outgoing payment to the account as a refund), and the MOD-04 admission port.
+
+## F1b / API-04: party balance summary (cari bakiye özeti) — FNS-D6, FNS-D10
+
+`GET /api/v1/finance/party-balance?partyId&companyAccountId` → `PartyBalanceView`: per currency, the party ledger's
+debit / credit totals and balance over **all** of the account's recorded facts (no range, so no carry-forward question
+and no row cap), plus `openReceivable` / `openPayable` — what is still outstanding on OPEN receivable and payable items
+(MOD-15). The ledger's two authorities (`finance.party-ledger.read`, `.amount.read`); without the amount grant every
+amount and the balance side are withheld. Currencies are never converted or added; nothing is netted for risk
+(ALS-D42); nothing is written. A money-event kind the ledger does not know, an unknown direction or an unreadable amount
+makes the summary 503 rather than a wrong figure. Screen: the card above the party ledger (`PartyLedger.tsx`).

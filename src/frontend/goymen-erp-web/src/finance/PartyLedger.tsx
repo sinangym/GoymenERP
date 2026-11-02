@@ -25,12 +25,24 @@ import { WithCurrencyCodes, currencyShown, type CurrencyCodes } from './currency
 import { isDateOnly } from './dateOnly'
 import { useFinanceRead } from './financePort'
 import {
+  decodePartyBalance,
   decodePartyLedgerAnswer,
   type PartyLedgerBalance,
   type PartyLedgerCurrency,
   type PartyLedgerEntry,
 } from './partyLedgerContract'
 import {
+  BALANCE_COLUMN_BALANCE,
+  BALANCE_COLUMN_CREDIT,
+  BALANCE_COLUMN_CURRENCY,
+  BALANCE_COLUMN_DEBIT,
+  BALANCE_COLUMN_OPEN_PAYABLE,
+  BALANCE_COLUMN_OPEN_RECEIVABLE,
+  BALANCE_EMPTY,
+  BALANCE_FORBIDDEN,
+  BALANCE_NOTICE,
+  BALANCE_TITLE,
+  BALANCE_UNAVAILABLE,
   BALANCE_SIDE_HINT,
   BALANCE_SIDE_SUFFIX,
   CLOSING_BALANCE,
@@ -216,6 +228,63 @@ function LedgerBody({
 }
 
 /**
+ * F1b / API-04: the account's all-time balance summary, one row per currency — the server's totals, balance and the
+ * still-open receivable / payable; nothing is computed here and no currency is converted or added.
+ */
+function BalanceSummary({ partyId, companyAccountId }: { readonly partyId: string; readonly companyAccountId: string }) {
+  const summary = useFinanceRead('party-balance', [partyId, companyAccountId],
+    (port, scope, signal) => port.partyBalance(scope, { partyId, companyAccountId }, signal), decodePartyBalance)
+
+  let body
+  if (summary.state.kind === 'forbidden') body = <p role="status">{BALANCE_FORBIDDEN}</p>
+  else if (summary.state.kind === 'service-unavailable') body = <p role="status">{BALANCE_UNAVAILABLE}</p>
+  else if (summary.state.kind !== 'ready') {
+    body = <StateBlock state={summary.state} subject={BALANCE_TITLE} onRetry={summary.refetch} />
+  } else if (summary.state.data.currencies.length === 0) body = <p role="status">{BALANCE_EMPTY}</p>
+  else {
+    const currencies = summary.state.data.currencies
+    body = (
+      <WithCurrencyCodes>
+        {(codes) => (
+          <table data-party-balance>
+            <caption>{BALANCE_TITLE}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{BALANCE_COLUMN_CURRENCY}</th>
+                <th scope="col">{BALANCE_COLUMN_DEBIT}</th>
+                <th scope="col">{BALANCE_COLUMN_CREDIT}</th>
+                <th scope="col">{BALANCE_COLUMN_BALANCE}</th>
+                <th scope="col">{BALANCE_COLUMN_OPEN_RECEIVABLE}</th>
+                <th scope="col">{BALANCE_COLUMN_OPEN_PAYABLE}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currencies.map((currency) => (
+                <tr key={currency.currencyId} data-balance-currency={currency.currencyId}>
+                  <th scope="row">{currencyShown(currency.currencyId, codes)}</th>
+                  {amountCell(currency.debitTotal)}
+                  {amountCell(currency.creditTotal)}
+                  <td data-amount-kind={amountShown(currency.balance.amount).kind}>{balanceText(currency.balance)}</td>
+                  {amountCell(currency.openReceivable)}
+                  {amountCell(currency.openPayable)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </WithCurrencyCodes>
+    )
+  }
+  return (
+    <section aria-labelledby="finance-party-balance-title" className={styles.ledger}>
+      <h2 id="finance-party-balance-title">{BALANCE_TITLE}</h2>
+      <p className={styles.hint}>{BALANCE_NOTICE}</p>
+      {body}
+    </section>
+  )
+}
+
+/**
  * The ledger of one party account. `range` is the URL's; `onRange` writes a new one (one history entry). The range
  * form only asks when the chosen dates are a valid range.
  */
@@ -257,6 +326,7 @@ export function PartyLedger({
     <section aria-labelledby="finance-party-ledger-title" className={styles.detail}>
       <h1 id="finance-party-ledger-title">{LEDGER_TITLE}</h1>
       <p className={styles.hint}>{accountReference(partyId, companyAccountId)}</p>
+      <BalanceSummary partyId={partyId} companyAccountId={companyAccountId} />
       <p className={styles.notice}>{LEDGER_NOTICE}</p>
       <p className={styles.notice} data-ledger-carry-forward="NoneOpen018"><strong>{LEDGER_NO_CARRY_FORWARD}</strong></p>
       <p className={styles.notice}>{LEDGER_PER_CURRENCY}</p>

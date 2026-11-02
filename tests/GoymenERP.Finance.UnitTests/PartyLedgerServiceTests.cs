@@ -120,6 +120,48 @@ public sealed class PartyLedgerServiceTests
     }
 
     [Fact]
+    public async Task The_balance_summary_is_the_ledgers_all_time_totals_per_currency_and_the_still_open_items()
+    {
+        // F1b / API-04 (FNS-D6): every fact of the story lies inside the ledger's range, so the all-time summary must
+        // equal the range's totals and closing balance, currency by currency; the open amounts come from OPEN items only.
+        await using var run = new Run();
+        await run.SeedStoryAsync();
+
+        PartyLedgerView ledger;
+        PartyBalanceResult summary;
+        await using (var reader = run.Ledger("reader", Company))
+        {
+            ledger = (await reader.Service.ReadAuthorizedAsync(reader.Context, Request(), CancellationToken.None)).Ledger!;
+            summary = await reader.Service.SummarizeAuthorizedAsync(reader.Context, new PartyBalanceRequest(Party, Account),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(PartyBalanceOutcome.Found, summary.Outcome);
+        Assert.Equal((Company, Party, Account), (summary.Balance!.CompanyId, summary.Balance.PartyId, summary.Balance.CompanyAccountId));
+        Assert.Equal(
+            ledger.Currencies.Select(currency => (currency.CurrencyId, currency.DebitTotal, currency.CreditTotal, currency.ClosingBalance)),
+            summary.Balance.Currencies.Select(currency => (currency.CurrencyId, currency.DebitTotal, currency.CreditTotal, currency.Balance)));
+        var tl = summary.Balance.Currencies.Single(currency => currency.CurrencyId == Currency);
+        Assert.Equal("0", tl.OpenPayable.Money!.Amount);
+        Assert.True(FinanceExactDecimalText.TryParseNonNegative(tl.OpenReceivable.Money!.Amount, out _));
+
+        await using var blind = run.Ledger("reader", Company, new DenyAmount());
+        var withheld = await blind.Service.SummarizeAuthorizedAsync(blind.Context, new PartyBalanceRequest(Party, Account),
+            CancellationToken.None);
+        Assert.Equal(PartyBalanceOutcome.Found, withheld.Outcome);
+        Assert.All(withheld.Balance!.Currencies, currency =>
+        {
+            Assert.All(new[] { currency.DebitTotal, currency.CreditTotal, currency.Balance.Amount, currency.OpenReceivable,
+                currency.OpenPayable }, view => Assert.Equal((AmountDisclosure.Redacted, (MoneyText?)null), (view.Disclosure, view.Money)));
+            Assert.Null(currency.Balance.Side);
+        });
+
+        await using var invalid = run.Ledger("reader", Company);
+        Assert.Equal(PartyBalanceOutcome.Invalid, (await invalid.Service.SummarizeAuthorizedAsync(invalid.Context,
+            new PartyBalanceRequest(Guid.Empty, Account), CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
     public async Task Without_the_amount_grant_every_amount_total_and_balance_side_is_withheld()
     {
         await using var run = new Run();

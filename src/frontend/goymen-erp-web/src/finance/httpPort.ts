@@ -17,6 +17,7 @@
  * | `listCustomerInstruments` / `customerInstrumentDetail` | `GET /finance/customer-instruments[/{id}]` (DEC-FIN-016) |
  * | `customerInstrumentRisk` | `GET /finance/customer-instruments/risk?asOf=[&partyId&companyAccountId]` (read-only) |
  * | `partyLedger` | `GET /finance/party-ledger?partyId&companyAccountId&from&to` (read-only; 400 / 422 as refusals) |
+ * | `partyBalance` | `GET /finance/party-balance?partyId&companyAccountId` (read-only, F1b / API-04) |
  * | `receiveCustomerInstrument` | `POST /finance/customer-instruments` with `Idempotency-Key` (DEC-FIN-016) |
  * | `changeCustomerInstrumentStatus` | `POST …/{id}/status-changes` with `Idempotency-Key` (DEC-FIN-016) |
  * | `collectCustomerInstrument` | `POST …/{id}/collection` with `Idempotency-Key` (DEC-FIN-016, the money effect) |
@@ -55,6 +56,7 @@ export const MANUAL_BANK_PAYMENTS_PATH = '/finance/manual-bank-payments'
 export const CUSTOMER_INSTRUMENTS_PATH = '/finance/customer-instruments'
 /** The first-release party ledger (cari hesap ekstresi), read-only. */
 export const PARTY_LEDGER_PATH = '/finance/party-ledger'
+export const PARTY_BALANCE_PATH = '/finance/party-balance'
 /** The ledger's stated refusal: more rows than one answer carries (narrow the range). */
 export const PARTY_LEDGER_TOO_MANY_CODE = 'finance_party_ledger_too_many_entries'
 
@@ -228,6 +230,10 @@ export function createHttpFinancePort(): FinanceReceiptPort {
         to: request.to,
       })
       return readPartyLedger(`${API_BASE}${PARTY_LEDGER_PATH}?${params.toString()}`, scope, signal)
+    },
+    partyBalance: (scope, request, signal) => {
+      const params = new URLSearchParams({ partyId: request.partyId, companyAccountId: request.companyAccountId })
+      return read(`${API_BASE}${PARTY_BALANCE_PATH}?${params.toString()}`, scope, signal)
     },
     customerInstrumentDetail: (scope, instrumentId, signal) =>
       read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(instrumentId)}`, scope, signal),

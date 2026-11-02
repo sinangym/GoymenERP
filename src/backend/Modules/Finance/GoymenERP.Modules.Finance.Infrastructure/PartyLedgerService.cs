@@ -144,6 +144,128 @@ public sealed class PartyLedgerService(
             from, to, PartyLedgerCarryForward.NoneOpen018, PartyLedgerPolicy.Build(facts, Disclosure(amount))));
     }
 
+    /// <summary>
+    /// F1b / API-04 (FNS-D6): the ledger's own rule over ALL of the account's recorded facts — no range, so no carry-forward
+    /// question (OPEN-018) and no row cap — reduced to each currency's debit / credit totals and balance, plus what is still
+    /// outstanding on OPEN receivable and payable items (MOD-15). The same two fresh authorities as the ledger; a money
+    /// event kind the ledger does not know, or an amount that does not parse, makes the summary unavailable rather than wrong.
+    /// </summary>
+    public async Task<PartyBalanceResult> SummarizeAuthorizedAsync(FinanceContext context, PartyBalanceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!SameContext(context))
+        {
+            return new PartyBalanceResult(PartyBalanceOutcome.Denied, null);
+        }
+
+        var read = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
+        if (read != PermissionDecision.Allowed || !SameContext(context))
+        {
+            return new PartyBalanceResult(BalanceRefusal(read), null);
+        }
+
+        if (request.PartyId == Guid.Empty || request.CompanyAccountId == Guid.Empty)
+        {
+            return new PartyBalanceResult(PartyBalanceOutcome.Invalid, null);
+        }
+
+        var partyId = request.PartyId;
+        var accountId = request.CompanyAccountId;
+        var moneyEvents = await dbContext.MoneyEvents.AsNoTracking()
+            .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
+            .Select(row => new { row.Id, row.Kind, row.CurrencyId, row.AmountText, row.OccurredOn, row.RecordedAtUtc })
+            .ToListAsync(cancellationToken);
+        var payments = await dbContext.OutgoingMoneyEvents.AsNoTracking()
+            .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
+            .Select(row => new { row.Id, row.CurrencyId, row.AmountText, row.OccurredOn, row.RecordedAtUtc })
+            .ToListAsync(cancellationToken);
+        var openItems = await dbContext.OpenItems.AsNoTracking()
+            .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
+            .Select(row => new
+            {
+                row.Id, row.CurrencyId, row.OriginalAmountText, row.OutstandingAmountText, row.Status, row.Direction,
+                row.CreatedAtUtc,
+            })
+            .ToListAsync(cancellationToken);
+
+        var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
+        var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
+        if (again != PermissionDecision.Allowed || !SameContext(context))
+        {
+            return new PartyBalanceResult(BalanceRefusal(again), null);
+        }
+
+        var facts = new List<PartyLedgerFact>(moneyEvents.Count + payments.Count + openItems.Count);
+        foreach (var row in moneyEvents)
+        {
+            PartyLedgerEntryKind kind;
+            switch (row.Kind)
+            {
+                case MoneyEventKinds.ManualBankReceiptRecorded: kind = PartyLedgerEntryKind.ManualReceipt; break;
+                case MoneyEventKinds.ManualBankReceiptReversed: kind = PartyLedgerEntryKind.ManualReceiptReversal; break;
+                case MoneyEventKinds.CustomerInstrumentCollected: kind = PartyLedgerEntryKind.CustomerInstrumentCollection; break;
+                default: return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
+            }
+
+            facts.Add(new PartyLedgerFact(kind, row.Id, row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText,
+                row.Id, null, null, null, null));
+        }
+
+        facts.AddRange(payments.Select(row => new PartyLedgerFact(PartyLedgerEntryKind.ManualBankPayment, row.Id,
+            row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText, row.Id, null, null, null, null)));
+        var receivable = new Dictionary<Guid, FinanceExactDecimalText>();
+        var payable = new Dictionary<Guid, FinanceExactDecimalText>();
+        foreach (var row in openItems)
+        {
+            if (row.Direction is not (FinanceOpenItemDirectionCodes.Receivable or FinanceOpenItemDirectionCodes.Payable)
+                || !FinanceExactDecimalText.TryParseNonNegative(row.OutstandingAmountText, out var outstanding))
+            {
+                return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
+            }
+
+            facts.Add(new PartyLedgerFact(OpenItemKind(row.Direction), row.Id,
+                DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime), row.CreatedAtUtc, row.CurrencyId, row.OriginalAmountText,
+                row.Id, null, null, null, null));
+            if (row.Status == FinanceOpenItemStatuses.Open)
+            {
+                var sums = row.Direction == FinanceOpenItemDirectionCodes.Receivable ? receivable : payable;
+                sums[row.CurrencyId] = sums.TryGetValue(row.CurrencyId, out var sum) ? sum.Add(outstanding) : outstanding;
+            }
+        }
+
+        IReadOnlyList<PartyLedgerCurrency> ledger;
+        try
+        {
+            ledger = PartyLedgerPolicy.Build(facts, Disclosure(amount));
+        }
+        catch (InvalidOperationException)
+        {
+            // A stored amount that does not parse is a broken invariant: the summary is withheld, never a partial sum.
+            return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
+        }
+
+        var disclosure = Disclosure(amount);
+        var currencies = ledger.Select(currency => new PartyBalanceCurrency(currency.CurrencyId, currency.DebitTotal,
+                currency.CreditTotal, currency.ClosingBalance,
+                OpenAmount(receivable, currency.CurrencyId, disclosure), OpenAmount(payable, currency.CurrencyId, disclosure)))
+            .ToList();
+        return new PartyBalanceResult(PartyBalanceOutcome.Found,
+            new PartyBalanceView(context.CompanyId, partyId, accountId, currencies));
+    }
+
+    private static AmountView OpenAmount(Dictionary<Guid, FinanceExactDecimalText> sums, Guid currencyId,
+        AmountDisclosure disclosure) =>
+        disclosure == AmountDisclosure.Visible
+            ? new AmountView(AmountDisclosure.Visible, new MoneyText(
+                sums.TryGetValue(currencyId, out var sum) ? sum.Text : "0", currencyId))
+            : new AmountView(disclosure, null);
+
+    private static PartyBalanceOutcome BalanceRefusal(PermissionDecision decision) =>
+        decision == PermissionDecision.Unavailable ? PartyBalanceOutcome.Unavailable : PartyBalanceOutcome.Denied;
+
     private static PartyLedgerFact Fact(PartyLedgerEntryKind kind, MoneyEventFact row, Guid? reversesSourceId,
         Guid? instrumentId) =>
         new PartyLedgerFact(kind, row.Id, row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText, row.SourceId,

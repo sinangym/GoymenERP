@@ -245,3 +245,65 @@ export function decodePartyLedgerAnswer(value: unknown, companyId: string): Deco
     },
   })
 }
+
+/**
+ * F1b / API-04 — `GET /finance/party-balance?partyId&companyAccountId` (PartyBalanceV1.cs): the account's ALL-TIME
+ * balance summary per currency — debit / credit totals, the balance and the still-open receivable and payable. Decoded
+ * strictly like the ledger: exact keys, the context company, one block per currency, every amount as disclosed.
+ */
+export interface PartyBalanceCurrency {
+  readonly currencyId: string
+  readonly debitTotal: AmountView
+  readonly creditTotal: AmountView
+  readonly balance: PartyLedgerBalance
+  readonly openReceivable: AmountView
+  readonly openPayable: AmountView
+}
+
+export interface PartyBalanceView {
+  readonly companyId: string
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly currencies: readonly PartyBalanceCurrency[]
+}
+
+export interface PartyBalanceRequest {
+  readonly partyId: string
+  readonly companyAccountId: string
+}
+
+const BALANCE_CURRENCY_KEYS = ['currencyId', 'debitTotal', 'creditTotal', 'balance', 'openReceivable', 'openPayable']
+
+function decodeBalanceCurrency(value: unknown): PartyBalanceCurrency | null {
+  if (!isRecord(value) || !hasExactKeys(value, BALANCE_CURRENCY_KEYS) || !isBoundUuid(value.currencyId)) return null
+  const currencyId = value.currencyId
+  const debitTotal = decodeAmount(value.debitTotal, currencyId, true)
+  const creditTotal = decodeAmount(value.creditTotal, currencyId, true)
+  const balance = decodeBalance(value.balance, currencyId)
+  const openReceivable = decodeAmount(value.openReceivable, currencyId, true)
+  const openPayable = decodeAmount(value.openPayable, currencyId, true)
+  if (debitTotal === null || creditTotal === null || balance === null || openReceivable === null || openPayable === null) {
+    return null
+  }
+  // One authority discloses all five together; a mixed answer is not this contract's.
+  const disclosures = new Set([debitTotal, creditTotal, balance.amount, openReceivable, openPayable].map((v) => v.disclosure))
+  if (disclosures.size !== 1) return null
+  return { currencyId, debitTotal, creditTotal, balance, openReceivable, openPayable }
+}
+
+export function decodePartyBalance(value: unknown, companyId: string): Decoded<PartyBalanceView> {
+  if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'partyId', 'companyAccountId', 'currencies'])) return FAIL
+  if (value.companyId !== companyId || !isBoundUuid(value.partyId) || !isBoundUuid(value.companyAccountId)
+    || !Array.isArray(value.currencies)) {
+    return FAIL
+  }
+  const currencies: PartyBalanceCurrency[] = []
+  const seen = new Set<string>()
+  for (const raw of value.currencies) {
+    const currency = decodeBalanceCurrency(raw)
+    if (currency === null || seen.has(currency.currencyId)) return FAIL
+    seen.add(currency.currencyId)
+    currencies.push(currency)
+  }
+  return ok({ companyId, partyId: value.partyId, companyAccountId: value.companyAccountId, currencies })
+}
