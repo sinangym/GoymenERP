@@ -28,7 +28,8 @@ iletilmiş, Sinan'ın kendi teyidiyle EK35'e yazılmıştır. Bu not karar dosya
   **outbox olayıdır:** `sales.invoice.finalized.v1`; tüketicileri Finans (API-10, alacak açık kalemi) ve Muhasebe (fiş).
   Sahipler: **Satış** — olay sözleşmesi + Satış outbox'ı; **Finans** — API-10 tüketicisi (inbox/dedup); **Muhasebe** — taslak
   fiş tüketicisi (inbox/dedup). İdempotency anahtarı fatura kimliği + sürümü; alan listesi Finans ile fatura dalgasında
-  netleşir. Finans şeridine (FNS-D1) devir notu koordinatör oturumu üzerinden `send_message` ile iletildi.
+  netleşir. Finans şeridine (FNS-D1) devir notu: Satış şeridi koordinatörü Finans oturumuna doğrudan `send_message` ile iletti
+  (2 Kasım; olay sözleşmesi önerisi, yük taslağı, fatura kimliği + sürümü idempotency'si, ERP-000F soruları); cevap bekleniyor.
 
 ## Okuma yöntemi
 
