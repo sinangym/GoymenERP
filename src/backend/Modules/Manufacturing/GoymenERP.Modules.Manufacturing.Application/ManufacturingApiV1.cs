@@ -600,7 +600,10 @@ public sealed partial class ManufacturingCommandService(
                 var revised = await planRevisions.RevisePlanWithCutLinesAsync(planId, request.ExpectedVersion, request.WorkCenterId,
                     process.Value, [.. PlannedInputs(verified.Inputs)], Target(request.Target, verified.TargetMass),
                     BuildCutToLengthSpec(content.CutToLengthSpec), reason, metadata, cancellationToken);
-                return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(revised), false, null);
+                // U1-b: a draft's answer uses the profile in force today, exactly as the plan read does.
+                var live = await ReadLiveParameterProfileAsync(revised, cancellationToken);
+                return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(revised, live), false,
+                    null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
 

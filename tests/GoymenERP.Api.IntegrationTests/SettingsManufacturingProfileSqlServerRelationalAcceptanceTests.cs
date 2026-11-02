@@ -432,8 +432,10 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE [name] IN (N'ManufacturingParameterProfiles', "
             + "N'ManufacturingParameterProfileValues', N'ManufacturingToleranceProfileVersions')"));
+        // Scoped to the Settings registry: Manufacturing's close decision carries a column of the same name (U1-b).
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'MassBalanceDifferenceTolerancePercent'"));
+            "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'MassBalanceDifferenceTolerancePercent' "
+            + "AND [object_id] = OBJECT_ID(N'[settings].[ManufacturingTolerancePolicies]')"));
         await migrator.MigrateAsync();
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE [name] IN (N'ManufacturingParameterProfiles', "
