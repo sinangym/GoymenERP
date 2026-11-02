@@ -209,7 +209,10 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
     </span>
   )
   const stageCell = (row: DraftSummaryWithParty) => (
-    <span data-testid={`sales-row-commercial-stage-${row.id}`}>{COMMERCIAL_STAGE_TEXT[row.commercialStage]}</span>
+    <span data-testid={`sales-row-commercial-stage-${row.id}`}>
+      {COMMERCIAL_STAGE_TEXT[row.commercialStage]}
+      {row.subcontractService === true ? ` · ${ORDER_LIST_TEXT.subcontract}` : null}
+    </span>
   )
   const statusCell = (row: DraftSummaryWithParty) => (
     <StatusIndicator tone={stateTone(row)} className={styles.status}>

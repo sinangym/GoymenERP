@@ -105,6 +105,17 @@ public sealed partial class SalesDraftService
                         refusal => TerminalAsync(scope, permission, envelope, requestHash, refusal, writeCancellationToken, commandName, draftId),
                         writeCancellationToken);
 
+                    // SAT-D175 (EK25): the customer of a subcontract service order changes only when no production plan or
+                    // customer-goods allocation is linked to it (read from the binding hook; unreadable = 503, fail-closed).
+                    if (draft.IsSubcontractService
+                        && (input.PartyId != draft.Header.PartyId || input.CompanyAccountId != draft.Header.CompanyAccountId))
+                    {
+                        input = input with
+                        {
+                            SubcontractCustomerUnbound = await IsSubcontractCustomerUnboundAsync(scope, permission, draft, writeCancellationToken),
+                        };
+                    }
+
                     // MOD-03 → Sales (SAT-D140/D105): a changed buyer tax, checked against the Settings lists, and the lines re-resolved.
                     if (await ResolveHeaderTaxAsync(scope, permission, draft, request, writeCancellationToken) is { } tax)
                     {
@@ -130,7 +141,8 @@ public sealed partial class SalesDraftService
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("reason", exception.Code)]);
         }
-        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.HeaderRevisionQuoteCustomer)
+        catch (SalesRuleException exception) when (exception.Code is SalesRuleCodes.HeaderRevisionQuoteCustomer
+            or SalesRuleCodes.SubcontractCustomerLocked)
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("companyAccountId", exception.Code)]);
         }

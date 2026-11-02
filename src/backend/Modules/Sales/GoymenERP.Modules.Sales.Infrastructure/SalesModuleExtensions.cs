@@ -78,6 +78,9 @@ public static class SalesModuleExtensions
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
         services.AddScoped<ISalesOrderLineReferencePortV1, SalesOrderLineReferencePort>();
+        // S-3 / SAT-D175 (EK25): the Sales-owned subcontract service order read port for the Production consumer (URT-D22), over
+        // the same company-filtered store; the Production lane binds its consumer to it.
+        services.AddScoped<ISalesSubcontractServiceOrderReadPortV1, SalesSubcontractServiceOrderReadPort>();
         // API-30 / API-31: the read-only dispatch list and invoice candidates over the Logistics dispatch owner's ports
         // (registered by that module), the Sales store's own order references and the Cari party display (host adapter).
         services.TryAddSingleton(new SalesDispatchReadBindings());
@@ -163,7 +166,13 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISettingsTaxRateListReaderV1>(),
         // SAT-D47 / DEC-FIN-010: the Settings rate-day port (the exchange-rate record), registered by the Settings owner's module;
         // until it is, a foreign-currency risk amount stays "exchange_rate_unavailable", never converted with a guessed rate.
-        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        // SAT-D176 (EK25): the Product owner's item type of the shared product card (SAT-D149), registered by the Product owner;
+        // until it is, a subcontract service order is 503, never a line assumed to be a service.
+        serviceProvider.GetService<IProductItemTypeReaderV1>(),
+        // SAT-D175 (EK25): the Production / customer-goods binding of a subcontract service order (host adapter, the Production
+        // lane's); until it is composed, the customer of such an order does not change (503, fail-closed).
+        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
