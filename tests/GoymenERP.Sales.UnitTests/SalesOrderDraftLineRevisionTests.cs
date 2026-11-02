@@ -57,7 +57,7 @@ public sealed class SalesOrderDraftLineRevisionTests
         var version = draft.Version;
         var added = Line(ProductB, "5");
 
-        var archived = draft.ReviseLines(version, [added], [new LineRemovalInput(first.Id)], "SENTETIK-writer", "  SENTETIK müşteri değişikliği  ", T0);
+        var archived = draft.ReviseLines(version, [added], [new LineRemovalInput(first.Id)], "SENTETIK-writer", "  SENTETIK müşteri değişikliği  ", T0, Day);
 
         Assert.NotNull(archived);
         Assert.Equal(("SENTETIK müşteri değişikliği", 2), (archived!.Reason, archived.Lines.Count));
@@ -77,7 +77,7 @@ public sealed class SalesOrderDraftLineRevisionTests
         var (draft, first, _) = Approved();
         var replacement = Line(ProductB, "10");
 
-        draft.ReviseLines(draft.Version, [replacement], [new LineRemovalInput(first.Id, replacement.LineId)], "SENTETIK-writer", "SENTETIK ürün", T0);
+        draft.ReviseLines(draft.Version, [replacement], [new LineRemovalInput(first.Id, replacement.LineId)], "SENTETIK-writer", "SENTETIK ürün", T0, Day);
 
         Assert.Equal(replacement.LineId, Assert.Single(draft.RemovedLines).ReplacedByLineId);
         Assert.Contains(draft.Lines, line => line.Id == replacement.LineId && line.Product.ProductId == ProductB);
@@ -88,19 +88,19 @@ public sealed class SalesOrderDraftLineRevisionTests
     {
         var (draft, first, second) = Approved();
         var version = draft.Version;
-        Assert.Equal(SalesRuleCodes.RevisionNoChange, CodeOf(() => draft.ReviseLines(version, [], [], "SENTETIK", "r", T0)));
-        Assert.Equal(SalesRuleCodes.RevisionReasonRequired, CodeOf(() => draft.ReviseLines(version, [Line()], [], "SENTETIK", " ", T0)));
+        Assert.Equal(SalesRuleCodes.RevisionNoChange, CodeOf(() => draft.ReviseLines(version, [], [], "SENTETIK", "r", T0, Day)));
+        Assert.Equal(SalesRuleCodes.RevisionReasonRequired, CodeOf(() => draft.ReviseLines(version, [Line()], [], "SENTETIK", " ", T0, Day)));
         Assert.Equal(SalesRuleCodes.RevisionLinesMismatch,
-            CodeOf(() => draft.ReviseLines(version, [], [new LineRemovalInput(Guid.NewGuid())], "SENTETIK", "r", T0)));
+            CodeOf(() => draft.ReviseLines(version, [], [new LineRemovalInput(Guid.NewGuid())], "SENTETIK", "r", T0, Day)));
         Assert.Equal(SalesRuleCodes.LineRevisionNoLinesLeft,
-            CodeOf(() => draft.ReviseLines(version, [], [new LineRemovalInput(first.Id), new LineRemovalInput(second.Id)], "SENTETIK", "r", T0)));
+            CodeOf(() => draft.ReviseLines(version, [], [new LineRemovalInput(first.Id), new LineRemovalInput(second.Id)], "SENTETIK", "r", T0, Day)));
         var same = Line(ProductA);
         Assert.Equal(SalesRuleCodes.LineReplacementSameProduct,
-            CodeOf(() => draft.ReviseLines(version, [same], [new LineRemovalInput(first.Id, same.LineId)], "SENTETIK", "r", T0)));
+            CodeOf(() => draft.ReviseLines(version, [same], [new LineRemovalInput(first.Id, same.LineId)], "SENTETIK", "r", T0, Day)));
         Assert.Equal(SalesRuleCodes.LineReplacementInvalid,
-            CodeOf(() => draft.ReviseLines(version, [], [new LineRemovalInput(first.Id, Guid.NewGuid())], "SENTETIK", "r", T0)));
-        Assert.Equal(SalesRuleCodes.DuplicateLineId, CodeOf(() => draft.ReviseLines(version, [Line(lineId: first.Id)], [], "SENTETIK", "r", T0)));
-        Assert.Throws<SalesVersionConflictException>(() => draft.ReviseLines(version - 1, [Line()], [], "SENTETIK", "r", T0));
+            CodeOf(() => draft.ReviseLines(version, [], [new LineRemovalInput(first.Id, Guid.NewGuid())], "SENTETIK", "r", T0, Day)));
+        Assert.Equal(SalesRuleCodes.DuplicateLineId, CodeOf(() => draft.ReviseLines(version, [Line(lineId: first.Id)], [], "SENTETIK", "r", T0, Day)));
+        Assert.Throws<SalesVersionConflictException>(() => draft.ReviseLines(version - 1, [Line()], [], "SENTETIK", "r", T0, Day));
         // Nothing moved.
         Assert.Equal((0, InternalApprovalState.Approved, version, 2), (draft.Revision, draft.ApprovalState, draft.Version, draft.Lines.Count));
 
@@ -108,10 +108,10 @@ public sealed class SalesOrderDraftLineRevisionTests
         var pending = Draft();
         pending.AddLine(pending.Version, Line(), T0);
         pending.Submit(pending.Version, "SENTETIK-writer", T0);
-        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => pending.ReviseLines(pending.Version, [Line()], [], "SENTETIK", "r", T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => pending.ReviseLines(pending.Version, [Line()], [], "SENTETIK", "r", T0, Day)));
         var preparing = Draft();
         preparing.AddLine(preparing.Version, Line(), T0);
-        Assert.Null(preparing.ReviseLines(preparing.Version, [Line(ProductB)], [], "SENTETIK", "r", T0));
+        Assert.Null(preparing.ReviseLines(preparing.Version, [Line(ProductB)], [], "SENTETIK", "r", T0, Day));
         Assert.Equal((0, 2, 0), (preparing.Revision, preparing.Lines.Count, preparing.Lines[1].AddedInRevision));
     }
 
@@ -120,7 +120,7 @@ public sealed class SalesOrderDraftLineRevisionTests
     {
         var (draft, first, second) = Approved();
         var added = Line(ProductB, "5");
-        draft.ReviseLines(draft.Version, [added], [new LineRemovalInput(first.Id, added.LineId)], "SENTETIK-writer", "r", T0);
+        draft.ReviseLines(draft.Version, [added], [new LineRemovalInput(first.Id, added.LineId)], "SENTETIK-writer", "r", T0, Day);
         draft.RescheduleDelivery(draft.Version, Day.AddDays(5),
             [.. draft.Lines.Select(line => new LineScheduleInput(line.Id, Day.AddDays(7), []))], "SENTETIK-planner", T0);
 
@@ -139,6 +139,23 @@ public sealed class SalesOrderDraftLineRevisionTests
         Assert.Equal((first.Id, 1, added.LineId), (rebuilt.RemovedLines[0].Id, rebuilt.RemovedLines[0].RemovedInRevision, rebuilt.RemovedLines[0].ReplacedByLineId));
         // Schedule 0 is the create's lines (with the removed one, without the added one).
         Assert.Equal([first.Id, second.Id], rebuilt.DeliveryScheduleHistory[0].Lines.Select(line => line.LineId));
+    }
+
+    [Fact]
+    public void An_added_lines_snapshots_are_taken_for_the_revision_day_not_the_orders_business_date()
+    {
+        // SAT-D212 (EK36): the order's business date is Day; the line is added two days later.
+        var (draft, _, _) = Approved();
+        var revisionDay = Day.AddDays(2);
+        Assert.Equal(SalesRuleCodes.SnapshotDateMismatch,
+            CodeOf(() => draft.ReviseLines(draft.Version, [Line(ProductB)], [], "SENTETIK", "r", T0, revisionDay)));
+
+        var later = Line(ProductB, "4");
+        later = later with { Product = later.Product with { EffectiveOn = revisionDay } };
+        draft.ReviseLines(draft.Version, [later], [], "SENTETIK", "r", T0, revisionDay);
+        Assert.Equal(revisionDay, draft.Lines.Single(line => line.Id == later.LineId).Product.EffectiveOn);
+        // The existing lines keep their own snapshots (taken for the business date).
+        Assert.All(draft.Lines.Where(line => line.Id != later.LineId), line => Assert.Equal(Day, line.Product.EffectiveOn));
     }
 
     [Fact]

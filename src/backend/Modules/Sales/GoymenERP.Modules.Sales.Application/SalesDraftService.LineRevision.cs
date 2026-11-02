@@ -15,8 +15,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// dispatch note and shipment hangs on one) for the line, read afresh from the owners; any → 422 <c>removed[i].lineId</c>
 /// <see cref="SalesRuleCodes.LineRevisionLineShipped"/> (not recorded: the owners move); an owner not composed or unreadable → 503
 /// <see cref="SalesDraftProblemCodesV1.RevisionImpactUnavailable"/> (fail-closed).</item>
-/// <item><b>Added lines:</b> the create's line rules and owners — the Product eligibility and the Settings unit profile on the
-/// order's business date; a price, discount or tax change needs the price-write name (SAT-D151); the tax from the Settings line
+/// <item><b>Added lines:</b> the create's line rules and owners — SAT-D212 (EK36): the Product eligibility, the Settings unit
+/// profile and the line tax as of the REVISION DAY (the server's Europe/Istanbul business day the line is added), not the order's
+/// business date; existing lines keep theirs; a price, discount or tax change needs the price-write name (SAT-D151); the tax from the Settings line
 /// tax port and lists (SAT-D93/D181) for the order's buyer situation; on a subcontract order only service products (the Product
 /// owner's item type), sold per kg, never from the price list and with no discount check (SAT-D176/D195). A replacement line's
 /// price, discount and tax are its own, i.e. re-resolved for the new product (SAT-D167).</item>
@@ -42,6 +43,9 @@ public sealed partial class SalesDraftService
 
         var added = request.Added ?? [];
         var removed = request.Removed ?? [];
+        // SAT-D212: the day an added line is read for — the server's business day now (an unresolvable zone is 503, never UTC).
+        // A removal alone reads nothing dated.
+        var revisionDay = added.Count > 0 ? ServerBusinessDay() : default;
 
         // SAT-D151: a price, a discount or a tax change on an added line needs the separate price-write name of the same actor.
         var priced = added.SelectMany((line, index) => PricedFields(line, $"added[{index}]")).ToList();
@@ -77,7 +81,7 @@ public sealed partial class SalesDraftService
                         ? input with { Commercial = SalesOrderDraft.WithDiscountLimitCheck(commercial, SalesDiscountLimit.Undefined, scope.ActorId, now) }
                         : input)],
                     [.. removed.Select(removal => new LineRemovalInput(removal.LineId, removal.ReplacedByLineId))],
-                    scope.ActorId, request.Reason, now), audit,
+                    scope.ActorId, request.Reason, now, revisionDay), audit,
                 async (draft, writeCancellationToken) =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
@@ -89,8 +93,8 @@ public sealed partial class SalesDraftService
                         await RequireRemovedLinesUnshippedAsync(scope, permission, draft, removed, writeCancellationToken);
                     }
 
-                    inputs.AddRange(await ReadAddedLinesAsync(scope, permission, draft, added, envelope, requestHash, commandName,
-                        writeCancellationToken));
+                    inputs.AddRange(await ReadAddedLinesAsync(scope, permission, draft, added, revisionDay, envelope, requestHash,
+                        commandName, writeCancellationToken));
                     // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
                     if (priced.Count > 0)
@@ -196,14 +200,14 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
-    /// The added lines as the domain takes them: each line's product and order unit from their owners on the order's business date,
+    /// The added lines as the domain takes them: each line's product and order unit from their owners on the revision day (SAT-D212),
     /// its commercial fields and plan (the create's checks), on a subcontract order the Product owner's item type (only services),
     /// and its tax from the Settings line tax port for the order's buyer situation (a reasoned change checked against the lists).
     /// Field errors name <c>added[i]</c>.
     /// </summary>
     private async Task<List<SalesDraftLineInput>> ReadAddedLinesAsync(Scope scope, string? permission, SalesOrderDraft draft,
-        IReadOnlyList<SalesOrderDraftLineRequest> added, SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-        CancellationToken cancellationToken)
+        IReadOnlyList<SalesOrderDraftLineRequest> added, DateOnly revisionDay, SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, CancellationToken cancellationToken)
     {
         var inputs = new List<SalesDraftLineInput>(added.Count);
         if (added.Count == 0)
@@ -211,7 +215,8 @@ public sealed partial class SalesDraftService
             return inputs;
         }
 
-        var businessDate = draft.Header.BusinessDate;
+        // SAT-D212 (EK36): every dated read of an added line is for the revision day.
+        var businessDate = revisionDay;
         for (var index = 0; index < added.Count; index++)
         {
             var line = added[index];

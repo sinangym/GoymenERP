@@ -354,7 +354,7 @@ public sealed partial class SalesOrderDraft
         RequireVersion(expectedVersion);
         ArgumentNullException.ThrowIfNull(input);
         RequireDraft();
-        var line = BuildLine(input);
+        var line = BuildLine(input, Header.BusinessDate);
         lines.Add(line);
         Touch(now);
         return line;
@@ -365,7 +365,11 @@ public sealed partial class SalesOrderDraft
     /// line count and identity (across active AND removed lines; removed lines keep their numbers), the snapshots, Ö2, the note, the
     /// commercial pairing, the plan, the tax snapshot and the subcontract rules. The new line takes the next line number.
     /// </summary>
-    private SalesOrderDraftLine BuildLine(SalesDraftLineInput input)
+    /// <summary>
+    /// One line under every create-line rule. <paramref name="snapshotDay"/> is the day its Product and Settings snapshots must be
+    /// taken for: the order's business date for a create line; SAT-D212 (EK36) the revision day for a line a line revision adds.
+    /// </summary>
+    private SalesOrderDraftLine BuildLine(SalesDraftLineInput input, DateOnly snapshotDay)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Product);
@@ -382,7 +386,7 @@ public sealed partial class SalesOrderDraft
         }
 
         RequireNote(input.Note);
-        RequireSnapshots(input.Product, input.OrderUnit);
+        RequireLineSnapshots(CompanyId, snapshotDay, input.Product, input.OrderUnit);
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
         RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
@@ -1789,9 +1793,6 @@ public sealed partial class SalesOrderDraft
 
     private SalesRuleException StateConflict(string message) =>
         new(SalesRuleCodes.StateConflict, $"{message} (durum: {ApprovalState}).");
-
-    private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit) =>
-        RequireLineSnapshots(CompanyId, Header.BusinessDate, product, orderUnit);
 
     /// <summary>
     /// The owner-snapshot rules of one line, shared by every Sales record that carries a product line (the order draft, and

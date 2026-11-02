@@ -1975,10 +1975,13 @@ public sealed partial class SalesDraftServiceTests
         public bool VersionConflict { get; set; }
         public int Calls { get; set; }
         public Action? BeforeErrorsEnumerated { get; set; }
+        /// <summary>The day each selection was evaluated for (SAT-D212: an added line's revision day).</summary>
+        public List<DateOnly> AskedOn { get; } = [];
 
         public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
         {
             Calls++;
+            AskedOn.Add(selection.EffectiveOn);
             if (Fault == "unavailable") throw new ProductOperationException("product_family_policy_unavailable", 503);
             if (Fault == "conflict-exception") throw new ProductOperationException("product_selection_changed", 409);
             if (Fault == "not-found") throw new ProductOperationException("product_not_found", 404);

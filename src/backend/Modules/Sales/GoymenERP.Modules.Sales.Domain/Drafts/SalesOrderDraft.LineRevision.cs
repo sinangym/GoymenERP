@@ -26,10 +26,13 @@ public sealed partial class SalesOrderDraft
     /// the lines simply change. <c>PendingApproval</c>, <c>Withdrawn</c>, a cancelled or closed order are refused (the quantity
     /// revision's preconditions, <see cref="RequireQuantityRevisable"/>). One version step whatever the number of lines.</item>
     /// </list>
+    /// SAT-D212 (EK36): an added line's product eligibility, unit and tax are read for <paramref name="revisionDay"/> — the server's
+    /// business day the line is added — not the order's business date; its snapshots must be taken for that day. Existing lines
+    /// keep theirs.
     /// Returns the archived snapshot when one was made.
     /// </summary>
     public ApprovedRevisionSnapshot? ReviseLines(long expectedVersion, IReadOnlyList<SalesDraftLineInput> added,
-        IReadOnlyList<LineRemovalInput> removed, string actorId, string? reason, DateTimeOffset now)
+        IReadOnlyList<LineRemovalInput> removed, string actorId, string? reason, DateTimeOffset now, DateOnly revisionDay)
     {
         var actor = RequireActor(actorId);
         var trimmedReason = RequireQuantityRevisable(expectedVersion, reason);
@@ -92,7 +95,7 @@ public sealed partial class SalesOrderDraft
         {
             try
             {
-                var line = BuildLine(input);
+                var line = BuildLine(input, revisionDay);
                 if (built.Any(other => other.Id == line.Id))
                 {
                     throw new SalesRuleException(SalesRuleCodes.DuplicateLineId, "Aynı satır kimliği ikinci kez eklenemez.");
@@ -147,7 +150,8 @@ public sealed partial class SalesOrderDraft
     public SalesOrderDraftLine RestoreAddedLine(SalesDraftLineInput input, int addedInRevision)
     {
         RequireApprovalNotRestored();
-        var line = BuildLine(input);
+        // The stored snapshot day (SAT-D212: the revision day it was read for); the unit profile is checked in effect on that day.
+        var line = BuildLine(input, input.Product.EffectiveOn);
         line.MarkAdded(addedInRevision);
         lines.Add(line);
         return line;

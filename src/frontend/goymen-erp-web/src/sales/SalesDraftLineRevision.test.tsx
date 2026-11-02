@@ -16,6 +16,7 @@ import { buildLineRevisionRequest, lineRevisionFromDetail, rowOfServerField } fr
 import { resetPendingLineRevisions } from './pendingLineRevisions'
 import type { UseReferenceOptions } from './referenceSource'
 import { ORDER_DETAIL_TEXT } from './salesText'
+import { todayText } from '../product/priceLists/contract'
 import { ALL_SALES, COMPANY_A, KG, OPTIONS_A, PRODUCT, installFetch, json, renderSalesApp } from './testHarness'
 
 const T = ORDER_DETAIL_TEXT.lineRevision
@@ -40,10 +41,13 @@ const OPTIONS = {
   }],
 }
 
-/** Offers both products to company A and records the item type each read asked for. */
-function sourceRecording(asked: string[]): UseReferenceOptions {
-  return (companyId, _date, _accounts, _q, itemType) => {
-    if (companyId === COMPANY_A) asked.push(itemType ?? 'all')
+/** Offers both products to company A and records the item type (and, when given, the day) each read asked for. */
+function sourceRecording(asked: string[], days: string[] = []): UseReferenceOptions {
+  return (companyId, date, _accounts, _q, itemType) => {
+    if (companyId === COMPANY_A) {
+      asked.push(itemType ?? 'all')
+      days.push(date)
+    }
     return companyId === COMPANY_A ? { status: 'ready', options: OPTIONS } : { status: 'unavailable' }
   }
 }
@@ -254,6 +258,17 @@ describe('S-04 line revision (SAT-D167, EK24)', () => {
     const entry = await screen.findByTestId('sales-line-revision')
     expect((within(entry).getByRole('button', { name: T.open }) as HTMLButtonElement).disabled).toBe(true)
     expect(within(entry).getByText(T.stateUnavailable)).toBeTruthy()
+  })
+
+  it('lists the products of the revision day, not of the order business date (SAT-D212)', async () => {
+    const days: string[] = []
+    installFetch({ capabilities: WITH_LINES, onDetail: () => json(detail()) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`, sourceRecording([], days))
+    const form = await openForm()
+    await waitFor(() => expect(days.length).toBeGreaterThan(0))
+    expect(new Set(days)).toEqual(new Set([todayText()]))
+    expect(days).not.toContain('2026-09-13')
+    expect(within(form).getByTestId('sales-line-revision-day').textContent).toBe(T.revisionDay(todayText()))
   })
 
   it('asks a fason order for the service products only and says its rules; a price needs the price-write control', async () => {

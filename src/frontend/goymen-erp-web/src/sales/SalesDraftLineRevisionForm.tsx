@@ -34,6 +34,7 @@ import {
 import { browserIds, type OrderDraftOptions } from './orderDraftForm'
 import { recallLineRevisionAttempt, rememberLineRevisionAttempt } from './pendingLineRevisions'
 import { SalesReferenceSourceContext } from './referenceSource'
+import { todayText } from '../product/priceLists/contract'
 import { ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
@@ -84,11 +85,13 @@ export function SalesDraftLineRevisionForm({
     }
   }, [detail, mint])
 
-  // The Product owner's candidates for the order's business date, read only while the form is open (a fason order asks for
-  // the service products only). Nothing is offered before the owner answered.
+  // The Product owner's candidates for the REVISION DAY (SAT-D212, EK36: a new line's product, unit and tax are read for the
+  // Europe/Istanbul business day it is added, not the order's business date; the server reads them again for its own day), read
+  // only while the form is open (a fason order asks for the service products only). Nothing is offered before the owner answered.
   const subcontract = detail.draft.subcontractService === true
+  const [revisionDay] = useState(() => todayText())
   const useReferences = useContext(SalesReferenceSourceContext)
-  const references = useReferences(open ? companyId : '', detail.draft.businessDate, '', search, subcontract ? 'Service' : undefined)
+  const references = useReferences(open ? companyId : '', revisionDay, '', search, subcontract ? 'Service' : undefined)
   const productRead = references.status === 'ready' ? null : (references.header?.products ?? null)
   const products: Products | null = references.status === 'ready'
     ? references.options.products
@@ -194,6 +197,7 @@ export function SalesDraftLineRevisionForm({
       {detail.draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{text.approvedWarning}</p> : null}
       <p className={styles.muted}>{text.linkedWarning}</p>
       {subcontract ? <p className={styles.muted} data-testid="sales-line-revision-subcontract">{text.subcontractNote}</p> : null}
+      <p className={styles.muted} data-testid="sales-line-revision-day">{text.revisionDay(revisionDay)}</p>
       {!stateAllowsRevision ? <p className={styles.muted}>{text.stateUnavailable}</p> : null}
       {localError === null ? null : <p role="alert" className={styles.notice}>{localError}</p>}
       {notice === null ? null : <p role={attempt.phase === 'failed' ? 'alert' : 'status'} className={styles.notice}>{notice}</p>}

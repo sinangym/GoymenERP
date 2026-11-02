@@ -203,7 +203,7 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RejectRemainderChange(3, 1, Approver, "SENTETIK", T0)));
         // SAT-D167: a withdrawn draft's lines are neither added nor removed.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseLines(3, [Line()],
-            [new LineRemovalInput(draft.Lines[0].Id)], "synthetic-reviser", "SENTETIK", T0)));
+            [new LineRemovalInput(draft.Lines[0].Id)], "synthetic-reviser", "SENTETIK", T0, DateOnly.FromDateTime(T0.UtcDateTime))));
         // API-04: a withdrawn draft's header does not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseHeader(3, new SalesHeaderRevisionInput(draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, null, null, null, Guid.NewGuid(), null), "synthetic-reviser", "SENTETIK", T0)));

@@ -39,7 +39,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         }
 
         var draft = await store.FindDraftAsync(orderId, cancellationToken);
-        var line = draft?.Lines.SingleOrDefault(candidate => candidate.Id == lineId);
+        var line = draft is null ? null : ShippableLines(draft).SingleOrDefault(candidate => candidate.Id == lineId);
         if (draft is null || line is null)
         {
             return NotFound;
@@ -170,6 +170,22 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             pendingState);
     }
 
+    /// <summary>
+    /// The lines a physical-shipping consumer may be offered, in line order: the active lines, and — SAT-D211 (EK36) — a line the
+    /// CURRENT revision removed (SAT-D167) while that revision stands rejected exactly as it was decided: the rejection keeps the
+    /// last approved revision for shipping, so the line comes back and ships under it (its standing is measured against that
+    /// revision like any line). While the removal is being prepared or waits for approval, or once the rejected revision is changed
+    /// again, the removed line is not offered (NotFound; fail-closed); a removal of an earlier revision is final.
+    /// </summary>
+    internal static IEnumerable<SalesOrderDraftLine> ShippableLines(SalesOrderDraft draft)
+    {
+        var restoredByRejection = draft.ApprovalState == InternalApprovalState.Rejected
+            && draft.Approval.DecidedAtUtc is { } decidedAt && draft.UpdatedAtUtc <= decidedAt;
+        return restoredByRejection
+            ? draft.AllLines.Where(line => !line.IsRemoved || line.RemovedInRevision == draft.Revision)
+            : draft.Lines.OrderBy(line => line.LineNo);
+    }
+
     private const string CustomerAcceptancePending = "CustomerAcceptancePending";
 
     /// <summary>SAT-D115: the current approved revision was rejected by the customer; the line answers the last accepted revision.</summary>
@@ -253,7 +269,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                 // The store cursor that lists THIS draft first: the page's own cursor for its first draft, else "after the previous".
                 var listsThisFirst = previous is null ? previousDraftCursor : SalesStore.ListCursor.Encode(draft.CompanyId, previous.CreatedAtUtc, previous.Id);
                 var skipThrough = skipDraft == draft.Id ? skipThroughLineNo : 0;
-                foreach (var line in draft.Lines.OrderBy(candidate => candidate.LineNo))
+                foreach (var line in ShippableLines(draft))
                 {
                     if (line.LineNo <= skipThrough)
                     {

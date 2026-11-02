@@ -66,7 +66,7 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         {
             var revised = await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope("l-lines"), Hash("l-lines"), SalesDraftCommands.ReviseLinesV1,
                 draft.Id, (d, now) => d.ReviseLines(approved, [replacement], [new LineRemovalInput(first.Id, replacement.LineId)], "SENTETIK-reviser",
-                    "SENTETIK ürün değişti", now), LinesRevised, (_, _) => Task.CompletedTask);
+                    "SENTETIK ürün değişti", now, Day), LinesRevised, (_, _) => Task.CompletedTask);
             Assert.Equal((1, "Preparing", approved + 1), (revised!.Draft.Revision, revised.Draft.ApprovalState.ToString(), revised.Draft.Version));
         }
 
@@ -121,7 +121,7 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         await using (var scope = run.SalesStore(CompanyA))
         {
             await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope("g-lines"), Hash("g-lines"), SalesDraftCommands.ReviseLinesV1, draft.Id,
-                (d, now) => d.ReviseLines(draft.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK-reviser", "SENTETIK", now), LinesRevised,
+                (d, now) => d.ReviseLines(draft.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK-reviser", "SENTETIK", now, Day), LinesRevised,
                 (_, _) => Task.CompletedTask);
         }
 

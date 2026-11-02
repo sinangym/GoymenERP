@@ -129,6 +129,52 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(SalesOrderDraft_ServiceItemType, Assert.Single(world.Store.Drafts).Lines[1].ItemType);
     }
 
+    [Fact]
+    public async Task A_removed_line_does_not_ship_while_its_removal_waits_and_comes_back_under_the_last_approved_revision_after_a_rejection()
+    {
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        var port = LinePort(world);
+        var added = AddedLine();
+
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [added], [new SalesDraftLineRemovalV1(line)]), Metadata("k-d211"));
+
+        // SAT-D211 (EK36): being prepared and waiting for approval, the removed line is not shipped; the added one waits too.
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved, (await port.GetApprovedLineAsync(approved.Id, added.LineId)).Outcome);
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-d211-submit"));
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
+
+        // Rejected: the line comes back and ships under the last approved revision (Rev.0, its quantity as the cap).
+        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-d211-reject"));
+        await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
+        Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
+
+        // The rejected revision changed again (a removal being prepared again): not shipped (fail-closed).
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("8", [AddedLine()]), Metadata("k-d211-again"));
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+    }
+
+    [Fact]
+    public async Task An_added_line_is_read_for_the_revision_day_and_the_existing_lines_keep_their_business_date_snapshots()
+    {
+        // SAT-D212 (EK36): the order is dated three days after the server's business day (Day); a line added today is read for Day.
+        var world = new World { Clock = QuoteClock() };
+        var created = (await world.Service().CreateDraftAsync(Request() with { BusinessDate = Day.AddDays(3) }, Metadata("k-d212"))).Detail;
+        var products = world.Products;
+        products.AskedOn.Clear();
+        var added = AddedLine();
+
+        await world.Service().ReviseLinesAsync(created.Draft.Id, LineRevision(created.Draft.Version, [added]), Metadata("k-d212-lines"));
+
+        Assert.Equal([Day], products.AskedOn);
+        var stored = Assert.Single(world.Store.Drafts);
+        Assert.Equal(Day, stored.Lines.Single(line => line.Id == added.LineId).Product.EffectiveOn);
+        Assert.All(stored.Lines.Where(line => line.Id != added.LineId), line => Assert.Equal(Day.AddDays(3), line.Product.EffectiveOn));
+    }
+
     private const string SalesOrderDraft_ServiceItemType = GoymenERP.Modules.Sales.Domain.Drafts.SalesOrderDraft.ServiceItemType;
 
     [Fact]

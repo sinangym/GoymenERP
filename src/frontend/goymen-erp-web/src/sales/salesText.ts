@@ -546,12 +546,13 @@ export const ORDER_DETAIL_TEXT = {
     close: 'Satır revizyonundan vazgeç',
     description:
       'Siparişe yeni satır ekleyin, sevk edilmemiş bir satırı çıkarın ya da sevk edilmemiş bir satırın ürününü değiştirin. ' +
-      'Çıkarılan satır silinmez, pasif olur; tutar, risk ve sevkiyatın dışında kalır. Vergi, satırın ürününe göre Ayarlar listelerinden belirlenir.',
+      'Çıkarılan satır silinmez, pasif olur; tutar, risk ve sevkiyatın dışında kalır (çıkarma onay beklerken sevk edilmez; reddedilirse satır geri gelir ve son onaylı revizyonla sevk edilir). Vergi, satırın ürününe göre Ayarlar listelerinden belirlenir.',
     approvedWarning:
       'Onaylı siparişte satır değişikliği mevcut revizyonu gerekçesiyle arşivler; sipariş yeni revizyonla iç onaya, gerekiyorsa yeniden müşteri kabulüne girer.',
     linkedWarning: 'Stok tahsisi ya da yükleme talimatı olan (sevki başlamış) satır çıkarılamaz ve ürünü değiştirilemez.',
     subcontractNote: 'Fason hizmet siparişinde yalnız "Hizmet" kalemli ürün eklenir; birim ve fiyat birimi kg, fiyat kg başına elle yazılır.',
     stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapanmış siparişte satır revizyonu yapılamaz.',
+    revisionDay: (day: string) => `Yeni satırın ürünü, birimi ve vergisi revizyon gününün (${day}) değerleriyle okunur; mevcut satırlar değişmez.`,
     action: 'Bu satır',
     actions: { keep: 'Değişmesin', remove: 'Satırı çıkar (pasif)', replace: 'Ürününü değiştir' } as const,
     replacementHeading: 'Yerine gelecek satır',
