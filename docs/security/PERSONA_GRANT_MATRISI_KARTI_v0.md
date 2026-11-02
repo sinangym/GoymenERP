@@ -31,6 +31,13 @@ yeni sütuna dağıtıldı ve değişen her hücre karar numarasını taşır. E
 satırı olmayan Müdür hücreleri eklendi. Sınıfı açık olmayan hücreler tahminle doldurulmadı: **`NEEDS-SINAN`** (NS-n) ile
 işaretlidir ve kartın sonunda listelenir. Ayrıntı: aşağıda "EK28 eşlemesi".
 
+**Güncelleme (2 Kasım 2026, EK29):** [EK29](../decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK29.md) (SAT-D191…D195) on iki
+NS'den on birini kapattı: eski Müdür'ün satış/muhasebe dışı yetkileri **o modülün müdürüne** gider, rol karta girene kadar
+Genel Müdür + Admin'dedir (SAT-D191); cari yönetimi yalnız Muhasebe Müdürü'ndedir (SAT-D192); SAT-D99 bakiyesi iki
+müdürdedir (SAT-D193); Satış Müdürü ve Genel Müdür taslak açar (SAT-D194). SAT-D188'in "okumalar iki müdüre de" kuralı
+satış ve muhasebe okumalarıyla sınırlandı; öteki modüllerin okumaları o modülün müdürüne gider (EK29 "Bilinçli
+değişiklikler"). Açık kalan tek hücre grubu **NS-11** (fatura kesme).
+
 **Tabloda satırı olmayan ÜÇ ad vardı (1 Kasım 2026'dan beri İKİ: `sales.orders.price.write` SAT-D151 ile kapandı ve tabloya girdi), ve üçü de burada adıyla yazılıdır** — çünkü bir sayı, sonraki
 okuyucuya tablonun tam olduğunu söyler. Eksikliği görünür kılmadan sayıyı güncellemek, karta hiç
 dokunmamaktan kötü olurdu:
@@ -92,14 +99,14 @@ bağlıdır.
 | ~~**Müdür**~~ *(19 Eylül §4; 2 Kasım 2026'da SAT-D187 ile ayrıldı — tabloda "Müdür (eski)" sütunu)* | ~~Siparişleri **onaylayabilir**. Tek başına tüm modüllerde sınırsız read/write veya Finance yetkisi vermez.~~ Bu tanımın yerine aşağıdaki üç müdür personası ve modül müdürü yer tutucuları geçer. K4.2'nin sınırı ("onayın gerektirdiği okuma evet, genel Finance hayır") her müdür personası için aynen geçerlidir. |
 | **Satış Uzmanı** (SAT-D141) | Ayrı persona; başlangıçta **Satış Destek'in bütün grant'larını** alır: sipariş girer ve düzenler, **onaylayamaz**, sipariş başlığını değiştirir. İleride ayrıştırılabilir (ör. yalnız kendi müşterileri — EK20 açık kalanı). *Uygulama yorumu (geri alınabilir, SAT-D141):* "Satış Destek gibi" kartta Satış Destek'e verilen her izni kapsar, alış siparişi izinleri dahil. EK21'de ayrıca risk istisnasını **talep eder ve onaylar** (kendi talebini onaylayamaz; SAT-D153/D159). |
 | **Muhasebe** (SAT-D142) | Satış modülünde **her şeyi görür**: siparişler, fiyatlar ve tutarlar, raporlar, vergi ayarları. **Sipariş yazmaz, onaylamaz.** Şimdi dış sistemde kesilen faturayı ERP sipariş/irsaliyesiyle **eşleştirir**; fatura modülü gelince (API-32…37) faturayı **keser** (ERP fatura taslağı; hazırlayan ≠ onaylayan, SAT-D88). Vergi ayarlarını yalnız **öneri → onay** akışıyla değiştirir (SAT-D146; onaylayan 2 Kasım 2026'dan beri Muhasebe Müdürü, Genel Müdür veya Admin — SAT-D188); kalem tipini değiştirmez. Cari e-belge durumunu günceller (SAT-D155). |
-| **Satış Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **satış** yetkilerini alır: satış siparişi onayı (SAT-D6), taban fiyat ve iskonto istisnası onayı (SAT-D1/D2/D37), miktar revizyonunun yeniden onayı (SAT-D3), iptal (SAT-D4), süresi geçmiş teklif onayı (SAT-D24/D44), fiyat ve başlık yazma (SAT-D151, SAT-D144), risk istisnası talebi ve onayı (SAT-D159, SAT-D153), fazla teslim onayı ve kapatma (SAT-D168), kaynak planı (SAT-D179), satış ayarları (SAT-D189). "Müdür" iskonto limit grubu **Satış Müdürü** grubudur (SAT-D188, soru 7). Okumaları Muhasebe Müdürü ile ortaktır. Vergi/muhasebe yetkisi **almaz**. |
-| **Muhasebe Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **vergi/muhasebe** yetkilerini alır: vergi ayarlarını ve kalem tipini doğrudan değiştirme (SAT-D145/D149; SAT-D148/D158/D181 değer ve liste girişi bunun içindedir), Muhasebe'nin vergi ayarı önerisini onaylama (SAT-D146), kur düzeltmesi (SAT-D169), belge tarihinden önceki sevklerde istisna onayı (SAT-D186). Okumaları Satış Müdürü ile ortaktır. Satış yetkisi **almaz**. Muhasebe personasının (SAT-D142) yetkilerini kendiliğinden almaz; aynı kişiye iki persona birlikte verilebilir. |
-| **Genel Müdür** (SAT-D187, SAT-D190) | **Bütün modüllerde** müdürlerin yaptığı onay ve değişiklikleri yapabilir; her müdür hücresinde yetkilidir (SAT-D188, soru 9). Admin'in **sistem yönetimi** yetkileri (kullanıcı, rol, sistem ayarı) bu kapsamda **değildir** (SAT-D190). Öteki modül müdürleri tanımlanana kadar o modüllerin müdür hücrelerini Admin ile birlikte tutar (SAT-D187). |
-| *Satın Alma Müdürü, Üretim Müdürü … (yer tutucu)* (SAT-D187) | Her modülün kendi müdürü, yetkisi kendi modülünde kalır. Bu personalar **o modüllerin karar dosyalarında** tanımlanır (Alış ve Üretim şeritleri; ALS-D3 alış siparişi onayı ve ALS-D6 kur düzeltmesinin güncellenmesi Alış şeridinin işidir). Karta girene kadar sütunları yoktur; hücreleri **Genel Müdür + Admin**'dedir. |
+| **Satış Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **satış** yetkilerini alır: satış siparişi onayı (SAT-D6), taban fiyat ve iskonto istisnası onayı (SAT-D1/D2/D37), miktar revizyonunun yeniden onayı (SAT-D3), iptal (SAT-D4), süresi geçmiş teklif onayı (SAT-D24/D44), fiyat ve başlık yazma (SAT-D151, SAT-D144), risk istisnası talebi ve onayı (SAT-D159, SAT-D153), fazla teslim onayı ve kapatma (SAT-D168), kaynak planı (SAT-D179), satış ayarları (SAT-D189). "Müdür" iskonto limit grubu **Satış Müdürü** grubudur (SAT-D188, soru 7). Satış siparişi taslağı açar (SAT-D194; açtığını onaylayamaz). "Faturalanmış, sevk edilmemiş" bakiyeyi Muhasebe Müdürü ile birlikte görür ve yönetir (SAT-D193). **Satış ve muhasebe** okumaları Muhasebe Müdürü ile ortaktır (SAT-D188); öteki modüllerin okumalarını **almaz** (SAT-D191). Vergi/muhasebe yetkisi ve cari yönetimi **almaz** (SAT-D188, SAT-D192). |
+| **Muhasebe Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **vergi/muhasebe** yetkilerini alır: vergi ayarlarını ve kalem tipini doğrudan değiştirme (SAT-D145/D149; SAT-D148/D158/D181 değer ve liste girişi bunun içindedir), Muhasebe'nin vergi ayarı önerisini onaylama (SAT-D146), kur düzeltmesi (SAT-D169), belge tarihinden önceki sevklerde istisna onayı (SAT-D186). Accounting modülünün müdürüdür: muhasebe dönemi ve yevmiye/fiş yetkileri (SAT-D191). Cari kartı açma/değiştirme ve cari hesabını aktif/pasif yapma **yalnız** Muhasebe Müdürü'ndedir (SAT-D192). SAT-D99 bakiyesini Satış Müdürü ile birlikte görür ve yönetir (SAT-D193). **Satış ve muhasebe** okumaları Satış Müdürü ile ortaktır (SAT-D188); öteki modüllerin okumalarını almaz (SAT-D191). Satış yetkisi **almaz**. Muhasebe personasının (SAT-D142) yetkilerini kendiliğinden almaz; aynı kişiye iki persona birlikte verilebilir. |
+| **Genel Müdür** (SAT-D187, SAT-D190) | **Bütün modüllerde** müdürlerin yaptığı onay ve değişiklikleri yapabilir; her müdür hücresinde yetkilidir (SAT-D188, soru 9). Admin'in **sistem yönetimi** yetkileri (kullanıcı, rol, sistem ayarı) bu kapsamda **değildir** (SAT-D190). Öteki modül müdürleri tanımlanana kadar o modüllerin müdür hücrelerini Admin ile birlikte tutar (SAT-D187, SAT-D191). Taslak açabilir (SAT-D194). |
+| *Satın Alma, Üretim, Stok, Lojistik, Finans Müdürü … (yer tutucu)* (SAT-D187, SAT-D191) | Her modülün kendi müdürü, yetkisi kendi modülünde kalır. Bu personalar **o modüllerin karar dosyalarında** tanımlanır (Alış ve Üretim şeritleri; ALS-D3 alış siparişi onayı ve ALS-D6 kur düzeltmesinin güncellenmesi Alış şeridinin işidir; URT-D2 plan onayı Üretim müdüründedir). Karta girene kadar sütunları yoktur. O modüllerde **eski Müdür'ün `+` hücreleri** ile SAT-D191'in o modülün müdürüne verdiği hücreler — tabloda "SAT-D187 ara dönem: … Müdürü" diye işaretli olanlar — **Genel Müdür + Admin**'dedir. Müdürü olmayan modülün (ör. Organizasyon) hücreleri de Genel Müdür + Admin'de kalır (SAT-D191). Kendi modülü dışındaki okumayı almaz (SAT-D191). |
 
 ## Önerilen eşleme
 
-`+` = önerilir · `—` = verilmez (gerekçe aşağıda) · `?` = bu tabloda belirsizdi. · **NS-n** = `NEEDS-SINAN`, müdür ayrımında sınıfı açık olmayan hücre (kartın sonundaki listede).
+`+` = önerilir · `—` = verilmez (gerekçe aşağıda) · `?` = bu tabloda belirsizdi. · **NS-n** = `NEEDS-SINAN`, müdür ayrımında sınıfı açık olmayan hücre (kartın sonundaki listede; EK29'dan sonra yalnız NS-11).
 Admin sütunu bilerek boş bırakılmadı: "tüm ERP işlevleri" cümlesi tüm kayıtlı adları kapsar,
 ama Critical adlar ayrı insan kapısına tabidir (aşağıda).
 
@@ -139,15 +146,24 @@ doldurulur; değişen her hücre karar numarasını taşır:
   → **Muhasebe Müdürü**; Satış Müdürü bu hücrelerde `—` *(SAT-D188)*. EK28'in iki **daraltması** kalın `—` ile
   gösterilir: vergi önerisi onayını Satış Müdürü vermez; kur düzeltmesini Satış Müdürü yapmaz (soru 8'de "İki müdür de"
   gösterildi ve seçilmedi).
-- Eski Müdür'ün `+` **okumaları** → **iki müdüre de** `+` *(SAT-D188 okuma)*.
+- Eski Müdür'ün `+` **satış ve muhasebe okumaları** → **iki müdüre de** `+` *(SAT-D188 okuma)*; EK29 bu kuralı
+  satış/muhasebe okumalarıyla sınırladı.
+- **Temel okumalar ve talep** (bütün personalara verilenler: `organization.context/sites/locations.read`,
+  `identity.profile.read`, `identity.access.request`, `counterparty.parties.read`, `product.operational-selection.read`)
+  → **bütün müdürlere** `+` *(SAT-D191 temel)*.
+- **Öteki modüllerin** okuma ve yazmaları (alış, stok, üretim, lojistik, Finance, organizasyon yazması) → **o modülün
+  müdürü**; rol karta girene kadar Genel Müdür + Admin; Satış ve Muhasebe Müdürü `—` *(SAT-D191)*. Muhasebe dönemi
+  ve yevmiye/fiş adları Accounting modülüdür → **Muhasebe Müdürü** *(SAT-D191)*. Üretim planı onayı URT-D2 gereği
+  Üretim müdüründedir → ara dönem Genel Müdür + Admin.
+- **Cari yönetimi** (`counterparty.parties.create`, `.update.basic`, `counterparty.accounts.create`,
+  `.status.update`) → **yalnız Muhasebe Müdürü**; Satış Müdürü kalın `—` *(SAT-D192)*.
 - **Alış** onayı (`purchasing.orders.approve`, ALS-D3) → Satın Alma Müdürü; o persona Alış şeridinde tanımlanana kadar
   hücre **Genel Müdür + Admin**'dedir (SAT-D187); Satış ve Muhasebe Müdürü `—`.
 - **Genel Müdür** her müdür hücresinde yetkilidir *(SAT-D188/D190)*: bir hücre herhangi bir müdürde `+` ise Genel
   Müdür'de de `+`. Eski Müdür'ün **almadığı** bir şeyi (ör. SAT-D155 e-belge, SAT-D65 limit düzenleme) Genel Müdür de
   almaz; Admin'in Critical/sistem yönetimi adları kapsam dışıdır (SAT-D190).
-- Eski Müdür hücresi `?` olan ve satış/muhasebe sınıfına açıkça girmeyen her satır (organizasyon, cari oluşturma,
-  stok, üretim, lojistik, muhasebe dönemi/fişi, Finance, alış siparişi girişi) üç sütunda da `?` **NS-n** olarak
-  işaretlidir; tahminle doldurulmadı. Liste: kartın sonunda "NEEDS-SINAN — müdür ayrımı".
+- İlk turda `? NS-n` işaretlenen hücreler EK29 ile kapandı (yukarıdaki maddeler; kapanış tablosu kartın sonunda).
+  Açık kalan tek grup **NS-11** (fatura kesme): üç müdür sütununda `?`, hiçbir şey açmaz (fail-closed).
 - **Yeni satırlar** (bu tarihte eklendi): eski Satış kararlarının tabloda satırı olmayan Müdür hücreleri
   (SAT-D1, SAT-D2/D37/D67, SAT-D4, SAT-D24/D44, SAT-D65/D69, SAT-D99, SAT-D110) ile EK24–EK28'in persona söyleyen
   kararları (SAT-D168, SAT-D169, SAT-D179, SAT-D186, SAT-D189). Bu satırlarda müdür dışı sütunlar yalnız kararın
@@ -157,19 +173,19 @@ doldurulur; değişen her hücre karar numarasını taşır:
 
 | İzin adı | Admin | Sevkiyatçı | Satış Destek | Satış Uzmanı | Müdür (eski) | Muhasebe | Satış Müdürü | Muhasebe Müdürü | Genel Müdür |
 |---|---|---|---|---|---|---|---|---|---|
-| `organization.context.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `organization.sites.read` | + | + | + | + | + | ? | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `organization.locations.read` | + | + | + | + | + | ? | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `organization.work-centers.read` | + | + | ? | ? | ? | ? | ? **NS-3** | ? **NS-3** | ? **NS-3** |
-| `organization.locations.status.update` | + | — | — | — | ? | ? | ? **NS-3** | ? **NS-3** | ? **NS-3** |
-| `counterparty.parties.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `counterparty.parties.create` | + | — | ? | ? | ? | ? | ? **NS-4** | ? **NS-4** | ? **NS-4** |
-| `counterparty.parties.update.basic` | + | — | ? | ? | ? | ? | ? **NS-4** | ? **NS-4** | ? **NS-4** |
-| `counterparty.accounts.create` | + | — | ? | ? | ? | ? | ? **NS-4** | ? **NS-4** | ? **NS-4** |
-| `counterparty.accounts.status.update` | + | — | — | — | ? | ? | ? **NS-4** | ? **NS-4** | ? **NS-4** |
-| `product.operational-selection.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
+| `organization.context.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
+| `organization.sites.read` | + | + | + | + | + | ? | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
+| `organization.locations.read` | + | + | + | + | + | ? | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
+| `organization.work-centers.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: müdürü yok)* |
+| `organization.locations.status.update` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: müdürü yok)* |
+| `counterparty.parties.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
+| `counterparty.parties.create` | + | — | ? | ? | ? | ? | **—** *(SAT-D192)* | + *(SAT-D192)* | + *(SAT-D192)* |
+| `counterparty.parties.update.basic` | + | — | ? | ? | ? | ? | **—** *(SAT-D192)* | + *(SAT-D192)* | + *(SAT-D192)* |
+| `counterparty.accounts.create` | + | — | ? | ? | ? | ? | **—** *(SAT-D192)* | + *(SAT-D192)* | + *(SAT-D192)* |
+| `counterparty.accounts.status.update` | + | — | — | — | ? | ? | **—** *(SAT-D192)* | + *(SAT-D192)* | + *(SAT-D192)* |
+| `product.operational-selection.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
 | `sales.drafts.read` | + | **engelli** | + | + | + | + | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `sales.drafts.create` | + | — | + | + | ? | **—** | ? **NS-12** *(SAT-D188 satış)* | — *(SAT-D188 satış)* | ? **NS-12** |
+| `sales.drafts.create` | + | — | + | + | ? | **—** | + *(SAT-D194)* | — *(SAT-D188 satış)* | + *(SAT-D194)* |
 | `sales.orders.approve` | + | — | **—** | **—** | + | **—** | + *(SAT-D6, SAT-D188)* | **—** *(SAT-D188)* | + *(SAT-D188/D190)* |
 | `sales.reports.read` (SAT-D143) | + | + | + | + | + | + | + *(SAT-D143, SAT-D188)* | + *(SAT-D143, SAT-D188)* | + *(SAT-D188/D190)* |
 | `sales.orders.price.read` (SAT-D150) | + | **—** | + | + | + | + | + *(SAT-D150, SAT-D188)* | + *(SAT-D150, SAT-D188)* | + *(SAT-D188/D190)* |
@@ -180,13 +196,13 @@ doldurulur; değişen her hücre karar numarasını taşır:
 | `sales.orders.price-floor-exception.approve` (SAT-D1) | + | — | **—** | **—** | + *(SAT-D1)* | **—** | + *(SAT-D1, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
 | `sales.orders.discount-exception.approve` (SAT-D2/D37/D67) | + | — | **—** | **—** | + *(SAT-D37)* | **—** | + *(SAT-D37, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
 | `sales.orders.cancel` (SAT-D4) | + | — | ? | ? | + *(SAT-D4)* | **—** | + *(SAT-D4, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
-| `sales.quotes.expired-conversion.approve` (SAT-D24/D44) | + | — | ? | ? | + *(SAT-D24 "yönetici")* | **—** | + *(SAT-D24/D44, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
+| `sales.quotes.expired-conversion.approve` (SAT-D24/D44) | + | — | — *(SAT-D24 "yönetici")* | — *(SAT-D24 "yönetici")* | + *(SAT-D24 "yönetici")* | **—** | + *(SAT-D24/D44, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
 | `sales.invoices.read` (SAT-D110) | + | ? | + *(SAT-D110)* | + *(SAT-D110, SAT-D141 kopya)* | + *(SAT-D110)* | + *(SAT-D110)* | + *(SAT-D110, SAT-D188 okuma)* | + *(SAT-D110, SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `settings.sales-discount-limits.manage` (SAT-D65/D69) | + *(SAT-D69)* | — | **—** *(SAT-D65)* | **—** *(SAT-D65, SAT-D141 kopya)* | **—** *(SAT-D65)* | ? | **—** *(SAT-D65)* | **—** *(SAT-D65)* | **—** *(SAT-D65)* |
+| `settings.sales-discount-limits.manage` (SAT-D65/D69) | + *(SAT-D69)* | — | **—** *(SAT-D65)* | **—** *(SAT-D65, SAT-D141 kopya)* | **—** *(SAT-D65)* | **—** *(SAT-D65)* | **—** *(SAT-D65)* | **—** *(SAT-D65)* | **—** *(SAT-D65)* |
 | *fazla teslim onayı, eksik teslimle satır kapatma, sipariş kapatma* (SAT-D168; **ad bekliyor**) | + *(SAT-D168)* | — | — *(SAT-D168)* | + *(SAT-D168)* | + *(SAT-D168)* | — *(SAT-D168)* | + *(SAT-D168, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
 | `sales.orders.source-plan.write` (SAT-D179; ad henüz kayıtlı değil, API-11) | + *(SAT-D179)* | — *(SAT-D179)* | + *(SAT-D179)* | + *(SAT-D179)* | + *(SAT-D179)* | — *(SAT-D179)* | + *(SAT-D179, SAT-D188)* | — *(SAT-D188)* | + *(SAT-D188/D190)* |
 | *satış ayarları: teklif kayıp nedenleri, varsayılan teklif geçerlilik günü, teslim toleransı yüzdeleri* (SAT-D189; **ad bekliyor**) | + *(SAT-D189)* | — | — | **—** *(SAT-D189)* | + *(EK28 soru 3)* | — | + *(SAT-D189)* | **—** *(SAT-D189)* | + *(SAT-D189)* |
-| *"faturalanmış, sevk edilmemiş" bakiyeyi görme ve yönetme* (SAT-D99; **ad bekliyor**) | + *(SAT-D187)* | ? | ? *(SAT-D99 "satışçı")* | ? *(SAT-D99 "satışçı")* | + *(SAT-D99)* | + *(SAT-D99 yorum)* | ? **NS-1** | ? **NS-1** | + *(SAT-D188/D190)* |
+| *"faturalanmış, sevk edilmemiş" bakiyeyi görme ve yönetme* (SAT-D99; **ad bekliyor**) | + *(SAT-D187)* | ? | ? *(SAT-D99 "satışçı")* | ? *(SAT-D99 "satışçı")* | + *(SAT-D99)* | + *(SAT-D99 yorum)* | + *(SAT-D193)* | + *(SAT-D193)* | + *(SAT-D193)* |
 | `settings.tax-master.manage` (SAT-D145) | + | — | — | — | + | **—** | **—** *(SAT-D188)* | + *(SAT-D145, SAT-D188)* | + *(SAT-D188/D190)* |
 | `product.item-type.manage` (SAT-D145/D149) | + | — | — | — | + | **—** | **—** *(SAT-D188)* | + *(SAT-D145/D149, SAT-D188)* | + *(SAT-D188/D190)* |
 | `counterparty.accounts.e-document.update` (SAT-D155) | + | — | — | — | — | + | — *(SAT-D155)* | — *(SAT-D155)* | — *(SAT-D155)* |
@@ -197,34 +213,34 @@ doldurulur; değişen her hücre karar numarasını taşır:
 | *belge tarihinden önceki sevklerde KDV istisnası onayı* (SAT-D186; **ad bekliyor**) | + *(SAT-D186)* | — | — | — | yok *(EK28 öncesi)* | — *(SAT-D186)* | — *(SAT-D186, SAT-D188)* | + *(SAT-D186, SAT-D188)* | + *(SAT-D186)* |
 | *dış fatura ↔ sipariş/irsaliye eşleştirme* (SAT-D142, SAT-D163; **ad bekliyor**) | + | — | — | — | — | + | — *(SAT-D142/D163)* | — *(SAT-D142/D163)* | — *(SAT-D142/D163)* |
 | *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32; **fatura dalgası, ad bekliyor**) | ? *(karar yok)* | ? | ? | ? | ? | + *(gelecek)* | ? **NS-11** | ? **NS-11** | ? **NS-11** |
-| `purchasing.orders.read` | + | + | + | + | + | ? | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `purchasing.orders.create` | + | — | + | + | ? | ? | ? **NS-5** | ? **NS-5** | ? **NS-5** |
+| `purchasing.orders.read` | + | + | + | + | + | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
+| `purchasing.orders.create` | + | — | + | + | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
 | `purchasing.orders.approve` | + | — | **—** | **—** | + | ? | — *(SAT-D187/D188 alış)* | — *(SAT-D187/D188 alış)* | + *(SAT-D187 ara dönem, SAT-D188; ALS-D3)* |
-| `inventory.labels.read` | + | + | ? | ? | ? | ? | ? **NS-6** | ? **NS-6** | ? **NS-6** |
-| `inventory.balances.read` | + | + | ? | ? | ? | ? | ? **NS-6** | ? **NS-6** | ? **NS-6** |
-| `inventory.opening-stock.record` | + | — | — | — | ? | ? | ? **NS-6** | ? **NS-6** | ? **NS-6** |
-| `manufacturing.orders.read` | + | + | ? | ? | ? | ? | ? **NS-7** | ? **NS-7** | ? **NS-7** |
-| `manufacturing.plans.write` | + | — | — | — | ? | ? | ? **NS-7** | ? **NS-7** | ? **NS-7** |
-| `manufacturing.plans.approve` | + | — | — | — | ? | ? | ? **NS-7** | ? **NS-7** | ? **NS-7** |
-| `manufacturing.orders.create` | + | — | — | — | ? | ? | ? **NS-7** | ? **NS-7** | ? **NS-7** |
-| `manufacturing.facts.record` | + | — | — | — | ? | ? | ? **NS-7** | ? **NS-7** | ? **NS-7** |
-| `logistics.loading-instructions.read` | + | + | ? | ? | ? | ? | ? **NS-8** | ? **NS-8** | ? **NS-8** |
-| `logistics.loading-instructions.create` | + | + | — | — | ? | ? | ? **NS-8** | ? **NS-8** | ? **NS-8** |
-| `logistics.loads.record` | + | + | — | — | ? | ? | ? **NS-8** | ? **NS-8** | ? **NS-8** |
-| `accounting.periods.read` | + | ? | — | — | ? | — *(SAT-D164)* | ? **NS-9** | ? **NS-9** | ? **NS-9** |
-| `accounting.journals.read` | + | **?** | — | — | ? | — *(SAT-D164)* | ? **NS-9** | ? **NS-9** | ? **NS-9** |
-| `accounting.posting-queues.read` | + | ? | — | — | ? | — *(SAT-D164)* | ? **NS-9** | ? **NS-9** | ? **NS-9** |
-| `accounting.periods.propose` | + | — | — | — | ? | ? | ? **NS-9** | ? **NS-9** | ? **NS-9** |
-| `accounting.periods.approve` | + | — | — | — | ? | ? | ? **NS-9** | ? **NS-9** | ? **NS-9** |
-| `accounting.periods.close` | + | — | — | — | ? | ? | ? **NS-9** | ? **NS-9** | ? **NS-9** |
-| `finance.bank-account.read` | + | **—** | — | — | ? | — *(SAT-D164)* | ? **NS-10** | ? **NS-10** | ? **NS-10** |
-| `finance.manual-receipt.draft.read` | + | **—** | — | — | ? | — *(SAT-D164)* | ? **NS-10** | ? **NS-10** | ? **NS-10** |
-| `finance.manual-receipt.draft.save` | + | **—** | — | — | ? | ? | ? **NS-10** | ? **NS-10** | ? **NS-10** |
-| `finance.manual-receipt.amount.read` | + | **—** | — | — | ? | — *(SAT-D164)* | ? **NS-10** | ? **NS-10** | ? **NS-10** |
+| `inventory.labels.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Stok Müdürü)* |
+| `inventory.balances.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Stok Müdürü)* |
+| `inventory.opening-stock.record` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Stok Müdürü)* |
+| `manufacturing.orders.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Üretim Müdürü)* |
+| `manufacturing.plans.write` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Üretim Müdürü)* |
+| `manufacturing.plans.approve` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, URT-D2; SAT-D187 ara dönem: Üretim Müdürü)* |
+| `manufacturing.orders.create` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Üretim Müdürü)* |
+| `manufacturing.facts.record` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Üretim Müdürü)* |
+| `logistics.loading-instructions.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Lojistik Müdürü)* |
+| `logistics.loading-instructions.create` | + | + | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Lojistik Müdürü)* |
+| `logistics.loads.record` | + | + | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Lojistik Müdürü)* |
+| `accounting.periods.read` | + | ? | — | — | ? | — *(SAT-D164)* | — *(SAT-D191)* | + *(SAT-D191)* | + *(SAT-D191, SAT-D188/D190)* |
+| `accounting.journals.read` | + | **?** | — | — | ? | — *(SAT-D164)* | — *(SAT-D191)* | + *(SAT-D191)* | + *(SAT-D191, SAT-D188/D190)* |
+| `accounting.posting-queues.read` | + | ? | — | — | ? | — *(SAT-D164)* | — *(SAT-D191)* | + *(SAT-D191)* | + *(SAT-D191, SAT-D188/D190)* |
+| `accounting.periods.propose` | + | — | — | — | ? | ? | — *(SAT-D191)* | + *(SAT-D191)* | + *(SAT-D191, SAT-D188/D190)* |
+| `accounting.periods.approve` | + | — | — | — | ? | ? | — *(SAT-D191)* | + *(SAT-D191)* | + *(SAT-D191, SAT-D188/D190)* |
+| `accounting.periods.close` | + | — | — | — | ? | ? | — *(SAT-D191)* | + *(SAT-D191)* | + *(SAT-D191, SAT-D188/D190)* |
+| `finance.bank-account.read` | + | **—** | — | — | ? | — *(SAT-D164)* | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Finans Müdürü)* |
+| `finance.manual-receipt.draft.read` | + | **—** | — | — | ? | — *(SAT-D164)* | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Finans Müdürü)* |
+| `finance.manual-receipt.draft.save` | + | **—** | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Finans Müdürü)* |
+| `finance.manual-receipt.amount.read` | + | **—** | — | — | ? | — *(SAT-D164)* | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Finans Müdürü)* |
 | `finance.bank-account.propose` (CRITICAL) | insan kapısı | — | — | — | — | — | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 | `finance.bank-account.approve` (CRITICAL) | insan kapısı | — | — | — | — | — | — *(Critical)* | — *(Critical)* | — *(Critical)* |
-| `identity.profile.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
-| `identity.access.request` | + | + | + | + | + | ? | ? **NS-2** | ? **NS-2** | ? **NS-2** |
+| `identity.profile.read` | + | + | + | + | + | + *(SAT-D164)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
+| `identity.access.request` | + | + | + | + | + | ? | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel)* |
 | `identity.access.approve` (CRITICAL) | insan kapısı | — | — | — | — | — | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 | `identity.roles.manage` (CRITICAL) | insan kapısı | — | — | — | — | — | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 | `identity.audit.read` (CRITICAL) | insan kapısı | — | — | — | — | — | — *(Critical)* | — *(Critical)* | — *(Critical)* |
@@ -305,8 +321,14 @@ doldurulur; değişen her hücre karar numarasını taşır:
     "İki müdür de" (soru 5) gösterildi ve seçilmedi → Satış Uzmanı ve Muhasebe Müdürü kalın `—`.
   - **SAT-D110** `sales.invoices.read`: Muhasebe, Satış Destek, eski Müdür; Müdür'ün okuması iki müdüre de geçer
     (SAT-D188 okuma). Satış Uzmanı SAT-D141 kopya yorumuyla `+`. Sevkiyatçı karardan geçmez → `?`.
-  - **SAT-D99** "faturalanmış, sevk edilmemiş" bakiye: kararın "Müdür"ü SAT-D188 sınıflarından hiçbirine açıkça
-    girmez (satış mı, muhasebe mi, ikisi mi?) → **NS-1**. Genel Müdür ve Admin her durumda yetkilidir (SAT-D187/D188).
+  - **SAT-D99** "faturalanmış, sevk edilmemiş" bakiye: ilk turda NS-1 idi; **Satış Müdürü ve Muhasebe Müdürü** görür
+    ve yönetir, Genel Müdür ve Admin de (SAT-D193). Kapatma yolu mali müşavirle belirlenir (SAT-D99).
+  - **SAT-D194** `sales.drafts.create`: Satış Müdürü ve Genel Müdür taslak açar; açan onaylayamaz (P6).
+  - **SAT-D192** cari yönetimi yalnız Muhasebe Müdürü'ndedir (Genel Müdür ve Admin de); "Satış ve Muhasebe Müdürü"
+    seçeneği gösterildi ve seçilmedi → Satış Müdürü kalın `—`.
+  - **SAT-D195 fason fiyatı:** fasonda fiyat listesi kullanılmaz; fiyat kg başına elle yazılır ve siparişin normal iç
+    onayına gider. **Yeni izin gerekmez:** elle fiyat yazmak `sales.orders.price.write` (SAT-D151) ister, onay
+    `sales.orders.approve`'dur; liste olmadığı için ayrıca taban/iskonto istisna onayı yoktur.
   - **SAT-D148/D158/D181** (onaylı kod ve tutar, alıcı durumu listesi, KDV/tevkifat oran listeleri) değer girişi
     `settings.tax-master.manage` içindedir → Muhasebe Müdürü, Genel Müdür, Admin (SAT-D188 muhasebe sınıfı).
 - **Critical adlar:** `AI_YETKI_SOZLESMESI.md` ve ADR-004 §6 gereği grant'leri ayrı insan kapısıdır;
@@ -429,42 +451,45 @@ işler sahipleriyle şunlardır ve **hiçbiri bu kartın kapsamı değildir**:
 5. **Cari/hesap oluşturma için ayrı dar izin** — K4.3. Sahibi: Cari owner.
 6. Ardından persona başına rol kodlarının Identity modelinde tasarlanması ve **en sonda** grant'lerin
    insan kapısında açılması.
-7. **EK20…EK28 grant PR'ı** (SAT-D141…D146, SAT-D150/D151, SAT-D153/D155/D159, SAT-D163, SAT-D164; müdür ayrımı
-   SAT-D186…D190 ve EK24–EK27 satırları): persona/rol tanımı ve izin eşlemesi yalnız bu kartta **karar numarasıyla
-   işaretli her hücre**yi açar — eski satırlardaki SAT-D164 ve SAT-D188 hücreleri dahil; "Müdür (eski)" sütunu, `?`
+7. **EK20…EK29 grant PR'ı** (SAT-D141…D146, SAT-D150/D151, SAT-D153/D155/D159, SAT-D163, SAT-D164; müdür ayrımı
+   SAT-D186…D190, EK24–EK27 satırları ve EK29 SAT-D191…D194): persona/rol tanımı ve izin eşlemesi yalnız bu kartta **karar numarasıyla
+   işaretli her hücre**yi açar — eski satırlardaki SAT-D164, SAT-D188 ve SAT-D191…D194 hücreleri dahil; "Müdür (eski)" sütunu, `?`
    ve **NS-n** hücreleri hiçbir şey açmaz. Ad bekleyen satırlar (risk istisnası, SAT-D146 vergi önerisi, eşleştirme,
    SAT-D168/D169/D186/D189/D99, `sales.orders.source-plan.write`) adları manifest'e gelince eşlenir. Aynı PR
    `ErpPermissions` açıklamalarını kararlarla hizalar.
 
-**İnsan kapısı değişmez:** EK20/EK21 ve EK28 persona kararları Sinan'ın somut kararıdır, ama bu kart da, o kararlarla açılacak
+**İnsan kapısı değişmez:** EK20/EK21, EK28 ve EK29 persona kararları Sinan'ın somut kararıdır, ama bu kart da, o kararlarla açılacak
 eşleme PR'ı da **gerçek bir kullanıcıya rol atamaz** ve **production'da hiçbir şeyi etkinleştirmez**. Gerçek rol
-ataması, Critical grant'ler ve production aktivasyonu her zaman insan kapısında kalır (SAT-D110; EK20, EK21 ve EK28
+ataması, Critical grant'ler ve production aktivasyonu her zaman insan kapısında kalır (SAT-D110; EK20, EK21, EK28 ve EK29
 "Sınırlar"). Bir kişiye birden fazla müdürlük verilmesi (SAT-D187) de gerçek bir atamadır ve aynı insan kapısındadır.
 
 İzin adları her durumda sahibinin teknik işidir; bu kart ad önermez ve atama yapmaz.
 
-## NEEDS-SINAN — müdür ayrımı (2 Kasım 2026, SAT-D188 son cümlesi)
+## NEEDS-SINAN — müdür ayrımı (2 Kasım 2026, SAT-D188 son cümlesi; EK29 ile güncellendi)
 
-SAT-D188 "bir hücre bu sınıflara açıkça girmiyorsa persona kartı PR'ında NEEDS-SINAN yazılır" diyor. Aşağıdaki hücreler
-satış, muhasebe, okuma veya alış onayı sınıfına **açıkça** girmiyor; tabloda üç müdür sütununda `? NS-n` olarak durur ve
-**hiçbir şey açmaz** (deny-first). Hepsinde, hangi müdür alırsa alsın, Genel Müdür ve Admin de yetkilidir (SAT-D188); öteki
-modül müdürleri tanımlanana kadar o modülün müdür hücresini Genel Müdür + Admin tutar (SAT-D187). Soru her satırda aynıdır:
-**bu hücre hangi müdürün (Satış, Muhasebe, ilgili modül müdürü) yetkisidir — yoksa hiçbirinin mi?**
+SAT-D188 "bir hücre bu sınıflara açıkça girmiyorsa persona kartı PR'ında NEEDS-SINAN yazılır" diyor. İlk turda on iki hücre
+grubu `? NS-n` olarak işaretlendi; EK29 (SAT-D191…D195) on birini kapattı.
 
-| NS | Hücre(ler) | Eski Müdür | Neden sınıfa girmiyor |
+**Açık kalan:**
+
+| NS | Hücre | Eski Müdür | Durum |
 |---|---|---|---|
-| NS-1 | *"faturalanmış, sevk edilmemiş" bakiyeyi görme ve yönetme* (SAT-D99) | `+` | SAT-D188'in kendi örneği. Bakiye hem satışın (sevk) hem muhasebenin (fatura, iade faturası) konusu; "görür ve yönetir" okuma + yazma birlikte |
-| NS-2 | `identity.access.request` | `+` | Okuma değil, onay/değişiklik değil; Identity modülünün temel talebi. Muhasebe sütunu da `?` |
-| NS-3 | `organization.work-centers.read`, `organization.locations.status.update` | `?` | Organizasyon modülü; müdür rolü tanımlanmadı. Eski hücre zaten belirsizdi |
-| NS-4 | `counterparty.parties.create`, `counterparty.parties.update.basic`, `counterparty.accounts.create`, `counterparty.accounts.status.update` | `?` | Cari oluşturma/değiştirme: satışın mı, muhasebenin mi, ayrı bir Cari sorumlusunun mu? K4.3 yalnız Satış Destek için "ayrı dar izin" der |
-| NS-5 | `purchasing.orders.create` | `?` | Alış modülü; Satın Alma Müdürü Alış şeridinde tanımlanacak (SAT-D187, ALS-D3). Alış **onayı** sınıflıdır (Satın Alma Müdürü; ara dönemde Genel Müdür + Admin) |
-| NS-6 | `inventory.labels.read`, `inventory.balances.read`, `inventory.opening-stock.record` | `?` | Stok modülü; müdür rolü tanımlanmadı |
-| NS-7 | `manufacturing.orders.read`, `manufacturing.plans.write`, `manufacturing.plans.approve`, `manufacturing.orders.create`, `manufacturing.facts.record` | `?` | Üretim modülü; Üretim Müdürü Üretim şeridinde tanımlanacak (SAT-D187) |
-| NS-8 | `logistics.loading-instructions.read`, `logistics.loading-instructions.create`, `logistics.loads.record` | `?` | Lojistik modülü; müdür rolü tanımlanmadı |
-| NS-9 | `accounting.periods.read`, `accounting.journals.read`, `accounting.posting-queues.read`, `accounting.periods.propose`, `accounting.periods.approve`, `accounting.periods.close` | `?` | Muhasebe **dönemi/fişi**: SAT-D188'in muhasebe sınıfı yalnız vergi/kur/istisna kararlarını sayar; Accounting modülünün dönem ve fiş işleri Muhasebe Müdürü'ne mi geçer, sorulmadı |
-| NS-10 | `finance.bank-account.read`, `finance.manual-receipt.draft.read`, `finance.manual-receipt.draft.save`, `finance.manual-receipt.amount.read` | `?` | Finance modülü; K4.2 "genel Finance hayır". Finance'ın müdürü (Muhasebe Müdürü mü, ayrı bir Finans Müdürü mü) sorulmadı |
-| NS-11 | *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32) | `?` | Fatura dalgası; yalnız Muhasebe söylendi, hiçbir müdür ve Admin için karar yok |
-| NS-12 | `sales.drafts.create` (Satış Müdürü ve Genel Müdür) | `?` | Satış sınıfıdır (Muhasebe Müdürü `—`), ama eski Müdür hücresi zaten belirsizdi: müdürün kendisi sipariş taslağı girebilir mi? |
+| NS-11 | *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32) | `?` | Fatura dalgası; yalnız Muhasebe söylendi. Hiçbir müdür, Genel Müdür ve Admin için karar yok; SAT-D191 satış/muhasebe **dışı** yetkileri dağıtır ve faturayı açıkça saymaz. Üç müdür sütunu ve Admin `?` kalır, **hiçbir şey açmaz** (fail-closed, deny-first). Soru: fatura taslağını hangi müdür hazırlar/onaylar, Admin dahil mi? |
 
-Bu liste persona kararı ister; `OPEN-*` kapatmaz ve hiçbir izni açmaz. Cevaplar gelince ilgili hücreler karar numarasıyla
-doldurulur.
+**EK29 ile kapananlar** (hücreler tabloda karar numarasıyla dolduruldu):
+
+| NS | Hücre(ler) | Karar | Sonuç |
+|---|---|---|---|
+| NS-1 | SAT-D99 "faturalanmış, sevk edilmemiş" bakiye | SAT-D193 | Satış Müdürü + Muhasebe Müdürü (+ Genel Müdür, Admin) |
+| NS-2 | `identity.access.request` | SAT-D191 (temel izin) | Bütün müdürler |
+| NS-3 | `organization.work-centers.read`, `organization.locations.status.update` | SAT-D191 | Organizasyon modülünün müdürü yok → Genel Müdür + Admin; Satış/Muhasebe Müdürü `—` |
+| NS-4 | `counterparty.parties.create`, `.update.basic`, `counterparty.accounts.create`, `.status.update` | SAT-D192 | Yalnız Muhasebe Müdürü (+ Genel Müdür, Admin); Satış Müdürü kalın `—` |
+| NS-5 | `purchasing.orders.create` (ve okuma, Review B P2) | SAT-D191 | Satın Alma Müdürü → ara dönem Genel Müdür + Admin; Satış/Muhasebe Müdürü `—` |
+| NS-6 | üç `inventory.*` adı | SAT-D191 | Stok Müdürü → ara dönem Genel Müdür + Admin |
+| NS-7 | beş `manufacturing.*` adı | SAT-D191, URT-D2 | Üretim Müdürü → ara dönem Genel Müdür + Admin |
+| NS-8 | üç `logistics.*` adı | SAT-D191 | Lojistik Müdürü → ara dönem Genel Müdür + Admin |
+| NS-9 | altı `accounting.*` dönem/fiş/kuyruk adı | SAT-D191 | Muhasebe Müdürü (+ Genel Müdür, Admin); Satış Müdürü `—` |
+| NS-10 | dört Critical olmayan `finance.*` adı | SAT-D191 | Finans Müdürü → ara dönem Genel Müdür + Admin; K4.2 sınırı aynen |
+| NS-12 | `sales.drafts.create` | SAT-D194 | Satış Müdürü + Genel Müdür; Muhasebe Müdürü `—` |
+
+Bu liste `OPEN-*` kapatmaz ve hiçbir izni açmaz; persona tanımı karardır, atama insan kapısıdır.
