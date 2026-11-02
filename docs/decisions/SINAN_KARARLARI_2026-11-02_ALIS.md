@@ -56,7 +56,7 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
   para olayı üretmez; gelecek arz `INV-006` ile düşer/geri gelir. Yeniden açma izninin adı sahip modülde konur; grant
   insan kapısındadır.
 - **ALS-D4 ve DEC-PUR-001:** fiziksel kabul ile kalite serbest bırakma kavram olarak ayrı kalır (DEC-PUR-001). ALS-D4
-  yalnız varsayılanı seçer: serbest bırakma kabul anında otomatik yapılır (`InitialBlock` boş); kalite kullanıcısı
+  yalnız varsayılanı seçer: serbest bırakma kabul anında otomatik yapılır (`InitialBlock = "Free"`, kodda zaten böyle); kalite kullanıcısı
   sonradan etiketi bloklayabilir.
 - **ALS-D5 "hubvogal":** Sinan'ın yerel ağda (VPN ile) kullandığı bir web uygulamasıdır. Bu oturumdan ve
   bağlı ofis bilgisayarından 2026-11-02'de erişilemedi. Erişim sağlanınca alış ekranları ve iş kuralları
