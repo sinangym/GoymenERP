@@ -300,7 +300,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/manufacturing.txt"] =
                 // Üretim U1-b: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (parameter snapshot at approval and
                 // catalog tolerance at close) (e03d7c7b… -> 7f38855d…).
-                "7f38855db8071e72e6686d5c8140eef39a3102a2afa00df9d0ac06320f076a76",
+                // Üretim U2-a: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (rejection, line speed, one order,
+                // cancellation; slitting approval with net width, line speed and label) and +3
+                // ManufacturingSqlServerRelationalAcceptanceTests facts (rejection replay, lifecycle migration, store rules)
+                // (7f38855d… -> f5bf9d89…).
+                "f5bf9d89c3846bad54f7054f58986784703ebccee8eb111b55e8eaf627adac8d",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
