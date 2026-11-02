@@ -88,17 +88,28 @@ Bu bölümdeki **yorum** etiketli maddeler geri alınabilir; karar değildir.
 - **ALS-D61 (MINSTOK kapanır):** Minimum stoktan otomatik talep önerisi **Alış planına girmez**; Stok modülü
   başlayınca ayrıca ele alınır. Talep elle (ALS-D54) ya da Satış/Üretim ihtiyacından (ALS-D16, MOD-02) açılır.
   Issue #66'ya MINSTOK sorusu yazılmaz.
-- **ALS-D62 (fatura→Finans portu):** ERP-000F dağıtıcısı gelene kadar, gelen fatura kesinleşince Finans'ın **kabul
-  portu aynı işlemde (senkron) çağrılır**; dağıtıcı gelince aynı içerik `purchasing.invoice.finalized.v1` olayı
-  olarak gider. Port sözleşmesi ile olay içeriği aynı sürümlü sözleşmedir (tek kaynak); geçişte çifte borç
-  yazılmaz (Finans kabulü kaynak kimliğiyle idempotent).
+- **ALS-D62 (fatura→Finans portu):** Sinan'ın seçimi (aynen): **"Önce doğrudan port (Önerilen)"** — "Dağıtıcı
+  gelene kadar fatura kesinleşince Finans'ın kabul portu aynı işlemde çağrılır. Dağıtıcı gelince aynı içerik olay
+  olarak gider." Karar: ERP-000F dağıtıcısı gelene kadar Finans'ın kabul portu **doğrudan (senkron) çağrılır**;
+  dağıtıcı gelince aynı içerik `purchasing.invoice.finalized.v1` olayı olarak gider. Geçişte çifte borç yazılmaz.
   - **Not (karar değişikliği değil):** Soru metnindeki "Alış'ın kendi olay kutusu var" ifadesi Claude'un
     yazımıdır; main'de Alış'ın outbox'ı **henüz yoktur** (plan §14 "Olay kaydı" satırı; A5-0'da planlı). Seçilen
-    seçenek bu ifadeye dayanmaz: dağıtıcı yokken senkron port, dağıtıcı gelince olay.
-  - *Yorum:* Senkron çağrı mal kabul ortak işlemindeki gibi Api katmanındaki bir host üzerinden yapılır; her
-    katılımcı yalnız kendi tablosuna yazar (plan §14 bilinçli istisna deseni). A5-0 (Alış outbox) A5 içinde yine
-    yapılır; olay yayımı dağıtıcıya bağlanınca senkron çağrı kaldırılır. Kabul sözleşmesi Finans ile netleştirilir
-    (§0.1 madde 7; `ALIS_FINANS_DEVIR_v1.md`). Geri alınabilir.
+    seçenek bu ifadeye dayanmaz: dağıtıcı yokken doğrudan port, dağıtıcı gelince olay. Seçenek açıklamasındaki
+    "aynı işlemde çağrılır" ifadesi de Claude'un yazımıdır (aşağıdaki yorum).
+  - *Yorum (işlem sınırı; geri alınabilir):* Kesin işlem sınırı — Alış'ın veritabanı işlemiyle **aynı işlem** mi,
+    yoksa **önce Alış commit'i, sonra idempotent çağrı** mı — bir mimari ayrıntıdır ve A5'te Finans ile
+    netleştirilir. Bugünkü yön Finans'ın önerisidir (Finans PR #923, `docs/handoffs/FINANS_ALIS_DEVIR_v1.md` FA-2;
+    koordinatör aktarımı): Finans kendi işleminde (ayrı DbContext) yazar; Alış kesinleştirmeyi **"Finans kabulü
+    bekliyor"** durumuyla commit eder, sonra `IFinanceInvoiceOpenItemAdmissionPortV1.AdmitAsync`'i idempotency
+    anahtarı `purchasing-invoice:{invoiceId}:{invoiceVersion}` ile çağırır; hata/zaman aşımında **aynı anahtarla**
+    yeniden dener. Bu akış ERP-000F gelince outbox'a bire bir eşlenir. Bu yorum para politikasını değiştirmez ve A5
+    kabul sözleşmesini kilitlemez; sözleşme A5'te Finans ile birlikte kesinleşir.
+  - *Yorum (açık kaleme yazılan kur; geri alınabilir):* Finans açık kalemindeki TL borç (`FunctionalAmount`)
+    **tedarikçi faturasındaki kurla** hesaplanır (ALS-D41; `ExchangeRate` = tedarikçi faturası kuru, Finans FA-2).
+    **ERP kontrol kuru (ALS-D6/D14) Finans açık kalemine yazılmaz**; Alış'ta (fatura snapshot'ı, A5-KUR) ve olay
+    payload'unda kalır.
+  - A5-0 (Alış outbox) A5 içinde yine yapılır; olay yayımı dağıtıcıya bağlanınca doğrudan çağrı kaldırılır (§0.1
+    madde 7; `ALIS_FINANS_DEVIR_v1.md`).
 
 ## 3. Değişmeyenler
 
