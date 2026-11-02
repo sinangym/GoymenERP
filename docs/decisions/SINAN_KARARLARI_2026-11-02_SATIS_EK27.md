@@ -21,7 +21,7 @@ seçmeli soru cevabı: bir tur, bir soru. Sinan'a her seçeneğin adı **ve aç�
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| SAT-D185 | Alıcı belgesinin sonradan girilmesi | Onaylı siparişte alıcı vergi durumu ve istisna kodu **aynı kalarak** yalnız alıcı belgesinin numarası ve/veya tarihi girilir ya da düzeltilirse **revizyon açılmaz**; iç onay ve müşteri kabulü yeniden istenmez. Değişiklik kimin girdiğiyle, gerekçe ve audit ile kaydedilir (SAT-D126 gibi). Sevk durmaz; belge girildiğinde fatura SAT-D147 gereği kesilebilir hâle gelir (soru 1). Uygulama ayrıntısı (geri alınabilir): satır vergileri yeniden çözülmez; alıcı vergi durumu veya istisna kodu da değişiyorsa SAT-D105 ve DEC-SAL-002 gereği revizyon açılır | Başlık revizyonu (API-04), PR #885 |
+| SAT-D185 | Alıcı belgesinin sonradan girilmesi | Onaylı siparişte alıcı vergi durumu ve istisna kodu **aynı kalarak** yalnız alıcı belgesinin numarası ve/veya tarihi sonradan girilirse **revizyon açılmaz**; iç onay ve müşteri kabulü yeniden istenmez. Değişiklik kimin girdiğiyle, gerekçe ve audit ile kaydedilir (SAT-D126 gibi). Sevk durmaz; belge girildiğinde fatura SAT-D147 gereği kesilebilir hâle gelir (soru 1). Uygulama ayrıntısı (geri alınabilir): satır vergileri yeniden çözülmez; daha önce girilmiş belge bilgisinin düzeltilmesi de aynı yolla yerinde kaydedilir, ama o belgeyle fatura kesildikten sonra yerinde düzeltme yapılmaz (fail-closed); belge girişi başlık yazma izniyle yapılır (`sales.orders.header.write`, SAT-D144), yeni izin açılmaz; alıcı vergi durumu veya istisna kodu da değişiyorsa SAT-D105 ve DEC-SAL-002 gereği revizyon açılır | Başlık revizyonu (API-04), PR #885 |
 
 ## Sınırlar
 
