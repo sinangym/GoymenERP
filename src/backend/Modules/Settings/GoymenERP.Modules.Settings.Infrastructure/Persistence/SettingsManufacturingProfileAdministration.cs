@@ -38,7 +38,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
     : ISettingsManufacturingParameterProfileAdministrationV1, ISettingsManufacturingToleranceProfileAdministrationV1
 {
     private const int CommandExecutionSchemaVersion = 1;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     private Guid RequireContextCompany()
     {
@@ -266,7 +266,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
 
     private ManufacturingToleranceProfileCommandContextV1 LifecycleContext(SettingsCommandMetadataV1 metadata,
         long expectedStateVersion, string reason) =>
-        new(metadata.CompanyId, metadata.ActorId, expectedStateVersion, metadata.IdempotencyKey, reason,
+        new ManufacturingToleranceProfileCommandContextV1(metadata.CompanyId, metadata.ActorId, expectedStateVersion, metadata.IdempotencyKey, reason,
             timeProvider.GetUtcNow().ToUniversalTime());
 
     /// <summary>The lifecycle refusal as a stored answer (an invalid context is the caller's 400).</summary>
@@ -314,17 +314,17 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
     }
 
     private static ManufacturingProfileCommandResultV1 Unstored(ManufacturingProfileCommandAnswerV1 answer,
-        SettingsCommandMetadataV1 metadata) => new(answer, false, metadata.CorrelationId);
+        SettingsCommandMetadataV1 metadata) => new ManufacturingProfileCommandResultV1(answer, false, metadata.CorrelationId);
 
     private static ManufacturingProfileCommandReceiptV1 Receipt(Guid profileId, long profileVersion, long stateVersion,
-        string status) => new(profileId, Text(profileVersion), Text(stateVersion), status);
+        string status) => new ManufacturingProfileCommandReceiptV1(profileId, Text(profileVersion), Text(stateVersion), status);
 
     private static class Answers
     {
         public static ManufacturingProfileCommandAnswerV1 Ok(ManufacturingProfileCommandReceiptV1 receipt) =>
-            new(200, null, "Kaydedildi.", "Değişiklik kaydedildi.", receipt);
+            new ManufacturingProfileCommandAnswerV1(200, null, "Kaydedildi.", "Değişiklik kaydedildi.", receipt);
 
-        public static ManufacturingProfileCommandAnswerV1 NotFound() => new(404, null, "Kayıt bulunamadı.",
+        public static ManufacturingProfileCommandAnswerV1 NotFound() => new ManufacturingProfileCommandAnswerV1(404, null, "Kayıt bulunamadı.",
             "İstenen üretim profili bu şirkette bulunamadı.", null);
 
         public static ManufacturingProfileCommandAnswerV1 Invalid(string detail) =>
@@ -343,6 +343,6 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
                 "Bu prosesin yayımlanmış bir tolerans profili aynı tarihleri kapsıyor; yayımlanmış profil değiştirilemez.");
 
         public static ManufacturingProfileCommandAnswerV1 Problem(int status, string code, string title, string detail) =>
-            new(status, code, title, detail, null);
+            new ManufacturingProfileCommandAnswerV1(status, code, title, detail, null);
     }
 }

@@ -125,7 +125,7 @@ internal sealed record ManufacturingParameterProfileCandidate(
     IReadOnlyList<ManufacturingParameterValueDataV1> Values)
 {
     public static ManufacturingParameterProfileCandidate FromCatalog(ApprovedManufacturingParameterProfileEntry entry) =>
-        new(entry.ProfileId, ManufacturingProfileSourcesV1.Catalog, entry.Process, null,
+        new ManufacturingParameterProfileCandidate(entry.ProfileId, ManufacturingProfileSourcesV1.Catalog, entry.Process, null,
             ApprovedManufacturingProfileCatalog.CatalogProfileVersion, entry.EffectiveFrom, null, entry.Values);
 }
 
