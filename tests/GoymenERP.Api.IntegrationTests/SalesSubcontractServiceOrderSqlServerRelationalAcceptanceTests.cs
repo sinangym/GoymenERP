@@ -236,10 +236,13 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
-            Assert.Equal(applied.Length - 1, index);
-            var refused = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
+            Assert.True(index > 0);
+            // A later migration (SAT-D167's AddDraftLineRevisions, no line revision here) rolls back freely first.
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(applied[index]);
+            var refused = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
             Assert.Equal(51141, refused.Number);
-            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
         }
     }
 
