@@ -18,18 +18,20 @@ Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_A
 `SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md`, plan `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md`.
 **Mevcut** satırlar kodda çalışır; **Hedef** satırlar karara bağlanmış ama uygulanmamıştır.
 
-**Mevcut (2026-11-02):**
+**Mevcut (2026-11-02, A1-1 dahil):**
 
-- Talep: Taslak → Gönderildi (`PurchaseRequestStatus` Draft / Submitted). Talep taahhüt değildir.
+- Talep: Taslak → Gönderildi → Onaylı / Reddedildi (`PurchaseRequestStatus` Draft / Submitted / Approved / Rejected;
+  A1-1). Talep taahhüt değildir. Onay yalnız Gönderildi talepte; ret Gönderildi veya Onaylı talepte, gerekçe zorunlu,
+  talebe bağlı Onaylı sipariş varken reddedilir (No.161 §1). Hazırlayan (oluşturan) ve gönderen karar veremez;
+  gönderen kaydı yoksa karar verilemez (fail-closed). Yetki `purchasing.requests.approve` (ALS-D2); audit aynı kayıtta.
 - Sipariş: Taslak → Onaylı (`PurchaseOrderStatus` Draft / Approved). Satır yalnız taslağa eklenir; onay tek adımlı
-  geçiştir (onay politikası yok). Talebe bağlı sipariş yalnız Gönderildi talepten açılır; Σ-pay onay anında ölçülür.
+  geçiştir (onay politikası yok). Talebe bağlı sipariş yalnız Onaylı talepten açılır (ALS-D2, ALS-D16) ve talep Onaylı
+  kaldığı sürece onaylanır; Σ-pay onay anında ölçülür.
 - Kabul payı: yalnız Onaylı siparişin satırına; kalan = taahhüt − kabul; kalanı aşan kabul reddedilir (tolerans yok).
   Yeni kabul stoğa `Free` blokla girer. Genel/teknik kırılım Taslak ve Onaylı'da açıktır (yalnız domain).
 
 **Hedef (karar var, kod yok):**
 
-- Talep: Gönderildi → Onaylı / Reddedildi; hazırlayan ≠ onaylayan; sipariş yalnız onaylı talepten (ALS-D2). Ret
-  yalnız Gönderildi veya Onaylı talepte ve bağlı Onaylı sipariş kalmamışsa; gerekçe + audit (No.161).
 - Sipariş kalanı iptali: Onaylı siparişte, kısmi kabul olsa bile yalnız kabul edilmemiş kalanın **tamamı** iptal
   edilir; fiziksel stok veya para olayı yok; `Alış Kalan = Onaylı − İptal − KabulNet − KesinRed/İade` (No.161, INV-006).
 - Satır kapanışı / yeniden açma: tolerans içi eksikte sistem kapatmayı önerir ve sorar (ALS-D10); tolerans dışı eksiği

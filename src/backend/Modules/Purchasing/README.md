@@ -12,12 +12,30 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   order's unaccepted remainder). Those decisions are **not implemented yet** unless a line below says so; the target
   states are listed in `docs/domain/DURUM_MAKINELERI.md` ("Satın Alma") and the ownership split in
   `docs/domain/SISTEM_OF_RECORD_MATRISI.md`.
-- **Statuses in code:** `PurchaseRequestStatus` = Draft, Submitted (`Domain/Requests/PurchaseRequest.cs`);
-  `PurchaseOrderStatus` = Draft, Approved (`Domain/Orders/PurchaseOrder.cs`). There is no request approval or
-  rejection, no order cancellation, closure, revision or supplier confirmation yet.
+- **Statuses in code:** `PurchaseRequestStatus` = Draft, Submitted, Approved, Rejected (`Domain/Requests/PurchaseRequest.cs`);
+  `PurchaseOrderStatus` = Draft, Approved (`Domain/Orders/PurchaseOrder.cs`). There is no order cancellation, closure,
+  revision or supplier confirmation yet.
+- **Request approval and rejection (A1-1, plan API-01; ALS-D2, ALS-D16, No.161 §1):** `POST requests/{id}/approval`
+  (Submitted → Approved) and `POST requests/{id}/rejection` (Submitted | Approved → Rejected, `reason` required, at most
+  4000 characters, never cut) under the new name `purchasing.requests.approve` (`PurchasingService.RequestDecisions.cs`;
+  commands `purchasing.purchase-request.approve.v1` / `.reject.v1`, audit `purchasing.purchase-request.approved.v1` /
+  `.rejected.v1`). The creator (`CreatedBy`, the preparer) and the submitter (`SubmittedBy`, recorded since A1-1) are the
+  makers; neither may decide (`purchasing_request_same_actor`, ordinal comparison); a request whose submitter is not
+  recorded cannot be decided at all (`purchasing_request_maker_unknown`, fail-closed). A rejection is refused while an
+  APPROVED order is bound to the request (`purchasing_request_has_approved_order`; the store reads the fact inside the
+  same save and the request row is the write's concurrency token, which every binding order approval also moves).
+  Other terminal refusals: `purchasing_request_decision_state`, `version_conflict`; the reason's 422s:
+  `purchasing_request_rejection_reason_required` / `_too_long`. The detail view carries `approval` and `rejection`
+  (decided by, at, reason). Migration `20261102125710_AddPurchaseRequestDecisions` adds the columns, the
+  `CK_PurchaseRequests_Decision` and `CK_PurchaseRequests_MakerChecker` checks, records the submitter of already
+  submitted requests from their own stored submit attempt, and its Down refuses (`THROW 51164`) while a request is
+  Approved or Rejected. Grant of the name is a human gate: no role, seed or persona carries it.
 - **Order creation:** an order is created with or without a source request (`CreatePurchaseOrderRequest.SourceRequestId`
-  is optional); when given, the request must be Submitted and of the same company
-  (`PurchasingService.ReadSourceRequestAsync`).
+  is optional); when given, the request must be **Approved** (A1-1, ALS-D2/ALS-D16; 409 `purchasing_request_state`,
+  field `sourceRequestId` = `not_approved`) and of the same company (`PurchasingService.ReadSourceRequestAsync`). An
+  order opened for a request is approved only while that request is still Approved (store code
+  `purchasing_source_request_not_approved`, answered as a terminal 409 `purchasing_request_state`), so a rejected
+  request's draft order never becomes a commitment.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
@@ -40,21 +58,23 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 - **Receipt reads:** options (locations), list, detail and the read-only accepted-vs-measured kg comparison
   (`PurchaseGoodsReceiptComparisonContractsV1.cs`: `SameKilogramUnit` / `Unavailable` are emitted; `ApprovedConversion`
   is declared but intentionally not emitted; no tolerance, approval or stock effect).
-- **HTTP (14 routes):** requests — create, list, detail, `submission`; orders — create, list, detail, `approval`;
+- **HTTP (16 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`; orders — create, list, detail, `approval`;
   goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
-- **Permissions (4):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`
-  (`PurchasingPermissionManifestV1`, `ErpPermissions`).
-- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.4`) declares P-01 request
-  list/new/detail (+ submit child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve and goods-receipt
+- **Permissions (5):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
+  `purchasing.requests.approve` (A1-1) (`PurchasingPermissionManifestV1`, `ErpPermissions`; company-wide, not critical,
+  registered only).
+- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.5`) declares P-01 request
+  list/new/detail (+ submit and, since A1-1, the `purchasing.requests.approve` decision child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve and goods-receipt
   children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
-  `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage`, `PurchaseOrderListPage`,
+  `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage` (+ `PurchaseRequestDecisionPanel`:
+  approve / reject with reason, unknown-result resend of the same key), `PurchaseOrderListPage`,
   `PurchaseOrderCreatePage`, `PurchaseOrderDetailPage`, `GoodsReceiptPanel`, `GoodsReceiptDetail`,
   `GoodsReceiptQuantityComparison` (routes in `purchasingRoutes.tsx`).
 - **Ports out:** `IPurchaseSupplyReferencePortV1` (expected supply, never stock), `IPurchaseOpenLineReadPortV1`
   (AT-025, below), `IPurchaseAcceptanceSourceV1`; the Document Vault reads purchase-order ownership through the host
   adapter `GoymenERP.Api/DocumentsRuntime/PurchasingDocumentOwnerLinkPort.cs`.
-- **Still absent:** price/tax/currency (T28; ALS-D5/D6), approval policy and preparer ≠ approver rule (ALS-D3),
+- **Still absent:** price/tax/currency (T28; ALS-D5/D6), order approval policy and the order's preparer ≠ approver rule (ALS-D3),
   revision, cancellation/closure, delivery schedule and "in transit", service lines and service acceptance, outgoing
   subcontracting (A-1), incoming invoice and three-way match, supplier return, outbox events, breakdown over the API
   (domain only), count/metre units (Settings approves kilograms only).
