@@ -135,8 +135,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // no longer "staged"); merged with U1-a (f52999f9…/f46fcab5… -> 722a6d6d…); no registration, generation, network or
         // hosted-service change.
         // DEC-FIN-010 / SAT-D169 maps the Settings exchange-rate routes; no registration, generation, network or hosted-service
-        // change (the TCMB source is composed inside AddSettingsModule and is off by default).
-        "722a6d6db067b8ae641b4e0e27e8379f52b937802c906674bde7f4b6fe435d20";
+        // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
+        "d219b1f55a22def9d2be84284f8879dbedfca95e9404fbe19086ef430c619e77";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -472,7 +472,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for DEC-FIN-010 / KUR_GUNU / SAT-D169…D171: the company-filtered exchange-rate record (day fence,
                 // append-only records and their rate lines; company inside every key and foreign key) joins the write fence
                 // (records and rate lines immutable, every row in the context company).
-                "8ece5e3cc5a0eaed79dd44455fbca347eff9e9c82084c215e160da0cfc06e9a7",
+                "4c558a477888627dffdfacc253aa659a98bba06a68bc867e5e10a699d04437f3",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1559,7 +1559,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // behind its two ports (DI-only); the database surface and its counts are unchanged.
                         // Re-fingerprinted for DEC-FIN-010 / SAT-D169: the exchange-rate administration, the rate-day port and the two
                         // official sources (disabled unless configuration names an https TCMB address; DI-only); counts unchanged.
-                        "983a856dd56e364fa22969b6b4f03d476be7de12dca86649048d5b6027964e25",
+                        "8e31d38534536624b5036973fbe81963c911618fa1b1a8247f8e19010d7e278c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
