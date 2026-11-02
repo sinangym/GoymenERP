@@ -10,8 +10,8 @@ kartından varsayılan, siparişte değiştirilebilir). Alış şeridi Ürün do
 - **Bugün:** Ürün modülü çevrim varsaymıyor (README: "There is no assumed conversion"; U-08 çevrim politikası
   kabul edilmedi). Alış satırı yalnız Ayarlar profiliyle doğrulanan tek birimle çalışıyor (`PurchaseUnitVerifier`).
 - **İstenen (Ürün):**
-  1. Ürün kartında, ürün özelliğine göre kg / adet / metre arasındaki çevrim (DEC-PRD-006'daki sabit veya formül
-     bağlı sınıf); çevrimi olmayan ürün açıkça "çevrim yok" döner, varsayılan katsayı üretilmez.
+  1. Ürün kartında, ürün özelliğine göre kg / adet / metre arasındaki çevrim (DEC-PRD-006'daki sabit, formül bağlı
+     veya fiilî sınıf; fiilî çevrimde katsayı ölçülen değerden gelir, ör. kantar kg'ı ile sayılan adet); çevrimi olmayan ürün açıkça "çevrim yok" döner, varsayılan katsayı üretilmez.
   2. Ürün kartında alış için **varsayılan fiyat birimi** (birim fiyatın çarpıldığı miktar).
   3. Bir okuma portu (öneri: `IProductPurchaseUnitConversionV1`): şirket + ürün → desteklenen birimler, çevrim
      sınıfı/sürümü, varsayılan fiyat birimi. Hesap ortak deterministic calculator'da yapılır.
