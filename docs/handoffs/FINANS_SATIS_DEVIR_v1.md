@@ -16,7 +16,8 @@ kendi karar, review ve merge kapıları geçerlidir.
   decimal text), `FunctionalAmount` (TL karşılığı, Satış calculator'ı hesaplar; TL faturada null). Taksit yoksa tek
   taksit.
 - **Idempotency:** `CommandMetadata.IdempotencyKey`, öneri `sales-invoice:{invoiceId}:{invoiceVersion}`. Aynı anahtar ve
-  payload tekrar oynatılır; aynı fatura aynı satırlarla yeniden gelirse ikinci kalem açılmaz; farklı satırla
+  payload aynı kullanıcıyla tekrar oynatılır (başka payload ya da kullanıcı → `IdempotencyConflict`); aynı fatura aynı
+  sürüm ve aynı satırlarla yeni bir kabulle gelirse ikinci kalem açılmaz; farklı satır **veya farklı sürümle**
   `finance_invoice_already_admitted` döner. Değişen fatura iptal + yeniden kesimdir (SAT-D96, Finans F2b).
 - **Yetki:** port kendi yetkisini taşımaz; Satış kendi kesinleştirme yetkisini ölçer. Bağlamdaki şirket ve kullanıcı
   sunucu bağlamına eşit olmalıdır.
@@ -26,7 +27,8 @@ kendi karar, review ve merge kapıları geçerlidir.
 
 ## FS-2 · Risk portu (MOD-05)
 
-`ISalesPartyRiskReadPortV1` main'de; F1 (#902) ile yalnız alacak kalemlerini sayar. Kredi limiti ve teminat
+`ISalesPartyRiskReadPortV1` main'de. Yön filtresi (yalnız alacak kalemleri) #902'de, açık taslak PR; merge'e kadar main
+bütün açık resmî taksitleri sayar (bugün borç kaynağı olmadığı için sonuç aynı). Kredi limiti ve teminat
 `NoSource` kalır (OPEN-010, Finans API-85).
 
 ## FS-3 · Finans → Satış olayları

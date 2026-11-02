@@ -7,7 +7,7 @@ Bağlam: `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §6 MOD-01…03, §18; Alı
 
 ## FA-1 · Açık kalemde yön (F-A1)
 
-#902 (MOD-15): `FinanceOpenItemDirectionV1`; gelen fatura taksiti `official.incoming-invoice-installment.v1` → borç
+#902 (MOD-15, açık taslak PR; merge'e kadar main'de yok): `FinanceOpenItemDirectionV1`; gelen fatura taksiti `official.incoming-invoice-installment.v1` → borç
 (Payable). Alış A5 bu merge'den sonra açılır.
 
 ## FA-2 · Gelen fatura kabul portu (F-A2, API-10)
@@ -19,7 +19,8 @@ Satış ile aynı port: `IFinanceInvoiceOpenItemAdmissionPortV1`, `Producer = Pu
 ## FA-3 · Sipariş başlığında bakiye (MOD-02)
 
 `GET /api/v1/finance/party-balance?partyId&companyAccountId` (API-04, #912): para birimi bazında Toplam Borç / Toplam
-Alacak ve net. Ekranı Alış tüketir.
+Alacak ve net. Ekranı Alış tüketir. MOD-02'deki limit boşluğu limit kaynağına bağlıdır (API-85, OPEN-010); o zamana
+kadar `NoSource`.
 
 ## FA-4 · Ödendi / avans (MOD-03)
 

@@ -212,7 +212,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-11 | İptal/iade portu | Kalemin ters kaydı; iade faturası ayrı belge (No 20/21) | SAT-D96 | K3 |
 | API-12 | Finans outbox + inbox tabloları | Olay kaydı ve tekrar engeli | ALS-D44 notu, ERP-000F | K3 |
 | API-14 | Açılış Kaydı (FNS-D12) | Açılış bakiyelerinin **elle** girişi: açık müşteri/tedarikçi kalemi, kasa/banka bakiyesi, portföydeki çek/senet, kredi kalanı, DBS/teminat limiti; "açılış" türüyle işaretli, gerçek tarihçe gibi gösterilmez; maker≠checker; geçici görünürlük (Ayarlar anahtarı) yorumu Sinan teyidi bekliyor | FNS-D12 | K3 |
-| API-13 | Dekont/makbuz numara serisi (Ayarlar'da şirket bazlı) | D-6 | N-12 | K3 |
+| API-13 | Dekont/makbuz numara serisi (Ayarlar'da şirket bazlı) — **ertelendi: Ayarlar başlayınca (FNS-D15)** | D-6 | N-12 | K3 |
 
 ### 5.3 Tahsilat ve ödemenin tamamlanması (F-02, F-03)
 
@@ -328,9 +328,9 @@ Finans onay matrisi (işlem × rol × tutar × para birimi × 1./2. onay; DEC-FI
 | MOD-03 | Alış | "Ödendi / kısmi ödendi" görünümü; tedarikçi avansı | Finans olayı; tüketen Alış | `finance.open-item.settled.v1`, API-21 | K3 |
 | MOD-04 | Satış | Kesinleşen satış faturasının alacak kalemi (Satış MOD-04) | Finans tarafı bu şerit; olay üreten Satış | API-10, `sales.invoice.finalized.v1` | K3 |
 | MOD-05 | Satış | Risk portu: yönlü kalem, limit ve teminat kaynağı, DBS güvenceli/teminatsız ayrımı | Bu şerit (port Finans'ta) | `ISalesPartyRiskReadPortV1` (sözleşme değişirse Satış notu) | K3 |
-| MOD-06 | Cari | Firmanın hem müşteri hem tedarikçi olması; IBAN (tedarikçi banka hesabı) doğrulaması | Cari'de küçük ekleme | DEC-CAR-001, DEC-AI-007 | K2 |
+| MOD-06 | Cari | Firmanın hem müşteri hem tedarikçi olması; IBAN (tedarikçi banka hesabı) doğrulaması — **ertelendi: Cari başlayınca (FNS-D15)** | Cari'de küçük ekleme | DEC-CAR-001, DEC-AI-007 | K2 |
 | MOD-07 | Muhasebe | Banka masrafı, kur farkı, kasa/virman, kredi faizi için fiş taslağı kaynakları | Muhasebe okuyucusu; Finans kaynak sağlar | Mevcut `...JournalSourceProviderV1` deseni | K3 |
-| MOD-08 | Ayarlar | §5.13 politikaları | Bu şerit (küçük ekleme) | ADR-SET-002 | K3 |
+| MOD-08 | Ayarlar | §5.13 politikaları — **ertelendi: Ayarlar başlayınca (FNS-D15)** | Bu şerit (küçük ekleme) | ADR-SET-002 | K3 |
 | MOD-09 | Work | Finans onay kuyrukları (ödeme, mahsup, ters kayıt, sayım farkı) tek onay kutusunda | Work deseni | Mevcut Work gözlem portu | K2 |
 | MOD-10 | Belgeler | Dekont, ekstre dosyası, çek görüntüsü, kredi sözleşmesi | Documents portu | DEC-DOC-* | K2 |
 | MOD-11 | Platform | Outbox dağıtıcısı ERP-000F | Alış şeridi (ALS-D44); Finans tüketir | — | K3 |
@@ -420,7 +420,7 @@ fail-closed kalır.
 |---|---|---|
 | **F0** | Bu plan; karar dosyası FNS-D1…; `FINANS_ALIS_DEVIR_v1.md` ve `FINANS_SATIS_DEVIR_v1.md` (MOD-01/04/05 sözleşme taslağı); `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Finans satırları; hubvogal finans incelemesi | N-01, N-02 |
 | **F1 (öncelik, FNS-D2)** | MOD-15: API-01…06 (yön, karantina, bakiye özeti, ekstre yönü, risk portu), TEK-01/02; UI-02/03 güncellemesi | N-03. **Alış A5'in ön şartı** |
-| **F2** | MOD-04: API-10…12 (fatura kabul portu, iptal, Finans outbox/inbox); API-13 numara serisi; MOD-01…05 sözleşmeleri | F1; Alış/Satış fatura dalgaları paralel ilerler (port fail-closed) |
+| **F2** | MOD-04: API-10…12 (fatura kabul portu, iptal, Finans outbox/inbox); ~~API-13 numara serisi~~ (ertelendi, FNS-D15); MOD-01…05 sözleşmeleri | F1; Alış/Satış fatura dalgaları paralel ilerler (port fail-closed) |
 | **F3** | API-20…25 (ödemenin dağıtımı, avans, kur farkı, ödeme ters kaydı, banka masrafı, cariye bağlı olmayan masraf ödemesi); API-07 mahsup; API-30…33 kasa ve virman; UI-01, UI-05 | F1; N-05, N-06 |
 | **F4** | API-40…43 banka defter bakiyesi, ekstre içe aktarma, mutabakat; UI-04 | F3; N-07 |
 | **F5** | API-60…64 çek/senet (ciro, teminat, karşılıksız, verilen çek); API-70…73 DBS; API-74…78 POS ve şirket kartı; UI-06, UI-07 | F3; FNS-D3, N-08, N-10 |
@@ -600,7 +600,8 @@ Kural: bir modül başka modülün tablosuna yazmaz; bağ yalnız sürümlü por
 dilimi PR açıklamasına bir **"Modül bağlantıları"** satırı yazar: ürettiği/tükettiği port veya olay ve karşı modülde
 bağlı olup olmadığı. Sinan'ın 2 Kasım kararıyla Ürün, Lojistik/Stok, Ayarlar ve Cari modüllerine şimdi yeni
 port/tablo/ekran açılmaz; o bağlar mevcut portlarla kurulur, yoksa fail-closed kalır ve "ertelendi: <modül> başlayınca"
-olarak işaretlenir.
+olarak işaretlenir (FNS-D15). Buna göre MOD-06 (Cari), MOD-08 (Ayarlar politikaları) ve API-13 (Ayarlar'da numara
+serisi) **ertelendi: ilgili modül başlayınca**; o zamana kadar ilgili davranış fail-closed kalır.
 
 Durum: ✅ main'de implementasyon + DI + gerçek-SQL/contract testi · 🟡 kısmi · ❌ yok.
 
@@ -609,19 +610,20 @@ Durum: ✅ main'de implementasyon + DI + gerçek-SQL/contract testi · 🟡 kıs
 | Satış faturası → alacak kalemi | Satış → Finans | `IFinanceInvoiceOpenItemAdmissionPortV1` (Producer=Sales); dispatcher sonrası `sales.invoice.finalized.v1` | ❌ — Finans portu F2a PR'ında (host kaydı yok); Satış üreticisi fatura dalgasında | F2a + Satış API-32…37 |
 | Gelen fatura → borç kalemi | Alış → Finans | aynı port (Producer=Purchasing); sonra `purchasing.invoice.finalized.v1` | ❌ — F1 (#902) yönü, F2a portu; Alış A5 | F2a + Alış A5 |
 | Fatura iptali/iadesi → ters kalem | Satış/Alış → Finans | iptal portu / olayı (SAT-D96) | ❌ | F2b |
-| Satış risk okuması | Finans → Satış | `ISalesPartyRiskReadPortV1` (`FinanceSalesPartyRiskReadPortV1`) | ✅ (yalnız alacak, F1); limit/teminat NoSource (OPEN-010) | API-06, API-85 (F6) |
+| Satış risk okuması | Finans → Satış | `ISalesPartyRiskReadPortV1` (`FinanceSalesPartyRiskReadPortV1`) | 🟡 port main'de (DI + SQL testli); yalnız-alacak filtresi #902'de (taslak); limit/teminat NoSource (OPEN-010) | API-06, API-85 (F6) |
 | Tedarikçi ödemesi → borç kalemi | Finans içi; Alış okur | elle banka ödemesi + dağıtım | 🟡 ödeme var, borç kalemine dağıtım yok; TEK-02 | F3 (API-20) |
 | Ödendi/kısmi ödendi, avans | Finans → Satış/Alış | `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | ❌ — Finans'ta outbox yok | F2 outbox dilimi (ERP-000F sonrası) |
-| Muhasebe fişi (120/320) | Finans → Accounting | aynı kaynak olay, Accounting inbox (FNS-D14) | ❌ — outbox yok | Outbox dilimi + MOD-07 |
+| Muhasebe fişi (120/320) | Finans → Accounting | aynı kaynak olay (FNS-D14); taşıma seçilmedi (outbox/inbox ya da kaynak sağlayıcı) | 🟡 elle tahsilat için salt-okuma `FinanceManualReceiptNormalJournalSourceProviderV1` (Accounting DI'da); satış/alış faturası (120/320) için ❌ | Outbox dilimi + MOD-07 |
 | Kur → döviz değerleme | Ayarlar → Finans | `ISettingsExchangeRateResolverV1` (#906, main'de) | ❌ — Finans okumuyor | F7 (API-95) |
-| Cari ana veri / uygunluk | Cari → Finans | `IFinancePartyAccountPort` | ✅ mevcut port; yeni alan **ertelendi: Cari başlayınca** (MOD-06) | — |
-| Onay kutusu | Finans → Work | mevcut Work gözlem portu | 🟡 ters kayıt önerisi var; ödeme/mahsup kuyrukları yok | MOD-09 |
+| Cari ana veri / uygunluk | Cari → Finans | `IFinancePartyAccountPort` (`CounterpartyFinancePartyAccountPort`) | ✅ mevcut port; yeni alan **ertelendi: Cari başlayınca** (MOD-06) | — |
+| Onay kutusu | Finans → Work | mevcut Work gözlem portu | 🟡 yalnız resmî fatura içe aktarma onayı (`FinanceInvoiceImportPendingApprovalAdapterV1`); ters kayıt önerisi Finans'ın kendi onay ucunda, Work kuyruğu yok; ödeme/mahsup kuyrukları yok | MOD-09 |
 | Üretim | — | doğrudan bağ yok (MOD-12); maliyet OPEN-008 | — | — |
 
 Eklenen dilim: **F2-OB (Finans outbox).** Açık kalem, tahsilat ve ödeme olayları Finans'ın kendi outbox'ından
 yayınlanır; tüketiciler Accounting (fiş), Satış ve Alış (ödeme durumu). Ön şart platform dağıtıcısı ERP-000F (MOD-11);
 dağıtıcı yokken olaylar yazılmaz, bağ senkron sürümlü porttur (SINAN 10-21 No 55). K3.
 
-Ekran: cari ekstresi (UI-02) ve bakiye özeti (API-04, #912) "Muhasebe > Cari Hesaplar" girişinden açılır (FNS-D14).
+Ekran önerisi (FNS-D14 yorumu, Sinan teyit eder): cari ekstresi (UI-02) ve bakiye özeti (API-04, #912) "Muhasebe > Cari
+Hesaplar" girişinden açılır.
 
 Devir notları: `docs/handoffs/FINANS_SATIS_DEVIR_v1.md`, `docs/handoffs/FINANS_ALIS_DEVIR_v1.md`.
