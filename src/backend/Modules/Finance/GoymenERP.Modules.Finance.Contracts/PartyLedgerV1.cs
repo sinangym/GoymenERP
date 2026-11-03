@@ -14,7 +14,9 @@ namespace GoymenERP.Modules.Finance.Contracts;
 [JsonConverter(typeof(JsonStringEnumConverter<PartyLedgerEntryKind>))]
 public enum PartyLedgerEntryKind
 {
-    /// <summary>An admitted open item (an approved official invoice installment, DEC-FIN-005): the party's debt.</summary>
+    /// <summary>
+    /// An admitted RECEIVABLE open item (an approved sales invoice installment, DEC-FIN-005): the party's debt — debit.
+    /// </summary>
     OpenItem = 1,
 
     /// <summary>A recorded manual bank / POS receipt's money event: the party's credit (POS: the gross, DEC-FIN-014).</summary>
@@ -28,6 +30,11 @@ public enum PartyLedgerEntryKind
 
     /// <summary>A recorded manual outgoing bank payment's money event (R47): the payment to the party.</summary>
     ManualBankPayment = 5,
+
+    /// <summary>
+    /// An admitted PAYABLE open item (a supplier invoice installment, MOD-15): the company's debt to the party — credit.
+    /// </summary>
+    PayableOpenItem = 6,
 }
 
 /// <summary>The column a row is written in, from the company's view of the party's account: borç / alacak.</summary>

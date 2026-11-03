@@ -5895,7 +5895,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("items", "type:array;items:ref:FinanceOpenItemViewV1"),
                     ("nextCursor", "type:null|string")),
                 ["FinanceOpenItemViewV1"] = ObjectSchema(
-                    ["id", "companyId", "sourceKind", "sourceId", "sourceLineId", "sourceVersion", "partyId", "companyAccountId", "currencyId", "version", "dueOn", "status", "createdAtUtc", "initialAmount", "outstandingAmount"],
+                    ["id", "companyId", "sourceKind", "sourceId", "sourceLineId", "sourceVersion", "partyId", "companyAccountId", "currencyId", "version", "dueOn", "status", "createdAtUtc", "initialAmount", "outstandingAmount", "direction"],
                     ("id", "type:string;format:uuid"),
                     ("companyId", "type:string;format:uuid"),
                     ("sourceKind", "type:string"),
@@ -5910,7 +5910,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("status", "oneOf:ref:FinanceOpenItemStatusV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("initialAmount", "ref:AmountView"),
-                    ("outstandingAmount", "ref:AmountView")),
+                    ("outstandingAmount", "ref:AmountView"),
+                    ("direction", "ref:FinanceOpenItemDirectionV1")),
+                ["FinanceOpenItemDirectionV1"] = ScalarSchema("enum:Receivable|Payable"),
                 ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed"),
                 ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
                 ["PartyLedgerCurrency"] = ObjectSchema(
@@ -5934,7 +5936,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("instrumentId", "type:null|string;format:uuid"),
                     ("documentId", "type:null|string;format:uuid"),
                     ("dueOn", "type:null|string;format:date")),
-                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment"),
+                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem"),
                 ["PartyLedgerSide"] = ScalarSchema("enum:Debit|Credit"),
                 ["PartyLedgerBalanceView"] = ObjectSchema(
                     ["side", "amount"],
