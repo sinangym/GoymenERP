@@ -5,7 +5,7 @@ Bu belge önceki karar dosyalarını silmez; AI-D1…AI-D6'yı ekler. `DEC-AI-00
 
 **Kaynak:** Sinan Göymen'in 3 Kasım 2026'da Claude Code cloud oturumunda (AI Merkezi şeridi,
 oturum `session_015Usc2puiKz7TEEqG49ym5e`) yazdığı görev metni. Tırnak içindeki ifadeler Sinan'ın metninden
-aynen alınmıştır (makbuz: [Issue #66 comment 6598131789](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598131789)); "Uygulama notu" sütunu Claude'un yorumudur ve geri alınabilir.
+aynen alınmıştır; makbuz yorumu ajan oturumundan yazılmıştır, Sinan düzeltme yazmazsa aktarım geçerli sayılır (makbuz: [Issue #66 comment 6598131789](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598131789)); "Uygulama notu" sütunu Claude'un yorumudur ve geri alınabilir.
 
 ## 0. Yetki ve sınır
 
@@ -31,6 +31,9 @@ aynen alınmıştır (makbuz: [Issue #66 comment 6598131789](https://github.com/
 
 > Dış AI'ın canlıda açılması, veri türü izinleri ve rol/yetki Sinan'da kalır.
 
+> Bu oturum "AI Merkezi" şeridi. Göymen ERP'nin AI katmanını geliştirir: her sayfada sağ AI paneli, AI Merkezi
+> (günlük özet, öneri, geri bildirim), modül araç kataloğu, belge okuma (OCR) ve dış AI (API) bağlantısı.
+
 ## 2. Kararlar
 
 | No | Konu | Karar | Uygulama notu (geri alınabilir) | Bağlı kimlik |
@@ -44,7 +47,7 @@ aynen alınmıştır (makbuz: [Issue #66 comment 6598131789](https://github.com/
 
 ## 3. Şerit
 
-Sinan'ın 3 Kasım görev metniyle AI katmanı (sağ AI paneli, AI Merkezi — günlük özet/öneri/geri bildirim —,
+Sinan'ın 3 Kasım görev metniyle (§1 son alıntı: "Göymen ERP'nin AI katmanını geliştirir") AI katmanı (sağ AI paneli, AI Merkezi — günlük özet/öneri/geri bildirim —,
 modül araç kataloğu, belge okuma/OCR, dış AI bağlantısı) **AI Merkezi şeridinde (Claude)** geliştirilir.
 Modül araçları, sahip modülün mevcut public application query/command portunu sarar; sahip modülün iş kuralı,
 formülü veya tablosu AI şeridinde değiştirilmez, gereken port ilgili şeride görev notuyla istenir.
