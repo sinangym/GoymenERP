@@ -173,6 +173,14 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
         // The same key from another actor is not a replay.
         Assert.Equal(CommandOutcome.IdempotencyConflict,
             (await run.AdmitAsync(CompanyA, "fence-ok", invoice, actor: "SENTETIK-other-finaliser")).Outcome);
+        // A resend of the same admission under a new key by another authorised user replays (SAT-D208); the same
+        // admission id with another payload is refused.
+        var resend = await run.AdmitAsync(CompanyA, "fence-resend", invoice, actor: "SENTETIK-other-finaliser");
+        Assert.Equal(CommandOutcome.Succeeded, resend.Outcome);
+        Assert.True(resend.IsReplay);
+        var hijack = await run.AdmitAsync(CompanyA, "fence-hijack", invoice with { InvoiceId = Guid.NewGuid() });
+        Assert.Contains(hijack.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemAdmissionService.AdmissionIdentityConflictCode);
         // Another version of an admitted invoice is refused, never a second set of open items.
         var version = await run.AdmitAsync(CompanyA, "fence-v2",
             invoice with { AdmissionId = Guid.NewGuid(), InvoiceVersion = "invoice-v2" });

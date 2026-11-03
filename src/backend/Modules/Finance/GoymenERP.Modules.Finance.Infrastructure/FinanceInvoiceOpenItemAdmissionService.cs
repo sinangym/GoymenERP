@@ -32,6 +32,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
 {
     internal const string CommandName = "finance.invoice-open-items.admit.v1";
     internal const string AlreadyAdmittedCode = "finance_invoice_already_admitted";
+    internal const string AdmissionIdentityConflictCode = "finance_invoice_admission_identity_conflict";
     private const int TokenMaximumLength = 128;
     private const string EntityType = "Finance.InvoiceOpenItemAdmission";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -67,7 +68,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
         }
 
         var payloadHash = PayloadHash(invoice);
-        if (await PriorAsync(context, metadata, payloadHash, cancellationToken) is { } prior)
+        if (await PriorAsync(context, metadata, invoice.AdmissionId, payloadHash, cancellationToken) is { } prior)
         {
             return prior;
         }
@@ -181,7 +182,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             dbContext.ChangeTracker.Clear();
-            return await PriorAsync(context, metadata, payloadHash, cancellationToken)
+            return await PriorAsync(context, metadata, invoice.AdmissionId, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, new ValidationIssue("request", "concurrent_change"));
         }
     }
@@ -310,24 +311,42 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
         return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
     }
 
+    /// <summary>
+    /// The stored answer of this admission, found by key (ADR-011: same key, payload and actor replay; otherwise a
+    /// conflict) or — like F-03's batch id — by <see cref="FinanceInvoiceOpenItemAdmissionV1.AdmissionId"/>: a resend of
+    /// the same admission under a new key, e.g. by another authorised user (SAT-D208), replays when its payload is the
+    /// same and is refused when it is not.
+    /// </summary>
     private async Task<FinanceOpenItemAdmissionResult?> PriorAsync(FinanceContext context, CommandMetadata metadata,
-        string payloadHash, CancellationToken cancellationToken)
+        Guid admissionId, string payloadHash, CancellationToken cancellationToken)
     {
         var keyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
         var prior = await dbContext.OpenItemSourceBatches.AsNoTracking()
             .SingleOrDefaultAsync(row => row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (prior is not null)
+        {
+            return prior.PayloadHash != payloadHash || prior.ActorId != context.ActorId
+                ? Refused(context, CommandOutcome.IdempotencyConflict)
+                : Stored(prior);
+        }
+
+        prior = await dbContext.OpenItemSourceBatches.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == admissionId, cancellationToken);
         if (prior is null)
         {
             return null;
         }
-        if (prior.PayloadHash != payloadHash || prior.ActorId != context.ActorId)
-        {
-            return Refused(context, CommandOutcome.IdempotencyConflict);
-        }
-        return (JsonSerializer.Deserialize<FinanceOpenItemAdmissionResult>(prior.ResultJson, Json)
-                ?? throw new InvalidOperationException("Stored invoice admission result cannot be read."))
-            with { IsReplay = true };
+
+        return prior.PayloadHash != payloadHash
+            ? Refused(context, CommandOutcome.ValidationFailed,
+                new ValidationIssue("admissionId", AdmissionIdentityConflictCode))
+            : Stored(prior);
     }
+
+    private static FinanceOpenItemAdmissionResult Stored(FinanceOpenItemSourceBatchRow prior) =>
+        (JsonSerializer.Deserialize<FinanceOpenItemAdmissionResult>(prior.ResultJson, Json)
+            ?? throw new InvalidOperationException("Stored invoice admission result cannot be read."))
+        with { IsReplay = true };
 
     private void Audit(FinanceContext context, CommandMetadata metadata, FinanceInvoiceOpenItemAdmissionV1 invoice,
         string kind, bool reused) =>

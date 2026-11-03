@@ -1154,7 +1154,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // no direct connection, command, raw SQL or query-filter bypass surface.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] =
                     new(
-                        "99fc4c50d61df36667448c5dd2107626bbc6fe237149507e018504988db1167c",
+                        "57b8d750d7f405956a20aa5a339cb066a8a55f4f0b510aa7983db9d5857bb91b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

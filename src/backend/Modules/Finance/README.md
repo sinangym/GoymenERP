@@ -411,7 +411,7 @@ Finance conversation's work; Purchasing's incoming-invoice finalisation, Purchas
 | Part | What |
 |---|---|
 | `FinanceOpenItemDirectionV1` | `Receivable` (the party owes the company — a sales invoice installment, THP 120) / `Payable` (the company owes the party — a purchase invoice installment, THP 320). Never caller-chosen: `FinanceOpenItemDirections.FromSourceKind` is the one mapping |
-| Source kinds | `official.invoice-installment.v1` → receivable (unchanged); `official.incoming-invoice-installment.v1` → payable, **reserved**: its producer is the Purchasing invoice-finalisation port (MOD-04, F2). The CSV import still admits sales installments only |
+| Source kinds | `official.invoice-installment.v1` → receivable (unchanged); `official.incoming-invoice-installment.v1` → payable; written by the MOD-04 invoice admission port (below) once Purchasing's finalisation (A5) calls it. The CSV import still admits sales installments only |
 | Migration `20261102134844_AddOpenItemDirection` | Adds `OpenItems.Direction`, fills 1 on every stored row (FNS-D7), then NOT NULL with no database default; the C# property is `required` too, so no writer can forget it. `CK_OpenItems_Direction`: 1 or 2, and each official kind only with its own direction. `Down` refuses with `THROW 51051` while any payable exists (forward fix) |
 | Read (FI04) | `FinanceOpenItemViewV1.Direction` (stored metadata, shown without the amount grant); an unknown stored value fails closed |
 | Party ledger | A payable is its own kind `PayableOpenItem` in the **credit** column; a receivable stays `OpenItem` in the debit column. Both rows stay; nothing is netted |
@@ -420,7 +420,7 @@ Finance conversation's work; Purchasing's incoming-invoice finalisation, Purchas
 
 Not in this slice (plan F1b/F2/F3): the balance summary read (API-04), the direction quarantine for direction-less
 imports (No 22, with a CSV v2), payable allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the
-risk read still nets every recorded outgoing payment to the account as a refund), and the MOD-04 admission port.
+risk read still nets every recorded outgoing payment to the account as a refund). The MOD-04 admission port is the next section.
 
 ## MOD-04: finalised invoice → open items (F2a) — FNS-D2, FNS-D7, DEC-FIN-005
 
@@ -430,9 +430,10 @@ finalisation) belongs to Sales and Purchasing (ALS-D44); Finance only admits the
 | Part | What |
 |---|---|
 | `IFinanceInvoiceOpenItemAdmissionPortV1` | Synchronous, idempotent in-process port (no HTTP surface). `Producer` fixes the kind and direction: `Sales` → `official.invoice-installment.v1` receivable, `Purchasing` → `official.incoming-invoice-installment.v1` payable. No user authority of its own: the producer measured its own finalisation grant; the caller's company and actor must equal the server context |
+| Authority | Every admission is fenced twice (before any read and right before the save) by the host-owned `IFinanceInvoiceOpenItemAdmissionAuthorityV1` (F-03 pattern; no grant named here; an unmapped composition is unavailable). Binding the caller to its `Producer` and the audit permission code are decided when S5/A5 wire the port |
 | Installments | One open item per installment, numbered 1…n, positive exact amounts, a due date each (SAT-D86, ALS-D24) |
 | Foreign currency | The invoice's one rate (SAT-D172 / ALS-D41) in `ExchangeRateText` and each installment's TL equivalent, computed by the producer's calculator, in `FunctionalAmountText`; both null for a TL invoice. `CK_OpenItems_Exchange` enforces all-or-none with explicit `IS NOT NULL` (a CHECK passes on UNKNOWN). Both columns are immutable after admission |
-| Idempotency | One save writes the receipt (`OpenItemSourceBatches`: key hash, payload hash, actor, result), the open items and the audit event `finance.invoice-open-items.admitted.v1`. Same key + payload + actor replays; same key with another payload or actor is `IdempotencyConflict`; the same invoice with the same rows under a new admission is a reuse (no second open item); with other rows it is refused `finance_invoice_already_admitted` — a changed invoice is cancelled and re-issued by its owner (SAT-D96, F2b) |
+| Idempotency | One save writes the receipt (`OpenItemSourceBatches`: key hash, payload hash, actor, result), the open items and the audit event `finance.invoice-open-items.admitted.v1`. Same key + payload + actor replays; same key with another payload or actor is `IdempotencyConflict`; the same `AdmissionId` under a new key (a resend by another authorised user, SAT-D208) replays with the same payload and is refused `finance_invoice_admission_identity_conflict` otherwise; the same invoice with the same rows under a new admission is a reuse (no second open item); with other rows it is refused `finance_invoice_already_admitted` — a changed invoice is cancelled and re-issued by its owner (SAT-D96, F2b) |
 | Migration `20261102220923_AddOpenItemInvoiceExchange` | Adds the two nullable columns and the constraint. `Down` refuses with `THROW 51051` while any row carries exchange data (forward fix) |
 
 Not registered in the host yet: the producers' finalisation ports (Sales S5, Purchasing A5) wire it when they exist.
