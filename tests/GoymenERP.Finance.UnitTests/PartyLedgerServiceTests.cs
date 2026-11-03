@@ -268,7 +268,7 @@ public sealed class PartyLedgerServiceTests
     }
 
     [Fact]
-    public async Task A_money_event_kind_the_ledger_does_not_know_fails_the_read_instead_of_hiding_a_row()
+    public async Task A_money_event_kind_the_ledger_does_not_know_withholds_the_ledger_and_the_summary_instead_of_hiding_a_row()
     {
         await using var run = new Run();
         await using (var db = run.Context(Company))
@@ -278,8 +278,31 @@ public sealed class PartyLedgerServiceTests
         }
 
         await using var reader = run.Ledger("reader", Company);
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            reader.Service.ReadAuthorizedAsync(reader.Context, Request(), CancellationToken.None));
+        var read = await reader.Service.ReadAuthorizedAsync(reader.Context, Request(), CancellationToken.None);
+        Assert.Equal(PartyLedgerOutcome.Unavailable, read.Outcome);
+        Assert.Null(read.Ledger);
+        var summary = await reader.Service.SummarizeAuthorizedAsync(reader.Context, new PartyBalanceRequest(Party, Account),
+            CancellationToken.None);
+        Assert.Equal(PartyBalanceOutcome.Unavailable, summary.Outcome);
+        Assert.Null(summary.Balance);
+    }
+
+    [Fact]
+    public async Task A_reversal_whose_original_cannot_be_found_withholds_the_ledger_and_the_summary()
+    {
+        await using var run = new Run();
+        await using (var db = run.Context(Company))
+        {
+            db.MoneyEvents.Add(Run.Event(Company, Guid.NewGuid(), MoneyEventKinds.ManualBankReceiptReversed, Currency,
+                "1.00", new DateOnly(2026, 9, 3)));
+            await db.SaveChangesAsync();
+        }
+
+        await using var reader = run.Ledger("reader", Company);
+        Assert.Equal(PartyLedgerOutcome.Unavailable,
+            (await reader.Service.ReadAuthorizedAsync(reader.Context, Request(), CancellationToken.None)).Outcome);
+        Assert.Equal(PartyBalanceOutcome.Unavailable, (await reader.Service.SummarizeAuthorizedAsync(reader.Context,
+            new PartyBalanceRequest(Party, Account), CancellationToken.None)).Outcome);
     }
 
     private static PartyLedgerRequest Request(DateOnly? from = null, DateOnly? to = null) =>

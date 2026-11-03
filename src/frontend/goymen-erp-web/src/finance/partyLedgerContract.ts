@@ -291,6 +291,22 @@ function decodeBalanceCurrency(value: unknown): PartyBalanceCurrency | null {
   return { currencyId, debitTotal, creditTotal, balance, openReceivable, openPayable }
 }
 
+/**
+ * The summary answer: a balance, or the server's stated refusal 422 `finance_party_balance_too_many_facts` (more facts
+ * than one all-time summary reads; a cut sum would be a wrong balance). The adapter passes the refusal as a marker.
+ */
+export type PartyBalanceAnswer =
+  | { readonly kind: 'balance'; readonly balance: PartyBalanceView }
+  | { readonly kind: 'refused'; readonly refusal: 'TooManyFacts' }
+
+export function decodePartyBalanceAnswer(value: unknown, companyId: string): Decoded<PartyBalanceAnswer> {
+  if (isRecord(value) && hasExactKeys(value, ['partyBalanceRefusal'])) {
+    return value.partyBalanceRefusal === 'TooManyFacts' ? ok({ kind: 'refused', refusal: 'TooManyFacts' }) : FAIL
+  }
+  const balance = decodePartyBalance(value, companyId)
+  return balance.ok ? ok({ kind: 'balance', balance: balance.value }) : FAIL
+}
+
 export function decodePartyBalance(value: unknown, companyId: string): Decoded<PartyBalanceView> {
   if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'partyId', 'companyAccountId', 'currencies'])) return FAIL
   if (value.companyId !== companyId || !isBoundUuid(value.partyId) || !isBoundUuid(value.companyAccountId)

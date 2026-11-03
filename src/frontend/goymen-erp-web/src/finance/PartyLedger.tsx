@@ -25,7 +25,7 @@ import { WithCurrencyCodes, currencyShown, type CurrencyCodes } from './currency
 import { isDateOnly } from './dateOnly'
 import { useFinanceRead } from './financePort'
 import {
-  decodePartyBalance,
+  decodePartyBalanceAnswer,
   decodePartyLedgerAnswer,
   type PartyLedgerBalance,
   type PartyLedgerCurrency,
@@ -42,6 +42,7 @@ import {
   BALANCE_FORBIDDEN,
   BALANCE_NOTICE,
   BALANCE_TITLE,
+  BALANCE_TOO_MANY,
   BALANCE_UNAVAILABLE,
   BALANCE_SIDE_HINT,
   BALANCE_SIDE_SUFFIX,
@@ -233,16 +234,17 @@ function LedgerBody({
  */
 function BalanceSummary({ partyId, companyAccountId }: { readonly partyId: string; readonly companyAccountId: string }) {
   const summary = useFinanceRead('party-balance', [partyId, companyAccountId],
-    (port, scope, signal) => port.partyBalance(scope, { partyId, companyAccountId }, signal), decodePartyBalance)
+    (port, scope, signal) => port.partyBalance(scope, { partyId, companyAccountId }, signal), decodePartyBalanceAnswer)
 
   let body
   if (summary.state.kind === 'forbidden') body = <p role="status">{BALANCE_FORBIDDEN}</p>
   else if (summary.state.kind === 'service-unavailable') body = <p role="status">{BALANCE_UNAVAILABLE}</p>
   else if (summary.state.kind !== 'ready') {
     body = <StateBlock state={summary.state} subject={BALANCE_TITLE} onRetry={summary.refetch} />
-  } else if (summary.state.data.currencies.length === 0) body = <p role="status">{BALANCE_EMPTY}</p>
+  } else if (summary.state.data.kind === 'refused') body = <p role="alert">{BALANCE_TOO_MANY}</p>
+  else if (summary.state.data.balance.currencies.length === 0) body = <p role="status">{BALANCE_EMPTY}</p>
   else {
-    const currencies = summary.state.data.currencies
+    const currencies = summary.state.data.balance.currencies
     body = (
       <WithCurrencyCodes>
         {(codes) => (

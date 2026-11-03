@@ -425,9 +425,10 @@ risk read still nets every recorded outgoing payment to the account as a refund)
 ## F1b / API-04: party balance summary (cari bakiye özeti) — FNS-D6, FNS-D10
 
 `GET /api/v1/finance/party-balance?partyId&companyAccountId` → `PartyBalanceView`: per currency, the party ledger's
-debit / credit totals and balance over **all** of the account's recorded facts (no range, so no carry-forward question
-and no row cap), plus `openReceivable` / `openPayable` — what is still outstanding on OPEN receivable and payable items
+debit / credit totals and balance over **all** of the account's recorded facts (no range, so no carry-forward question;
+an account with more than `PartyBalanceRules.MaximumFacts` facts — ASSUMPTION-FIN-BALANCE-FACTS, a technical memory guard —
+is refused 422 `finance_party_balance_too_many_facts`, never summed from a cut set), plus `openReceivable` / `openPayable` — what is still outstanding on OPEN receivable and payable items
 (MOD-15). The ledger's two authorities (`finance.party-ledger.read`, `.amount.read`); without the amount grant every
 amount and the balance side are withheld. Currencies are never converted or added; nothing is netted for risk
-(ALS-D42); nothing is written. A money-event kind the ledger does not know, an unknown direction or an unreadable amount
-makes the summary 503 rather than a wrong figure. Screen: the card above the party ledger (`PartyLedger.tsx`).
+(ALS-D42); nothing is written. A money-event kind the ledger does not know, a reversal whose original is missing, an unknown
+direction or an unreadable amount makes the summary — and the ledger itself — 503 rather than a wrong figure. Screen: the card above the party ledger (`PartyLedger.tsx`).

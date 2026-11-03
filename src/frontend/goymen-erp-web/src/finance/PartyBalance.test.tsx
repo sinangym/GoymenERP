@@ -7,9 +7,10 @@
 import { describe, expect, it } from 'vitest'
 import { waitFor, within } from '@testing-library/react'
 import { PartyLedger } from './PartyLedger'
-import { decodePartyBalance } from './partyLedgerContract'
+import { decodePartyBalance, decodePartyBalanceAnswer } from './partyLedgerContract'
+import { BALANCE_EMPTY, BALANCE_FORBIDDEN, BALANCE_TOO_MANY, BALANCE_UNAVAILABLE } from './partyLedgerText'
 import { LEDGER_ACCOUNT, LEDGER_PARTY, LEDGER_TRY, LEDGER_USD, ledgerBody } from './partyLedgerFixtures'
-import { COMPANY_A, found, recordingPort, renderFinance } from './testHarness'
+import { body, COMPANY_A, found, recordingPort, renderFinance } from './testHarness'
 
 const visible = (amount: string, currencyId: string) => ({ disclosure: 'Visible', money: { amount, currencyId } })
 const redacted = { disclosure: 'Redacted', money: null }
@@ -49,8 +50,16 @@ describe('party balance decoder', () => {
     ['mixed disclosures', summary([currency(LEDGER_TRY, { openPayable: redacted })])],
     ['money in another currency', summary([currency(LEDGER_TRY, { openReceivable: visible('1.00', LEDGER_USD) })])],
     ['a negative open amount', summary([currency(LEDGER_TRY, { openPayable: visible('-1.00', LEDGER_TRY) })])],
-  ])('refuses %s', (_name, body) => {
-    expect(decodePartyBalance(body, COMPANY_A).ok).toBe(false)
+  ])('refuses %s', (_name, value) => {
+    expect(decodePartyBalance(value, COMPANY_A).ok).toBe(false)
+  })
+
+  it('passes the stated too-many-facts refusal as its own answer and nothing else as a marker', () => {
+    expect(decodePartyBalanceAnswer({ partyBalanceRefusal: 'TooManyFacts' }, COMPANY_A))
+      .toEqual({ ok: true, value: { kind: 'refused', refusal: 'TooManyFacts' } })
+    expect(decodePartyBalanceAnswer({ partyBalanceRefusal: 'Invalid' }, COMPANY_A).ok).toBe(false)
+    expect(decodePartyBalanceAnswer(summary(), COMPANY_A))
+      .toEqual({ ok: true, value: { kind: 'balance', balance: summary() } })
   })
 })
 
@@ -69,5 +78,21 @@ describe('PartyLedger balance summary', () => {
     const row = container.querySelector(`[data-balance-currency="${LEDGER_TRY}"]`) as HTMLElement
     expect(within(row).getAllByRole('cell').map((cell) => cell.textContent))
       .toEqual(['1.000,00', '400,00', '600,00 (B)', '1.000,00', '400,00'])
+  })
+
+  it.each([
+    ['forbidden', body({ outcome: 'Denied', resource: null }), BALANCE_FORBIDDEN],
+    ['unavailable (503)', body({ outcome: 'Unavailable', resource: null }), BALANCE_UNAVAILABLE],
+    ['an empty account', found(summary([])), BALANCE_EMPTY],
+    ['too many facts (422)', found({ partyBalanceRefusal: 'TooManyFacts' }), BALANCE_TOO_MANY],
+  ])('says so when the summary is %s, and still shows the ledger', async (_name, reply, text) => {
+    const { port } = recordingPort((method) => method === 'partyBalance' ? reply : found(ledgerBody()))
+    const { container, findByText } = renderFinance(
+      <PartyLedger partyId={LEDGER_PARTY} companyAccountId={LEDGER_ACCOUNT}
+        range={{ from: '2026-09-01', to: '2026-09-30' }} onRange={() => undefined} />,
+      { port, router: true },
+    )
+    expect(await findByText(text)).toBeTruthy()
+    expect(container.querySelector('[data-balance-currency]')).toBeNull()
   })
 })

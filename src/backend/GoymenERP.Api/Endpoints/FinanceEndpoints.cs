@@ -650,6 +650,9 @@ public static class FinanceEndpoints
                     PartyBalanceOutcome.Invalid => Results.Problem(statusCode: StatusCodes.Status400BadRequest),
                     PartyBalanceOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
                     PartyBalanceOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                    PartyBalanceOutcome.TooManyFacts => Results.Problem(
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        extensions: new Dictionary<string, object?> { ["code"] = PartyBalanceRules.TooManyFactsCode }),
                     _ => throw new InvalidOperationException("Party balance read returned an invalid outcome/resource combination."),
                 };
             })
@@ -662,6 +665,7 @@ public static class FinanceEndpoints
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnprocessableEntity(PartyBalanceRules.TooManyFactsCode)
             .ProducesErpServiceUnavailable();
 
         endpoints.MapGet(CustomerInstrumentsPath + "/{instrumentId:guid}", async (

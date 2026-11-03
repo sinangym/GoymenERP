@@ -88,3 +88,5 @@ export const BALANCE_COLUMN_OPEN_PAYABLE = 'Açık borç (alış)'
 export const BALANCE_EMPTY = 'Bu cari hesap için kesinleşmiş kayıt yok.'
 export const BALANCE_FORBIDDEN = 'Bu cari hesabın bakiyesini görme yetkiniz yok.'
 export const BALANCE_UNAVAILABLE = 'Cari bakiye özeti şu anda alınamadı.'
+export const BALANCE_TOO_MANY =
+  'Bu cari hesapta tek bir özetin okuyabileceğinden fazla kayıt var; bakiye eksik kayıtla hesaplanmaz. Ekstreyi tarih aralığıyla açın.'

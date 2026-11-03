@@ -57,6 +57,8 @@ export const CUSTOMER_INSTRUMENTS_PATH = '/finance/customer-instruments'
 /** The first-release party ledger (cari hesap ekstresi), read-only. */
 export const PARTY_LEDGER_PATH = '/finance/party-ledger'
 export const PARTY_BALANCE_PATH = '/finance/party-balance'
+/** The summary's stated refusal: more facts than one all-time summary reads. */
+export const PARTY_BALANCE_TOO_MANY_CODE = 'finance_party_balance_too_many_facts'
 /** The ledger's stated refusal: more rows than one answer carries (narrow the range). */
 export const PARTY_LEDGER_TOO_MANY_CODE = 'finance_party_ledger_too_many_entries'
 
@@ -109,6 +111,40 @@ async function read(url: string, scope: FinanceScope, signal: AbortSignal): Prom
  * server states by status — 400 (a malformed range) and 422 `finance_party_ledger_too_many_entries` — handed on as the
  * ledger decoder's refusal marker, so the screen can say which one it was. Any other 422 is not a ledger answer.
  */
+/** The balance summary: a 422 with its own code is a stated refusal (a marker), everything else is a plain read. */
+async function readPartyBalance(url: string, scope: FinanceScope, signal: AbortSignal): Promise<PortReply> {
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: { ...devHeaders(), 'X-Company-Id': scope.companyId, Accept: 'application/json' },
+      signal,
+    })
+  } catch {
+    return { kind: 'no-reply' }
+  }
+
+  if (response.status === 422) {
+    let code: unknown
+    try {
+      code = ((await response.json()) as { readonly code?: unknown } | null)?.code
+    } catch {
+      return signal.aborted ? { kind: 'no-reply' } : { kind: 'body', body: undefined }
+    }
+    return code === PARTY_BALANCE_TOO_MANY_CODE
+      ? { kind: 'body', body: { outcome: 'Found', resource: { partyBalanceRefusal: 'TooManyFacts' } } }
+      : { kind: 'body', body: undefined }
+  }
+  if (response.status === 200) {
+    try {
+      return { kind: 'body', body: { outcome: 'Found', resource: await response.json() } }
+    } catch {
+      return signal.aborted ? { kind: 'no-reply' } : { kind: 'body', body: undefined }
+    }
+  }
+  const outcome = READ_OUTCOME_BY_STATUS[response.status]
+  return outcome === undefined ? { kind: 'body', body: undefined } : { kind: 'body', body: { outcome, resource: null } }
+}
+
 async function readPartyLedger(url: string, scope: FinanceScope, signal: AbortSignal): Promise<PortReply> {
   let response: Response
   try {
@@ -233,7 +269,7 @@ export function createHttpFinancePort(): FinanceReceiptPort {
     },
     partyBalance: (scope, request, signal) => {
       const params = new URLSearchParams({ partyId: request.partyId, companyAccountId: request.companyAccountId })
-      return read(`${API_BASE}${PARTY_BALANCE_PATH}?${params.toString()}`, scope, signal)
+      return readPartyBalance(`${API_BASE}${PARTY_BALANCE_PATH}?${params.toString()}`, scope, signal)
     },
     customerInstrumentDetail: (scope, instrumentId, signal) =>
       read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(instrumentId)}`, scope, signal),

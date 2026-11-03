@@ -37,6 +37,22 @@ public enum PartyBalanceOutcome
     /// <summary>A malformed request: an empty id.</summary>
     Invalid,
     Found,
+
+    /// <summary>The account has more recorded facts than <see cref="PartyBalanceRules.MaximumFacts"/>; refused, never cut.</summary>
+    TooManyFacts,
+}
+
+public static class PartyBalanceRules
+{
+    /// <summary>
+    /// ASSUMPTION-FIN-BALANCE-FACTS (technical, reversible): the all-time summary reads at most this many facts of one
+    /// party account; an account with more is refused with <see cref="TooManyFactsCode"/> rather than summed from a cut
+    /// set, because a cut sum would be a wrong balance. Not a business policy — a memory guard until the totals are
+    /// kept incrementally.
+    /// </summary>
+    public const int MaximumFacts = 20000;
+
+    public const string TooManyFactsCode = "finance_party_balance_too_many_facts";
 }
 
 public sealed record PartyBalanceResult(PartyBalanceOutcome Outcome, PartyBalanceView? Balance);

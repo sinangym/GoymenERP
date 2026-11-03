@@ -117,31 +117,53 @@ public sealed class PartyLedgerService(
             return Refused(ReadRefusal(again));
         }
 
+        // A broken stored invariant (an unknown money-event kind or direction, a reversal without its original, an
+        // amount that does not parse) withholds the whole ledger as unavailable — never a partial or wrong statement.
         var facts = new List<PartyLedgerFact>(moneyEvents.Count + payments.Count + openItems.Count);
         foreach (var row in moneyEvents)
         {
-            facts.Add(row.Kind switch
+            switch (row.Kind)
             {
-                MoneyEventKinds.ManualBankReceiptRecorded => Fact(PartyLedgerEntryKind.ManualReceipt, row, null, null),
-                MoneyEventKinds.ManualBankReceiptReversed => Fact(PartyLedgerEntryKind.ManualReceiptReversal, row,
-                    originals.TryGetValue(row.SourceId, out var original)
-                        ? original
-                        : throw new InvalidOperationException("Ters kaydın özgün kaynağı bulunamadı; ekstre hesaplanmaz."),
-                    null),
-                MoneyEventKinds.CustomerInstrumentCollected => Fact(PartyLedgerEntryKind.CustomerInstrumentCollection,
-                    row, null, instruments.TryGetValue(row.SourceId, out var instrument) ? instrument : null),
-                _ => throw new InvalidOperationException("Tanınmayan para olayı türü; ekstre hesaplanmaz."),
-            });
+                case MoneyEventKinds.ManualBankReceiptRecorded:
+                    facts.Add(Fact(PartyLedgerEntryKind.ManualReceipt, row, null, null));
+                    break;
+                case MoneyEventKinds.ManualBankReceiptReversed when originals.TryGetValue(row.SourceId, out var original):
+                    facts.Add(Fact(PartyLedgerEntryKind.ManualReceiptReversal, row, original, null));
+                    break;
+                case MoneyEventKinds.CustomerInstrumentCollected:
+                    facts.Add(Fact(PartyLedgerEntryKind.CustomerInstrumentCollection, row, null,
+                        instruments.TryGetValue(row.SourceId, out var instrument) ? instrument : null));
+                    break;
+                default:
+                    return Refused(PartyLedgerOutcome.Unavailable);
+            }
         }
 
         facts.AddRange(payments.Select(row => new PartyLedgerFact(PartyLedgerEntryKind.ManualBankPayment, row.Id,
             row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText, row.PaymentId, null, null, null, null)));
-        facts.AddRange(openItems.Select(row => new PartyLedgerFact(OpenItemKind(row.Direction), row.Id,
-            DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime), row.CreatedAtUtc, row.CurrencyId, row.AmountText, row.Id,
-            null, null, row.DocumentId, row.DueOn)));
+        foreach (var row in openItems)
+        {
+            if (OpenItemKind(row.Direction) is not { } kind)
+            {
+                return Refused(PartyLedgerOutcome.Unavailable);
+            }
+
+            facts.Add(new PartyLedgerFact(kind, row.Id, DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime),
+                row.CreatedAtUtc, row.CurrencyId, row.AmountText, row.Id, null, null, row.DocumentId, row.DueOn));
+        }
+
+        IReadOnlyList<PartyLedgerCurrency> currencies;
+        try
+        {
+            currencies = PartyLedgerPolicy.Build(facts, Disclosure(amount));
+        }
+        catch (InvalidOperationException)
+        {
+            return Refused(PartyLedgerOutcome.Unavailable);
+        }
 
         return new PartyLedgerResult(PartyLedgerOutcome.Found, new PartyLedgerView(context.CompanyId, partyId, accountId,
-            from, to, PartyLedgerCarryForward.NoneOpen018, PartyLedgerPolicy.Build(facts, Disclosure(amount))));
+            from, to, PartyLedgerCarryForward.NoneOpen018, currencies));
     }
 
     /// <summary>
@@ -174,28 +196,54 @@ public sealed class PartyLedgerService(
 
         var partyId = request.PartyId;
         var accountId = request.CompanyAccountId;
+        var take = PartyBalanceRules.MaximumFacts + 1;
         var moneyEvents = await dbContext.MoneyEvents.AsNoTracking()
             .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
-            .Select(row => new { row.Id, row.Kind, row.CurrencyId, row.AmountText, row.OccurredOn, row.RecordedAtUtc })
+            .OrderBy(row => row.Id)
+            .Take(take)
+            .Select(row => new
+            {
+                row.Id, row.SourceId, row.Kind, row.CurrencyId, row.AmountText, row.OccurredOn, row.RecordedAtUtc,
+            })
             .ToListAsync(cancellationToken);
         var payments = await dbContext.OutgoingMoneyEvents.AsNoTracking()
             .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
+            .OrderBy(row => row.Id)
+            .Take(take)
             .Select(row => new { row.Id, row.CurrencyId, row.AmountText, row.OccurredOn, row.RecordedAtUtc })
             .ToListAsync(cancellationToken);
         var openItems = await dbContext.OpenItems.AsNoTracking()
             .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
+            .OrderBy(row => row.Id)
+            .Take(take)
             .Select(row => new
             {
                 row.Id, row.CurrencyId, row.OriginalAmountText, row.OutstandingAmountText, row.Status, row.Direction,
                 row.CreatedAtUtc,
             })
             .ToListAsync(cancellationToken);
+        var tooMany = moneyEvents.Count + payments.Count + openItems.Count > PartyBalanceRules.MaximumFacts;
+        var reversalSourceIds = tooMany
+            ? []
+            : moneyEvents.Where(row => row.Kind == MoneyEventKinds.ManualBankReceiptReversed)
+                .Select(row => row.SourceId).ToList();
+        var reversalOriginals = reversalSourceIds.Count == 0
+            ? new HashSet<Guid>()
+            : (await dbContext.ReversalProposals.AsNoTracking()
+                .Where(row => row.ReversalSourceId.HasValue && reversalSourceIds.Contains(row.ReversalSourceId.Value))
+                .Select(row => row.ReversalSourceId!.Value)
+                .ToListAsync(cancellationToken)).ToHashSet();
 
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
         {
             return new PartyBalanceResult(BalanceRefusal(again), null);
+        }
+
+        if (tooMany)
+        {
+            return new PartyBalanceResult(PartyBalanceOutcome.TooManyFacts, null);
         }
 
         var facts = new List<PartyLedgerFact>(moneyEvents.Count + payments.Count + openItems.Count);
@@ -205,7 +253,10 @@ public sealed class PartyLedgerService(
             switch (row.Kind)
             {
                 case MoneyEventKinds.ManualBankReceiptRecorded: kind = PartyLedgerEntryKind.ManualReceipt; break;
-                case MoneyEventKinds.ManualBankReceiptReversed: kind = PartyLedgerEntryKind.ManualReceiptReversal; break;
+                // Like the ledger: a reversal whose original cannot be found is a broken invariant.
+                case MoneyEventKinds.ManualBankReceiptReversed when reversalOriginals.Contains(row.SourceId):
+                    kind = PartyLedgerEntryKind.ManualReceiptReversal;
+                    break;
                 case MoneyEventKinds.CustomerInstrumentCollected: kind = PartyLedgerEntryKind.CustomerInstrumentCollection; break;
                 default: return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
             }
@@ -226,7 +277,7 @@ public sealed class PartyLedgerService(
                 return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
             }
 
-            facts.Add(new PartyLedgerFact(OpenItemKind(row.Direction), row.Id,
+            facts.Add(new PartyLedgerFact(OpenItemKind(row.Direction)!.Value, row.Id,
                 DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime), row.CreatedAtUtc, row.CurrencyId, row.OriginalAmountText,
                 row.Id, null, null, null, null));
             if (row.Status == FinanceOpenItemStatuses.Open)
@@ -309,10 +360,10 @@ public sealed class PartyLedgerService(
         DateTimeOffset CreatedAtUtc, int Direction);
 
     /// <summary>MOD-15: a receivable is the party's debt (debit), a payable the company's debt to it (credit).</summary>
-    private static PartyLedgerEntryKind OpenItemKind(int direction) => direction switch
+    private static PartyLedgerEntryKind? OpenItemKind(int direction) => direction switch
     {
         FinanceOpenItemDirectionCodes.Receivable => PartyLedgerEntryKind.OpenItem,
         FinanceOpenItemDirectionCodes.Payable => PartyLedgerEntryKind.PayableOpenItem,
-        _ => throw new InvalidOperationException("Açık kalemin yönü okunamadı; ekstre hesaplanmaz."),
+        _ => null,
     };
 }
