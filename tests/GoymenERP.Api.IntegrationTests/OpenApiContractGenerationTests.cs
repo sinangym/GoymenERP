@@ -586,7 +586,7 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:from:true:type:string;format:date", "query:to:true:type:string;format:date"]),
         // F1b / API-04: the party account's all-time balance summary per currency (FNS-D6, MOD-15).
         new("get", "/api/v1/finance/party-balance", "GetFinancePartyBalanceV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/open-items", "ListFinanceOpenItemsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
@@ -2880,6 +2880,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             // Party ledger: the owner's response-size refusal, read here, never retyped.
             ["GetFinancePartyLedgerV1:422"] = [GoymenERP.Modules.Finance.Contracts.PartyLedgerRules.TooManyEntriesCode],
+            ["GetFinancePartyBalanceV1:422"] = [GoymenERP.Modules.Finance.Contracts.PartyBalanceRules.TooManyFactsCode],
             ["UpdateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             // R19: the owner's closed sets (InventoryLabelTransformationHttpCodesV1), read here, never retyped.
             ["RecordInventoryLabelTransformationV1:400"] = [.. InventoryLabelTransformationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
