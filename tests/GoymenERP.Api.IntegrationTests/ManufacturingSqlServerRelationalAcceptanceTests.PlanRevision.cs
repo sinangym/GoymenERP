@@ -124,7 +124,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var error = await Assert.ThrowsAsync<ManufacturingRuleException>(() => store.Revisions.RevisePlanAsync(plan.Id, 1,
                 plan.WorkCenterId, ManufacturingProcess.Slitting, [new PlannedInput(RollA, Kg(1m), 1)], null, "emirden sonra",
                 Metadata(run)));
-            Assert.Equal(ManufacturingRuleCodes.PlanNotDraft, error.Code);
+            // U2-a: the rebuilt plan carries the order it opened (URT-D1), and a Draft cannot own an order — the tampered
+            // record is refused as invalid before any revision rule runs.
+            Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid, error.Code);
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanRevisions"));

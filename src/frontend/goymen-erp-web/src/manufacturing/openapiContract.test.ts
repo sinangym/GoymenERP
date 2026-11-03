@@ -91,8 +91,11 @@ function names(name: string): string[] {
  */
 const CUT_TO_LENGTH = 'cutToLengthSpec'
 
+/** Üretim U2-a: the plan-entered line speed, an additive optional member the existing request fixtures omit. */
+const LINE_SPEED = 'lineSpeedMetresPerMinute'
+
 function withoutCutToLength(name: string): string[] {
-  return names(name).filter((property) => property !== CUT_TO_LENGTH)
+  return names(name).filter((property) => property !== CUT_TO_LENGTH && property !== LINE_SPEED)
 }
 
 function expectOptionalCutToLength(name: string, component: string): void {
@@ -142,7 +145,8 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
       names('PlanViewV1').filter(
         (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH
-          && name !== 'parameterSnapshot',
+          && name !== 'parameterSnapshot' && name !== LINE_SPEED && name !== 'orderId' && name !== 'rejections'
+          && name !== 'cancellation',
       ),
     )
     expectOptionalCutToLength('PlanViewV1', 'CutToLengthSpecViewV1')
@@ -206,8 +210,12 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
   })
 
   it('declares the additive ordered slitting request and stored view without adding it to revisions', () => {
-    expect(names('SlittingSpecRequestV1')).toEqual(['lines', 'windingTargetKg'])
-    expect(names('SlittingSpecViewV1')).toEqual(['lines', 'windingTargetKg'])
+    // Üretim U2-a: the plan-entered net usable width is an additive optional member of both.
+    expect(names('SlittingSpecRequestV1')).toEqual(['lines', 'netUsableWidthMm', 'windingTargetKg'])
+    expect(names('SlittingSpecViewV1')).toEqual(['lines', 'netUsableWidthMm', 'windingTargetKg'])
+    expect(schema('SlittingSpecViewV1').required ?? []).not.toContain('netUsableWidthMm')
+    expect(schema('SavePlanRequestV1').properties).toHaveProperty(LINE_SPEED)
+    expect(schema('RevisePlanRequestV1').properties).toHaveProperty(LINE_SPEED)
     expect(names('SlitLineRequestV1')).toEqual(['bandWidthMm', 'count'])
     expect(names('SlitLineViewV1')).toEqual(['bandWidthMm', 'count'])
     expect(schema('SavePlanRequestV1').properties).toHaveProperty('slittingSpec')
@@ -326,9 +334,14 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     const page = planList([planSummary()], 'CURSOR-1')
     expect(Object.keys(page).sort()).toEqual(names('PlanListViewV1'))
     expect(Object.keys(page.plans[0] as object).sort()).toEqual(names('PlanSummaryViewV1'))
-    for (const name of ['PlanListViewV1', 'PlanSummaryViewV1']) {
-      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
-    }
+    expect([...(schema('PlanListViewV1').required ?? [])].sort()).toEqual(names('PlanListViewV1'))
+    // Üretim U2-a: the cancellation time is additive and optional; everything else is required.
+    expect([...(schema('PlanSummaryViewV1').required ?? [])].sort())
+      .toEqual(names('PlanSummaryViewV1').filter((name) => name !== 'cancelledAtUtc'))
+    expect(decodePlanList(planList([planSummary({
+      status: 'Cancelled', version: 2, cancelledAtUtc: '2026-11-02T10:00:00.000Z',
+    })]))).not.toBeNull()
+    expect(decodePlanList(planList([planSummary({ status: 'Cancelled', version: 2 })]))).toBeNull()
     // Both statuses decode from the fixture the screen tests use, so the decoder reads these very names.
     expect(decodePlanList(page)).not.toBeNull()
     expect(
@@ -374,7 +387,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(request.target ?? {}).sort()).toEqual(names('TargetRequestV1'))
     // A plan carrying cut lines sends the member; its lines are exactly CutToLengthLineRequestV1.
     const cutRequest: RevisePlanRequest = { ...request, cutToLengthSpec: { lines: cutToLengthSpec().lines } }
-    expect(Object.keys(cutRequest).sort()).toEqual(names('RevisePlanRequestV1'))
+    expect(Object.keys(cutRequest).sort()).toEqual(names('RevisePlanRequestV1').filter((property) => property !== LINE_SPEED))
     expect(Object.keys(cutRequest.cutToLengthSpec ?? {}).sort()).toEqual(names('CutToLengthSpecRequestV1'))
     expect(Object.keys(cutRequest.cutToLengthSpec?.lines[0] ?? {}).sort()).toEqual(names('CutToLengthLineRequestV1'))
   })
@@ -403,7 +416,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(legacy.request).sort()).toEqual(['inputs', 'target', 'workCenterId'])
     // A cut plan's edit preview: every declared member except the slitting one an edit never sends.
     expect(Object.keys(cut.request).sort())
-      .toEqual(names('PlanPreviewRequestV1').filter((property) => property !== 'slittingSpec'))
+      .toEqual(names('PlanPreviewRequestV1').filter((property) => property !== 'slittingSpec' && property !== LINE_SPEED))
     expect(Object.keys(cut.request.inputs[0]).sort()).toEqual(names('PlannedInputRequestV1'))
     expect(Object.keys(cut.request.cutToLengthSpec ?? {}).sort()).toEqual(names('CutToLengthSpecRequestV1'))
     expect(Object.keys(cut.request.cutToLengthSpec?.lines[0] ?? {}).sort()).toEqual(names('CutToLengthLineRequestV1'))

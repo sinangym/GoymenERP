@@ -439,7 +439,46 @@ describe('decodePlan', () => {
     expect(decoded?.slittingSpec).toEqual({
       lines: [{ bandWidthMm: '0.001', count: 2147483647 }, { bandWidthMm: '240.5', count: 3 }],
       windingTargetKg: '2000',
+      netUsableWidthMm: null,
     })
+  })
+
+  // Üretim U2-a: the plan-entered net usable width and line speed, the one order, rejections and cancellation.
+  it('reads the U2-a plan lifecycle members and binds them to the status', () => {
+    const approved = {
+      status: 'Approved',
+      version: 2,
+      approvedByUserId: '99999999-9999-9999-9999-999999999999',
+      approvedAtUtc: '2026-11-02T09:00:00.000Z',
+    }
+    const decoded = decodePlan(plan({
+      ...approved,
+      lineSpeedMetresPerMinute: '30.5',
+      orderId: '88888888-8888-4888-8888-888888888888',
+      slittingSpec: { lines: [{ bandWidthMm: '490', count: 2 }], windingTargetKg: null, netUsableWidthMm: '980' },
+      rejections: [{
+        number: 1, reason: 'Hat hızı yüksek', rejectedByUserId: '99999999-9999-9999-9999-999999999999',
+        rejectedAtUtc: '2026-11-02T08:00:00.000Z', planVersion: 2,
+      }],
+    }))
+    expect(decoded?.lineSpeedMetresPerMinute).toBe('30.5')
+    expect(decoded?.orderId).toBe('88888888-8888-4888-8888-888888888888')
+    expect(decoded?.slittingSpec?.netUsableWidthMm).toBe('980')
+    expect(decoded?.rejections).toHaveLength(1)
+
+    const cancellation = {
+      reason: 'Sipariş iptal edildi', cancelledByUserId: '99999999-9999-9999-9999-999999999999',
+      cancelledAtUtc: '2026-11-02T10:00:00.000Z',
+    }
+    expect(decodePlan(plan({ status: 'Cancelled', version: 2, cancellation }))?.cancellation).toEqual(cancellation)
+    expect(decodePlan(plan({ ...approved, status: 'Cancelled', version: 3, cancellation }))?.status).toBe('Cancelled')
+    // A Cancelled plan without its cancellation, a cancellation on a Draft, an order on a Draft are not this contract.
+    expect(decodePlan(plan({ status: 'Cancelled', version: 2 }))).toBeNull()
+    expect(decodePlan(plan({ cancellation }))).toBeNull()
+    expect(decodePlan(plan({ orderId: '88888888-8888-4888-8888-888888888888' }))).toBeNull()
+    expect(decodePlan(plan({ lineSpeedMetresPerMinute: '-1' }))).toBeNull()
+    expect(decodePlan(plan({ rejections: [{ number: 2, reason: 'x', rejectedByUserId: approved.approvedByUserId,
+      rejectedAtUtc: approved.approvedAtUtc, planVersion: 2 }] }))).toBeNull()
   })
 
   it.each([
