@@ -6,7 +6,20 @@ public enum PlanStatus
 {
     Draft = 1,
     Approved = 2,
+
+    /// <summary>Üretim U2-a: cancelled with a reason; kept, never deleted, and takes no further decision.</summary>
+    Cancelled = 3,
 }
+
+/// <summary>
+/// Üretim U2-a (URT-D2, API-10): one recorded rejection of a Draft plan by its approver — the reason, who rejected it,
+/// when, and the plan version it produced. The plan stays a Draft; the rejection is kept in its history.
+/// </summary>
+public sealed record PlanRejection(int Number, string Reason, Guid RejectedByUserId, DateTimeOffset RejectedAtUtc,
+    long PlanVersion);
+
+/// <summary>Üretim U2-a (API-11): the cancellation of a plan — the reason, who cancelled it and when.</summary>
+public sealed record PlanCancellation(string Reason, Guid CancelledByUserId, DateTimeOffset CancelledAtUtc);
 
 /// <summary>
 /// What is intended to be produced, from which parent rolls, on which work center (plan v2
@@ -15,7 +28,20 @@ public enum PlanStatus
 /// </summary>
 public sealed class ProductionPlan
 {
+    /// <summary>The longest rejection or cancellation reason (trimmed) a plan keeps, as a revision reason.</summary>
+    public const int DecisionReasonMaximumLength = 256;
+
+    /// <summary>The engines' line-speed parameter name (= the Settings key); a plan-entered value wins (URT-D9).</summary>
+    public const string LineSpeedParameter = "lineSpeedMetresPerMinute";
+
+    /// <summary>The unit of the plan-entered line speed (the Settings unit of the same key).</summary>
+    public const string LineSpeedUnit = "m/min";
+
+    /// <summary>A plan-entered line speed carries at most the Settings value scale (decimal(18,6)).</summary>
+    public const int LineSpeedScale = 6;
+
     private readonly List<PlannedInput> _inputs;
+    private readonly List<PlanRejection> _rejections = [];
 
     public ProductionPlan(
         Guid id,
@@ -25,7 +51,8 @@ public sealed class ProductionPlan
         IEnumerable<PlannedInput> inputs,
         ProductionTarget? target = null,
         SlittingSpec? spec = null,
-        CutToLengthSpec? cutToLengthSpec = null)
+        CutToLengthSpec? cutToLengthSpec = null,
+        decimal? lineSpeedMetresPerMinute = null)
     {
         Id = RequireId(id, nameof(id));
         CompanyId = RequireId(companyId, nameof(companyId));
@@ -66,10 +93,13 @@ public sealed class ProductionPlan
         }
 
         RequireConsistentCommercialContext(_inputs, nameof(inputs));
+        RequireLineSpeed(process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
+        RequireNetWidthWithinParents(spec, _inputs);
 
         Target = target;
         Spec = spec;
         CutToLengthSpec = cutToLengthSpec;
+        LineSpeedMetresPerMinute = lineSpeedMetresPerMinute;
         Status = PlanStatus.Draft;
     }
 
@@ -98,6 +128,13 @@ public sealed class ProductionPlan
     /// <summary>Ordered coil-to-sheet cut lines; null on legacy plans and every other process.</summary>
     public CutToLengthSpec? CutToLengthSpec { get; private set; }
 
+    /// <summary>
+    /// Üretim U2-a (URT-D9 "dilme ve boru hat hızları planda girilir"): the line speed entered on a Slitting or
+    /// Tube / Profile plan, or null. It wins over the parameter profile's value for this plan and is captured at approval
+    /// with source <c>Plan</c>. Part of the plan's content: a Draft revision replaces it with the rest.
+    /// </summary>
+    public decimal? LineSpeedMetresPerMinute { get; private set; }
+
     public PlanStatus Status { get; private set; }
 
     /// <summary>Optimistic concurrency, as on the production order (MFG-3): Approve names the version it read.</summary>
@@ -113,7 +150,25 @@ public sealed class ProductionPlan
 
     public DateTimeOffset? ApprovedAtUtc { get; private set; }
 
+    /// <summary>
+    /// Üretim U1-b (DEC-PRDCT-008): the Settings parameter profile captured at approval, or null — a draft, a plan approved
+    /// before U1-b, or an approval for which Settings had no profile of the process. Never refreshed after approval.
+    /// </summary>
+    public PlanParameterSnapshotV1? ParameterSnapshot { get; private set; }
+
     public IReadOnlyList<PlannedInput> Inputs => _inputs.AsReadOnly();
+
+    /// <summary>Üretim U2-a: the recorded rejections, oldest first. A rejected plan stays a Draft.</summary>
+    public IReadOnlyList<PlanRejection> Rejections => _rejections.AsReadOnly();
+
+    /// <summary>Üretim U2-a: the cancellation, or null while the plan is not cancelled.</summary>
+    public PlanCancellation? Cancellation { get; private set; }
+
+    /// <summary>
+    /// Üretim U2-a (URT-D1): the one order this approved plan opened, or null. Not a change of the plan (its version does
+    /// not move): the order is its own record; the store supplies it when the plan is rebuilt.
+    /// </summary>
+    public Guid? OrderId { get; private set; }
 
     /// <summary>
     /// Rebuilds a stored plan (MFG-5). Every rule of a new plan holds again, and the approval is
@@ -135,7 +190,12 @@ public sealed class ProductionPlan
         long version,
         SlittingSpec? spec = null,
         IEnumerable<PlanRevisionContent>? revisions = null,
-        CutToLengthSpec? cutToLengthSpec = null)
+        CutToLengthSpec? cutToLengthSpec = null,
+        PlanParameterSnapshotV1? parameterSnapshot = null,
+        decimal? lineSpeedMetresPerMinute = null,
+        IEnumerable<PlanRejection>? rejections = null,
+        PlanCancellation? cancellation = null,
+        Guid? orderId = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -152,21 +212,74 @@ public sealed class ProductionPlan
                 "Kayıtlı boy kesme ayrıntıları Boy Kesme dışındaki bir sürece bağlı olamaz.");
         }
 
-        var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec, cutToLengthSpec);
+        ProductionPlan plan;
+        try
+        {
+            plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec, cutToLengthSpec,
+                lineSpeedMetresPerMinute);
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan içeriği planın kurallarını karşılamıyor.");
+        }
+
+        // U2-a: the Draft revisions and rejections interleave; each advanced the version by one, and a stored step names
+        // the version it produced. They are replayed in that order (a rejection whose version is next goes first).
+        var pendingRejections = new Queue<PlanRejection>((rejections ?? []).OrderBy(rejection => rejection.PlanVersion));
+        void ReplayRejectionsUpTo(long? beforeVersion)
+        {
+            while (pendingRejections.Count > 0 && pendingRejections.Peek().PlanVersion == plan.Version + 1
+                   && (beforeVersion is null || pendingRejections.Peek().PlanVersion < beforeVersion))
+            {
+                var rejection = pendingRejections.Dequeue();
+                try
+                {
+                    plan.Reject(plan.Version, rejection.RejectedByUserId, rejection.RejectedAtUtc, rejection.Reason);
+                }
+                catch (Exception exception) when (exception is ManufacturingRuleException or ArgumentException)
+                {
+                    throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kayıtlı plan reddi planın kurallarını karşılamıyor.");
+                }
+
+                if (plan._rejections[^1].Number != rejection.Number)
+                {
+                    throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kayıtlı plan retleri eksiksiz numaralanmamış.");
+                }
+            }
+        }
+
         foreach (var revision in revisions ?? [])
         {
             ArgumentNullException.ThrowIfNull(revision);
+            ReplayRejectionsUpTo(revision.PlanVersion);
             try
             {
                 plan.Revise(plan.Version, revision.WorkCenterId, process, revision.Inputs, revision.Target,
-                    revision.CutToLengthSpec);
+                    revision.CutToLengthSpec, revision.LineSpeedMetresPerMinute);
             }
-            catch (ManufacturingRuleException exception)
+            catch (Exception exception) when (exception is ManufacturingRuleException or ArgumentException)
             {
                 // A stored revision the rules would refuse is refused, not repaired.
+                var code = exception is ManufacturingRuleException rule ? rule.Code : "argument";
                 throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
-                    $"Kayıtlı plan revizyonu planın kurallarını karşılamıyor ({exception.Code}).");
+                    $"Kayıtlı plan revizyonu planın kurallarını karşılamıyor ({code}).");
             }
+
+            if (revision.PlanVersion is { } produced && produced != plan.Version)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı plan revizyonunun sürümü planın adımlarıyla uyuşmuyor.");
+            }
+        }
+
+        ReplayRejectionsUpTo(beforeVersion: null);
+        if (pendingRejections.Count > 0)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan reddinin sürümü planın adımlarıyla uyuşmuyor.");
         }
 
         if (approvedByUserId is { } approvedBy && approvedAtUtc is { } approvedAt)
@@ -177,6 +290,48 @@ public sealed class ProductionPlan
         {
             throw new ManufacturingRuleException(
                 ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı onay izi onaylayanı ve anı birlikte taşımalı.");
+        }
+
+        if (parameterSnapshot is not null)
+        {
+            if (plan.Status != PlanStatus.Approved || parameterSnapshot.Process != process)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı parametre snapshot'ı yalnız aynı süreçteki onaylı plana ait olabilir.");
+            }
+
+            // U2-a: a plan-entered value is in the snapshot exactly when the plan carries it, with the plan's number.
+            if (!plan.MatchesPlanValues(parameterSnapshot))
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı parametre snapshot'ı planda girilen değerle uyuşmuyor.");
+            }
+
+            plan.ParameterSnapshot = parameterSnapshot;
+        }
+
+        if (orderId is { } order)
+        {
+            if (order == Guid.Empty || plan.Status != PlanStatus.Approved)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı emir yalnız onaylı plana bağlı olabilir.");
+            }
+
+            plan.OrderId = order;
+        }
+
+        if (cancellation is not null)
+        {
+            try
+            {
+                plan.Cancel(plan.Version, cancellation.CancelledByUserId, cancellation.CancelledAtUtc, cancellation.Reason);
+            }
+            catch (Exception exception) when (exception is ManufacturingRuleException or ArgumentException)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı plan iptali planın kurallarını karşılamıyor.");
+            }
         }
 
         if (plan.Version != version)
@@ -197,20 +352,134 @@ public sealed class ProductionPlan
     /// the MFG-6 approval gate (<see cref="SlittingApprovalGate"/>): nothing is approved with gaps.
     /// </summary>
     public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc,
-        SlittingPlanParameters? parameters)
+        SlittingPlanParameters? parameters) =>
+        Approve(expectedVersion, approvedByUserId, approvedAtUtc, parameters, parameterSnapshot: null);
+
+    /// <summary>
+    /// Üretim U1-b: the approval with the Settings parameter profile it captures (DEC-PRDCT-008). The snapshot must be of
+    /// the plan's own process; the slitting gate runs on the parameters the caller derived from it. Nothing is applied
+    /// on a refusal.
+    /// </summary>
+    public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc,
+        SlittingPlanParameters? parameters, PlanParameterSnapshotV1? parameterSnapshot)
     {
         RequireApprovable(expectedVersion);
+        if (parameterSnapshot is not null && parameterSnapshot.Process != Process)
+        {
+            throw new ArgumentException("Parametre profili planın sürecine ait olmalıdır.", nameof(parameterSnapshot));
+        }
+
+        if (parameterSnapshot?.Values.Any(value => value.Source is not null) == true)
+        {
+            throw new ArgumentException("Ayarlar profili planda girilen değer taşıyamaz.", nameof(parameterSnapshot));
+        }
+
         SlittingApprovalGate.Require(this, parameters);
         ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
+        // U2-a (URT-D9): the plan-entered line speed replaces the profile's value in the captured snapshot.
+        ParameterSnapshot = parameterSnapshot is null ? null : CaptureWithPlanValues(parameterSnapshot);
+    }
+
+    /// <summary>
+    /// Üretim U2-a (URT-D2, API-10): the approver's rejection of a Draft instead of its approval. The plan stays a Draft
+    /// (there is no separate "Kontrolde" step), the rejection with its reason is recorded and the version advances by
+    /// one, so the planner's next revision or a later approval names the version after it. In order, and nothing is
+    /// applied on a refusal: the version fence; a cancelled plan (<see cref="ManufacturingRuleCodes.PlanCancelled"/>);
+    /// only a Draft (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>); a reason.
+    /// </summary>
+    public void Reject(long expectedVersion, Guid rejectedByUserId, DateTimeOffset rejectedAtUtc, string reason)
+    {
+        RequireFence(expectedVersion);
+        if (Status == PlanStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanCancelled, "İptal edilmiş plan reddedilmez.");
+        }
+
+        if (Status != PlanStatus.Draft)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft, "Yalnız taslak plan reddedilebilir.");
+        }
+
+        var rejectedBy = RequireId(rejectedByUserId, nameof(rejectedByUserId));
+        var text = RequireReason(reason, nameof(reason));
+        Version++;
+        _rejections.Add(new PlanRejection(_rejections.Count + 1, text, rejectedBy, rejectedAtUtc.ToUniversalTime(),
+            Version));
+    }
+
+    /// <summary>
+    /// Üretim U2-a (API-11): cancels a Draft, or an approved plan that opened no order. The plan is kept with its reason
+    /// (never deleted) and takes no further decision; the version advances by one. In order, and nothing is applied on a
+    /// refusal: the version fence; already cancelled (<see cref="ManufacturingRuleCodes.PlanCancelled"/>); an order
+    /// exists (<see cref="ManufacturingRuleCodes.PlanHasOrder"/>); a reason.
+    /// </summary>
+    public void Cancel(long expectedVersion, Guid cancelledByUserId, DateTimeOffset cancelledAtUtc, string reason)
+    {
+        RequireFence(expectedVersion);
+        if (Status == PlanStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanCancelled, "Plan zaten iptal edilmiş.");
+        }
+
+        if (OrderId is not null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanHasOrder,
+                "Emir açmış plan iptal edilmez; emrin kendi iptal/ters zinciri ayrıdır.");
+        }
+
+        var cancelledBy = RequireId(cancelledByUserId, nameof(cancelledByUserId));
+        var text = RequireReason(reason, nameof(reason));
+        Cancellation = new PlanCancellation(text, cancelledBy, cancelledAtUtc.ToUniversalTime());
+        Status = PlanStatus.Cancelled;
+        Version++;
+    }
+
+    /// <summary>
+    /// Üretim U2-a (URT-D1): records that this approved plan opened <paramref name="orderId"/>. One plan opens exactly one
+    /// order: a second is refused (<see cref="ManufacturingRuleCodes.PlanOrderExists"/>). Only
+    /// <see cref="ProductionOrder.FromApprovedPlan"/> calls it; the plan's version does not move.
+    /// </summary>
+    internal void RecordOrder(Guid orderId)
+    {
+        if (Status != PlanStatus.Approved)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotApproved,
+                "Üretim emri yalnız onaylı plandan oluşturulabilir.");
+        }
+
+        if (OrderId is not null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanOrderExists,
+                "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
+        }
+
+        OrderId = RequireId(orderId, nameof(orderId));
+    }
+
+    /// <summary>The profile snapshot as this plan captures it: its plan-entered line speed replaces the profile's.</summary>
+    private PlanParameterSnapshotV1 CaptureWithPlanValues(PlanParameterSnapshotV1 snapshot) =>
+        LineSpeedMetresPerMinute is { } speed ? snapshot.WithPlanValue(LineSpeedParameter, LineSpeedUnit, speed) : snapshot;
+
+    /// <summary>A stored snapshot carries a plan-entered value exactly when this plan has it, with this plan's number.</summary>
+    private bool MatchesPlanValues(PlanParameterSnapshotV1 snapshot)
+    {
+        var planValues = snapshot.Values.Where(value => value.Source is not null).ToArray();
+        if (LineSpeedMetresPerMinute is not { } speed)
+        {
+            return planValues.Length == 0;
+        }
+
+        return planValues.Length == 1 && planValues[0].Key == LineSpeedParameter && planValues[0].Unit == LineSpeedUnit
+               && planValues[0].Number == speed;
     }
 
     /// <summary>
     /// MFG-PLAN-EDIT: the edit of a plan that has no downstream effect yet. Only a Draft is revised: an approved plan
-    /// has recorded a decision and may have opened orders (one approved plan may open more than one order,
-    /// #66 5728934213), and an order carries its own snapshot from which inputs are issued — so an approved plan is
-    /// never edited here; a post-approval revision with snapshot and difference (PR-09) is a separate, undecided flow.
-    /// A revision replaces the work center, the planned inputs and the target AS A WHOLE and advances the version by
-    /// one. In order, and nothing is applied on a refusal:
+    /// has recorded a decision and may have opened its order (one plan opens one order, URT-D1), and an order carries its
+    /// own snapshot from which inputs are issued — so an approved plan is never edited here; a post-approval revision
+    /// with snapshot and difference (PR-09) is a separate flow. A cancelled plan is not a Draft either.
+    /// A revision replaces the work center, the planned inputs, the target and (U2-a) the plan-entered line speed AS A
+    /// WHOLE and advances the version by one. In order, and nothing is applied on a refusal:
     /// <list type="number">
     /// <item>the version fence (<see cref="ManufacturingVersionConflictException"/>);</item>
     /// <item>only a Draft (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>);</item>
@@ -224,7 +493,8 @@ public sealed class ProductionPlan
     /// </list>
     /// </summary>
     public void Revise(long expectedVersion, Guid workCenterId, ManufacturingProcess workCenterProcess,
-        IEnumerable<PlannedInput> inputs, ProductionTarget? target, CutToLengthSpec? cutToLengthSpec = null)
+        IEnumerable<PlannedInput> inputs, ProductionTarget? target, CutToLengthSpec? cutToLengthSpec = null,
+        decimal? lineSpeedMetresPerMinute = null)
     {
         RequireRevisable(expectedVersion);
         var newWorkCenter = RequireId(workCenterId, nameof(workCenterId));
@@ -265,9 +535,10 @@ public sealed class ProductionPlan
         }
 
         RequireConsistentCommercialContext(newInputs, nameof(inputs));
+        RequireLineSpeed(Process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
 
         if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs)
-            && CutSpecsEqual(cutToLengthSpec, CutToLengthSpec))
+            && CutSpecsEqual(cutToLengthSpec, CutToLengthSpec) && lineSpeedMetresPerMinute == LineSpeedMetresPerMinute)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanRevisionNoChange,
                 "Düzenleme planda hiçbir şeyi değiştirmiyor.");
@@ -276,6 +547,7 @@ public sealed class ProductionPlan
         WorkCenterId = newWorkCenter;
         Target = target;
         CutToLengthSpec = cutToLengthSpec;
+        LineSpeedMetresPerMinute = lineSpeedMetresPerMinute;
         _inputs.Clear();
         _inputs.AddRange(newInputs);
         RevisionCount++;
@@ -288,11 +560,7 @@ public sealed class ProductionPlan
     /// </summary>
     public void RequireRevisable(long expectedVersion)
     {
-        if (expectedVersion != Version)
-        {
-            throw new ManufacturingVersionConflictException(expectedVersion, Version);
-        }
-
+        RequireFence(expectedVersion);
         if (Status != PlanStatus.Draft)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
@@ -317,19 +585,76 @@ public sealed class ProductionPlan
 
     private void RequireApprovable(long expectedVersion)
     {
-        if (expectedVersion != Version)
-        {
-            throw new ManufacturingVersionConflictException(expectedVersion, Version);
-        }
-
+        RequireFence(expectedVersion);
         if (Status != PlanStatus.Draft)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft, "Yalnız taslak plan onaylanabilir.");
         }
     }
 
+    private void RequireFence(long expectedVersion)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new ManufacturingVersionConflictException(expectedVersion, Version);
+        }
+    }
+
     private static Guid RequireId(Guid value, string parameterName) =>
         value == Guid.Empty ? throw new ArgumentException("Kimlik boş olamaz.", parameterName) : value;
+
+    private static string RequireReason(string? reason, string parameterName)
+    {
+        var text = reason?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length > DecisionReasonMaximumLength || text.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                $"Gerekçe 1–{DecisionReasonMaximumLength} karakter olmalı ve kontrol karakteri taşımamalıdır.", parameterName);
+        }
+
+        return text;
+    }
+
+    /// <summary>
+    /// U2-a (URT-D9): a plan-entered line speed only on a Slitting or Tube / Profile plan, positive, with at most the
+    /// Settings value scale. A caller error otherwise (the API refuses it as an invalid field first).
+    /// </summary>
+    private static void RequireLineSpeed(ManufacturingProcess process, decimal? lineSpeed, string parameterName)
+    {
+        if (lineSpeed is not { } speed)
+        {
+            return;
+        }
+
+        if (process is not (ManufacturingProcess.Slitting or ManufacturingProcess.TubeProfile))
+        {
+            throw new ArgumentException("Hat hızı planda yalnız Dilme ve Boru/Profil süreçlerinde girilir.", parameterName);
+        }
+
+        if (speed <= 0m || decimal.Round(speed, LineSpeedScale) != speed)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, lineSpeed,
+                $"Hat hızı sıfırdan büyük ve en fazla {LineSpeedScale} ondalık olmalıdır.");
+        }
+    }
+
+    /// <summary>
+    /// U2-a: the net usable width entered on a slitting spec cannot exceed any planned parent coil's width (the Product
+    /// snapshot captured for that roll). A roll without a snapshot (legacy) has no captured width to compare.
+    /// </summary>
+    private static void RequireNetWidthWithinParents(SlittingSpec? spec, IEnumerable<PlannedInput> inputs)
+    {
+        if (spec?.NetUsableWidthMm is not { } netWidth)
+        {
+            return;
+        }
+
+        if (inputs.Any(input => input.TechnicalSnapshot is { } snapshot && netWidth > snapshot.WidthMm))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNetWidthExceedsParent,
+                "Net kullanılabilir en ana rulonun eninden büyük olamaz.");
+        }
+    }
 
     private static bool CutSpecsEqual(CutToLengthSpec? left, CutToLengthSpec? right) =>
         ReferenceEquals(left, right)
@@ -364,4 +689,4 @@ public sealed class ProductionPlan
 /// replaced the previous ones as a whole. <see cref="ProductionPlan.Restore"/> replays them in their order.
 /// </summary>
 public sealed record PlanRevisionContent(Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
-    CutToLengthSpec? CutToLengthSpec = null);
+    CutToLengthSpec? CutToLengthSpec = null, decimal? LineSpeedMetresPerMinute = null, long? PlanVersion = null);

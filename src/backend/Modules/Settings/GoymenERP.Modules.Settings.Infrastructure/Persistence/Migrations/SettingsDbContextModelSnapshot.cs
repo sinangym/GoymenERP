@@ -259,6 +259,295 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateDayRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<long>("LastRecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Date");
+
+                    b.ToTable("ExchangeRateDays", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsExchangeRateDays_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateDays_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateDays_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRateRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CurrencyCode")
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(3)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal>("SellingRate")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.HasKey("CompanyId", "RecordId", "CurrencyCode");
+
+                    b.ToTable("ExchangeRateRecordRates", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecordRates_Currency", "LEN([CurrencyCode]) = 3 AND [CurrencyCode] NOT LIKE '%[^A-Z]%' AND [CurrencyCode] <> 'TRY'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecordRates_Rate", "[SellingRate] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("RecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "Date", "RecordVersion")
+                        .IsUnique();
+
+                    b.ToTable("ExchangeRateRecords", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_ManualReason", "[Provenance] <> 'Manual' OR LEN(LTRIM(RTRIM(ISNULL([Reason], N'')))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Source", "[Source] = 'Tcmb'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_State", "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified')) OR ([Kind] = 'Bulletin' AND [Provenance] = 'Manual' AND [State] = 'Published') OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined'))");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Version", "[RecordVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("EffectiveThrough")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PreparationReason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Process")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<long>("ProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PublicationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("PublishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PublishedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("StateVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<Guid?>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "ProfileId");
+
+                    b.HasIndex("CompanyId", "Process", "WorkCenterId", "ProfileVersion")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Process", "WorkCenterId", "Status", "EffectiveFrom");
+
+                    b.ToTable("ManufacturingParameterProfiles", "settings", t =>
+                        {
+                            t.HasTrigger("TR_ManufacturingParameterProfiles_Guard");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Lifecycle", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND (([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Published' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedBy] <> [PreparedBy] AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0))");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Process", "[Process] IN ('Slitting','ColdRolling','TubeProfile','Paint','CutToLength')");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Profile", "[ProfileId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Versions", "[ProfileVersion] > 0 AND [StateVersion] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_WorkCenter", "[WorkCenterId] IS NULL OR [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileValueRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ParameterKey")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ChoiceValue")
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<decimal?>("NumericValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.HasKey("CompanyId", "ProfileId", "ParameterKey");
+
+                    b.ToTable("ManufacturingParameterProfileValues", "settings", t =>
+                        {
+                            t.HasTrigger("TR_ManufacturingParameterProfileValues_InsertOnly");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterValues_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterValues_Key", "LEN([ParameterKey]) BETWEEN 1 AND 64 AND [ParameterKey] NOT LIKE '%[^A-Za-z0-9]%'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterValues_Shape", "([NumericValue] IS NOT NULL AND [ChoiceValue] IS NULL) OR ([NumericValue] IS NULL AND [ChoiceValue] IS NOT NULL AND LEN([ChoiceValue]) > 0)");
+
+                            t.HasCheckConstraint("CK_SettingsMfgParameterValues_Unit", "LEN(LTRIM(RTRIM([Unit]))) > 0");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingTolerancePolicyRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -295,6 +584,10 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<decimal?>("MassBalanceDifferenceTolerancePercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
                     b.Property<decimal>("MaximumFirePercent")
                         .HasPrecision(9, 6)
                         .HasColumnType("decimal(9,6)");
@@ -308,6 +601,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.Property<long>("Version")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid?>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("CompanyId", "ProfileId");
 
                     b.HasIndex("CompanyId", "Process", "EffectiveFrom");
@@ -317,9 +613,13 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.ToTable("ManufacturingTolerancePolicies", "settings", t =>
                         {
+                            t.HasTrigger("TR_ManufacturingTolerancePolicies_NoOverlap");
+
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", "[ApprovalStatus] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedAtUtc] > '0001-01-01T00:00:00+00:00' AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0");
 
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgTolerance_MassBalance", "[MassBalanceDifferenceTolerancePercent] IS NULL OR ([MassBalanceDifferenceTolerancePercent] >= 0 AND [MassBalanceDifferenceTolerancePercent] <= 100)");
 
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Percent", "[MaximumFirePercent] >= 0");
 
@@ -330,7 +630,119 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Version", "[Version] > 0");
 
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
+
+                            t.HasCheckConstraint("CK_SettingsMfgTolerance_WorkCenter", "[WorkCenterId] IS NULL OR [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingToleranceProfileVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("EffectiveThrough")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("MassBalanceDifferenceTolerancePercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<decimal>("MaximumFirePercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("PreparationReason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Process")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<long>("ProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PublicationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("PublishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PublishedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("StateVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<Guid?>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "ProfileId");
+
+                    b.HasIndex("CompanyId", "Process", "ProfileVersion")
+                        .IsUnique();
+
+                    b.ToTable("ManufacturingToleranceProfileVersions", "settings", t =>
+                        {
+                            t.HasTrigger("TR_ManufacturingToleranceProfileVersions_Guard");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Lifecycle", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND (([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Published' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedBy] <> [PreparedBy] AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0))");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Percents", "[MaximumFirePercent] >= 0 AND [MaximumFirePercent] <= 100 AND [MassBalanceDifferenceTolerancePercent] >= 0 AND [MassBalanceDifferenceTolerancePercent] <= 100");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Process", "[Process] IN ('Slitting','ColdRolling','TubeProfile','Paint','CutToLength')");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Profile", "[ProfileId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Versions", "[ProfileVersion] > 0 AND [StateVersion] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_WorkCenter", "[WorkCenterId] IS NULL OR [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitGroupRow", b =>
@@ -1166,6 +1578,33 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdWithdrawals_Replacement", "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRateRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "RecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateDayRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Date")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileValueRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitMembershipGroupRow", b =>

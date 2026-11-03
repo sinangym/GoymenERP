@@ -380,6 +380,11 @@ export interface DraftCreateRequest {
    * value), so a create that keeps the start value is the same content as before the member existed.
    */
   readonly buyerTax?: BuyerTaxRequest
+  /**
+   * SAT-D175 (EK25): `true` opens an incoming subcontract service ("fason hizmet") order — only service lines (SAT-D176), fixed
+   * at create. Omitted for a normal order, so a normal create is the same content as before the member existed.
+   */
+  readonly subcontractService?: true
 }
 
 export const OWNER_REFERENCE_FIELDS = [
@@ -425,6 +430,8 @@ export interface DraftSummary {
   readonly commercialStage: CommercialStage
   /** Additive stored facts. Omitted and explicit null are both normalized to an absent property. */
   readonly productSnapshots?: readonly ProductSnapshot[]
+  /** SAT-D175 (EK25, additive): present (`true`) only on an incoming subcontract service ("fason") order. */
+  readonly subcontractService?: true
 }
 
 export interface DraftLine {
@@ -750,7 +757,11 @@ function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | n
 }
 
 export function decodeDraftSummary(value: unknown): DraftSummary | null {
-  const o = exactWithOptional(value, SUMMARY_KEYS, ['commercialStage', 'productSnapshots'])
+  const o = exactWithOptional(value, SUMMARY_KEYS, ['commercialStage', 'productSnapshots', 'subcontractService'])
+  // SAT-D175: the server writes the member only as `true`; omitted / null = a normal order; anything else is off-contract.
+  const subcontractService = o === null || o.subcontractService === undefined || o.subcontractService === null
+    ? false
+    : o.subcontractService === true ? true : null
   const hasCommercialStage = o !== null && Object.hasOwn(o, 'commercialStage')
   const commercialStage = !hasCommercialStage || o?.commercialStage === null
     ? COMMERCIAL_STAGE.unavailable
@@ -762,6 +773,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     o === null ||
     commercialStage === null ||
     productSnapshots === null ||
+    subcontractService === null ||
     !isReferenceId(o.id) ||
     !isReferenceId(o.companyId) ||
     !isText(o.documentNo, 200) ||
@@ -803,6 +815,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     approvalState: o.approvalState,
     commercialStage,
     ...(productSnapshots === undefined ? {} : { productSnapshots }),
+    ...(subcontractService ? { subcontractService: true as const } : {}),
   }
 }
 

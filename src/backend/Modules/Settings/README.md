@@ -527,3 +527,109 @@ Sales refuses a loss (fail-closed) and suggests no validity. A malformed catalog
 long for the consumer's snapshot, repeated id or code, a list without entries, a non-positive day count, overlapping windows) is
 refused as a whole with `settings_profile_invalid`. Host registration: `Program.cs`, scoped. Evidence:
 `tests/GoymenERP.Settings.UnitTests/ApprovedSalesQuotePolicyProviderTests.cs`.
+
+## Manufacturing parameter and tolerance profiles (Üretim U1-a: API-01/02, MOD-01)
+
+Decisions: URT-D6, URT-D7, URT-D9, URT-D10 (`docs/decisions/SINAN_KARARLARI_2026-11-01_URETIM.md`), delegation No 86,
+D-MFG-PROFILE-AUTH-01=A (the existing `ManufacturingToleranceProfileLifecyclePolicyV1`, reused for both families).
+
+- **Parameter profiles** — `settings.ManufacturingParameterProfiles` (one header per version of a company × process ×
+  optional work center; lifecycle Draft → Approved → Published, `StateVersion` fence) and
+  `settings.ManufacturingParameterProfileValues` (one typed row per key: number `decimal(18,6)` or choice, with the unit). The
+  keys are the engines' own input names, declared in `ManufacturingParameterKeysV1` with unit, kind (Positive, NonNegative,
+  RatioUpToOne, WholeCount, Choice), scale and allowed processes; a new key needs no migration.
+- **Read port** — `ISettingsManufacturingParameterProviderV1.GetManufacturingParametersAsync(process, workCenterId?, on)`
+  serves only published versions and the reviewed version-0 catalog: a work center's own covering version wins, else the
+  process version; within a scope the latest `EffectiveFrom`, then the highest version. Codes: `settings_access_denied`,
+  `settings_manufacturing_parameter_request_invalid`, `settings_provider_unavailable`,
+  `settings_manufacturing_parameter_profile_not_found`, `settings_profile_invalid`. Since U1-b Manufacturing consumes it in plan
+  preview, save, read and approval and snapshots it at approval (Manufacturing README, "Current state").
+- **Catalog** — `ApprovedManufacturingProfileCatalog` (GDC/GSP/GIN, from 2026-11-01, version 0): density 7850 kg/m³
+  (Slitting, ColdRolling, CutToLength), Paint line speed 20 m/min, 80 µm, solids 0.55, loss factor 1.10, 3 simultaneous
+  profiles; kerf 0 mm (CutToLength) and edge trim 0 mm (Slitting). Not shipped (undecided, unknown — never 0): kerf mode,
+  head/tail trim, coil diameters, metre tolerance, slitting/tube line speeds (entered on the plan).
+- **Tolerance write path** — `settings.ManufacturingToleranceProfileVersions` holds the lifecycle; publication inserts the
+  immutable `settings.ManufacturingTolerancePolicies` row (gains nullable `MassBalanceDifferenceTolerancePercent`, URT-D6)
+  in the same transaction.
+- **U1-b (URT-D6, URT-D23) — line scope, catalog live, supersession.** A tolerance version may carry an optional `WorkCenterId`
+  (request and view, additive; versions are still numbered per process across its scopes). `GetScopedManufacturingToleranceAsync
+  (process, workCenterId?, on)` (a default interface member over the process-only read, overridden by
+  `SettingsManufacturingToleranceProviderV1`) serves only a window covering the date: the line's published version, else the
+  process's, else the reviewed version-0 catalog (`Source = Catalog`, fire 5 %, mass balance ± 2 %, from 2026-11-01). The
+  process-only read is unchanged (it ignores line versions and never serves the catalog). The registry trigger keeps windows of
+  one scope from overlapping. **Supersession:** publishing a successor that starts after an open-ended published predecessor of
+  the same scope closes the predecessor's window on the day before, in the same save — the ONLY permitted change of a published
+  registry row (the trigger checks every other column unchanged and `NULL → date ≥ EffectiveFrom`; any other update or delete
+  is still 51002; the context's write fence admits the update only beside the successor's publication). Chosen over a new
+  "superseded" table or reader-side implicit windows because the stored window then always equals the served window, the
+  close decision snapshots it as is, and immutability stays one trigger rule. The lifecycle row keeps its prepared window; the
+  list/get view shows the registry's window for published versions. A bounded predecessor that overlaps, or a successor that
+  starts on or before the predecessor, is still refused (`settings_manufacturing_profile_window_overlap`).
+- **Routes** — `GET/POST /api/v1/settings/manufacturing-parameter-profiles`, `GET …/{id}`, `POST …/{id}/approval`,
+  `POST …/{id}/publication`; the same under `/api/v1/settings/manufacturing-tolerance-profiles`. Names (registered, granted to
+  no role, company-wide, not Critical): `settings.manufacturing-parameter-profiles.read|prepare|approve|publish`,
+  `settings.manufacturing-tolerance-profiles.read|prepare|approve|publish`. Approver ≠ preparer, publisher ≠ preparer; no
+  version may take effect before today. Idempotency-Key, expected version text, reason ≤ 500, one audit event per change.
+- **Migration** `AddManufacturingParameterProfiles` (dotnet ef + hand-written SQL): guard triggers (51181 header, 51182 values,
+  51184 tolerance versions), the registry trigger re-created with the new column, `Down` refuses with `THROW 51183` while any
+  profile or mass-balance value exists (forward fix). U1-b `AddManufacturingToleranceLineScope`: `WorkCenterId` on both
+  tolerance tables, the registry trigger (scope windows, window-close update) and the lifecycle guard re-created; `Down`
+  refuses with `THROW 51185` while any profile exists or a registry row carries a line, then restores the U1-a triggers.
+- **Open points (after U1-b).** Plan-level authorized tolerance override (URT-D6 "planda yetkili değiştirebilir") needs a new
+  permission and a plan field — not built (human grant gate). The close's tolerance date is the UTC close date while profile
+  dates are Europe/Istanbul business dates (the same as before U1-b). Work center ids are not validated against Organization
+  (as for parameter profiles). A predecessor whose window was closed by a successor shows the registry window in the view but
+  its lifecycle row keeps the prepared one.
+
+## Exchange-rate record (DEC-FIN-010; KUR_GUNU SAT-D54/D55; EK24 SAT-D169…D172; OPEN-012 partial)
+
+Owner: Settings (master report §16 "Ana Veriler: … kur …", AV-02 "Birim / Para / Kur / Vergi"; Settings already owns the
+currency identities and money profiles). Company-scoped; nothing is seeded.
+
+| Part | What |
+|---|---|
+| Tables | `ExchangeRateDays` (one row per company and calendar day, the edit fence), `ExchangeRateRecords` (append-only: official bulletin answer `Published` / `NoBulletin` / `Unverified`, manual correction `Manual`+`Published` with a reason, official half-day answer `FullDay` / `HalfDay` / `Undetermined`), `ExchangeRateRecordRates` (forex selling per ONE unit in TRY, `decimal(28,10)`, never rounded). Records and rate lines are immutable (write fence); the day's current answer of a kind is its highest record version. |
+| Migration | `20261102143743_AddExchangeRateRecords` (dotnet ef). `Down` refuses with `THROW 51201` while any record exists (forward fix); an empty store rolls back freely. |
+| Calculator | `RateDayExchangeRate` (BuildingBlocks/Monetary): SAT-D54/D55 + SAT-D170/D171, fail-closed. |
+| Read port | `ISettingsExchangeRateResolverV1.ResolveAsync(rateDay, source, target)` → `ExchangeRateResolutionV1`: the rate as exact text with its provenance (bulletin day, source `Tcmb`, `Official`/`Manual`, record id and version, half-day rule applied, previous full business day) — what an invoice snapshots (SAT-D172); or `Unavailable` with the code and the day that stopped it. Needs an authenticated actor with company access; computed fresh on each call. |
+| Names | `settings.exchange-rates.read`, `settings.exchange-rates.correct` (SAT-D169/D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), `settings.exchange-rates.import`. Registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/exchange-rates?from&to` (≤ 62 days), `GET …/resolution?rateDay&currencyCode`, `POST …/days/{date}/corrections` (204), `POST …/imports` (200 with a per-day summary; ≤ 31 past days). |
+
+**Correction (SAT-D169).** One currency on a day TCMB officially published (any other day is 422
+`exchange_rate_day_not_published`: a manual record never makes or unmakes a business day, SAT-D55). Reason (≤ 1000),
+Idempotency-Key, the day's expected version, one audit event `settings.exchange-rate.corrected.v1` (before/after value);
+the same value again is a no-op. It is a new record next to the official one, so it reaches only documents that read the
+rate afterwards. The size limit of a correction is open (OPEN-012).
+
+**Import.** `IExchangeRateBulletinSourceV1` / `IExchangeRateHalfDaySourceV1`. Only past days are asked (today and later are
+refused, so the open cut-off hour never matters). An unverified answer never overwrites a definite one; a different definite
+answer is reported as `Conflict` and nothing is written; one audit event per run that recorded something.
+
+**Sources — human gate.** Both are **disabled by default** and the repository ships no configuration for them:
+- TCMB (`TcmbExchangeRateBulletinSource`): enabled only when `Settings:ExchangeRates:TcmbEnabled=true`; then
+  `Settings:ExchangeRates:TcmbBaseAddress` must be an https URL ending in `/` (anything else fails at startup; optional
+  `TcmbTimeoutSeconds`). It reads only the dated archive `kurlar/yyyyMM/ddMMyyyy.xml` (404 → "no bulletin" candidate; other
+  status, timeout, another day's bulletin or unreadable XML → `Unverified`); `today.xml` is not used because it could fill a
+  day with another day's bulletin. No secret is needed. While disabled the import answers 503 (on the wire the platform's
+  `service_unavailable`; the list read's `bulletinSourceEnabled` says why) and records nothing.
+- A 404 is recorded as `NoBulletin` only when a LATER bulletin exists — received in the same run or already recorded;
+  otherwise the day stays `Unverified` and the next run asks again (a 404 can also mean "not yet published" or an archive
+  gap).
+- A day whose official answer is already final (`Published` / `NoBulletin`; a definite half-day answer) is never asked again.
+- Arife / half day (SAT-D171): no reviewed automatic official source is wired; every day stays `Undetermined`, so the
+  resolver chooses no rate ("kur belirlenemedi") until a human enables a reviewed source.
+
+**Follow-ups (decided in EK31, `SINAN_KARARLARI_2026-11-02_SATIS_EK31.md`; not in this slice):**
+- **SAT-D198** (A P2-1 / B P2-3, the SAT-D171 escape): when the automatic source cannot decide a day, Muhasebe, Muhasebe
+  Müdürü, Genel Müdür or Admin mark it full or half day with a reason (audited); the mark never overrides a definite automatic
+  answer. This slice has no manual half-day mark yet: an undetermined day stays "kur belirlenemedi" (fail-closed) until that
+  command lands.
+- **SAT-D199**: who reads the rates (Satış Uzmanı, Satış Müdürü, Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin, Finans
+  Uzmanı, Finans Müdürü) — the persona card for `settings.exchange-rates.read`; the real grant stays a human gate.
+- **SAT-D200**: TL amounts against a foreign-currency credit limit are converted by DIVIDING by the check day's TCMB rate
+  (fail-closed when unresolved; no cross rate between two foreign currencies). The risk calculator here still converts only
+  foreign → TRY by multiplication; the division is a follow-up.
+
+**Consumers.** Sales risk (SAT-D47) converts foreign → TRY amounts with the check day's rate through the port (never frozen);
+a TL amount against a foreign limit stays `exchange_rate_unavailable` (the formula is not decided). The invoice snapshot and
+the dispatch invoice-group rate (SAT-D90/D101) are later slices; Purchasing uses the same rule (ALS-D6).

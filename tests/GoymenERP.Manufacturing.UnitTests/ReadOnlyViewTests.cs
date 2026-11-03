@@ -7,7 +7,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// <summary>
 /// ÜRÜN #280 P3-1: the fact collections were the live lists behind the order, so a cast could add
 /// or clear facts past the duplicate, roll and closed-order rules. Every view is now read-only.
-/// Also pins the plan → order behaviour that is kept on purpose until Business decides it.
+/// Also pins the plan → order rule (URT-D1: one plan opens exactly one order).
 /// </summary>
 public sealed class ReadOnlyViewTests
 {
@@ -76,20 +76,21 @@ public sealed class ReadOnlyViewTests
     }
 
     [Fact]
-    public void One_approved_plan_can_still_open_more_than_one_order_until_Business_decides()
+    public void One_approved_plan_opens_exactly_one_order()
     {
-        // Open question (#66 5728934213, same principle as Purchasing's request → several orders):
-        // §7.3 does not say whether a plan becomes one order or several partial ones. The current
-        // behaviour is kept and pinned; it changes only by that decision. The physical guard is
-        // Inventory's: a parent roll cannot be issued beyond the stock its label holds.
+        // URT-D1 (SINAN_KARARLARI_2026-11-01_URETIM.md, closing #66 5728934213): "tek plan = tek emir". The plan
+        // records the order it opened; a second order for the same plan is refused and changes nothing.
         var plan = ApprovedPlan();
+        var version = plan.Version;
 
         var first = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
-        var second = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
+        var refusal = Assert.Throws<ManufacturingRuleException>(
+            () => ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan));
 
+        Assert.Equal(ManufacturingRuleCodes.PlanOrderExists, refusal.Code);
         Assert.Equal(plan.Id, first.PlanId);
-        Assert.Equal(plan.Id, second.PlanId);
-        Assert.NotEqual(first.Id, second.Id);
+        Assert.Equal(first.Id, plan.OrderId);
+        Assert.Equal(version, plan.Version);
     }
 
     [Fact]

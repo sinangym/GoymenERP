@@ -145,7 +145,7 @@ public sealed class FinanceAllocationPolicyTests
     };
 
     private static FinanceOpenItemRow OpenItem(string outstanding) => new()
-    {
+    { Direction = FinanceOpenItemDirectionCodes.Receivable,
         Id = Guid.NewGuid(), CompanyId = CompanyId, CompanyAccountId = AccountId, CurrencyId = CurrencyId,
         OriginalAmountText = outstanding == "0.00" ? "250.10" : outstanding,
         OutstandingAmountText = outstanding, Status = FinanceOpenItemStatuses.Open, Version = 1,

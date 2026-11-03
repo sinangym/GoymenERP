@@ -244,7 +244,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
 
     private static FinanceOpenItemRow Row(string original, string outstanding, int status = FinanceOpenItemStatuses.Open,
         Guid? currency = null, Guid? party = null, Guid? account = null, Guid? company = null) => new()
-    {
+    { Direction = FinanceOpenItemDirectionCodes.Receivable,
         Id = Guid.NewGuid(),
         CompanyId = company ?? Company,
         SourceKind = "official.invoice-installment.v1",

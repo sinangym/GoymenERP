@@ -8,6 +8,7 @@ import type { PlanStatus } from './contract'
 export const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   Draft: 'Taslak',
   Approved: 'Onaylı',
+  Cancelled: 'İptal',
 }
 
 export const PLAN_LIST_TEXT = {

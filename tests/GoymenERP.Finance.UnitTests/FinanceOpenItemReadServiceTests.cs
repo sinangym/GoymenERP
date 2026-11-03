@@ -278,7 +278,7 @@ public sealed class FinanceOpenItemReadServiceTests
         new(company, actor, "SENTETIK-correlation", null);
 
     private static FinanceOpenItemRow Row(Guid? id = null, DateTimeOffset? createdAtUtc = null) => new()
-    {
+    { Direction = FinanceOpenItemDirectionCodes.Receivable,
         Id = id ?? OpenItem,
         CompanyId = Company,
         SourceKind = "official.invoice-installment.v1",

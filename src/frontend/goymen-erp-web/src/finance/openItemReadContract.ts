@@ -52,6 +52,11 @@ const ITEM_KEYS = ['id', 'companyId', 'sourceKind', 'sourceId', 'sourceLineId', 
   'companyAccountId', 'currencyId', 'version', 'dueOn', 'status', 'createdAtUtc', 'initialAmount', 'outstandingAmount',
   'direction']
 const PAGE_KEYS = ['companyId', 'items', 'nextCursor']
+/** The two official source kinds and the one direction each may carry (MOD-15). */
+const KNOWN_KIND_DIRECTION: Readonly<Record<string, OpenItemDirection>> = {
+  'official.invoice-installment.v1': 'Receivable',
+  'official.incoming-invoice-installment.v1': 'Payable',
+}
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -97,6 +102,9 @@ export function decodeOpenItem(value: unknown, companyId: string): OpenItem | nu
     || !(dueOn === null || (typeof dueOn === 'string' && isDateOnly(dueOn)))
     || !(status === null || status === 'Open' || status === 'Closed')
     || !(direction === 'Receivable' || direction === 'Payable')) return null
+  // A known official kind carries only its own direction (the server's CK_OpenItems_Direction); defence in depth.
+  const expected = KNOWN_KIND_DIRECTION[sourceKind as string]
+  if (expected !== undefined && expected !== direction) return null
   const initialAmount = decodeAmount(body.initialAmount, currencyId, false)
   const outstandingAmount = decodeAmount(body.outstandingAmount, currencyId, true)
   if (initialAmount === null || outstandingAmount === null) return null

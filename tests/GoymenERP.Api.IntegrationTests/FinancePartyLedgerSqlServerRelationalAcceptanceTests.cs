@@ -18,6 +18,7 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -179,6 +180,35 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
                 (tl.CurrencyId, tl.DebitTotal.Money!.Amount, tl.CreditTotal.Money!.Amount, tl.Balance.Side!.Value,
                     tl.Balance.Amount.Money!.Amount, tl.OpenReceivable.Money!.Amount, tl.OpenPayable.Money!.Amount));
         }
+    }
+
+    /// <summary>
+    /// MOD-15 migration on a POPULATED store (review B P3): rolling back with only receivables drops the column and keeps
+    /// the row; re-applying fills the stored row as a receivable (FNS-D7); once a payable is stored, the Down refuses with
+    /// Finance's module refusal 51051 and changes nothing (forward fix).
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_direction_migration_fills_stored_rows_as_receivables_and_refuses_rollback_while_a_payable_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var receivable = await run.SeedOpenItemAsync();
+        const string BeforeDirection = "20261005213000_AddOfficialInvoiceImportWorkDeliveryV1";
+        const string DirectionColumn =
+            "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.OpenItems') AND name = N'Direction'";
+
+        await run.MigrateFinanceAsync(BeforeDirection);
+        Assert.Equal(0, await run.ScalarAsync<int>(DirectionColumn));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id", ("@id", receivable)));
+
+        await run.MigrateFinanceAsync(null);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT Direction FROM finance.OpenItems WHERE Id = @id", ("@id", receivable)));
+
+        var payable = await run.SeedOpenItemAsync(FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment,
+            FinanceOpenItemDirectionCodes.Payable, "400.00", new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero));
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.MigrateFinanceAsync(BeforeDirection));
+        Assert.Equal(51051, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>(DirectionColumn));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT Direction FROM finance.OpenItems WHERE Id = @id", ("@id", payable)));
     }
 
     [SqlServerFact]
@@ -419,6 +449,13 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             dbContext.Roles.Add(role);
             dbContext.RoleAssignments.Add(assignment);
             await dbContext.SaveChangesAsync();
+        }
+
+        /// <summary>Moves Finance's schema to <paramref name="target"/> (null: the latest migration).</summary>
+        public async Task MigrateFinanceAsync(string? target)
+        {
+            await using var context = Context(CompanyA, null);
+            await context.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().MigrateAsync(target);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)

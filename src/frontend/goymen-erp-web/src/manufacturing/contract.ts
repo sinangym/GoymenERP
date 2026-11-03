@@ -84,7 +84,8 @@ export interface RemainingTarget {
   readonly remainingKg: string | null
 }
 
-export type PlanStatus = 'Draft' | 'Approved'
+/** Üretim U2-a: a plan may be Cancelled (kept, never deleted). */
+export type PlanStatus = 'Draft' | 'Approved' | 'Cancelled'
 
 export interface CapturedPlanTechnicalSnapshot {
   readonly productId: string
@@ -130,6 +131,8 @@ export interface SlitLineView {
 export interface SlittingSpecView {
   readonly lines: readonly SlitLineView[]
   readonly windingTargetKg: string | null
+  /** Üretim U2-a: the plan-entered net usable width (server millimetre text); null when not entered or legacy JSON. */
+  readonly netUsableWidthMm: string | null
 }
 
 /**
@@ -147,6 +150,47 @@ export interface CutToLengthLineView {
 /** Ordered cut lines a CutToLength plan carries (`CutToLengthSpecViewV1`). Null also covers legacy omitted JSON. */
 export interface CutToLengthSpecView {
   readonly lines: readonly CutToLengthLineView[]
+}
+
+/** One captured parameter value (`PlanParameterValueViewV1`): a canonical decimal number or a choice, never both. */
+export interface PlanParameterValueView {
+  readonly key: string
+  readonly unit: string
+  readonly number: string | null
+  readonly choice: string | null
+  /** Üretim U2-a: `Plan` for a value entered on the plan (the line speed, URT-D9); null for the profile's own value. */
+  readonly source: 'Plan' | null
+}
+
+/** Üretim U2-a: one recorded rejection of a Draft plan (`PlanRejectionViewV1`). */
+export interface PlanRejectionView {
+  readonly number: number
+  readonly reason: string
+  readonly rejectedByUserId: string
+  readonly rejectedAtUtc: string
+  readonly planVersion: number
+}
+
+/** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
+export interface PlanCancellationView {
+  readonly reason: string
+  readonly cancelledByUserId: string
+  readonly cancelledAtUtc: string
+}
+
+/**
+ * The Settings parameter profile captured at plan approval (`PlanParameterSnapshotViewV1`, Üretim U1-b). `Catalog` is the
+ * reviewed version 0; `Settings` a published version. The screen shows it; it never recomputes anything from it.
+ */
+export interface PlanParameterSnapshotView {
+  readonly profileId: string
+  readonly profileVersion: string
+  readonly source: 'Catalog' | 'Settings'
+  readonly workCenterId: string | null
+  readonly effectiveFrom: string
+  readonly effectiveThrough: string | null
+  readonly selectedForDate: string
+  readonly values: readonly PlanParameterValueView[]
 }
 
 /**
@@ -173,6 +217,16 @@ export interface ProductionPlanView {
   readonly slittingSpec: SlittingSpecView | null
   /** M01.2: null for plans without cut lines and for legacy JSON that omitted the additive member. */
   readonly cutToLengthSpec: CutToLengthSpecView | null
+  /** U1-b: the profile captured at approval; null for a draft, a pre-U1-b plan or legacy JSON without the member. */
+  readonly parameterSnapshot: PlanParameterSnapshotView | null
+  /** U2-a: the plan-entered line speed (Slitting, Tube / Profile); null when none or legacy JSON. */
+  readonly lineSpeedMetresPerMinute: string | null
+  /** U2-a (URT-D1): the one order this plan opened; null when none or legacy JSON. */
+  readonly orderId: string | null
+  /** U2-a: every recorded rejection, oldest first; empty for legacy JSON. */
+  readonly rejections: readonly PlanRejectionView[]
+  /** U2-a: the cancellation of a Cancelled plan; null otherwise. */
+  readonly cancellation: PlanCancellationView | null
 }
 
 export interface ProductionOrderView {
@@ -435,6 +489,13 @@ function decodeSlittingSpec(value: unknown): SlittingSpecView | null | undefined
       ? value.windingTargetKg
       : undefined
   if (windingTargetKg === undefined) return undefined
+  // U2-a: the additive net usable width; an older answer omits it.
+  const netUsableWidthMm = value.netUsableWidthMm === undefined || value.netUsableWidthMm === null
+    ? null
+    : typeof value.netUsableWidthMm === 'string' && MM_OUT.test(value.netUsableWidthMm) && value.netUsableWidthMm !== '0'
+      ? value.netUsableWidthMm
+      : undefined
+  if (netUsableWidthMm === undefined) return undefined
   const lines: SlitLineView[] = []
   for (const raw of value.lines) {
     if (!isObject(raw)
@@ -447,7 +508,7 @@ function decodeSlittingSpec(value: unknown): SlittingSpecView | null | undefined
       || raw.count > INT32_MAX) return undefined
     lines.push({ bandWidthMm: raw.bandWidthMm, count: raw.count })
   }
-  return { lines, windingTargetKg }
+  return { lines, windingTargetKg, netUsableWidthMm }
 }
 
 function int32(value: unknown): value is number {
@@ -481,6 +542,72 @@ export function decodeCutToLengthSpec(value: unknown): CutToLengthSpecView | nul
     lines.push({ lineId, sequence: raw.sequence, lengthMm: raw.lengthMm, count: raw.count })
   }
   return { lines }
+}
+
+const PARAMETER_SNAPSHOT_KEYS = [
+  'profileId', 'profileVersion', 'source', 'workCenterId', 'effectiveFrom', 'effectiveThrough', 'selectedForDate', 'values',
+] as const
+const LEGACY_PARAMETER_VALUE_KEYS = ['key', 'unit', 'number', 'choice'] as const
+/** Üretim U2-a: the current wire also emits the value's source (`Plan` or null). */
+const PARAMETER_VALUE_KEYS = [...LEGACY_PARAMETER_VALUE_KEYS, 'source'] as const
+const PARAMETER_KEY = /^[A-Za-z0-9]{1,64}$/
+const CANONICAL_DECIMAL = /^-?(0|[1-9]\d*)(\.\d*[1-9])?$/
+const PROFILE_VERSION = /^(0|[1-9]\d{0,31})$/
+
+/**
+ * Strict `PlanParameterSnapshotViewV1` decoding. `null` is the contract's absence (omitted legacy member or explicit null);
+ * `undefined` is not this contract and fails the whole plan read. The server's rules bound what is trusted: catalog is
+ * version 0 and a Settings version is positive, the window covers the selected date, at least one value, each key once,
+ * each value either a canonical number or a choice.
+ */
+export function decodeParameterSnapshot(value: unknown): PlanParameterSnapshotView | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, PARAMETER_SNAPSHOT_KEYS)) return undefined
+  const profileId = nonNilGuid(value.profileId)
+  const workCenterId = value.workCenterId === null ? null : nonNilGuid(value.workCenterId) ?? undefined
+  if (profileId === null || workCenterId === undefined
+    || typeof value.profileVersion !== 'string' || !PROFILE_VERSION.test(value.profileVersion)
+    || (value.source !== 'Catalog' && value.source !== 'Settings')
+    || (value.source === 'Catalog') !== (value.profileVersion === '0')
+    || !calendarDate(value.effectiveFrom) || !calendarDate(value.selectedForDate)
+    || (value.effectiveThrough !== null && !calendarDate(value.effectiveThrough))
+    || value.selectedForDate < value.effectiveFrom
+    || (value.effectiveThrough !== null && (value.effectiveThrough < value.effectiveFrom
+      || value.selectedForDate > value.effectiveThrough))
+    || !Array.isArray(value.values) || value.values.length === 0) return undefined
+  const values: PlanParameterValueView[] = []
+  const keys = new Set<string>()
+  for (const raw of value.values) {
+    if (!isObject(raw)
+      || (!hasExactKeys(raw, PARAMETER_VALUE_KEYS) && !hasExactKeys(raw, LEGACY_PARAMETER_VALUE_KEYS))
+      || (raw.source !== undefined && raw.source !== null && raw.source !== 'Plan')
+      || typeof raw.key !== 'string' || !PARAMETER_KEY.test(raw.key) || keys.has(raw.key)
+      || typeof raw.unit !== 'string' || raw.unit.length === 0 || raw.unit.length > 16) return undefined
+    const isNumber = typeof raw.number === 'string' && CANONICAL_DECIMAL.test(raw.number) && raw.choice === null
+    const isChoice = raw.number === null && typeof raw.choice === 'string' && raw.choice.length > 0
+      && raw.choice.length <= 32
+    if (!isNumber && !isChoice) return undefined
+    // A plan-entered value is a number.
+    if (raw.source === 'Plan' && !isNumber) return undefined
+    keys.add(raw.key)
+    values.push({
+      key: raw.key,
+      unit: raw.unit,
+      number: isNumber ? raw.number as string : null,
+      choice: isChoice ? raw.choice as string : null,
+      source: raw.source === 'Plan' ? 'Plan' : null,
+    })
+  }
+  return {
+    profileId,
+    profileVersion: value.profileVersion as string,
+    source: value.source as 'Catalog' | 'Settings',
+    workCenterId,
+    effectiveFrom: value.effectiveFrom as string,
+    effectiveThrough: value.effectiveThrough as string | null,
+    selectedForDate: value.selectedForDate as string,
+    values,
+  }
 }
 
 /** A positive safe integer: the version is compared and sent back, never computed. */
@@ -583,6 +710,16 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     : decodePlanPreview(body.calculation)
   const slittingSpec = decodeSlittingSpec(body.slittingSpec)
   const cutToLengthSpec = decodeCutToLengthSpec(body.cutToLengthSpec)
+  const parameterSnapshot = decodeParameterSnapshot(body.parameterSnapshot)
+  const lineSpeedMetresPerMinute = body.lineSpeedMetresPerMinute === undefined || body.lineSpeedMetresPerMinute === null
+    ? null
+    : typeof body.lineSpeedMetresPerMinute === 'string' && CANONICAL_DECIMAL.test(body.lineSpeedMetresPerMinute)
+      && !body.lineSpeedMetresPerMinute.startsWith('-') && body.lineSpeedMetresPerMinute !== '0'
+      ? body.lineSpeedMetresPerMinute
+      : undefined
+  const orderId = body.orderId === undefined ? null : nullableGuid(body.orderId)
+  const rejections = decodeRejections(body.rejections)
+  const cancellation = decodeCancellation(body.cancellation)
   if (
     planId === null ||
     companyId === null ||
@@ -593,19 +730,26 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     approvedAtUtc === undefined ||
     slittingSpec === undefined ||
     cutToLengthSpec === undefined ||
+    parameterSnapshot === undefined ||
+    lineSpeedMetresPerMinute === undefined ||
+    orderId === undefined ||
+    rejections === undefined ||
+    cancellation === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
-    (body.status !== 'Draft' && body.status !== 'Approved') ||
+    (body.status !== 'Draft' && body.status !== 'Approved' && body.status !== 'Cancelled') ||
     !Array.isArray(body.inputs)
   ) {
     return null
   }
-  // CK_Plans_Approval: Draft has neither value; Approved has both. No other combination is trusted.
-  if (body.status === 'Draft') {
-    if (approvedByUserId !== null || approvedAtUtc !== null) return null
-  } else if (approvedByUserId === null || approvedAtUtc === null) {
-    return null
-  }
+  // CK_Plans_Approval: Draft has neither value; Approved has both; a Cancelled plan keeps both or neither.
+  if ((approvedByUserId === null) !== (approvedAtUtc === null)) return null
+  if (body.status === 'Draft' && approvedByUserId !== null) return null
+  if (body.status === 'Approved' && approvedByUserId === null) return null
+  // A snapshot is captured only by the approval; an order only from an approved plan; a cancellation only when Cancelled.
+  if (approvedByUserId === null && parameterSnapshot !== null) return null
+  if (body.status !== 'Approved' && orderId !== null) return null
+  if ((body.status === 'Cancelled') !== (cancellation !== null)) return null
   const inputs: PlannedInput[] = []
   for (const raw of body.inputs) {
     const input = decodePlannedInput(raw)
@@ -641,7 +785,43 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     calculation,
     slittingSpec,
     cutToLengthSpec,
+    parameterSnapshot,
+    lineSpeedMetresPerMinute,
+    orderId,
+    rejections,
+    cancellation,
   }
+}
+
+const REJECTION_KEYS = ['number', 'reason', 'rejectedByUserId', 'rejectedAtUtc', 'planVersion'] as const
+const CANCELLATION_KEYS = ['reason', 'cancelledByUserId', 'cancelledAtUtc'] as const
+
+/** U2-a: the recorded rejections, numbered 1..n in order; an omitted member (legacy JSON) is none. */
+function decodeRejections(value: unknown): PlanRejectionView[] | undefined {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) return undefined
+  const rejections: PlanRejectionView[] = []
+  for (const [index, raw] of value.entries()) {
+    if (!isObject(raw) || !hasExactKeys(raw, REJECTION_KEYS)) return undefined
+    const rejectedByUserId = nonNilGuid(raw.rejectedByUserId)
+    const rejectedAtUtc = nullableInstant(raw.rejectedAtUtc)
+    const planVersion = version(raw.planVersion)
+    if (raw.number !== index + 1 || !requiredText(raw.reason) || rejectedByUserId === null
+      || rejectedAtUtc === null || rejectedAtUtc === undefined || planVersion === null || planVersion < 2) return undefined
+    rejections.push({ number: index + 1, reason: raw.reason, rejectedByUserId, rejectedAtUtc, planVersion })
+  }
+  return rejections
+}
+
+/** U2-a: the cancellation of a Cancelled plan, or null. */
+function decodeCancellation(value: unknown): PlanCancellationView | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, CANCELLATION_KEYS)) return undefined
+  const cancelledByUserId = nonNilGuid(value.cancelledByUserId)
+  const cancelledAtUtc = nullableInstant(value.cancelledAtUtc)
+  if (!requiredText(value.reason) || cancelledByUserId === null || cancelledAtUtc === null
+    || cancelledAtUtc === undefined) return undefined
+  return { reason: value.reason, cancelledByUserId, cancelledAtUtc }
 }
 
 export function decodeOrder(body: unknown): ProductionOrderView | null {

@@ -5,8 +5,13 @@ internal sealed class ManufacturingTolerancePolicyRow
     public Guid CompanyId { get; set; }
     public Guid ProfileId { get; set; }
     public string Process { get; set; } = string.Empty;
+
+    /// <summary>U1-b (URT-D6): the line this version is scoped to; null = the whole process.</summary>
+    public Guid? WorkCenterId { get; set; }
+
     public long Version { get; set; }
     public decimal MaximumFirePercent { get; set; }
+    public decimal? MassBalanceDifferenceTolerancePercent { get; set; }
     public bool IsActive { get; set; }
     public DateOnly EffectiveFrom { get; set; }
     public DateOnly? EffectiveThrough { get; set; }

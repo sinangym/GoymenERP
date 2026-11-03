@@ -88,9 +88,9 @@ public static class SalesRiskReasonCodes
     public const string Unavailable = "unavailable";
 
     /// <summary>
-    /// SAT-D47: an amount is in another currency than the check's (the order's). It is converted only with the check day's TCMB
-    /// selling rate from the Finance/Settings rate record; no such record exists on main, so it is refused — never converted
-    /// with an invented rate and never added across currencies.
+    /// SAT-D47: an amount is in another currency than the total's and no rate converts it: the caller resolved no DEC-FIN-010
+    /// rate for that pair on the check day (the Settings rate record answered "kur bulunamadı/belirlenemedi", or the pair is not
+    /// a TCMB foreign → TRY pair). Never converted with an invented rate and never added across currencies.
     /// </summary>
     public const string ExchangeRateUnavailable = "exchange_rate_unavailable";
 
@@ -161,8 +161,8 @@ public sealed record SalesRiskEvaluation(
 /// <see cref="SalesRiskInputState.Unavailable"/> makes the outcome <see cref="SalesRiskOutcome.Unavailable"/> — never zero and
 /// never "within". Every reason is listed once, not only the first.</item>
 /// <item><b>Money</b>: every amount becomes a <see cref="Money"/> in the target currency at the scale the caller passes (the
-/// Settings profile). An amount in another currency needs the DEC-FIN-010 rate (SAT-D47: the previous business day's TCMB selling
-/// rate in force on the check day; hour and holidays OPEN-012); no rate record exists on main, so it is refused
+/// Settings profile). An amount in another currency needs the DEC-FIN-010 rate the caller resolved for the check day (SAT-D47,
+/// computed on each check and never frozen; the rate day rule is SAT-D54/D55/D170); without it the amount is refused
 /// (<c>exchange_rate_unavailable</c>) — never converted with an invented rate. More decimals than the scale are refused (never
 /// rounded); amounts on different tax bases are never added (SAT-D46: all VAT-included).</item>
 /// <item><b>Boundary</b> (SAT-D49): "over" means the total EXCEEDS the limit (strictly greater); a total equal to the limit is
@@ -181,6 +181,11 @@ public static class SalesCustomerRiskCalculator
     /// <param name="limitCurrency">
     /// The credit limit's currency and its scale; null when there is no single limit amount or its currency's scale is unknown.
     /// </param>
+    /// <param name="exchangeRates">
+    /// SAT-D47: the DEC-FIN-010 rates the caller resolved for the check day, keyed (source currency, target currency); an amount
+    /// in another currency than a total's is converted only by the rate of exactly that pair (one rounding to the total's scale,
+    /// SAT-D11), otherwise it is <see cref="SalesRiskReasonCodes.ExchangeRateUnavailable"/>. No inverse or cross rate is derived.
+    /// </param>
     public static SalesRiskEvaluation Evaluate(
         SalesRiskCurrency? local,
         SalesRiskCurrency? limitCurrency,
@@ -188,8 +193,10 @@ public static class SalesCustomerRiskCalculator
         SalesRiskInput shippedNotInvoiced,
         SalesRiskInput approvedUnshippedRemainder,
         SalesRiskInput thisOrder,
-        SalesRiskInput creditLimit)
+        SalesRiskInput creditLimit,
+        IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate>? exchangeRates = null)
     {
+        var rates = exchangeRates ?? new Dictionary<(Guid Source, Guid Target), ExchangeRate>();
         ArgumentNullException.ThrowIfNull(openReceivables);
         ArgumentNullException.ThrowIfNull(shippedNotInvoiced);
         ArgumentNullException.ThrowIfNull(approvedUnshippedRemainder);
@@ -250,7 +257,7 @@ public static class SalesCustomerRiskCalculator
             var sums = new Dictionary<string, Money>(StringComparer.Ordinal);
             foreach (var (component, input) in exposures.Append(thisPart))
             {
-                if (answered.Contains(component) && Sum(component, input, target.CurrencyId, target.Scale, totalReasons) is { } sum)
+                if (answered.Contains(component) && Sum(component, input, target.CurrencyId, target.Scale, totalReasons, rates) is { } sum)
                 {
                     sums[component] = sum;
                 }
@@ -288,7 +295,7 @@ public static class SalesCustomerRiskCalculator
             else
             {
                 limit = ToMoney(SalesRiskComponents.CreditLimit, creditLimit.Amounts[0], limitCurrency.CurrencyId,
-                    limitCurrency.Scale, reasons);
+                    limitCurrency.Scale, reasons, rates);
                 limitTotals = Totals(limitCurrency, reasons);
             }
         }
@@ -323,12 +330,13 @@ public static class SalesCustomerRiskCalculator
     }
 
     /// <summary>The input's amounts as one <see cref="Money"/> in the check currency, or null with its reasons.</summary>
-    private static Money? Sum(string component, SalesRiskInput input, Guid currencyId, int scale, List<SalesRiskReason> reasons)
+    private static Money? Sum(string component, SalesRiskInput input, Guid currencyId, int scale, List<SalesRiskReason> reasons,
+        IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate> rates)
     {
         var amounts = new List<Money>(input.Amounts.Count);
         foreach (var amount in input.Amounts)
         {
-            if (ToMoney(component, amount, currencyId, scale, reasons) is not { } money)
+            if (ToMoney(component, amount, currencyId, scale, reasons, rates) is not { } money)
             {
                 return null;
             }
@@ -356,7 +364,8 @@ public static class SalesCustomerRiskCalculator
         }
     }
 
-    private static Money? ToMoney(string component, SalesRiskAmount? amount, Guid currencyId, int scale, List<SalesRiskReason> reasons)
+    private static Money? ToMoney(string component, SalesRiskAmount? amount, Guid currencyId, int scale, List<SalesRiskReason> reasons,
+        IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate> rates)
     {
         if (amount is null || amount.Amount < 0m)
         {
@@ -366,8 +375,24 @@ public static class SalesCustomerRiskCalculator
 
         if (amount.CurrencyId != currencyId)
         {
-            reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.ExchangeRateUnavailable));
-            return null;
+            if (amount.CurrencyId == Guid.Empty || !rates.TryGetValue((amount.CurrencyId, currencyId), out var rate)
+                || rate.SourceCurrencyId != amount.CurrencyId || rate.TargetCurrencyId != currencyId)
+            {
+                reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.ExchangeRateUnavailable));
+                return null;
+            }
+
+            try
+            {
+                // SAT-D47 / SAT-D11: the exact amount times the check day's rate, rounded once to the total's scale.
+                var source = Money.Of(amount.Amount, amount.CurrencyId, Math.Min(Money.SignificantDecimals(amount.Amount), Money.MaximumScale));
+                return rate.Convert(source, scale);
+            }
+            catch (OverflowException)
+            {
+                reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.AmountInvalid));
+                return null;
+            }
         }
 
         if (!Money.TryOf(amount.Amount, currencyId, scale, out var money))

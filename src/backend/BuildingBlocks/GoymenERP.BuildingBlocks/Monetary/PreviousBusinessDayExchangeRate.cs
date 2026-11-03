@@ -178,7 +178,7 @@ public static class PreviousBusinessDayExchangeRate
             request, skipped, PreviousBusinessDayExchangeRateCodes.CurrencyMissing, date);
     }
 
-    private static Dictionary<(DateOnly, ExchangeRateBulletinDayProvenance), ExchangeRateBulletinDay> Index(
+    internal static Dictionary<(DateOnly, ExchangeRateBulletinDayProvenance), ExchangeRateBulletinDay> Index(
         ExchangeRateBulletinSource source, IEnumerable<ExchangeRateBulletinDay> bulletinDays)
     {
         ArgumentNullException.ThrowIfNull(bulletinDays);

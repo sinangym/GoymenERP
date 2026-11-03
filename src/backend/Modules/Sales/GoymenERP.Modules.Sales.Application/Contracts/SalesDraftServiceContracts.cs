@@ -92,6 +92,18 @@ public static class SalesDraftProblemCodesV1
     /// </summary>
     public const string OwnerReferenceInvalid = "owner_reference_invalid";
 
+    /// <summary>
+    /// 503 (SAT-D176, EK25): the Product owner's item type of a subcontract service order's line cannot be read (the reader is not
+    /// composed or answers an outage); the line is never assumed a service.
+    /// </summary>
+    public const string ProductItemTypeUnavailable = "product_item_type_unavailable";
+
+    /// <summary>
+    /// 503 (SAT-D175, EK25): whether a production plan or a customer-goods allocation is linked to a subcontract service order
+    /// cannot be read (no Production port is composed yet, or it answers "unreadable"); its customer is not changed (fail-closed).
+    /// </summary>
+    public const string SubcontractBindingUnavailable = "subcontract_binding_unavailable";
+
     /// <summary>503: the Product eligibility runtime is not composed, or answers an outage.</summary>
     public const string ProductEligibilityUnavailable = "product_eligibility_unavailable";
 

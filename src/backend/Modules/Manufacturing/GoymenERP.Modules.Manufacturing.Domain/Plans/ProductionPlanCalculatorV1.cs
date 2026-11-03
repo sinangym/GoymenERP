@@ -12,8 +12,8 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Plans;
 /// What is known from OUTSIDE the plan for its calculation, by the engines' own parameter names (for example
 /// <c>densityKgPerCubicMetre</c>, <c>thicknessMm</c>, <c>lineSpeedMetresPerMinute</c>). A roll's own value wins over the
 /// plan-wide one. A name that is absent is UNKNOWN — never 0 and never a default: the engine then answers
-/// <see cref="EngineOutcome.Unavailable"/> and names it (OPEN-007: density, speed, kerf, tolerance and the other values
-/// are not decided; DEC-SET-001: their source is the Settings / Policy Registry, which is not built yet).
+/// <see cref="EngineOutcome.Unavailable"/> and names it. Sources: Product's captured dimensions per roll and, since U1-b,
+/// the Settings parameter profile (DEC-SET-001, URT-D9) plan-wide.
 /// </summary>
 public sealed record PlanCalculationParameters(
     IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, decimal>>? Rolls = null,
@@ -27,7 +27,29 @@ public sealed record PlanCalculationParameters(
     /// names. Every roll keeps its own dimensions: values are never taken from the first roll,
     /// averaged or promoted to plan-wide defaults. Legacy inputs without a snapshot stay unknown.
     /// </summary>
-    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs)
+    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs) =>
+        FromCapturedSnapshots(inputs, parameterProfile: null);
+
+    /// <summary>
+    /// Üretim U1-b (URT-D9, DEC-PRDCT-008): each roll's Product snapshot as above, plus the plan-wide numeric values of the
+    /// Settings parameter profile — captured at approval for an approved plan, read live for a draft or a preview. The
+    /// Settings keys are the engines' own parameter names, so nothing is mapped or renamed; a key the profile does not
+    /// carry stays unknown and is named by the engine. A roll's own (Product) value wins over the profile's.
+    /// </summary>
+    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs,
+        PlanParameterSnapshotV1? parameterProfile)
+    {
+        var products = FromProductSnapshots(inputs);
+        if (parameterProfile is null)
+        {
+            return products;
+        }
+
+        var plan = parameterProfile.Numbers();
+        return plan.Count == 0 ? products : new PlanCalculationParameters(products.Rolls, plan);
+    }
+
+    private static PlanCalculationParameters FromProductSnapshots(IEnumerable<PlannedInput> inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         var rolls = new Dictionary<Guid, IReadOnlyDictionary<string, decimal>>();
@@ -49,6 +71,25 @@ public sealed record PlanCalculationParameters(
         }
 
         return rolls.Count == 0 ? Unknown : new PlanCalculationParameters(rolls);
+    }
+
+    /// <summary>
+    /// Üretim U2-a (URT-D9): the same parameters with a plan-wide value the plan itself entered (e.g. the line speed). The
+    /// plan's value wins over the profile's; null changes nothing.
+    /// </summary>
+    public PlanCalculationParameters WithPlanValue(string name, decimal? value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (value is not { } number)
+        {
+            return this;
+        }
+
+        var plan = new Dictionary<string, decimal>(Plan ?? new Dictionary<string, decimal>(), StringComparer.Ordinal)
+        {
+            [name] = number,
+        };
+        return this with { Plan = plan };
     }
 
     internal decimal? Value(Guid? roll, string name)
@@ -150,7 +191,10 @@ public static class ProductionPlanCalculatorV1
     public static PlanCalculation Calculate(ProductionPlan plan, PlanCalculationParameters? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, plan.CutToLengthSpec, parameters);
+        // U2-a: the plan-entered line speed (Slitting, Tube / Profile) wins over the profile for this plan.
+        return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, plan.CutToLengthSpec,
+            (parameters ?? PlanCalculationParameters.Unknown).WithPlanValue(ProductionPlan.LineSpeedParameter,
+                plan.LineSpeedMetresPerMinute));
     }
 
     public static PlanCalculation Calculate(ManufacturingProcess process, IReadOnlyList<PlannedInput> inputs,
@@ -214,7 +258,8 @@ public static class ProductionPlanCalculatorV1
                 return
                 [
                     Answer("SLT-001…007", SlittingEngineV1.FormulaVersion,
-                        SlittingEngineV1.Plan(new SlittingPlanInputV1(kg, P("netUsableWidthMm"), lines)),
+                        SlittingEngineV1.Plan(new SlittingPlanInputV1(kg, spec?.NetUsableWidthMm ?? P("netUsableWidthMm"),
+                            lines)),
                         result =>
                         [
                             new("kgPerMillimetreWidth", result.KgPerMillimetreWidth),

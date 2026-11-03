@@ -31,6 +31,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.OrdersApprove, ErpPermissions.PurchasingOrdersApprove)]
     [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsRecord, ErpPermissions.PurchasingGoodsReceiptsRecord)]
     [InlineData(PurchasingPermissionManifestV1.RequestsApprove, ErpPermissions.PurchasingRequestsApprove)]
+    [InlineData(PurchasingPermissionManifestV1.RequestsWithdraw, ErpPermissions.PurchasingRequestsWithdraw)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -80,7 +81,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(10, purchasing.Length);
+        Assert.Equal(11, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
@@ -93,6 +94,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
             PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
+            PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
@@ -139,6 +141,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(requestDetail.ContextRequirement, requestApprove.ContextRequirement);
         Assert.Equal(requestDetail.ScopeRequirement, requestApprove.ScopeRequirement);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsApprove], requestApprove.RequiredPermissions);
+
+        // A1-1b (ALS-D46): the withdrawal control is another child of the request detail with its own name.
+        var requestWithdraw = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId).Declaration;
+        Assert.Equal(requestDetail.CapabilityId, requestWithdraw.ParentCapabilityId);
+        Assert.Equal(requestDetail.RoutePath, requestWithdraw.RoutePath);
+        Assert.Equal(requestDetail.ContextRequirement, requestWithdraw.ContextRequirement);
+        Assert.Equal(requestDetail.ScopeRequirement, requestWithdraw.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsWithdraw], requestWithdraw.RequiredPermissions);
     }
 
     [Fact]

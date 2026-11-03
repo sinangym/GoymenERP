@@ -176,6 +176,31 @@ public interface IManufacturingPlanStore
     Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAt,
         ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Üretim U1-b: approves and, in the same save, persists the Settings parameter profile captured for the plan
+    /// (DEC-PRDCT-008). The slitting gate runs on what the plan captured (Product dimensions per roll) and the profile.
+    /// A store that cannot persist a snapshot refuses one rather than dropping it.
+    /// </summary>
+    Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAt,
+        PlanParameterSnapshotV1? parameterSnapshot, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        parameterSnapshot is null
+            ? ApprovePlanAsync(planId, expectedVersion, approvedByUserId, approvedAt, metadata, cancellationToken)
+            : throw new NotSupportedException("Bu plan deposu parametre snapshot'ı saklamıyor.");
+
+    /// <summary>
+    /// Üretim U2-a: the approval with Inventory's current answer per parent roll for the slitting gate's
+    /// <c>labelState</c> (true = usable, false = blocked or unusable; a roll without an entry stays unknown). A store that
+    /// cannot take the label answers refuses them rather than dropping them.
+    /// </summary>
+    Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAt,
+        PlanParameterSnapshotV1? parameterSnapshot, IReadOnlyDictionary<Guid, bool>? labelUsable,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        labelUsable is null
+            ? ApprovePlanAsync(planId, expectedVersion, approvedByUserId, approvedAt, parameterSnapshot, metadata,
+                cancellationToken)
+            : throw new NotSupportedException("Bu plan deposu etiket durumunu onaya taşımıyor.");
+
     /// <summary>The company's stored plan, or null (another company's plan is null too).</summary>
     Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default);
 }
@@ -188,7 +213,8 @@ public interface IManufacturingPlanStore
 public sealed record ManufacturingPlanSummary(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, ManufacturingProcess Process, PlanStatus Status, long Version,
     int PlannedRollCount, Kilograms PlannedInputMass, TargetBasis? TargetBasis, Kilograms? TargetMass,
-    DateTimeOffset CreatedAtUtc, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc);
+    DateTimeOffset CreatedAtUtc, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
+    DateTimeOffset? CancelledAtUtc = null);
 
 /// <summary>
 /// One page of the company's plans, newest first (createdAtUtc desc, id desc), as the order list pages:
@@ -204,7 +230,8 @@ public sealed record ManufacturingPlanPage(IReadOnlyList<ManufacturingPlanSummar
 public interface IManufacturingPlanListStore
 {
     /// <summary>
-    /// One page of this company's plans, newest first, optionally only those in <paramref name="status"/>.
+    /// One page of this company's plans, newest first, optionally only those in <paramref name="status"/>; without a
+    /// status (U2-a) the active plans only — a Cancelled plan is listed only when <paramref name="status"/> asks for it.
     /// <paramref name="cursor"/> is the previous page's <see cref="ManufacturingPlanPage.NextCursor"/>; another
     /// company's, another ordering's (an order-list cursor included) or an unreadable cursor is
     /// <see cref="ManufacturingStoreCodes.ListCursorInvalid"/>. A page size outside the store's bound is an
@@ -221,7 +248,8 @@ public interface IManufacturingPlanListStore
 /// </summary>
 public sealed record ManufacturingPlanRevision(
     int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
-    string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc, CutToLengthSpec? CutToLengthSpec = null);
+    string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc, CutToLengthSpec? CutToLengthSpec = null,
+    decimal? LineSpeedMetresPerMinute = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: the Draft edit of a stored plan and its history. A port of its own, beside
@@ -249,11 +277,41 @@ public interface IManufacturingPlanRevisionStore
             : throw new NotSupportedException("Bu plan deposu boy kesme satırlı revizyonu desteklemiyor.");
 
     /// <summary>
+    /// Üretim U2-a: the revision with the plan-entered line speed (URT-D9) beside the rest of the content. A store that
+    /// cannot keep a line speed refuses one rather than dropping it.
+    /// </summary>
+    Task<ProductionPlan> RevisePlanContentAsync(Guid planId, long expectedVersion, Guid workCenterId,
+        ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+        CutToLengthSpec? cutToLengthSpec, decimal? lineSpeedMetresPerMinute, string reason,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        lineSpeedMetresPerMinute is null
+            ? RevisePlanWithCutLinesAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target,
+                cutToLengthSpec, reason, metadata, cancellationToken)
+            : throw new NotSupportedException("Bu plan deposu planda girilen hat hızını saklamıyor.");
+
+    /// <summary>
     /// The plan's history, oldest first (revision 0 = as created), or null when the company has no such plan
     /// (another company's plan is null too). It reads and stores nothing else.
     /// </summary>
     Task<IReadOnlyList<ManufacturingPlanRevision>?> ListPlanRevisionsAsync(Guid planId,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Üretim U2-a (URT-D2, API-10/11): the rejection and the cancellation of a stored plan. A port of its own, beside
+/// <see cref="IManufacturingPlanStore"/> (the plan-list / revision pattern); the one store implements it. Each decision,
+/// the plan's new version, its audit event and the command record commit in one save or not at all; the domain decides
+/// on the plan rebuilt from storage (with the order it opened).
+/// </summary>
+public interface IManufacturingPlanLifecycleStore
+{
+    /// <summary>Records the approver's rejection of a Draft; the plan stays a Draft one version on.</summary>
+    Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId, DateTimeOffset rejectedAt,
+        string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>Cancels a Draft, or an approved plan that opened no order; the plan is kept as Cancelled one version on.</summary>
+    Task<ProductionPlan> CancelPlanAsync(Guid planId, long expectedVersion, Guid cancelledByUserId, DateTimeOffset cancelledAt,
+        string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

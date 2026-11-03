@@ -162,6 +162,24 @@ describe('S-04 commands', () => {
     expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
   })
 
+  it('SAT-D201: a fason submission refused for a service line without a per-kg price says so and changes nothing', async () => {
+    installFetch({
+      capabilities: ALL_SALES,
+      onDetail: () => json(detail('Preparing')),
+      onCommand: () => json({
+        status: 422, title: 'Unprocessable', code: 'validation_failed', correlationId: 'c-fason-price',
+        errors: [{ field: 'draft', code: 'sales_subcontract_price_required' }],
+      }, 422),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    await userEvent.click(screen.getByRole('button', { name: T.approval.submit }))
+
+    const alert = await screen.findByText((text) => text.includes(T.approval.subcontractPriceRequired))
+    expect(alert.textContent).toContain(T.approval.validation)
+    expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
+  })
+
   it('SAT-D123: an approval refused for missing due terms says so and changes nothing', async () => {
     installFetch({
       capabilities: ALL_SALES_WITH_APPROVE,

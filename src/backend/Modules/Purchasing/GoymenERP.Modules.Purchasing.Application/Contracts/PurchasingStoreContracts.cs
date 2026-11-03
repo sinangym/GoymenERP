@@ -40,15 +40,19 @@ public static class PurchasingCommands
     /// <summary>A1-1 (No.161 §1): Submitted | Approved → Rejected with a reason, under <c>purchasing.requests.approve</c>.</summary>
     public const string RequestRejectV1 = "purchasing.purchase-request.reject.v1";
 
+    /// <summary>A1-1b (ALS-D46, ALS-D47): Submitted → Withdrawn with a reason, by the recorded preparer or submitter, under <c>purchasing.requests.withdraw</c>.</summary>
+    public const string RequestWithdrawV1 = "purchasing.purchase-request.withdraw.v1";
+
     public const string OrderCreateV1 = "purchasing.purchase-order.create.v1";
     public const string OrderApproveV1 = "purchasing.purchase-order.approve.v1";
 
     public static bool IsRequestCommand(string commandName) =>
-        commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1;
+        commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderCommand(string commandName) => commandName is OrderCreateV1 or OrderApproveV1;
 
-    public static bool IsRequestMutation(string commandName) => commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1;
+    public static bool IsRequestMutation(string commandName) =>
+        commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || commandName is OrderApproveV1;
 
@@ -114,7 +118,7 @@ public sealed record PurchasingMutationAudit(string EventType, string Operation,
 
 /// <summary>
 /// A1-1: what the store measured about a request inside the transition's own save, for the domain to decide on —
-/// whether an APPROVED order is bound to it (No.161 §1 refuses a rejection then).
+/// whether an APPROVED order is bound to it (No.161 §1 refuses a rejection — and an A1-1b withdrawal — then).
 /// </summary>
 public sealed record PurchaseRequestBindingFacts(bool HasApprovedOrder);
 
@@ -133,7 +137,7 @@ public interface IPurchasingStore
         Func<PurchaseRequest> build, IReadOnlyDictionary<Guid, string> productVersionsByLineId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// One transition (submit, approve, reject) of the company's stored request in ONE save: the domain transition,
+    /// One transition (submit, approve, reject, withdraw) of the company's stored request in ONE save: the domain transition,
     /// the attempt record and the audit event. The store measures the request's <see cref="PurchaseRequestBindingFacts"/>
     /// inside the same save and hands them to the domain; the request row is this write's concurrency token, and an
     /// order approval moves the same row, so a rejection and a binding approval cannot both pass unseen. The caller

@@ -40,7 +40,7 @@ public sealed class ManufacturingStore(
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
-        IManufacturingCommandLog
+        IManufacturingCommandLog, IManufacturingPlanLifecycleStore
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -51,6 +51,9 @@ public sealed class ManufacturingStore(
     // The exclusive bound of a decimal(18,3) column (15 integer digits): every such column — the masses and the
     // plan's band widths alike — refuses a value at or above it before the save (FİNANS #342 INFO-3: a neutral name).
     private const decimal Decimal18Scale3Limit = 1_000_000_000_000_000m;
+
+    // The exclusive bound of a decimal(18,6) column (12 integer digits): a captured parameter value beyond it is refused.
+    private const decimal Decimal18Scale6Limit = 1_000_000_000_000m;
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
@@ -80,6 +83,13 @@ public sealed class ManufacturingStore(
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kesim boyu kayıt sütununa sığmıyor.");
         }
 
+        // U2-a: the net usable width is a decimal(18,3) millimetre, the plan-entered line speed a decimal(18,6) value.
+        if (plan.Spec?.NetUsableWidthMm >= Decimal18Scale3Limit)
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Net kullanılabilir en kayıt sütununa sığmıyor.");
+        }
+
+        RequireLineSpeedFits(plan.LineSpeedMetresPerMinute);
         var payloadHash = PlanHash(plan);
         var existing = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == plan.Id, cancellationToken);
         if (existing is not null)
@@ -100,6 +110,8 @@ public sealed class ManufacturingStore(
             TargetBasis = plan.Target is null ? null : (int)plan.Target.Basis,
             TargetKg = plan.Target?.Mass.Value,
             WindingTargetKg = plan.Spec?.WindingTargetKg?.Value,
+            NetUsableWidthMm = plan.Spec?.NetUsableWidthMm,
+            LineSpeedMetresPerMinute = plan.LineSpeedMetresPerMinute,
             Version = plan.Version,
             PayloadHash = payloadHash,
             CreatedAtUtc = now,
@@ -158,8 +170,30 @@ public sealed class ManufacturingStore(
         return ManufacturingWriteOutcome.Recorded;
     }
 
+    public Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId,
+        DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        ApprovePlanAsync(planId, expectedVersion, approvedByUserId, approvedAt, parameterSnapshot: null, metadata,
+            cancellationToken);
+
+    /// <summary>
+    /// Üretim U1-b: the approval with its captured Settings parameter profile, in ONE save: the plan's status and
+    /// version, the snapshot header and values, the audit event and the command answer. The slitting gate runs on the
+    /// Product dimensions the plan captured and the profile (<see cref="SlittingPlanParameters.FromCaptured"/>).
+    /// </summary>
+    public Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId,
+        DateTimeOffset approvedAt, PlanParameterSnapshotV1? parameterSnapshot, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        ApprovePlanAsync(planId, expectedVersion, approvedByUserId, approvedAt, parameterSnapshot, labelUsable: null,
+            metadata, cancellationToken);
+
+    /// <summary>
+    /// Üretim U2-a: the approval with Inventory's current label answer per parent roll (the slitting gate's
+    /// <c>labelState</c>) beside the captured profile. The plan-entered line speed replaces the profile's value in the
+    /// stored snapshot (source <c>Plan</c>, URT-D9).
+    /// </summary>
     public async Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId,
-        DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        DateTimeOffset approvedAt, PlanParameterSnapshotV1? parameterSnapshot, IReadOnlyDictionary<Guid, bool>? labelUsable,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
@@ -168,17 +202,57 @@ public sealed class ManufacturingStore(
         var plan = await RestorePlanAsync(row, cancellationToken);
         var before = PlanAudit(plan);
         var versionBefore = plan.Version;
+        if (parameterSnapshot is not null && parameterSnapshot.Values.Any(value =>
+                value.Number is { } number && (number >= Decimal18Scale6Limit || number <= -Decimal18Scale6Limit
+                    || decimal.Round(number, 6) != number)))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Parametre değeri kayıt sütununa sığmıyor.");
+        }
 
-        // The domain decides: the version fence first, then "only a draft is approved".
-        plan.Approve(expectedVersion, approvedByUserId, approvedAt);
+        // The domain decides: the version fence first, then "only a draft is approved", then the slitting gate.
+        plan.Approve(expectedVersion, approvedByUserId, approvedAt,
+            SlittingPlanParameters.FromCaptured(plan.Inputs, parameterSnapshot, labelUsable), parameterSnapshot);
 
         row.Status = (int)plan.Status;
         row.ApprovedByUserId = plan.ApprovedByUserId;
         row.ApprovedAtUtc = plan.ApprovedAtUtc;
         row.Version = plan.Version;
         row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        // U2-a: the plan's own capture (with a plan-entered value replacing the profile's) is what is stored.
+        parameterSnapshot = plan.ParameterSnapshot;
+        if (parameterSnapshot is not null)
+        {
+            dbContext.PlanParameterSnapshots.Add(new PlanParameterSnapshotRow
+            {
+                CompanyId = companyId,
+                PlanId = plan.Id,
+                ProfileId = parameterSnapshot.ProfileId,
+                ProfileVersion = parameterSnapshot.ProfileVersion,
+                Source = parameterSnapshot.Source,
+                Process = (int)parameterSnapshot.Process,
+                ProfileWorkCenterId = parameterSnapshot.WorkCenterId,
+                EffectiveFrom = parameterSnapshot.EffectiveFrom,
+                EffectiveThrough = parameterSnapshot.EffectiveThrough,
+                SelectedForDate = parameterSnapshot.SelectedForDate,
+                CapturedAtUtc = plan.ApprovedAtUtc!.Value,
+            });
+            foreach (var value in parameterSnapshot.Values)
+            {
+                dbContext.PlanParameterSnapshotValues.Add(new PlanParameterSnapshotValueRow
+                {
+                    CompanyId = companyId,
+                    PlanId = plan.Id,
+                    ParameterKey = value.Key,
+                    Unit = value.Unit,
+                    NumericValue = value.Number,
+                    ChoiceValue = value.Choice,
+                    ValueSource = value.Source,
+                });
+            }
+        }
+
         Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.approved.v1", "Approve",
-            versionBefore, plan.Version, before, PlanAudit(plan), "Üretim planı onayı");
+            versionBefore, plan.Version, before, ApprovalAudit(plan, parameterSnapshot), "Üretim planı onayı");
         Complete(metadata, companyId, plan);
         await SaveAsync(cancellationToken);
         return plan;
@@ -217,6 +291,12 @@ public sealed class ManufacturingStore(
             var statusValue = (int)requested;
             query = query.Where(row => row.Status == statusValue);
         }
+        else
+        {
+            // U2-a: without a status the list is the active plans; a Cancelled plan is listed only when asked for.
+            const int cancelled = (int)PlanStatus.Cancelled;
+            query = query.Where(row => row.Status != cancelled);
+        }
 
         if (cursor is not null)
         {
@@ -243,15 +323,16 @@ public sealed class ManufacturingStore(
             .Select(group => new { PlanId = group.Key, Count = group.Count(), PlannedKg = group.Sum(input => input.PlannedKg) })
             .ToListAsync(cancellationToken);
 
-        // MFG-PLAN-EDIT: a revised plan lists its CURRENT content — the revision its row's version counts — not the
-        // content it was created with. A revision committed after the row was read is not this page's; the next read
-        // shows it with its own version.
-        var revised = page.Where(row => RevisionCountOf(row) > 0).Select(row => row.Id).ToArray();
-        var revisionHeaders = revised.Length == 0
-            ? []
-            : await dbContext.PlanRevisions.AsNoTracking()
-                .Where(revision => revised.Contains(revision.PlanId))
-                .ToListAsync(cancellationToken);
+        // MFG-PLAN-EDIT: a revised plan lists its CURRENT content — the newest revision its row's version covers — not
+        // the content it was created with. A revision committed after the row was read is not this page's (its produced
+        // version is above the row's); the next read shows it with its own version.
+        var allRevisionHeaders = await dbContext.PlanRevisions.AsNoTracking()
+            .Where(revision => ids.Contains(revision.PlanId))
+            .ToListAsync(cancellationToken);
+        var revisionHeaders = allRevisionHeaders
+            .Where(revision => page.Any(row => row.Id == revision.PlanId && revision.PlanVersion <= row.Version))
+            .ToList();
+        var revised = revisionHeaders.Select(revision => revision.PlanId).Distinct().ToArray();
         // The same grouped sum as the creation inputs above (an empty id set reads nothing).
         var revisionInputs = await dbContext.PlanRevisionInputs.AsNoTracking()
             .Where(input => revised.Contains(input.PlanId))
@@ -268,7 +349,8 @@ public sealed class ManufacturingStore(
         var summaries = new List<ManufacturingPlanSummary>(page.Count);
         foreach (var row in page)
         {
-            var revisionNo = RevisionCountOf(row);
+            var revisionNo = revisionHeaders.Where(revision => revision.PlanId == row.Id)
+                .Select(revision => revision.RevisionNo).DefaultIfEmpty(0).Max();
             var (workCenterId, targetBasis, targetKg) = (row.WorkCenterId, row.TargetBasis, row.TargetKg);
             int count;
             decimal plannedKg;
@@ -298,7 +380,7 @@ public sealed class ManufacturingStore(
                 (ManufacturingProcess)row.Process, (PlanStatus)row.Status, row.Version, count,
                 new Kilograms(plannedKg), (TargetBasis?)targetBasis,
                 targetKg is { } target ? new Kilograms(target) : null, row.CreatedAtUtc, row.ApprovedByUserId,
-                row.ApprovedAtUtc));
+                row.ApprovedAtUtc, row.CancelledAtUtc));
         }
 
         var last = page.LastOrDefault();
@@ -323,10 +405,18 @@ public sealed class ManufacturingStore(
         await RevisePlanWithCutLinesAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target,
             cutToLengthSpec: null, reason, metadata, cancellationToken);
 
-    public async Task<ProductionPlan> RevisePlanWithCutLinesAsync(Guid planId, long expectedVersion, Guid workCenterId,
+    public Task<ProductionPlan> RevisePlanWithCutLinesAsync(Guid planId, long expectedVersion, Guid workCenterId,
         ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
         CutToLengthSpec? cutToLengthSpec, string reason, ManufacturingCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        RevisePlanContentAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec,
+            lineSpeedMetresPerMinute: null, reason, metadata, cancellationToken);
+
+    /// <summary>Üretim U2-a: the revision with the plan-entered line speed (URT-D9), stored on the revision row.</summary>
+    public async Task<ProductionPlan> RevisePlanContentAsync(Guid planId, long expectedVersion, Guid workCenterId,
+        ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+        CutToLengthSpec? cutToLengthSpec, decimal? lineSpeedMetresPerMinute, string reason,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         ArgumentNullException.ThrowIfNull(inputs);
@@ -354,6 +444,7 @@ public sealed class ManufacturingStore(
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kesim boyu kayıt sütununa sığmıyor.");
         }
 
+        RequireLineSpeedFits(lineSpeedMetresPerMinute);
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var plan = await RestorePlanAsync(row, cancellationToken);
@@ -361,7 +452,8 @@ public sealed class ManufacturingStore(
         var versionBefore = plan.Version;
 
         // The domain decides: the version fence first, then "only a draft", the spec, the process, the inputs.
-        plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec);
+        plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec,
+            lineSpeedMetresPerMinute);
 
         if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
         {
@@ -379,6 +471,7 @@ public sealed class ManufacturingStore(
             WorkCenterId = plan.WorkCenterId,
             TargetBasis = plan.Target is null ? null : (int)plan.Target.Basis,
             TargetKg = plan.Target?.Mass.Value,
+            LineSpeedMetresPerMinute = plan.LineSpeedMetresPerMinute,
             Reason = trimmedReason,
             PlanVersion = plan.Version,
             RevisedBy = metadata.ActorId.Trim(),
@@ -429,6 +522,82 @@ public sealed class ManufacturingStore(
     }
 
     /// <summary>
+    /// Üretim U2-a (URT-D2, API-10): the rejection of a Draft in one save — the rejection row (append-only), the plan
+    /// row's new version and update time, the audit event (<c>manufacturing.plan.rejected.v1</c>, before and after, the
+    /// reason) and the command record — or nothing. The domain decides on the plan rebuilt from storage.
+    /// </summary>
+    public async Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId,
+        DateTimeOffset rejectedAt, string reason, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var before = PlanAudit(plan);
+        var versionBefore = plan.Version;
+
+        // The domain decides: the version fence, not cancelled, only a Draft, a reason.
+        plan.Reject(expectedVersion, rejectedByUserId, rejectedAt, reason);
+        var rejection = plan.Rejections[^1];
+
+        dbContext.PlanRejections.Add(new PlanRejectionRow
+        {
+            CompanyId = companyId,
+            PlanId = plan.Id,
+            RejectionNo = rejection.Number,
+            Reason = rejection.Reason,
+            PlanVersion = rejection.PlanVersion,
+            RejectedByUserId = rejection.RejectedByUserId,
+            RejectedAtUtc = rejection.RejectedAtUtc,
+            CorrelationId = metadata.CorrelationId.Trim(),
+        });
+        row.Version = plan.Version;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.rejected.v1", "Reject",
+            versionBefore, plan.Version, before, PlanAudit(plan), rejection.Reason);
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    /// <summary>
+    /// Üretim U2-a (API-11): the cancellation of a Draft, or of an approved plan with no order, in one save — the plan
+    /// row's status, cancellation columns, version and update time, the audit event (<c>manufacturing.plan.cancelled.v1</c>)
+    /// and the command record — or nothing. The plan is kept; nothing is deleted. An order created concurrently moves no
+    /// plan column, so the domain's check reads the order the rebuilt plan carries.
+    /// </summary>
+    public async Task<ProductionPlan> CancelPlanAsync(Guid planId, long expectedVersion, Guid cancelledByUserId,
+        DateTimeOffset cancelledAt, string reason, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var before = PlanAudit(plan);
+        var versionBefore = plan.Version;
+
+        // The domain decides: the version fence, not already cancelled, no order, a reason.
+        plan.Cancel(expectedVersion, cancelledByUserId, cancelledAt, reason);
+        var cancellation = plan.Cancellation!;
+
+        row.Status = (int)plan.Status;
+        row.CancelledByUserId = cancellation.CancelledByUserId;
+        row.CancelledAtUtc = cancellation.CancelledAtUtc;
+        row.CancellationReason = cancellation.Reason;
+        row.Version = plan.Version;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.cancelled.v1", "Cancel",
+            versionBefore, plan.Version, before, PlanAudit(plan), cancellation.Reason);
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    /// <summary>
     /// MFG-PLAN-EDIT: the plan's history — revision 0 from the plan's own rows as created, then every revision its row's
     /// version counts, each with its complete inputs. Null when the company has no such plan.
     /// </summary>
@@ -457,7 +626,7 @@ public sealed class ManufacturingStore(
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                     input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc,
-                CutSpec(createdCutLines)),
+                CutSpec(createdCutLines), row.LineSpeedMetresPerMinute),
         };
         history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
             header.WorkCenterId,
@@ -465,7 +634,8 @@ public sealed class ManufacturingStore(
                 .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                     input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
             Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc,
-            CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)))));
+            CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)),
+            header.LineSpeedMetresPerMinute)));
         return history;
     }
 
@@ -482,14 +652,19 @@ public sealed class ManufacturingStore(
                 : throw Refused(ManufacturingStoreCodes.OrderIdConflict, "Aynı emir kimliği başka bir plan için verildi.");
         }
 
-        var planRow = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == planId, cancellationToken)
+        // U2-a: the plan row is tracked and its update time touched in the order's save, so a cancellation racing this
+        // order (which reads the plan's orders before it commits) loses on the plan row's concurrency token, and the
+        // reverse: a cancelled plan never carries an order.
+        var planRow = await dbContext.Plans.SingleOrDefaultAsync(row => row.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var plan = await RestorePlanAsync(planRow, cancellationToken);
 
-        // The domain decides: only an approved plan becomes an order.
+        // The domain decides: only an approved plan becomes an order, and (U2-a, URT-D1) only one order per plan — the
+        // rebuilt plan carries the order it already opened. Racing writers meet the unique (company, plan) index.
         var order = ProductionOrder.FromApprovedPlan(orderId, plan);
 
         var now = timeProvider.GetUtcNow();
+        planRow.UpdatedAtUtc = now;
         dbContext.Orders.Add(new OrderRow
         {
             Id = order.Id,
@@ -671,6 +846,11 @@ public sealed class ManufacturingStore(
             ApprovalPolicyId = exceptionApproval?.PolicyId,
             ApprovalPolicyVersion = exceptionApproval?.PolicyVersion,
             ApprovedAtUtc = exceptionApproval?.ApprovedAtUtc,
+            PolicySource = policy.Source,
+            PolicyWorkCenterId = policy.WorkCenterId,
+            MassBalanceDifferenceTolerancePercent = policy.MassBalanceDifferenceTolerancePercent is { } massBalance
+                ? Canonical(massBalance)
+                : null,
         });
 
         row.Status = (int)order.Status;
@@ -689,6 +869,11 @@ public sealed class ManufacturingStore(
                     policy.PolicyVersion,
                     process = policy.Process.ToString(),
                     maximumFirePercent = Canonical(policy.MaximumFirePercent),
+                    massBalanceDifferenceTolerancePercent = policy.MassBalanceDifferenceTolerancePercent is { } percent
+                        ? Canonical(percent)
+                        : null,
+                    source = policy.Source,
+                    workCenterId = policy.WorkCenterId,
                     policy.IsActive,
                     policy.EffectiveFrom,
                     policy.EffectiveThrough,
@@ -947,47 +1132,122 @@ public sealed class ManufacturingStore(
             .OrderBy(line => line.Ordinal)
             .ToListAsync(cancellationToken);
         var (headers, revisionInputs, revisionCutLines) = await ReadRevisionsAsync(row, cancellationToken);
+        var parameterSnapshot = await RestoreParameterSnapshotAsync(row, cancellationToken);
+        // U2-a: the rejections the row's version covers (each names the version it produced), the order the plan opened
+        // (one per plan, URT-D1) and the cancellation on the row.
+        var rejections = await dbContext.PlanRejections.AsNoTracking()
+            .Where(rejection => rejection.PlanId == row.Id && rejection.PlanVersion <= row.Version)
+            .OrderBy(rejection => rejection.RejectionNo)
+            .ToListAsync(cancellationToken);
+        var orderIds = await dbContext.Orders.AsNoTracking()
+            .Where(order => order.PlanId == row.Id)
+            .Select(order => order.Id)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        if (orderIds.Count > 1)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı planın birden fazla emri var; bir plandan tek emir açılır.");
+        }
+
+        var cancellation = row.CancelledByUserId is { } cancelledBy && row.CancelledAtUtc is { } cancelledAt
+                                                                     && row.CancellationReason is { } cancellationReason
+            ? new PlanCancellation(cancellationReason, cancelledBy, cancelledAt)
+            : null;
+        if (cancellation is null && (row.CancelledByUserId is not null || row.CancelledAtUtc is not null
+                                     || row.CancellationReason is not null))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan iptali iptal edeni, anı ve gerekçeyi birlikte taşımalı.");
+        }
+
         // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
-        return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
+        var plan = ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                 input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input))),
             Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
-            Spec(lines, row.WindingTargetKg),
+            Spec(lines, row.WindingTargetKg, row.NetUsableWidthMm),
             headers.Select(header => new PlanRevisionContent(header.WorkCenterId,
                 [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                     .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                         input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(header.TargetBasis, header.TargetKg),
-                CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)))),
-            CutSpec(cutLines));
+                CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)),
+                header.LineSpeedMetresPerMinute, header.PlanVersion)),
+            CutSpec(cutLines),
+            parameterSnapshot,
+            row.LineSpeedMetresPerMinute,
+            rejections.Select(rejection => new PlanRejection(rejection.RejectionNo, rejection.Reason,
+                rejection.RejectedByUserId, rejection.RejectedAtUtc, rejection.PlanVersion)),
+            cancellation,
+            orderIds.Count == 1 ? orderIds[0] : null);
+        if ((PlanStatus)row.Status != plan.Status)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan durumu planın kendi adımlarıyla uyuşmuyor.");
+        }
+
+        return plan;
     }
 
     /// <summary>
-    /// MFG-PLAN-EDIT: how many revisions the plan row's version counts — one step for the creation, one per revision
-    /// and one for the approval. Read under RCSI, the row fixes the snapshot: a revision committed after it (with its
-    /// own version step) is not this read's, so a plan never pairs one version with another version's content.
+    /// Üretim U1-b: the parameter profile captured at the plan's approval, or null. A stored snapshot the domain refuses
+    /// (no values, a malformed version, a value of neither shape) is refused, never repaired.
     /// </summary>
-    private static int RevisionCountOf(PlanRow row) =>
-        (int)Math.Max(0L, row.Version - 1 - (row.Status == (int)PlanStatus.Approved ? 1 : 0));
+    private async Task<PlanParameterSnapshotV1?> RestoreParameterSnapshotAsync(PlanRow row,
+        CancellationToken cancellationToken)
+    {
+        var header = await dbContext.PlanParameterSnapshots.AsNoTracking()
+            .SingleOrDefaultAsync(snapshot => snapshot.PlanId == row.Id, cancellationToken);
+        if (header is null)
+        {
+            return null;
+        }
+
+        var values = await dbContext.PlanParameterSnapshotValues.AsNoTracking()
+            .Where(value => value.PlanId == row.Id)
+            .ToListAsync(cancellationToken);
+        try
+        {
+            return new PlanParameterSnapshotV1(header.ProfileId, header.ProfileVersion, header.Source,
+                (ManufacturingProcess)header.Process, header.ProfileWorkCenterId, header.EffectiveFrom,
+                header.EffectiveThrough, header.SelectedForDate,
+                values.Select(value => new PlanParameterValueV1(value.ParameterKey, value.Unit, value.NumericValue,
+                    value.ChoiceValue, value.ValueSource)));
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan parametre snapshot'ı geçersiz.");
+        }
+    }
 
     /// <summary>
-    /// The revisions the row's version counts, with their complete inputs, oldest first. Numbered 1..n without a gap,
-    /// or the stored plan is refused, never repaired.
+    /// The revisions the row's version covers — each names the plan version it produced (U2-a: rejections step the
+    /// version too, so the row's version no longer counts revisions alone) — with their complete inputs, oldest first.
+    /// Read under RCSI, the row fixes the snapshot: a revision committed after it (its produced version is above the
+    /// row's) is not this read's, so a plan never pairs one version with another version's content. Numbered 1..n
+    /// without a gap, or the stored plan is refused, never repaired.
     /// </summary>
     private async Task<(IReadOnlyList<PlanRevisionRow> Headers, IReadOnlyList<PlanRevisionInputRow> Inputs,
         IReadOnlyList<PlanRevisionCutLineRow> CutLines)> ReadRevisionsAsync(
         PlanRow row, CancellationToken cancellationToken)
     {
-        var count = RevisionCountOf(row);
-        if (count == 0)
+        if (row.Version <= 1)
         {
             return ([], [], []);
         }
 
         var headers = await dbContext.PlanRevisions.AsNoTracking()
-            .Where(revision => revision.PlanId == row.Id && revision.RevisionNo <= count)
+            .Where(revision => revision.PlanId == row.Id && revision.PlanVersion <= row.Version)
             .OrderBy(revision => revision.RevisionNo)
             .ToListAsync(cancellationToken);
+        var count = headers.Count;
+        if (count == 0)
+        {
+            return ([], [], []);
+        }
+
         if (!headers.Select(header => header.RevisionNo).SequenceEqual(Enumerable.Range(1, count)))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
@@ -1080,15 +1340,28 @@ public sealed class ManufacturingStore(
                 throw new ArgumentException("Kayıtlı tolerans yüzdesi decimal değildir.");
             }
 
+            decimal? massBalance = null;
+            if (row.MassBalanceDifferenceTolerancePercent is { } massBalanceText)
+            {
+                if (!decimal.TryParse(massBalanceText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                        out var parsed))
+                {
+                    throw new ArgumentException("Kayıtlı kütle dengesi yüzdesi decimal değildir.");
+                }
+
+                massBalance = parsed;
+            }
+
             var policy = new ClosureTolerancePolicySnapshotV1(
                 row.CompanyId, row.PolicyId, row.PolicyVersion, (ManufacturingProcess)row.Process,
-                maximumFirePercent, row.IsActive, row.EffectiveFrom, row.EffectiveThrough, row.SelectedForDate);
+                maximumFirePercent, row.IsActive, row.EffectiveFrom, row.EffectiveThrough, row.SelectedForDate,
+                massBalance, row.PolicySource ?? ClosureTolerancePolicySnapshotV1.SettingsSource, row.PolicyWorkCenterId);
             var approval = row.ApprovedByUserId is not Guid approvedBy
                 ? null
                 : ClosureExceptionApprovalV1.Create(
                     row.CompanyId, row.OrderId, approvedBy, row.ApprovalReason!,
                     row.ApprovalOrderVersion ?? 0, row.ApprovalPolicyId ?? Guid.Empty,
-                    row.ApprovalPolicyVersion ?? 0, row.ApprovedAtUtc ?? default);
+                    row.ApprovalPolicyVersion ?? -1, row.ApprovedAtUtc ?? default);
             return (policy, approval);
         }
         catch (ArgumentException)
@@ -1102,18 +1375,19 @@ public sealed class ManufacturingStore(
     /// A plan has a slitting spec exactly when it has slit lines; a winding target without lines is a
     /// stored record the domain cannot have produced, and is refused, not repaired.
     /// </summary>
-    private static SlittingSpec? Spec(IReadOnlyList<PlanSlitLineRow> lines, decimal? windingTargetKg)
+    private static SlittingSpec? Spec(IReadOnlyList<PlanSlitLineRow> lines, decimal? windingTargetKg,
+        decimal? netUsableWidthMm)
     {
         if (lines.Count == 0)
         {
-            return windingTargetKg is null
+            return windingTargetKg is null && netUsableWidthMm is null
                 ? null
                 : throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
-                    "Kayıtlı sarım hedefi dilme satırı olmadan var olamaz.");
+                    "Kayıtlı sarım hedefi ya da net en dilme satırı olmadan var olamaz.");
         }
 
         return new SlittingSpec(lines.Select(line => new SlitLine(line.BandWidthMm, line.BandCount)),
-            windingTargetKg is { } target ? new Kilograms(target) : null);
+            windingTargetKg is { } target ? new Kilograms(target) : null, netUsableWidthMm);
     }
 
     private static CutToLengthSpec? CutSpec(IReadOnlyList<PlanCutLineRow> lines) => lines.Count == 0
@@ -1210,6 +1484,12 @@ public sealed class ManufacturingStore(
                 builder.Append(Canonical(line.BandWidthMm)).Append('x')
                     .Append(line.Count.ToString(CultureInfo.InvariantCulture)).Append(';');
             }
+
+            // U2-a: only a spec WITH a net usable width extends the bytes, so every spec stored before keeps its hash.
+            if (spec.NetUsableWidthMm is { } netWidth)
+            {
+                builder.Append("|net-width.v1|").Append(Canonical(netWidth));
+            }
         }
 
 
@@ -1224,6 +1504,12 @@ public sealed class ManufacturingStore(
                     .Append(Canonical(line.LengthMm)).Append('x')
                     .Append(line.Count.ToString(CultureInfo.InvariantCulture)).Append(';');
             }
+        }
+
+        // U2-a (URT-D9): only a plan WITH a plan-entered line speed extends the historical hash bytes.
+        if (plan.LineSpeedMetresPerMinute is { } lineSpeed)
+        {
+            builder.Append("|line-speed.v1|").Append(Canonical(lineSpeed));
         }
 
         return Hash(builder.ToString());
@@ -1381,7 +1667,60 @@ public sealed class ManufacturingStore(
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
-    private static string PlanAudit(ProductionPlan plan) => plan.Spec is { } spec
+    /// <summary>
+    /// The approval's after-state: the plan audit as before and, when a parameter profile was captured (U1-b), the
+    /// profile identity, source, window and values beside it.
+    /// </summary>
+    private static string ApprovalAudit(ProductionPlan plan, PlanParameterSnapshotV1? snapshot) => snapshot is null
+        ? PlanAudit(plan)
+        : JsonSerializer.Serialize(new
+        {
+            plan = JsonSerializer.Deserialize<JsonElement>(PlanAudit(plan)),
+            parameterProfile = new
+            {
+                snapshot.ProfileId,
+                snapshot.ProfileVersion,
+                snapshot.Source,
+                snapshot.WorkCenterId,
+                snapshot.EffectiveFrom,
+                snapshot.EffectiveThrough,
+                snapshot.SelectedForDate,
+                values = snapshot.Values.Select(value => new { value.Key, value.Unit, value.Number, value.Choice, value.Source }),
+            },
+        }, Json);
+
+    /// <summary>
+    /// The plan's audit state. Üretim U2-a: a plan that carries a plan-entered value (net usable width, line speed), a
+    /// rejection or a cancellation adds them beside the earlier shape; every other plan keeps that shape exactly.
+    /// </summary>
+    private static string PlanAudit(ProductionPlan plan)
+    {
+        var core = PlanAuditCore(plan);
+        if (plan.Spec?.NetUsableWidthMm is null && plan.LineSpeedMetresPerMinute is null && plan.Rejections.Count == 0
+            && plan.Cancellation is null && plan.Status != PlanStatus.Cancelled)
+        {
+            return core;
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            plan = JsonSerializer.Deserialize<JsonElement>(core),
+            status = plan.Status.ToString(),
+            netUsableWidthMm = plan.Spec?.NetUsableWidthMm,
+            lineSpeedMetresPerMinute = plan.LineSpeedMetresPerMinute,
+            rejections = plan.Rejections.Select(rejection => new
+            {
+                rejection.Number,
+                rejection.Reason,
+                rejection.RejectedByUserId,
+                rejection.RejectedAtUtc,
+                rejection.PlanVersion,
+            }),
+            cancellation = plan.Cancellation,
+        }, Json);
+    }
+
+    private static string PlanAuditCore(ProductionPlan plan) => plan.Spec is { } spec
         // MFG-6: a plan with a slitting spec carries it in its audit; a plan without one keeps the MFG-5 shape.
         ? JsonSerializer.Serialize(new
         {
@@ -1464,6 +1803,14 @@ public sealed class ManufacturingStore(
         {
             // A unique key lost to another writer, or a plan naming a work center that is not this
             // company's (the composite foreign key, 547). Anything else stays the database's error.
+            // U2-a (URT-D1): the unique (company, plan) order index lost to another writer is the plan's own rule.
+            if (sql.Number is 2601 or 2627
+                && sql.Message.Contains("IX_Orders_CompanyId_PlanId", StringComparison.Ordinal))
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanOrderExists,
+                    "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
+            }
+
             var code = sql.Number switch
             {
                 2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
@@ -1555,6 +1902,15 @@ public sealed class ManufacturingStore(
         if (masses.Any(mass => mass.Value >= Decimal18Scale3Limit))
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kütle kayıt alanına sığmıyor; kesilmez, reddedilir.");
+        }
+    }
+
+    /// <summary>U2-a: the plan-entered line speed is a decimal(18,6) value; beyond the column it is refused, never cut.</summary>
+    private static void RequireLineSpeedFits(decimal? lineSpeed)
+    {
+        if (lineSpeed >= Decimal18Scale6Limit)
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Hat hızı kayıt sütununa sığmıyor.");
         }
     }
 

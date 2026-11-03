@@ -17,8 +17,10 @@ internal sealed class FinanceOpenItemRow : IFinanceTenantRow
     /// <summary>
     /// MOD-15: <see cref="FinanceOpenItemDirectionCodes.Receivable"/> or <see cref="FinanceOpenItemDirectionCodes.Payable"/>,
     /// always the one its <see cref="SourceKind"/> maps to (the database checks the pair, CK_OpenItems_Direction).
+    /// <c>required</c> and without a default: every writer names the direction, a forgotten one never becomes a
+    /// silent receivable (review B P3).
     /// </summary>
-    public int Direction { get; set; } = FinanceOpenItemDirectionCodes.Receivable;
+    public required int Direction { get; set; }
     public Guid SourceId { get; set; }
     public Guid SourceLineId { get; set; }
     public string SourceVersion { get; set; } = string.Empty;

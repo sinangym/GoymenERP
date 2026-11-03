@@ -278,7 +278,8 @@ public sealed class OrderTargetAndCloseTests
             fault == "empty-reason" ? " " : fault == "control-reason" ? "bad\nreason" : "Geçerli gerekçe",
             fault == "order-version" ? 0 : 7,
             fault == "policy-id" ? Guid.Empty : Policy,
-            fault == "policy-version" ? 0 : 3,
+            // U1-b (URT-D23): the catalog's version 0 is valid evidence; a negative version never is.
+            fault == "policy-version" ? -1 : 3,
             fault == "time" ? default : DateTimeOffset.UnixEpoch));
 
         Assert.NotEmpty(exception.Message);

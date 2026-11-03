@@ -10,11 +10,13 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 
 /// <summary>
 /// The plan content to preview: the plan save's grammar without the plan id (nothing is created) — the work center,
-/// the planned inputs with the Inventory label version the screen read, and the optional target.
+/// the planned inputs with the Inventory label version the screen read, the optional target and, since U2-a, the
+/// optional plan-entered line speed (Slitting, Tube / Profile).
 /// </summary>
 public sealed record PlanPreviewRequestV1(
     Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
-    SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null);
+    SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null,
+    string? LineSpeedMetresPerMinute = null);
 
 /// <summary>One named, unrounded value as lossless invariant text.</summary>
 public sealed record PlanCalculatedValueViewV1(string Name, string Value);
@@ -59,9 +61,10 @@ public sealed partial class ManufacturingCommandService
     /// the fresh fence again; the plan's own domain rules (at least one roll, no roll twice). Any refusal is the save's
     /// own answer for the same content (status, code, field), so the screen can say why and on which field.
     /// Then the ONE plan calculator on the would-be plan with the outside parameters known today: the Product
-    /// dimensions captured on each input (<see cref="PlanCalculationParameters.FromCapturedSnapshots"/>). Every engine
-    /// parameter without a source yet (density, speed, kerf, …) answers <c>Unavailable</c> and is named. No command
-    /// record, no audit, no store write.
+    /// dimensions captured on each input and, since U1-b, the Settings parameter profile of the work center in force
+    /// today (<see cref="PlanCalculationParameters.FromCapturedSnapshots(IEnumerable{PlannedInput}, PlanParameterSnapshotV1?)"/>).
+    /// Every engine parameter the profile does not carry answers <c>Unavailable</c> and is named. No command record, no
+    /// audit, no store write.
     /// </summary>
     public async Task<ManufacturingApiResult<PlanPreviewViewV1>> PreviewPlanAsync(PlanPreviewRequestV1? request,
         string permission, CancellationToken cancellationToken)
@@ -83,6 +86,12 @@ public sealed partial class ManufacturingCommandService
         if (content.InvalidField is { } invalidField)
         {
             return Invalid<PlanPreviewViewV1>(invalidField);
+        }
+
+        var lineSpeed = ParseLineSpeed(request.LineSpeedMetresPerMinute);
+        if (lineSpeed.Invalid)
+        {
+            return Invalid<PlanPreviewViewV1>("lineSpeedMetresPerMinute");
         }
 
         // The save's grant, measured fresh before any owner is asked (#276).
@@ -108,6 +117,11 @@ public sealed partial class ManufacturingCommandService
             return Invalid<PlanPreviewViewV1>("cutToLengthSpec");
         }
 
+        if (lineSpeed.Value is not null && !LineSpeedAllowed(process.Value))
+        {
+            return Invalid<PlanPreviewViewV1>("lineSpeedMetresPerMinute");
+        }
+
         var verified = await VerifyPlanContentAsync(
             content.Inputs!, content.TargetKg, permission, companyId, actorId, cancellationToken);
         if (verified.Refusal is not null)
@@ -119,6 +133,14 @@ public sealed partial class ManufacturingCommandService
         if (slittingSpec.Refusal is not null)
         {
             return Refusal<PlanPreviewViewV1>(slittingSpec.Refusal);
+        }
+
+        // U1-b: the save's own read of the parameter profile in force today (same refusals as the save).
+        var parameters = await ReadParameterProfileAsync(process.Value, request.WorkCenterId, approval: false,
+            cancellationToken);
+        if (parameters.Refusal is not null)
+        {
+            return Refusal<PlanPreviewViewV1>(parameters.Refusal);
         }
 
         if (await FenceCapturedAsync<PlanPreviewViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
@@ -134,7 +156,7 @@ public sealed partial class ManufacturingCommandService
             plan = new ProductionPlan(Guid.NewGuid(), companyId, request.WorkCenterId, process.Value,
                 PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
                 BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget),
-                BuildCutToLengthSpec(content.CutToLengthSpec));
+                BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value);
         }
         catch (ManufacturingRuleException exception)
         {
@@ -150,7 +172,7 @@ public sealed partial class ManufacturingCommandService
 
         return new ManufacturingApiResult<PlanPreviewViewV1>(ManufacturingApiStatus.Ok,
             PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
-                PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))),
+                PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs, parameters.Snapshot))),
             false, null);
     }
 

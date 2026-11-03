@@ -78,7 +78,12 @@ export type UseReferenceOptions = (
   businessDate: string,
   accountSearch?: string,
   productSearch?: string,
+  /** SAT-D176 (EK25): a subcontract service order's picker asks the server for the service products only. */
+  productItemType?: ProductItemTypeFilter,
 ) => ReferenceSourceState
+
+/** SAT-D176: the Product owner's item type wire value the product candidates are narrowed to (only "Service" is asked). */
+export type ProductItemTypeFilter = 'Service'
 
 export const unavailableReferenceSource: UseReferenceOptions = () => ({ status: 'unavailable' })
 
@@ -186,20 +191,25 @@ export const useHttpCurrencyOptions: UseCurrencyOptions = (companyId, effectiveO
 }
 
 /** Product E1: bounded owner candidates for the business date and the server's normalized search. */
-export const useHttpProductOptions = (companyId: string, effectiveOn: string, productSearch = ''): ProductReadState => {
+export const useHttpProductOptions = (
+  companyId: string,
+  effectiveOn: string,
+  productSearch = '',
+  itemType?: ProductItemTypeFilter,
+): ProductReadState => {
   const q = productSearch.trim()
-  const key = companyId !== '' && isDateOnly(effectiveOn) ? `${companyId}|${effectiveOn}|${q}` : null
+  const key = companyId !== '' && isDateOnly(effectiveOn) ? `${companyId}|${effectiveOn}|${q}|${itemType ?? ''}` : null
   const [state, setState] = useState<Held<ProductOffer> | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     if (key === null) return
     const controller = new AbortController()
-    fetchProductOptions(effectiveOn, companyId, controller.signal, q).then((outcome) => {
+    fetchProductOptions(effectiveOn, companyId, controller.signal, q, itemType).then((outcome) => {
       if (controller.signal.aborted) return
       setState({ key, value: readState(outcome, () => setAttempt((n) => n + 1)) })
     })
     return () => controller.abort()
-  }, [key, companyId, effectiveOn, q, attempt])
+  }, [key, companyId, effectiveOn, q, itemType, attempt])
   if (key === null) return { status: 'idle' }
   return state !== null && state.key === key ? state.value : { status: 'loading' }
 }
@@ -245,11 +255,12 @@ export const useHttpReferenceOptions: UseReferenceOptions = (
   businessDate,
   accountSearch = '',
   productSearch = '',
+  productItemType,
 ) => {
   const accounts = useHttpAccountOptions(companyId, accountSearch)
   const useCurrencies = useContext(SalesCurrencySourceContext)
   const currencies = useCurrencies(companyId, businessDate)
-  const products = useHttpProductOptions(companyId, businessDate, productSearch)
+  const products = useHttpProductOptions(companyId, businessDate, productSearch, productItemType)
   // Until the real accounts answer arrives, or for another company, nothing is offered.
   if (accounts.status === 'idle' || accounts.status === 'loading') return { status: 'unavailable' }
   const missing: MissingReference[] = []

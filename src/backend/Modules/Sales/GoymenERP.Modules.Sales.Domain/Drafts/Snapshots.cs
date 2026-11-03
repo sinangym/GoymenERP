@@ -227,10 +227,12 @@ public sealed record ApprovedRevisionSnapshot(
 /// address and contact references, the sales owner and the due terms (DEC-SAL-008). Append-only beside the archived revision.
 /// </summary>
 /// <remarks>MOD-03 → Sales (SAT-D140): <see cref="BuyerTax"/> is the buyer tax situation the revision was approved with (null for an
-/// archive written before the tax wiring).</remarks>
+/// archive written before the tax wiring).
+/// SAT-D175 (EK25): <see cref="IsSubcontractService"/> is the order's "fason" flag as the revision was approved (set at create
+/// and never changed, so every archive of an order repeats it; false for every archive written before the flag existed).</remarks>
 public sealed record RevisionHeaderSnapshot(
     Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, OwnerReference? DeliveryAddress, OwnerReference? Contact,
-    Guid? SalesOwnerUserId, SalesDueTerms? DueTerms, SalesBuyerTax? BuyerTax = null);
+    Guid? SalesOwnerUserId, SalesDueTerms? DueTerms, SalesBuyerTax? BuyerTax = null, bool IsSubcontractService = false);
 
 /// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
 public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);
