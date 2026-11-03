@@ -18,6 +18,9 @@
 # A1-1 (plan API-01, ALS-D2): the disposable approver also holds purchasing.requests.approve so the browser journey
 # can approve the request the creator prepared and submitted (maker != checker: the creator never holds it) before
 # an order is opened for it. No real user, production role or seeded role receives purchasing.requests.approve.
+# A1-1b (plan API-01b, ALS-D46): the disposable creator, who prepares and submits its requests, also holds
+# purchasing.requests.withdraw so the browser journey can withdraw its own submitted request from the request detail.
+# Only this SENTETIK creator holds it; no real user, production role or seeded role receives purchasing.requests.withdraw.
 services:
   api:
     environment:
@@ -92,6 +95,7 @@ services:
       IdentitySeed__Roles__7__Permissions__3: product.operational-selection.read
       IdentitySeed__Roles__7__Permissions__4: documents.files.read
       IdentitySeed__Roles__7__Permissions__5: documents.files.upload
+      IdentitySeed__Roles__7__Permissions__6: purchasing.requests.withdraw
       IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000604
       IdentitySeed__Roles__8__Code: BROWSER_PUR01_RECEIVER
       IdentitySeed__Roles__8__Name: SENTETIK browser-suite:pur01 Purchasing goods receiver

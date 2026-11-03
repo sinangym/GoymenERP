@@ -237,6 +237,14 @@ public static class ErpPermissions
         "manufacturing.orders.close-exception.approve";
 
     /// <summary>
+    /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
+    /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
+    /// nor approving one. Registered, not granted: no role and no user receives it here; the grant is a human gate.
+    /// Company-wide only for the reason above (K-1: the route filters by no work center). Not Critical.
+    /// </summary>
+    public const string ManufacturingPlansCancel = "manufacturing.plans.cancel";
+
+    /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
     /// reading one, and because until now a plan could be created and approved but **never read
     /// again** — there was no plan read at any layer above the store. Registered, not granted.
@@ -656,6 +664,15 @@ public static class ErpPermissions
     public const string PurchasingRequestsApprove = "purchasing.requests.approve";
 
     /// <summary>
+    /// A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer or submitter withdraws their Submitted purchase request with a reason — the
+    /// Purchasing owner's name (PurchasingPermissionManifestV1.RequestsWithdraw), apart from entering and from the
+    /// manager's decision; neither confers the other. "Only the preparer or submitter" is enforced by the Purchasing service on the
+    /// command, not through this catalogue. Registered, not granted: no role, seed or user receives it here (only SENTETIK
+    /// browser-suite personas in disposable stacks). Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingRequestsWithdraw = "purchasing.requests.withdraw";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -865,6 +882,7 @@ public static class ErpPermissions
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
+            ManufacturingPlansCancel,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -894,6 +912,7 @@ public static class ErpPermissions
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
             PurchasingRequestsApprove,
+            PurchasingRequestsWithdraw,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1016,6 +1035,7 @@ public static class ErpPermissions
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
+            ManufacturingPlansCancel,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -1045,6 +1065,7 @@ public static class ErpPermissions
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
             PurchasingRequestsApprove,
+            PurchasingRequestsWithdraw,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

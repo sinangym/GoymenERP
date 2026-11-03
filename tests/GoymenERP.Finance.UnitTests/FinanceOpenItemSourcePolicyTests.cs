@@ -20,7 +20,7 @@ public sealed class FinanceOpenItemSourcePolicyTests
             new FinanceContext(company, "actor", "correlation", null), reference, batch));
 
         var persisted = new FinanceOpenItemRow
-        {
+        { Direction = FinanceOpenItemDirectionCodes.Receivable,
             Id = row.OpenItemId,
             SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
             SourceId = row.SourceDocumentId,

@@ -19,6 +19,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private const string PlanCutLines = "20261014120000_AddManufacturingPlanCutLines";
     private const string TechnicalLengthSnapshots = "20261015123000_AddManufacturingPlanTechnicalLengthSnapshots";
     private const string PlanParameterSnapshots = "20261102121844_AddManufacturingPlanParameterSnapshots";
+    private const string PlanLifecycle = "20261102181335_AddManufacturingPlanLifecycle";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -45,12 +46,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(PlanParameterSnapshots, reapplied[^1]);
-            Assert.Equal(TechnicalLengthSnapshots, reapplied[^2]);
-            Assert.Equal(PlanCutLines, reapplied[^3]);
-            Assert.Equal(CommercialContexts, reapplied[^4]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^5]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^6]);
+            Assert.Equal(PlanLifecycle, reapplied[^1]);
+            Assert.Equal(PlanParameterSnapshots, reapplied[^2]);
+            Assert.Equal(TechnicalLengthSnapshots, reapplied[^3]);
+            Assert.Equal(PlanCutLines, reapplied[^4]);
+            Assert.Equal(CommercialContexts, reapplied[^5]);
+            Assert.Equal(TechnicalSnapshots, reapplied[^6]);
+            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^7]);
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(

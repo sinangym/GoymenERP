@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -24,20 +25,27 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 // travel as lossless invariant text (Ö2), as Inventory's reads do; a JSON number would lose digits in
 // a browser. Every id is the caller's (R3): the same id with the same content is a replay.
 
+/// <summary>
+/// A new Draft plan. Üretim U2-a: <see cref="LineSpeedMetresPerMinute"/> is the optional line speed entered on a Slitting
+/// or Tube / Profile plan (URT-D9), lossless positive decimal text; it wins over the parameter profile for this plan.
+/// </summary>
 public sealed record SavePlanRequestV1(
     Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
-    SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null);
+    SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null,
+    string? LineSpeedMetresPerMinute = null);
 
 public sealed record SlitLineRequestV1(string? BandWidthMm, int Count);
 
 /// <summary>
 /// The immutable Slitting content declared when a plan is created. Line order is significant and preserved.
-/// <see cref="WindingTargetKg"/> is optional; all other calculation inputs remain owner-provided and fail closed
-/// when unavailable.
+/// <see cref="WindingTargetKg"/> is optional. Üretim U2-a: <see cref="NetUsableWidthMm"/> (optional, Ö2 millimetres) is
+/// the net usable width entered on the plan; it cannot exceed a planned parent coil's width. All other calculation
+/// inputs remain owner-provided and fail closed when unavailable.
 /// </summary>
 public sealed record SlittingSpecRequestV1(
     IReadOnlyList<SlitLineRequestV1>? Lines,
-    string? WindingTargetKg = null);
+    string? WindingTargetKg = null,
+    string? NetUsableWidthMm = null);
 
 public sealed record CutToLengthLineRequestV1(Guid LineId, int Sequence, string? LengthMm, int Count);
 
@@ -61,13 +69,25 @@ public sealed record TargetRequestV1(string? Basis, string? Kg);
 public sealed record ApprovePlanRequestV1(long ExpectedVersion);
 
 /// <summary>
+/// Üretim U2-a (URT-D2, API-10): the approver's rejection of a Draft plan at the version the caller read, with the
+/// reason (1–256 characters, required). The plan stays a Draft with the rejection recorded.
+/// </summary>
+public sealed record RejectPlanRequestV1(long ExpectedVersion, string? Reason);
+
+/// <summary>
+/// Üretim U2-a (API-11): the cancellation of a Draft plan, or of an approved plan that opened no order, at the version the
+/// caller read, with the reason (1–256 characters, required). The plan is kept as Cancelled, never deleted.
+/// </summary>
+public sealed record CancelPlanRequestV1(long ExpectedVersion, string? Reason);
+
+/// <summary>
 /// MFG-PLAN-EDIT: the Draft plan's new content AS A WHOLE — work center, planned inputs (each with the Inventory label
 /// version the caller read) and the optional target — at the version the caller read, with the user's reason. The
 /// process is not in the request: it is the plan's own and never changes. The same grammar as the plan save.
 /// </summary>
 public sealed record RevisePlanRequestV1(
     long ExpectedVersion, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
-    string? Reason, CutToLengthSpecRequestV1? CutToLengthSpec = null);
+    string? Reason, CutToLengthSpecRequestV1? CutToLengthSpec = null, string? LineSpeedMetresPerMinute = null);
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
@@ -143,7 +163,9 @@ public sealed record TargetViewV1(string Basis, string Kg);
 
 public sealed record SlitLineViewV1(string BandWidthMm, int Count);
 
-public sealed record SlittingSpecViewV1(IReadOnlyList<SlitLineViewV1> Lines, string? WindingTargetKg);
+/// <summary>The plan's slitting spec; <see cref="NetUsableWidthMm"/> (U2-a) is null when it was not entered.</summary>
+public sealed record SlittingSpecViewV1(IReadOnlyList<SlitLineViewV1> Lines, string? WindingTargetKg,
+    string? NetUsableWidthMm = null);
 
 public sealed record CutToLengthLineViewV1(Guid LineId, int Sequence, string LengthMm, int Count);
 
@@ -151,9 +173,11 @@ public sealed record CutToLengthSpecViewV1(IReadOnlyList<CutToLengthLineViewV1> 
 
 /// <summary>
 /// One captured parameter value (Üretim U1-b): the engine input name (= the Settings key), its unit and either the
-/// number as lossless invariant text or the choice.
+/// number as lossless invariant text or the choice. <see cref="Source"/> (U2-a) is <c>Plan</c> for a value entered on the
+/// plan that replaced the profile's (the line speed, URT-D9), null for the profile's own value.
 /// </summary>
-public sealed record PlanParameterValueViewV1(string Key, string Unit, string? Number, string? Choice);
+public sealed record PlanParameterValueViewV1(string Key, string Unit, string? Number, string? Choice,
+    string? Source = null);
 
 /// <summary>
 /// The Settings parameter profile captured when the plan was approved (DEC-PRDCT-008, URT-D9): the exact profile id,
@@ -165,16 +189,28 @@ public sealed record PlanParameterSnapshotViewV1(
     Guid ProfileId, string ProfileVersion, string Source, Guid? WorkCenterId, DateOnly EffectiveFrom,
     DateOnly? EffectiveThrough, DateOnly SelectedForDate, IReadOnlyList<PlanParameterValueViewV1> Values);
 
+/// <summary>Üretim U2-a: one recorded rejection of the plan — its reason, the rejecting user, when, and the version it produced.</summary>
+public sealed record PlanRejectionViewV1(int Number, string Reason, Guid RejectedByUserId, DateTimeOffset RejectedAtUtc,
+    long PlanVersion);
+
+/// <summary>Üretim U2-a: the plan's cancellation — its reason, the cancelling user and when.</summary>
+public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserId, DateTimeOffset CancelledAtUtc);
+
 /// <summary>
 /// A plan. <see cref="ParameterSnapshot"/> (U1-b, additive) is the profile captured at approval; null for a draft (whose
 /// <see cref="Calculation"/> uses the profile in force today), for a plan approved before U1-b and for an approval for
-/// which Settings had no profile of the process.
+/// which Settings had no profile of the process. Üretim U2-a (additive): <see cref="LineSpeedMetresPerMinute"/> is the
+/// plan-entered line speed (Slitting, Tube / Profile), <see cref="OrderId"/> the one order the plan opened (URT-D1),
+/// <see cref="Rejections"/> every recorded rejection (oldest first) and <see cref="Cancellation"/> the cancellation of a
+/// Cancelled plan.
 /// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
     PlanPreviewViewV1? Calculation = null, SlittingSpecViewV1? SlittingSpec = null,
-    CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null);
+    CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null,
+    string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
+    IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -196,7 +232,7 @@ public sealed record PlanRevisionInputViewV1(
 public sealed record PlanRevisionViewV1(
     int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlanRevisionInputViewV1> Inputs,
     TargetViewV1? Target, string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc,
-    CutToLengthSpecViewV1? CutToLengthSpec = null);
+    CutToLengthSpecViewV1? CutToLengthSpec = null, string? LineSpeedMetresPerMinute = null);
 
 /// <summary>MFG-PLAN-EDIT: the plan's history, oldest first.</summary>
 public sealed record PlanRevisionListViewV1(Guid PlanId, IReadOnlyList<PlanRevisionViewV1> Revisions);
@@ -222,12 +258,13 @@ public sealed record OrderViewV1(
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
 /// its status and version, how many parent rolls it plans and their planned mass together, its declared target and
-/// its creation and approval times. No engine answer, no spec, no roll label and no order it may have opened: one
-/// approved plan may open more than one order (#66 5728934213 is open), so the list claims no "converted" state.
+/// its creation, approval and (U2-a) cancellation times. No engine answer, no spec, no roll label and no order: the
+/// plan read names its one order (URT-D1) and the order list answers the orders.
 /// </summary>
 public sealed record PlanSummaryViewV1(
     Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version, int PlannedRollCount,
-    string PlannedInputKg, TargetViewV1? Target, DateTimeOffset CreatedAtUtc, DateTimeOffset? ApprovedAtUtc);
+    string PlannedInputKg, TargetViewV1? Target, DateTimeOffset CreatedAtUtc, DateTimeOffset? ApprovedAtUtc,
+    DateTimeOffset? CancelledAtUtc = null);
 
 /// <summary>
 /// One page of the company's plans, newest first. <see cref="NextCursor"/> null is the end; the cursor is opaque
@@ -326,6 +363,8 @@ public static class ManufacturingCommandNames
     public const string SavePlan = "manufacturing.plan.save.v1";
     public const string ApprovePlan = "manufacturing.plan.approve.v1";
     public const string RevisePlan = "manufacturing.plan.revise.v1";
+    public const string RejectPlan = "manufacturing.plan.reject.v1";
+    public const string CancelPlan = "manufacturing.plan.cancel.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
@@ -382,7 +421,8 @@ public sealed partial class ManufacturingCommandService(
     IProductManufacturingTechnicalSnapshotV1? productTechnicalSnapshots = null,
     ICounterpartyManufacturingPartyAccountSourceV1? partyAccounts = null,
     IInventoryContextualParentRollReferencesV1? contextualParentRolls = null,
-    ISettingsManufacturingParameterProviderV1? manufacturingParameters = null)
+    ISettingsManufacturingParameterProviderV1? manufacturingParameters = null,
+    IManufacturingPlanLifecycleStore? planLifecycle = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -420,10 +460,16 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>(invalidField));
         }
 
+        var lineSpeed = ParseLineSpeed(request.LineSpeedMetresPerMinute);
+        if (lineSpeed.Invalid)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>("lineSpeedMetresPerMinute"));
+        }
+
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
         var canonical = CanonicalSavePlan(request.PlanId, request.WorkCenterId, inputs, request.Target, targetKg,
-            content.SlittingSpec, content.CutToLengthSpec);
+            content.SlittingSpec, content.CutToLengthSpec, lineSpeed.Value);
 
         // U1-b: the draft's answer (returned AND recorded for replay) uses the profile in force today, read once below.
         PlanParameterSnapshotV1? saveParameters = null;
@@ -445,6 +491,11 @@ public sealed partial class ManufacturingCommandService(
                 if (content.CutToLengthSpec is not null && process.Value != ManufacturingProcess.CutToLength)
                 {
                     return Invalid<PlanViewV1>("cutToLengthSpec");
+                }
+
+                if (lineSpeed.Value is not null && !LineSpeedAllowed(process.Value))
+                {
+                    return Invalid<PlanViewV1>("lineSpeedMetresPerMinute");
                 }
 
                 var verified = await VerifyPlanContentAsync(
@@ -480,7 +531,7 @@ public sealed partial class ManufacturingCommandService(
                 var plan = new ProductionPlan(request.PlanId, companyId, request.WorkCenterId,
                     process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
                     BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget),
-                    BuildCutToLengthSpec(content.CutToLengthSpec));
+                    BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value);
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
                 return stored is null
@@ -533,6 +584,12 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>(invalidField));
         }
 
+        var lineSpeed = ParseLineSpeed(request.LineSpeedMetresPerMinute);
+        if (lineSpeed.Invalid)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>("lineSpeedMetresPerMinute"));
+        }
+
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
         var canonicalInputs = CanonicalPlanInputs(inputs);
@@ -557,6 +614,13 @@ public sealed partial class ManufacturingCommandService(
                 reason,
                 cutToLengthSpec = CanonicalCutToLengthSpec(content.CutToLengthSpec),
             };
+        if (lineSpeed.Value is { } speed)
+        {
+            // U2-a (ADR-011 compatibility): only a supplied line speed joins the request hash.
+            var node = JsonSerializer.SerializeToNode(canonical, Json)!.AsObject();
+            node["lineSpeedMetresPerMinute"] = Text(speed);
+            canonical = node;
+        }
 
         // U1-b: the draft's answer (returned AND recorded for replay) uses the profile in force today, read once below.
         PlanParameterSnapshotV1? reviseParameters = null;
@@ -590,6 +654,11 @@ public sealed partial class ManufacturingCommandService(
                     return Invalid<PlanViewV1>("cutToLengthSpec");
                 }
 
+                if (lineSpeed.Value is not null && !LineSpeedAllowed(process.Value))
+                {
+                    return Invalid<PlanViewV1>("lineSpeedMetresPerMinute");
+                }
+
                 var verified = await VerifyPlanContentAsync(
                     inputs, targetKg, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
@@ -610,9 +679,10 @@ public sealed partial class ManufacturingCommandService(
                     return fenced;
                 }
 
-                var revised = await planRevisions.RevisePlanWithCutLinesAsync(planId, request.ExpectedVersion, request.WorkCenterId,
-                    process.Value, [.. PlannedInputs(verified.Inputs)], Target(request.Target, verified.TargetMass),
-                    BuildCutToLengthSpec(content.CutToLengthSpec), reason, metadata, cancellationToken);
+                var revised = await planRevisions.RevisePlanContentAsync(planId, request.ExpectedVersion,
+                    request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
+                    Target(request.Target, verified.TargetMass), BuildCutToLengthSpec(content.CutToLengthSpec),
+                    lineSpeed.Value, reason, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok,
                     PlanView(revised, reviseParameters), false, null);
             }, stored => PlanView((ProductionPlan)stored, reviseParameters), cancellationToken);
@@ -689,7 +759,8 @@ public sealed partial class ManufacturingCommandService(
 
     private sealed record ParsedSlitLine(decimal BandWidthMm, int Count);
 
-    private sealed record ParsedSlittingSpec(IReadOnlyList<ParsedSlitLine> Lines, decimal? WindingTargetKg);
+    private sealed record ParsedSlittingSpec(IReadOnlyList<ParsedSlitLine> Lines, decimal? WindingTargetKg,
+        decimal? NetUsableWidthMm = null);
 
     private sealed record ParsedCutToLengthLine(Guid LineId, int Sequence, decimal LengthMm, int Count);
 
@@ -720,6 +791,33 @@ public sealed partial class ManufacturingCommandService(
     /// A supplied spec adds only its ordered canonical lines and optional canonical winding target.
     /// </summary>
     private static object CanonicalSavePlan(Guid planId, Guid workCenterId, IEnumerable<ParsedPlanInput> inputs,
+        TargetRequestV1? target, decimal? targetKg, ParsedSlittingSpec? slittingSpec,
+        ParsedCutToLengthSpec? cutToLengthSpec, decimal? lineSpeed)
+    {
+        // U2-a (ADR-011 compatibility): the net usable width and the plan-entered line speed join the request hash only
+        // when supplied, so every request shape published before keeps its exact hash.
+        var canonical = CanonicalSavePlanContent(planId, workCenterId, inputs, target, targetKg, slittingSpec,
+            cutToLengthSpec);
+        if (slittingSpec?.NetUsableWidthMm is null && lineSpeed is null)
+        {
+            return canonical;
+        }
+
+        var node = JsonSerializer.SerializeToNode(canonical, Json)!.AsObject();
+        if (slittingSpec?.NetUsableWidthMm is { } netWidth)
+        {
+            node["slittingSpec"]!.AsObject()["netUsableWidthMm"] = Text(netWidth);
+        }
+
+        if (lineSpeed is { } speed)
+        {
+            node["lineSpeedMetresPerMinute"] = Text(speed);
+        }
+
+        return node;
+    }
+
+    private static object CanonicalSavePlanContent(Guid planId, Guid workCenterId, IEnumerable<ParsedPlanInput> inputs,
         TargetRequestV1? target, decimal? targetKg, ParsedSlittingSpec? slittingSpec,
         ParsedCutToLengthSpec? cutToLengthSpec)
     {
@@ -871,7 +969,19 @@ public sealed partial class ManufacturingCommandService(
                 windingTargetKg = winding;
             }
 
-            parsedSpec = new ParsedSlittingSpec(lines, windingTargetKg);
+            decimal? netUsableWidthMm = null;
+            if (slittingSpec.NetUsableWidthMm is not null)
+            {
+                // U2-a: an Ö2 nominal millimetre like the band widths; its bound against the coil is the plan's rule.
+                if (ParsePositiveMillimetres(slittingSpec.NetUsableWidthMm) is not { } netWidth)
+                {
+                    return (null, null, null, null, "slittingSpec.netUsableWidthMm");
+                }
+
+                netUsableWidthMm = netWidth;
+            }
+
+            parsedSpec = new ParsedSlittingSpec(lines, windingTargetKg, netUsableWidthMm);
         }
 
         ParsedCutToLengthSpec? parsedCutSpec = null;
@@ -933,7 +1043,28 @@ public sealed partial class ManufacturingCommandService(
 
     private static SlittingSpec? BuildSlittingSpec(ParsedSlittingSpec? spec, Kilograms? windingTarget) => spec is null
         ? null
-        : new SlittingSpec(spec.Lines.Select(line => new SlitLine(line.BandWidthMm, line.Count)), windingTarget);
+        : new SlittingSpec(spec.Lines.Select(line => new SlitLine(line.BandWidthMm, line.Count)), windingTarget,
+            spec.NetUsableWidthMm);
+
+    /// <summary>
+    /// U2-a (URT-D9): the plan-entered line speed as lossless positive decimal text with at most the Settings value scale
+    /// (<see cref="ProductionPlan.LineSpeedScale"/>); null when not supplied. <c>Invalid</c> is true for any other text.
+    /// </summary>
+    private static (decimal? Value, bool Invalid) ParseLineSpeed(string? text)
+    {
+        if (text is null)
+        {
+            return (null, false);
+        }
+
+        return ParseKg(text) is { } value && value > 0m && value.Scale <= ProductionPlan.LineSpeedScale
+            ? (value, false)
+            : (null, true);
+    }
+
+    /// <summary>U2-a: a plan-entered line speed belongs only to a Slitting or Tube / Profile plan.</summary>
+    private static bool LineSpeedAllowed(ManufacturingProcess process) =>
+        process is ManufacturingProcess.Slitting or ManufacturingProcess.TubeProfile;
 
     private static CutToLengthSpec? BuildCutToLengthSpec(ParsedCutToLengthSpec? spec) => spec is null
         ? null
@@ -1025,6 +1156,7 @@ public sealed partial class ManufacturingCommandService(
                 // U1-b (DEC-PRDCT-008, URT-D9): the Settings parameter profile of the plan's line is captured with the
                 // approval. The stored state answers first: a missing, stale or non-draft plan never queries Settings.
                 PlanParameterSnapshotV1? snapshot = null;
+                IReadOnlyDictionary<Guid, bool>? labelUsable = null;
                 var current = await plans.FindPlanAsync(planId, cancellationToken);
                 if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion)
                 {
@@ -1041,10 +1173,24 @@ public sealed partial class ManufacturingCommandService(
                     }
 
                     snapshot = parameters.Snapshot;
+
+                    // U2-a: a plan with a slitting spec reads each parent roll's CURRENT label state from Inventory
+                    // (the existing parent-roll read ports) for the gate's labelState; a blocked or unusable roll refuses.
+                    if (current.Spec is not null)
+                    {
+                        var labels = await ReadLabelUsabilityAsync(current, permission, companyId, actor,
+                            cancellationToken);
+                        if (labels.Refusal is not null)
+                        {
+                            return Refusal<PlanViewV1>(labels.Refusal);
+                        }
+
+                        labelUsable = labels.Usable;
+                    }
                 }
 
                 var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
-                    timeProvider.GetUtcNow(), snapshot, metadata, cancellationToken);
+                    timeProvider.GetUtcNow(), snapshot, labelUsable, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(approved), false, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
@@ -1766,7 +1912,7 @@ public sealed partial class ManufacturingCommandService(
             }
 
             // A draft's calculation uses the profile in force today; a read never fails on Settings (unknown instead).
-            var live = plan.Status == PlanStatus.Draft ? await ReadLiveParameterProfileAsync(plan, cancellationToken) : null;
+            var live = plan.ApprovedAtUtc is null ? await ReadLiveParameterProfileAsync(plan, cancellationToken) : null;
             return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(plan, live), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
@@ -2627,14 +2773,23 @@ public sealed partial class ManufacturingCommandService(
             TechnicalSnapshotView(input.TechnicalSnapshot), CommercialContextView(input.CommercialContext)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         plan.ApprovedByUserId, plan.ApprovedAtUtc,
+        // U2-a: a plan that was approved (also when cancelled later) is calculated from its captured profile only.
         PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
             PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs,
-                plan.Status == PlanStatus.Approved ? plan.ParameterSnapshot : liveParameters))),
+                plan.ApprovedAtUtc is not null ? plan.ParameterSnapshot : liveParameters))),
         plan.Spec is { } spec ? new SlittingSpecViewV1(
             [.. spec.Lines.Select(line => new SlitLineViewV1(Text(line.BandWidthMm), line.Count))],
-            spec.WindingTargetKg is { } winding ? Text(winding.Value) : null) : null,
+            spec.WindingTargetKg is { } winding ? Text(winding.Value) : null,
+            spec.NetUsableWidthMm is { } netWidth ? Text(netWidth) : null) : null,
         CutSpecView(plan.CutToLengthSpec),
-        ParameterSnapshotView(plan.ParameterSnapshot));
+        ParameterSnapshotView(plan.ParameterSnapshot),
+        plan.LineSpeedMetresPerMinute is { } lineSpeed ? Text(lineSpeed) : null,
+        plan.OrderId,
+        [.. plan.Rejections.Select(rejection => new PlanRejectionViewV1(rejection.Number, rejection.Reason,
+            rejection.RejectedByUserId, rejection.RejectedAtUtc, rejection.PlanVersion))],
+        plan.Cancellation is { } cancellation
+            ? new PlanCancellationViewV1(cancellation.Reason, cancellation.CancelledByUserId, cancellation.CancelledAtUtc)
+            : null);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null
@@ -2642,7 +2797,7 @@ public sealed partial class ManufacturingCommandService(
             : new PlanParameterSnapshotViewV1(snapshot.ProfileId, snapshot.ProfileVersion, snapshot.Source,
                 snapshot.WorkCenterId, snapshot.EffectiveFrom, snapshot.EffectiveThrough, snapshot.SelectedForDate,
                 [.. snapshot.Values.Select(value => new PlanParameterValueViewV1(value.Key, value.Unit,
-                    value.Number is { } number ? Text(number) : null, value.Choice))]);
+                    value.Number is { } number ? Text(number) : null, value.Choice, value.Source))]);
 
     private static CutToLengthSpecViewV1? CutSpecView(CutToLengthSpec? spec) => spec is null
         ? null
@@ -2676,7 +2831,8 @@ public sealed partial class ManufacturingCommandService(
             input.ExpectedLabelVersion?.ToString(CultureInfo.InvariantCulture),
             CommercialContextView(input.CommercialContext), TechnicalSnapshotView(input.TechnicalSnapshot)))],
         revision.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
-        revision.Reason, revision.RevisedBy, revision.RecordedAtUtc, CutSpecView(revision.CutToLengthSpec));
+        revision.Reason, revision.RevisedBy, revision.RecordedAtUtc, CutSpecView(revision.CutToLengthSpec),
+        revision.LineSpeedMetresPerMinute is { } lineSpeed ? Text(lineSpeed) : null);
 
     /// <summary>The stored plan summary as text: the same lossless kilogram text as every other mass here.</summary>
     internal static PlanSummaryViewV1 PlanSummaryView(ManufacturingPlanSummary summary) => new(
@@ -2685,7 +2841,7 @@ public sealed partial class ManufacturingCommandService(
         summary is { TargetBasis: { } basis, TargetMass: { } targetMass }
             ? new TargetViewV1(basis.ToString(), Text(targetMass.Value))
             : null,
-        summary.CreatedAtUtc, summary.ApprovedAtUtc);
+        summary.CreatedAtUtc, summary.ApprovedAtUtc, summary.CancelledAtUtc);
 
     /// <summary>The stored summary as text: the same lossless kilogram text as every other mass here.</summary>
     internal static OrderSummaryViewV1 OrderSummaryView(ManufacturingOrderSummary summary) => new(

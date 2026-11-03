@@ -82,6 +82,11 @@ public sealed class ProductionOrder
 
     public IReadOnlyList<OutputDeclaration> Outputs => _outputs.AsReadOnly();
 
+    /// <summary>
+    /// Opens the order of an approved plan. Üretim U2-a (URT-D1, "tek plan = tek emir"): a plan opens exactly one order —
+    /// a plan that already opened one is refused (<see cref="ManufacturingRuleCodes.PlanOrderExists"/>), and the plan
+    /// records the order it opened. A cancelled or Draft plan is not approved (<see cref="ManufacturingRuleCodes.PlanNotApproved"/>).
+    /// </summary>
     public static ProductionOrder FromApprovedPlan(Guid id, ProductionPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -92,7 +97,15 @@ public sealed class ProductionOrder
                 "Üretim emri yalnız onaylı plandan oluşturulabilir.");
         }
 
-        return new ProductionOrder(id, plan);
+        if (plan.OrderId is not null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanOrderExists,
+                "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
+        }
+
+        var order = new ProductionOrder(id, plan);
+        plan.RecordOrder(order.Id);
+        return order;
     }
 
     /// <summary>

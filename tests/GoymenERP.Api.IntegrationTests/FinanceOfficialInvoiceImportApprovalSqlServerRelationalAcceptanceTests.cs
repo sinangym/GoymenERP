@@ -166,7 +166,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         await context.Database.MigrateAsync();
         Assert.Equal(4, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
-        Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1",
+        // The rollback above also ran MOD-15's AddOpenItemDirection Down on an empty store; the reapply ends with it.
+        Assert.EndsWith("_AddOpenItemDirection",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
     }
 

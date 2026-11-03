@@ -15,7 +15,8 @@
       "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)",
       "Bash(find:*)", "Bash(rg:*)", "Bash(sha256sum:*)", "Bash(sed -n:*)", "Bash(mkdir:*)",
       "WebFetch(domain:github.com)", "WebFetch(domain:docs.github.com)",
-      "WebFetch(domain:learn.microsoft.com)"
+      "WebFetch(domain:learn.microsoft.com)",
+      "mcp__Remote_Desktop_Commander"
     ],
     "ask": ["Bash(git push:*)"],
     "deny": [

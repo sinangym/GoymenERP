@@ -298,7 +298,7 @@ public sealed class FinanceOpenItemReadSqlServerRelationalAcceptanceTests
         AssertExactProperties(item,
             "id", "companyId", "sourceKind", "sourceId", "sourceLineId", "sourceVersion",
             "partyId", "companyAccountId", "currencyId", "version", "dueOn", "status", "createdAtUtc",
-            "initialAmount", "outstandingAmount");
+            "initialAmount", "outstandingAmount", "direction");
         AssertAmount(item.GetProperty("initialAmount"), disclosure);
         AssertAmount(item.GetProperty("outstandingAmount"), disclosure);
         var status = item.GetProperty("status");

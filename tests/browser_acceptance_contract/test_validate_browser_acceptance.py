@@ -1080,6 +1080,7 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.labels.read",
                 "inventory.balances.read",
                 "purchasing.requests.approve",
+                "purchasing.requests.withdraw",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
@@ -1105,9 +1106,31 @@ class WorkflowTests(unittest.TestCase):
             )
 
         creator_with_decision = dict(environment)
-        creator_with_decision["IdentitySeed__Roles__7__Permissions__6"] = "purchasing.requests.approve"
+        creator_with_decision["IdentitySeed__Roles__7__Permissions__7"] = "purchasing.requests.approve"
         with self.assertRaises(ValueError):
             validator.validate_suite_extensions("pur01", creator_with_decision)
+
+    def test_pur01_request_withdrawal_belongs_only_to_the_creator(self):
+        # A1-1b (ALS-D46, ALS-D47): only the preparer or submitter withdraws; the disposable creator prepares and submits its requests.
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        holders = sorted(
+            key for key, value in environment.items()
+            if key.startswith("IdentitySeed__Roles__") and value == "purchasing.requests.withdraw"
+        )
+        self.assertEqual(["IdentitySeed__Roles__7__Permissions__6"], holders)
+
+        approver_with_withdrawal = dict(environment)
+        approver_with_withdrawal["IdentitySeed__Roles__5__Permissions__3"] = "purchasing.requests.withdraw"
+        with self.assertRaisesRegex(ValueError, "pur01-approver requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", approver_with_withdrawal)
+
+        creator_without_withdrawal = dict(environment)
+        del creator_without_withdrawal["IdentitySeed__Roles__7__Permissions__6"]
+        with self.assertRaisesRegex(ValueError, "pur01-creator requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", creator_without_withdrawal)
 
     def test_pur01_document_permissions_belong_only_to_creator(self):
         environment = self._pur01_environment()
@@ -1234,7 +1257,9 @@ class WorkflowTests(unittest.TestCase):
             validator.validate_suite_extensions("pur01", reader_grant)
 
         creator_missing_upload = self._pur01_environment()
-        del creator_missing_upload["IdentitySeed__Roles__7__Permissions__5"]
+        # A1-1b: keep the indices contiguous — the withdrawal name (index 6) moves into the upload's slot.
+        creator_missing_upload["IdentitySeed__Roles__7__Permissions__5"] = "purchasing.requests.withdraw"
+        del creator_missing_upload["IdentitySeed__Roles__7__Permissions__6"]
         with self.assertRaisesRegex(ValueError, "pur01-creator requires its exact isolated permissions"):
             validator.validate_suite_extensions("pur01", creator_missing_upload)
 

@@ -48,6 +48,8 @@ export interface PlanRevision {
   readonly recordedAtUtc: string
   /** M01.2: the ordered cut lines this revision set; null without cut lines and for legacy omitted JSON. */
   readonly cutToLengthSpec: CutToLengthSpecView | null
+  /** Üretim U2-a: the plan-entered line speed this revision set (server decimal text); null when none or legacy JSON. */
+  readonly lineSpeedMetresPerMinute: string | null
 }
 
 export interface PlanRevisionList {
@@ -67,7 +69,9 @@ const LEGACY_REVISION_KEYS = [
   'recordedAtUtc',
 ] as const
 /** The current wire always emits the additive cut spec member, explicit null included; old stored JSON omits it. */
-const REVISION_KEYS = [...LEGACY_REVISION_KEYS, 'cutToLengthSpec'] as const
+/** Üretim U2-a: the current wire also emits the plan-entered line speed, explicit null included. */
+const REVISION_KEYS = [...LEGACY_REVISION_KEYS, 'cutToLengthSpec', 'lineSpeedMetresPerMinute'] as const
+const LINE_SPEED = /^(0|[1-9]\d*)(\.\d*[1-9])?$/
 const LEGACY_INPUT_KEYS = ['parentRollId', 'plannedKg', 'expectedLabelVersion'] as const
 const COMMERCIAL_INPUT_KEYS = [...LEGACY_INPUT_KEYS, 'commercialContext'] as const
 const INPUT_KEYS = [...COMMERCIAL_INPUT_KEYS, 'technicalSnapshot'] as const
@@ -153,9 +157,18 @@ function decodeTarget(value: unknown): PlanRevision['target'] | undefined {
 
 function decodeRevision(value: unknown, expectedRevision: number): PlanRevision | null {
   if (!isObject(value)) return null
-  const isCurrent = hasExactKeys(value, REVISION_KEYS)
-  if (!isCurrent && !hasExactKeys(value, LEGACY_REVISION_KEYS)) return null
-  const cutToLengthSpec = isCurrent ? decodeCutToLengthSpec(value.cutToLengthSpec) : null
+  // The legacy members are required; each additive member (cut spec, U2-a line speed) is present on the current wire
+  // and may be omitted by older stored JSON. Nothing else is this contract.
+  const keys = Object.keys(value)
+  if (!LEGACY_REVISION_KEYS.every((key) => keys.includes(key))
+    || !keys.every((key) => (REVISION_KEYS as readonly string[]).includes(key))) return null
+  const cutToLengthSpec = decodeCutToLengthSpec(value.cutToLengthSpec)
+  const lineSpeedMetresPerMinute = value.lineSpeedMetresPerMinute === undefined || value.lineSpeedMetresPerMinute === null
+    ? null
+    : typeof value.lineSpeedMetresPerMinute === 'string' && LINE_SPEED.test(value.lineSpeedMetresPerMinute)
+      && value.lineSpeedMetresPerMinute !== '0'
+      ? value.lineSpeedMetresPerMinute
+      : undefined
   const revision = wholeNumber(value.revision, 0)
   const planVersion = wholeNumber(value.planVersion, 1)
   const workCenterId = nonNilGuid(value.workCenterId)
@@ -170,6 +183,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
     workCenterId === null ||
     target === undefined ||
     cutToLengthSpec === undefined ||
+    lineSpeedMetresPerMinute === undefined ||
     recordedAtUtc === null ||
     !Array.isArray(value.inputs) ||
     value.inputs.length === 0
@@ -205,6 +219,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
     revisedBy: revision === 0 ? null : (revisedBy as string),
     recordedAtUtc,
     cutToLengthSpec,
+    lineSpeedMetresPerMinute,
   }
 }
 
