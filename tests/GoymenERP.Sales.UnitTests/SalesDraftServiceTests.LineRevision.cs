@@ -237,6 +237,8 @@ public sealed partial class SalesDraftServiceTests
         Assert.DoesNotContain(progress.Lines, candidate => candidate.LineId == line);
         var returns = await world.Service().GetDraftCustomerReturnsAsync(approved.Id);
         Assert.DoesNotContain(returns.Lines, candidate => candidate.LineId == line);
+        // The realization axis reads the same answers (and measures the line under the accepted revision): no 503.
+        Assert.NotNull(await world.Service().GetDraftStatusAsync(approved.Id));
 
         // K3 review B probe 1 / review A P1-1 (regression): the line is loaded under Rev.0, then Rev.2 opens (a line added). Rev.1
         // is archived as approved (without the line); the revert brings the line back in Rev.2, which keeps shipping it under the
