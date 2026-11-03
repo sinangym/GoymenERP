@@ -1494,7 +1494,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for S-1 / MOD-03: the draft service also receives the supply owners' optional linked-supply
                     // adapters (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     new(
-                        "a1ded5bac4daf1e5a0f7d751da264c22c434770748e986a10e502c6668161ae8",
+                        "6dc6ee1a3547ab97e1af8fc25489f15053879abaef8e50b2fc7a584b7c0fc9fc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
