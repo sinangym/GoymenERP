@@ -5,8 +5,8 @@ Kararlar: `docs/decisions/SINAN_KARARLARI_2026-11-02_ALIS_EK3.md` ALS-D41 (TL bo
 ALS-D42 (tedarikçi borcu satış riskinden düşülmez); `_ALIS.md` ALS-D6 (kur); `_ALIS_EK4.md` ALS-D44 (borç/alacak
 ayrımı Finans konuşmasında); `_ALIS_EK7.md` ALS-D50 (avans Finans'ta ödeme olarak); `_ALIS_EK9.md` ALS-D59 (borç Finans'ta tek kayıt; Cari
 kartına hareket yok; 320 fişi aynı olaydan Muhasebe'de), ALS-D62 (dağıtıcı gelene kadar doğrudan kabul portu, sonra
-olay), ALS-D64 (önce kaydet, sonra idempotent çağrı; tek DB işlemi yok; **açık çelişki:** koordinatör aktarımı "tek DB
-işlemi" — NEEDS-SINAN https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590568009). Alış şeridi Finans dosyalarını
+olay), ALS-D64 (önce kaydet, sonra idempotent çağrı; tek DB işlemi yok; koordinatörün "tek DB işlemi" aktarımıyla
+çelişki Sinan'ın **"Ayrı adım"** cevabıyla kapandı: https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590642890). Alış şeridi Finans dosyalarını
 değiştirmez. Bu not iş tanımıdır; Finans'ın kendi karar, review ve merge kapıları geçerlidir. Arayüz ve olay adları
 öneridir. Bağlam: `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` §6 MOD-04/MOD-15, §14; Finans planı
 `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` F1/F2/F3.
@@ -38,15 +38,15 @@ değiştirmez. Bu not iş tanımıdır; Finans'ın kendi karar, review ve merge 
   hemen çağırır; Finans kendi işleminde (ayrı veritabanı bağlamı) yazar. Hata/zaman aşımında aynı anahtarla yeniden
   denenir. İki modül tek DB işleminde bağlanmaz (ADR-CARI-001). Dağıtıcı gelince aynı içerik
   `purchasing.invoice.finalized.v1` olayıyla gider (bire bir eşleme). Ayrıntılar A5 sözleşmesinde Finans ile yazılır.
-  **Açık çelişki (NEEDS-SINAN):** koordinatör Sinan adına "tek veritabanı işlemi; fatura kesinleşmesi ve borç
-  kalemi birlikte commit" aktardı (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590513683 madde 2); Sinan'ın doğrudan cevabı ALS-D64. Soru: https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590568009. Cevaba kadar
-  ALS-D64 geçerli (ALS-D57); A5 kabul sözleşmesi kilitlenmez.
+  **Çelişki çözüldü:** koordinatör Sinan adına "tek veritabanı işlemi" aktarmıştı (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590513683 madde 2;
+  soru https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590568009); Sinan doğrudan **"Ayrı adım"** dedi
+  (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590642890). ALS-D64 geçerli; tek DB işlemi (participant deseni) yok; A5 kabul sözleşmesi bu sınırla yazılır.
 - **Idempotency:** fatura kimliği + sürüm üzerinden; anahtar önerisi `purchasing-invoice:{invoiceId}:{invoiceVersion}`
   (Finans FS-1 `sales-invoice:` deseni; teknik ayrıntı). Aynı anahtar ikinci kez gelirse ikinci kalem açılmaz
   (inbox/dedup); bu yüzden yeniden denemede çifte borç oluşmaz.
   Faturanın iptali/ters kaydı ayrı sürümlü olayla gelir (Alış A5'te ayrıca önerilir).
 - **Alış tarafı:** dağıtıcıya kadar doğrudan port çağrısı, sonra olay Alış outbox'ından çıkar (MOD-12, plan §14.1
-  A5-0); Finans tablosuna Alış yazmaz (işlem sınırı yukarıdaki açık çelişkiye bağlı). Borç Finans'ta tek kayıttır; Cari kartına ayrıca hareket yazılmaz; 320 fişi
+  A5-0); Finans tablosuna Alış yazmaz (işlem sınırı ALS-D64: ayrı adım). Borç Finans'ta tek kayıttır; Cari kartına ayrıca hareket yazılmaz; 320 fişi
   aynı kaynak olaydan Muhasebe'de üretilir (ALS-D59).
 
 ## F-A3 · Ödeme amacı (Finans planı TEK-02, F1) ve tedarikçi ödemesinin borca dağıtımı (API-20, F3)

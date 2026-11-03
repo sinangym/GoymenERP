@@ -102,7 +102,7 @@ public sealed partial class PurchasingService(
                 var purchaseRequest = PurchaseRequest.Create(Guid.NewGuid(), scope.CompanyId, scope.ActorId.Trim(), now);
                 foreach (var (line, _, quantity) in lines)
                 {
-                    purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now);
+                    purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now, SourceOf(line.Source));
                 }
 
                 return purchaseRequest;
@@ -868,6 +868,20 @@ public sealed partial class PurchasingService(
 
     // ---- mapping --------------------------------------------------------------------------------
 
+    /// <summary>
+    /// A1-2 (plan API-02): the wire source as the domain's (null = manual). The shape was read by <see cref="PurchasingJson"/>;
+    /// a kind it did not admit is an <see cref="ArgumentException"/> (400), never a default.
+    /// </summary>
+    private static PurchaseRequestLineSource? SourceOf(PurchaseRequestLineSourceRequest? source) =>
+        source is null
+            ? null
+            : PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
+                ? PurchaseRequestLineSource.Of(kind, source.DocumentId, source.DocumentLineId)
+                : throw new ArgumentException("Talep satırı kaynağı tanımlı değil.", nameof(source));
+
+    private static PurchaseRequestLineSourceView? SourceView(PurchaseRequestLineSource? source) =>
+        source is null ? null : new PurchaseRequestLineSourceView(PurchaseRequestSourceKindsV1.Name(source.Kind), source.DocumentId, source.DocumentLineId);
+
     private static string Text(Quantity quantity) => quantity.Value.ToString(CultureInfo.InvariantCulture);
 
     private static string VersionOf(IReadOnlyDictionary<Guid, string> versions, Guid lineId) =>
@@ -880,16 +894,25 @@ public sealed partial class PurchasingService(
     {
         var request = stored.Request;
         return new PurchaseRequestSummaryView(request.Id, request.CompanyId, request.Status.ToString(), request.Version.ToString(CultureInfo.InvariantCulture),
-            stored.EffectiveOn, request.CreatedAtUtc, request.UpdatedAtUtc, request.Lines.Count);
+            stored.EffectiveOn, request.CreatedAtUtc, request.UpdatedAtUtc, request.Lines.Count)
+        {
+            SourceKinds = PurchaseRequestSourceKindsV1.Distinct(request.Lines.Select(line => line.Source)),
+        };
     }
 
     private static PurchaseRequestDetailView RequestDetail(StoredPurchaseRequest stored) =>
         new(RequestSummary(stored),
             [.. stored.Request.Lines.Select((line, index) => new PurchaseRequestLineView(line.Id, index + 1, line.ProductId,
-                VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity)))])
+                VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity))
+            {
+                Source = SourceView(line.Source),
+            })])
         {
             Approval = Decision(stored.Request.Approval),
             Rejection = Decision(stored.Request.Rejection),
+            Withdrawal = Decision(stored.Request.Withdrawal),
+            PreparedBy = stored.Request.PreparedBy,
+            SubmittedBy = stored.Request.SubmittedBy,
         };
 
     private static PurchaseRequestDecisionView? Decision(PurchaseRequestDecision? decision) =>

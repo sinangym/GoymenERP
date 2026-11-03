@@ -26,5 +26,5 @@ Aşağıdaki "İstenen (Ürün)" maddelerinin tamamı Ürün modülü çalışma
   birimle kaydedilir, türetilen miktarlar "hesaplanamıyor" kalır (fail-closed). A3 kabulü ve A5 üçlü kontrol aynı
   portu okur.
 - **Kabul toleransı (ALS-D55, EK8):** A3 kabul toleransı satırın **giriş biriminde** ölçülür; kabul başka birimde
-  kaydedildiyse bu portun çevrimiyle giriş birimine çevrilerek karşılaştırılır. Katsayı yoksa tolerans
-  "hesaplanamıyor" kalır (fail-closed; tahmini katsayı yok).
+  kaydedildiyse bu portun çevrimiyle giriş birimine çevrilerek karşılaştırılır (yorum, EK8 §2). Katsayı yoksa
+  tolerans "hesaplanamıyor" kalır (fail-closed; tahmini katsayı yok) (yorum, EK8 §2).

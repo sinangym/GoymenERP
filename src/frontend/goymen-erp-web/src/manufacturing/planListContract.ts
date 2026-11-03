@@ -17,7 +17,7 @@
 
 import type { PlanStatus } from './contract'
 
-export const PLAN_STATUSES: readonly PlanStatus[] = ['Draft', 'Approved']
+export const PLAN_STATUSES: readonly PlanStatus[] = ['Draft', 'Approved', 'Cancelled']
 
 export interface PlanSummary {
   readonly planId: string
@@ -31,6 +31,8 @@ export interface PlanSummary {
   readonly target: { readonly basis: string; readonly kg: string } | null
   readonly createdAtUtc: string
   readonly approvedAtUtc: string | null
+  /** Üretim U2-a: set exactly when the plan is Cancelled (the list shows cancelled plans only when asked for). */
+  readonly cancelledAtUtc: string | null
 }
 
 /** `nextCursor === null` is the end of the list; the cursor is opaque and is sent back unchanged. */
@@ -51,6 +53,8 @@ const SUMMARY_KEYS = [
   'createdAtUtc',
   'approvedAtUtc',
 ] as const
+/** Üretim U2-a: the current wire also emits the cancellation time, explicit null included. */
+const CURRENT_SUMMARY_KEYS = [...SUMMARY_KEYS, 'cancelledAtUtc'] as const
 
 const PAGE_KEYS = ['plans', 'nextCursor'] as const
 const TARGET_KEYS = ['basis', 'kg'] as const
@@ -102,7 +106,9 @@ function target(value: unknown): PlanSummary['target'] | undefined {
 }
 
 function decodePlanSummary(value: unknown): PlanSummary | null {
-  if (!isObject(value) || !hasExactKeys(value, SUMMARY_KEYS)) return null
+  if (!isObject(value)) return null
+  const isCurrent = hasExactKeys(value, CURRENT_SUMMARY_KEYS)
+  if (!isCurrent && !hasExactKeys(value, SUMMARY_KEYS)) return null
   const planId = nonNilGuid(value.planId)
   const workCenterId = nonNilGuid(value.workCenterId)
   const version = positive(value.version)
@@ -112,6 +118,7 @@ function decodePlanSummary(value: unknown): PlanSummary | null {
   const planTarget = target(value.target)
   const createdAtUtc = instant(value.createdAtUtc)
   const approvedAtUtc = value.approvedAtUtc === null ? null : instant(value.approvedAtUtc)
+  const cancelledAtUtc = !isCurrent || value.cancelledAtUtc === null ? null : instant(value.cancelledAtUtc)
   if (
     planId === null ||
     workCenterId === null ||
@@ -122,14 +129,17 @@ function decodePlanSummary(value: unknown): PlanSummary | null {
     createdAtUtc === null ||
     typeof value.process !== 'string' ||
     !ENUM_NAME.test(value.process) ||
-    (value.status !== 'Draft' && value.status !== 'Approved')
+    (value.status !== 'Draft' && value.status !== 'Approved' && value.status !== 'Cancelled')
   ) {
     return null
   }
+  // U2-a: a cancellation time exactly on a Cancelled plan; a cancelled plan keeps the approval time it had (or none).
+  if (isCurrent && value.cancelledAtUtc !== null && cancelledAtUtc === null) return null
+  if ((value.status === 'Cancelled') !== (cancelledAtUtc !== null)) return null
   // A non-null approval time that is not an instant is not the contract, and neither is a half-told status:
   // a Draft has no approval time and an Approved plan has one. The screen never infers one from the other.
   if (value.approvedAtUtc !== null && approvedAtUtc === null) return null
-  if ((value.status === 'Approved') !== (approvedAtUtc !== null)) return null
+  if (value.status !== 'Cancelled' && (value.status === 'Approved') !== (approvedAtUtc !== null)) return null
   return {
     planId,
     workCenterId,
@@ -141,6 +151,7 @@ function decodePlanSummary(value: unknown): PlanSummary | null {
     target: planTarget,
     createdAtUtc,
     approvedAtUtc,
+    cancelledAtUtc,
   }
 }
 
