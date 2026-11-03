@@ -747,7 +747,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs",
         "StoreRequestAsync",
-    ): "4633eed9c0696cfaad609f2e4b7f043d33831078ca3593c536ce234bbddc37b8",
+    ): "94e4f9fc371feb652059dbf25ffb7214933c3f43123516b2f515a01f50a2c20b",
     (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
         "StoreDraftAsync",
