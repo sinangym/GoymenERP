@@ -141,8 +141,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.5", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(10, declarations.Count);
+        Assert.Equal("1.6", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(11, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -169,6 +169,14 @@ public sealed class PurchasingPersistenceModelTests
                 PurchasingShellCapabilityProvider.RequestDetailCapabilityId),
             (requestApprove.RoutePath, requestApprove.ScreenId, requestApprove.ParentCapabilityId));
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsApprove], requestApprove.RequiredPermissions);
+        // A1-1b (ALS-D46): the withdrawal control is another child of the request detail, measured with its own name.
+        var requestWithdraw = byId[PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId];
+        Assert.Equal("purchasing.requests.withdraw", requestWithdraw.CapabilityId);
+        Assert.Equal(
+            (PurchasingShellCapabilityProvider.RequestDetailRoutePath, PurchasingShellCapabilityProvider.RequestDetailScreenId,
+                PurchasingShellCapabilityProvider.RequestDetailCapabilityId),
+            (requestWithdraw.RoutePath, requestWithdraw.ScreenId, requestWithdraw.ParentCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsWithdraw], requestWithdraw.RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateRoutePath, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersCreate], byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailRoutePath, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].RoutePath);
@@ -191,8 +199,9 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(5, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(6, PurchasingPermissionManifestV1.Names.Count);
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
+        Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
         Assert.Equal(PurchasingShellCapabilityProvider.ListScreenId, byId[PurchasingShellCapabilityProvider.ListCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);
@@ -209,21 +218,44 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_migration_is_the_last_one_and_the_snapshot_matches_the_model()
+    public void The_A1_1_and_A1_1b_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
-        Assert.Equal("20261102125710_AddPurchaseRequestDecisions", context.Database.GetMigrations().Last());
+        Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal"],
+            context.Database.GetMigrations().TakeLast(2));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
-        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Status" && check.Sql == "[Status] IN (1, 2, 3, 4)");
-        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Decision");
+        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Status" && check.Sql == "[Status] IN (1, 2, 3, 4, 5)");
+        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Decision"
+            && check.Sql.Contains("[Status] = 5 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0)", StringComparison.Ordinal));
+        // #900 review P3: maker ≠ checker compares binary, the domain's ordinal rule.
         Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_MakerChecker"
-            && check.Sql.Contains("[ApprovedBy] <> [CreatedBy]", StringComparison.Ordinal)
-            && check.Sql.Contains("[RejectedBy] <> [SubmittedBy]", StringComparison.Ordinal));
+            && check.Sql.Contains("[ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal)
+            && check.Sql.Contains("[RejectedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal));
+        // A1-1b (ALS-D46, ALS-D47): only the preparer or the submitter withdraws (binary), with a reason; no other status
+        // carries withdrawal facts.
+        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Withdrawal"
+            && check.Sql.Contains("[WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [CreatedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal)
+            && check.Sql.Contains("[WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [SubmittedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal)
+            && check.Sql.Contains("[Status] <> 5 AND [WithdrawnBy] IS NULL", StringComparison.Ordinal));
         Assert.Equal((128, 128, 128, 4000), (requests.FindProperty(nameof(PurchaseRequestRow.SubmittedBy))!.GetMaxLength(),
             requests.FindProperty(nameof(PurchaseRequestRow.ApprovedBy))!.GetMaxLength(), requests.FindProperty(nameof(PurchaseRequestRow.RejectedBy))!.GetMaxLength(),
             requests.FindProperty(nameof(PurchaseRequestRow.RejectionReason))!.GetMaxLength()));
+        Assert.Equal((128, 4000), (requests.FindProperty(nameof(PurchaseRequestRow.WithdrawnBy))!.GetMaxLength(),
+            requests.FindProperty(nameof(PurchaseRequestRow.WithdrawalReason))!.GetMaxLength()));
+
+        // A1-1b Down refuses while a withdrawn request exists (forward fix) before any drop.
+        var withdrawal = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseRequestWithdrawal();
+        var withdrawalGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(withdrawal.DownOperations[0]);
+        Assert.Contains("THROW 51165", withdrawalGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] = 5", withdrawalGuard.Sql, StringComparison.Ordinal);
+        // ... and refuses clearly (51166) when the restored case-insensitive maker-checker check would fail, before any drop.
+        var collationGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(withdrawal.DownOperations[1]);
+        Assert.Contains("THROW 51166", collationGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[ApprovedBy] = [CreatedBy]", collationGuard.Sql, StringComparison.Ordinal);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(withdrawal.DownOperations[2]);
+        Assert.Empty(withdrawal.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
 
         // Down refuses while a decided request exists (forward fix) before any drop; Up backfills the submitter from its own attempt.
         var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseRequestDecisions();
@@ -248,6 +280,31 @@ public sealed class PurchasingPersistenceModelTests
         row.ApprovedBy = "SENTETIK-manager";
         row.ApprovedAtUtc = DateTimeOffset.UtcNow;
         row.CreatedBy = "SENTETIK-other"; // not allowed: the preparer never moves
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_write_guard_lets_the_withdrawal_facts_move_but_not_another_field()
+    {
+        await using PurchasingDbContext context = Context();
+        var row = new PurchaseRequestRow
+        {
+            Id = Guid.NewGuid(), CompanyId = CompanyA, Status = 2, Version = 3, EffectiveOn = new DateOnly(2026, 11, 2),
+            CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow, CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
+            SubmittedBy = "SENTETIK",
+        };
+        context.Requests.Attach(row);
+        row.Status = 5;
+        row.WithdrawnBy = "SENTETIK";
+        row.WithdrawnAtUtc = DateTimeOffset.UtcNow;
+        row.WithdrawalReason = "SENTETIK";
+        // The withdrawal facts alone are on the allow-list: the guard passes them (only the database is unreachable here).
+        var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+        Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
+
+        row.EffectiveOn = new DateOnly(2026, 11, 3); // not allowed: the business date never moves
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
     }
