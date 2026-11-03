@@ -154,6 +154,64 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
             "SELECT FunctionalAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", dollar.Installments[0].OpenItemId)));
     }
 
+    [SqlServerFact]
+    public async Task The_authority_fence_another_actor_another_version_and_an_overlong_rate_admit_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Lira, null, Installment(1, "75.00"));
+
+        Assert.Equal(CommandOutcome.Denied,
+            (await run.AdmitAsync(CompanyA, "fence-denied", invoice, authority: PermissionDecision.Denied)).Outcome);
+        var unavailable = await run.AdmitAsync(CompanyA, "fence-unavailable", invoice,
+            authority: PermissionDecision.Unavailable);
+        Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
+        Assert.Contains(unavailable.Issues, issue => issue.Code == "finance_invoice_admission_authority_unavailable");
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id", ("@id", invoice.InvoiceId)));
+
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync(CompanyA, "fence-ok", invoice)).Outcome);
+        // The same key from another actor is not a replay.
+        Assert.Equal(CommandOutcome.IdempotencyConflict,
+            (await run.AdmitAsync(CompanyA, "fence-ok", invoice, actor: "SENTETIK-other-finaliser")).Outcome);
+        // Another version of an admitted invoice is refused, never a second set of open items.
+        var version = await run.AdmitAsync(CompanyA, "fence-v2",
+            invoice with { AdmissionId = Guid.NewGuid(), InvoiceVersion = "invoice-v2" });
+        Assert.Contains(version.Issues, issue => issue.Code == FinanceInvoiceOpenItemAdmissionService.AlreadyAdmittedCode);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id", ("@id", invoice.InvoiceId)));
+
+        // A rate longer than the stored column is a structured refusal, not a database error.
+        var overlong = Invoice(FinanceInvoiceProducerV1.Purchasing, Dollar, "1." + new string('5', 70),
+            Installment(1, "1.00", "1.56"));
+        var refused = await run.AdmitAsync(CompanyA, "fence-overlong", overlong);
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.Contains(refused.Issues, issue => issue.Code == "finance_invoice_exchange_rate_invalid");
+    }
+
+    [SqlServerFact]
+    public async Task A_reuse_compares_the_rate_and_functional_amounts_exactly_and_the_columns_never_change()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Purchasing, Dollar, "38.45", Installment(1, "10.00", "384.50"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync(CompanyA, "exact-1", invoice)).Outcome);
+
+        var reused = await run.AdmitAsync(CompanyA, "exact-2", invoice with
+        {
+            AdmissionId = Guid.NewGuid(),
+            ExchangeRate = "38.450",
+            Installments = [invoice.Installments[0] with { OpenItemId = Guid.NewGuid(), FunctionalAmount = "384.5" }],
+        });
+        Assert.Equal(CommandOutcome.Succeeded, reused.Outcome);
+        Assert.True(reused.IsReplay);
+        Assert.Equal("38.45", await run.ScalarAsync<string>(
+            "SELECT ExchangeRateText FROM finance.OpenItems WHERE Id = @id", ("@id", invoice.Installments[0].OpenItemId)));
+
+        // Finance's EF write guard keeps the admitted exchange columns immutable.
+        await Assert.ThrowsAnyAsync<Exception>(() => run.ChangeExchangeAsync(invoice.Installments[0].OpenItemId));
+        Assert.Equal("384.50", await run.ScalarAsync<string>(
+            "SELECT FunctionalAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", invoice.Installments[0].OpenItemId)));
+    }
+
     private static FinanceInvoiceOpenItemAdmissionV1 Invoice(FinanceInvoiceProducerV1 producer, Guid currency,
         string? rate, params FinanceInvoiceInstallmentV1[] installments) =>
         new(Guid.NewGuid(), producer, Guid.NewGuid(), "invoice-v1", Party, Account, currency, rate, installments);
@@ -188,19 +246,29 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
         }
 
         public async Task<FinanceOpenItemAdmissionResult> AdmitAsync(Guid company, string key,
-            FinanceInvoiceOpenItemAdmissionV1 invoice, Guid? contextCompany = null)
+            FinanceInvoiceOpenItemAdmissionV1 invoice, Guid? contextCompany = null,
+            PermissionDecision authority = PermissionDecision.Allowed, string actor = Actor)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
             var collector = new AuditEventCollector();
             await using var dbContext = new FinanceDbContext(Options(companyContext, collector), companyContext);
             var service = new FinanceInvoiceOpenItemAdmissionService(dbContext, companyContext,
-                new FixedCurrentUser(Actor, company), new SyntheticParty(company), collector,
+                new FixedCurrentUser(actor, company), new SyntheticParty(company), new SyntheticAuthority(authority), collector,
                 new FinanceAuditEnvelope("synthetic.finance.invoice-open-items.admit", ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System);
             return await service.AdmitAsync(
-                new FinanceContext(contextCompany ?? company, Actor, $"f2a-{Guid.NewGuid():N}", null),
+                new FinanceContext(contextCompany ?? company, actor, $"f2a-{Guid.NewGuid():N}", null),
                 new CommandMetadata($"f2a-{key}"), invoice, CancellationToken.None);
+        }
+
+        /// <summary>Tries to change an admitted row's functional amount through Finance's own EF context.</summary>
+        public async Task ChangeExchangeAsync(Guid openItemId)
+        {
+            await using var dbContext = Context(CompanyA, null);
+            var row = await dbContext.OpenItems.SingleAsync(item => item.Id == openItemId);
+            row.FunctionalAmountText = "999.00";
+            await dbContext.SaveChangesAsync();
         }
 
         /// <summary>Moves Finance's schema to <paramref name="target"/> (null: the latest migration).</summary>
@@ -270,6 +338,13 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
                 ? new ReadResult<PartyAccountEligibility>(ReadOutcome.Found,
                     new PartyAccountEligibility(Party, Account, company, true, IsPartyActive: true))
                 : new ReadResult<PartyAccountEligibility>(ReadOutcome.NotFound, null));
+    }
+
+    /// <summary>SENTETIK: the host-owned authority answer for every admission. Not a grant.</summary>
+    private sealed class SyntheticAuthority(PermissionDecision decision) : IFinanceInvoiceOpenItemAdmissionAuthorityV1
+    {
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceInvoiceProducerV1 producer,
+            Guid invoiceId, CancellationToken cancellationToken) => Task.FromResult(decision);
     }
 
     private sealed class FixedCurrentUser(string userId, Guid company) : ICurrentUser

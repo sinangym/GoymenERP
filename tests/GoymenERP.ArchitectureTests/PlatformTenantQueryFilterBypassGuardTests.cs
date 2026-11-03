@@ -586,7 +586,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // batch/receipt relationships and an immutable-write guard.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "2e4c19761becd602322f464c86ce42e8671d82a5f7eaa3202d93a4274d7199af",
+            "973395d3a6ffdd30305ae3edd889f3149f826b585bacde1dfa8161587572cb86",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1154,7 +1154,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // no direct connection, command, raw SQL or query-filter bypass surface.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] =
                     new(
-                        "0a2a6da24a0e4d9a161eed266d5e64cb66016d846e81e3bdfc1c9f4309846eb6",
+                        "99fc4c50d61df36667448c5dd2107626bbc6fe237149507e018504988db1167c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

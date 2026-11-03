@@ -25,6 +25,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IFinancePartyAccountPort parties,
+    IFinanceInvoiceOpenItemAdmissionAuthorityV1 authority,
     IAuditEventCollector auditEvents,
     FinanceAuditEnvelope envelope,
     TimeProvider timeProvider) : IFinanceInvoiceOpenItemAdmissionPortV1
@@ -58,6 +59,11 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
         if (issues.Count > 0)
         {
             return Refused(context, CommandOutcome.ValidationFailed, [.. issues]);
+        }
+
+        if (await FenceAsync(context, invoice, cancellationToken) is { } fenced)
+        {
+            return fenced;
         }
 
         var payloadHash = PayloadHash(invoice);
@@ -159,10 +165,11 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
         };
         dbContext.OpenItemSourceBatches.Add(receipt);
         Audit(context, metadata, invoice, kind, reused);
-        if (!SameContext(context))
+        // The authority is measured again right before the save: a grant withdrawn meanwhile writes nothing.
+        if (await FenceAsync(context, invoice, cancellationToken) is { } late)
         {
             dbContext.ChangeTracker.Clear();
-            return Refused(context, CommandOutcome.Denied);
+            return late;
         }
 
         try
@@ -214,7 +221,8 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
         }
 
         var foreign = invoice.ExchangeRate is not null;
-        if (foreign && !FinanceExactDecimalText.TryParsePositive(invoice.ExchangeRate, out _))
+        if (foreign && (invoice.ExchangeRate!.Length > FinanceOpenItemExchange.RateMaximumLength
+            || !FinanceExactDecimalText.TryParsePositive(invoice.ExchangeRate, out _)))
         {
             issues.Add(new ValidationIssue("exchangeRate", "finance_invoice_exchange_rate_invalid"));
         }
@@ -273,8 +281,34 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
             && row.CurrencyId == invoice.CurrencyId
             && FinanceExactDecimalText.Equal(row.OriginalAmountText, installment.Amount)
             && row.DueOn == installment.DueOn
-            && row.ExchangeRateText == invoice.ExchangeRate
-            && row.FunctionalAmountText == installment.FunctionalAmount);
+            && SameOptionalAmount(row.ExchangeRateText, invoice.ExchangeRate)
+            && SameOptionalAmount(row.FunctionalAmountText, installment.FunctionalAmount));
+
+    /// <summary>Exact decimal equality ("38.45" = "38.450"); both absent is equal, one absent is not.</summary>
+    private static bool SameOptionalAmount(string? stored, string? requested) =>
+        stored is null || requested is null
+            ? stored is null && requested is null
+            : FinanceExactDecimalText.Equal(stored, requested);
+
+    private async Task<FinanceOpenItemAdmissionResult?> FenceAsync(FinanceContext context,
+        FinanceInvoiceOpenItemAdmissionV1 invoice, CancellationToken cancellationToken)
+    {
+        if (!SameContext(context))
+        {
+            return Refused(context, CommandOutcome.Denied);
+        }
+
+        var decision = await authority.CheckAsync(context, invoice.Producer, invoice.InvoiceId, cancellationToken);
+        if (decision != PermissionDecision.Allowed)
+        {
+            return decision == PermissionDecision.Denied
+                ? Refused(context, CommandOutcome.Denied)
+                : Refused(context, CommandOutcome.Unavailable,
+                    new ValidationIssue("permission", "finance_invoice_admission_authority_unavailable"));
+        }
+
+        return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
+    }
 
     private async Task<FinanceOpenItemAdmissionResult?> PriorAsync(FinanceContext context, CommandMetadata metadata,
         string payloadHash, CancellationToken cancellationToken)

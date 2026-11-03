@@ -50,6 +50,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionValidationTests
     [InlineData("-1", "3845.12")]
     [InlineData("38.45", "0")]
     [InlineData("abc", "3845.12")]
+    [InlineData("1.55555555555555555555555555555555555555555555555555555555555555555", "3845.12")]
     public void Exchange_data_is_all_or_none_and_positive(string? rate, string? functional)
     {
         var issues = FinanceInvoiceOpenItemAdmissionService.Validate(

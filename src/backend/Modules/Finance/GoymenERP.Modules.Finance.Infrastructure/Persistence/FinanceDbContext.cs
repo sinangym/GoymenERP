@@ -491,7 +491,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.SourceBatchChecksum).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
         entity.Property(x => x.OriginalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
         entity.Property(x => x.OutstandingAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
-        entity.Property(x => x.ExchangeRateText).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.ExchangeRateText).HasMaxLength(FinanceOpenItemExchange.RateMaximumLength).IsUnicode(false);
         entity.Property(x => x.FunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false);
         entity.Property(x => x.DueOn).HasColumnType("date");
         entity.Property(x => x.Version).IsConcurrencyToken();

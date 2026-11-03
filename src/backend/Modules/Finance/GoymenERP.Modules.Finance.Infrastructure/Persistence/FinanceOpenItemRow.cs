@@ -60,6 +60,12 @@ internal static class FinanceOpenItemDirectionCodes
         Contracts.FinanceOpenItemDirections.FromSourceKind(sourceKind) is { } direction ? (int)direction : null;
 }
 
+/// <summary>F2a: the stored length of an invoice exchange rate (<c>OpenItems.ExchangeRateText</c>).</summary>
+internal static class FinanceOpenItemExchange
+{
+    public const int RateMaximumLength = 64;
+}
+
 internal static class FinanceOpenItemStatuses
 {
     public const int Open = 1;

@@ -51,9 +51,11 @@ public sealed record FinanceInvoiceOpenItemAdmissionV1(
     IReadOnlyList<FinanceInvoiceInstallmentV1> Installments);
 
 /// <summary>
-/// The Finance side of MOD-04. It writes open items only; it carries no user authority of its own — the producing module
-/// measured its own finalisation authority (e.g. <c>sales.invoices.finalize</c>) before calling, and the caller's company
-/// and actor must equal the server context. Not an HTTP surface.
+/// The Finance side of MOD-04. It writes open items only. The producing module measures its own finalisation authority
+/// (e.g. <c>sales.invoices.finalize</c>); Finance additionally fences every admission with the host-owned
+/// <see cref="IFinanceInvoiceOpenItemAdmissionAuthorityV1"/> (fail closed: an unmapped composition is unavailable), and
+/// the caller's company and actor must equal the server context. Not an HTTP surface. The producer decides whether the
+/// invoice currency is foreign (rate and functional amounts present) or the functional currency (both absent).
 /// <list type="bullet">
 /// <item>The same admission (same key, same payload, same actor) replays its first answer.</item>
 /// <item>An invoice already admitted with the same rows answers as a reuse (no second open item); with other rows or another
@@ -67,5 +69,19 @@ public interface IFinanceInvoiceOpenItemAdmissionPortV1
         FinanceContext context,
         CommandMetadata metadata,
         FinanceInvoiceOpenItemAdmissionV1 invoice,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Host-owned fresh authority measurement for one invoice admission (the F-03 <c>IFinanceOpenItemSourceAuthority</c>
+/// pattern). No permission string or grant is declared here; which grant answers it is decided when a producer is wired,
+/// and an unmapped production composition must remain unavailable.
+/// </summary>
+public interface IFinanceInvoiceOpenItemAdmissionAuthorityV1
+{
+    Task<PermissionDecision> CheckAsync(
+        FinanceContext context,
+        FinanceInvoiceProducerV1 producer,
+        Guid invoiceId,
         CancellationToken cancellationToken);
 }
