@@ -512,6 +512,15 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SourceDocumentLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("SourceKind")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("UnitId")
                         .HasColumnType("uniqueidentifier");
 
@@ -524,6 +533,10 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_PurchaseRequestLines_LineId");
 
+                    b.HasIndex("CompanyId", "SourceKind", "SourceDocumentId")
+                        .HasDatabaseName("IX_PurchaseRequestLines_Source")
+                        .HasFilter("[SourceKind] IS NOT NULL");
+
                     b.ToTable("PurchaseRequestLines", "purchasing", t =>
                         {
                             t.HasCheckConstraint("CK_PurchaseRequestLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProductVersion]) > 0");
@@ -531,6 +544,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseRequestLines_LineNo", "[LineNo] >= 1");
 
                             t.HasCheckConstraint("CK_PurchaseRequestLines_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseRequestLines_Source", "([SourceKind] IS NULL AND [SourceDocumentId] IS NULL AND [SourceDocumentLineId] IS NULL) OR ([SourceKind] IS NOT NULL AND [SourceKind] IN (1, 2, 3) AND [SourceDocumentId] IS NOT NULL AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [SourceDocumentLineId] IS NOT NULL AND [SourceDocumentLineId] <> '00000000-0000-0000-0000-000000000000')");
                         });
                 });
 

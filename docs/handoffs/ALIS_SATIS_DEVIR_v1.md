@@ -28,7 +28,10 @@ iş tanımıdır; Satış'ın kendi karar, review ve merge kapıları geçerlidi
     siparişi/satırı talebe bağlar; satırda `RemainingQuantity` (= taahhüt − kabul) hesaplanır. Talepsiz girilen
     siparişin satış bağı yoktur (`SourceRequestId` boş). Sipariş durumu bugün yalnız
     `Draft` / `Approved`; iptal (API-10, No.161) ve satır kapatma (API-11) henüz yok.
-  - Bağ API-02 ile gelir (plan A1): talep kaynağı = Satış + satış siparişi kimliği (+ satır). Ardından adaptör
+  - Bağ API-02 ile gelir (plan A1): talep kaynağı = Satış + satış siparişi kimliği (+ satır). **A1-2 (taslak PR):**
+    talep satırında isteğe bağlı `source` = `{ kind: "Sales", documentId: <satış siparişi>, documentLineId: <satır> }`
+    (opak; Alış Satış tablosunu okumaz, kimliğin varlığını doğrulamaz) ve okuma için süzgeçli dizin
+    `IX_PurchaseRequestLines_Source` (`CompanyId, SourceKind, SourceDocumentId`) eklendi. Ardından adaptör
     (plan A4, MOD-03) Alış'ın **kendi okuma modelini** bir Alış uygulama okuma servisi üzerinden okur: talep kaynağı
     → `SourceRequestId`/`SourceRequestLineId` ile siparişler ve satırlar → açık miktar = onaylı, iptal/kapalı
     olmayan satırın `RemainingQuantity`'si (genel satır ile teknik kırılım satırları toplanmaz; aynı miktar iki kez

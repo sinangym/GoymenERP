@@ -44,6 +44,12 @@ public enum PurchaseRequestStatus
 /// (its rejection stays a manager's decision), and a bound APPROVED order refuses the withdrawal as it refuses a
 /// rejection (No.161 §1).
 /// </para>
+/// <para>
+/// A1-2 (plan API-02; Üretim A-2, Satış S-A1): every line may carry its source (<see cref="PurchaseRequestLineSource"/>:
+/// Stock, Sales or Production plus the source record's opaque identity); a line without one is manual. The source is
+/// fixed when the line is added and plays no part in any decision: a Production-sourced request waits for the manager's
+/// approval like any other (ALS-D16).
+/// </para>
 /// </summary>
 public sealed class PurchaseRequest
 {
@@ -96,9 +102,11 @@ public sealed class PurchaseRequest
 
     /// <summary>
     /// Adds a line for a product in a Settings unit (identity only; the unit's profile and the
-    /// quantity's scale are verified by the Application layer before the line is added).
+    /// quantity's scale are verified by the Application layer before the line is added). A1-2 (plan API-02): the line's
+    /// optional <paramref name="source"/> (null = manual) is set here and never moves.
     /// </summary>
-    public PurchaseRequestLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity quantity, DateTimeOffset now)
+    public PurchaseRequestLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity quantity, DateTimeOffset now,
+        PurchaseRequestLineSource? source = null)
     {
         RequireVersion(expectedVersion);
         RequireDraft();
@@ -115,7 +123,7 @@ public sealed class PurchaseRequest
             throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateLineId, "Aynı talep satırı kimliği ikinci kez eklenemez.");
         }
 
-        var line = new PurchaseRequestLine(lineId, productId, unitId, quantity);
+        var line = new PurchaseRequestLine(lineId, productId, unitId, quantity, source);
         lines.Add(line);
         Touch(now);
         return line;
@@ -303,12 +311,13 @@ public sealed record PurchaseRequestDecision(string DecidedBy, DateTimeOffset De
 
 public sealed class PurchaseRequestLine
 {
-    internal PurchaseRequestLine(Guid id, Guid productId, Guid unitId, Quantity quantity)
+    internal PurchaseRequestLine(Guid id, Guid productId, Guid unitId, Quantity quantity, PurchaseRequestLineSource? source)
     {
         Id = id;
         ProductId = productId;
         UnitId = unitId;
         Quantity = quantity;
+        Source = source;
     }
 
     public Guid Id { get; }
@@ -318,4 +327,7 @@ public sealed class PurchaseRequestLine
     public Guid UnitId { get; }
 
     public Quantity Quantity { get; }
+
+    /// <summary>A1-2 (plan API-02): where the need came from (an opaque reference into the source module); null = manual.</summary>
+    public PurchaseRequestLineSource? Source { get; }
 }

@@ -11,7 +11,8 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingPurchaseRequestSubmissionKey, recallPendingPurchaseRequestSubmission, releasePendingPurchaseRequestSubmission, reservePendingPurchaseRequestSubmission, type PendingPurchaseRequestSubmission } from './pendingRequestStore'
 import { Button } from '../ui/Button'
-import { PURCHASE_REQUEST_STATUS_LABEL, REQUEST_DECISION_TEXT, REQUEST_DETAIL_TEXT as T, REQUEST_WITHDRAWAL_TEXT } from './purchasingText'
+import type { PurchaseRequestLineSource } from './contract'
+import { PURCHASE_REQUEST_SOURCE_LABEL, PURCHASE_REQUEST_STATUS_LABEL, REQUEST_DECISION_TEXT, REQUEST_DETAIL_TEXT as T, REQUEST_WITHDRAWAL_TEXT } from './purchasingText'
 import { PurchaseRequestDecisionPanel } from './PurchaseRequestDecisionPanel'
 import { PurchaseRequestWithdrawalPanel } from './PurchaseRequestWithdrawalPanel'
 import styles from './purchasing.module.css'
@@ -27,6 +28,17 @@ function sourceOrderId(value: unknown, namespace: string | null, requestId: stri
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(origin.orderId)
     || origin.orderId === '00000000-0000-0000-0000-000000000000') return null
   return origin.orderId
+}
+
+/**
+ * A1-2 (plan API-02): the line's source, read-only — the module and the opaque source reference as the server sent it.
+ * Purchasing does not resolve the reference into the source module's record (no port yet); a body without the field
+ * (before A1-2) is unknown, never shown as manual.
+ */
+function sourceCell(source: PurchaseRequestLineSource | null | undefined): ReactNode {
+  if (source === undefined) return T.sourceUnknown
+  if (source === null) return PURCHASE_REQUEST_SOURCE_LABEL.Manual
+  return <>{PURCHASE_REQUEST_SOURCE_LABEL[source.kind]} <span className={styles.mono}>{T.sourceReference(source.documentId, source.documentLineId)}</span></>
 }
 
 export function PurchaseRequestDetailPage() {
@@ -116,5 +128,5 @@ function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespac
   const notice = attempt.phase === 'applied' ? <p role="status" className={styles.success}>{attempt.replayed ? T.replayed : T.submitted}</p> : attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{T.notSubmitted(attempt.code ?? attempt.status)}</p> : null
   const showOrderReturn = returnOrderId !== null && namespace !== null && request.id === requestId && request.companyId === companyId
     && hasCapability(shell, PURCHASING_CAPABILITY.requestDetail) && hasCapability(shell, PURCHASING_CAPABILITY.orderDetail)
-  return frame(<>{showOrderReturn && returnOrderId !== null ? <nav aria-label={T.returnNav}><Link to={purchaseOrderDetailPath(returnOrderId)} state={null}>{T.returnLink}</Link></nav> : null}<dl className={styles.facts}><div><dt>{T.request}</dt><dd className={styles.mono}>{request.id}</dd></div><div><dt>{T.status}</dt><dd><span className={statusClass}>{PURCHASE_REQUEST_STATUS_LABEL[request.status]}</span></dd></div><div><dt>{T.version}</dt><dd>{request.version}</dd></div><div><dt>{T.businessDate}</dt><dd>{request.effectiveOn}</dd></div>{decisionFacts}{withdrawalFacts}</dl><section><h2>{T.linesHeading}</h2><div className={styles.tableWrap}><table><thead><tr><th>{T.lineNo}</th><th>{T.product}</th><th>{T.unit}</th><th>{T.quantity}</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.quantity}</td></tr>)}</tbody></table></div></section>{canSubmit ? notice : null}{canSubmit && (request.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>{T.submitHeading}</h2><p>{T.submitNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.unknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void send(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.sending : attempt.phase === 'unknown' ? T.retry : T.submit}</Button></section> : null}{withdrawalControl}{decision}</>)
+  return frame(<>{showOrderReturn && returnOrderId !== null ? <nav aria-label={T.returnNav}><Link to={purchaseOrderDetailPath(returnOrderId)} state={null}>{T.returnLink}</Link></nav> : null}<dl className={styles.facts}><div><dt>{T.request}</dt><dd className={styles.mono}>{request.id}</dd></div><div><dt>{T.status}</dt><dd><span className={statusClass}>{PURCHASE_REQUEST_STATUS_LABEL[request.status]}</span></dd></div><div><dt>{T.version}</dt><dd>{request.version}</dd></div><div><dt>{T.businessDate}</dt><dd>{request.effectiveOn}</dd></div>{decisionFacts}{withdrawalFacts}</dl><section><h2>{T.linesHeading}</h2><div className={styles.tableWrap}><table><thead><tr><th>{T.lineNo}</th><th>{T.product}</th><th>{T.unit}</th><th>{T.quantity}</th><th>{T.source}</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.quantity}</td><td>{sourceCell(line.source)}</td></tr>)}</tbody></table></div></section>{canSubmit ? notice : null}{canSubmit && (request.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>{T.submitHeading}</h2><p>{T.submitNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.unknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void send(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.sending : attempt.phase === 'unknown' ? T.retry : T.submit}</Button></section> : null}{withdrawalControl}{decision}</>)
 }

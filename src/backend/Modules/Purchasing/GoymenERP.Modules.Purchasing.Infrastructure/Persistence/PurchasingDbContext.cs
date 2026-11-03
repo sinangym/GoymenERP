@@ -69,6 +69,16 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + " OR ([SubmittedBy] IS NOT NULL AND [WithdrawnBy] COLLATE " + IdentityCollation + " = [SubmittedBy] COLLATE " + IdentityCollation + "))) "
         + "OR ([Status] <> 5 AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawalReason] IS NULL)";
 
+    /// <summary>
+    /// A1-2 (plan API-02): a request line's source is either absent (manual: kind and both identities null) or a defined kind
+    /// (1 Stock, 2 Sales, 3 Production) with both identities present and non-empty. A CHECK passes on UNKNOWN, so every
+    /// column is tested with IS [NOT] NULL.
+    /// </summary>
+    internal const string RequestLineSourceCheck =
+        "([SourceKind] IS NULL AND [SourceDocumentId] IS NULL AND [SourceDocumentLineId] IS NULL) "
+        + "OR ([SourceKind] IS NOT NULL AND [SourceKind] IN (1, 2, 3) AND [SourceDocumentId] IS NOT NULL AND [SourceDocumentId] <> " + EmptyGuid
+        + " AND [SourceDocumentLineId] IS NOT NULL AND [SourceDocumentLineId] <> " + EmptyGuid + ")";
+
     /// <summary>One create attempt per stored order; the approve command's attempts share the order id.</summary>
     internal static readonly string OrderCreateAttemptFilter =
         "[OrderId] IS NOT NULL AND [CommandName] = N'" + PurchasingCommands.OrderCreateV1 + "'";
@@ -161,9 +171,14 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseRequestLines_Identity",
                 $"[LineId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid} AND LEN([ProductVersion]) > 0");
             table.HasCheckConstraint("CK_PurchaseRequestLines_Quantity", "[Quantity] > 0");
+            // A1-2 (plan API-02): a source is a defined kind with both opaque identities, or (manual) none of the three.
+            table.HasCheckConstraint("CK_PurchaseRequestLines_Source", RequestLineSourceCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.RequestId, x.LineNo });
         entity.HasIndex(x => new { x.CompanyId, x.RequestId, x.LineId }).IsUnique().HasDatabaseName("UX_PurchaseRequestLines_LineId");
+        // A1-2: the read the Sales adaptor (S-A1/MOD-03) and the Üretim action (A-2/U5-c) need — the lines of one source record.
+        entity.HasIndex(x => new { x.CompanyId, x.SourceKind, x.SourceDocumentId }).HasDatabaseName("IX_PurchaseRequestLines_Source")
+            .HasFilter("[SourceKind] IS NOT NULL");
         entity.Property(x => x.ProductVersion).HasMaxLength(64).IsRequired();
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
         entity.HasOne<PurchaseRequestRow>().WithMany()
