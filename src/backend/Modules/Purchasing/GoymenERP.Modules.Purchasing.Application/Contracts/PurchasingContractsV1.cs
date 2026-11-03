@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using GoymenERP.Modules.Purchasing.Domain.Requests;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -14,7 +15,21 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public sealed record CreatePurchaseRequestRequest(DateOnly EffectiveOn, IReadOnlyList<PurchaseRequestLineRequest> Lines);
 
-public sealed record PurchaseRequestLineRequest(Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid UnitId, string Quantity);
+/// <summary>
+/// One request line. A1-2 (plan API-02): <paramref name="Source"/> is optional; absent or null is a manual line. It is never
+/// written when null, so the content hash of a manual line — and every ADR-011 attempt recorded before A1-2 — is unchanged.
+/// </summary>
+public sealed record PurchaseRequestLineRequest(Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid UnitId, string Quantity,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseRequestLineSourceRequest? Source = null);
+
+/// <summary>
+/// A1-2 (plan API-02; Üretim A-2, Satış S-A1): the line's source — <paramref name="Kind"/> is exactly <c>Stock</c>,
+/// <c>Sales</c> or <c>Production</c> (a manual line sends no source; <c>Manual</c> is not accepted here, so a line has one
+/// spelling for it), <paramref name="DocumentId"/> the source record (sales order, production plan, stock need) and
+/// <paramref name="DocumentLineId"/> its line, both non-empty. The identities are opaque: Purchasing stores them as given and
+/// does not read the source module (no port exists yet; validation is the producing module's follow-up).
+/// </summary>
+public sealed record PurchaseRequestLineSourceRequest(string Kind, Guid DocumentId, Guid DocumentLineId);
 
 /// <summary>POST …/requests/{id}/submission: Draft → Submitted at the expected version.</summary>
 public sealed record SubmitPurchaseRequestRequest(string ExpectedVersion);
@@ -28,6 +43,13 @@ public sealed record ApprovePurchaseRequestRequest(string ExpectedVersion);
 /// order is bound to the request.
 /// </summary>
 public sealed record RejectPurchaseRequestRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
+/// A1-1b (ALS-D46, ALS-D47): POST …/requests/{id}/withdrawal — Submitted → Withdrawn at the expected version, by the
+/// request's preparer (creator) or submitter only, with the reason (required, at most 4000 characters, never cut), refused while an APPROVED order is
+/// bound to the request (No.161 §1).
+/// </summary>
+public sealed record WithdrawPurchaseRequestRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
 /// POST /api/v1/purchasing/orders: a commitment towards ONE supplier (the Cari party + its company account
@@ -52,31 +74,54 @@ public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 
 // ---- views --------------------------------------------------------------------------------------
 
+/// <summary>
+/// The request header. A1-2 (plan API-02): <see cref="SourceKinds"/> names the distinct sources of its lines in a fixed order
+/// (<c>Manual</c>, <c>Stock</c>, <c>Sales</c>, <c>Production</c>), so the request pool shows where each need came from
+/// (ALS-D16) without reading the lines; a request whose lines are all manual answers <c>["Manual"]</c>.
+/// </summary>
 public sealed record PurchaseRequestSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, DateOnly EffectiveOn,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount)
+{
+    public IReadOnlyList<string> SourceKinds { get; init; } = [];
+}
 
-public sealed record PurchaseRequestLineView(Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid UnitId, string Quantity);
+/// <summary>A request line; A1-2: <see cref="Source"/> is the line's source as recorded, or null for a manual line.</summary>
+public sealed record PurchaseRequestLineView(Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid UnitId, string Quantity)
+{
+    public PurchaseRequestLineSourceView? Source { get; init; }
+}
 
-/// <summary>A1-1: one decision on a request — who decided, when, and (a rejection only) why.</summary>
+/// <summary>A1-2 (plan API-02): a line's recorded source — the kind (<c>Stock</c> | <c>Sales</c> | <c>Production</c>) and the opaque source identity.</summary>
+public sealed record PurchaseRequestLineSourceView(string Kind, Guid DocumentId, Guid DocumentLineId);
+
+/// <summary>A1-1: one decision on a request — who decided, when, and (a rejection or a withdrawal, A1-1b) why.</summary>
 public sealed record PurchaseRequestDecisionView(string DecidedBy, DateTimeOffset DecidedAtUtc, string? Reason);
 
 /// <summary>
-/// The request with its lines; <see cref="Approval"/> and <see cref="Rejection"/> (A1-1) are the recorded decisions,
-/// null until made. An approval stays visible after a later rejection.
+/// The request with its lines; <see cref="Approval"/> and <see cref="Rejection"/> (A1-1) and <see cref="Withdrawal"/>
+/// (A1-1b) are the recorded decisions, null until made. An approval stays visible after a later rejection.
+/// <see cref="PreparedBy"/> and <see cref="SubmittedBy"/> (A1-1b) are the recorded makers — the only actors who may
+/// withdraw (ALS-D47) — or null when not recorded (the submitter of a Draft, or of a submission recorded without its actor).
 /// </summary>
 public sealed record PurchaseRequestDetailView(PurchaseRequestSummaryView Request, IReadOnlyList<PurchaseRequestLineView> Lines)
 {
     public PurchaseRequestDecisionView? Approval { get; init; }
 
     public PurchaseRequestDecisionView? Rejection { get; init; }
+
+    public PurchaseRequestDecisionView? Withdrawal { get; init; }
+
+    public string? PreparedBy { get; init; }
+
+    public string? SubmittedBy { get; init; }
 }
 
 public sealed record PurchaseRequestResponse(PurchaseRequestDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record PurchaseRequestListResponse(IReadOnlyList<PurchaseRequestSummaryView> Items, string? NextCursor);
 
-/// <param name="Status">An exact status name ("Draft" | "Submitted" | "Approved" | "Rejected") to narrow the list to, or null.</param>
+/// <param name="Status">An exact status name ("Draft" | "Submitted" | "Approved" | "Rejected" | "Withdrawn") to narrow the list to, or null.</param>
 public sealed record PurchaseRequestListQuery(int PageSize = 50, string? Cursor = null, string? Status = null);
 
 public sealed record PurchaseOrderSummaryView(
@@ -130,6 +175,54 @@ public sealed record PurchaseOrderListQuery(
     string? Status = null,
     Guid? SupplierPartyId = null);
 
+/// <summary>
+/// A1-2 (plan API-02): the request-line source vocabulary on the wire. <see cref="Manual"/> appears only in a summary's
+/// <see cref="PurchaseRequestSummaryView.SourceKinds"/>; a line says "manual" by carrying no source.
+/// </summary>
+public static class PurchaseRequestSourceKindsV1
+{
+    public const string Manual = "Manual";
+    public const string Stock = "Stock";
+    public const string Sales = "Sales";
+    public const string Production = "Production";
+
+    /// <summary>The exact (ordinal) name of a source kind; <see cref="Manual"/>, a different case or anything else is refused.</summary>
+    public static bool TryParse(string? text, out PurchaseRequestSourceKind kind)
+    {
+        switch (text)
+        {
+            case Stock:
+                kind = PurchaseRequestSourceKind.Stock;
+                return true;
+            case Sales:
+                kind = PurchaseRequestSourceKind.Sales;
+                return true;
+            case Production:
+                kind = PurchaseRequestSourceKind.Production;
+                return true;
+            default:
+                kind = default;
+                return false;
+        }
+    }
+
+    public static string Name(PurchaseRequestSourceKind kind) => kind switch
+    {
+        PurchaseRequestSourceKind.Stock => Stock,
+        PurchaseRequestSourceKind.Sales => Sales,
+        PurchaseRequestSourceKind.Production => Production,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    /// <summary>The distinct kinds of the given line sources in the fixed order Manual, Stock, Sales, Production.</summary>
+    public static IReadOnlyList<string> Distinct(IEnumerable<PurchaseRequestLineSource?> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        var present = sources.Select(source => source is null ? 0 : (int)source.Kind).ToHashSet();
+        return [.. new[] { (0, Manual), (1, Stock), (2, Sales), (3, Production) }.Where(item => present.Contains(item.Item1)).Select(item => item.Item2)];
+    }
+}
+
 public sealed record PurchasingFieldError(string Field, string Code);
 
 // ---- problems -----------------------------------------------------------------------------------
@@ -152,16 +245,23 @@ public static class PurchasingProblemCodesV1
     /// </summary>
     public const string RequestState = "purchasing_request_state";
 
-    /// <summary>409, terminal (§7; A1-1): the request is not in the state the decision needs (approve: Submitted; reject: Submitted or Approved).</summary>
+    /// <summary>
+    /// 409, terminal (§7; A1-1): the request is not in the state the decision needs (approve: Submitted; reject: Submitted
+    /// or Approved; withdraw, A1-1b: Submitted).
+    /// </summary>
     public const string RequestDecisionState = "purchasing_request_decision_state";
 
     /// <summary>409, terminal (§7; ALS-D2): the actor prepared or submitted this request and cannot decide it (hazırlayan ≠ onaylayan).</summary>
     public const string RequestSameActor = "purchasing_request_same_actor";
 
-    /// <summary>409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it.</summary>
+    /// <summary>
+    /// 409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it.
+    /// A1-1b (ALS-D47): a withdrawal is refused with this code only when NEITHER maker is recorded; with one recorded, only
+    /// that one may withdraw and anyone else is <see cref="RequestNotPreparer"/>.
+    /// </summary>
     public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
 
-    /// <summary>409, terminal (§7; No.161 §1): an APPROVED order is bound to the request; the order is cancelled first.</summary>
+    /// <summary>409, terminal (§7; No.161 §1): an APPROVED order is bound to the request; the order is cancelled first (rejection and A1-1b withdrawal).</summary>
     public const string RequestHasApprovedOrder = "purchasing_request_has_approved_order";
 
     /// <summary>422: the rejection reason is missing or blank.</summary>
@@ -169,6 +269,18 @@ public static class PurchasingProblemCodesV1
 
     /// <summary>422: the rejection reason is longer than 4000 characters (refused, never cut).</summary>
     public const string RequestRejectionReasonTooLong = "purchasing_request_rejection_reason_too_long";
+
+    /// <summary>
+    /// 409, terminal (§7; A1-1b, ALS-D46/ALS-D47): the actor is neither the request's recorded preparer (creator) nor its
+    /// recorded submitter; only they withdraw it.
+    /// </summary>
+    public const string RequestNotPreparer = "purchasing_request_not_preparer";
+
+    /// <summary>422 (A1-1b): the withdrawal reason is missing or blank.</summary>
+    public const string RequestWithdrawalReasonRequired = "purchasing_request_withdrawal_reason_required";
+
+    /// <summary>422 (A1-1b): the withdrawal reason is longer than 4000 characters (refused, never cut).</summary>
+    public const string RequestWithdrawalReasonTooLong = "purchasing_request_withdrawal_reason_too_long";
 
     /// <summary>409, terminal (§7): the expected version is stale.</summary>
     public const string VersionConflict = "version_conflict";
@@ -221,7 +333,8 @@ public sealed record PurchasingServiceBindings(
     string? ReadPermission = PurchasingPermissionManifestV1.OrdersRead,
     string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove,
     string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord,
-    string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove);
+    string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove,
+    string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -233,6 +346,7 @@ public static class PurchasingApiV1
     public const string RequestSubmissionPath = "/api/v1/purchasing/requests/{id}/submission";
     public const string RequestApprovalPath = "/api/v1/purchasing/requests/{id}/approval";
     public const string RequestRejectionPath = "/api/v1/purchasing/requests/{id}/rejection";
+    public const string RequestWithdrawalPath = "/api/v1/purchasing/requests/{id}/withdrawal";
     public const string OrdersPath = "/api/v1/purchasing/orders";
     public const string OrderDetailPath = "/api/v1/purchasing/orders/{id}";
     public const string OrderApprovalPath = "/api/v1/purchasing/orders/{id}/approval";
@@ -289,6 +403,11 @@ public static class PurchasingJson
 
             RequireProductVersionShape(line.ExpectedProductVersion);
             RequireDecimalShape(line.Quantity);
+            if (line.Source is { } source
+                && (!PurchaseRequestSourceKindsV1.TryParse(source.Kind, out _) || source.DocumentId == Guid.Empty || source.DocumentLineId == Guid.Empty))
+            {
+                throw new JsonException("Invalid line source.");
+            }
         }
 
         return request;
@@ -314,6 +433,20 @@ public static class PurchasingJson
     public static RejectPurchaseRequestRequest ReadRejectRequest(string json)
     {
         var request = JsonSerializer.Deserialize<RejectPurchaseRequestRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>A1-1b: the reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
+    public static WithdrawPurchaseRequestRequest ReadWithdrawRequest(string json)
+    {
+        var request = JsonSerializer.Deserialize<WithdrawPurchaseRequestRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersionShape(request.ExpectedVersion);
         if (request.Reason is null)

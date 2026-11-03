@@ -237,7 +237,8 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
         "9007199254740993", Guid.NewGuid(), Guid.NewGuid(), CurrencyId, "1", null,
         visible ? FinanceOpenItemStatusV1.Open : null, new DateTimeOffset(2026, 10, 13, 0, 0, 0, TimeSpan.Zero),
         new(visible ? AmountDisclosure.Visible : AmountDisclosure.Redacted, visible ? new("123456.78", CurrencyId) : null),
-        new(visible ? AmountDisclosure.Visible : AmountDisclosure.Redacted, visible ? new("99999.01", CurrencyId) : null));
+        new(visible ? AmountDisclosure.Visible : AmountDisclosure.Redacted, visible ? new("99999.01", CurrencyId) : null),
+        FinanceOpenItemDirectionV1.Receivable);
 
     private sealed class CapturingService : IFinanceOpenItemReadServiceV1
     {

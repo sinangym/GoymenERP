@@ -58,8 +58,19 @@ internal sealed class PlanRow : IManufacturingTenantRow
     /// <summary>MFG-6: the slitting spec's winding target, or null (no spec, or a spec that winds to no target).</summary>
     public decimal? WindingTargetKg { get; set; }
 
+    /// <summary>Üretim U2-a: the slitting spec's plan-entered net usable width, or null. Creation content.</summary>
+    public decimal? NetUsableWidthMm { get; set; }
+
+    /// <summary>Üretim U2-a (URT-D9): the plan-entered line speed as created (revision 0), or null.</summary>
+    public decimal? LineSpeedMetresPerMinute { get; set; }
+
     public Guid? ApprovedByUserId { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
+
+    /// <summary>Üretim U2-a: the cancellation (all three set exactly when the status is Cancelled).</summary>
+    public Guid? CancelledByUserId { get; set; }
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public string? CancellationReason { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public string PayloadHash { get; set; } = string.Empty;
@@ -141,6 +152,9 @@ internal sealed class PlanParameterSnapshotValueRow : IManufacturingTenantRow
     public string Unit { get; set; } = string.Empty;
     public decimal? NumericValue { get; set; }
     public string? ChoiceValue { get; set; }
+
+    /// <summary>Üretim U2-a: null for the profile's value, <c>Plan</c> for a plan-entered value (the line speed).</summary>
+    public string? ValueSource { get; set; }
 }
 
 /// <summary>One ordered coil-to-sheet cut line of the plan as created. Never changes.</summary>
@@ -168,10 +182,31 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow
     public Guid WorkCenterId { get; set; }
     public int? TargetBasis { get; set; }
     public decimal? TargetKg { get; set; }
+
+    /// <summary>Üretim U2-a (URT-D9): the plan-entered line speed this revision set, or null.</summary>
+    public decimal? LineSpeedMetresPerMinute { get; set; }
+
     public string Reason { get; set; } = string.Empty;
     public long PlanVersion { get; set; }
     public string RevisedBy { get; set; } = string.Empty;
     public DateTimeOffset RevisedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Üretim U2-a (URT-D2, API-10): one recorded rejection of a Draft plan by its approver (append-only) — numbered 1..n per
+/// plan, with the reason, who rejected it, when, the plan version it produced and the request's correlation. Never
+/// modified, never deleted.
+/// </summary>
+internal sealed class PlanRejectionRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int RejectionNo { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long PlanVersion { get; set; }
+    public Guid RejectedByUserId { get; set; }
+    public DateTimeOffset RejectedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }
 

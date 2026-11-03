@@ -429,7 +429,7 @@ public sealed class PartyLedgerServiceTests
             await using var context = Context(Company);
             var admitted = new DateTimeOffset(2026, 9, 10, 23, 30, 0, TimeSpan.Zero);
             var row = new FinanceOpenItemRow
-            {
+            { Direction = FinanceOpenItemDirectionCodes.Receivable,
                 Id = Guid.NewGuid(), CompanyId = Company, SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
                 SourceId = document, SourceLineId = Guid.NewGuid(), SourceVersion = "1",
                 SourceBatchId = Guid.NewGuid(), SourceBatchVersion = "synthetic-v1", SourceBatchChecksum = new string('f', 64),

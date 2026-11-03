@@ -238,6 +238,74 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task A_request_line_source_reaches_the_service_and_the_wire_and_a_loose_source_is_refused_before_it()
+    {
+        // A1-2 (plan API-02): the optional line source is read strictly; the response carries it on the line and the
+        // summary's kinds. No new permission or route: the create route is unchanged.
+        var id = Guid.NewGuid();
+        var salesOrder = Guid.NewGuid();
+        var salesOrderLine = Guid.NewGuid();
+        var detail = RequestDetail(id, "Draft", "2") with
+        {
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Sales"] },
+            Lines = [new PurchaseRequestLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", Guid.NewGuid(), "6")
+            {
+                Source = new PurchaseRequestLineSourceView("Sales", salesOrder, salesOrderLine),
+            }],
+        };
+        var service = new StubService { CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(detail, false, "SENTETIK-corr-1")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        var source = $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""";
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-source", RequestBody(source))))
+        {
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var line = body.GetProperty("detail").GetProperty("lines")[0].GetProperty("source");
+            Assert.Equal(("Sales", salesOrder.ToString("D"), salesOrderLine.ToString("D")),
+                (line.GetProperty("kind").GetString(), line.GetProperty("documentId").GetString(), line.GetProperty("documentLineId").GetString()));
+            Assert.Equal("[\"Sales\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+        }
+
+        Assert.Equal(new PurchaseRequestLineSourceRequest("Sales", salesOrder, salesOrderLine), service.LastCreateRequest!.Lines[0].Source);
+
+        foreach (var loose in new[]
+        {
+            $$""","source":{"kind":"Manual","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{Guid.Empty:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}","extra":1}""",
+        })
+        {
+            using var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, $"SENTETIK-loose-{Guid.NewGuid():N}", RequestBody(loose)));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Equal(1, service.Calls);
+
+        // A manual line (no source on the request) is emitted with an explicit "source": null and the summary names only Manual.
+        var manualDetail = RequestDetail(id, "Draft", "2") with
+        {
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Manual"] },
+        };
+        service.CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(manualDetail, false, "SENTETIK-corr-2"));
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-manual", RequestBody())))
+        {
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var manualLine = body.GetProperty("detail").GetProperty("lines")[0];
+            Assert.True(manualLine.TryGetProperty("source", out var manualSource));
+            Assert.Equal(JsonValueKind.Null, manualSource.ValueKind);
+            Assert.Equal("[\"Manual\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+        }
+
+        Assert.Null(service.LastCreateRequest!.Lines[0].Source);
+        Assert.Equal(2, service.Calls);
+    }
+
+    [Fact]
     public async Task A_request_is_approved_and_rejected_over_its_own_routes_with_strict_bodies_and_replayed_terminal_refusals()
     {
         // A1-1 (plan API-01): POST …/approval and …/rejection answer 200 with the request and its decision; a terminal
@@ -597,6 +665,123 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         CompanyA, AcceptanceId, PurchaseOrderId, PurchaseOrderLineId, "7", ProductId, "3", UnitId,
         "100.25", "400.75", Guid.NewGuid(), Guid.NewGuid(), "SENTETIK-RECEIPT-DETAIL", "1",
         Guid.NewGuid(), Guid.NewGuid(), "101.75", "Blocked", DateTimeOffset.Parse("2026-10-13T00:00:00Z"));
+    [Fact]
+    public async Task A_request_is_withdrawn_over_its_own_route_with_a_strict_body_and_replayed_terminal_refusals()
+    {
+        // A1-1b (plan API-01b; ALS-D46, ALS-D47): POST …/withdrawal answers 200 with the Withdrawn request, its withdrawal and
+        // the recorded preparer and submitter; a terminal refusal (409, §7) replays with the first attempt's headers; a malformed body never
+        // reaches the service; a blank reason is the domain's 422 on the reason field.
+        var id = Guid.NewGuid();
+        var withdrawnAt = new DateTimeOffset(2026, 11, 2, 11, 0, 0, TimeSpan.Zero);
+        var service = new StubService
+        {
+            WithdrawRequest = (requestId, body) => Task.FromResult(new PurchaseRequestResponse(
+                RequestDetail(requestId, "Withdrawn", "4") with
+                {
+                    Withdrawal = new PurchaseRequestDecisionView("SENTETIK-submitter", withdrawnAt, body.Reason),
+                    PreparedBy = "SENTETIK-preparer",
+                    SubmittedBy = "SENTETIK-submitter",
+                },
+                false, "SENTETIK-corr-withdraw")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/withdrawal", "SENTETIK-request-withdraw",
+                   """{"expectedVersion":"3","reason":"SENTETIK yanlış ürün"}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(("Withdrawn", "4"), (detail.GetProperty("request").GetProperty("status").GetString(), detail.GetProperty("request").GetProperty("version").GetString()));
+            Assert.Equal("SENTETIK-submitter", detail.GetProperty("withdrawal").GetProperty("decidedBy").GetString());
+            Assert.Equal("SENTETIK yanlış ürün", detail.GetProperty("withdrawal").GetProperty("reason").GetString());
+            Assert.Equal("SENTETIK-submitter", detail.GetProperty("submittedBy").GetString());
+            Assert.Equal("SENTETIK-preparer", detail.GetProperty("preparedBy").GetString());
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty("rejection").ValueKind);
+        }
+
+        var calls = service.Calls;
+        foreach (var body in new[]
+                 {
+                     """{"expectedVersion":"3"}""",
+                     """{"expectedVersion":"3","reason":null}""",
+                     """{"expectedVersion":"0","reason":"x"}""",
+                     """{"expectedVersion":3,"reason":"x"}""",
+                     """{"expectedVersion":"3","reason":"x","actor":"SENTETIK-other"}""",
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/withdrawal", $"SENTETIK-bad-{Guid.NewGuid():N}", body));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        service.WithdrawRequest = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestNotPreparer,
+            [new("actor", "purchasing_request_not_preparer")], isReplay: true, originalCorrelationId: "SENTETIK-first-withdraw");
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/withdrawal", "SENTETIK-request-withdraw-other",
+                   """{"expectedVersion":"3","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first-withdraw", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            Assert.Equal(PurchasingProblemCodesV1.RequestNotPreparer, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.WithdrawRequest = (_, _) => throw new PurchasingServiceException(422, PurchasingProblemCodesV1.RequestWithdrawalReasonRequired,
+            [new("reason", "purchasing_request_withdrawal_reason_required")]);
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/withdrawal", "SENTETIK-request-withdraw-blank",
+                   """{"expectedVersion":"3","reason":" "}""")))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(PurchasingProblemCodesV1.RequestWithdrawalReasonRequired, problem.GetProperty("code").GetString());
+            Assert.Equal("reason", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+    }
+
+    [Theory]
+    [InlineData("approval", 403, "forbidden")]
+    [InlineData("rejection", 403, "forbidden")]
+    [InlineData("withdrawal", 403, "forbidden")]
+    [InlineData("approval", 404, "not_found")]
+    [InlineData("rejection", 404, "not_found")]
+    [InlineData("withdrawal", 404, "not_found")]
+    public async Task A_request_decision_route_maps_the_services_403_and_404_directly_and_releases_no_request(string route, int status, string code)
+    {
+        // #900 review P3: the decision and withdrawal routes answer the service's authorization (403) and unknown /
+        // foreign-company (404) refusals as they are, with no request data and no replay headers.
+        var id = Guid.NewGuid();
+        PurchasingServiceException Refusal() => new(status, code);
+        var service = new StubService
+        {
+            ApproveRequest = (_, _) => throw Refusal(),
+            RejectRequest = (_, _) => throw Refusal(),
+            WithdrawRequest = (_, _) => throw Refusal(),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var body = route == "approval" ? """{"expectedVersion":"3"}""" : """{"expectedVersion":"3","reason":"SENTETIK"}""";
+
+        using var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/{route}", $"SENTETIK-{route}-{status}", body));
+
+        Assert.Equal((HttpStatusCode)status, response.StatusCode);
+        Assert.Equal(1, service.Calls);
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(id.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"detail\":{", payload, StringComparison.Ordinal);
+        // The platform's shapes: a 403 carries only the public "forbidden" code, a 404 none; neither names which rule held.
+        using var problem = JsonDocument.Parse(payload);
+        if (status == 403)
+        {
+            Assert.Equal("forbidden", problem.RootElement.GetProperty("code").GetString());
+        }
+        else
+        {
+            Assert.False(problem.RootElement.TryGetProperty("code", out _));
+        }
+    }
 
     private static string OrderBody(bool sourceRequest = true, bool boundLine = true)
     {
@@ -605,8 +790,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         return $$"""{"supplierPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","sourceRequestId":{{source}},"effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6","sourceRequestLineId":{{bound}}}]}""";
     }
 
-    private static string RequestBody() =>
-        $$"""{"effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6"}]}""";
+    private static string RequestBody(string source = "") =>
+        $$"""{"effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6"{{source}}}]}""";
 
     private static HttpRequestMessage Post(string path, string key, string json, string mediaType = "application/json")
     {
@@ -678,6 +863,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, RejectPurchaseRequestRequest, Task<PurchaseRequestResponse>> RejectRequest { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
+        public Func<Guid, WithdrawPurchaseRequestRequest, Task<PurchaseRequestResponse>> WithdrawRequest { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> CreateOrder { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> Approve { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
@@ -710,9 +897,12 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return Comparison(purchaseOrderId, acceptanceId);
         }
 
+        public CreatePurchaseRequestRequest? LastCreateRequest { get; private set; }
+
         public Task<PurchaseRequestResponse> CreateRequestAsync(CreatePurchaseRequestRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastCreateRequest = request;
             return CreateRequest();
         }
 
@@ -734,6 +924,13 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             Calls++;
             return RejectRequest(requestId, request);
+        }
+
+        public Task<PurchaseRequestResponse> WithdrawRequestAsync(Guid requestId, WithdrawPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return WithdrawRequest(requestId, request);
         }
 
         public Task<PurchaseRequestDetailView> GetRequestDetailAsync(Guid requestId, CancellationToken cancellationToken = default) =>

@@ -249,7 +249,7 @@ describe('plan list', () => {
     renderAt(PATH)
     await screen.findByRole('row', { name: new RegExp(PLAN.slice(-8)) })
     const options = within(screen.getByLabelText('Durum')).getAllByRole('option')
-    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(['', 'Draft', 'Approved'])
+    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(['', 'Draft', 'Approved', 'Cancelled'])
   })
 
   it('says so when the company has no plan', async () => {

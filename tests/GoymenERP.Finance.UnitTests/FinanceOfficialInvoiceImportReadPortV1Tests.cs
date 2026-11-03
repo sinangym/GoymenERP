@@ -119,7 +119,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1Tests
     private static FinanceContext Context() => new(Company, "actor", "correlation", null);
 
     private static FinanceOpenItemRow Row() => new()
-    {
+    { Direction = FinanceOpenItemDirectionCodes.Receivable,
         Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
         CompanyId = Company,
         SourceKind = FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,

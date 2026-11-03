@@ -4,13 +4,18 @@
  * Rendered text is unchanged from the screens' former inline strings.
  */
 
-import type { PurchaseOrderStatus, PurchaseRequestStatus } from './contract'
+import type { PurchaseOrderStatus, PurchaseRequestStatus, PurchaseRequestSummarySourceKind } from './contract'
 
 export const PURCHASE_ORDER_STATUS_LABEL: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı' }
 
-/** A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1). */
+/** A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1); A1-1b: Withdrawn (ALS-D46). */
 export const PURCHASE_REQUEST_STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
-  Draft: 'Taslak', Submitted: 'Gönderildi', Approved: 'Onaylandı', Rejected: 'Reddedildi',
+  Draft: 'Taslak', Submitted: 'Gönderildi', Approved: 'Onaylandı', Rejected: 'Reddedildi', Withdrawn: 'Geri çekildi',
+}
+
+/** A1-2 (plan API-02): where a request line's need came from; Manual is a line without a source. */
+export const PURCHASE_REQUEST_SOURCE_LABEL: Record<PurchaseRequestSummarySourceKind, string> = {
+  Manual: 'Manuel', Stock: 'Stok', Sales: 'Satış', Production: 'Üretim',
 }
 
 /** Shared by the request and order create forms. */
@@ -50,6 +55,9 @@ export const REQUEST_LIST_TEXT = {
   status: 'Durum',
   businessDate: 'İş tarihi',
   lineCount: 'Satır',
+  source: 'Kaynak',
+  /** A body without the A1-2 field: the source is not known, never shown as manual. */
+  sourceUnknown: '—',
   updatedAt: 'Güncellendi',
   loadingMore: 'Sonraki sayfa yükleniyor…',
   loadMore: 'Daha fazla göster',
@@ -65,7 +73,8 @@ export const REQUEST_CREATE_TEXT = {
   saved: 'Satın alma talebi kaydedildi',
   notSaved: (code: string | number) => `Talep kaydedilmedi (${code}).`,
   linesRequired: 'Her satırda Product kaynağından ürün/alış birimi ve sıfırdan büyük miktar zorunludur.',
-  sourceLegend: 'Talep kaynağı',
+  detailsLegend: 'Talep bilgileri',
+  manualSource: 'Kaynak: Manuel. Satış, Üretim veya Stok ihtiyacından açılan talep kaynağını o modülün eyleminden alır.',
   linesLegend: 'Talep satırları',
   product: (position: number) => `Ürün ${position}`,
   removeLine: 'Satırı kaldır',
@@ -91,6 +100,9 @@ export const REQUEST_DETAIL_TEXT = {
   product: 'Ürün',
   unit: 'Birim',
   quantity: 'Miktar',
+  source: 'Kaynak',
+  sourceUnknown: '—',
+  sourceReference: (documentId: string, documentLineId: string) => `belge …${documentId.slice(-8)} · satır …${documentLineId.slice(-8)}`,
   submitHeading: 'Talebi ihtiyaç havuzuna gönder',
   submitNote: 'Gönderim yalnız talep durumunu değiştirir; sipariş, fiyat veya stok hareketi üretmez.',
   unknown: 'Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.',
@@ -185,6 +197,39 @@ export const REQUEST_DECISION_PROBLEM_TEXT: Readonly<Record<string, string>> = {
   purchasing_request_has_approved_order: 'Talebe bağlı onaylı sipariş var; önce bağlı sipariş iptal edilmelidir.',
   purchasing_request_rejection_reason_required: 'Ret gerekçesi zorunludur.',
   purchasing_request_rejection_reason_too_long: 'Ret gerekçesi 4000 karakteri aşamaz.',
+  concurrent_change: 'Talep aynı anda başka bir işlemle değişti; kayıt yeniden okundu.',
+  same_key_payload_mismatch: 'Aynı işlem anahtarı başka bir içerikle kullanıldı.',
+}
+
+/** A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer's or submitter's withdrawal control's user texts. */
+export const REQUEST_WITHDRAWAL_TEXT = {
+  heading: 'Talebi geri çek',
+  note: 'Oluşturduğunuz veya onaya gönderdiğiniz talebi, henüz karar verilmemişken gerekçeyle geri çekebilirsiniz. Geri çekilen talep kapanır, siparişe dönüşmez ve ret sayılmaz; sipariş, fiyat veya stok hareketi üretmez.',
+  withdraw: 'Geri çek',
+  withdrawing: 'Geri çekiliyor…',
+  reasonLabel: 'Geri çekme gerekçesi',
+  reasonHint: 'Geri çekme için gerekçe zorunludur (en fazla 4000 karakter).',
+  reasonRequired: 'Geri çekme gerekçesi boş olamaz.',
+  reasonTooLong: 'Geri çekme gerekçesi 4000 karakteri aşamaz; kısaltın.',
+  unknown: 'Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar, sürüm ve gerekçeyle yeniden gönderin.',
+  retry: 'Aynı geri çekmeyi yeniden gönder',
+  withdrawn: 'Talep geri çekildi ve yeniden okundu.',
+  replayed: 'Önceki geri çekme yanıtı yeniden gösterildi.',
+  failed: 'Talep geri çekilmedi',
+  reread: 'Kayıt yeniden okundu.',
+  withdrawalFacts: 'Geri çekme',
+  reasonFacts: 'Geri çekme gerekçesi',
+} as const
+
+/** Known withdrawal refusal codes in user words; an unknown code is shown as-is beside the generic text. */
+export const REQUEST_WITHDRAWAL_PROBLEM_TEXT: Readonly<Record<string, string>> = {
+  version_conflict: 'Talep bu sırada değişti; güncel sürüm yeniden okundu.',
+  purchasing_request_decision_state: 'Yalnız gönderilmiş ve henüz karar verilmemiş talep geri çekilir.',
+  purchasing_request_not_preparer: 'Talebi yalnız oluşturan veya gönderen kişi geri çekebilir.',
+  purchasing_request_maker_unknown: 'Talebi oluşturan ve gönderen bilinmiyor; talep geri çekilemez.',
+  purchasing_request_has_approved_order: 'Talebe bağlı onaylı sipariş var; önce bağlı sipariş iptal edilmelidir.',
+  purchasing_request_withdrawal_reason_required: 'Geri çekme gerekçesi zorunludur.',
+  purchasing_request_withdrawal_reason_too_long: 'Geri çekme gerekçesi 4000 karakteri aşamaz.',
   concurrent_change: 'Talep aynı anda başka bir işlemle değişti; kayıt yeniden okundu.',
   same_key_payload_mismatch: 'Aynı işlem anahtarı başka bir içerikle kullanıldı.',
 }

@@ -1667,7 +1667,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             dbContext.OpenItemSourceBatches.Add(SyntheticSourceBatch(
                 company, batchId, "synthetic.receivable.v1"));
             var row = new FinanceOpenItemRow
-            {
+            { Direction = FinanceOpenItemDirectionCodes.Receivable,
                 Id = Guid.NewGuid(), CompanyId = company, SourceKind = "synthetic.receivable.v1",
                 SourceId = Guid.NewGuid(), SourceLineId = Guid.NewGuid(), SourceVersion = "1",
                 SourceBatchId = batchId, SourceBatchVersion = "synthetic-v1",
@@ -1710,7 +1710,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             dbContext.OpenItemSourceBatches.Add(SyntheticSourceBatch(
                 company, batchId, "synthetic.receivable.v1"));
             dbContext.OpenItems.Add(new FinanceOpenItemRow
-            {
+            { Direction = FinanceOpenItemDirectionCodes.Receivable,
                 Id = openItemId,
                 CompanyId = company,
                 SourceKind = "synthetic.receivable.v1",

@@ -139,7 +139,7 @@ public sealed class FinanceAllocationReadServiceTests
             run._seedCompany.Set(Company);
             run.Db = run.Context(run._seedCompany);
             run.Db.OpenItems.Add(new FinanceOpenItemRow
-            {
+            { Direction = FinanceOpenItemDirectionCodes.Receivable,
                 Id = OpenItem, CompanyId = Company, CurrencyId = Currency, Version = 7,
                 SourceKind = "official.invoice-installment.v1", SourceId = Guid.NewGuid(), SourceLineId = Guid.NewGuid(),
                 SourceVersion = "1", SourceBatchId = Guid.NewGuid(), SourceBatchVersion = "1", SourceBatchChecksum = "abc",

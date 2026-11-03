@@ -11,6 +11,11 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// refusals (§7) recorded under the key: a stale version, a state the decision does not start from, the maker deciding
 /// their own request (hazırlayan ≠ onaylayan), an unknown maker (fail-closed) and — for a rejection — an APPROVED order
 /// bound to the request, which the store measures inside the same save. A missing or too long reason is a 422 (not terminal).
+/// <para>
+/// A1-1b (ALS-D46, ALS-D47): the preparer's or submitter's withdrawal of their Submitted request runs on the same path
+/// under its own name <c>purchasing.requests.withdraw</c>; its terminal refusals are a state other than Submitted, no
+/// recorded maker at all (fail-closed), an actor who is neither recorded maker and a bound APPROVED order.
+/// </para>
 /// </summary>
 public sealed partial class PurchasingService
 {
@@ -18,7 +23,7 @@ public sealed partial class PurchasingService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return DecideRequestAsync(requestId, request, request.ExpectedVersion, metadata, PurchasingCommands.RequestApproveV1,
+        return DecideRequestAsync(requestId, request, request.ExpectedVersion, metadata, PurchasingCommands.RequestApproveV1, bindings.RequestApprovePermission,
             (target, _, actor, version, now) => target.Approve(version, actor, now),
             new PurchasingMutationAudit("purchasing.purchase-request.approved.v1", "Approve", "Satınalma talebi onaylandı"), cancellationToken);
     }
@@ -27,18 +32,27 @@ public sealed partial class PurchasingService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return DecideRequestAsync(requestId, request, request.ExpectedVersion, metadata, PurchasingCommands.RequestRejectV1,
+        return DecideRequestAsync(requestId, request, request.ExpectedVersion, metadata, PurchasingCommands.RequestRejectV1, bindings.RequestApprovePermission,
             (target, facts, actor, version, now) => target.Reject(version, actor, request.Reason, facts.HasApprovedOrder, now),
             new PurchasingMutationAudit("purchasing.purchase-request.rejected.v1", "Reject", "Satınalma talebi reddedildi"), cancellationToken);
     }
 
+    public Task<PurchaseRequestResponse> WithdrawRequestAsync(Guid requestId, WithdrawPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return DecideRequestAsync(requestId, request, request.ExpectedVersion, metadata, PurchasingCommands.RequestWithdrawV1, bindings.RequestWithdrawPermission,
+            (target, facts, actor, version, now) => target.Withdraw(version, actor, request.Reason, facts.HasApprovedOrder, now),
+            new PurchasingMutationAudit("purchasing.purchase-request.withdrawn.v1", "Withdraw", "Satınalma talebi oluşturan veya gönderen tarafından geri çekildi"),
+            cancellationToken);
+    }
+
     private async Task<PurchaseRequestResponse> DecideRequestAsync(Guid requestId, object wire, string expectedVersionText, PurchasingCommandMetadata metadata,
-        string commandName, Action<PurchaseRequest, PurchaseRequestBindingFacts, string, long, DateTimeOffset> decide, PurchasingMutationAudit audit,
-        CancellationToken cancellationToken)
+        string commandName, string? permission, Action<PurchaseRequest, PurchaseRequestBindingFacts, string, long, DateTimeOffset> decide,
+        PurchasingMutationAudit audit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
-        var permission = bindings.RequestApprovePermission;
         var scope = await RequireAsync(permission, cancellationToken);
         var expectedVersion = ParseVersion(expectedVersionText);
         var requestHash = PurchasingRequestHash.Compute(commandName, requestId, wire);
@@ -68,7 +82,8 @@ public sealed partial class PurchasingService
             return await DecisionTerminalAsync(scope, permission, envelope, requestHash, commandName,
                 PurchasingProblemCodesV1.VersionConflict, "expectedVersion", "version_conflict", cancellationToken);
         }
-        catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.RequestNotSubmitted or PurchasingRuleCodes.RequestNotRejectable)
+        catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.RequestNotSubmitted or PurchasingRuleCodes.RequestNotRejectable
+                                                             or PurchasingRuleCodes.RequestNotWithdrawable)
         {
             return await DecisionTerminalAsync(scope, permission, envelope, requestHash, commandName,
                 PurchasingProblemCodesV1.RequestDecisionState, "status", exception.Code, cancellationToken);
@@ -77,6 +92,12 @@ public sealed partial class PurchasingService
         {
             return await DecisionTerminalAsync(scope, permission, envelope, requestHash, commandName,
                 PurchasingProblemCodesV1.RequestSameActor, "actor", exception.Code, cancellationToken);
+        }
+        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestNotPreparer)
+        {
+            // ALS-D47: only the preparer or the submitter withdraws; terminal for this key.
+            return await DecisionTerminalAsync(scope, permission, envelope, requestHash, commandName,
+                PurchasingProblemCodesV1.RequestNotPreparer, "actor", exception.Code, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestMakerUnknown)
         {
@@ -90,7 +111,9 @@ public sealed partial class PurchasingService
                 PurchasingProblemCodesV1.RequestHasApprovedOrder, "status", exception.Code, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.RequestRejectionReasonRequired
-                                                             or PurchasingRuleCodes.RequestRejectionReasonTooLong)
+                                                             or PurchasingRuleCodes.RequestRejectionReasonTooLong
+                                                             or PurchasingRuleCodes.RequestWithdrawalReasonRequired
+                                                             or PurchasingRuleCodes.RequestWithdrawalReasonTooLong)
         {
             throw new PurchasingServiceException(422, exception.Code, [new("reason", exception.Code)]);
         }

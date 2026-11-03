@@ -7,12 +7,12 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 
 - **Plan and decisions:** the module's roadmap is `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` (waves A0…A6); the
   business decisions are `docs/decisions/SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13), `_ALIS_EK1.md`
-  (ALS-D14…D20), `_ALIS_EK2.md` (ALS-D21…D28), `_ALIS_EK3.md` (ALS-D29…D43) and
+  (ALS-D14…D20), `_ALIS_EK2.md` (ALS-D21…D28), `_ALIS_EK3.md` (ALS-D29…D43), `_ALIS_EK5.md` (ALS-D46), `_ALIS_EK6.md` (ALS-D47) and
   `SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md` (request rejection, cancellation of an approved
   order's unaccepted remainder). Those decisions are **not implemented yet** unless a line below says so; the target
   states are listed in `docs/domain/DURUM_MAKINELERI.md` ("Satın Alma") and the ownership split in
   `docs/domain/SISTEM_OF_RECORD_MATRISI.md`.
-- **Statuses in code:** `PurchaseRequestStatus` = Draft, Submitted, Approved, Rejected (`Domain/Requests/PurchaseRequest.cs`);
+- **Statuses in code:** `PurchaseRequestStatus` = Draft, Submitted, Approved, Rejected, Withdrawn (`Domain/Requests/PurchaseRequest.cs`);
   `PurchaseOrderStatus` = Draft, Approved (`Domain/Orders/PurchaseOrder.cs`). There is no order cancellation, closure,
   revision or supplier confirmation yet.
 - **Request approval and rejection (A1-1, plan API-01; ALS-D2, ALS-D16, No.161 §1):** `POST requests/{id}/approval`
@@ -29,7 +29,60 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   (decided by, at, reason). Migration `20261102125710_AddPurchaseRequestDecisions` adds the columns, the
   `CK_PurchaseRequests_Decision` and `CK_PurchaseRequests_MakerChecker` checks, records the submitter of already
   submitted requests from their own stored submit attempt, and its Down refuses (`THROW 51164`) while a request is
-  Approved or Rejected. Grant of the name is a human gate: no role, seed or persona carries it.
+  Approved or Rejected. Grant of the name is a human gate: no real role, seed or user carries it (only the SENTETIK
+  `pur01` browser-suite approver in its disposable stack).
+- **Legacy `purchasing_request_maker_unknown` (#900 review P3):** a request submitted before A1-1 whose submit attempt
+  is not in `purchasing.PurchaseAttempts` keeps `SubmittedBy = NULL` after the migration's backfill (nothing is
+  guessed). Such a request stays Submitted and visible, but no one can approve or reject it — every decision answers
+  the terminal 409 `purchasing_request_maker_unknown`; only its recorded preparer may withdraw it (A1-1b, ALS-D47). There is no repair command; a forward fix (a
+  reviewed data correction recording the real submitter) is an operations decision, not a code default. In a fresh
+  database every submission records its submitter, so the code is reachable only for such legacy rows.
+- **Request withdrawal (A1-1b, plan API-01b; ALS-D46, ALS-D47):** `POST requests/{id}/withdrawal` (Submitted →
+  **Withdrawn**, a separate terminal outcome from Rejected so reports never mix a maker's withdrawal with a manager's refusal;
+  `reason` required, at most 4000 characters, never cut, the rejection's blank rule) under its own name
+  `purchasing.requests.withdraw` (`PurchasingService.RequestDecisions.cs`; command `purchasing.purchase-request.withdraw.v1`,
+  audit `purchasing.purchase-request.withdrawn.v1` in the same save). **Only the recorded preparer (`CreatedBy`) or the
+  recorded submitter (`SubmittedBy`)** withdraws, ordinal comparison (ALS-D47, Sinan 2026-11-02: "oluşturan veya
+  gönderen"); anyone else is `purchasing_request_not_preparer`; an unrecorded maker never matches, and when neither is
+  recorded nobody withdraws (`purchasing_request_maker_unknown`);
+  Draft / Approved / Rejected / Withdrawn are `purchasing_request_decision_state` (field code
+  `purchasing_request_not_withdrawable`); an APPROVED order bound to the request (possible only for orders approved
+  before A1-1, when Submitted requests could source orders) refuses it (`purchasing_request_has_approved_order`,
+  No.161 §1's guard). The reason's 422s: `purchasing_request_withdrawal_reason_required` / `_too_long`. The detail view
+  carries `withdrawal` (by, at, reason) and the recorded `preparedBy` and `submittedBy`. Migration
+  `20261102161658_AddPurchaseRequestWithdrawal` adds `WithdrawnBy` / `WithdrawnAtUtc` / `WithdrawalReason`, the
+  Withdrawn branch of `CK_PurchaseRequests_Decision`, `CK_PurchaseRequests_Withdrawal` (withdrawer = preparer or
+  recorded submitter, binary comparison; no withdrawal facts on any other status) and re-creates `CK_PurchaseRequests_MakerChecker` with a binary
+  comparison (`Latin1_General_100_BIN2`, the domain's ordinal rule; #900 review P3 — under the database's
+  case-insensitive default a decider differing from a maker only by case passed the domain and failed the check). Its
+  Down refuses (`THROW 51165`) while a request is Withdrawn. Grant of the name is a human gate: no real role, seed or
+  user carries it (only the SENTETIK `pur01` browser-suite creator in its disposable stack).
+- **Down guard `51166` (#907 review P3, CODE-REVIEW-A):** `AddPurchaseRequestWithdrawal`'s Down also refuses
+  (`THROW 51166`, before any drop) while a stored approval or rejection differs from its preparer or submitter **only by
+  case** (`ApprovedBy`/`RejectedBy` = `CreatedBy`/`SubmittedBy` under the column's default, case-insensitive collation).
+  Since A1-1b the domain (ordinal) and `CK_PurchaseRequests_MakerChecker` (binary) treat such an actor as a different
+  person, so the decision is valid; the A1-1 check that Down would restore compares case-insensitively and would reject
+  the row with a raw 547 halfway through the rollback. The refusal is the clear, early form of that failure. There is
+  no automatic repair: rolling back past A1-1b with such rows needs a reviewed forward fix (an operations decision), not
+  a code default. A fresh database never meets it unless actor identities differing only by case exist.
+- **Request line source (A1-2, plan API-02; Üretim A-2, Satış S-A1, ALS-D16):** every request line may carry an
+  optional `source` on `POST requests` — `kind` exactly `Stock`, `Sales` or `Production` plus the source record's opaque
+  identity `documentId` and `documentLineId` (both non-empty); a line without one is **manual** (`Manual` is not accepted
+  on a line, so manual has one spelling). The source is fixed when the line is created (request lines are insert-only)
+  and plays no part in any decision: a Production-sourced request waits for the manager's approval like any other
+  (ALS-D16). The identities are **opaque**: Purchasing does not read Sales, Manufacturing or Inventory tables and does
+  not check that the record exists (no producer port yet; ALS-D58 forbids new ports in deferred modules) — validation
+  belongs to the producing module's future port and is a follow-up. A null source is never serialised into the content
+  hash, so the ADR-011 attempts recorded before A1-2 keep replaying. No new permission: the request is created under the
+  existing creation name. The detail line carries `source` (null = manual); the summary (list and detail) carries
+  `sourceKinds`, the distinct kinds of its lines in the fixed order `Manual`, `Stock`, `Sales`, `Production`. The
+  create audit record names each line's source. Migration `20261103012142_AddPurchaseRequestLineSource` adds the
+  nullable `SourceKind` (1 Stock, 2 Sales, 3 Production) / `SourceDocumentId` / `SourceDocumentLineId` columns,
+  `CK_PurchaseRequestLines_Source` (none of the three, or a defined kind with both identities non-empty) and the filtered
+  index `IX_PurchaseRequestLines_Source` (`CompanyId, SourceKind, SourceDocumentId`) for the reads by source record the
+  Sales adaptor (S-A1/MOD-03) and the Üretim action (A-2/U5-c) will need; its Down refuses (`THROW 51167`) while any line
+  carries a source (dropping the columns would silently turn it manual). The P-01 form opens manual requests only; the
+  detail and list show the source read-only. The plan's "istenen tarih" (requested date) of API-02 is not in this slice.
 - **Order creation:** an order is created with or without a source request (`CreatePurchaseOrderRequest.SourceRequestId`
   is optional); when given, the request must be **Approved** (A1-1, ALS-D2/ALS-D16; 409 `purchasing_request_state`,
   field `sourceRequestId` = `not_approved`) and of the same company (`PurchasingService.ReadSourceRequestAsync`). An
@@ -58,17 +111,19 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 - **Receipt reads:** options (locations), list, detail and the read-only accepted-vs-measured kg comparison
   (`PurchaseGoodsReceiptComparisonContractsV1.cs`: `SameKilogramUnit` / `Unavailable` are emitted; `ApprovedConversion`
   is declared but intentionally not emitted; no tolerance, approval or stock effect).
-- **HTTP (16 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`; orders — create, list, detail, `approval`;
+- **HTTP (17 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`;
   goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
-- **Permissions (5):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
-  `purchasing.requests.approve` (A1-1) (`PurchasingPermissionManifestV1`, `ErpPermissions`; company-wide, not critical,
-  registered only).
-- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.5`) declares P-01 request
-  list/new/detail (+ submit and, since A1-1, the `purchasing.requests.approve` decision child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve and goods-receipt
+- **Permissions (6):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
+  `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b) (`PurchasingPermissionManifestV1`,
+  `ErpPermissions`; company-wide, not critical, registered only).
+- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.6`) declares P-01 request
+  list/new/detail (+ submit, since A1-1 the `purchasing.requests.approve` decision child and since A1-1b the
+  `purchasing.requests.withdraw` withdrawal child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve and goods-receipt
   children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
   `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage` (+ `PurchaseRequestDecisionPanel`:
-  approve / reject with reason, unknown-result resend of the same key), `PurchaseOrderListPage`,
+  approve / reject with reason, unknown-result resend of the same key; `PurchaseRequestWithdrawalPanel`: "Geri çek"
+  with reason, shown only to the recorded preparer or submitter), `PurchaseOrderListPage`,
   `PurchaseOrderCreatePage`, `PurchaseOrderDetailPage`, `GoodsReceiptPanel`, `GoodsReceiptDetail`,
   `GoodsReceiptQuantityComparison` (routes in `purchasingRoutes.tsx`).
 - **Ports out:** `IPurchaseSupplyReferencePortV1` (expected supply, never stock), `IPurchaseOpenLineReadPortV1`

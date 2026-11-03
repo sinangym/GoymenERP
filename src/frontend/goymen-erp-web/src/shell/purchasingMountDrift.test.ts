@@ -31,6 +31,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     ].sort())
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestSubmit)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestApprove)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestWithdraw)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderApprove)
   })
 

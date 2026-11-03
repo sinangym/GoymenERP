@@ -64,11 +64,14 @@ public sealed class FinanceBankAccountTests
         Assert.Contains(customerInstruments, migrations);
         Assert.Contains(officialInvoiceImport, migrations);
         Assert.Contains(officialInvoiceImportWorkDelivery, migrations);
+        const string openItemDirection = "20261102134844_AddOpenItemDirection";
+        Assert.Contains(openItemDirection, migrations);
         Assert.True(Array.IndexOf(migrations, customerInstruments) < Array.IndexOf(migrations, officialInvoiceImport));
         Assert.True(Array.IndexOf(migrations, officialInvoiceImport) < Array.IndexOf(migrations, officialInvoiceImportWorkDelivery));
-        // The NEWEST migration is pinned by name on purpose: Work delivery is the reviewed append after the
-        // approved invoice import, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal(officialInvoiceImportWorkDelivery, migrations.Last());
+        Assert.True(Array.IndexOf(migrations, officialInvoiceImportWorkDelivery) < Array.IndexOf(migrations, openItemDirection));
+        // The NEWEST migration is pinned by name on purpose: the open-item direction (MOD-15) is the reviewed append
+        // after the Work delivery, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal(openItemDirection, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
