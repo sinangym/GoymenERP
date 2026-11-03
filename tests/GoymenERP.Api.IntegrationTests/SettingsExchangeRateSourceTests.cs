@@ -142,6 +142,7 @@ public sealed class SettingsExchangeRateSourceTests
     [InlineData(SettingsExchangeRatePermissionManifestV1.Read, ErpPermissions.SettingsExchangeRatesRead)]
     [InlineData(SettingsExchangeRatePermissionManifestV1.Correct, ErpPermissions.SettingsExchangeRatesCorrect)]
     [InlineData(SettingsExchangeRatePermissionManifestV1.Import, ErpPermissions.SettingsExchangeRatesImport)]
+    [InlineData(SettingsExchangeRatePermissionManifestV1.MarkHalfDay, ErpPermissions.SettingsExchangeRatesHalfDayMark)]
     public void The_names_are_registered_company_wide_not_critical_and_seeded_to_no_role(string owner, string central)
     {
         Assert.Equal(owner, central);
