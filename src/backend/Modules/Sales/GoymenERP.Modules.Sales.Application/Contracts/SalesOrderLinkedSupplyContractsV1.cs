@@ -38,6 +38,13 @@ public static class SalesOrderLinkedSupplyContractV1
 /// <summary>
 /// What Sales asks: the OPEN (not closed, not cancelled) supply documents an owner links to the order in the company — all lines,
 /// or only <paramref name="OrderLineIds"/> when given. The company is the caller's server-resolved company.
+/// <para>
+/// <paramref name="OrderId"/> is ALWAYS sent (the owner's index is on the order: Purchasing's request-line source
+/// <c>{ kind: "Sales", documentId, documentLineId }</c>, <c>IX_PurchaseRequestLines_Source (CompanyId, SourceKind,
+/// SourceDocumentId)</c>, #928); line ids are only a narrowing filter. The ids are opaque to the owner, which stores what the
+/// requester sent and does not validate it against Sales; Sales checks every answered line id against the order and reads an
+/// unknown one as Unreadable (fail-closed), never as a validated link.
+/// </para>
 /// </summary>
 public sealed record SalesOrderLinkedSupplyQueryV1(Guid CompanyId, Guid OrderId, IReadOnlyList<Guid>? OrderLineIds);
 
