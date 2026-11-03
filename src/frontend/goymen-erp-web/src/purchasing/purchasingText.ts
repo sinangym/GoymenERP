@@ -73,7 +73,7 @@ export const REQUEST_CREATE_TEXT = {
   saved: 'Satın alma talebi kaydedildi',
   notSaved: (code: string | number) => `Talep kaydedilmedi (${code}).`,
   linesRequired: 'Her satırda Product kaynağından ürün/alış birimi ve sıfırdan büyük miktar zorunludur.',
-  sourceLegend: 'Talep kaynağı',
+  detailsLegend: 'Talep bilgileri',
   manualSource: 'Kaynak: Manuel. Satış, Üretim veya Stok ihtiyacından açılan talep kaynağını o modülün eyleminden alır.',
   linesLegend: 'Talep satırları',
   product: (position: number) => `Ürün ${position}`,

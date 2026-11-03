@@ -31,7 +31,13 @@ iş tanımıdır; Satış'ın kendi karar, review ve merge kapıları geçerlidi
   - Bağ API-02 ile gelir (plan A1): talep kaynağı = Satış + satış siparişi kimliği (+ satır). **A1-2 (taslak PR):**
     talep satırında isteğe bağlı `source` = `{ kind: "Sales", documentId: <satış siparişi>, documentLineId: <satır> }`
     (opak; Alış Satış tablosunu okumaz, kimliğin varlığını doğrulamaz) ve okuma için süzgeçli dizin
-    `IX_PurchaseRequestLines_Source` (`CompanyId, SourceKind, SourceDocumentId`) eklendi. Ardından adaptör
+    `IX_PurchaseRequestLines_Source` (`CompanyId, SourceKind, SourceDocumentId`) eklendi (#928).
+    - **Kaynak kimlikleri opak ve doğrulanmamıştır:** talebi açan istemci ne gönderdiyse o saklanır. Adaptör (A4)
+      bunları doğrulanmış satış bağı saymaz; varlık/eşleşme doğrulaması Satış portu gelince ayrı iştir.
+    - Satış'ın talep açan akışı her zaman **satış siparişi kimliğini** (`documentId`) gönderir: dizin
+      `(CompanyId, SourceKind, SourceDocumentId)` üzerindedir, satır kimliğiyle tek başına arama dizinden yararlanmaz.
+    - Adaptör geldiğinde okuma planına göre dizine `INCLUDE (SourceDocumentLineId, LineId)` eklenmesi düşünülebilir
+      (ayrı migration; bugün eklenmedi). Ardından adaptör
     (plan A4, MOD-03) Alış'ın **kendi okuma modelini** bir Alış uygulama okuma servisi üzerinden okur: talep kaynağı
     → `SourceRequestId`/`SourceRequestLineId` ile siparişler ve satırlar → açık miktar = onaylı, iptal/kapalı
     olmayan satırın `RemainingQuantity`'si (genel satır ile teknik kırılım satırları toplanmaz; aynı miktar iki kez

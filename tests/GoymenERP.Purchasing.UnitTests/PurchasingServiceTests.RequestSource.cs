@@ -120,6 +120,9 @@ public sealed partial class PurchasingServiceTests
             "{\"command\":\"" + PurchasingCommands.RequestCreateV1 + "\",\"request\":{\"effectiveOn\":\"2026-09-19\",\"lines\":[{\"lineId\":\"b2b2b2b2-0000-4000-8000-000000000001\","
             + $"\"productId\":\"{Product:D}\",\"expectedProductVersion\":\"7\",\"unitId\":\"{KgUnit:D}\",\"quantity\":\"6\"}}]}}}}",
             canonical);
+        // The hash itself, pinned: a manual line's content hash is the one recorded before A1-2.
+        Assert.Equal("fc0e79a9b0356eb7c9864b4d5618f2857c3c460b4f47c0888feadda7bb320a9b",
+            PurchasingRequestHash.Compute(PurchasingCommands.RequestCreateV1, manual));
         var withSource = manual with
         {
             Lines = [manual.Lines[0] with { Source = new PurchaseRequestLineSourceRequest("Stock", SalesOrder, SalesOrderLine) }],

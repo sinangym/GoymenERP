@@ -169,7 +169,7 @@ export interface PurchaseRequestLine {
   readonly productVersion: string
   readonly unitId: string
   readonly quantity: string
-  /** A1-2: null for a manual line; a body before A1-2 has no field (read as manual). */
+  /** A1-2: null for a manual line; a body before A1-2 has no field — the source is unknown (shown as "—"), never read as manual. */
   readonly source?: PurchaseRequestLineSource | null
 }
 

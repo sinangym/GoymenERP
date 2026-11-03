@@ -284,6 +284,25 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         }
 
         Assert.Equal(1, service.Calls);
+
+        // A manual line (no source on the request) is emitted with an explicit "source": null and the summary names only Manual.
+        var manualDetail = RequestDetail(id, "Draft", "2") with
+        {
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Manual"] },
+        };
+        service.CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(manualDetail, false, "SENTETIK-corr-2"));
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-manual", RequestBody())))
+        {
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var manualLine = body.GetProperty("detail").GetProperty("lines")[0];
+            Assert.True(manualLine.TryGetProperty("source", out var manualSource));
+            Assert.Equal(JsonValueKind.Null, manualSource.ValueKind);
+            Assert.Equal("[\"Manual\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+        }
+
+        Assert.Null(service.LastCreateRequest!.Lines[0].Source);
+        Assert.Equal(2, service.Calls);
     }
 
     [Fact]
