@@ -92,4 +92,56 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(approved.ParameterSnapshot.Values, reopened.ParameterSnapshot!.Values);
         Assert.Equal("RAL 9016", reopened.ProcessSpec!.PaintColorCode);
     }
+
+    /// <summary>
+    /// U2-b1 review: the preview reads the process spec exactly as the save does; a measure beyond the decimal(18,6)
+    /// approval snapshot column is refused on save (422, never a 500 at approval); the spec is part of the idempotent
+    /// request, so the same key with another spec is a conflict.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Plan_process_spec_previews_refuses_oversized_values_and_fences_its_key_on_real_sql()
+    {
+        await using var run = await Run.StartAsync(useSqlSettings: true, clockAt: CatalogDay);
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, LifecycleGrants);
+        using var client = run.ClientFor(user, CompanyA);
+        var paint = await run.WorkCenterOfKindAsync(CompanyA, "Paint");
+        var roll = await run.StockedLabelAsync($"SYN-MFG-U2B1R-{Guid.NewGuid():N}");
+        var inputs = new[] { new PlannedInputRequestV1(roll.Id, "1000", roll.Version) };
+        var spec = new PlanProcessSpecRequestV1(PackageCount: 10, PiecesPerPackage: 25, PieceLengthMm: "6000",
+            PerimeterMm: "160.5", PaintDescription: "Polyester toz");
+
+        using (var previewResponse = await client.PostAsJsonAsync($"{Base}/plans/preview",
+                   new PlanPreviewRequestV1(paint, inputs, null, ProcessSpec: spec)))
+        {
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<PlanPreviewViewV1>())!;
+            var area = preview.Answers.Single(answer => answer.Formula == "PNT-005");
+            Assert.DoesNotContain("perimeterMm", area.MissingParameters);
+            Assert.DoesNotContain("profileLengthMm", area.MissingParameters);
+        }
+
+        var oversizedId = Guid.NewGuid();
+        using (var oversized = await client.PostWithKeyAsync($"{Base}/plans",
+                   new SavePlanRequestV1(oversizedId, paint, inputs, null,
+                       ProcessSpec: spec with { PieceLengthMm = "5000000000000" })))
+        {
+            Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingStoreCodes.ValueDoesNotFit),
+                (oversized.StatusCode, (await Problem(oversized)).Code));
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @p", ("@c", CompanyA), ("@p", oversizedId)));
+
+        var save = new SavePlanRequestV1(Guid.NewGuid(), paint, inputs, null, ProcessSpec: spec);
+        using (var created = await client.PostWithKeyAsync($"{Base}/plans", save, "u2b1-spec-key"))
+        {
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+        using (var otherSpec = await client.PostWithKeyAsync($"{Base}/plans",
+                   save with { ProcessSpec = spec with { PiecesPerPackage = 20 } }, "u2b1-spec-key"))
+        {
+            Assert.Equal((HttpStatusCode.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+                (otherSpec.StatusCode, (await Problem(otherSpec)).Code));
+            Assert.False(otherSpec.Headers.Contains("Idempotency-Replayed"));
+        }
+    }
 }

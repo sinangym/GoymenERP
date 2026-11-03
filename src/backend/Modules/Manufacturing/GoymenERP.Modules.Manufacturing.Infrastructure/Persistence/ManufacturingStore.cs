@@ -53,9 +53,6 @@ public sealed class ManufacturingStore(
     // plan's band widths alike — refuses a value at or above it before the save (FİNANS #342 INFO-3: a neutral name).
     private const decimal Decimal18Scale3Limit = 1_000_000_000_000_000m;
 
-    /// <summary>U2-b1: the exclusive upper bound of a decimal(18,4) column (the unit kg).</summary>
-    private const decimal Decimal18Scale4Limit = 100_000_000_000_000m;
-
     // The exclusive bound of a decimal(18,6) column (12 integer digits): a captured parameter value beyond it is refused.
     private const decimal Decimal18Scale6Limit = 1_000_000_000_000m;
 
@@ -207,12 +204,7 @@ public sealed class ManufacturingStore(
         var plan = await RestorePlanAsync(row, cancellationToken);
         var before = PlanAudit(plan);
         var versionBefore = plan.Version;
-        if (parameterSnapshot is not null && parameterSnapshot.Values.Any(value =>
-                value.Number is { } number && (number >= Decimal18Scale6Limit || number <= -Decimal18Scale6Limit
-                    || decimal.Round(number, 6) != number)))
-        {
-            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Parametre değeri kayıt sütununa sığmıyor.");
-        }
+        RequireSnapshotFits(parameterSnapshot);
 
         // The domain decides: the version fence first, then "only a draft is approved", then the slitting gate.
         plan.Approve(expectedVersion, approvedByUserId, approvedAt,
@@ -225,6 +217,8 @@ public sealed class ManufacturingStore(
         row.UpdatedAtUtc = timeProvider.GetUtcNow();
         // U2-a: the plan's own capture (with a plan-entered value replacing the profile's) is what is stored.
         parameterSnapshot = plan.ParameterSnapshot;
+        // U2-b1: the plan's own values join the capture after the domain's approval; they must fit decimal(18,6) too.
+        RequireSnapshotFits(parameterSnapshot);
         if (parameterSnapshot is not null)
         {
             dbContext.PlanParameterSnapshots.Add(new PlanParameterSnapshotRow
@@ -1940,6 +1934,17 @@ public sealed class ManufacturingStore(
         }
     }
 
+    /// <summary>A captured parameter value is stored as decimal(18,6); beyond the column it is refused, never cut.</summary>
+    private static void RequireSnapshotFits(PlanParameterSnapshotV1? snapshot)
+    {
+        if (snapshot is not null && snapshot.Values.Any(value =>
+                value.Number is { } number && (number >= Decimal18Scale6Limit || number <= -Decimal18Scale6Limit
+                    || decimal.Round(number, 6) != number)))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Parametre değeri kayıt sütununa sığmıyor.");
+        }
+    }
+
     /// <summary>U2-a: the plan-entered line speed is a decimal(18,6) value; beyond the column it is refused, never cut.</summary>
     private static void RequireLineSpeedFits(decimal? lineSpeed)
     {
@@ -1951,7 +1956,8 @@ public sealed class ManufacturingStore(
 
     /// <summary>
     /// U2-b1: the process spec's measures are decimal(18,3) millimetres and a decimal(18,4) unit kg, its texts within their
-    /// columns; beyond them it is refused, never cut.
+    /// columns; beyond them it is refused, never cut. Each value is also captured at approval into a decimal(18,6)
+    /// snapshot column, so the smaller of the two limits applies.
     /// </summary>
     private static void RequireProcessSpecFits(PlanProcessSpec? spec)
     {
@@ -1960,8 +1966,9 @@ public sealed class ManufacturingStore(
             return;
         }
 
-        if (spec.PieceLengthMm >= Decimal18Scale3Limit || spec.PerimeterMm >= Decimal18Scale3Limit
-            || spec.TargetThicknessMm >= Decimal18Scale3Limit || spec.UnitKg >= Decimal18Scale4Limit)
+        // Decimal18Scale6Limit (10^12) is below both column limits.
+        if (spec.PieceLengthMm >= Decimal18Scale6Limit || spec.PerimeterMm >= Decimal18Scale6Limit
+            || spec.TargetThicknessMm >= Decimal18Scale6Limit || spec.UnitKg >= Decimal18Scale6Limit)
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Süreç ayrıntısı değeri kayıt sütununa sığmıyor.");
         }

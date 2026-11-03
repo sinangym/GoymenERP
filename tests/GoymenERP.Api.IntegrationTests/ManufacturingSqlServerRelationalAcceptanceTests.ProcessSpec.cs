@@ -8,7 +8,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Üretim U2-b1 at the store on a REAL SQL Server: the process spec migration travels Down and Up while no plan carries a
-/// process value, and refuses Down (51186) once one does, keeping everything; the stored spec rebuilds exactly.
+/// process value, and refuses Down (51189) once one does, keeping everything; the stored spec rebuilds exactly.
 /// </summary>
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
@@ -49,7 +49,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         {
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(BeforePlanProcessSpecs));
-            Assert.Equal(51186, error.Number);
+            Assert.Equal(51189, error.Number);
             Assert.EndsWith("_AddManufacturingPlanProcessSpecs", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
         }

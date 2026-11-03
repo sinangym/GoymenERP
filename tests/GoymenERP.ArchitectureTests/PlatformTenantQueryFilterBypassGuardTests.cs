@@ -311,8 +311,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (7f38855d… -> f5bf9d89…).
                 // Üretim U2-b1: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (process spec save, revision,
                 // approval capture) and +1 ManufacturingSqlServerRelationalAcceptanceTests fact (process spec migration)
-                // (f5bf9d89… -> e5d404de…).
-                "e5d404deb1e5d3c0b022d61ba773ed35e8123d503dd01703d105b13a350d28f3",
+                // (f5bf9d89… -> e5d404de…). U2-b1 review: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact
+                // (process spec preview, oversized value, idempotency key) (e5d404de… -> 1a881db5…).
+                "1a881db5dd73e8f6c77786994e1877586b6179fc236c4dc86790b90f29f09984",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -1245,7 +1246,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "5b0511faaa0f6175fd7e805c7768c5dd5015324940770972ba1da9d13cf2077c",
+                        "8701f6d5b933e1f3d1878a5f4e3516c8aaa31b2d8a0a75c3459bf79515d57183",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1850,7 +1851,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 2
                         }),
-                // Üretim U2-b1: Down's only raw SQL refuses (51186) while any plan-entered process value, or a plan-sourced
+                // Üretim U2-b1: Down's only raw SQL refuses (51189) while any plan-entered process value, or a plan-sourced
                 // snapshot value other than the U2-a line speed, exists (forward fix), before anything is dropped.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"

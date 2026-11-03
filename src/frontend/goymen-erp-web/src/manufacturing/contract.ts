@@ -171,7 +171,6 @@ export interface PlanRejectionView {
   readonly planVersion: number
 }
 
-/** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
 /**
  * Üretim U2-b1 (API-12): the values a Tube / Profile, Paint or Cold Rolling plan entered itself. Measures are lossless
  * positive decimal text; counts are whole numbers from 1. The paint is free text until Product carries paint products.
@@ -187,6 +186,7 @@ export interface PlanProcessSpecView {
   readonly paintColorCode: string | null
 }
 
+/** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
 export interface PlanCancellationView {
   readonly reason: string
   readonly cancelledByUserId: string
