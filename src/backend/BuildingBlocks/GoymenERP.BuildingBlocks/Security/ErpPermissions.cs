@@ -765,6 +765,13 @@ public static class ErpPermissions
     public const string SettingsExchangeRatesImport = "settings.exchange-rates.import";
 
     /// <summary>
+    /// EK31 SAT-D198: mark a day full or half day with a reason when the automatic official source left it undetermined
+    /// (<c>SettingsExchangeRatePermissionManifestV1.MarkHalfDay</c>). Intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür,
+    /// Admin. Registered, not granted: no role, seed or user receives it here. Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsExchangeRatesHalfDayMark = "settings.exchange-rates.half-day.mark";
+
+    /// <summary>
     /// Üretim U1-a API-01 (URT-D9/D10, <c>SINAN_KARARLARI_2026-11-01_URETIM.md</c>): the Settings owner's names for the versioned
     /// Manufacturing parameter profiles (<c>ManufacturingParameterProfileActionsV1</c>) — read, prepare, approve, publish. The
     /// lifecycle enforces approver ≠ preparer and publisher ≠ preparer at command time (D-MFG-PROFILE-AUTH-01=A). Registered,
@@ -951,6 +958,7 @@ public static class ErpPermissions
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
+            SettingsExchangeRatesHalfDayMark,
             SettingsManufacturingParameterProfilesRead,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
@@ -1103,6 +1111,7 @@ public static class ErpPermissions
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
+            SettingsExchangeRatesHalfDayMark,
             SettingsManufacturingParameterProfilesRead,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
