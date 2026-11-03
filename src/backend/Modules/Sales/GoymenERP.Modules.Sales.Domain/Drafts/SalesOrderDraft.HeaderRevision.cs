@@ -167,10 +167,7 @@ public sealed partial class SalesOrderDraft
             // The approved revision as it stands — its header included — archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         // A value-equal due terms keeps the stored spelling (as a value-equal quantity text keeps its text).

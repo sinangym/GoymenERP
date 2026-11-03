@@ -152,9 +152,21 @@ public sealed partial class SalesDraftServiceTests
         await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
         Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
 
-        // The rejected revision changed again (a removal being prepared again): not shipped (fail-closed).
+        // The rejection reverted the removal in the order itself: the line is active again (not only in the port's view).
+        var reverted = await world.Service().GetDraftDetailAsync(approved.Id);
+        Assert.Contains(reverted.Lines, candidate => candidate.LineId == line);
+        Assert.DoesNotContain(reverted.RemovedLines ?? [], candidate => candidate.LineId == line);
+
+        // K3 review B probe 2 (regression): the line is loaded, the rejected revision is changed and resubmitted — the line stays
+        // active and ships, the submission passes (no dead end) and the approval keeps the line.
+        var (_, loadings) = Owners(world);
+        loadings.Answer = order => new(Company, order, [new SalesOrderLineLoadingV1(line, KgUnit, 1, 0.5m, 0.5m, 0m, 0m)]);
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("8", [AddedLine()]), Metadata("k-d211-again"));
-        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        await world.Service().SubmitDraftAsync(approved.Id, Command("9"), Metadata("k-d211-resubmit"));
+        var reapproved = await world.Service().ApproveDraftAsync(approved.Id, Command("10"), Metadata("k-d211-reapprove"));
+        Assert.Contains(reapproved.Detail.Lines, candidate => candidate.LineId == line);
+        Assert.DoesNotContain(reapproved.Detail.RemovedLines ?? [], candidate => candidate.LineId == line);
     }
 
     [Fact]
@@ -184,10 +196,15 @@ public sealed partial class SalesDraftServiceTests
             Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
         }
 
-        // Rejected: the old line comes back under Rev.0; the replacement never ships.
+        // Rejected: the old line comes back (active) under Rev.0; the replacement goes passive in the rejected revision, so the
+        // order never holds both products, and it never ships.
         await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-pc-reject"));
         await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
-        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved, (await port.GetApprovedLineAsync(approved.Id, replacement.LineId)).Outcome);
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, replacement.LineId)).Outcome);
+        var detail = await world.Service().GetDraftDetailAsync(approved.Id);
+        Assert.Equal([line], detail.Lines.Select(candidate => candidate.LineId));
+        Assert.Equal((replacement.LineId, "Rev.1", (Guid?)null), (Assert.Single(detail.RemovedLines!).LineId, detail.RemovedLines![0].RemovedInRevision,
+            detail.RemovedLines[0].ReplacedByLineId));
         Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
     }
 
@@ -211,6 +228,30 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, "1.25", "1.25", "CustomerRejected"),
             (answer.Outcome, answer.Line!.Revision, answer.Line.QuantityText, answer.Line.ShippingCapQuantityText, answer.Line.PendingApprovalState));
         Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
+
+        // K3 review A P1-2: the removed line shipped (and was returned) under the accepted revision while the customer-rejected
+        // revision stands — the delivery and return owners answer it; it is the order's line, never a malformed answer (no 503).
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new SalesOrderLineDeliveryV1(line, KgUnit, 0.5m, 0.5m)]));
+        world.CustomerReturns = new FakeCustomerReturns(order => new(Company, order, [new SalesOrderLineCustomerReturnV1(line, KgUnit, 0.1m)]));
+        var progress = await world.Service().GetDraftDeliveryProgressAsync(approved.Id);
+        Assert.DoesNotContain(progress.Lines, candidate => candidate.LineId == line);
+        var returns = await world.Service().GetDraftCustomerReturnsAsync(approved.Id);
+        Assert.DoesNotContain(returns.Lines, candidate => candidate.LineId == line);
+
+        // K3 review B probe 1 / review A P1-1 (regression): the line is loaded under Rev.0, then Rev.2 opens (a line added). Rev.1
+        // is archived as approved (without the line); the revert brings the line back in Rev.2, which keeps shipping it under the
+        // accepted Rev.0, and Rev.2's approval holds it.
+        var (_, loadings) = Owners(world);
+        loadings.Answer = order => new(Company, order, [new SalesOrderLineLoadingV1(line, KgUnit, 1, 0.5m, 0.5m, 0m, 0m)]);
+        var opened = await world.Service().ReviseLinesAsync(approved.Id, LineRevision("9", [AddedLine()]), Metadata("k-d211c-rev2"));
+        Assert.Equal(("Rev.2", "Preparing"), (opened.Detail.Draft.Revision, opened.Detail.Draft.ApprovalState));
+        Assert.Contains(opened.Detail.Lines, candidate => candidate.LineId == line);
+        Assert.DoesNotContain(Assert.Single(world.Store.Drafts).ArchivedRevisions[^1].Lines, archived => archived.LineId == line);
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        await world.Service().SubmitDraftAsync(approved.Id, Command("10"), Metadata("k-d211c-rev2-submit"));
+        var rev2 = await world.Service().ApproveDraftAsync(approved.Id, Command("11"), Metadata("k-d211c-rev2-approve"));
+        Assert.Contains(rev2.Detail.Lines, candidate => candidate.LineId == line);
+        Assert.DoesNotContain(rev2.Detail.RemovedLines ?? [], candidate => candidate.LineId == line);
     }
 
     [Fact]

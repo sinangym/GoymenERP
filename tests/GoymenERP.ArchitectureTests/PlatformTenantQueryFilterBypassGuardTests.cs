@@ -421,8 +421,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // archives Rev.0 and rebuilds; the write guard, CK_DraftLines_LineRevision and the 51142 rollback refusal; the route's grant,
             // replay and company refusals), kept
             // ordinal-sorted (1f679068… -> ba7de976…).
+            // SAT-D211 (EK36; K3 review B P2-1): +1 SalesOrderLineRevision fact (a rejected removal brings the line back in the
+            // stored order, the line port and the approved-line list; the guard admits no other reinstatement move), kept
+            // ordinal-sorted (ba7de976… -> ee57b276…).
             ["tools/relational_inventory/sales.txt"] =
-                "ba7de9769074274a8cd7974b9da297e0a87c85911ad53905481da764f8661cbb",
+                "ee57b276608727bca2be276c10d5e7d19d995cf3f1fb1667f16fbb1ff0f64d53",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -534,9 +537,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for SAT-D167 (EK24): DraftLines.AddedInRevision / RemovedInRevision / ReplacedByLineId
             // (CK_DraftLines_LineRevision); the write guard is widened by exactly DraftLines.RemovedInRevision and ReplacedByLineId,
             // and a removal is never undone or changed (a passive line never comes back).
+            // Re-fingerprinted for SAT-D211 (EK36): DraftLines.ReinstatedInRevision (in CK_DraftLines_LineRevision); the guard admits it
+            // and exactly one way back — RemovedInRevision R → null with the replacement cleared and ReinstatedInRevision → R.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "d3ee54a7d5e77b183437a2267cd7f5961aa2851b85cc6ed0faf656bc530e665a",
+                "cde0688c7ff9e1510986f9db5f43dfa22d3264af01ad5241af415240f96ec75f",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1545,8 +1550,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D167 (EK24): the line revision passivates removed line rows (RemovedInRevision /
                     // ReplacedByLineId) and inserts added line rows, and the restore rebuilds both, through the same filtered context;
                     // SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D211 (EK36): a rejection (and the next revision of a customer-rejected one) writes the
+                    // reverted lines' revision columns (ReinstatedInRevision) through the same filtered context, checked move by move;
+                    // the restore rebuilds reinstatements; SqlClient count unchanged.
                     new(
-                        "48b8c09c2ba7ca719d0f4c5be5c27e4f8014e40c0dbf206a8c43e05ff0a852f0",
+                        "bd5daa3f27d8428a9eff4c8fb684cc8238f184cfa049755dd30e441fd9628ee6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2191,9 +2199,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // SAT-D167 (EK24): the Down's only raw SQL is Sales' refusal (51142, used by no other migration) while any line was
-                // added or removed by a line revision; the THROW precedes every drop. Forward fix.
+                // added, removed or (SAT-D211) reinstated by a line revision; the THROW precedes every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102212525_AddDraftLineRevisions.cs"] =
-                    new("b71ee58cbefcfe8fdc1a1dbeaf9da51107b2c167d7342aaa3bb57d3d1382d91c",
+                    new("32e82f8eec6987b42b9a4b1ae631cb6256d0798705bd6f9e29728c748c37766d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

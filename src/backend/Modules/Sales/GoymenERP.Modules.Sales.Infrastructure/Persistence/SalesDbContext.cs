@@ -447,6 +447,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             // SAT-D167 (EK24): revision numbers are never negative; a replacement exists only beside a removal and names another line.
             table.HasCheckConstraint("CK_DraftLines_LineRevision",
                 "([AddedInRevision] IS NULL OR [AddedInRevision] >= 0) AND ([RemovedInRevision] IS NULL OR [RemovedInRevision] >= 0) "
+                + "AND ([ReinstatedInRevision] IS NULL OR [ReinstatedInRevision] >= 0) "
                 + "AND ([ReplacedByLineId] IS NULL OR ([RemovedInRevision] IS NOT NULL AND [ReplacedByLineId] <> [LineId] "
                 + "AND [ReplacedByLineId] <> '00000000-0000-0000-0000-000000000000'))");
             table.HasCheckConstraint("CK_DraftLines_Window",
@@ -1156,6 +1157,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         // SAT-D167 (EK24): a line revision passivates a line — its removal revision and replacement, null → value once
                         // (checked below); the line is never deleted and nothing else of it moves with them.
                         nameof(DraftLineRow.RemovedInRevision), nameof(DraftLineRow.ReplacedByLineId),
+                        // SAT-D211 (EK36): a rejection reverts the rejected revision's removal — RemovedInRevision R → null with
+                        // ReinstatedInRevision → R (checked below); nothing else of the line moves with them.
+                        nameof(DraftLineRow.ReinstatedInRevision),
                     ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
                     // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an
@@ -1206,13 +1210,20 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 };
                 if (entry.Entity is DraftLineRow)
                 {
-                    // SAT-D167: a removal is recorded once and never undone (a passive line does not come back).
+                    // SAT-D167: a line goes passive by a removal (RemovedInRevision null → R, with its replacement). SAT-D211
+                    // (EK36): the ONLY way back is the rejection of that same revision — RemovedInRevision R → null, the replacement
+                    // cleared, ReinstatedInRevision → R. Nothing else moves these columns.
                     var removedIn = entry.Property(nameof(DraftLineRow.RemovedInRevision));
                     var replacedBy = entry.Property(nameof(DraftLineRow.ReplacedByLineId));
-                    if ((removedIn.IsModified && removedIn.OriginalValue is not null)
-                        || (replacedBy.IsModified && (replacedBy.OriginalValue is not null || !removedIn.IsModified)))
+                    var reinstatedIn = entry.Property(nameof(DraftLineRow.ReinstatedInRevision));
+                    var removal = removedIn.IsModified && removedIn.OriginalValue is null && removedIn.CurrentValue is not null
+                        && !reinstatedIn.IsModified && (!replacedBy.IsModified || replacedBy.OriginalValue is null);
+                    var reinstatement = removedIn.IsModified && removedIn.OriginalValue is int revision && removedIn.CurrentValue is null
+                        && replacedBy.CurrentValue is null && reinstatedIn.IsModified && reinstatedIn.CurrentValue is int back && back == revision;
+                    if ((removedIn.IsModified || replacedBy.IsModified || reinstatedIn.IsModified) && !removal && !reinstatement)
                     {
-                        throw new InvalidOperationException("Satış sipariş satırı yalnız bir kez ve geri dönmez biçimde pasif olur.");
+                        throw new InvalidOperationException(
+                            "Satış sipariş satırı bir kez pasif olur ve yalnız o revizyonun reddiyle geri döner.");
                     }
                 }
 

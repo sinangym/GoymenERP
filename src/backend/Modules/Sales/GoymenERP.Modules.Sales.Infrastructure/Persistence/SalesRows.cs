@@ -170,6 +170,12 @@ internal sealed class DraftLineRow : ISalesTenantRow
 
     /// <summary>SAT-D167: for a line removed by a product change, the replacing line's id; set together with the removal only.</summary>
     public Guid? ReplacedByLineId { get; set; }
+
+    /// <summary>
+    /// SAT-D211 (EK36): the revision whose rejection reverted this line's removal (the line is active again); set only together
+    /// with that reinstatement (RemovedInRevision R → null, ReinstatedInRevision → R).
+    /// </summary>
+    public int? ReinstatedInRevision { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>

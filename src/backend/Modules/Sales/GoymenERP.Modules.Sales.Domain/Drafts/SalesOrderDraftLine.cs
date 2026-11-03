@@ -102,6 +102,13 @@ public sealed class SalesOrderDraftLine
     /// <summary>Whether a line revision removed the line (passive).</summary>
     public bool IsRemoved => RemovedInRevision is not null;
 
+    /// <summary>
+    /// SAT-D211 (EK36): the revision whose REJECTION brought this line back — its removal in that revision was reverted (the line
+    /// is active again, ships under the last approved / accepted revision and leaves only by a later revision's own unshipped
+    /// check); null when no rejection reinstated it. The latest reinstatement is kept.
+    /// </summary>
+    public int? ReinstatedInRevision { get; private set; }
+
     /// <summary>The aggregate records the revision a line revision added this line in (once).</summary>
     internal void MarkAdded(int revision)
     {
@@ -123,6 +130,30 @@ public sealed class SalesOrderDraftLine
 
         RemovedInRevision = revision;
         ReplacedByLineId = replacedByLineId;
+    }
+
+    /// <summary>SAT-D211: the aggregate reverts the line's removal in <paramref name="revision"/> (that revision was rejected).</summary>
+    internal void Reinstate(int revision)
+    {
+        if (RemovedInRevision != revision)
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Yalnız o revizyonda pasif olan satır geri döner (iç değişmez).");
+        }
+
+        RemovedInRevision = null;
+        ReplacedByLineId = null;
+        ReinstatedInRevision = revision;
+    }
+
+    /// <summary>The store's rebuild of a recorded reinstatement (SAT-D211): an active line, its revision recorded.</summary>
+    internal void RestoreReinstated(int revision)
+    {
+        if (IsRemoved || revision < 0 || ReinstatedInRevision is not null)
+        {
+            throw new InvalidOperationException("Kayıtlı geri dönüş satırla uyuşmuyor.");
+        }
+
+        ReinstatedInRevision = revision;
     }
 
     /// <summary>The aggregate replaces the tax snapshot (a commercial revision or a buyer situation change); its rules ran first.</summary>

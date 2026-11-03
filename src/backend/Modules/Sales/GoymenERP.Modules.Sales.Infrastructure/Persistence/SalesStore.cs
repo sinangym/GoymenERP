@@ -273,6 +273,7 @@ public sealed partial class SalesStore(
             customerRejection = draft.CurrentRevisionCustomerRejection };
         var rejectionsBefore = draft.CustomerRejections.Count;
         var versionBefore = draft.Version;
+        var linesBefore = LineRevisionStates(draft);
         var now = timeProvider.GetUtcNow();
         // The domain decides: the expected version, the allowed transition and the reason bound. A
         // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
@@ -287,6 +288,15 @@ public sealed partial class SalesStore(
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
         {
             throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
+        }
+
+        // SAT-D211 (EK36): only an internal rejection moves lines — it reverts the rejected revision's removals.
+        var reverted = RequireLineRevisionChanges(draft, linesBefore, lineRevision: null,
+            revertedRevision: commandName == SalesDraftCommands.RejectV1 ? draft.Revision : null);
+        if (reverted.Count > 0)
+        {
+            var revertedRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).ToListAsync(cancellationToken);
+            WriteLineRevisionColumns(draft, revertedRows);
         }
 
         row.ApprovalState = (int)draft.ApprovalState;
@@ -349,7 +359,9 @@ public sealed partial class SalesStore(
             envelope.RoleCodes,
             JsonSerializer.Serialize(before, Json),
             JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
-                customerRejection = draft.CurrentRevisionCustomerRejection }, Json),
+                customerRejection = draft.CurrentRevisionCustomerRejection,
+                // SAT-D211: the lines the rejection brought back / took out (omitted when none).
+                revertedLines = reverted.Count == 0 ? null : reverted }, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -472,10 +484,11 @@ public sealed partial class SalesStore(
         await beforeWrite(draft, cancellationToken);
         var before = picture(draft);
         var versionBefore = draft.Version;
-        var commercialBefore = draft.Lines.Select(line => line.Commercial).ToArray();
-        var quantitiesBefore = draft.Lines.Select(line => line.QuantityText).ToArray();
         var activeBefore = draft.Lines.ToDictionary(line => line.Id, line => (line.QuantityText, line.Commercial, line.Tax));
         var allBefore = draft.AllLines.Select(line => line.Id).ToHashSet();
+        var linesBefore = LineRevisionStates(draft);
+        var commercialById = draft.AllLines.ToDictionary(line => line.Id, line => line.Commercial);
+        var quantityById = draft.AllLines.ToDictionary(line => line.Id, line => line.QuantityText);
         var now = timeProvider.GetUtcNow();
         var archived = mutate(draft, now);
         var result = replayResult(draft);
@@ -495,17 +508,17 @@ public sealed partial class SalesStore(
         // SAT-D167 (EK24): a line revision only adds lines and passivates active ones — every line that stays keeps its quantity,
         // commercial fields and tax; a removed line keeps them too; nothing passive comes back.
         var added = draft.AllLines.Where(line => !allBefore.Contains(line.Id)).ToArray();
-        var removed = draft.AllLines.Where(line => line.IsRemoved && activeBefore.ContainsKey(line.Id)).ToArray();
+        // SAT-D211: opening the next revision of a customer-rejected one reverts its removals (after its archive).
+        var changed = RequireLineRevisionChanges(draft, linesBefore, lineCommand ? draft.Revision : null, archived?.Revision);
         if (lineCommand
                 ? draft.AllLines.Any(line => activeBefore.TryGetValue(line.Id, out var was)
                         && (!string.Equals(was.QuantityText, line.QuantityText, StringComparison.Ordinal) || was.Commercial != line.Commercial
                             || !Equals(was.Tax, line.Tax)))
-                    || draft.Lines.Any(line => !activeBefore.ContainsKey(line.Id) && !added.Contains(line))
                     || added.Any(line => line.IsRemoved || line.AddedInRevision != draft.Revision)
-                    || removed.Any(line => line.RemovedInRevision != draft.Revision)
-                    || added.Length + removed.Length == 0
-                : quantityCommand ? !draft.Lines.Select(line => line.Commercial).SequenceEqual(commercialBefore)
-                : !draft.Lines.Select(line => line.QuantityText).SequenceEqual(quantitiesBefore, StringComparer.Ordinal))
+                    || added.Length + changed.Count(entry => entry.RemovedInRevision == draft.Revision) == 0
+                : quantityCommand ? draft.AllLines.Any(line => commercialById.TryGetValue(line.Id, out var was) && was != line.Commercial) || added.Length > 0
+                : draft.AllLines.Any(line => quantityById.TryGetValue(line.Id, out var was) && !string.Equals(was, line.QuantityText, StringComparison.Ordinal))
+                    || added.Length > 0)
         {
             throw new InvalidOperationException("Satır revizyonu yalnız kendi komutunun alanlarını değiştirir.");
         }
@@ -530,12 +543,7 @@ public sealed partial class SalesStore(
             var line = draft.AllLines.Single(candidate => candidate.LineNo == lineRow.LineNo);
             if (lineCommand)
             {
-                // SAT-D167: only the passivation columns of a line this revision removed (the write guard admits exactly those).
-                if (removed.Contains(line))
-                {
-                    lineRow.RemovedInRevision = line.RemovedInRevision;
-                    lineRow.ReplacedByLineId = line.ReplacedByLineId;
-                }
+                // SAT-D167: a line command moves only the revision columns (written below for every command).
             }
             else if (quantityCommand)
             {
@@ -560,6 +568,8 @@ public sealed partial class SalesStore(
             }
         }
 
+        // SAT-D167 / SAT-D211: the removal, replacement and reinstatement columns the domain moved (checked above).
+        WriteLineRevisionColumns(draft, lineRows);
         foreach (var line in added)
         {
             // SAT-D167: the added line's row and slices, exactly as a create writes a line (with its added revision).
@@ -590,6 +600,73 @@ public sealed partial class SalesStore(
 
         return ReviseLinesAsync(envelope, requestHash, commandName, draftId, mutate, audit, beforeWrite, LineRevisionPicture,
             static _ => null, cancellationToken);
+    }
+
+    /// <summary>One line's revision columns as the aggregate holds them (SAT-D167 / SAT-D211).</summary>
+    private sealed record LineRevisionState(Guid LineId, int LineNo, int? RemovedInRevision, Guid? ReplacedByLineId, int? ReinstatedInRevision);
+
+    private static Dictionary<Guid, LineRevisionState> LineRevisionStates(SalesOrderDraft draft) =>
+        draft.AllLines.ToDictionary(line => line.Id,
+            line => new LineRevisionState(line.Id, line.LineNo, line.RemovedInRevision, line.ReplacedByLineId, line.ReinstatedInRevision));
+
+    /// <summary>
+    /// The lines whose revision columns this command moved, refused unless each move is one the command may make: a removal in
+    /// <paramref name="lineRevision"/> (a line command's own revision; an active line goes passive), or — SAT-D211 (EK36) — the revert
+    /// of the rejected <paramref name="revertedRevision"/> (a line it removed comes back, a replacement it added goes passive).
+    /// </summary>
+    private static IReadOnlyList<LineRevisionState> RequireLineRevisionChanges(SalesOrderDraft draft,
+        IReadOnlyDictionary<Guid, LineRevisionState> before, int? lineRevision, int? revertedRevision)
+    {
+        var changed = new List<LineRevisionState>();
+        foreach (var line in draft.AllLines)
+        {
+            if (!before.TryGetValue(line.Id, out var was))
+            {
+                continue; // an added line: written whole by the line command (checked by the caller)
+            }
+
+            var now = new LineRevisionState(line.Id, line.LineNo, line.RemovedInRevision, line.ReplacedByLineId, line.ReinstatedInRevision);
+            if (now == was)
+            {
+                continue;
+            }
+
+            var removedNow = was.RemovedInRevision is null && now.RemovedInRevision is { } removedIn && now.ReinstatedInRevision == was.ReinstatedInRevision
+                && (removedIn == lineRevision || (removedIn == revertedRevision && now.ReplacedByLineId is null));
+            var reinstated = was.RemovedInRevision is { } wasRemoved && wasRemoved == revertedRevision && now.RemovedInRevision is null
+                && now.ReplacedByLineId is null && now.ReinstatedInRevision == wasRemoved;
+            if (!removedNow && !reinstated)
+            {
+                throw new InvalidOperationException("Satırın revizyon durumu yalnız kendi komutunun kaldırmasıyla ya da reddin geri almasıyla değişir.");
+            }
+
+            changed.Add(now);
+        }
+
+        return changed;
+    }
+
+    /// <summary>SAT-D167 / SAT-D211: writes each tracked line row's revision columns where the aggregate moved them (the guard checks).</summary>
+    private static void WriteLineRevisionColumns(SalesOrderDraft draft, IEnumerable<DraftLineRow> lineRows)
+    {
+        foreach (var lineRow in lineRows)
+        {
+            var line = draft.AllLines.Single(candidate => candidate.LineNo == lineRow.LineNo);
+            if (lineRow.RemovedInRevision != line.RemovedInRevision)
+            {
+                lineRow.RemovedInRevision = line.RemovedInRevision;
+            }
+
+            if (lineRow.ReplacedByLineId != line.ReplacedByLineId)
+            {
+                lineRow.ReplacedByLineId = line.ReplacedByLineId;
+            }
+
+            if (lineRow.ReinstatedInRevision != line.ReinstatedInRevision)
+            {
+                lineRow.ReinstatedInRevision = line.ReinstatedInRevision;
+            }
+        }
     }
 
     /// <summary>SAT-D167: the audit picture of a line revision — revision, approval axis, every line (active and passive) and the reason.</summary>
@@ -1673,6 +1750,13 @@ public sealed partial class SalesStore(
                 {
                     throw new InvalidOperationException("Kayıtlı satır numaraları taslağın satır sırasıyla uyuşmuyor.");
                 }
+            }
+
+            // SAT-D211 (EK36): a recorded reinstatement (a rejection reverted the line's removal) — restored first, while every line
+            // is still active, since a reinstated line may have been removed again by a later revision.
+            foreach (var line in lines.Where(line => line.DraftId == row.Id && line.ReinstatedInRevision is not null).OrderBy(line => line.LineNo))
+            {
+                draft.RestoreReinstatement(line.LineId, line.ReinstatedInRevision!.Value);
             }
 
             // SAT-D167 (EK24): the removed (passive) lines leave the active lines after every line is rebuilt (numbers kept).

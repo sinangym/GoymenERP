@@ -141,6 +141,7 @@ internal static class SalesDraftRows
             AddedInRevision = line.AddedInRevision,
             RemovedInRevision = line.RemovedInRevision,
             ReplacedByLineId = line.ReplacedByLineId,
+            ReinstatedInRevision = line.ReinstatedInRevision,
         });
         var sliceNo = 0;
         foreach (var slice in line.RequestedDeliverySlices)

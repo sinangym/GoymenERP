@@ -142,6 +142,61 @@ public sealed class SalesOrderDraftLineRevisionTests
     }
 
     [Fact]
+    public void A_rejection_reverts_its_removals_in_the_order_and_the_rebuild_keeps_the_reinstatement()
+    {
+        // SAT-D211 (EK36): Rev.1 removes A (product change to C) and B; the rejection brings A and B back and takes C out.
+        var (draft, first, second) = Approved();
+        var replacement = Line(ProductB, "10");
+        draft.ReviseLines(draft.Version, [replacement], [new LineRemovalInput(first.Id, replacement.LineId), new LineRemovalInput(second.Id)],
+            "SENTETIK-writer", "r", T0, Day);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Reject(draft.Version, "SENTETIK-approver", "SENTETIK ret", T0);
+
+        Assert.Equal([first.Id, second.Id], draft.Lines.Select(line => line.Id));
+        Assert.All(draft.Lines, line => Assert.Equal((1, (int?)null, (Guid?)null), (line.ReinstatedInRevision!.Value, line.RemovedInRevision, line.ReplacedByLineId)));
+        var passive = Assert.Single(draft.RemovedLines);
+        Assert.Equal((replacement.LineId, 1, (Guid?)null), (passive.Id, passive.RemovedInRevision, passive.ReplacedByLineId));
+
+        // A reinstated line leaves again only by a later revision's own removal.
+        draft.ReviseLines(draft.Version, [], [new LineRemovalInput(second.Id)], "SENTETIK-writer", "r", T0, Day);
+        Assert.Equal((1, 1), (second.RemovedInRevision, second.ReinstatedInRevision));
+
+        // The rebuild: reinstatements first, then removals.
+        var rebuilt = Draft();
+        rebuilt.AddLine(rebuilt.Version, Line(lineId: first.Id), T0);
+        rebuilt.AddLine(rebuilt.Version, Line(ProductB, "20", second.Id), T0);
+        rebuilt.RestoreAddedLine(Line(ProductB, "10", replacement.LineId), 1);
+        rebuilt.RestoreReinstatement(first.Id, 1);
+        rebuilt.RestoreReinstatement(second.Id, 1);
+        rebuilt.RestoreLineRemoval(replacement.LineId, 1, null);
+        rebuilt.RestoreLineRemoval(second.Id, 1, null);
+        Assert.Equal([first.Id], rebuilt.Lines.Select(line => line.Id));
+        Assert.Equal((1, 1), (rebuilt.Lines[0].ReinstatedInRevision!.Value, rebuilt.RemovedLines.Single(line => line.Id == second.Id).ReinstatedInRevision!.Value));
+    }
+
+    [Fact]
+    public void A_never_approved_order_and_a_line_added_and_removed_in_the_rejected_revision_are_not_reverted()
+    {
+        // No approved revision to ship under: a Rev.0 draft's own removal stays.
+        var draft = Draft();
+        var first = draft.AddLine(draft.Version, Line(), T0);
+        draft.AddLine(draft.Version, Line(ProductB, "20"), T0);
+        draft.ReviseLines(draft.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK", "r", T0, Day);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Reject(draft.Version, "SENTETIK-approver", null, T0);
+        Assert.Equal(first.Id, Assert.Single(draft.RemovedLines).Id);
+
+        // A line Rev.1 added and removed again was never approved: it stays passive after the rejection.
+        var (approved, _, _) = Approved();
+        var added = Line(ProductB, "3");
+        approved.ReviseLines(approved.Version, [added], [], "SENTETIK", "r", T0, Day);
+        approved.ReviseLines(approved.Version, [], [new LineRemovalInput(added.LineId)], "SENTETIK", "r", T0, Day);
+        approved.Submit(approved.Version, "SENTETIK-writer", T0);
+        approved.Reject(approved.Version, "SENTETIK-approver", null, T0);
+        Assert.Equal(added.LineId, Assert.Single(approved.RemovedLines).Id);
+    }
+
+    [Fact]
     public void A_revision_never_writes_more_lines_than_the_rebuild_takes_and_never_passivates_a_line_with_remainder_history()
     {
         // K3 review A P1-1: 2 lines + 499 added would be 501 — refused before anything changes; 498 (500 in all) rebuild fine.
@@ -187,6 +242,7 @@ public sealed class SalesOrderDraftLineRevisionTests
         Assert.Contains("THROW 51142,", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[sales].[DraftLines] WHERE [AddedInRevision] IS NOT NULL OR [RemovedInRevision] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.All(migration.DownOperations.Skip(1), operation => Assert.IsNotType<SqlOperation>(operation));
-        Assert.Equal(3, migration.UpOperations.OfType<AddColumnOperation>().Count(column => column.IsNullable));
+        Assert.Equal(4, migration.UpOperations.OfType<AddColumnOperation>().Count(column => column.IsNullable));
+        Assert.Contains("OR [ReinstatedInRevision] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
     }
 }

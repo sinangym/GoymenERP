@@ -171,22 +171,21 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
     }
 
     /// <summary>
-    /// The lines a physical-shipping consumer may be offered, in line order: the active lines, and — SAT-D211 (EK36) — a line a
-    /// line revision removed (SAT-D167) while that revision stands REJECTED exactly as it was decided: internally (<c>Rejected</c>,
-    /// unchanged since the decision) or by the customer (SAT-D115: internally approved, the customer rejected it and the order goes
-    /// on under the last accepted revision). The rejection keeps the last approved / accepted revision for shipping, so the line comes
-    /// back and ships under it when that revision holds it (its standing is measured against that revision like any line; a line the
-    /// basis does not hold stays out). While the removal is being prepared or waits for a decision, or once the rejected revision is
-    /// changed again, a removed line is not offered (NotFound; fail-closed); a removal that was approved (and accepted) is final.
+    /// The lines a physical-shipping consumer may be offered, in line order: the active lines — SAT-D211 (EK36): an internal
+    /// rejection reverts the rejected revision's removals in the aggregate, so a reinstated line is active again — and, while the
+    /// CUSTOMER has rejected the internally approved current revision (SAT-D115; the order goes on under the last accepted
+    /// revision), the lines that revision removed: the aggregate reverts those removals only when the next revision opens (after
+    /// archiving the rejected one as it was approved), and until then they ship under the accepted revision when it holds them.
+    /// That state is stable — every change of an approved order opens the next revision. While a removal is being prepared or
+    /// waits for a decision the removed line is not offered (NotFound; fail-closed); an approved (and accepted) removal is final.
     /// </summary>
     internal static IEnumerable<SalesOrderDraftLine> ShippableLines(SalesOrderDraft draft)
     {
-        var rejectedAsDecided = draft.ApprovalState == InternalApprovalState.Rejected
-            && draft.Approval.DecidedAtUtc is { } decidedAt && draft.UpdatedAtUtc <= decidedAt;
         var customerRejected = draft.ApprovalState == InternalApprovalState.Approved && !draft.IsCustomerAccepted
-            && draft.CustomerAcceptedFallback is not null;
-        return rejectedAsDecided || customerRejected
-            ? draft.AllLines.Where(line => !line.IsRemoved || Stand(draft, line).RefusedState is null)
+            && draft.CustomerAcceptedFallback is not null && draft.IsCustomerRejected(draft.Revision);
+        return customerRejected
+            ? draft.AllLines.Where(line => !line.IsRemoved
+                || (line.RemovedInRevision == draft.Revision && line.AddedInRevision != draft.Revision && Stand(draft, line).RefusedState is null))
             : draft.Lines.OrderBy(line => line.LineNo);
     }
 

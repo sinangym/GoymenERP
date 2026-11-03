@@ -50,6 +50,7 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit LinesRevised = new("sales.order-draft.lines-revised.v1", "ReviseLines", "SENTETIK satır");
+    private static readonly SalesDraftStateAudit Rejected = new("sales.order-draft.rejected.v1", "Reject", "SENTETIK reddedildi");
     private static readonly SalesDraftStateAudit Rescheduled = new("sales.order-draft.delivery-rescheduled.v1", "RescheduleDelivery", "SENTETIK termin");
 
     [SqlServerFact]
@@ -197,6 +198,54 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         Assert.Equal((1, 1), (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-lines.v1'"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] = 1", ("@id", draft.Id))));
+    }
+
+    [SqlServerFact]
+    public async Task A_rejected_removal_brings_the_line_back_in_the_stored_order_the_line_port_and_the_approved_line_list_on_real_sql()
+    {
+        // SAT-D211 (EK36): Rev.1 removes line 1, is submitted and REJECTED — the rejection reverts the removal in the stored order.
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "r");
+        var first = draft.Lines[0];
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope("r-d211-lines"), Hash("r-d211-lines"), SalesDraftCommands.ReviseLinesV1, draft.Id,
+                (d, now) => d.ReviseLines(d.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK-reviser", "SENTETIK", now, Day), LinesRevised,
+                (_, _) => Task.CompletedTask);
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("r-d211-submit"), Hash("r-d211-submit"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(d.Version, run.Actor, now), Submitted);
+            var port = new SalesOrderLineReferencePort(scope.Store, run.Company(CompanyA));
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(draft.Id, first.Id)).Outcome);
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("r-d211-reject", "SENTETIK-approver"), Hash("r-d211-reject"), SalesDraftCommands.RejectV1,
+                draft.Id, (d, now) => d.Reject(d.Version, "SENTETIK-approver", "SENTETIK ret", now), Rejected);
+        }
+
+        Assert.Equal((0, 1, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] IS NOT NULL", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [LineNo] = 1 AND [ReinstatedInRevision] = 1 "
+                + "AND [ReplacedByLineId] IS NULL", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId] = @id AND [EventType] = N'sales.order-draft.rejected.v1' "
+                + "AND [AfterJson] LIKE N'%revertedLines%'", ("@id", draft.Id.ToString("D")))));
+
+        // Rebuilt from the rows: the line is active (reinstated in Rev.1) and ships under Rev.0 on the direct read and the list.
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var stored = (await scope.Store.FindDraftAsync(draft.Id))!;
+            Assert.Equal((2, 1, 0), (stored.Lines.Count, stored.Lines[0].ReinstatedInRevision!.Value, stored.RemovedLines.Count));
+            var port = new SalesOrderLineReferencePort(scope.Store, run.Company(CompanyA));
+            var answer = await port.GetApprovedLineAsync(draft.Id, first.Id);
+            Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, "Rejected"), (answer.Outcome, answer.Line!.Revision, answer.Line.PendingApprovalState));
+            var listed = (await port.ListApprovedLinesAsync(10, null)).Items.Where(item => item.OrderId == draft.Id).Select(item => item.LineId);
+            Assert.Contains(first.Id, listed);
+        }
+
+        // The guard admits no other move of the reinstatement column.
+        await using (var context = run.SalesContext(CompanyA))
+        {
+            var row = await context.DraftLines.SingleAsync(line => line.DraftId == draft.Id && line.LineNo == 1);
+            row.ReinstatedInRevision = 2;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        }
     }
 
     // ---- helpers --------------------------------------------------------------------------------

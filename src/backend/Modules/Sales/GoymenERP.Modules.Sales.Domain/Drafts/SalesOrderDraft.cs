@@ -833,6 +833,8 @@ public sealed partial class SalesOrderDraft
 
         ApprovalState = InternalApprovalState.Rejected;
         Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = trimmedReason };
+        // SAT-D211 (EK36): "reddedilirse satır geri döner ve sevk edilebilir" — the rejected revision's removals are reverted.
+        RevertRemovalsOf(Revision);
         Touch(now);
     }
 
@@ -1086,10 +1088,7 @@ public sealed partial class SalesOrderDraft
             // The approved revision as it stands, archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), Header: CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         foreach (var (line, fields) in replacements)
@@ -1319,10 +1318,7 @@ public sealed partial class SalesOrderDraft
             // The approved revision as it stands, archived BEFORE anything of it changes — with the reason it is superseded.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         foreach (var (line, quantity, text) in replacements)

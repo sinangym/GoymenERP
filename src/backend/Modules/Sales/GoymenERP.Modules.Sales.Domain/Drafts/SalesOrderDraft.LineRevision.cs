@@ -50,6 +50,18 @@ public sealed partial class SalesOrderDraft
             throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch, "Satır revizyonu her satırı en fazla bir kez adlandırır.");
         }
 
+        // SAT-D211: opening the next revision of a customer-rejected one reverts its product changes first; a replacement that the
+        // revert takes out is not the line this request may remove.
+        var revertedReplacements = ApprovalState == InternalApprovalState.Approved && IsCustomerRejected(Revision)
+            ? removedLines.Where(line => line.RemovedInRevision == Revision && line.AddedInRevision != Revision)
+                .Select(line => line.ReplacedByLineId).OfType<Guid>().ToHashSet()
+            : [];
+        if (removed.Any(removal => revertedReplacements.Contains(removal.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
+                "Müşterinin reddettiği ürün değişikliğinin yeni satırı geri alınır; ayrıca çıkarılamaz.");
+        }
+
         var removals = new List<(SalesOrderDraftLine Line, Guid? ReplacedBy)>(removed.Count);
         foreach (var removal in removed)
         {
@@ -127,10 +139,7 @@ public sealed partial class SalesOrderDraft
             // The approved revision as it stands — its lines and header — archived BEFORE anything of it changes, with the reason.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         foreach (var (line, replacedBy) in removals)
@@ -149,6 +158,72 @@ public sealed partial class SalesOrderDraft
         lines.Sort((left, right) => left.LineNo.CompareTo(right.LineNo));
         Touch(now);
         return archived;
+    }
+
+    /// <summary>
+    /// The approved revision is archived (<paramref name="archived"/>, taken BEFORE anything of it changes) and the order goes on as
+    /// the next revision in <c>Preparing</c>. SAT-D211 (EK36) with SAT-D115: when the customer had rejected the archived revision,
+    /// its removals are reverted now — after the archive, which keeps the revision exactly as it was approved — so the removed lines
+    /// are active again in the next revision (they shipped meanwhile under the last accepted revision).
+    /// </summary>
+    private void AdvanceRevision(ApprovedRevisionSnapshot archived)
+    {
+        var customerRejected = IsCustomerRejected(Revision);
+        archivedRevisions.Add(archived);
+        Revision += 1;
+        ApprovalState = InternalApprovalState.Preparing;
+        Approval = ApprovalFacts.None;
+        if (customerRejected)
+        {
+            RevertRemovalsOf(Revision - 1);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D211 (EK36): the removals of a REJECTED <paramref name="revision"/> are reverted — every line it removed is active again
+    /// (<see cref="SalesOrderDraftLine.ReinstatedInRevision"/>), and a line it added to replace one of them (a product change) goes
+    /// passive in that revision, so the order never holds both products. Nothing is reverted for an order never approved (no
+    /// approved revision to ship under) and a line added and removed in the same revision stays passive (it was never approved).
+    /// The lines that only the revision added stay as they are (its own content, never shipped before an approval).
+    /// </summary>
+    private void RevertRemovalsOf(int revision)
+    {
+        if (archivedRevisions.Count == 0)
+        {
+            return;
+        }
+
+        var reverted = removedLines.Where(line => line.RemovedInRevision == revision && line.AddedInRevision != revision).ToList();
+        if (reverted.Count == 0)
+        {
+            return;
+        }
+
+        var replacements = reverted.Select(line => line.ReplacedByLineId).OfType<Guid>().ToHashSet();
+        foreach (var line in reverted)
+        {
+            line.Reinstate(revision);
+            removedLines.Remove(line);
+            lines.Add(line);
+        }
+
+        foreach (var line in lines.Where(line => replacements.Contains(line.Id)).ToList())
+        {
+            line.MarkRemoved(revision, null);
+            lines.Remove(line);
+            removedLines.Add(line);
+        }
+
+        lines.Sort((left, right) => left.LineNo.CompareTo(right.LineNo));
+    }
+
+    /// <summary>The store's rebuild of a recorded reinstatement (SAT-D211); no version step. Runs before the approval axis is restored.</summary>
+    public void RestoreReinstatement(Guid lineId, int reinstatedInRevision)
+    {
+        RequireApprovalNotRestored();
+        var line = lines.SingleOrDefault(candidate => candidate.Id == lineId)
+            ?? throw new InvalidOperationException("Kayıtlı geri dönen satır taslağın etkin satırlarında yok.");
+        line.RestoreReinstated(reinstatedInRevision);
     }
 
     /// <summary>
