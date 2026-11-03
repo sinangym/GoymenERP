@@ -505,7 +505,7 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
                 CorrelationId = "synthetic-finance-open-item-fixture", AdmittedAtUtc = DateTimeOffset.UtcNow,
             });
             var row = new FinanceOpenItemRow
-            {
+            { Direction = FinanceOpenItemDirectionCodes.Receivable,
                 Id = Guid.NewGuid(), CompanyId = company, SourceKind = "synthetic.receivable.v1",
                 SourceId = Guid.NewGuid(), SourceLineId = Guid.NewGuid(), SourceVersion = "1",
                 SourceBatchId = batchId, SourceBatchVersion = "synthetic-v1",

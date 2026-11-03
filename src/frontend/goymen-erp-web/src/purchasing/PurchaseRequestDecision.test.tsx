@@ -171,6 +171,51 @@ describe('P-01-DETAIL request decision (A1-1)', () => {
     await waitFor(() => expect(scenario.report).toHaveBeenCalledWith(status, { token: 1 }))
   })
 
+  // #900 review P3: the rejection path's own 409 re-read, its 403 boundary and the 4000-character bound.
+  it('refuses a reason longer than 4000 characters before anything is sent', async () => {
+    const user = userEvent.setup(); mount(); await ready()
+    await user.click(screen.getByLabelText('Ret gerekçesi'))
+    await user.paste('x'.repeat(4001))
+    await user.click(screen.getByRole('button', { name: 'Talebi reddet' }))
+    expect(screen.getByRole('alert').textContent).toContain('Ret gerekçesi 4000 karakteri aşamaz; kısaltın.')
+    expect(decidePurchaseRequest).not.toHaveBeenCalled()
+    expect(sessionStorage.length).toBe(0)
+    // Exactly 4000 characters is the bound itself and is sent as written.
+    vi.mocked(decidePurchaseRequest).mockResolvedValue(applied('Rejected', '4'))
+    await user.clear(screen.getByLabelText('Ret gerekçesi'))
+    await user.paste('y'.repeat(4000))
+    await user.click(screen.getByRole('button', { name: 'Talebi reddet' }))
+    await screen.findByText('Talep reddedildi ve yeniden okundu.')
+    expect(vi.mocked(decidePurchaseRequest).mock.calls[0][5]).toHaveLength(4000)
+  })
+
+  it('re-reads the record after a 409 on a rejection and keeps no unresolved snapshot', async () => {
+    vi.mocked(decidePurchaseRequest).mockResolvedValue({ type: 'failed', status: 409, code: 'purchasing_request_decision_state', replayed: false })
+    const user = userEvent.setup(); mount(); await ready()
+    await user.type(screen.getByLabelText('Ret gerekçesi'), 'SENTETIK neden')
+    vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Rejected', '5') })
+    await user.click(screen.getByRole('button', { name: 'Talebi reddet' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Talep bu karar için uygun durumda değil.')
+    expect(alert.textContent).toContain('Kayıt yeniden okundu.')
+    await waitFor(() => expect(fetchPurchaseRequest).toHaveBeenCalledTimes(2))
+    await screen.findByText('Reddedildi')
+    expect(screen.queryByRole('button', { name: 'Talebi reddet' })).toBeNull()
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('reports a 403 on a rejection to the auth boundary without a re-read or a resend offer', async () => {
+    vi.mocked(decidePurchaseRequest).mockResolvedValue({ type: 'failed', status: 403, code: null, replayed: false })
+    const user = userEvent.setup(); mount(); await ready()
+    await user.type(screen.getByLabelText('Ret gerekçesi'), 'SENTETIK neden')
+    await user.click(screen.getByRole('button', { name: 'Talebi reddet' }))
+    await waitFor(() => expect(scenario.report).toHaveBeenCalledWith(403, { token: 1 }))
+    expect((await screen.findByRole('alert')).textContent).toContain('Karar kaydedilmedi (403)')
+    expect(fetchPurchaseRequest).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Aynı reddi yeniden gönder' })).toBeNull()
+    expect(sessionStorage.length).toBe(0)
+  })
+
   it('offers no decision on a draft or a rejected request', async () => {
     vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Rejected', '5') })
     mount(); await ready()

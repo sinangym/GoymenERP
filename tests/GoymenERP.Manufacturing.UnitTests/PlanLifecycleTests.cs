@@ -222,7 +222,7 @@ public sealed class PlanLifecycleTests
             lineSpeedMetresPerMinute: lineSpeed);
 
     [Fact]
-    public void The_net_usable_width_cannot_exceed_a_parent_coil_and_keeps_Ö2_precision()
+    public void The_net_usable_width_cannot_exceed_a_parent_coil_and_keeps_O2_precision()
     {
         Assert.Equal(ManufacturingRuleCodes.PlanNetWidthExceedsParent,
             Assert.Throws<ManufacturingRuleException>(() => SlittingPlan(1_000.001m, null)).Code);

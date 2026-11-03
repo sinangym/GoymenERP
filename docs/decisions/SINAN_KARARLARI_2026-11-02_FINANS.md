@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
 incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
-cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap; on üç karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap: on üç doğrudan karar (FNS-D1…D13); FNS-D14 ve FNS-D15 aynı gün koordinatör oturumu aracılığıyla aktarılmıştır (doğrudan cevap değil, aktarım). Toplam on beş karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
 cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
@@ -35,6 +35,8 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 | FNS-D11 | Banka/kasa eksi bakiye | Seçenek: **Hayır, engellensin.** Seçenek açıklaması: KMH/BCH gibi kredili hesaplar hariç, bakiye eksiye düşecek işlem kaydedilmez | Plan N-16; hubvogal'de bazı döviz hesapları eksi | API-31/32/40 |
 | FNS-D12 | Açılış bakiyeleri | Cevap aynen: **"Elle girilebilir olmalı, bunun için ayrı geçici nasıl bir buton ile mi yapılabilir"** | Plan N-13 (hubvogal mi Mikro mu) | MIG-02, API-14 |
 | FNS-D13 | Banka hareketi ve ekstre | Cevap aynen: **"Hareketler elle girilecek ama kontrol için internet bankacılığı ve mt940 standart dosya olabilir"** | Plan N-07 | API-41, API-42 |
+| FNS-D14 | Borç/alacak kaydının yeri | Koordinatör oturumu aracılığıyla aktarılan metin aynen: **"tek kayıt cari ekranında; sahibi Finans açık kalem alt defteri; Cari kartı yalnız ana veri; muhasebe fişi kaynak olaydan Accounting'de"** | Sinan önce "Tek kayıt, cari ekranında" seçeneğini seçti; yerleşimi koordinatör oturumuna bıraktı | Plan §18, DEC-FIN-005/006, ana rapor §7.10 |
+| FNS-D15 | Komşu modüllerde kapsam | Koordinatör oturumu aracılığıyla aktarılan karar: Ürün, Lojistik/Stok, Ayarlar ve Cari modüllerinin geliştirmesi başlamadı; önce Satış, Alış, Finans ve Üretim tamamlanır. Bu modüllere şimdi yeni port, tablo veya ekran açılmaz; gereken bağ mevcut portlarla kurulur, yoksa fail-closed kalır ve "ertelendi: <modül> başlayınca" diye işaretlenir | FNS-D1 Ayarlar/Cari'deki küçük eklemeleri bu şeride vermişti; FNS-D15 bunları erteler | Plan §18, MOD-06, MOD-08, API-13 |
 
 ## 2. Notlar (geri alınabilir)
 
@@ -87,6 +89,16 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 - **FNS-D13:** banka hareketi **elle** kaydedilir (kaynak her zaman kullanıcı kaydıdır). İnternet bankacılığı dosyası
   (Excel/CSV) ve **MT940** yalnız **kontrol** içindir: içe aktarılan ekstre satırı hareket üretmez, mevcut elle
   kayıtlarla eşleştirilir (mutabakat); eşleşmeyen satır "elle kaydedilmemiş hareket" uyarısı olur.
+
+- **FNS-D14 yorumu (geri alınabilir, Sinan teyit eder):** kararın metni yukarıdaki tablodadır. Bu planın okuması üç
+  katmandır: (1) Cari kartı (Counterparty) yalnız ana veridir, hareket taşımaz; (2) cari hareket ve açık kalem alt
+  defteri Finans'ın açık kalem motorudur (fatura taksiti, tahsilat/ödeme, kısmi kapama); bakiye ve risk saklanmaz, açık
+  kalemlerden hesaplanır; (3) muhasebe fişi Accounting'de aynı kaynak olaydan taslak olarak üretilir ve onayla kesinleşir
+  (SAT-D208), elle ikinci kayıt yapılmaz. 120/320 eşlemesi FNS-D7 gereği mali müşavir teyidine kadar yalnız anlam
+  eşlemesidir. **Taşıma seçilmemiştir:** outbox/inbox ya da
+  MOD-07'deki mevcut kaynak sağlayıcı (`...JournalSourceProviderV1`) deseni; seçim Accounting dilimiyle yapılır.
+  Ekranda cari ekstresi ve bakiye özetinin "Muhasebe > Cari Hesaplar" girişinden açılması ana rapor §7.10 ve
+  DEC-FIN-005/006 ile uyumlu bir öneridir, karar değildir.
 
 ## 3. Değişmeyenler
 

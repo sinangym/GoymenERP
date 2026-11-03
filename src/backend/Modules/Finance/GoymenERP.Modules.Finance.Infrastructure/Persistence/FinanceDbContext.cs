@@ -467,9 +467,17 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
             table.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");
             table.HasCheckConstraint("CK_OpenItems_Version", "[Version] >= 1");
+            // MOD-15: a receivable (1) or a payable (2); a known official kind can carry only its own direction.
+            table.HasCheckConstraint("CK_OpenItems_Direction",
+                "[Direction] IN (1, 2) AND "
+                + "([SourceKind] <> '" + FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
+                + "' OR [Direction] = 1) AND "
+                + "([SourceKind] <> '" + FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment
+                + "' OR [Direction] = 2)");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Direction).IsRequired();
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
         entity.Property(x => x.SourceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();

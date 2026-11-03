@@ -292,7 +292,7 @@ public sealed class PosCollectionServiceTests
         {
             await using var context = Context(Company);
             var row = new FinanceOpenItemRow
-            {
+            { Direction = FinanceOpenItemDirectionCodes.Receivable,
                 Id = Guid.NewGuid(), CompanyId = Company, SourceKind = "synthetic.receivable.v1",
                 SourceId = Guid.NewGuid(), SourceLineId = Guid.NewGuid(), SourceVersion = "1",
                 SourceBatchId = Guid.NewGuid(), SourceBatchVersion = "synthetic-v1", SourceBatchChecksum = new string('f', 64),
