@@ -634,7 +634,7 @@ test('PUR01-GR records once, reopens, follows the read-only receipt detail to th
       await openOrderFromList(page, orderId, () => page.on('request', watch))
       await expect(page.getByText('Onaylandı', { exact: true })).toBeVisible()
       await expect(lineRow(page).getByRole('cell').nth(7)).toHaveText('0')
-    await expect(lineRow(page).getByRole('cell').nth(8)).toHaveText(REMAINING)
+      await expect(lineRow(page).getByRole('cell').nth(8)).toHaveText(REMAINING)
       await expect(page.getByRole('region', { name: 'Mal kabulü', exact: true })).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Mal kabulünü kaydet', exact: true })).toHaveCount(0)
       await expect(page.getByRole('region', { name: 'Sipariş mal kabul geçmişi', exact: true })).toBeVisible()
