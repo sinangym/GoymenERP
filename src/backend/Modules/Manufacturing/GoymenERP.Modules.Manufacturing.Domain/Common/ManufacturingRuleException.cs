@@ -82,6 +82,27 @@ public static class ManufacturingRuleCodes
     public const string PlanRevisionNoChange = "manufacturing_plan_revision_no_change";
 
     /// <summary>
+    /// Üretim U2-a (URT-D1, "tek plan = tek emir"): the approved plan already opened its one order; a second order for the
+    /// same plan is refused. The order it opened stands.
+    /// </summary>
+    public const string PlanOrderExists = "manufacturing_plan_order_exists";
+
+    /// <summary>
+    /// Üretim U2-a: a plan that opened an order is not cancelled here; its order carries the downstream effect (an order's
+    /// own cancellation / reversal chain is a later slice).
+    /// </summary>
+    public const string PlanHasOrder = "manufacturing_plan_has_order";
+
+    /// <summary>Üretim U2-a: the plan is cancelled; it is kept (never deleted) and takes no further decision.</summary>
+    public const string PlanCancelled = "manufacturing_plan_cancelled";
+
+    /// <summary>
+    /// Üretim U2-a: the net usable width entered on the slitting spec is wider than a planned parent coil's width (the
+    /// Product snapshot captured for that roll). Refused, never cut to the coil.
+    /// </summary>
+    public const string PlanNetWidthExceedsParent = "manufacturing_plan_net_width_exceeds_parent";
+
+    /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace
     /// with only one of its two parts, a version that is not the one its facts add up to, or a
     /// stored cost the domain cannot have produced. The record is refused, never repaired.

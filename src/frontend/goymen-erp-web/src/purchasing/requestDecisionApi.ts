@@ -4,12 +4,17 @@ import { decodePurchaseRequestCommandResponse, type PurchaseRequestCommandRespon
 /** A1-1 (plan API-01): the two decisions on a request; each has its own route and its own status after it. */
 export type RequestDecisionKind = 'approval' | 'rejection'
 
+/** A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer's or submitter's withdrawal rides the same command shape on its own route. */
+export type RequestCommandKind = RequestDecisionKind | 'withdrawal'
+
 export type RequestDecisionOutcome =
   | { readonly type: 'applied'; readonly response: PurchaseRequestCommandResponse; readonly replayed: boolean }
   | { readonly type: 'failed'; readonly status: number; readonly code: string | null; readonly replayed: boolean }
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'undecodable' | 'unexpected-status' }
 
-const STATUS_AFTER: Record<RequestDecisionKind, 'Approved' | 'Rejected'> = { approval: 'Approved', rejection: 'Rejected' }
+const STATUS_AFTER: Record<RequestCommandKind, 'Approved' | 'Rejected' | 'Withdrawn'> = {
+  approval: 'Approved', rejection: 'Rejected', withdrawal: 'Withdrawn',
+}
 
 function codeOf(body: unknown): string | null {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return null
@@ -18,14 +23,15 @@ function codeOf(body: unknown): string | null {
 }
 
 /**
- * POST …/requests/{id}/approval or …/rejection with the Idempotency-Key, the expected version and (a rejection) the
+ * POST …/requests/{id}/approval, …/rejection or …/withdrawal with the Idempotency-Key, the expected version and (a
+ * rejection or a withdrawal) the
  * reason. A 200 counts only if it decodes, names this company and request, carries the decision's status and its
  * replay headers agree with the body; anything else that may have been applied is `unknown` (resend the same snapshot).
  */
 export async function decidePurchaseRequest(
   companyId: string,
   requestId: string,
-  kind: RequestDecisionKind,
+  kind: RequestCommandKind,
   expectedVersion: string,
   idempotencyKey: string,
   reason?: string,
@@ -39,7 +45,7 @@ export async function decidePurchaseRequest(
         'Content-Type': 'application/json',
         'Idempotency-Key': idempotencyKey,
       },
-      body: JSON.stringify(kind === 'rejection' ? { expectedVersion, reason: reason ?? '' } : { expectedVersion }),
+      body: JSON.stringify(kind === 'approval' ? { expectedVersion } : { expectedVersion, reason: reason ?? '' }),
     })
   } catch {
     return { type: 'unknown', reason: navigator.onLine ? 'network-error' : 'offline' }
