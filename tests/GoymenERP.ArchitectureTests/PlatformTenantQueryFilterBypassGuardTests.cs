@@ -1857,7 +1857,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
                  + "20261102224501_AddManufacturingPlanProcessSpecs.cs"] =
                     new(
-                        "9ceed7eb45646bd60139959d1fc0c8b4ab73048899f835bc6229faefe353642d",
+                        "94fa32cf0ecbe4a0d8b172a7e73ef62d9d41c2964b59eed1a6b69341bbe11eeb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
