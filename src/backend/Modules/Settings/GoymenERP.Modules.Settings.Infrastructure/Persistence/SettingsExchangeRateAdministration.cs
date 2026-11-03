@@ -44,6 +44,8 @@ internal sealed class SettingsExchangeRateAdministration(
     private const string EntityType = "Settings.ExchangeRateDay";
     private const string CorrectCommandName = "settings.exchange-rate.correct.v1";
     private const string ImportCommandName = "settings.exchange-rate.import.v1";
+    private const string MarkHalfDayCommandName = "settings.exchange-rate.mark-half-day.v1";
+    private const string ReverifyCommandName = "settings.exchange-rate.reverify.v1";
     private const int CommandExecutionSchemaVersion = 1;
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
@@ -178,6 +180,155 @@ internal sealed class SettingsExchangeRateAdministration(
             await SaveChangeAsync(CorrectCommandName, NoContent(), keyHash, requestHash, metadata, cancellationToken));
     }
 
+    /// <summary>
+    /// EK31 SAT-D198: when the automatic official source has not given a day a definite half-day answer, an authorized person
+    /// marks it full or half day with a reason. The mark is a new manual record (audited); a definite official answer, already
+    /// recorded or arriving later, always wins; issued documents keep the rate they snapshotted (SAT-D172).
+    /// </summary>
+    public async Task<ExchangeRateCommandResultV1> MarkHalfDayAsync(DateOnly date, MarkExchangeRateHalfDayRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+    {
+        const string permission = SettingsExchangeRatePermissionManifestV1.MarkHalfDay;
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateMetadata(metadata);
+        var companyId = RequireContextCompany();
+        var scope = await RequireAsync(permission, companyId, cancellationToken);
+        if (!TryParseVersion(request.ExpectedVersion, out var expectedVersion))
+        {
+            return Unstored(Invalid("Beklenen sürüm (\"0\" veya pozitif tam sayı metni) zorunludur."), metadata);
+        }
+
+        if (!ExchangeRateHalfDayStatesV1.IsDefinite(request.State))
+        {
+            return Unstored(Invalid("İşaret \"FullDay\" (tam gün) veya \"HalfDay\" (arife / yarım gün) olmalıdır."), metadata);
+        }
+
+        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
+        {
+            return Unstored(reasonRefusal, metadata);
+        }
+
+        if (date > SettingsBusinessDate.Today(timeProvider))
+        {
+            // Review A P3-4: only a day that has come (or today) is marked; a future day waits for the automatic source.
+            return Unstored(Problem(422, ExchangeRateProblemCodesV1.MarkFutureDay, "İleri tarih.",
+                "Henüz gelmemiş bir gün elle işaretlenmez; otomatik kaynağın cevabı beklenir."), metadata);
+        }
+
+        var state = request.State!;
+        var subject = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
+        var requestHash = IdempotencyHash.ComputePayload(new { Date = date, ExpectedVersion = expectedVersion, State = state, Reason = reason });
+        if (await FindExecutionAsync(MarkHalfDayCommandName, keyHash, cancellationToken) is { } existing)
+        {
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done("mark-half-day", metadata, subject, Replay(existing, requestHash, metadata));
+        }
+
+        var rows = await ReadForCommandAsync(date, date, cancellationToken);
+        var header = rows.Days.SingleOrDefault(day => day.Date == date);
+        var official = rows.Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official);
+        var refusal = (header?.Version ?? 0) != expectedVersion ? VersionConflict()
+            : ExchangeRateHalfDayStatesV1.IsDefinite(official?.State) ? Problem(409, ExchangeRateProblemCodesV1.HalfDayDetermined,
+                "Gün belirlenmiş.", "Otomatik resmî kaynak bu günü kesin olarak belirledi; elle işaret yazılmaz.")
+            : null;
+        if (refusal is not null)
+        {
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done("mark-half-day", metadata, subject,
+                await StoreRefusalAsync(MarkHalfDayCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        var (before, beforeRecord) = rows.HalfDayAnswer(date);
+        if (beforeRecord?.Provenance == ExchangeRateProvenancesV1.Manual && before == state)
+        {
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done("mark-half-day", metadata, subject,
+                await StoreRefusalAsync(MarkHalfDayCommandName, NoContent(), keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = header?.Version;
+        var record = Append(rows, companyId, date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Manual, state,
+            metadata.ActorId, now, reason, null);
+        Audit(companyId, "settings.exchange-rate.half-day-marked.v1", subject, "MarkExchangeRateHalfDay", versionBefore,
+            rows.Days.Single(day => day.Date == date).Version, permission, scope,
+            new { Date = date, HalfDayState = before, Provenance = beforeRecord?.Provenance },
+            new { Date = date, HalfDayState = state, Provenance = ExchangeRateProvenancesV1.Manual, RecordId = record.Id, record.RecordVersion },
+            reason, metadata);
+        await RequireStillAsync(permission, companyId, cancellationToken);
+        return Done("mark-half-day", metadata, subject,
+            await SaveChangeAsync(MarkHalfDayCommandName, NoContent(), keyHash, requestHash, metadata, cancellationToken));
+    }
+
+    /// <summary>
+    /// Review B P2: reopens a day whose official bulletin answer is final (Published / NoBulletin) — e.g. a business day a
+    /// transient TCMB answer made "no bulletin". It appends an official <c>Unverified</c> record with the person and reason:
+    /// nothing is chosen (no rate, no business-day decision), the resolver stops on the day (fail-closed) and the next import
+    /// asks TCMB again under the normal rules. Under the import name: it only re-opens the source's question.
+    /// </summary>
+    public async Task<ExchangeRateCommandResultV1> ReverifyAsync(DateOnly date, ReverifyExchangeRateDayRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+    {
+        const string permission = SettingsExchangeRatePermissionManifestV1.Import;
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateMetadata(metadata);
+        var companyId = RequireContextCompany();
+        var scope = await RequireAsync(permission, companyId, cancellationToken);
+        if (!TryParseVersion(request.ExpectedVersion, out var expectedVersion))
+        {
+            return Unstored(Invalid("Beklenen sürüm (\"0\" veya pozitif tam sayı metni) zorunludur."), metadata);
+        }
+
+        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
+        {
+            return Unstored(reasonRefusal, metadata);
+        }
+
+        if (!bulletinSource.IsEnabled)
+        {
+            // Review A P2-1: without an enabled source nothing could ever answer the reopened question, so the day would stay
+            // "kur belirlenemedi" for good. Environment state, not the key's answer: nothing is recorded or stored.
+            return Unstored(Problem(503, ExchangeRateProblemCodesV1.SourceDisabled, "Kur kaynağı kapalı.",
+                "TCMB kur kaynağı bu ortamda etkin değil; gün yeniden doğrulamaya açılamaz."), metadata);
+        }
+
+        var subject = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
+        var requestHash = IdempotencyHash.ComputePayload(new { Date = date, ExpectedVersion = expectedVersion, Reason = reason });
+        if (await FindExecutionAsync(ReverifyCommandName, keyHash, cancellationToken) is { } existing)
+        {
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done("reverify", metadata, subject, Replay(existing, requestHash, metadata));
+        }
+
+        var rows = await ReadForCommandAsync(date, date, cancellationToken);
+        var header = rows.Days.SingleOrDefault(day => day.Date == date);
+        var before = rows.BulletinState(date);
+        var refusal = (header?.Version ?? 0) != expectedVersion ? VersionConflict()
+            : !ExchangeRateBulletinStatesV1.IsFinal(before) ? Problem(422, ExchangeRateProblemCodesV1.DayNotFinal,
+                "Gün zaten açık.", "Yalnız TCMB cevabı kesinleşmiş (yayımlandı / bülten yok) bir gün yeniden doğrulamaya açılır.")
+            : null;
+        if (refusal is not null)
+        {
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done("reverify", metadata, subject,
+                await StoreRefusalAsync(ReverifyCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = header!.Version;
+        var record = Append(rows, companyId, date, ExchangeRateRecordKindsV1.Bulletin, ExchangeRateProvenancesV1.Official,
+            ExchangeRateBulletinStatesV1.Unverified, metadata.ActorId, now, reason, "Yeniden doğrulama istendi");
+        Audit(companyId, "settings.exchange-rate.reverification-requested.v1", subject, "ReverifyExchangeRateDay", versionBefore,
+            rows.Days.Single(day => day.Date == date).Version, permission, scope, new { Date = date, BulletinState = before },
+            new { Date = date, BulletinState = ExchangeRateBulletinStatesV1.Unverified, RecordId = record.Id, record.RecordVersion },
+            reason, metadata);
+        await RequireStillAsync(permission, companyId, cancellationToken);
+        return Done("reverify", metadata, subject,
+            await SaveChangeAsync(ReverifyCommandName, NoContent(), keyHash, requestHash, metadata, cancellationToken));
+    }
+
     public async Task<ExchangeRateCommandResultV1> ImportAsync(ImportExchangeRatesRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
@@ -234,7 +385,7 @@ internal sealed class SettingsExchangeRateAdministration(
             bool HalfDayFinal)>();
         for (var date = from; date <= to; date = date.AddDays(1))
         {
-            var bulletinFinal = known.BulletinState(date) is ExchangeRateBulletinStatesV1.Published or ExchangeRateBulletinStatesV1.NoBulletin;
+            var bulletinFinal = ExchangeRateBulletinStatesV1.IsFinal(known.BulletinState(date));
             var halfDayFinal = known.Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official)?.State
                 is ExchangeRateHalfDayStatesV1.FullDay or ExchangeRateHalfDayStatesV1.HalfDay;
             fetched.Add((date,
@@ -243,25 +394,13 @@ internal sealed class SettingsExchangeRateAdministration(
                 halfDayFinal));
         }
 
-        // B P2-2: TCMB's 404 for a dated file is final only once a LATER bulletin exists (received in this run or already
-        // recorded): before that a 404 can mean "not yet published" or an archive gap, so the day stays unverified and the
-        // next run asks again.
+        // B P2-2: a 404 can mean "not yet published", an archive gap or a transient fault. It becomes a final "no bulletin" only
+        // when it is seen AGAIN in a later run (the day already carries NotFound) while a LATER bulletin exists (received in this
+        // run or already recorded); the first 404 is recorded as NotFound, which the resolver treats as unverified.
         var publishedDays = fetched.Where(day => day.Bulletin?.State == ExchangeRateBulletinStatesV1.Published).Select(day => day.Date)
             .Concat(fetched.Where(day => known.BulletinState(day.Date) == ExchangeRateBulletinStatesV1.Published).Select(day => day.Date))
             .ToArray();
-        for (var index = 0; index < fetched.Count; index++)
-        {
-            var day = fetched[index];
-            if (day.Bulletin?.State == ExchangeRateBulletinStatesV1.NoBulletin
-                && !publishedAfterRange && !publishedDays.Any(published => published > day.Date))
-            {
-                fetched[index] = day with
-                {
-                    Bulletin = new ExchangeRateBulletinFetchV1(day.Date, ExchangeRateBulletinStatesV1.Unverified, [],
-                        Reference((day.Bulletin.SourceReference ?? string.Empty) + " (sonraki bir bülten görülmeden kesin sayılmaz)")),
-                };
-            }
-        }
+        bool LaterBulletin(DateOnly date) => publishedAfterRange || publishedDays.Any(published => published > date);
 
         var rows = await ReadForCommandAsync(from, to, cancellationToken);
         var now = timeProvider.GetUtcNow();
@@ -271,7 +410,7 @@ internal sealed class SettingsExchangeRateAdministration(
         {
             var bulletinOutcome = bulletin is null
                 ? ExchangeRateImportOutcomesV1.Unchanged
-                : ImportBulletin(rows, companyId, date, bulletin, metadata.ActorId, now, recorded);
+                : ImportBulletin(rows, companyId, date, bulletin, LaterBulletin(date), metadata.ActorId, now, recorded);
             var halfDayOutcome = halfDay is not null
                 ? ImportHalfDay(rows, companyId, date, halfDay, metadata.ActorId, now, recorded)
                 : halfDayFinal ? ExchangeRateImportOutcomesV1.Unchanged
@@ -347,54 +486,64 @@ internal sealed class SettingsExchangeRateAdministration(
                && answer.Rates.Select(line => line.CurrencyCode).Distinct(StringComparer.Ordinal).Count() == answer.Rates.Count;
     }
 
+    /// <summary>
+    /// One day's official bulletin answer. A final record (Published / NoBulletin) is never overwritten (only an audited
+    /// re-verification reopens it). A 404 is NotFound the first time and NoBulletin only on a later run with a later bulletin.
+    /// An unverified answer never replaces a recorded one.
+    /// </summary>
     private string ImportBulletin(ExchangeRateRows rows, Guid companyId, DateOnly date, ExchangeRateBulletinFetchV1 answer,
-        string actorId, DateTimeOffset now, List<object> recorded)
+        bool laterBulletin, string actorId, DateTimeOffset now, List<object> recorded)
     {
-        var current = rows.Current(date, ExchangeRateRecordKindsV1.Bulletin, ExchangeRateProvenancesV1.Official);
-        if (current is not null && current.State != ExchangeRateBulletinStatesV1.Unverified)
+        var current = rows.Current(date, ExchangeRateRecordKindsV1.Bulletin, ExchangeRateProvenancesV1.Official)?.State;
+        // Review A P2-2: a day TCMB ever published is a business day; no 404 later turns it into "no bulletin" automatically (that
+        // would slide documents onto an older rate). It stays NotFound — fail-closed — until a bulletin is read again.
+        var everPublished = rows.Records.Any(record => record.Date == date && record.Kind == ExchangeRateRecordKindsV1.Bulletin
+            && record.Provenance == ExchangeRateProvenancesV1.Official && record.State == ExchangeRateBulletinStatesV1.Published);
+        string? state = current switch
         {
-            if (answer.State == ExchangeRateBulletinStatesV1.Unverified)
-            {
-                return ExchangeRateImportOutcomesV1.Unchanged;
-            }
-
-            return answer.State == current.State && SameRates(rows.RatesOf(current.Id), answer.Rates)
-                ? ExchangeRateImportOutcomesV1.Unchanged
-                : ExchangeRateImportOutcomesV1.Conflict;
-        }
-
-        if (current is not null && answer.State == ExchangeRateBulletinStatesV1.Unverified)
+            _ when ExchangeRateBulletinStatesV1.IsFinal(current) => null,
+            _ when answer.State == ExchangeRateBulletinStatesV1.Published => ExchangeRateBulletinStatesV1.Published,
+            _ when answer.State == ExchangeRateBulletinStatesV1.NoBulletin => current == ExchangeRateBulletinStatesV1.NotFound
+                ? laterBulletin && !everPublished ? ExchangeRateBulletinStatesV1.NoBulletin : null
+                : ExchangeRateBulletinStatesV1.NotFound,
+            null => ExchangeRateBulletinStatesV1.Unverified,
+            _ => null,
+        };
+        if (state is null)
         {
             return ExchangeRateImportOutcomesV1.Unchanged;
         }
 
         var record = Append(rows, companyId, date, ExchangeRateRecordKindsV1.Bulletin, ExchangeRateProvenancesV1.Official,
-            answer.State, actorId, now, null, Reference(answer.SourceReference));
-        foreach (var line in answer.Rates)
+            state, actorId, now, null, Reference(answer.SourceReference));
+        if (state == ExchangeRateBulletinStatesV1.Published)
         {
-            TryParseRate(line.SellingRate, out var rate);
-            database.ExchangeRateRecordRates.Add(new ExchangeRateRecordRateRow
+            foreach (var line in answer.Rates)
             {
-                CompanyId = companyId, RecordId = record.Id, CurrencyCode = line.CurrencyCode, SellingRate = rate,
-            });
+                TryParseRate(line.SellingRate, out var rate);
+                database.ExchangeRateRecordRates.Add(new ExchangeRateRecordRateRow
+                {
+                    CompanyId = companyId, RecordId = record.Id, CurrencyCode = line.CurrencyCode, SellingRate = rate,
+                });
+            }
         }
 
         recorded.Add(new { Date = date, Kind = record.Kind, record.State, RecordId = record.Id, Lines = answer.Rates.Count });
         return ExchangeRateImportOutcomesV1.Recorded;
     }
 
+    /// <summary>
+    /// One day's official half-day answer. A definite official answer is final (asked no more); an undetermined answer never
+    /// replaces a recorded one. A SAT-D198 manual mark does not stop the source from answering: its definite answer wins.
+    /// </summary>
     private string ImportHalfDay(ExchangeRateRows rows, Guid companyId, DateOnly date, ExchangeRateHalfDayFetchV1 answer,
         string actorId, DateTimeOffset now, List<object> recorded)
     {
         var current = rows.Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official);
-        if (current is not null && (answer.State == ExchangeRateHalfDayStatesV1.Undetermined || current.State == answer.State))
+        if (ExchangeRateHalfDayStatesV1.IsDefinite(current?.State)
+            || (current is not null && answer.State == ExchangeRateHalfDayStatesV1.Undetermined))
         {
             return ExchangeRateImportOutcomesV1.Unchanged;
-        }
-
-        if (current is not null && current.State != ExchangeRateHalfDayStatesV1.Undetermined)
-        {
-            return ExchangeRateImportOutcomesV1.Conflict;
         }
 
         var record = Append(rows, companyId, date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official,
@@ -402,11 +551,6 @@ internal sealed class SettingsExchangeRateAdministration(
         recorded.Add(new { Date = date, Kind = record.Kind, record.State, RecordId = record.Id, Lines = 0 });
         return ExchangeRateImportOutcomesV1.Recorded;
     }
-
-    private static bool SameRates(IReadOnlyList<ExchangeRateRecordRateRow> stored, IReadOnlyList<ExchangeRateLineV1> answer) =>
-        stored.Count == answer.Count
-        && answer.All(line => TryParseRate(line.SellingRate, out var rate)
-                              && stored.Any(row => row.CurrencyCode == line.CurrencyCode && row.SellingRate == rate));
 
     private static string? Reference(string? reference) =>
         string.IsNullOrWhiteSpace(reference) ? null : reference.Trim() is { Length: > 400 } trimmed ? trimmed[..400] : reference.Trim();
@@ -493,7 +637,8 @@ internal sealed class SettingsExchangeRateAdministration(
                 rows.RatesOf(record.Id).Select(rate => new ExchangeRateLineV1(rate.CurrencyCode, Text(rate.SellingRate))).ToArray(),
                 record.RecordedBy, record.RecordedAtUtc, record.Reason, record.SourceReference))
             .ToArray();
-        return new ExchangeRateDayViewV1(date, Text(header?.Version ?? 0), bulletinState, rows.HalfDayState(date), values, records);
+        return new ExchangeRateDayViewV1(date, Text(header?.Version ?? 0), bulletinState, rows.HalfDayState(date),
+            rows.HalfDayProvenance(date), values, records);
     }
 
     // ---- authority, metadata, idempotency, audit ----------------------------------------------------------------------------
@@ -653,6 +798,9 @@ internal sealed class SettingsExchangeRateAdministration(
             {
                 "settings.exchange-rate.corrected.v1" => "Kur elle düzeltildi; gerekçe kayıt içeriğindedir",
                 "settings.exchange-rate.imported.v1" => "Kur kaydı resmî kaynaktan içe aktarıldı",
+                "settings.exchange-rate.half-day-marked.v1" => "Gün elle tam / yarım gün olarak işaretlendi; gerekçe kayıt içeriğindedir",
+                "settings.exchange-rate.reverification-requested.v1" =>
+                    "Günün TCMB cevabı yeniden doğrulamaya açıldı; gerekçe kayıt içeriğindedir",
                 _ => throw new InvalidOperationException("Tanımsız kur audit olayı."),
             },
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel,
