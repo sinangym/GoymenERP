@@ -4,13 +4,18 @@
  * Rendered text is unchanged from the screens' former inline strings.
  */
 
-import type { PurchaseOrderStatus, PurchaseRequestStatus } from './contract'
+import type { PurchaseOrderStatus, PurchaseRequestStatus, PurchaseRequestSummarySourceKind } from './contract'
 
 export const PURCHASE_ORDER_STATUS_LABEL: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı' }
 
 /** A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1); A1-1b: Withdrawn (ALS-D46). */
 export const PURCHASE_REQUEST_STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   Draft: 'Taslak', Submitted: 'Gönderildi', Approved: 'Onaylandı', Rejected: 'Reddedildi', Withdrawn: 'Geri çekildi',
+}
+
+/** A1-2 (plan API-02): where a request line's need came from; Manual is a line without a source. */
+export const PURCHASE_REQUEST_SOURCE_LABEL: Record<PurchaseRequestSummarySourceKind, string> = {
+  Manual: 'Manuel', Stock: 'Stok', Sales: 'Satış', Production: 'Üretim',
 }
 
 /** Shared by the request and order create forms. */
@@ -50,6 +55,9 @@ export const REQUEST_LIST_TEXT = {
   status: 'Durum',
   businessDate: 'İş tarihi',
   lineCount: 'Satır',
+  source: 'Kaynak',
+  /** A body without the A1-2 field: the source is not known, never shown as manual. */
+  sourceUnknown: '—',
   updatedAt: 'Güncellendi',
   loadingMore: 'Sonraki sayfa yükleniyor…',
   loadMore: 'Daha fazla göster',
@@ -65,7 +73,8 @@ export const REQUEST_CREATE_TEXT = {
   saved: 'Satın alma talebi kaydedildi',
   notSaved: (code: string | number) => `Talep kaydedilmedi (${code}).`,
   linesRequired: 'Her satırda Product kaynağından ürün/alış birimi ve sıfırdan büyük miktar zorunludur.',
-  sourceLegend: 'Talep kaynağı',
+  detailsLegend: 'Talep bilgileri',
+  manualSource: 'Kaynak: Manuel. Satış, Üretim veya Stok ihtiyacından açılan talep kaynağını o modülün eyleminden alır.',
   linesLegend: 'Talep satırları',
   product: (position: number) => `Ürün ${position}`,
   removeLine: 'Satırı kaldır',
@@ -91,6 +100,9 @@ export const REQUEST_DETAIL_TEXT = {
   product: 'Ürün',
   unit: 'Birim',
   quantity: 'Miktar',
+  source: 'Kaynak',
+  sourceUnknown: '—',
+  sourceReference: (documentId: string, documentLineId: string) => `belge …${documentId.slice(-8)} · satır …${documentLineId.slice(-8)}`,
   submitHeading: 'Talebi ihtiyaç havuzuna gönder',
   submitNote: 'Gönderim yalnız talep durumunu değiştirir; sipariş, fiyat veya stok hareketi üretmez.',
   unknown: 'Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.',

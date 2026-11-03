@@ -48,6 +48,8 @@ interface RequestSummary {
   readonly status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Withdrawn'
   readonly version: string
   readonly effectiveOn: string
+  /** A1-2 (plan API-02): the distinct sources of the lines. */
+  readonly sourceKinds: readonly string[]
 }
 
 interface RequestDetail {
@@ -58,6 +60,8 @@ interface RequestDetail {
     readonly productVersion: string
     readonly unitId: string
     readonly quantity: string
+    /** A1-2: null for a manual line (the P-01 form opens manual requests only). */
+    readonly source: { readonly kind: string; readonly documentId: string; readonly documentLineId: string } | null
   }>
 }
 
@@ -162,11 +166,15 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
   expect(created.detail.lines[0]).toMatchObject({
     productId, productVersion, unitId: productUnitId, quantity: '7',
   })
+  // A1-2 (plan API-02): the P-01 form opens a manual request — no line source, the summary names only Manual.
+  expect(created.detail.lines[0].source).toBeNull()
+  expect(created.detail.request.sourceKinds).toEqual(['Manual'])
   await expect(page.getByRole('heading', { level: 1, name: 'Satın alma talebi kaydedildi' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Listeye dön ve formu kapat' }).click()
   const createdRow = page.getByRole('row').filter({ hasText: `…${requestId.slice(-8)}` })
   await expect(createdRow).toContainText('Taslak')
+  await expect(createdRow).toContainText('Manuel')
   const afterCreate = await readRequests(page, creatorActor)
   expect(afterCreate).toHaveLength(before.length + 1)
   expect(afterCreate.filter((item) => item.id === requestId)).toHaveLength(1)

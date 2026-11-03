@@ -103,6 +103,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 UnitId = line.UnitId,
                 UnitIsKilogram = line.Quantity.Unit == QuantityUnit.Kilogram,
                 Quantity = RequireFits(line.Quantity.Value),
+                SourceKind = line.Source is { } source ? (int)source.Kind : null,
+                SourceDocumentId = line.Source?.DocumentId,
+                SourceDocumentLineId = line.Source?.DocumentLineId,
             });
         }
 
@@ -611,7 +614,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var request = PurchaseRequest.Create(row.Id, row.CompanyId, row.CreatedBy, row.CreatedAtUtc);
         foreach (var line in lines)
         {
-            request.AddLine(request.Version, line.LineId, line.ProductId, line.UnitId, Quantity.Of(line.Quantity, UnitOf(line.UnitIsKilogram)), row.CreatedAtUtc);
+            request.AddLine(request.Version, line.LineId, line.ProductId, line.UnitId, Quantity.Of(line.Quantity, UnitOf(line.UnitIsKilogram)), row.CreatedAtUtc,
+                SourceOf(line));
         }
 
         if (row.Status != (int)PurchaseRequestStatus.Draft)
@@ -655,6 +659,19 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         return request;
     }
+
+    /// <summary>
+    /// A1-2: the stored source through the domain (null = manual). A stored kind the domain does not define, or a kind
+    /// without its identities, is never read as manual: the rebuild fails (the CHECK keeps such a row out).
+    /// </summary>
+    private static PurchaseRequestLineSource? SourceOf(PurchaseRequestLineRow line) =>
+        line.SourceKind is not { } kind
+            ? (line.SourceDocumentId is null && line.SourceDocumentLineId is null
+                ? null
+                : throw new InvalidOperationException("Kayıtlı talep satırı kaynağının türü yok."))
+            : PurchaseRequestLineSource.Of((PurchaseRequestSourceKind)kind,
+                line.SourceDocumentId ?? throw new InvalidOperationException("Kayıtlı talep satırı kaynağının belgesi yok."),
+                line.SourceDocumentLineId ?? throw new InvalidOperationException("Kayıtlı talep satırı kaynağının belge satırı yok."));
 
     private async Task<IReadOnlyList<StoredPurchaseOrder>> RestoreOrdersAsync(IReadOnlyList<PurchaseOrderRow> rows, CancellationToken cancellationToken)
     {
@@ -804,7 +821,14 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         withdrawal = request.Withdrawal is { } withdrawal
             ? new { decidedBy = withdrawal.DecidedBy, decidedAtUtc = withdrawal.DecidedAtUtc, reason = withdrawal.Reason }
             : null,
-        lines = request.Lines.Select(line => new { lineId = line.Id, productId = line.ProductId, quantity = line.Quantity.Value }),
+        // A1-2 (plan API-02): the line's source (null = manual) is part of the audited record.
+        lines = request.Lines.Select(line => new
+        {
+            lineId = line.Id, productId = line.ProductId, quantity = line.Quantity.Value,
+            source = line.Source is { } source
+                ? new { kind = source.Kind.ToString(), documentId = source.DocumentId, documentLineId = source.DocumentLineId }
+                : null,
+        }),
     }, Json);
 
     private static string Snapshot(PurchaseOrder order) => JsonSerializer.Serialize(new

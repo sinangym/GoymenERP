@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using GoymenERP.Modules.Purchasing.Domain.Requests;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -14,7 +15,21 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public sealed record CreatePurchaseRequestRequest(DateOnly EffectiveOn, IReadOnlyList<PurchaseRequestLineRequest> Lines);
 
-public sealed record PurchaseRequestLineRequest(Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid UnitId, string Quantity);
+/// <summary>
+/// One request line. A1-2 (plan API-02): <paramref name="Source"/> is optional; absent or null is a manual line. It is never
+/// written when null, so the content hash of a manual line — and every ADR-011 attempt recorded before A1-2 — is unchanged.
+/// </summary>
+public sealed record PurchaseRequestLineRequest(Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid UnitId, string Quantity,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseRequestLineSourceRequest? Source = null);
+
+/// <summary>
+/// A1-2 (plan API-02; Üretim A-2, Satış S-A1): the line's source — <paramref name="Kind"/> is exactly <c>Stock</c>,
+/// <c>Sales</c> or <c>Production</c> (a manual line sends no source; <c>Manual</c> is not accepted here, so a line has one
+/// spelling for it), <paramref name="DocumentId"/> the source record (sales order, production plan, stock need) and
+/// <paramref name="DocumentLineId"/> its line, both non-empty. The identities are opaque: Purchasing stores them as given and
+/// does not read the source module (no port exists yet; validation is the producing module's follow-up).
+/// </summary>
+public sealed record PurchaseRequestLineSourceRequest(string Kind, Guid DocumentId, Guid DocumentLineId);
 
 /// <summary>POST …/requests/{id}/submission: Draft → Submitted at the expected version.</summary>
 public sealed record SubmitPurchaseRequestRequest(string ExpectedVersion);
@@ -59,11 +74,26 @@ public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 
 // ---- views --------------------------------------------------------------------------------------
 
+/// <summary>
+/// The request header. A1-2 (plan API-02): <see cref="SourceKinds"/> names the distinct sources of its lines in a fixed order
+/// (<c>Manual</c>, <c>Stock</c>, <c>Sales</c>, <c>Production</c>), so the request pool shows where each need came from
+/// (ALS-D16) without reading the lines; a request whose lines are all manual answers <c>["Manual"]</c>.
+/// </summary>
 public sealed record PurchaseRequestSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, DateOnly EffectiveOn,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount)
+{
+    public IReadOnlyList<string> SourceKinds { get; init; } = [];
+}
 
-public sealed record PurchaseRequestLineView(Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid UnitId, string Quantity);
+/// <summary>A request line; A1-2: <see cref="Source"/> is the line's source as recorded, or null for a manual line.</summary>
+public sealed record PurchaseRequestLineView(Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid UnitId, string Quantity)
+{
+    public PurchaseRequestLineSourceView? Source { get; init; }
+}
+
+/// <summary>A1-2 (plan API-02): a line's recorded source — the kind (<c>Stock</c> | <c>Sales</c> | <c>Production</c>) and the opaque source identity.</summary>
+public sealed record PurchaseRequestLineSourceView(string Kind, Guid DocumentId, Guid DocumentLineId);
 
 /// <summary>A1-1: one decision on a request — who decided, when, and (a rejection or a withdrawal, A1-1b) why.</summary>
 public sealed record PurchaseRequestDecisionView(string DecidedBy, DateTimeOffset DecidedAtUtc, string? Reason);
@@ -144,6 +174,54 @@ public sealed record PurchaseOrderListQuery(
     string? Cursor = null,
     string? Status = null,
     Guid? SupplierPartyId = null);
+
+/// <summary>
+/// A1-2 (plan API-02): the request-line source vocabulary on the wire. <see cref="Manual"/> appears only in a summary's
+/// <see cref="PurchaseRequestSummaryView.SourceKinds"/>; a line says "manual" by carrying no source.
+/// </summary>
+public static class PurchaseRequestSourceKindsV1
+{
+    public const string Manual = "Manual";
+    public const string Stock = "Stock";
+    public const string Sales = "Sales";
+    public const string Production = "Production";
+
+    /// <summary>The exact (ordinal) name of a source kind; <see cref="Manual"/>, a different case or anything else is refused.</summary>
+    public static bool TryParse(string? text, out PurchaseRequestSourceKind kind)
+    {
+        switch (text)
+        {
+            case Stock:
+                kind = PurchaseRequestSourceKind.Stock;
+                return true;
+            case Sales:
+                kind = PurchaseRequestSourceKind.Sales;
+                return true;
+            case Production:
+                kind = PurchaseRequestSourceKind.Production;
+                return true;
+            default:
+                kind = default;
+                return false;
+        }
+    }
+
+    public static string Name(PurchaseRequestSourceKind kind) => kind switch
+    {
+        PurchaseRequestSourceKind.Stock => Stock,
+        PurchaseRequestSourceKind.Sales => Sales,
+        PurchaseRequestSourceKind.Production => Production,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    /// <summary>The distinct kinds of the given line sources in the fixed order Manual, Stock, Sales, Production.</summary>
+    public static IReadOnlyList<string> Distinct(IEnumerable<PurchaseRequestLineSource?> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        var present = sources.Select(source => source is null ? 0 : (int)source.Kind).ToHashSet();
+        return [.. new[] { (0, Manual), (1, Stock), (2, Sales), (3, Production) }.Where(item => present.Contains(item.Item1)).Select(item => item.Item2)];
+    }
+}
 
 public sealed record PurchasingFieldError(string Field, string Code);
 
@@ -325,6 +403,11 @@ public static class PurchasingJson
 
             RequireProductVersionShape(line.ExpectedProductVersion);
             RequireDecimalShape(line.Quantity);
+            if (line.Source is { } source
+                && (!PurchaseRequestSourceKindsV1.TryParse(source.Kind, out _) || source.DocumentId == Guid.Empty || source.DocumentLineId == Guid.Empty))
+            {
+                throw new JsonException("Invalid line source.");
+            }
         }
 
         return request;

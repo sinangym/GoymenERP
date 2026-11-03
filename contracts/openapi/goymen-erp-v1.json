@@ -107453,6 +107453,58 @@
           },
           "quantity": {
             "type": "string"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseRequestLineSourceRequest"
+              }
+            ]
+          }
+        }
+      },
+      "PurchaseRequestLineSourceRequest": {
+        "required": [
+          "kind",
+          "documentId",
+          "documentLineId"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "documentLineId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PurchaseRequestLineSourceView": {
+        "required": [
+          "kind",
+          "documentId",
+          "documentLineId"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "documentLineId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -107492,6 +107544,16 @@
           },
           "quantity": {
             "type": "string"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseRequestLineSourceView"
+              }
+            ]
           }
         }
       },
@@ -107581,6 +107643,12 @@
               "string"
             ],
             "format": "int32"
+          },
+          "sourceKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

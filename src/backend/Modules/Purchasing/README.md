@@ -57,6 +57,32 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   case-insensitive default a decider differing from a maker only by case passed the domain and failed the check). Its
   Down refuses (`THROW 51165`) while a request is Withdrawn. Grant of the name is a human gate: no real role, seed or
   user carries it (only the SENTETIK `pur01` browser-suite creator in its disposable stack).
+- **Down guard `51166` (#907 review P3, CODE-REVIEW-A):** `AddPurchaseRequestWithdrawal`'s Down also refuses
+  (`THROW 51166`, before any drop) while a stored approval or rejection differs from its preparer or submitter **only by
+  case** (`ApprovedBy`/`RejectedBy` = `CreatedBy`/`SubmittedBy` under the column's default, case-insensitive collation).
+  Since A1-1b the domain (ordinal) and `CK_PurchaseRequests_MakerChecker` (binary) treat such an actor as a different
+  person, so the decision is valid; the A1-1 check that Down would restore compares case-insensitively and would reject
+  the row with a raw 547 halfway through the rollback. The refusal is the clear, early form of that failure. There is
+  no automatic repair: rolling back past A1-1b with such rows needs a reviewed forward fix (an operations decision), not
+  a code default. A fresh database never meets it unless actor identities differing only by case exist.
+- **Request line source (A1-2, plan API-02; Üretim A-2, Satış S-A1, ALS-D16):** every request line may carry an
+  optional `source` on `POST requests` — `kind` exactly `Stock`, `Sales` or `Production` plus the source record's opaque
+  identity `documentId` and `documentLineId` (both non-empty); a line without one is **manual** (`Manual` is not accepted
+  on a line, so manual has one spelling). The source is fixed when the line is created (request lines are insert-only)
+  and plays no part in any decision: a Production-sourced request waits for the manager's approval like any other
+  (ALS-D16). The identities are **opaque**: Purchasing does not read Sales, Manufacturing or Inventory tables and does
+  not check that the record exists (no producer port yet; ALS-D58 forbids new ports in deferred modules) — validation
+  belongs to the producing module's future port and is a follow-up. A null source is never serialised into the content
+  hash, so the ADR-011 attempts recorded before A1-2 keep replaying. No new permission: the request is created under the
+  existing creation name. The detail line carries `source` (null = manual); the summary (list and detail) carries
+  `sourceKinds`, the distinct kinds of its lines in the fixed order `Manual`, `Stock`, `Sales`, `Production`. The
+  create audit record names each line's source. Migration `20261103012142_AddPurchaseRequestLineSource` adds the
+  nullable `SourceKind` (1 Stock, 2 Sales, 3 Production) / `SourceDocumentId` / `SourceDocumentLineId` columns,
+  `CK_PurchaseRequestLines_Source` (none of the three, or a defined kind with both identities non-empty) and the filtered
+  index `IX_PurchaseRequestLines_Source` (`CompanyId, SourceKind, SourceDocumentId`) for the reads by source record the
+  Sales adaptor (S-A1/MOD-03) and the Üretim action (A-2/U5-c) will need; its Down refuses (`THROW 51167`) while any line
+  carries a source (dropping the columns would silently turn it manual). The P-01 form opens manual requests only; the
+  detail and list show the source read-only. The plan's "istenen tarih" (requested date) of API-02 is not in this slice.
 - **Order creation:** an order is created with or without a source request (`CreatePurchaseOrderRequest.SourceRequestId`
   is optional); when given, the request must be **Approved** (A1-1, ALS-D2/ALS-D16; 409 `purchasing_request_state`,
   field `sourceRequestId` = `not_approved`) and of the same company (`PurchasingService.ReadSourceRequestAsync`). An

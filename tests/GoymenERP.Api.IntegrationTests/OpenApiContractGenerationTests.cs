@@ -4229,7 +4229,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("productId", "type:string;format:uuid"),
                     ("productVersion", "type:string"),
                     ("unitId", "type:string;format:uuid"),
-                    ("quantity", "type:string")),
+                    ("quantity", "type:string"),
+                    // A1-2 (plan API-02): the line's source, or null for a manual line.
+                    ("source", "oneOf:ref:PurchaseRequestLineSourceView|type:null")),
+                ["PurchaseRequestLineSourceView"] = ObjectSchema(
+                    ["kind", "documentId", "documentLineId"],
+                    ("kind", "type:string"),
+                    ("documentId", "type:string;format:uuid"),
+                    ("documentLineId", "type:string;format:uuid")),
                 ["PurchaseRequestListResponse"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:PurchaseRequestSummaryView"),
@@ -4248,7 +4255,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("effectiveOn", "type:string;format:date"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("updatedAtUtc", "type:string;format:date-time"),
-                    ("lineCount", "type:integer|string;format:int32")),
+                    ("lineCount", "type:integer|string;format:int32"),
+                    // A1-2 (plan API-02): the distinct sources of the lines (Manual | Stock | Sales | Production).
+                    ("sourceKinds", "type:array;items:type:string")),
                 ["LoadingInstructionDetailView"] = ObjectSchema(
                     // #518 P2: the weighing (null before it is weighed) and the dispatch notes (an array) are always on the wire, so required.
                     ["instruction", "lines", "shares", "weighing", "dispatchNotes"],
@@ -7617,7 +7626,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("productId", "type:string;format:uuid"),
                     ("expectedProductVersion", "type:string"),
                     ("unitId", "type:string;format:uuid"),
-                    ("quantity", "type:string")),
+                    ("quantity", "type:string"),
+                    // A1-2 (plan API-02): optional; absent or null is a manual line.
+                    ("source", "oneOf:ref:PurchaseRequestLineSourceRequest|type:null")),
+                ["PurchaseRequestLineSourceRequest"] = ObjectSchema(
+                    ["kind", "documentId", "documentLineId"],
+                    ("kind", "type:string"),
+                    ("documentId", "type:string;format:uuid"),
+                    ("documentLineId", "type:string;format:uuid")),
                 ["SubmitPurchaseRequestRequest"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),

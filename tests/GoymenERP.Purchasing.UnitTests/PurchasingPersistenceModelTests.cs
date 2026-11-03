@@ -218,11 +218,12 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_and_A1_1b_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_and_A1_2_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
-        Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal"],
-            context.Database.GetMigrations().TakeLast(2));
+        Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
+                "20261103012142_AddPurchaseRequestLineSource"],
+            context.Database.GetMigrations().TakeLast(3));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -280,6 +281,52 @@ public sealed class PurchasingPersistenceModelTests
         row.ApprovedBy = "SENTETIK-manager";
         row.ApprovedAtUtc = DateTimeOffset.UtcNow;
         row.CreatedBy = "SENTETIK-other"; // not allowed: the preparer never moves
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_A1_2_line_source_is_three_nullable_columns_kept_together_by_a_check_and_its_Down_refuses_while_a_source_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var lines = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestLineRow))!;
+        Assert.True(lines.FindProperty(nameof(PurchaseRequestLineRow.SourceKind))!.IsNullable);
+        Assert.True(lines.FindProperty(nameof(PurchaseRequestLineRow.SourceDocumentId))!.IsNullable);
+        Assert.True(lines.FindProperty(nameof(PurchaseRequestLineRow.SourceDocumentLineId))!.IsNullable);
+        var check = Assert.Single(lines.GetCheckConstraints(), candidate => candidate.Name == "CK_PurchaseRequestLines_Source");
+        Assert.Equal(PurchasingDbContext.RequestLineSourceCheck, check.Sql);
+        Assert.Contains("[SourceKind] IS NULL AND [SourceDocumentId] IS NULL AND [SourceDocumentLineId] IS NULL", check.Sql, StringComparison.Ordinal);
+        Assert.Contains("[SourceKind] IN (1, 2, 3)", check.Sql, StringComparison.Ordinal);
+        Assert.Contains("[SourceDocumentLineId] <> '00000000-0000-0000-0000-000000000000'", check.Sql, StringComparison.Ordinal);
+        var index = Assert.Single(lines.GetIndexes(), candidate => candidate.GetDatabaseName() == "IX_PurchaseRequestLines_Source");
+        Assert.Equal([nameof(PurchaseRequestLineRow.CompanyId), nameof(PurchaseRequestLineRow.SourceKind), nameof(PurchaseRequestLineRow.SourceDocumentId)],
+            index.Properties.Select(property => property.Name));
+        Assert.Equal("[SourceKind] IS NOT NULL", index.GetFilter());
+
+        // Up only adds nullable columns, the index and the check; Down refuses (51167) before any drop while a line has a source.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseRequestLineSource();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.All(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(),
+            column => Assert.True(column.IsNullable));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51167", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[SourceKind] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public async Task The_write_guard_never_lets_a_stored_line_source_move()
+    {
+        await using PurchasingDbContext context = Context();
+        var row = new PurchaseRequestLineRow
+        {
+            CompanyId = CompanyA, RequestId = Guid.NewGuid(), LineNo = 1, LineId = Guid.NewGuid(), ProductId = Guid.NewGuid(), ProductVersion = "7",
+            UnitId = Guid.NewGuid(), UnitIsKilogram = true, Quantity = 6m,
+        };
+        context.RequestLines.Attach(row);
+        row.SourceKind = 2;
+        row.SourceDocumentId = Guid.NewGuid();
+        row.SourceDocumentLineId = Guid.NewGuid();
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
     }

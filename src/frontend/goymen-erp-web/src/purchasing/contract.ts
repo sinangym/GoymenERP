@@ -134,6 +134,14 @@ export interface CreatePurchaseOrderRequest {
  */
 export type PurchaseRequestStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Withdrawn'
 
+/** A1-2 (plan API-02): a line's source module; a manual line carries no source. */
+export type PurchaseRequestSourceKind = 'Stock' | 'Sales' | 'Production'
+
+/** A1-2: the summary's source vocabulary — the line kinds plus `Manual` for lines without a source, in this fixed order. */
+export type PurchaseRequestSummarySourceKind = 'Manual' | PurchaseRequestSourceKind
+
+export const PURCHASE_REQUEST_SUMMARY_SOURCE_KINDS: readonly PurchaseRequestSummarySourceKind[] = ['Manual', 'Stock', 'Sales', 'Production']
+
 export interface PurchaseRequestSummary {
   readonly id: string
   readonly companyId: string
@@ -143,6 +151,15 @@ export interface PurchaseRequestSummary {
   readonly createdAtUtc: string
   readonly updatedAtUtc: string
   readonly lineCount: number
+  /** A1-2: the distinct sources of the request's lines (fixed order). A body before A1-2 has no field. */
+  readonly sourceKinds?: readonly PurchaseRequestSummarySourceKind[]
+}
+
+/** A1-2: the source module and the source record's opaque identity (its document and the line in it). */
+export interface PurchaseRequestLineSource {
+  readonly kind: PurchaseRequestSourceKind
+  readonly documentId: string
+  readonly documentLineId: string
 }
 
 export interface PurchaseRequestLine {
@@ -152,6 +169,8 @@ export interface PurchaseRequestLine {
   readonly productVersion: string
   readonly unitId: string
   readonly quantity: string
+  /** A1-2: null for a manual line; a body before A1-2 has no field — the source is unknown (shown as "—"), never read as manual. */
+  readonly source?: PurchaseRequestLineSource | null
 }
 
 /** A1-1: one decision on a request — who, when and (a rejection or an A1-1b withdrawal) why. */
@@ -193,6 +212,8 @@ export interface CreatePurchaseRequestLineRequest {
   readonly expectedProductVersion: string
   readonly unitId: string
   readonly quantity: string
+  /** A1-2: omitted for a manual line (the P-01 form never sends one); a module that opens a request from its need sends it. */
+  readonly source?: PurchaseRequestLineSource
 }
 
 export interface CreatePurchaseRequestRequest {
@@ -366,16 +387,38 @@ function decodeAcceptanceHistory(value: unknown): PurchaseOrderAcceptanceHistory
   return source as unknown as PurchaseOrderAcceptanceHistory
 }
 
+const REQUEST_SUMMARY_FIELDS = ['id', 'companyId', 'status', 'version', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount'] as const
+
+/** A1-2: distinct known kinds in the fixed order Manual, Stock, Sales, Production; anything else is not trusted. */
+function summarySourceKinds(value: unknown): value is readonly PurchaseRequestSummarySourceKind[] {
+  if (!Array.isArray(value)) return false
+  const positions = value.map((kind) => PURCHASE_REQUEST_SUMMARY_SOURCE_KINDS.indexOf(kind as PurchaseRequestSummarySourceKind))
+  return positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1]))
+}
+
 function decodeRequestSummary(value: unknown): PurchaseRequestSummary | null {
   const source = record(value)
+  if (source === null) return null
+  // A1-2: the current summary adds the lines' source kinds; a body before A1-2 lacks the field.
+  const sourced = exact(source, [...REQUEST_SUMMARY_FIELDS, 'sourceKinds'])
   if (
-    source === null ||
-    !exact(source, ['id', 'companyId', 'status', 'version', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount']) ||
+    (!exact(source, REQUEST_SUMMARY_FIELDS) && !sourced) ||
     !guid(source.id) || !guid(source.companyId) || !requestStatus(source.status) || !canonicalVersion(source.version) ||
     !dateOnly(source.effectiveOn) || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc) ||
-    !Number.isSafeInteger(source.lineCount) || (source.lineCount as number) < 0
+    !Number.isSafeInteger(source.lineCount) || (source.lineCount as number) < 0 ||
+    (sourced && (!summarySourceKinds(source.sourceKinds) || ((source.sourceKinds as unknown[]).length === 0) !== (source.lineCount === 0)))
   ) return null
   return source as unknown as PurchaseRequestSummary
+}
+
+function decodeRequestLineSource(value: unknown): PurchaseRequestLineSource | null {
+  const source = record(value)
+  if (
+    source === null || !exact(source, ['kind', 'documentId', 'documentLineId']) ||
+    (source.kind !== 'Stock' && source.kind !== 'Sales' && source.kind !== 'Production') ||
+    !guid(source.documentId) || !guid(source.documentLineId)
+  ) return null
+  return source as unknown as PurchaseRequestLineSource
 }
 
 function decodeRequestDecision(value: unknown, withReason: boolean): PurchaseRequestDecision | null {
@@ -390,9 +433,13 @@ function decodeRequestDecision(value: unknown, withReason: boolean): PurchaseReq
 
 function decodeRequestLine(value: unknown): PurchaseRequestLine | null {
   const source = record(value)
+  const fields = ['lineId', 'lineNo', 'productId', 'productVersion', 'unitId', 'quantity'] as const
+  // A1-2: the current line adds its source (null = manual); a body before A1-2 lacks the field.
+  const sourced = source !== null && exact(source, [...fields, 'source'])
   if (
     source === null ||
-    !exact(source, ['lineId', 'lineNo', 'productId', 'productVersion', 'unitId', 'quantity']) ||
+    (!exact(source, fields) && !sourced) ||
+    (sourced && source.source !== null && decodeRequestLineSource(source.source) === null) ||
     !guid(source.lineId) || !Number.isSafeInteger(source.lineNo) || (source.lineNo as number) < 1 ||
     !guid(source.productId) || !canonicalVersion(source.productVersion) || !guid(source.unitId) ||
     !text(source.quantity) || !DECIMAL.test(source.quantity as string) || !/[1-9]/.test(source.quantity as string)
@@ -488,6 +535,14 @@ export function decodePurchaseRequestDetail(value: unknown): PurchaseRequestDeta
   const request = decodeRequestSummary(source.request)
   const lines = source.lines.map(decodeRequestLine)
   if (request === null || lines.some((line) => line === null) || request.lineCount !== lines.length) return null
+  // A1-2: a body with sources has them on the summary and on every line, and the summary's kinds are exactly the lines'.
+  const sourcedLines = (lines as PurchaseRequestLine[]).filter((line) => line.source !== undefined).length
+  if (request.sourceKinds === undefined ? sourcedLines !== 0 : sourcedLines !== lines.length) return null
+  if (request.sourceKinds !== undefined) {
+    const present = new Set((lines as PurchaseRequestLine[]).map((line) => line.source?.kind ?? 'Manual'))
+    const expected = PURCHASE_REQUEST_SUMMARY_SOURCE_KINDS.filter((kind) => present.has(kind))
+    if (expected.length !== request.sourceKinds.length || expected.some((kind, index) => kind !== request.sourceKinds?.[index])) return null
+  }
   const approval = current && source.approval !== null ? decodeRequestDecision(source.approval, false) : null
   const rejection = current && source.rejection !== null ? decodeRequestDecision(source.rejection, true) : null
   if ((current && source.approval !== null && approval === null) || (current && source.rejection !== null && rejection === null)) return null

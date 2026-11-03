@@ -238,6 +238,74 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task A_request_line_source_reaches_the_service_and_the_wire_and_a_loose_source_is_refused_before_it()
+    {
+        // A1-2 (plan API-02): the optional line source is read strictly; the response carries it on the line and the
+        // summary's kinds. No new permission or route: the create route is unchanged.
+        var id = Guid.NewGuid();
+        var salesOrder = Guid.NewGuid();
+        var salesOrderLine = Guid.NewGuid();
+        var detail = RequestDetail(id, "Draft", "2") with
+        {
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Sales"] },
+            Lines = [new PurchaseRequestLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", Guid.NewGuid(), "6")
+            {
+                Source = new PurchaseRequestLineSourceView("Sales", salesOrder, salesOrderLine),
+            }],
+        };
+        var service = new StubService { CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(detail, false, "SENTETIK-corr-1")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        var source = $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""";
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-source", RequestBody(source))))
+        {
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var line = body.GetProperty("detail").GetProperty("lines")[0].GetProperty("source");
+            Assert.Equal(("Sales", salesOrder.ToString("D"), salesOrderLine.ToString("D")),
+                (line.GetProperty("kind").GetString(), line.GetProperty("documentId").GetString(), line.GetProperty("documentLineId").GetString()));
+            Assert.Equal("[\"Sales\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+        }
+
+        Assert.Equal(new PurchaseRequestLineSourceRequest("Sales", salesOrder, salesOrderLine), service.LastCreateRequest!.Lines[0].Source);
+
+        foreach (var loose in new[]
+        {
+            $$""","source":{"kind":"Manual","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{Guid.Empty:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}","extra":1}""",
+        })
+        {
+            using var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, $"SENTETIK-loose-{Guid.NewGuid():N}", RequestBody(loose)));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Equal(1, service.Calls);
+
+        // A manual line (no source on the request) is emitted with an explicit "source": null and the summary names only Manual.
+        var manualDetail = RequestDetail(id, "Draft", "2") with
+        {
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Manual"] },
+        };
+        service.CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(manualDetail, false, "SENTETIK-corr-2"));
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-manual", RequestBody())))
+        {
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var manualLine = body.GetProperty("detail").GetProperty("lines")[0];
+            Assert.True(manualLine.TryGetProperty("source", out var manualSource));
+            Assert.Equal(JsonValueKind.Null, manualSource.ValueKind);
+            Assert.Equal("[\"Manual\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+        }
+
+        Assert.Null(service.LastCreateRequest!.Lines[0].Source);
+        Assert.Equal(2, service.Calls);
+    }
+
+    [Fact]
     public async Task A_request_is_approved_and_rejected_over_its_own_routes_with_strict_bodies_and_replayed_terminal_refusals()
     {
         // A1-1 (plan API-01): POST …/approval and …/rejection answer 200 with the request and its decision; a terminal
@@ -722,8 +790,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         return $$"""{"supplierPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","sourceRequestId":{{source}},"effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6","sourceRequestLineId":{{bound}}}]}""";
     }
 
-    private static string RequestBody() =>
-        $$"""{"effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6"}]}""";
+    private static string RequestBody(string source = "") =>
+        $$"""{"effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6"{{source}}}]}""";
 
     private static HttpRequestMessage Post(string path, string key, string json, string mediaType = "application/json")
     {
@@ -829,9 +897,12 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return Comparison(purchaseOrderId, acceptanceId);
         }
 
+        public CreatePurchaseRequestRequest? LastCreateRequest { get; private set; }
+
         public Task<PurchaseRequestResponse> CreateRequestAsync(CreatePurchaseRequestRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastCreateRequest = request;
             return CreateRequest();
         }
 
