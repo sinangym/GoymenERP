@@ -77,15 +77,15 @@ AI-6 → AI-7 → AI-8 → AI-9 → AI-10. Her dilim ayrı PR'dır. AI-8, AI-4 s
 ## 5. Modül şeritlerinden gelen araç ihtiyaçları (3 Kasım)
 
 3 Kasım'da beş şeride aynı soru gönderildi; cevaplar aşağıdadır. Adlar şeritlerin önerisidir (AI-6'da
-katalogda sürümlenir). İzin adları mevcut `ErpPermissions`/manifest adlarıdır; yeni ad açılmaz. Tutar/fiyat
+katalogda sürümlenir). İzin adları mevcut `ErpPermissions`/manifest adları ya da sahip şeridin açık PR'ında planlanan adlardır ("bekleyen" diye işaretli); AI şeridi yeni ad açmaz. Tutar/fiyat
 maskesi sahip serviste uygulanır (ör. `sales.orders.price.read` yoksa Withheld; Finans `…amount.read` yoksa
 Redacted); AI bu maskeyi aynen taşır, tutarı yeniden hesaplamaz veya toplamaz.
 
 | Modül | İlk 3 (READ/SIMULATE) | Dayanak | İzin | Hassas |
 |---|---|---|---|---|
 | Satış | `sales.order.status.explain`, `sales.open_orders.daily_summary`, `sales.customer.risk.explain` | `GET /api/v1/sales/drafts/{id}/status`, `…/{id}`, `…/{id}/line-pricing`; `GET /api/v1/sales/reports/open-orders`; `GET …/{id}/risk-check` | `sales.drafts.read`, `sales.reports.read` (+ `sales.orders.price.read`) | fiyat, iskonto, risk limiti/teminat/açık alacak |
-| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` | bugün yok; A2a'dan sonra birim fiyat/tutar/iskonto |
-| Finans | `finance.party-balance.explain`, `finance.party-ledger.explain`, `finance.open-items.overdue-summary` | `IPartyLedgerService.SummarizeAuthorizedAsync`/`ReadAuthorizedAsync` (#912); `IFinanceOpenItemReadServiceV1` | `finance.party-ledger.read` (+ `.amount.read`), `finance.open-items.read` (+ `.amount.read`) | tüm tutarlar, cari kimliği, IBAN, çek no (Finans önerisi: IBAN dış AI'a hiç açılmasın) |
+| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` (bekleyen: Alış API-10 / #932, henüz main'de değil) | bugün yok; A2a'dan sonra birim fiyat/tutar/iskonto |
+| Finans | `finance.party-balance.explain`, `finance.party-ledger.explain`, `finance.open-items.overdue-summary` | `IPartyLedgerService.ReadAuthorizedAsync`; `SummarizeAuthorizedAsync` (bekleyen: #912); `IFinanceOpenItemReadServiceV1` | `finance.party-ledger.read` (+ `.amount.read`), `finance.open-items.read` (+ `.amount.read`) | tüm tutarlar, cari kimliği, IBAN, çek no (Finans önerisi: IBAN dış AI'a hiç açılmasın) |
 | Üretim | `manufacturing.plan.explain`, `manufacturing.plan.simulate` (SIMULATE), `manufacturing.order.variance.explain` | `GET plans/{id}`; `POST plans/preview` (calculator, kayıt yok); `GET orders/{id}` | `manufacturing.plans.read`, `manufacturing.plans.write`, `manufacturing.orders.read` | yok (ticari bağlam müşteri adı taşıyabilir: dışarı aktarılmaz) |
 | Kalan Modüller | Liste K0 dalgasından sonra gelecek | Belgeler: `IDocumentContentReadPortV1` istendi (K6, AI-9 için) | `documents.files.read` + sahip kontrolü | şirket belgeleri |
 

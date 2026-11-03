@@ -58,7 +58,7 @@ Review ve merge kapıları değişmez (K3'te iki bağımsız exact-head review).
 - Dış AI sağlayıcısı ve hesap (veri saklamama / eğitimde kullanmama kanıtıyla) — OPEN-020.
 - Yerel model/OCR çalışma ortamı ve GPU kapasitesi — OPEN-020 (yerel PoC).
 - Ayarlar'daki AI politikasını hazırlama/onaylama/yayınlama izinleri hangi personalarda — rol/yetki kapısı.
-- Listede olmayan "Gizli" kalemler (marj, cari kimliği, sözleşme) dış AI'a takma adla gidebilir mi, hiç mi gitmez.
+- Listede olmayan "Gizli" kalemler (marj, cari kimliği, sözleşme) dış AI'a takma adla gidebilir mi, hiç mi gitmez ("sözleşme"nin şirket belgesi sayılıp sayılmayacağı dahil).
 
 Uygulama notu (geri alınabilir, Claude): genel (ERP dışı) soru AI-D3 kapsamındadır; dış AI canlıda açıldığında
 ayrı veri türü izni istemez. Genel soruda dış AI'a **yalnız kullanıcının yazdığı metin** gider: sayfa/kayıt bağlamı,
