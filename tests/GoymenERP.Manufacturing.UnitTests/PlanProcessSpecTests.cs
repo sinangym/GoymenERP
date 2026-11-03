@@ -19,7 +19,7 @@ public sealed class PlanProcessSpecTests
     private static readonly DateOnly Today = new(2026, 11, 2);
     private static readonly DateTimeOffset At = new(2026, 11, 2, 10, 0, 0, TimeSpan.Zero);
 
-    private static PlanTechnicalParameterSnapshotV1 Coil => new(
+    private static readonly PlanTechnicalParameterSnapshotV1 Coil = new(
         Guid.NewGuid(), "1", Guid.NewGuid(), "SAC", "r1", Guid.NewGuid(), "1", "T", "r1", Company, Guid.NewGuid(), "kg",
         Guid.NewGuid(), "1", Today, 2.000m, 1_000.000m);
 
