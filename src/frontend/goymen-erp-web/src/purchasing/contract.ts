@@ -128,8 +128,11 @@ export interface CreatePurchaseOrderRequest {
   readonly lines: readonly CreatePurchaseOrderLineRequest[]
 }
 
-/** A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1). */
-export type PurchaseRequestStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected'
+/**
+ * A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1). A1-1b: Withdrawn is the
+ * preparer's or submitter's withdrawal (ALS-D46, ALS-D47), a separate outcome from Rejected.
+ */
+export type PurchaseRequestStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Withdrawn'
 
 export interface PurchaseRequestSummary {
   readonly id: string
@@ -151,7 +154,7 @@ export interface PurchaseRequestLine {
   readonly quantity: string
 }
 
-/** A1-1: one decision on a request — who, when and (a rejection only) why. */
+/** A1-1: one decision on a request — who, when and (a rejection or an A1-1b withdrawal) why. */
 export interface PurchaseRequestDecision {
   readonly decidedBy: string
   readonly decidedAtUtc: string
@@ -165,6 +168,12 @@ export interface PurchaseRequestDetail {
   readonly approval?: PurchaseRequestDecision | null
   /** Null until rejected; carries the reason. */
   readonly rejection?: PurchaseRequestDecision | null
+  /** A1-1b: null until the preparer or the submitter withdraws the request (ALS-D47); carries the reason. A body before A1-1b reads as null. */
+  readonly withdrawal?: PurchaseRequestDecision | null
+  /** A1-1b (ALS-D47): the recorded preparer (creator) — one of the two actors who may withdraw — or null if not recorded. */
+  readonly preparedBy?: string | null
+  /** A1-1b: the recorded submitter — the other actor who may withdraw — or null (Draft, or not recorded). */
+  readonly submittedBy?: string | null
 }
 
 export interface PurchaseRequestList {
@@ -229,7 +238,7 @@ function status(value: unknown): value is PurchaseOrderStatus {
 }
 
 function requestStatus(value: unknown): value is PurchaseRequestStatus {
-  return value === 'Draft' || value === 'Submitted' || value === 'Approved' || value === 'Rejected'
+  return value === 'Draft' || value === 'Submitted' || value === 'Approved' || value === 'Rejected' || value === 'Withdrawn'
 }
 
 function lineKind(value: unknown): value is PurchaseOrderLineKind {
@@ -471,7 +480,10 @@ export function decodePurchaseRequestDetail(value: unknown): PurchaseRequestDeta
   const source = record(value)
   if (source === null || !Array.isArray(source.lines)) return null
   const legacy = exact(source, ['request', 'lines'])
-  const current = exact(source, ['request', 'lines', 'approval', 'rejection'])
+  const decided = exact(source, ['request', 'lines', 'approval', 'rejection'])
+  // A1-1b: the current body adds the withdrawal and the recorded preparer and submitter.
+  const withdrawable = exact(source, ['request', 'lines', 'approval', 'rejection', 'withdrawal', 'preparedBy', 'submittedBy'])
+  const current = decided || withdrawable
   if (!legacy && !current) return null
   const request = decodeRequestSummary(source.request)
   const lines = source.lines.map(decodeRequestLine)
@@ -479,13 +491,28 @@ export function decodePurchaseRequestDetail(value: unknown): PurchaseRequestDeta
   const approval = current && source.approval !== null ? decodeRequestDecision(source.approval, false) : null
   const rejection = current && source.rejection !== null ? decodeRequestDecision(source.rejection, true) : null
   if ((current && source.approval !== null && approval === null) || (current && source.rejection !== null && rejection === null)) return null
-  // The decision facts match the status (the backend's CK_PurchaseRequests_Decision); anything else is not trusted.
-  const consistent = request.status === 'Approved' ? approval !== null && rejection === null
-    : request.status === 'Rejected' ? rejection !== null
-      : approval === null && rejection === null
+  const withdrawal = withdrawable && source.withdrawal !== null ? decodeRequestDecision(source.withdrawal, true) : null
+  if (withdrawable && source.withdrawal !== null && withdrawal === null) return null
+  if (withdrawable && source.submittedBy !== null && (!text(source.submittedBy) || !(source.submittedBy as string).trim())) return null
+  if (withdrawable && source.preparedBy !== null && (!text(source.preparedBy) || !(source.preparedBy as string).trim())) return null
+  const submittedBy = withdrawable ? source.submittedBy as string | null : null
+  const preparedBy = withdrawable ? source.preparedBy as string | null : null
+  // The decision facts match the status (the backend's CK_PurchaseRequests_Decision / _Withdrawal); anything else is not trusted.
+  const consistent = request.status === 'Approved' ? approval !== null && rejection === null && withdrawal === null
+    : request.status === 'Rejected' ? rejection !== null && withdrawal === null
+      : request.status === 'Withdrawn' ? withdrawal !== null && approval === null && rejection === null
+        : approval === null && rejection === null && withdrawal === null
   if (current && !consistent) return null
-  if (legacy && (request.status === 'Approved' || request.status === 'Rejected')) return null
-  return { request, lines: lines as PurchaseRequestLine[], approval, rejection }
+  // A1-1b (ALS-D47): only a recorded preparer or submitter withdraws; a Draft has no submitter; an approved or rejected
+  // request always has one; a withdrawn one may lack it (its preparer withdrew a request submitted before A1-1).
+  if (withdrawable && (request.status === 'Draft' ? submittedBy !== null
+    : request.status === 'Submitted' ? false
+      : request.status === 'Withdrawn'
+        ? withdrawal === null || (withdrawal.decidedBy !== preparedBy && withdrawal.decidedBy !== submittedBy)
+        : submittedBy === null)) return null
+  if (decided && request.status === 'Withdrawn') return null
+  if (legacy && (request.status === 'Approved' || request.status === 'Rejected' || request.status === 'Withdrawn')) return null
+  return { request, lines: lines as PurchaseRequestLine[], approval, rejection, withdrawal, preparedBy, submittedBy }
 }
 
 export function decodePurchaseRequestCommandResponse(value: unknown): PurchaseRequestCommandResponse | null {

@@ -1,6 +1,6 @@
 # Alış (Satın Alma) Modülü Hazırlık Planı v1
 
-Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**, **`_ALIS_EK4.md` (ALS-D44…D45)**, **`_ALIS_EK5.md` (ALS-D46)**, **`_ALIS_EK7.md` (ALS-D48…D52)**, **`_ALIS_EK8.md` (ALS-D53…D56)**, **`_ALIS_EK9.md` (ALS-D57…D65)**
+Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**, **`_ALIS_EK4.md` (ALS-D44…D45)**, **`_ALIS_EK5.md` (ALS-D46)**, **`_ALIS_EK6.md` (ALS-D47)**, **`_ALIS_EK7.md` (ALS-D48…D52)**, **`_ALIS_EK8.md` (ALS-D53…D56)**, **`_ALIS_EK9.md` (ALS-D57…D65)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.3, §8.2, §10.3, §25.5, §27.3, §28.12, §28.16, §29.3
 (AT-025…028); `docs/decisions/KARAR_SICILI.md` `DEC-PUR-001`, `DEC-CAR-001`, `DEC-STK-002/003/006/008/009`,
@@ -228,7 +228,7 @@ eklenir. İzin adları öneridir; sahip modül koyar (No P5).
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
 | API-01 | `POST requests/{id}/approval` · `/rejection` | Talep onayı/reddi; ret yalnız Submitted/Approved iken ve bağlı onaylı sipariş yokken; gerekçe zorunlu | `purchasing.requests.approve` (yeni) | No.161 §1, N-02 | K3 |
-| API-01b | `POST requests/{id}/withdrawal` | Hazırlayan, Submitted (Gönderildi) durumundaki kendi talebini gerekçeyle geri çeker; onaylı talep geri çekilemez; bağlı onaylı sipariş varken geri çekilemez (No.161 §1 ile aynı koruma) | `purchasing.requests.withdraw` (yeni, öneri) — yalnız talebi gönderen | ALS-D46 | K3 |
+| API-01b | `POST requests/{id}/withdrawal` | Talebi oluşturan veya onaya gönderen kişi, Submitted (Gönderildi) durumundaki talebi gerekçeyle geri çeker; başka kimse geri çekemez (ALS-D47); onaylı talep geri çekilemez; bağlı onaylı sipariş varken geri çekilemez (No.161 §1 ile aynı koruma) | `purchasing.requests.withdraw` (yeni, öneri) — yalnız talebi oluşturan veya gönderen | ALS-D46, ALS-D47 | K3 |
 | API-02 | `POST requests` genişlemesi | Satır kaynağı (stok / satış / üretim / manuel) + kaynak kimliği, istenen tarih | mevcut | A-2 | K3 |
 | API-03 | `GET requests/pool` | İhtiyaç havuzu: onaylı, siparişe bağlanmamış kalanlar; kaynak ve tarih filtresi | `purchasing.orders.read` | §7.3 | K2 |
 
@@ -403,8 +403,8 @@ eşlemesi EK8 §3 "Kart için not"tadır; kart PRS-01 PR'ında güncellenir. **P
 ## 8. Kararlar
 
 2026-11-02'de dört turda on beş soru soruldu; cevaplar `SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13). Sonraki iki
-karar dosyası: `_ALIS_EK1.md` (ALS-D14…D20, §13.4) ve `_ALIS_EK2.md` (ALS-D21…D28, §13.7); kalan sorular `_ALIS_EK3.md` (ALS-D29…D43, §13.8); uygulama sırasındaki turlar `_ALIS_EK4.md`, `_ALIS_EK5.md` ve
-`_ALIS_EK7.md` (ALS-D48…D52; ALS-D47/EK6 PR #907 ile eklenecek) ve `_ALIS_EK8.md` (ALS-D53…D56; personalar, talep açanlar, N-38, kur düzeltme) ve `_ALIS_EK9.md` (ALS-D57…D65; koordinatör yetkisi, modül önceliği, borç Finans'ta, fiyat birimi, MINSTOK, fatura→Finans portu, Ayarlar istisnası, işlem sınırı, Lojistik). Sonraki
+karar dosyası: `_ALIS_EK1.md` (ALS-D14…D20, §13.4) ve `_ALIS_EK2.md` (ALS-D21…D28, §13.7); kalan sorular `_ALIS_EK3.md` (ALS-D29…D43, §13.8); uygulama sırasındaki turlar `_ALIS_EK4.md`, `_ALIS_EK5.md`,
+`_ALIS_EK6.md` (ALS-D47, PR #907), `_ALIS_EK7.md` (ALS-D48…D52), `_ALIS_EK8.md` (ALS-D53…D56; personalar, talep açanlar, N-38, kur düzeltme) ve `_ALIS_EK9.md` (ALS-D57…D65; koordinatör yetkisi, modül önceliği, borç Finans'ta, fiyat birimi, MINSTOK, fatura→Finans portu, Ayarlar istisnası, işlem sınırı, Lojistik). Sonraki
 turlar `_ALIS_EKn.md` olur. Zaten karara bağlanmış konular yeniden sorulmaz: tolerans bantları ve onaycılar (No 40,
 41, 62, 63), iade faturası (No 20), fatura para birimi (No 26; kur günü ALS-D6 ile kabul günü), talep reddi ve sipariş iptali (No.161), siparişsiz
 kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-003), fason yönü (URT-D15/D17).
@@ -433,7 +433,7 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | – | Satın alma personaları ve talebi kimin açtığı (PRS-01) | ALS-D53 (Satın Alma Uzmanı + Satın Alma Müdürü), ALS-D54 (Satın alma + Satış); grant değildir |
 | MINSTOK | Minimum stoktan otomatik talep önerisi | ALS-D61 (şimdilik kapsam dışı; Stok modülü başlayınca ayrıca ele alınır; talep elle ya da Satış/Üretim ihtiyacından) |
 | – | Koordinatör oturumunun aktarımı, modül önceliği | ALS-D57 (koordinatörün ilettiği yürütme biçimi Sinan adına geçer; insan kapıları değişmez), ALS-D58 (Ürün/Stok/Ayarlar/Cari için Alış'tan yeni port/tablo/ekran yok; mevcut port; yoksa "hesaplanamıyor"), ALS-D65 (Lojistik de ertelendi), ALS-D63 (API-95/96/97 Ayarlar'da dar istisna; API-98 NEEDS-SINAN) |
-| – | Gelen fatura borcu ve Finans'a iletim (MOD-04) | ALS-D59 (Finans'ta tek borç açık kalemi; Cari kartına hareket yok; 320 fişi aynı olaydan Muhasebe'de), ALS-D62 (dağıtıcı gelene kadar Finans kabul portu doğrudan çağrılır; sonra aynı içerik olay olarak), ALS-D64 (önce "Finans kabulü bekliyor" durumuyla kaydet, sonra aynı anahtarla idempotent çağrı; tek DB işlemi yok, ADR-CARI-001); **açık çelişki:** koordinatör aktarımı "tek DB işlemi" → NEEDS-SINAN (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590568009); cevaba kadar ALS-D64 geçerli, A5 sözleşmesi kilitlenmez |
+| – | Gelen fatura borcu ve Finans'a iletim (MOD-04) | ALS-D59 (Finans'ta tek borç açık kalemi; Cari kartına hareket yok; 320 fişi aynı olaydan Muhasebe'de), ALS-D62 (dağıtıcı gelene kadar Finans kabul portu doğrudan çağrılır; sonra aynı içerik olay olarak), ALS-D64 (önce "Finans kabulü bekliyor" durumuyla kaydet, sonra aynı anahtarla idempotent çağrı; tek DB işlemi yok, ADR-CARI-001); koordinatör aktarımındaki "tek DB işlemi" çelişkisi Sinan'ın **"Ayrı adım"** cevabıyla kapandı (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590642890) |
 
 **Açık kalanlar (2026-11-02 sonu):**
 
@@ -444,7 +444,7 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | – | N-19: hubvogal erişimi göç (MIG-01) için yeniden gerekecek (karar değil, bağımlılık) | MIG-01'den önce |
 | – | API-98 Ayarlar listeleri ALS-D63 istisnasına girer mi | NEEDS-SINAN (Issue #66, EK9 ALS-D63); o zamana kadar ertelenmiş ve fail-closed (yorum) |
 
-Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43); uygulama sırasında gelen kararlar EK4 (ALS-D44/D45), EK5 (ALS-D46) ve EK7 (ALS-D48…D52; N-18, N-36, N-27 kalan, N-28 kalan kapandı); EK8 (ALS-D53…D56; N-38 kapandı); EK9 (ALS-D57…D65; EK7'deki fiyat birimi NEEDS-SINAN'ı ve MINSTOK kapandı).
+Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43); uygulama sırasında gelen kararlar EK4 (ALS-D44/D45), EK5 (ALS-D46), EK6 (ALS-D47), EK7 (ALS-D48…D52; N-18, N-36, N-27 kalan, N-28 kalan kapandı); EK8 (ALS-D53…D56; N-38 kapandı); EK9 (ALS-D57…D65; EK7'deki fiyat birimi NEEDS-SINAN'ı ve MINSTOK kapandı).
 
 ---
 
@@ -509,9 +509,10 @@ Bu bölüm iş takibidir; karar değildir.
 | Hubvogal incelemesi (§13.6/§13.7) + EK2 ALS-D21…D28 | #889 | merge edildi (`f7ec453e`) |
 | Kalan sorular (§13.8) + EK3 ALS-D29…D43 | #891 | taslak PR |
 | A0 belgeleri: FZL-01 (Purchasing README kodla eşit), `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Satın Alma satırları | – | taslak PR |
-| A1-1 (K3): API-01 talep onay/ret + TEK-09 talep ekseni; `purchasing.requests.approve` (yalnız kayıt, grant insan kapısı); siparişin kaynak talebi Onaylı olmalı (ALS-D2/D16); migration `AddPurchaseRequestDecisions`; P-01-DETAIL karar paneli | – | dal `claude/alis-a1-talep-onay` |
+| A1-1 (K3): API-01 talep onay/ret + TEK-09 talep ekseni; `purchasing.requests.approve` (yalnız kayıt, grant insan kapısı); siparişin kaynak talebi Onaylı olmalı (ALS-D2/D16); migration `AddPurchaseRequestDecisions`; P-01-DETAIL karar paneli | #900 | merge edildi (`5d569df3`) |
+| A1-1b (K3): API-01b oluşturan veya gönderenin geri çekmesi (ALS-D46, ALS-D47; `Withdrawn` ayrı kapanış durumu) + #900 review P3'leri (maker-checker CHECK ikili karşılaştırma, `maker_unknown` README notu, PUR01 403 açıklaması, UI/HTTP testleri); `purchasing.requests.withdraw` (yalnız kayıt; grant yalnız SENTETIK browser-suite personasında); migration `AddPurchaseRequestWithdrawal`; P-01-DETAIL "Geri çek"; karar dosyası EK6 ALS-D47 (geri çekme yetkisi: oluşturan veya gönderen) | #907 | taslak PR |
 
-Sıradaki: A1 — talep onay/ret (A1-1, PR hazırlanıyor), hazırlayanın geri çekmesi (A1-1b, ALS-D46; DURUM_MAKINELERI hedef satırı da o dilimde), talep kaynağı, No.161 iptali, PRS-01. Açık sorular §8
+Sıradaki: A1 — talep kaynağı, No.161 iptali, PRS-01 (A1-1 #900 ile merge edildi; A1-1b oluşturan veya gönderenin geri çekmesi #907 taslak PR'da, DURUM_MAKINELERI satırı o dilimde güncellendi). Açık sorular §8
 sonundaki tabloda.
 
 ---
@@ -738,7 +739,7 @@ Durum: ✅ main'de impl + DI + test · 🟡 kısmen · ❌ yok · ❓ kapsam sor
 | **A3-0** | A3 başı | `IPurchaseSupplyReferencePortV1` v2: termin dilimi, tedarikçide hazır, yolda, ayrılan miktar (ALS-D22/D25/D30); v1 kırılmaz; ilk tüketici Stok ST-08 görünümü (ST-08 görünümü ertelendi: Stok başlayınca (ALS-D58); port v2 Alış'ta, tüketici Satış MOD-16) | MOD-14, MOD-16 | K3 |
 | **A3-KAPI** | A3 | Kabul toleransı ve kalite blok işi codex P05.1 (#772-776, #782) ve I04.1A (#750) merge edilmeden başlamaz; sıra: P05.1 → #750 → Alış A3 kabul genişlemesi; `InitialBlock = "Free"` sabiti #750 sonrası yeniden değerlendirilir (karar değişikliği gerekirse NEEDS-SINAN). Codex PR'ları A3 başında merge edilmemişse Issue #66'ya sıra için NEEDS-SINAN yazılır | codex PR'ları | K3 |
 | **A4-0** | A4 başı | #770 `PurchasingSubcontractOrderContractsV1` ile Üretim'in istediği `IPurchaseSubcontractOrderReadPortV1` (A-1) uzlaşması: tek sözleşme, sürümlü, Üretim'in okuduğu alanlar; çifte sözleşme merge edilmez | #770 yazarı (Codex) + Üretim şeridi | K3 |
-| **A5-0** | A5 başı | Alış outbox tablosu (Work/Stok deseni) + dağıtıcı testi (commit ile mesaj kaybı/kopyası yok); ERP-000F hâlâ `SPEC_ONLY` ise dağıtıcı ihtiyacı #66 makbuzuyla çözülür. ALS-D62: dağıtıcı gelene kadar gelen fatura kesinleşince Finans'ın kabul portu (`IFinanceInvoiceOpenItemAdmissionPortV1`, Finans #923) doğrudan çağrılır; dağıtıcı gelince aynı içerik `purchasing.invoice.finalized.v1` olarak gider, çifte borç yazılmaz (idempotent kabulün sonucu). İşlem sınırı ALS-D64: Alış "Finans kabulü bekliyor" durumuyla kendi işleminde commit eder, sonra portu çağırır ve hatada aynı anahtarla yeniden dener (outbox'a bire bir; tek DB işlemi yok, ADR-CARI-001); anahtar önerisi `purchasing-invoice:{invoiceId}:{invoiceVersion}` teknik ayrıntıdır. **Açık çelişki:** koordinatör aktarımı "tek DB işlemi" diyor; NEEDS-SINAN (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590568009); Sinan cevaplayana kadar ALS-D64 geçerli (ALS-D57), A5 kabul sözleşmesi kilitlenmez. ERP kontrol kuru açık kaleme yazılmaz; TL borç tedarikçi faturası kuruyla (ALS-D41). Borç Finans'ta tek kayıt; Cari hareketi yok; 320 fişi aynı kaynak olaydan Muhasebe'de (ALS-D59) | B-3, ALS-D44, ALS-D59, ALS-D62, ALS-D64 | K3 |
+| **A5-0** | A5 başı | Alış outbox tablosu (Work/Stok deseni) + dağıtıcı testi (commit ile mesaj kaybı/kopyası yok); ERP-000F hâlâ `SPEC_ONLY` ise dağıtıcı ihtiyacı #66 makbuzuyla çözülür. ALS-D62: dağıtıcı gelene kadar gelen fatura kesinleşince Finans'ın kabul portu (`IFinanceInvoiceOpenItemAdmissionPortV1`, Finans #923) doğrudan çağrılır; dağıtıcı gelince aynı içerik `purchasing.invoice.finalized.v1` olarak gider, çifte borç yazılmaz (idempotent kabulün sonucu). İşlem sınırı ALS-D64: Alış "Finans kabulü bekliyor" durumuyla kendi işleminde commit eder, sonra portu çağırır ve hatada aynı anahtarla yeniden dener (outbox'a bire bir; tek DB işlemi yok, ADR-CARI-001); anahtar önerisi `purchasing-invoice:{invoiceId}:{invoiceVersion}` teknik ayrıntıdır. Koordinatör aktarımındaki "tek DB işlemi" ile çelişki Sinan'ın doğrudan **"Ayrı adım"** cevabıyla kapandı (https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590642890; soru https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590568009): ALS-D64 geçerli, A5 kabul sözleşmesi bu sınırla yazılır. ERP kontrol kuru açık kaleme yazılmaz; TL borç tedarikçi faturası kuruyla (ALS-D41). Borç Finans'ta tek kayıt; Cari hareketi yok; 320 fişi aynı kaynak olaydan Muhasebe'de (ALS-D59) | B-3, ALS-D44, ALS-D59, ALS-D62, ALS-D64 | K3 |
 | **MINSTOK** | – | **Kapsam dışı (ALS-D61, EK9):** minimum stoktan satın alma talebi önerisi Alış planına girmez; Stok modülü başlayınca ayrıca ele alınır. Talep elle ya da Satış/Üretim ihtiyacından açılır. #66'ya soru yazılmaz | – | – |
 
 Karşı taraf notları: Finans `docs/handoffs/ALIS_FINANS_DEVIR_v1.md`; Satış `docs/handoffs/ALIS_SATIS_DEVIR_v1.md`

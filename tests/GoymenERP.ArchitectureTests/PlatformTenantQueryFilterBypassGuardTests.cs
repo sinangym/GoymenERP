@@ -356,8 +356,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A1-1 (plan API-01): +5 request approval/rejection SQL facts (one save + maker/decision checks, bound approved
             // order + rejected request's draft order, rejection vs binding approval race, company isolation, migration
             // backfill + Down refusal), kept ordinal-sorted (23decb33… -> 27a9dd4f…).
+            // A1-1b (plan API-01b; ALS-D46): +4 request withdrawal SQL facts (one save + only-the-submitter + withdrawal
+            // check, bound approved order vs draft order, company isolation, Down refusal + binary maker-checker), kept
+            // ordinal-sorted (27a9dd4f… -> 88f2c7a5…). ALS-D47 (creator or submitter withdraws): +1 fact for creator ≠
+            // submitter, a third party and a legacy request, and the one-save fact renamed for it (88f2c7a5… -> 37e3e2bd…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "27a9dd4f09206d2aa6f385cf2dbe6013146ab4476c68829e97bad77329c441c9",
+                "37e3e2bd77b3f3e386731c8790f3bd5d2d038dc9556a078c4d0a6f1d07e025e5",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -541,9 +545,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
             // guard's decision-fact allow-list; filters and keys unchanged.
+            // Re-measured for A1-1b: the withdrawal columns and check, the Withdrawn branch of the decision check, the
+            // binary maker-checker comparison (#900 review P3) and the write guard's withdrawal-fact allow-list; filters
+            // and keys unchanged. Re-measured for ALS-D47: the withdrawal check accepts the preparer or the submitter.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "7a6596f031864fbce3c421a1230cb0c76e00680d233bb3767bf082d5a4a77376",
+                "c4cd14f013acc7010061c680f786d53e49346a749d7104c6add23a7c736d58b2",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1403,10 +1410,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.
                 // Re-fingerprinted for A1-1: request decisions (bound approved-order fact read through the filtered
                 // context, decision facts written, source request state at order approval); same token count.
+                // Re-fingerprinted for A1-1b: the withdrawal facts written and rebuilt through the domain; same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "3461d63bb9443bb14e82733246c66db28dbe6442d575de369bf858a98b7d50d9",
+                        "439bf98f4e805252ae2b3a49a84cf4c9338fcf31a83e5200024ac004c01452d4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1989,6 +1997,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261102125710_AddPurchaseRequestDecisions.cs"] =
                     new(
                         "86686db520f0be62c2fb11e8bc50ca59c4769c45a052f955f25e23f10a29b42f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
+                // A1-1b (plan API-01b; ALS-D46): two reviewed statements, both before every drop. Down refuses (51165, used by
+                // no other migration) while any request is Withdrawn, and (51166, used by no other migration; #907 review P3)
+                // while a stored decision differs from its maker only by case, which the restored A1-1 check would reject.
+                // Up only re-creates checks and adds nullable columns.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261102161658_AddPurchaseRequestWithdrawal.cs"] =
+                    new(
+                        "e9948461dac12ae23a6f93c9e93e5a468e0ddacafc63ebec339bb317a0e23bf3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 2

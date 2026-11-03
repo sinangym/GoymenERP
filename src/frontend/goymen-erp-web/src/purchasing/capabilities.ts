@@ -4,6 +4,7 @@ export const PURCHASING_CAPABILITY = {
   requestDetail: 'purchasing.requests.detail',
   requestSubmit: 'purchasing.requests.submit',
   requestApprove: 'purchasing.requests.approve',
+  requestWithdraw: 'purchasing.requests.withdraw',
   orderList: 'purchasing.orders.list',
   orderCreate: 'purchasing.orders.create',
   orderDetail: 'purchasing.orders.detail',
