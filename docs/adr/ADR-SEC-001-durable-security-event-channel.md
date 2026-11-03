@@ -28,26 +28,61 @@ kodlanmaz. Saklama süreleri No 134/157 ile verilmiştir; geri kalanlar bu ADR'�
 | B | Ayrı veritabanı / ayrı sunucu | Daha güçlü ayrım | Yeni bileşen, yedek/geri yükleme ve dağıtık yazma karmaşası; OPEN-014 envanterine bağlı |
 | C | Yalnız log/OTLP hattı | Kolay | Kayıp olabilir (ERP-000L §6.3); kalıcı kanal şartını karşılamaz — **red** |
 
+## Kapı (ERP-000L §6.2/§16)
+
+ERP-000L §6.2 bu deponun `ERP-000L-DECISION-PACK` kapanmadan kodlanmamasını ister; §16 paketi OPEN-014/015/017
+gibi geniş platform kararlarına bağlar. Bu ADR, güvenlik olayı kanalının bu toplu paketten **ayrılmasını önerir**
+(NEEDS-SINAN-4). Sinan cevaplayana kadar kanal kodlanmaz ve AI-3 (gateway runtime) merge edilmez.
+
 ## Önerilen karar (Sinan cevabına kadar öneri)
 
-1. **Seçenek A.** `security.SecurityEvents` tablosu: yalnız INSERT; UPDATE/DELETE uygulama kullanıcısına
-   kapalı (DB izni + mimari test). Silme yalnız saklama süresi dolunca imha politikasıyla (OPEN-021 kapsamı).
-2. **Sahip:** platform (BuildingBlocks'ta port `ISecurityEventWriterV1`, Infrastructure'da tek yazar). Modüller
-   yalnız portu çağırır; tabloya doğrudan yazmaz (AGENTS.md "bir modül başka modül tablosuna yazmaz").
-3. **Olay zarfı (şema v1):** `EventId`, `OccurredAtUtc`, `CompanyId` (sunucu çözümlü; şirket bağlamı yoksa null +
-   `ScopeKind=Platform`), `ActorType`/`ActorId`, `EventType` (sürümlü kod: `auth.login`, `authz.denied`,
-   `identity.permission.changed`, `settings.policy.published`, `export.performed`, `retention.purge.requested`,
-   `ai.tool.called`, `ai.request.refused`), `Outcome` (Allowed/Denied/Failed), `ReasonCode`, `PermissionCode`,
-   `PolicyRef` (id+sürüm), `CorrelationId`/`CausationId`, `SourceChannel`, `SchemaVersion`, `RetainUntilUtc`
-   (yazım anında No 134 → 2 yıl, AI olayları No 157 → 1 yıl; değer ayar sağlayıcısından, kod sabiti değil).
-   **Saklanmaz:** ham istek gövdesi, prompt/cevap, token, credential, IBAN/VKN/tutar gibi hassas iş verisi.
-   AI olayında yalnız araç kimliği/sürümü, risk sınıfı, veri sınıfı, sonuç ve red kodu (ADR-008 `AiAuditContextV1`).
-4. **Yazma hatası (öneri — NEEDS-SINAN-1):** güvenlik açısından anlamlı işlemde olay yazılamazsa işlem
-   **reddedilir** (fail-closed): AI çağrısı yapılmaz, yetki değişikliği uygulanmaz. Yetki reddi olayının kendisi
-   yazılamazsa red yine geçerlidir (kullanıcıya red döner) ve telemetry'ye "olay kaybı" alarmı gider.
-5. **Erişim (öneri — NEEDS-SINAN-2):** okuma ayrı izinle (`platform.security-events.read`, katalog kaydı, grant
-   yok); şirket kapsamlı; platform olayları yalnız Admin. Okuma da audit'lenir.
-6. **Telemetry ayrımı:** olay telemetry'ye kopyalanmaz; yalnız ortak `CorrelationId` ile bağlanır.
+1. **Depo — Seçenek A.** Ayrı modül `Modules/SecurityEvents` (şema `security`, kendi DbContext ve migration'ı;
+   Audit modülüyle aynı desen). `security.SecurityEvents` tablosu INSERT-only: mevcut audit deseniyle
+   `INSTEAD OF UPDATE, DELETE` trigger'ı (bkz. `[audit].[TR_AuditEvents_RejectUpdateDelete]`) + satır bütünlük
+   hash'i (`AuditEventIntegrity` deseni). DB izni (DENY) yalnız ek savunmadır. Saklama süresi dolan satırın imhası
+   ayrı, yetkili ve kendisi olay yazan bir yoldur (OPEN-021); trigger yalnız o yolun kontrollü oturumunda aşılır.
+2. **Sahip:** platform; geliştirme AI Merkezi şeridi, review platform sahibi (Kalan Modüller). Port
+   `ISecurityEventWriterV1` BuildingBlocks'ta; tek yazar `SecurityEvents.Infrastructure`. Diğer modüller yalnız
+   portu çağırır, tabloya yazmaz.
+3. **Olay zarfı (şema v1):**
+   - Kimlik: `EventId`, `OccurredAtUtc`, `SchemaVersion`, `IntegrityHash`.
+   - Kapsam: `CompanyId` (sunucu çözümlü; yoksa null), `RequestedCompanyId` (istenen ama yetkisiz şirket; şirket
+     sınırı aşma denemesi için), `ScopeKind` (Company/Platform). `CompanyId=null` satırlar yalnız platform kapsamlı
+     okuma izniyle görülür.
+   - Aktör: `ActorType`, `ActorId` (yalnız iç kullanıcı kimliği). Başarısız girişte denenen kullanıcı adı/e-posta
+     saklanmaz; yalnız anahtarlı hash (kişisel veri, KVKK).
+   - Olay: `EventType` (kapalı, sürümlü kod listesi; aşağıdaki tablo), `Outcome` (Allowed/Denied/Failed),
+     `ReasonCode` (kapalı, sürümlü kod; serbest metin yok), `Severity`, `PermissionCode`, `PolicyRef`
+     (id + sürüm), `CorrelationId`/`CausationId`, `SourceChannel`.
+   - Saklama: `RetainUntilUtc` + `RetentionPolicyRef` (yazım anında ayar sağlayıcısından; kod sabiti yok),
+     `LegalHold` (bayrak; OPEN-018 legal hold kararına bağlı, o gelene kadar her zaman false ve imha yolu
+     legal hold'u aşamaz).
+   - **Saklanmaz:** ham istek gövdesi, prompt/cevap, token, credential, IBAN/VKN/tutar gibi hassas iş verisi.
+     IP ve user-agent: NEEDS-SINAN-5 cevaplanana kadar saklanmaz. AI olayında yalnız araç kimliği/sürümü, risk
+     sınıfı, veri sınıfı, sonuç ve red kodu (ADR-008 `AiAuditContextV1`).
+4. **Olay türü → saklama ve yazma hatası davranışı (öneri — NEEDS-SINAN-1):** her tür tek bir saklama kuralına
+   bağlıdır. AI kökenli her olay (AI içinden gelen yetki reddi dahil) No 157 (1 yıl); diğerleri No 134 (2 yıl).
+
+   | EventType | Saklama | Yazılamazsa | Sıra |
+   |---|---|---|---|
+   | `auth.login.succeeded/failed` | No 134 | **fail-open + alarm** (DB kesintisinde herkes kilitlenmesin) | işlemden sonra |
+   | `authz.denied` | No 134 (AI kökenliyse No 157) | red geçerli kalır + alarm | red anında |
+   | `identity.permission.changed` | No 134 | **fail-closed** | sahip modülün değişikliğiyle **aynı SQL transaction'ında** (aynı DB, farklı şema) |
+   | `settings.policy.published` | No 134 | **fail-closed** | aynı transaction |
+   | `export.performed` | No 134 | **fail-closed** (dosya verilmez) | teslimden önce |
+   | `retention.purge.requested` | No 134 | **fail-closed** | aynı transaction |
+   | `ai.tool.called` | No 157 | **fail-closed** (sağlayıcı/araç çağrılmaz) | çağrıdan önce `Started`, sonra sonuç olayı (`Completed/Failed`, aynı `CorrelationId`) |
+   | `ai.request.refused` | No 157 | red geçerli kalır + alarm | red anında |
+
+   Alarm: telemetry'ye düşük kardinaliteli "güvenlik olayı kaybı" metriği (No 134 Prometheus/Grafana hattı);
+   dış alarm hedefi ve incident bağlantısı ERP-000L alarm matrisiyle gelir (NEEDS-SINAN-6).
+5. **Erişim (öneri — NEEDS-SINAN-2):** okuma ayrı izinle; önerilen ad `platform.security-events.read` (yalnız
+   katalog kaydı, grant yok); şirket kapsamlı; `ScopeKind=Platform` satırları ayrı platform kapsamlı izinle.
+   Rol adı kullanılmaz. Kanalın okunması aynı kanala olay olarak yazılır (business audit'e değil).
+6. **Hacim (NEEDS-SINAN-7 / OPEN-015):** reddedilen istek seli depoyu doldurabilir; aynı aktör + tür + neden için
+   zaman penceresinde toplulaştırma (sayaçlı tek satır) veya hız sınırı önerilir; eşik ölçümle seçilir, kod
+   sabiti olmaz.
+7. **Telemetry ayrımı:** olay telemetry'ye kopyalanmaz; yalnız ortak `CorrelationId` ile bağlanır.
 
 ## Sonuçlar ve riskler
 
@@ -58,9 +93,14 @@ kodlanmaz. Saklama süreleri No 134/157 ile verilmiştir; geri kalanlar bu ADR'�
 
 ## NEEDS-SINAN (Issue #66, 3 Kasım)
 
-1. Depoya yazılamazsa işlem reddedilsin mi (öneri), yoksa işlem sürüp olay sonra mı yazılsın?
-2. Güvenlik olaylarını kim görebilsin (yalnız Sinan/Admin mi, denetçi de mi)?
+1. Depoya yazılamazsa: yukarıdaki tür bazlı tablo (giriş fail-open + alarm; yetki/politika/dışa aktarım/imha/AI
+   çağrısı fail-closed) uygun mu?
+2. Güvenlik olaylarını kim görebilsin (hangi personalar; platform kapsamlı satırlar dahil)?
 3. Depo ERP veritabanında ayrı şema mı (öneri A), ayrı depo mu (B)?
+4. Güvenlik olayı kanalı ERP-000L'nin toplu karar paketinden (OPEN-014/015/017) ayrılıp önden kodlanabilir mi?
+5. IP adresi ve tarayıcı bilgisi (user-agent) güvenlik olayında saklansın mı (kişisel veri, KVKK)?
+6. Güvenlik olayı kaybı alarmı kime/nereye gitsin?
+7. Reddedilen istek seli için toplulaştırma/hız sınırı uygulansın mı?
 
 ## Geri alma/yeniden değerlendirme koşulu
 
@@ -69,6 +109,8 @@ değişir. Migration geri alınabilir: tablo boşken Down bırakır; doluyken Do
 
 ## Test ve kanıt
 
-Unit: zarf doğrulama, yasaklı alan yok, `RetainUntilUtc` ayar sağlayıcısından. Gerçek SQL: INSERT-only, şirket
-filtresi, fail-closed. Mimari: modüller tabloya doğrudan erişemez. AI-3 runtime'ı yalnız bu kanal main'deyken
+Unit: zarf doğrulama, yasaklı alan yok, kapalı kod listeleri, `RetainUntilUtc` ayar sağlayıcısından, tür → saklama
+eşlemesi tekil. Gerçek SQL: UPDATE/DELETE trigger reddi, bütünlük hash'i, şirket filtresi, `CompanyId=null`
+görünürlüğü, aynı transaction'da geri alma (yetki değişikliği geri alınınca olay da yok), fail-closed/fail-open
+davranışı tür bazında. Mimari: modüller tabloya doğrudan erişemez. AI-3 runtime'ı yalnız bu kanal main'deyken
 merge edilir.
