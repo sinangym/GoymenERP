@@ -588,12 +588,12 @@ currency identities and money profiles). Company-scoped; nothing is seeded.
 
 | Part | What |
 |---|---|
-| Tables | `ExchangeRateDays` (one row per company and calendar day, the edit fence), `ExchangeRateRecords` (append-only: official bulletin answer `Published` / `NoBulletin` / `Unverified`, manual correction `Manual`+`Published` with a reason, official half-day answer `FullDay` / `HalfDay` / `Undetermined`), `ExchangeRateRecordRates` (forex selling per ONE unit in TRY, `decimal(28,10)`, never rounded). Records and rate lines are immutable (write fence); the day's current answer of a kind is its highest record version. |
-| Migration | `20261102143743_AddExchangeRateRecords` (dotnet ef). `Down` refuses with `THROW 51201` while any record exists (forward fix); an empty store rolls back freely. |
+| Tables | `ExchangeRateDays` (one row per company and calendar day, the edit fence), `ExchangeRateRecords` (append-only: official bulletin answer `Published` / `NoBulletin` / `Unverified` / `NotFound` (a single 404, not yet final), manual correction `Manual`+`Published` with a reason, official half-day answer `FullDay` / `HalfDay` / `Undetermined`, SAT-D198 manual half-day mark `Manual`+`FullDay`/`HalfDay` with a reason), `ExchangeRateRecordRates` (forex selling per ONE unit in TRY, `decimal(28,10)`, never rounded). Records and rate lines are immutable (write fence); the day's current answer of a kind is its highest record version. |
+| Migration | `20261102143743_AddExchangeRateRecords` (dotnet ef). `Down` refuses with `THROW 51201` while any record exists (forward fix); an empty store rolls back freely. `20261102192125_AmendExchangeRateRecordStates` (dotnet ef) widens the state check (`NotFound`, manual half-day mark); `Down` refuses with `THROW 51202` while such a record exists. |
 | Calculator | `RateDayExchangeRate` (BuildingBlocks/Monetary): SAT-D54/D55 + SAT-D170/D171, fail-closed. |
 | Read port | `ISettingsExchangeRateResolverV1.ResolveAsync(rateDay, source, target)` → `ExchangeRateResolutionV1`: the rate as exact text with its provenance (bulletin day, source `Tcmb`, `Official`/`Manual`, record id and version, half-day rule applied, previous full business day) — what an invoice snapshots (SAT-D172); or `Unavailable` with the code and the day that stopped it. Needs an authenticated actor with company access; computed fresh on each call. |
-| Names | `settings.exchange-rates.read`, `settings.exchange-rates.correct` (SAT-D169/D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), `settings.exchange-rates.import`. Registered, company-wide, not Critical, **granted to no role** (human gate). |
-| Routes | `GET /api/v1/settings/exchange-rates?from&to` (≤ 62 days), `GET …/resolution?rateDay&currencyCode`, `POST …/days/{date}/corrections` (204), `POST …/imports` (200 with a per-day summary; ≤ 31 past days). |
+| Names | `settings.exchange-rates.read`, `settings.exchange-rates.correct` (SAT-D169/D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), `settings.exchange-rates.import` (also the re-verification), `settings.exchange-rates.half-day.mark` (SAT-D198; intended holders Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin). Registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/exchange-rates?from&to` (≤ 62 days), `GET …/resolution?rateDay&currencyCode`, `POST …/days/{date}/corrections` (204), `POST …/days/{date}/half-day-marks` (204), `POST …/days/{date}/reverification` (204), `POST …/imports` (200 with a per-day summary; ≤ 31 past days). |
 
 **Correction (SAT-D169).** One currency on a day TCMB officially published (any other day is 422
 `exchange_rate_day_not_published`: a manual record never makes or unmakes a business day, SAT-D55). Reason (≤ 1000),
@@ -612,24 +612,44 @@ answer is reported as `Conflict` and nothing is written; one audit event per run
   status, timeout, another day's bulletin or unreadable XML → `Unverified`); `today.xml` is not used because it could fill a
   day with another day's bulletin. No secret is needed. While disabled the import answers 503 (on the wire the platform's
   `service_unavailable`; the list read's `bulletinSourceEnabled` says why) and records nothing.
-- A 404 is recorded as `NoBulletin` only when a LATER bulletin exists — received in the same run or already recorded;
-  otherwise the day stays `Unverified` and the next run asks again (a 404 can also mean "not yet published" or an archive
-  gap).
+- A 404 is first recorded as `NotFound` (the resolver treats it as unverified). It becomes `NoBulletin` only when a LATER run
+  sees the 404 again while a later bulletin exists (received in that run or already recorded); one transient 404 never turns
+  a business day into a holiday.
+- **Re-verification** (`POST …/days/{date}/reverification`, under the import name, reason + version + key + audit
+  `settings.exchange-rate.reverification-requested.v1`): reopens a day whose final official answer may be wrong (Published or
+  NoBulletin) by appending an official `Unverified` record. It chooses nothing — no rate, no business-day decision; the
+  resolver stops on the day (fail-closed; a manual rate on it is a manual conflict until then) and the next import asks TCMB
+  again under the rules above. The import name, not the correction name: it only re-opens the source's question, which is
+  what an importer does; deciding a value stays with the correction. Refused with 503 while the source is disabled (nothing
+  could answer the reopened question). The reopening record is an official `Unverified` record carrying the person
+  (`recordedBy`), the reason and the reference "Yeniden doğrulama istendi", with its own audit event; the Kurlar screen (UI
+  slice) should show it as a person's request, not a source answer.
+- **Runbook (review B P3-2):** because a 404 needs a second run, a weekend or holiday becomes `NoBulletin` only on the second
+  import that sees it after the next business day's bulletin exists. When the source is opened, schedule the import to run at
+  least twice after the next business day's 15:30 announcement (e.g. Monday 15:30 for a weekend); until then the days after
+  the weekend resolve to "kur bulunamadı" (fail-closed).
+- A day TCMB ever published never becomes `NoBulletin` automatically (review A P2-2): repeated 404s keep it `NotFound`
+  (fail-closed) until a bulletin is read again.
 - A day whose official answer is already final (`Published` / `NoBulletin`; a definite half-day answer) is never asked again.
 - Arife / half day (SAT-D171): no reviewed automatic official source is wired; every day stays `Undetermined`, so the
-  resolver chooses no rate ("kur belirlenemedi") until a human enables a reviewed source.
+  resolver chooses no rate ("kur belirlenemedi") until a human enables a reviewed source or a person marks the day (SAT-D198).
+- **SAT-D198 manual half-day mark** (`POST …/days/{date}/half-day-marks`, `settings.exchange-rates.half-day.mark`): `FullDay`
+  or `HalfDay` with a reason, version, key and audit `settings.exchange-rate.half-day-marked.v1`, only for today or a past day
+  (422 `exchange_rate_mark_future_day`) and only while the automatic source has no definite answer for the day (409
+  `exchange_rate_half_day_determined` otherwise). A later definite automatic
+  answer wins over the mark. Issued documents keep the rate they snapshotted (SAT-D172).
 
-**Follow-ups (decided in EK31, `SINAN_KARARLARI_2026-11-02_SATIS_EK31.md`; not in this slice):**
-- **SAT-D198** (A P2-1 / B P2-3, the SAT-D171 escape): when the automatic source cannot decide a day, Muhasebe, Muhasebe
-  Müdürü, Genel Müdür or Admin mark it full or half day with a reason (audited); the mark never overrides a definite automatic
-  answer. This slice has no manual half-day mark yet: an undetermined day stays "kur belirlenemedi" (fail-closed) until that
-  command lands.
-- **SAT-D199**: who reads the rates (Satış Uzmanı, Satış Müdürü, Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin, Finans
+**Follow-ups:**
+- **SAT-D199** (EK31): who reads the rates (Satış Uzmanı, Satış Müdürü, Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin, Finans
   Uzmanı, Finans Müdürü) — the persona card for `settings.exchange-rates.read`; the real grant stays a human gate.
-- **SAT-D200**: TL amounts against a foreign-currency credit limit are converted by DIVIDING by the check day's TCMB rate
-  (fail-closed when unresolved; no cross rate between two foreign currencies). The risk calculator here still converts only
-  foreign → TRY by multiplication; the division is a follow-up.
+- **Rounding of risk conversions**: decided by SAT-D206/D207 (EK34) — the intermediate TL value unrounded, each final
+  limit-currency amount rounded half-up to the currency's approved scale, then the rounded amounts summed (the sum is not
+  rounded again); implemented in one place (`SalesRiskCurrencyConversion.RoundForRisk`).
+- The invoice snapshot (API-32) and the Ayarlar > Kurlar screen.
 
-**Consumers.** Sales risk (SAT-D47) converts foreign → TRY amounts with the check day's rate through the port (never frozen);
-a TL amount against a foreign limit stays `exchange_rate_unavailable` (the formula is not decided). The invoice snapshot and
-the dispatch invoice-group rate (SAT-D90/D101) are later slices; Purchasing uses the same rule (ALS-D6).
+**Consumers.**
+- Sales risk (SAT-D47/D200/D203) converts with the check day's rates through the port (never frozen): foreign → TL ×, TL →
+  foreign ÷, foreign → other foreign via TL; a missing rate is "hesaplanamadı" (SAT-D80).
+- The invoice-candidate groups (SAT-D90/D101) take the rate of the shipment day from the port and group by bulletin day and
+  value; an unresolved rate keeps the shipment day apart.
+- Purchasing uses the same rule (ALS-D6).
