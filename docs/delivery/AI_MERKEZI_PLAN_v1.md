@@ -74,12 +74,33 @@ türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılm
 Sıra W05.1 → W05.2 → W06 kararına (2026-10-22 §1.3) uyar: AI-0 → AI-1 → AI-2 → AI-3 → AI-4 ve AI-5 (paralel) →
 AI-6 → AI-7 → AI-8 → AI-9 → AI-10. Her dilim ayrı PR'dır. AI-8, AI-4 süzgeci main'e girmeden merge edilmez.
 
-## 5. Modül şeritlerinden istenen araç ihtiyaçları
+## 5. Modül şeritlerinden gelen araç ihtiyaçları (3 Kasım)
 
-3 Kasım'da Satış, Alış, Finans, Üretim ve Kalan Modüller şeritlerine aynı soru gönderildi: araç adı ve sınıfı,
-kullanıcı ihtiyacı, dayanılan mevcut port ve izin, hassas alanlar, WRITE için önizleme servisi ve idempotency
-anahtarı, ilk üç öncelik. Cevaplar geldikçe bu bölüme tablo olarak işlenir. Olmayan port uydurulmaz;
-backlog'a veya ilgili şeride görev notu olarak yazılır.
+3 Kasım'da beş şeride aynı soru gönderildi; cevaplar aşağıdadır. Adlar şeritlerin önerisidir (AI-6'da
+katalogda sürümlenir). İzin adları mevcut `ErpPermissions`/manifest adlarıdır; yeni ad açılmaz. Tutar/fiyat
+maskesi sahip serviste uygulanır (ör. `sales.orders.price.read` yoksa Withheld; Finans `…amount.read` yoksa
+Redacted); AI bu maskeyi aynen taşır, tutarı yeniden hesaplamaz veya toplamaz.
+
+| Modül | İlk 3 (READ/SIMULATE) | Dayanak | İzin | Hassas |
+|---|---|---|---|---|
+| Satış | `sales.order.status.explain`, `sales.open_orders.daily_summary`, `sales.customer.risk.explain` | `GET /api/v1/sales/drafts/{id}/status`, `…/{id}`, `…/{id}/line-pricing`; `GET /api/v1/sales/reports/open-orders`; `GET …/{id}/risk-check` | `sales.drafts.read`, `sales.reports.read` (+ `sales.orders.price.read`) | fiyat, iskonto, risk limiti/teminat/açık alacak |
+| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` | bugün yok; A2a'dan sonra birim fiyat/tutar/iskonto |
+| Finans | `finance.party-balance.explain`, `finance.party-ledger.explain`, `finance.open-items.overdue-summary` | `IPartyLedgerService.SummarizeAuthorizedAsync`/`ReadAuthorizedAsync` (#912); `IFinanceOpenItemReadServiceV1` | `finance.party-ledger.read` (+ `.amount.read`), `finance.open-items.read` (+ `.amount.read`) | tüm tutarlar, cari kimliği, IBAN, çek no (Finans önerisi: IBAN dış AI'a hiç açılmasın) |
+| Üretim | `manufacturing.plan.explain`, `manufacturing.plan.simulate` (SIMULATE), `manufacturing.order.variance.explain` | `GET plans/{id}`; `POST plans/preview` (calculator, kayıt yok); `GET orders/{id}` | `manufacturing.plans.read`, `manufacturing.plans.write`, `manufacturing.orders.read` | yok (ticari bağlam müşteri adı taşıyabilir: dışarı aktarılmaz) |
+| Kalan Modüller | Liste K0 dalgasından sonra gelecek | Belgeler: `IDocumentContentReadPortV1` istendi (K6, AI-9 için) | `documents.files.read` + sahip kontrolü | şirket belgeleri |
+
+Sonraki adaylar (AI-9/AI-10, önizleme + kullanıcı onayı + Idempotency-Key + `expectedVersion`):
+Satış iptal/zorla kapatma (önizlemenin `impactToken`'ı zorunlu), teklif/sipariş taslağı; Alış talep taslağı,
+talep geri çekme, kalan iptali; Üretim plan taslağı; Finans tahsilat dağıtım taslağı (ayrı simulate ucu yok).
+
+**AI'a hiç açılmayacak komutlar (şeritlerin önerisi, DEC-AI-002):** her türlü onay/ret (sipariş, talep,
+iskonto/taban istisnası, plan), plan iptali, emir açma, girdi/çıktı beyanı, kapanış ve istisna onayı,
+ödeme/tahsilat kaydı.
+
+**Yok (uydurulmaz, backlog):** tedarikçi performansı (Alış API-91), tedarikçi faturası OCR'ı (Alış A5 Mikro
+içe aktarma), termin önerisi, teklif karşılaştırma; satır/miktar revizyonu önizlemesi (Satış); günlük hat
+özeti ve kuyruk önerisi (Üretim U4); banka satırı eşleştirme (Finans F4), aging (API-90…93), kur/nakit/kredi
+(F7); müşteri bazlı risk ucu.
 
 ## 6. NEEDS-SINAN (Issue #66)
 
@@ -87,3 +108,5 @@ backlog'a veya ilgili şeride görev notu olarak yazılır.
 2. Yerel model ve OCR çalışma ortamı, GPU kapasitesi (OPEN-020 yerel PoC).
 3. Ayarlar'daki AI politikasını hazırlama/onaylama/yayınlama ve AI panelini kullanma izinlerinin hangi
    personalara verileceği (rol/yetki kapısı).
+4. AI_VERI_GUVENLIK'te Sinan'ın listesinde olmayan "Gizli" kalemler (marj, cari kimliği, sözleşme) dış AI'a
+   takma adla gidebilir mi, hiç mi gitmez ("sözleşme"nin şirket belgesi sayılıp sayılmayacağı dahil).
