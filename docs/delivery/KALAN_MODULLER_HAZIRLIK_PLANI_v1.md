@@ -242,7 +242,7 @@ kendi tarafını bu şeridin portuna bağlar.
 | B-01 | Üretim girdi tahsisi: ayır / serbest bırak / tüket + okuma; talep türü `manufacturing.plan-input` (CHECK geri alınabilir migration); bir etiket miktarla çok plana; toplam ≤ serbest; müşteri malı yalnız aynı müşterinin fason planına | Üretim U3-a (URT-D3/D21/D22) | Stok | yeni `IInventoryManufacturingAllocationPortV1` (öneri) | K3 | ❌ **engelliyor** |
 | B-02 | Fason sipariş cari kilidi; müşteri malı anahtarı | Satış 2e, Üretim U5-b | Stok (+Üretim) | `ISalesSubcontractOrderBindingReadPortV1` host adaptörü | K3 | ❌ bugün 503 |
 | B-03 | Çıktı soy ağacı kenarı + 2. kalite/hurda etiket sınıfı | Üretim (URT-D8/D14, API-22/27) | Stok | `IInventoryManufacturingRealizationParticipantV1` v2, `IInventoryLabelGenealogyWriterV1` | K3 | 🟡 |
-| B-04 | Faturadan 120/320 taslak fiş (aynı olay, onayla kesinleşir, elle ikinci kayıt yok); fatura iptali/iadesinde ters fiş (Finans F2b, SAT-D96) | Satış S5, Alış A5, Finans | Muhasebe | `sales.invoice.finalized.v1` (SAT-D208) / `purchasing.invoice.finalized.v1` (ALS-D59) tüketicisi; ara dönem §6.1 | K3 | ❌ |
+| B-04 | Faturadan 120/320 taslak fiş (aynı olay, onayla kesinleşir, elle ikinci kayıt yok); fatura iptali/iadesinde ters fiş (Finans F2b, SAT-D96) | Satış S5, Alış A5, Finans | Muhasebe | `sales.invoice.finalized.v1` (SAT-D208) / `purchasing.invoice.finalized.v1` (ALS-D59/D62) tüketicisi; ara dönem §6.1 | K3 | ❌ |
 | B-05 | M-03 Muhasebe › Cari Hesaplar ekranı (API-04/05 okur) + Cari tarafında ekstre rotası | Finans | Muhasebe, Cari (ekran) | `party-ledger`, `party-balance` (#912) | K1/K2 | ❌ |
 | B-06 | Ürün runtime'ını açma: `ProductPilotIssuerBinding` (yerel kullanıcı ↔ dış kimlik) + `CursorSigningKey` | Satış 5a–5c, Alış | Ürün | yapılandırma | K3 (kimlik/yetki + secret; **secret ve grant Sinan'da**, dev/test dahil) | 🟡 |
 | B-07 | Birim çevrimi + varsayılan fiyat birimi; "çevrim yok" açıkça, varsayılan katsayı **asla** | Alış A3/A5 (ALS-D51/D55/D60) | Ürün | `IProductPurchaseUnitConversionV1` | K3 | ❌ |
@@ -260,7 +260,7 @@ kendi tarafını bu şeridin portuna bağlar.
 | B-19 | Tedarikçiye iade çıkışı (blokajlı stoktan da) | Alış MOD-06 | Stok | yeni çıkış portu | K3 | ❌ |
 | B-20 | ST-08 "tedarikçide hazır" + tahsiste "aynı ton bir kez" (ALS-D30) | Alış MOD-14, Satış | Stok | Alış'ın `IPurchaseSupplyReferencePortV1` v2'sini tüketir | K3 | ❌ |
 | B-21 | L-09/L-10 kabulün tek kayıt olması, kantar fişi bağı, iade sevki | Alış MOD-07, B-7 | Lojistik | yeni | K3 | ❌ |
-| B-22 | Fasona giden transfer (mülkiyet şirkette) + Alış fason siparişine bağ | Üretim (URT-D17), Alış A4 | Stok | `IInventoryTransferWriterV1` (bağlanmamış) | K3 | ❌ (#714/#715 kararı önce) |
+| B-22 | Fasona giden transfer (mülkiyet şirkette) + Alış fason siparişine bağ | Üretim (URT-D17), Alış A4 | Stok | `IInventoryTransferWriterV1` (bağlanmamış) | K3 | ❌ kararlar kilitli (K-4); uygulanabilir |
 | B-23 | Miktar bazlı rezervasyon | Satış 3h | Stok | tanımsız | K3 | ❌ NEEDS-SINAN (#66'da) |
 | B-24 | Work: Work runtime'ını açma + outbox dağıtıcısı (ERP-000F) sahipliği | Finans MOD-11, Satış/Alış fatura olayları | Work/platform | `AddWorkModule`, dispatcher | K3 | ❌ bu şeritte (K-3) |
 | B-25 | Work yeni kaynak türleri (gerekirse) | Satış 5j, Alış MOD-10, Üretim MOD-05, Finans MOD-09 | Work | `INativeApprovalReadAdapterV1` | K3 (modüller arası sözleşme) | 🟡 adaptörleri tüketici yazar |
@@ -421,7 +421,7 @@ yolu kanıtı (fail-closed). Port değişikliğinde sözleşme sürüm testi ve 
 | K-1 | Menü düzeni — **KAPANDI:** Sinan onayladı; `SINAN_KARARLARI_2026-11-03_MENU.md` (KLN-D1…D5), #935 | K0-1 |
 | K-2 | Muhasebe fiş taşıması §6.1: hedef SAT-D208 (outbox + inbox/dedup) aynen; ara dönemde Muhasebe kabul portu (SAT-D208'in Finans ara yolunun aynası) — teknik, ASSUMPTION olarak ilerler; Satış/Alış şeritlerine yazılır | K0-5 |
 | K-3 | Outbox dağıtıcısı ve Work — **KAPANDI:** ERP-000F dağıtıcısı ve Work bu şeritte; ALS-D44'teki dağıtıcı görevi Alış'tan buraya taşındı (Sinan, koordinatör aracılığıyla, [#66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598020192)) | B-24 |
-| K-4 | Transfer kararları — **KAPANDI:** Sinan "doğru" dedi ([#66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276)); dosyalar #714/#715 yerine bu şeridin docs PR'ıyla main'e taşındı; içlerindeki `NEEDS-SINAN` maddeleri açık | B-22 |
+| K-4 | Transfer kararları — **KAPANDI:** Sinan "doğru" dedi ([#66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276)); dosyalar #714/#715 yerine bu şeridin docs PR'ıyla (#937) main'e taşındı; 13 Ekim dosyasının altı açık konusu 14 Ekim kilitli karar 1–6 ile karşılanmış durumda | B-22 |
 | K-5 | Miktar bazlı rezervasyon kapsamı (#66'da açık, Satış 3h) | B-23 |
 | K-6 | Teklif politika verisi (kayıp nedenleri, varsayılan geçerlilik — 4g) ve API-98 listeleri (#66'da açık) | B-12 |
 | K-7 | MINSTOK (ALS-D61: "Stok modülü başlayınca ayrıca ele alınır") Stok kapsamına girsin mi? | B-32 |
@@ -433,7 +433,7 @@ Rol/yetki ataması, OPEN-* kapatma, production açma bu planla seçilmez.
 - Plan #934 ve menü kararı #935 merge edildi. Transfer kararları main'e taşındı (K-4).
 - Codex taslakları: kaynak olarak kullanılır; alınan PR "yerine geçti: #…" notuyla kapatılır; kod kör kopyalanmaz
   (Sinan, koordinatör aracılığıyla, 2026-11-03).
-- B-04 ara yolu Satış şeridince kabul edildi: anahtar `sales-invoice:{invoiceId}:{invoiceVersion}`, iptal ayrı anahtar
+- B-04 ara yolu Satış şeridince kabul edildi (Satış oturumu `session_01SPADrzecggx3apH2gfNW7b` mesajı, 2026-11-03 07:37Z): anahtar `sales-invoice:{invoiceId}:{invoiceVersion}`, iptal ayrı anahtar
   (`sales-invoice-cancel:…`), sonuç türü Finans kabul portuyla aynı (Succeeded | ValidationFailed | Denied | Unavailable |
   IdempotencyConflict | VersionConflict).
 - Sıradaki dilim: K0-1 menü düzeni (KLN-D1/D2), ardından K0-2 Stok üretim girdi tahsisi (port biçimi önce Üretim şeridine

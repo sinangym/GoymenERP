@@ -1,6 +1,6 @@
 # Sinan Kararları — Transfer Belge ve Stok Yaşam Döngüsü — 2026-10-14
 
-> **Sinan teyidi 3 Kasım 2026:** içerik "doğru" diye teyit edildi (koordinatör oturumu aracılığıyla aktarım: [Issue #66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276); K-4, Kalan Modüller planı PR #934). Metin Codex PR #715'deki haliyle değiştirilmeden taşındı; `NEEDS-SINAN` maddeleri açık kalır.
+> **Sinan teyidi 3 Kasım 2026:** içerik "doğru" diye teyit edildi (koordinatör oturumu aracılığıyla aktarım: [Issue #66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276); K-4, Kalan Modüller planı PR #934). Metin Codex PR #715'teki haliyle değiştirilmeden taşındı.
 
 ## Kaynak ve kapsam
 

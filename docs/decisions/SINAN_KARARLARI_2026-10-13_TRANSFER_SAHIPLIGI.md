@@ -1,6 +1,6 @@
 # Sinan Kararları — Transfer Sahipliği — 2026-10-13
 
-> **Sinan teyidi 3 Kasım 2026:** içerik "doğru" diye teyit edildi (koordinatör oturumu aracılığıyla aktarım: [Issue #66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276); K-4, Kalan Modüller planı PR #934). Metin Codex PR #714'deki haliyle değiştirilmeden taşındı; `NEEDS-SINAN` maddeleri açık kalır.
+> **Sinan teyidi 3 Kasım 2026:** içerik "doğru" diye teyit edildi (koordinatör oturumu aracılığıyla aktarım: [Issue #66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276); K-4, Kalan Modüller planı PR #934). Metin Codex PR #714'teki haliyle değiştirilmeden taşındı. Aşağıdaki altı `NEEDS-SINAN` konusu (belge türü, yaşam döngüsü, cardinality, e-irsaliye eşlemesi, iptal/ters kayıt, stok etkisinin anı) ertesi gün `SINAN_KARARLARI_2026-10-14_TRANSFER_YASAM_DONGUSU.md` kilitli karar 1–6 ile karşılandı; bu dosyanın gövdesi tarihî kayıt olarak aynen korunur.
 
 ## Kaynak ve kapsam
 
