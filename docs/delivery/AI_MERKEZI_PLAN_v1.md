@@ -1,0 +1,86 @@
+# AI Merkezi — Var/Eksik Tablosu ve Dilim Planı v1
+
+Tarih: 2026-11-03 · Şerit: AI Merkezi (Claude, oturum `session_015Usc2puiKz7TEEqG49ym5e`) · Taban: `main@2318317`
+
+Kaynaklar: `AGENTS.md`, `KARAR_SICILI.md` (DEC-AI-001…009), `SINAN_KARARLARI_2026-11-03_AI.md` (AI-D1…D6),
+`SINAN_KARARLARI_2026-10-21.md` (No 156/157/159), `SINAN_KARARLARI_2026-10-22.md` §1.3 (W05.1 → W05.2 → W06 açık),
+`docs/security/AI_VERI_GUVENLIK.md`, `docs/security/AI_YETKI_SOZLESMESI.md`, master rapor v3 §6 ve §25.1–25.3,
+`docs/features/ERP-000J_AI_GATEWAY_CONTRACT_v1.md`, `docs/ui/UI_DESIGN_SYSTEM.md` §7. Birleşmemiş önceki çalışmalar
+referans olarak okundu: `origin/docs/ai-merkezi-master-rapor-v1` (AI Merkezi master v1.5 + kodlama tasarımı v1.3) ve
+`origin/codex/w051-ai-contract-20261022` (W05.1 sözleşme tipleri + önerilen ADR-008).
+
+## 1. Hedef (Sinan, 3 Kasım)
+
+AI dört iş yapar (AI-D1): **sistemi kullanır** (kullanıcı onayıyla işlem), **iş yükünü azaltır** (taslak, OCR,
+özet), **sistemi tanır** (ekran, kural ve kaydı açıklar), **genel sorulara cevap verir**. İki kaynak vardır
+(AI-D2): **yerel sistem AI'sı** ve **API ile bağlı dış AI**. Yerleşim (master §6.1): sayfa içi mikro AI, her
+sayfada **sağ AI paneli**, **AI Merkezi** (günlük özet, öneri, geri bildirim).
+
+Değişmezler: AI DB'ye veya ham SQL'e erişmez, yalnız modüllerin şemalı araçlarını kullanır · yazma =
+önizleme + kullanıcı onayı + idempotency, AI kendi onay veremez · AI kapalıyken ERP normal çalışır (DEC-AI-001) ·
+her AI çağrısı kaydedilir (DEC-AI-005) · dış AI'a hassas veri yalnız takma adla ve yöneticinin açtığı veri
+türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılması, veri türü izni ve rol/yetki Sinan'da.
+
+## 2. Var / eksik tablosu (main@2318317)
+
+| Alan | Var | Eksik | Dilim |
+|---|---|---|---|
+| Kararlar | DEC-AI-001…009; No 156 (önizleme 15 dk, A fazı salt okunur), No 157 (araç çağrısı/red kaydı 1 yıl), No 159 (soru/cevap maskeli 90 gün); AI-D1…D6 | OPEN-020 (sağlayıcı, sözleşme, KVKK, yerel model/GPU) açık | — / NEEDS-SINAN |
+| ADR-008 (AI gateway) | Codex dalında "Önerildi" taslağı (main'de yok) | Main'de fiziksel ADR-008 | AI-1 |
+| Sözleşme tipleri | Codex W05.1 dalında `BuildingBlocks/Ai/*` (araç tanımı, risk sınıfı, veri sınıfı, kanonik JSON, önizleme hash'i, audit DTO, ~30 test) | Main'de yok; dal 22 Ekim tabanlı, cherry-pick + uzlaştırma gerekir | AI-1 |
+| AI modülü (backend) | — | `Modules/Ai` (Domain/Application/Infrastructure), endpoint'ler, DI, araç kataloğu (default-deny), politika sırası | AI-1 |
+| Model sağlayıcı | — | Sağlayıcı portu; sahte (fake) sağlayıcı; yerel model adaptörü; dış AI HTTP adaptörü (kapalı) | AI-1 / AI-6 |
+| Veri sınıfı + maskeleme | Audit'te maskeleme alanları kararı (No 135: VKN/TCKN, IBAN, telefon, e-posta, adres) | Alan bazında veri sınıfı etiketi, takma ad (pseudonym) üretici ve geri çözücü, dış AI süzgeci | AI-2 |
+| AI ayarları | Ayarlar modülünde tipli politika sağlayıcıları; ADR-SET-002 politika kaydı **taslak** (runtime yok) | `ai.externalProvider.enabled` (varsayılan kapalı), izinli veri türleri listesi (varsayılan boş) | AI-2 |
+| Denetim / AI çağrı kaydı | `AuditEventDraft` içinde `AiInvolvement` (None/Assisted/Proposed/Executed) ve `AiContextJson`; `SourceChannels.AiAssisted`; `AuditActorTypes.Ai` | AI çağrı kaydı (kullanıcı, şirket, sayfa, model/prompt/araç sürümü, veri kapsamı, sonuç, red) — genel güvenlik olayı deposu yok; AI modülü kendi append-only çağrı kaydını tutar (No 157: 1 yıl) | AI-1 |
+| Shell capability | `GET /api/v1/shell/capabilities`, `IShellCapabilityProvider`, frontend `CapabilityRoute` | AI capability bildirimi (`ai.panel.use`, `ai.center.view` — katalog kaydı, grant yok) | AI-1 / AI-3 |
+| Sağ AI paneli (frontend) | Shell 240 px sol menü + içerik; tasarım sisteminde 320–380 px sağ panel tarifi (UI_DESIGN_SYSTEM §7) | `AppShell` sağ panel yuvası, `AiContextPanel`, kapalı/yetkisiz/hata/yükleniyor durumları, şirket değişince oturum sıfırlama | AI-3 |
+| "Sistemi tanır" bilgisi | Master rapor, karar sicili, ekran kataloğu, durum makineleri (docs/) | Ekran/alan/kural açıklama bilgisinin sürümlü ve yetki süzgeçli okunması (`platform.help.explain` aracı) | AI-4 |
+| Modül araçları (READ) | Modüllerin public query portları; global arama `IGlobalSearchSourceV1` | Modül başına READ adaptörleri — şeritlerden ihtiyaç listesi istendi (§5) | AI-4 |
+| AI Merkezi (AI-01/02/03) | Ekran kataloğunda `DECISION_ONLY_REFERENCE_MISSING` | Günlük özet, öneri kartları (master §6.3 alanları), geri bildirim (No 159), araç/politika görünümü | AI-5 |
+| Belge okuma (OCR) | Documents modülü: append-only dosya kasası, PDF/PNG/JPEG, tarayıcı, yetkili içerik okuma | OCR/çıkarım portu, taslak ekranı (kaynak sayfa/alan, güven, düzeltme — DEC-AI-008) | AI-7 |
+| DRAFT araçları | — | Belgeden/metinden form taslağı (kayıt yazmaz) | AI-7 |
+| WRITE araçları | Modüllerde idempotent komutlar, `CommandExecution` | Önizleme → onay → sahip modül komutu; No 156: B fazında ikinci onay + adım yükseltme (kapalı) | AI-8 |
+| Test | Modül unit testleri, SQL kabul testleri, vitest, Playwright | `GoymenERP.Ai.UnitTests`, AI SQL kabul testi, panel vitest'leri, red-team/golden seti | her dilim |
+
+## 3. Uyarlanan önceki tasarım kararları
+
+- W05.1 sözleşme tipleri tek kanon olur; master v1.5'teki eksik alanlar (kapsam, dış çıkış, kill switch,
+  bayt/kardinalite sınırı) ona eklenir.
+- Master v1.5'teki "Çok gizli asla dışarı gitmez / maskeleme sınıf düşürmez" kuralı AI-D4 ile güncellenir:
+  ham hassas değer hiç gitmez; takma ad yalnız izinli veri türünde gider; Sinan'ın listesinde olmayan
+  "Çok gizli" kalemler hiç gitmez.
+- Önizleme geçerliliği 24 saat değil **15 dakika** (No 156). Saklama No 157/159'a göre.
+- Model tutar yazmaz: sayısal değerler araç sonucundan sunucuda yerleştirilir (master v1.5 `measure` ilkesi,
+  DEC-AI-007).
+- Ağır iş akışı/kurtarma/workflow katmanı ertelenir; önce READ + sahte sağlayıcı + panel kurulur.
+
+## 4. Dilimler
+
+| Dilim | K | Kapsam | Kabul |
+|---|---|---|---|
+| AI-0 | docs | Bu plan + `SINAN_KARARLARI_2026-11-03_AI.md` | İki review, validator'lar |
+| AI-1 | K3 | ADR-008 (main'e); W05.1 tipleri; `Modules/Ai` iskeleti; default-deny araç kataloğu; sahte sağlayıcı; append-only AI çağrı kaydı + migration; `GET /api/v1/ai/capabilities`, `POST /api/v1/ai/ask` (yalnız READ); AI capability katalog kaydı | Kapalıyken 503/disabled ve ERP etkisiz; tanımsız araç reddi; CompanyContext yoksa sağlayıcı çağrılmaz; her çağrı + red kayıtlı; gerçek SQL testi |
+| AI-2 | K3 | Veri sınıfı etiketleri, takma ad üretici/çözücü, dış AI süzgeci; Ayarlar'da AI politikası (dış AI kapalı, izinli tür boş) | Ham hassas değer dış adaptör girdisinde hiç görünmez; izin yoksa tür hiç gitmez; "Çok gizli" kalemler her durumda reddedilir |
+| AI-3 | K2 | Frontend: sağ AI paneli (her sayfa), capability kapısı, durumlar, şirket değişimi sıfırlama, güvenli metin gösterimi | vitest + a11y; capability yokken panel görünür ama kapalı, sahte cevap yok |
+| AI-4 | K2/K3 | READ araçları: ekran/alan/kural açıklama, global arama sarmalayıcı, şeritlerden gelen ilk 3'lük listeler | Yetkisiz kayıt cevaba/sayıya/kaynağa sızmaz; kaynak bağlantısı açılırken yeniden yetki |
+| AI-5 | K2 | AI Merkezi AI-01 (günlük özet, öneri kartı), AI-02 geri bildirim (No 159), AI-03 araç/politika görünümü | Her özet cümlesinin kaynak kaydı; geri bildirim maskeli |
+| AI-6 | K3 | Dış AI HTTP adaptörü (kapalı, anahtar yalnız ortam değişkeni), yerel model adaptörü portu | Ayar kapalıyken dışarı sıfır istek; sağlayıcı şartı (AI-D5) kanıtsızsa açılamaz |
+| AI-7 | K3 | Belge okuma (OCR) portu + DRAFT araçları + taslak ekranı | OCR kesin kayıt yazmaz; kaynak sayfa/alan, güven, kullanıcı düzeltmesi bağlı |
+| AI-8 | K3 | WRITE: önizleme (15 dk) → açık onay → sahip modül komutu (idempotent); ikinci onay + adım yükseltme; varsayılan kapalı | AI kendi onaylayamaz; payload/sürüm değişince eski onay reddedilir; aynı anahtar tek etki |
+
+Sıra AI-0 → AI-1 → AI-3 (AI-2 ile paralel) → AI-4 → AI-5 → AI-6 → AI-7 → AI-8. Her dilim ayrı PR'dır.
+
+## 5. Modül şeritlerinden istenen araç ihtiyaçları
+
+3 Kasım'da Satış, Alış, Finans, Üretim ve Kalan Modüller şeritlerine aynı soru gönderildi: araç adı ve sınıfı,
+kullanıcı ihtiyacı, dayanılan mevcut port ve izin, hassas alanlar, WRITE için önizleme servisi ve idempotency
+anahtarı, ilk üç öncelik. Cevaplar geldikçe bu bölüme tablo olarak işlenir. Olmayan port uydurulmaz;
+backlog'a veya ilgili şeride görev notu olarak yazılır.
+
+## 6. NEEDS-SINAN (Issue #66)
+
+1. Dış AI sağlayıcısı ve hesabı — veri saklamama ve eğitimde kullanmama kanıtıyla (AI-D5, OPEN-020).
+2. Yerel model ve OCR çalışma ortamı, GPU kapasitesi (OPEN-020 yerel PoC).
+3. Ayarlar'daki AI politikasını hazırlama/onaylama/yayınlama ve AI panelini kullanma izinlerinin hangi
+   personalara verileceği (rol/yetki kapısı).
