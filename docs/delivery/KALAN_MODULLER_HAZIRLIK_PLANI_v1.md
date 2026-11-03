@@ -51,21 +51,26 @@ Kısaltmalar: **CL** Claude, **GP** ChatGPT (spec/kabul/golden), **SN** Sinan (k
 
 ## 1. Menü (ekran düzeyi)
 
-Kullanıcı talimatı (2026-11-03, bu oturum):
+Karar: **KLN-D1…D4** (`docs/decisions/SINAN_KARARLARI_2026-11-03_MENU.md`, #935). On üç başlık: Ana Sayfa · Çalışma
+Merkezi · Satış · Satın Alma (işletme alımları dahil) · Üretim · Stok & Lojistik · Ürün & Hizmet · Cari · Finans & Hazine ·
+Muhasebe · Belgeler · Raporlar · Ayarlar. AI Merkezi ayrı karar bekliyor. Bu şeridin menüleri:
 
 | Menü | İçerik | Kod modülleri |
 |---|---|---|
-| **Ayarlar** | Organizasyon · Kullanıcı ve Yetki · Ana Veriler · Denetim kaydı (dört alt başlık) | Organization, Identity, Settings, Audit |
+| **Ayarlar** | **Ana Veriler:** Organizasyon, birim, kur, parametre, kalite · **Sistem Yönetimi:** kullanıcı/rol/yetki, onay kuralı, entegrasyon, denetim kaydı (KLN-D2) | Organization, Settings, Identity, Audit |
 | **Stok & Lojistik** | Stok pozisyonu, hareketler, etiket, sayım, transfer · yükleme, kantar, sevkiyat, irsaliye, iade, mal kabul | Inventory, Logistics |
 | **Cari** | Cari kartlar, cari hesap takibi (ekstre) | Counterparty (+ Finans okuma) |
 | **Muhasebe** | Kontrol, fişler, dönemler, mizan, hesap planı, **Cari Hesaplar** (ekstre) | Accounting (+ Finans okuma) |
+| **Çalışma Merkezi** | Görevler, onaylar | Work |
+| **Belgeler** | Merkezi arşiv; ayrıca her kayıtta sekme (KLN-D4) | Documents |
+| **Raporlar** | Kurumsal rapor merkezi | (modüllerin rapor uçları) |
 
 - **Cari ekstresi iki yerden açılır (FNS-D14):** Cari > cari kart/cari hesap takibi ve Muhasebe > Cari Hesaplar. İkisi de
   aynı Finans kaynağını (`GET /api/v1/finance/party-ledger` API-05, `party-balance` API-04 #912) okur; yeni master
   açılmaz, Cari kartında hareket tutulmaz.
 - **Ana rapor §4'ten sapma:** §4'te "Ana Veriler" (16) ve "Sistem Yönetimi" (17) ayrı menüdür; "Stok & Tahsis" (8) ve
-  "Lojistik & Kantar" (10) ayrıdır. Kullanıcı talimatı daha yenidir ve geçerlidir. Koordinatör "karar dosyasına
-  geçmeden Sinan'dan teyit al" dedi → kayıt K-1 sorusu olarak §11'de.
+  "Lojistik & Kantar" (10) ayrıdır; "İşletme Alımları" (6) ayrıdır. KLN-D1 daha yenidir ve geçerlidir (fark tablosu karar
+  dosyasında).
 - Ekranların yetki kapıları menü düzeninden etkilenmez; boş menü gösterilmez (DEC-GOV-007). Bugünkü kodda grup başlığının kendi yetkisi yoktur (`navigation.ts`).
 
 Bugünkü menü (`src/frontend/goymen-erp-web/src/shell/navigation.ts` `NAV_GROUPS`): Ayarlar grubu **var**
@@ -237,7 +242,7 @@ kendi tarafını bu şeridin portuna bağlar.
 | B-01 | Üretim girdi tahsisi: ayır / serbest bırak / tüket + okuma; talep türü `manufacturing.plan-input` (CHECK geri alınabilir migration); bir etiket miktarla çok plana; toplam ≤ serbest; müşteri malı yalnız aynı müşterinin fason planına | Üretim U3-a (URT-D3/D21/D22) | Stok | yeni `IInventoryManufacturingAllocationPortV1` (öneri) | K3 | ❌ **engelliyor** |
 | B-02 | Fason sipariş cari kilidi; müşteri malı anahtarı | Satış 2e, Üretim U5-b | Stok (+Üretim) | `ISalesSubcontractOrderBindingReadPortV1` host adaptörü | K3 | ❌ bugün 503 |
 | B-03 | Çıktı soy ağacı kenarı + 2. kalite/hurda etiket sınıfı | Üretim (URT-D8/D14, API-22/27) | Stok | `IInventoryManufacturingRealizationParticipantV1` v2, `IInventoryLabelGenealogyWriterV1` | K3 | 🟡 |
-| B-04 | Faturadan 120/320 taslak fiş (aynı olay, onayla kesinleşir, elle ikinci kayıt yok); fatura iptali/iadesinde ters fiş (Finans F2b, SAT-D96) | Satış S5, Alış A5, Finans | Muhasebe | `sales/purchasing.invoice.finalized.v1` tüketicisi; ara dönem §6.1 | K3 | ❌ |
+| B-04 | Faturadan 120/320 taslak fiş (aynı olay, onayla kesinleşir, elle ikinci kayıt yok); fatura iptali/iadesinde ters fiş (Finans F2b, SAT-D96) | Satış S5, Alış A5, Finans | Muhasebe | `sales.invoice.finalized.v1` (SAT-D208) / `purchasing.invoice.finalized.v1` (ALS-D59) tüketicisi; ara dönem §6.1 | K3 | ❌ |
 | B-05 | M-03 Muhasebe › Cari Hesaplar ekranı (API-04/05 okur) + Cari tarafında ekstre rotası | Finans | Muhasebe, Cari (ekran) | `party-ledger`, `party-balance` (#912) | K1/K2 | ❌ |
 | B-06 | Ürün runtime'ını açma: `ProductPilotIssuerBinding` (yerel kullanıcı ↔ dış kimlik) + `CursorSigningKey` | Satış 5a–5c, Alış | Ürün | yapılandırma | K3 (kimlik/yetki + secret; **secret ve grant Sinan'da**, dev/test dahil) | 🟡 |
 | B-07 | Birim çevrimi + varsayılan fiyat birimi; "çevrim yok" açıkça, varsayılan katsayı **asla** | Alış A3/A5 (ALS-D51/D55/D60) | Ürün | `IProductPurchaseUnitConversionV1` | K3 | ❌ |
@@ -257,15 +262,15 @@ kendi tarafını bu şeridin portuna bağlar.
 | B-21 | L-09/L-10 kabulün tek kayıt olması, kantar fişi bağı, iade sevki | Alış MOD-07, B-7 | Lojistik | yeni | K3 | ❌ |
 | B-22 | Fasona giden transfer (mülkiyet şirkette) + Alış fason siparişine bağ | Üretim (URT-D17), Alış A4 | Stok | `IInventoryTransferWriterV1` (bağlanmamış) | K3 | ❌ (#714/#715 kararı önce) |
 | B-23 | Miktar bazlı rezervasyon | Satış 3h | Stok | tanımsız | K3 | ❌ NEEDS-SINAN (#66'da) |
-| B-24 | Work: Work runtime'ını açma + outbox dağıtıcısı (ERP-000F) sahipliği | Finans MOD-11, Satış/Alış fatura olayları | Work/platform | `AddWorkModule`, dispatcher | K3 | ❌ sahibi yok (§11 K-3) |
+| B-24 | Work: Work runtime'ını açma + outbox dağıtıcısı (ERP-000F) sahipliği | Finans MOD-11, Satış/Alış fatura olayları | Work/platform | `AddWorkModule`, dispatcher | K3 | ❌ bu şeritte (K-3) |
 | B-25 | Work yeni kaynak türleri (gerekirse) | Satış 5j, Alış MOD-10, Üretim MOD-05, Finans MOD-09 | Work | `INativeApprovalReadAdapterV1` | K3 (modüller arası sözleşme) | 🟡 adaptörleri tüketici yazar |
 | B-26 | Belgeler sahip türleri: üretim emri/plan, finans belgeleri; XLSX/MT940 | Üretim MOD-10, Finans MOD-10 | Belgeler | `IDocumentOwnerLinkPortV1` | K3 (dosya türü güvenliği) | ❌ |
 | B-28 | Finans fiş kaynakları (banka masrafı, kur farkı, kasa/virman, kredi faizi, masraf ödemesi) + F2-OB olay tüketicisi | Finans MOD-07 | Muhasebe | `…JournalSourceProviderV1` / Finans outbox | K3 | ❌ |
 | B-29 | Vergi masteri ve para profili okuması için Ayarlar portu (bugün yalnız mevcut sağlayıcı) | Alış MOD-05 | Ayarlar | `ISettingsPrerequisiteProvider` genişlemesi | K3 | ❌ ertelendi |
 | B-30 | Tedarikçiye özel alış fiyatı/fiyat listesi, hizmet ürünleri | Alış MOD-09 | Ürün | N-05 | K3 (fiyat) | ❌ ertelendi |
 | B-31 | Cari bağlarının yeniden incelenmesi (5d/5e/5f/5h) ve Ürün bağlarının (5a–5c) yeniden incelenmesi — "ertelendi: <modül> başlayınca" | Satış | Cari, Ürün | mevcut portlar | K2 | 🟡 SQL testleri Satış'ta |
-| B-32 | Minimum stoktan satın alma talebi önerisi (MINSTOK) — "Stok başlayınca ayrıca ele alınır" | Alış (ALS-D61) | Stok | — | — | ⛔ kapsam kararı Sinan'da (§11 K-7) |
 | B-27 | Maliyet izi (süre, hat, fire, lot ham verisi) | Üretim, Finans | Muhasebe | — | — | ⛔ OPEN-008 (yöntem açık karar; yapılmaz) |
+| B-32 | Minimum stoktan satın alma talebi önerisi (MINSTOK) — "Stok başlayınca ayrıca ele alınır" | Alış (ALS-D61) | Stok | — | — | ⛔ kapsam kararı Sinan'da (§11 K-7) |
 
 Değiştirilmeyecek çalışan bağlar (dokunmadan önce sahibine haber): mal kabul → stok ortak işlemi
 (`IPurchaseGoodsReceiptTransactionV1` / `IInventoryGoodsReceiptParticipantV1`), `IDocumentOwnerLinkPortV1`
@@ -319,7 +324,7 @@ Değer seçilmez; değerler Sinan kararından gelir, gelmeyen anahtar "tanımsı
 | UI | Ekran | Menü | Dayandığı backend |
 |---|---|---|---|
 | UI-K01 | Menü yeniden düzeni (Ayarlar alt başlıkları, Stok & Lojistik grubu, Muhasebe › Cari Hesaplar, Mizan) | — | — |
-| UI-K02 | Denetim kaydı listesi + filtre (correlation, varlık) | Ayarlar › Denetim | ✅ hazır |
+| UI-K02 | Denetim kaydı listesi + filtre (correlation, varlık) | Ayarlar › Sistem Yönetimi | ✅ hazır |
 | UI-K03 | Kurlar | Ayarlar › Ana Veriler | ✅ hazır |
 | UI-K04 | Muhasebe › Cari Hesaplar + Cari › Cari hesap takibi (aynı bileşen, iki giriş) | Muhasebe, Cari | Finans API-04/05 |
 | UI-K05 | KDV/tevkifat listeleri, satış ayarları, Finans anahtarları, boya/fire listeleri | Ayarlar › Ana Veriler | B-10…B-14 |
@@ -413,20 +418,23 @@ yolu kanıtı (fail-closed). Port değişikliğinde sözleşme sürüm testi ve 
 
 | ID | Soru | Etkisi |
 |---|---|---|
-| K-1 | Menü düzeni (§1) karar dosyasına kayıt (`SINAN_KARARLARI_2026-11-03_KALAN_MODULLER.md`): Ayarlar = Organizasyon + Kullanıcı ve Yetki + Ana Veriler + Denetim; Stok & Lojistik tek menü; Cari ve Muhasebe ayrı, ekstre iki yerden. Ana rapor §4'ten sapma onayı | K0-1 geri alınabilir yapılır |
+| K-1 | Menü düzeni — **KAPANDI:** Sinan onayladı; `SINAN_KARARLARI_2026-11-03_MENU.md` (KLN-D1…D5), #935 | K0-1 |
 | K-2 | Muhasebe fiş taşıması §6.1: hedef SAT-D208 (outbox + inbox/dedup) aynen; ara dönemde Muhasebe kabul portu (SAT-D208'in Finans ara yolunun aynası) — teknik, ASSUMPTION olarak ilerler; Satış/Alış şeritlerine yazılır | K0-5 |
-| K-3 | Outbox dağıtıcısı (ERP-000F) ve Work runtime'ı kimde? Öneri: bu şerit (Work modülü burada) | B-24 |
-| K-4 | Transfer kararları #714/#715 (sahiplik sınırı, yaşam döngüsü) — merge/teyit | B-22 |
+| K-3 | Outbox dağıtıcısı ve Work — **KAPANDI:** ERP-000F dağıtıcısı ve Work bu şeritte; ALS-D44'teki dağıtıcı görevi Alış'tan buraya taşındı (Sinan, koordinatör aracılığıyla, [#66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598020192)) | B-24 |
+| K-4 | Transfer kararları — **KAPANDI:** Sinan "doğru" dedi ([#66](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6598058276)); dosyalar #714/#715 yerine bu şeridin docs PR'ıyla main'e taşındı; içlerindeki `NEEDS-SINAN` maddeleri açık | B-22 |
 | K-5 | Miktar bazlı rezervasyon kapsamı (#66'da açık, Satış 3h) | B-23 |
 | K-6 | Teklif politika verisi (kayıp nedenleri, varsayılan geçerlilik — 4g) ve API-98 listeleri (#66'da açık) | B-12 |
-
 | K-7 | MINSTOK (ALS-D61: "Stok modülü başlayınca ayrıca ele alınır") Stok kapsamına girsin mi? | B-32 |
-
-K-1 PR #935 ile kayda geçiyor (KLN-D1…D5; Sinan teyidi koordinatör aracılığıyla, 2026-11-03).
 
 Rol/yetki ataması, OPEN-* kapatma, production açma bu planla seçilmez.
 
 ## 12. Durum (2026-11-03)
 
-- Analiz tamam (bu belge). Kod değişikliği yok.
-- Sıradaki dilim: K0-1 menü düzeni, ardından K0-2 Stok üretim girdi tahsisi (port biçimi önce Üretim şeridine yazılır).
+- Plan #934 ve menü kararı #935 merge edildi. Transfer kararları main'e taşındı (K-4).
+- Codex taslakları: kaynak olarak kullanılır; alınan PR "yerine geçti: #…" notuyla kapatılır; kod kör kopyalanmaz
+  (Sinan, koordinatör aracılığıyla, 2026-11-03).
+- B-04 ara yolu Satış şeridince kabul edildi: anahtar `sales-invoice:{invoiceId}:{invoiceVersion}`, iptal ayrı anahtar
+  (`sales-invoice-cancel:…`), sonuç türü Finans kabul portuyla aynı (Succeeded | ValidationFailed | Denied | Unavailable |
+  IdempotencyConflict | VersionConflict).
+- Sıradaki dilim: K0-1 menü düzeni (KLN-D1/D2), ardından K0-2 Stok üretim girdi tahsisi (port biçimi önce Üretim şeridine
+  yazılır).
