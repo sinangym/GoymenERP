@@ -75,6 +75,24 @@ public static class ManufacturingEndpoints
         .. ManufacturingProblemCodes.Unprocessable,
         InventoryParentRollCodesV1.ContextRequired,
         InventoryParentRollCodesV1.NoPhysicalPosition,
+        // Üretim U2-a: the slitting spec's net usable width is wider than a planned parent coil.
+        ManufacturingRuleCodes.PlanNetWidthExceedsParent,
+    ];
+
+    // Üretim U2-a (URT-D2, API-10/11): the rejection's and the cancellation's own 422 set — the write set plus the two
+    // lifecycle rules. Declared on those endpoints only, so no existing endpoint's contract moves.
+    private static readonly string[] PlanDecisionUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanCancelled,
+        ManufacturingRuleCodes.PlanHasOrder,
+    ];
+
+    // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
+    private static readonly string[] CreateOrderUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanOrderExists,
     ];
 
     // MFG-PLAN-EDIT: the revision's own 422 set — the plan save's, plus the three revision rules. Declared on the
@@ -206,7 +224,44 @@ public static class ManufacturingEndpoints
             .WithName("ApproveManufacturingPlanV1")
             .Accepts<ApprovePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithApprovePlanProblems();
+
+        // Üretim U2-a (URT-D2, API-10): instead of approving a Draft, its approver rejects it with a reason, under the
+        // approval's own grant. The plan stays a Draft one version on, with the rejection recorded; ADR-011 as the approval.
+        group.MapPost("/plans/{planId:guid}/rejection", async (
+                Guid planId,
+                RejectPlanRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.RejectPlanAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansApprove, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("RejectManufacturingPlanV1")
+            .Accepts<RejectPlanRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .WithPlanDecisionProblems();
+
+        // Üretim U2-a (API-11): the cancellation of a Draft, or of an approved plan that opened no order, with a reason,
+        // under its own grant (`manufacturing.plans.cancel`, company-wide, granted to no role). The plan is kept as
+        // Cancelled; a plan with an order is refused (422 manufacturing_plan_has_order). ADR-011 as the approval.
+        group.MapPost("/plans/{planId:guid}/cancellation", async (
+                Guid planId,
+                CancelPlanRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CancelPlanAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansCancel, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansCancel)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CancelManufacturingPlanV1")
+            .Accepts<CancelPlanRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .WithPlanDecisionProblems();
 
         // MFG-PLAN-EDIT: the Draft edit of a plan, under the plan save's own grant (`manufacturing.plans.write`,
         // company-wide): the new content as a whole with the save's checks, a reason, and the version the caller read.
@@ -311,7 +366,7 @@ public static class ManufacturingEndpoints
             .WithName("CreateManufacturingOrderV1")
             .Accepts<CreateOrderRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status201Created)
-            .WithWriteProblems(notFound: true);
+            .WithCreateOrderProblems();
 
         group.MapPost("/orders/{orderId:guid}/input-issues", async (
                 Guid orderId,
@@ -486,6 +541,41 @@ public static class ManufacturingEndpoints
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
+
+    // Üretim U2-a: the approval reads each parent roll's current label for the slitting gate, so Inventory's label version /
+    // read conflict (409) joins its write set; its 422 set is the write set (which already names the label refusal).
+    private static RouteHandlerBuilder WithApprovePlanProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(SavePlanConflictCodes)
+            .ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
+    private static RouteHandlerBuilder WithPlanDecisionProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity(PlanDecisionUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
+    private static RouteHandlerBuilder WithCreateOrderProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity(CreateOrderUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
     private static RouteHandlerBuilder WithSavePlanProblems(this RouteHandlerBuilder builder) =>
         builder

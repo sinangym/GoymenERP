@@ -73,6 +73,25 @@ public sealed record PlanCalculationParameters(
         return rolls.Count == 0 ? Unknown : new PlanCalculationParameters(rolls);
     }
 
+    /// <summary>
+    /// Üretim U2-a (URT-D9): the same parameters with a plan-wide value the plan itself entered (e.g. the line speed). The
+    /// plan's value wins over the profile's; null changes nothing.
+    /// </summary>
+    public PlanCalculationParameters WithPlanValue(string name, decimal? value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (value is not { } number)
+        {
+            return this;
+        }
+
+        var plan = new Dictionary<string, decimal>(Plan ?? new Dictionary<string, decimal>(), StringComparer.Ordinal)
+        {
+            [name] = number,
+        };
+        return this with { Plan = plan };
+    }
+
     internal decimal? Value(Guid? roll, string name)
     {
         if (roll is { } id && Rolls is { } rolls && rolls.TryGetValue(id, out var own) && own.TryGetValue(name, out var value))
@@ -172,7 +191,10 @@ public static class ProductionPlanCalculatorV1
     public static PlanCalculation Calculate(ProductionPlan plan, PlanCalculationParameters? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, plan.CutToLengthSpec, parameters);
+        // U2-a: the plan-entered line speed (Slitting, Tube / Profile) wins over the profile for this plan.
+        return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, plan.CutToLengthSpec,
+            (parameters ?? PlanCalculationParameters.Unknown).WithPlanValue(ProductionPlan.LineSpeedParameter,
+                plan.LineSpeedMetresPerMinute));
     }
 
     public static PlanCalculation Calculate(ManufacturingProcess process, IReadOnlyList<PlannedInput> inputs,
@@ -236,7 +258,8 @@ public static class ProductionPlanCalculatorV1
                 return
                 [
                     Answer("SLT-001…007", SlittingEngineV1.FormulaVersion,
-                        SlittingEngineV1.Plan(new SlittingPlanInputV1(kg, P("netUsableWidthMm"), lines)),
+                        SlittingEngineV1.Plan(new SlittingPlanInputV1(kg, spec?.NetUsableWidthMm ?? P("netUsableWidthMm"),
+                            lines)),
                         result =>
                         [
                             new("kgPerMillimetreWidth", result.KgPerMillimetreWidth),

@@ -164,6 +164,11 @@ export function plan(overrides: Record<string, unknown> = {}) {
     cutToLengthSpec: null,
     // U1-b: the profile captured at approval; a draft never carries one.
     parameterSnapshot: null,
+    // U2-a: the plan-entered line speed, the one order, the recorded rejections and the cancellation.
+    lineSpeedMetresPerMinute: null,
+    orderId: null,
+    rejections: [],
+    cancellation: null,
     ...overrides,
   }
 }
@@ -179,8 +184,8 @@ export function parameterSnapshot(overrides: Record<string, unknown> = {}) {
     effectiveThrough: null,
     selectedForDate: '2026-11-02',
     values: [
-      { key: 'densityKgPerCubicMetre', unit: 'kg/m3', number: '7850', choice: null },
-      { key: 'edgeTrimMm', unit: 'mm', number: '0', choice: null },
+      { key: 'densityKgPerCubicMetre', unit: 'kg/m3', number: '7850', choice: null, source: null },
+      { key: 'edgeTrimMm', unit: 'mm', number: '0', choice: null, source: null },
     ],
     ...overrides,
   }
@@ -232,6 +237,8 @@ export function planRevision(overrides: Record<string, unknown> = {}) {
     revisedBy: null,
     recordedAtUtc: '2026-09-27T08:00:00Z',
     cutToLengthSpec: null,
+    // U2-a: the plan-entered line speed this revision set; the server always emits the member.
+    lineSpeedMetresPerMinute: null,
     ...overrides,
   }
 }
@@ -324,6 +331,8 @@ export function planSummary(overrides: Record<string, unknown> = {}) {
     target: null,
     createdAtUtc: '2026-09-18T09:00:00.000Z',
     approvedAtUtc: null,
+    // U2-a: set exactly on a Cancelled plan.
+    cancelledAtUtc: null,
     ...overrides,
   }
 }

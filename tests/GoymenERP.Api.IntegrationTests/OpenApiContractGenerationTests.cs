@@ -421,6 +421,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/plans/{planId}/approval", "ApproveManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/ApprovePlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        // Üretim U2-a (URT-D2, API-10/11): the rejection under the approval's grant; the cancellation under its own grant.
+        new("post", "/api/v1/manufacturing/plans/{planId}/rejection", "RejectManufacturingPlanV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/RejectPlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/manufacturing/plans/{planId}/cancellation", "CancelManufacturingPlanV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/CancelPlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
         // MFG-PLAN-EDIT: a Draft plan is revised under the plan write (the save's rules); its history under the plan read.
         new("post", "/api/v1/manufacturing/plans/{planId}/revision", "ReviseManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
@@ -1309,6 +1316,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["PreviewManufacturingPlanV1"] = "ref:PlanPreviewViewV1",
             ["GetManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["RejectManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["CancelManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ReviseManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ListManufacturingPlanRevisionsV1"] = "ref:PlanRevisionListViewV1",
             ["CreateManufacturingOrderV1"] = "ref:OrderViewV1",
@@ -1626,6 +1635,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
         "ReviseManufacturingPlanV1",
+        "RejectManufacturingPlanV1",
+        "CancelManufacturingPlanV1",
         "ListManufacturingPlanRevisionsV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
@@ -1887,6 +1898,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
         "ReviseManufacturingPlanV1",
+        "RejectManufacturingPlanV1",
+        "CancelManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -2084,6 +2097,8 @@ public sealed partial class OpenApiContractGenerationTests
                     [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ApproveManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ReviseManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["RejectManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CancelManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status404NotFound],
                 ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
@@ -2340,6 +2355,8 @@ public sealed partial class OpenApiContractGenerationTests
         "PreviewManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
         "ReviseManufacturingPlanV1",
+        "RejectManufacturingPlanV1",
+        "CancelManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -2546,6 +2563,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetManufacturingPlanV1:404",
         "ApproveManufacturingPlanV1:404",
         "ReviseManufacturingPlanV1:404",
+        "RejectManufacturingPlanV1:404",
+        "CancelManufacturingPlanV1:404",
         "ListManufacturingPlanRevisionsV1:404",
         "CreateManufacturingOrderV1:404",
         "IssueManufacturingInputV1:404",
@@ -2697,6 +2716,8 @@ public sealed partial class OpenApiContractGenerationTests
         "PreviewManufacturingPlanV1:400",
         "ApproveManufacturingPlanV1:400",
         "ReviseManufacturingPlanV1:400",
+        "RejectManufacturingPlanV1:400",
+        "CancelManufacturingPlanV1:400",
         "CreateManufacturingOrderV1:400",
         "IssueManufacturingInputV1:400",
         "ReturnManufacturingInputV1:400",
@@ -3017,26 +3038,41 @@ public sealed partial class OpenApiContractGenerationTests
             ["SaveManufacturingPlanV1:409"] =
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["SaveManufacturingPlanV1:422"] =
-                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position"],
+                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position",
+                    "manufacturing_plan_net_width_exceeds_parent"],
             // AT-061: the preview answers the save's own 400/422; its only 409s are Inventory's label version / read
             // conflicts (nothing is written, so no idempotency or store conflict).
             ["PreviewManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["PreviewManufacturingPlanV1:409"] = ["inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["PreviewManufacturingPlanV1:422"] =
-                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position"],
+                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position",
+                    "manufacturing_plan_net_width_exceeds_parent"],
             // MFG-PLAN-EDIT: the revision takes the save's rules and adds its three Draft-edit refusals.
             ["ReviseManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ReviseManufacturingPlanV1:409"] =
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["ReviseManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position",
-                    "manufacturing_plan_process_fixed", "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
+                    "manufacturing_plan_net_width_exceeds_parent", "manufacturing_plan_process_fixed",
+                    "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
+            // Üretim U2-a: the approval reads each roll's current label for the slitting gate (Inventory's 409s join).
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
-            ["ApproveManufacturingPlanV1:409"] = ManufacturingConflictCodes,
+            ["ApproveManufacturingPlanV1:409"] =
+                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
+            // Üretim U2-a (URT-D2, API-10/11): the rejection and the cancellation add their two lifecycle refusals.
+            ["RejectManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
+            ["RejectManufacturingPlanV1:409"] = ManufacturingConflictCodes,
+            ["RejectManufacturingPlanV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
+            ["CancelManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
+            ["CancelManufacturingPlanV1:409"] = ManufacturingConflictCodes,
+            ["CancelManufacturingPlanV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
+            // URT-D1: one plan opens exactly one order.
             ["CreateManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CreateManufacturingOrderV1:409"] = ManufacturingConflictCodes,
-            ["CreateManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
+            ["CreateManufacturingOrderV1:422"] = [.. ManufacturingUnprocessableCodes, "manufacturing_plan_order_exists"],
             ["IssueManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
             ["IssueManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
             ["IssueManufacturingInputV1:422"] = ManufacturingUnprocessableCodes,
@@ -3697,7 +3733,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("plannedInputKg", "type:string"),
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
-                    ("approvedAtUtc", "type:null|string;format:date-time")),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("cancelledAtUtc", "type:null|string;format:date-time")),
                 ["CutToLengthLineViewV1"] = ObjectSchema(
                     ["lineId", "sequence", "lengthMm", "count"],
                     ("lineId", "type:string;format:uuid"),
@@ -3722,7 +3759,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null"),
                     ("reason", "type:null|string"),
                     ("revisedBy", "type:null|string"),
-                    ("recordedAtUtc", "type:string;format:date-time")),
+                    ("recordedAtUtc", "type:string;format:date-time"),
+                    ("lineSpeedMetresPerMinute", "type:null|string")),
                 ["PlanRevisionInputViewV1"] = ObjectSchema(
                     ["parentRollId", "plannedKg", "expectedLabelVersion"],
                     ("parentRollId", "type:string;format:uuid"),
@@ -6077,7 +6115,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
                     ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null"),
                     ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null"),
-                    ("parameterSnapshot", "oneOf:ref:PlanParameterSnapshotViewV1|type:null")),
+                    ("parameterSnapshot", "oneOf:ref:PlanParameterSnapshotViewV1|type:null"),
+                    ("lineSpeedMetresPerMinute", "type:null|string"),
+                    ("orderId", "type:null|string;format:uuid"),
+                    ("rejections", "type:array|null;items:ref:PlanRejectionViewV1"),
+                    ("cancellation", "oneOf:ref:PlanCancellationViewV1|type:null")),
+                // Üretim U2-a: the plan's recorded rejections and its cancellation (additive, optional on PlanViewV1).
+                ["PlanRejectionViewV1"] = ObjectSchema(
+                    ["number", "reason", "rejectedByUserId", "rejectedAtUtc", "planVersion"],
+                    ("number", "type:integer|string;format:int32"),
+                    ("reason", "type:string"),
+                    ("rejectedByUserId", "type:string;format:uuid"),
+                    ("rejectedAtUtc", "type:string;format:date-time"),
+                    ("planVersion", "type:integer|string;format:int64")),
+                ["PlanCancellationViewV1"] = ObjectSchema(
+                    ["reason", "cancelledByUserId", "cancelledAtUtc"],
+                    ("reason", "type:string"),
+                    ("cancelledByUserId", "type:string;format:uuid"),
+                    ("cancelledAtUtc", "type:string;format:date-time")),
                 // Üretim U1-b: the parameter profile captured at plan approval (additive, optional on PlanViewV1).
                 ["PlanParameterSnapshotViewV1"] = ObjectSchema(
                     ["profileId", "profileVersion", "source", "workCenterId", "effectiveFrom", "effectiveThrough", "selectedForDate", "values"],
@@ -6094,7 +6149,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("key", "type:string"),
                     ("unit", "type:string"),
                     ("number", "type:null|string"),
-                    ("choice", "type:null|string")),
+                    ("choice", "type:null|string"),
+                    ("source", "type:null|string")),
                 ["SlitLineViewV1"] = ObjectSchema(
                     ["bandWidthMm", "count"],
                     ("bandWidthMm", "type:string"),
@@ -6102,7 +6158,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SlittingSpecViewV1"] = ObjectSchema(
                     ["lines", "windingTargetKg"],
                     ("lines", "type:array;items:ref:SlitLineViewV1"),
-                    ("windingTargetKg", "type:null|string")),
+                    ("windingTargetKg", "type:null|string"),
+                    ("netUsableWidthMm", "type:null|string")),
                 ["RemainingTargetViewV1"] = ObjectSchema(
                     ["basis", "targetKg", "achievedKg", "remainingKg"],
                     ("basis", "type:null|string"),
@@ -8104,6 +8161,15 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApprovePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
+                // Üretim U2-a: the rejection and the cancellation name the version read and a reason.
+                ["RejectPlanRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:null|string")),
+                ["CancelPlanRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:null|string")),
                 ["CreateOrderRequestV1"] = ObjectSchema(
                     ["orderId", "planId"],
                     ("orderId", "type:string;format:uuid"),
@@ -8172,7 +8238,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SlittingSpecRequestV1"] = ObjectSchema(
                     ["lines"],
                     ("lines", "type:array|null;items:ref:SlitLineRequestV1"),
-                    ("windingTargetKg", "type:null|string")),
+                    ("windingTargetKg", "type:null|string"),
+                    ("netUsableWidthMm", "type:null|string")),
                 ["CutToLengthLineRequestV1"] = ObjectSchema(
                     ["lineId", "sequence", "lengthMm", "count"],
                     ("lineId", "type:string;format:uuid"),
@@ -8196,7 +8263,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
                     ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
-                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null")),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
+                    ("lineSpeedMetresPerMinute", "type:null|string")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
@@ -8204,7 +8272,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
                     ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
-                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null")),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
+                    ("lineSpeedMetresPerMinute", "type:null|string")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
@@ -8213,7 +8282,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
                     ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
-                    ("reason", "type:null|string")),
+                    ("reason", "type:null|string"),
+                    ("lineSpeedMetresPerMinute", "type:null|string")),
                 ["TargetRequestV1"] = ObjectSchema(
                     ["basis", "kg"],
                     ("basis", "type:null|string"),

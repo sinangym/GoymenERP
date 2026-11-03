@@ -41,8 +41,8 @@ public sealed record SlittingPlanParameters(
     /// Üretim U1-b: the approval gate's outside inputs from what the plan captured — each roll's Product thickness and
     /// width (the parent width) and the Settings parameter profile's density, line speed, coil diameters and metre
     /// tolerance (the engines' own key names). <paramref name="labelUsable"/> is Inventory's answer per roll when the caller
-    /// has one. The net usable width has no source yet (entered on the plan, plan v1 §8 — not built): it stays unknown and
-    /// the gate names it. Nothing is defaulted.
+    /// has one. Üretim U2-a: the net usable width and a plan-entered line speed are the plan's own content; the gate takes
+    /// them from the plan (they win over these values). Nothing is defaulted.
     /// </summary>
     public static SlittingPlanParameters FromCaptured(IEnumerable<PlannedInput> inputs,
         PlanParameterSnapshotV1? parameterProfile, IReadOnlyDictionary<Guid, bool>? labelUsable = null)
@@ -122,6 +122,8 @@ public static class SlittingApprovalGate
         }
 
         var lines = spec.Lines.Select(line => new SlitLineInputV1(line.BandWidthMm, line.Count)).ToArray();
+        // U2-a (URT-D9, plan v1 §8): the plan's own entries win over an outside value of the same name.
+        var lineSpeed = plan.LineSpeedMetresPerMinute ?? parameters.LineSpeedMetresPerMinute;
         foreach (var input in plan.Inputs)
         {
             var roll = parameters.Rolls is { } rolls && rolls.TryGetValue(input.ParentRollId, out var known)
@@ -137,9 +139,10 @@ public static class SlittingApprovalGate
             }
 
             var parentKg = input.PlannedMass.Value;
-            Take(SlittingEngineV1.Plan(new SlittingPlanInputV1(parentKg, roll.NetUsableWidthMm, lines)));
+            Take(SlittingEngineV1.Plan(new SlittingPlanInputV1(parentKg, spec.NetUsableWidthMm ?? roll.NetUsableWidthMm,
+                lines)));
             var lineTime = SlittingEngineV1.LineTime(new LineTimeInputV1(parentKg, roll.ThicknessMm, roll.ParentWidthMm,
-                roll.DensityKgPerCubicMetre, parameters.LineSpeedMetresPerMinute));
+                roll.DensityKgPerCubicMetre, lineSpeed));
             Take(lineTime);
 
             if (spec.WindingTargetKg is not { } target)
