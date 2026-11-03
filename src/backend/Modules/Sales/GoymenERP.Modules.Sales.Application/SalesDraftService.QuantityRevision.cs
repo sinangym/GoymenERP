@@ -250,5 +250,15 @@ public sealed partial class SalesDraftService
             var index = Array.FindIndex(lines, line => line.Id == lineId);
             throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].quantity", exception.Code)]);
         }
+
+        // SAT-D167 (K3 review A P2-2): the lines this revision removed are read again at its submission and approval — an
+        // allocation or loading line opened after the revision was recorded (no transaction spans the owners) refuses the decision
+        // (422 removedLines[i].lineId sales_line_revision_line_shipped); an unreadable owner is 503 (fail-closed).
+        var removedNow = current.RemovedLines.Where(line => line.RemovedInRevision == current.Revision).OrderBy(line => line.LineNo)
+            .Select(line => new SalesDraftLineRemovalV1(line.Id, null)).ToArray();
+        if (removedNow.Length > 0)
+        {
+            await RequireRemovedLinesUnshippedAsync(scope, permission, current, removedNow, cancellationToken, "removedLines");
+        }
     }
 }

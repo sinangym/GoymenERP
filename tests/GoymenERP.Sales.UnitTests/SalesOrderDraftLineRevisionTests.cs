@@ -142,6 +142,27 @@ public sealed class SalesOrderDraftLineRevisionTests
     }
 
     [Fact]
+    public void A_revision_never_writes_more_lines_than_the_rebuild_takes_and_never_passivates_a_line_with_remainder_history()
+    {
+        // K3 review A P1-1: 2 lines + 499 added would be 501 — refused before anything changes; 498 (500 in all) rebuild fine.
+        var (draft, first, _) = Approved();
+        var version = draft.Version;
+        Assert.Equal(SalesRuleCodes.TooManyLines, CodeOf(() => draft.ReviseLines(version, [.. Enumerable.Range(0, 499).Select(_ => Line(ProductB, "1"))],
+            [], "SENTETIK", "r", T0, Day)));
+        Assert.Equal((version, 2, 0), (draft.Version, draft.Lines.Count, draft.Revision));
+        draft.ReviseLines(version, [.. Enumerable.Range(0, 498).Select(_ => Line(ProductB, "1"))], [new LineRemovalInput(first.Id)], "SENTETIK", "r", T0, Day);
+        Assert.Equal((500, 499), (draft.AllLines.Count, draft.Lines.Count));
+        Assert.Equal(SalesRuleCodes.TooManyLines, CodeOf(() => draft.ReviseLines(draft.Version, [Line(ProductB, "1")], [], "SENTETIK", "r", T0, Day)));
+
+        // K3 review A P3-1: a line with a remainder-change request (it shipped) is never removed, whatever the owners answered.
+        var (other, line, _) = Approved();
+        other.RequestRemainderChange(other.Version, line.Id, RemainderChangeKind.Cancel, null, null, "SENTETIK",
+            new RemainderFloor(0.5m, 0.5m, 0.5m), "SENTETIK-requester", T0);
+        Assert.Equal(SalesRuleCodes.LineRevisionLineShipped,
+            CodeOf(() => other.ReviseLines(other.Version, [Line(ProductB)], [new LineRemovalInput(line.Id)], "SENTETIK", "r", T0, Day)));
+    }
+
+    [Fact]
     public void An_added_lines_snapshots_are_taken_for_the_revision_day_not_the_orders_business_date()
     {
         // SAT-D212 (EK36): the order's business date is Day; the line is added two days later.

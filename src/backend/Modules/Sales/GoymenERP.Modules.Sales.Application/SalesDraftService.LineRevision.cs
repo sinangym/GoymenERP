@@ -174,7 +174,7 @@ public sealed partial class SalesDraftService
     /// of the order is left to the domain (<c>sales_revision_lines_mismatch</c>).
     /// </summary>
     private async Task RequireRemovedLinesUnshippedAsync(Scope scope, string? permission, SalesOrderDraft draft,
-        IReadOnlyList<SalesDraftLineRemovalV1> removed, CancellationToken cancellationToken)
+        IReadOnlyList<SalesDraftLineRemovalV1> removed, CancellationToken cancellationToken, string fieldPrefix = "removed")
     {
         var allocated = await ReadAllocationsAsync(scope, permission, draft, cancellationToken)
             ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
@@ -189,7 +189,7 @@ public sealed partial class SalesDraftService
             if ((allocation is not null && (allocation.Count > 0 || allocation.RemainingKg > 0m))
                 || (loading is not null && (loading.Count > 0 || loading.Instructed > 0m || loading.Shipped > 0m)))
             {
-                errors.Add(new($"removed[{index}].lineId", SalesRuleCodes.LineRevisionLineShipped));
+                errors.Add(new($"{fieldPrefix}[{index}].lineId", SalesRuleCodes.LineRevisionLineShipped));
             }
         }
 
@@ -303,7 +303,7 @@ public sealed partial class SalesDraftService
     {
         if (exception.LineId is not { } lineId)
         {
-            return "lines";
+            return exception.Code == SalesRuleCodes.TooManyLines ? "added" : "lines";
         }
 
         var addedIndex = (request.Added ?? []).ToList().FindIndex(line => line.LineId == lineId);

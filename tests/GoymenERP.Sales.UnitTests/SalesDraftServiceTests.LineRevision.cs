@@ -197,6 +197,53 @@ public sealed partial class SalesDraftServiceTests
         Assert.All(stored.Lines.Where(line => line.Id != added.LineId), line => Assert.Equal(Day.AddDays(3), line.Product.EffectiveOn));
     }
 
+    [Fact]
+    public async Task A_removal_is_read_again_at_its_submission_and_the_review_A_gaps_are_held()
+    {
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        var (allocations, _) = Owners(world);
+        var plain = LineRevision("5", [AddedLine()], [new SalesDraftLineRemovalV1(line)]);
+        await world.Service().ReviseLinesAsync(approved.Id, plain, Metadata("k-a"));
+
+        // P3-2: the same key with another body is the key's 409, nothing changes.
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseLinesAsync(approved.Id,
+            plain with { Reason = "başka" }, Metadata("k-a")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), Status(other));
+
+        // P2-2: an allocation opened on the removed line after the revision was recorded refuses its submission (no transaction
+        // spans the owners); an unreadable owner refuses it too (503).
+        allocations.Answer = order => new(Company, order, [new SalesOrderLineAllocationV1(line, 1, 0.5m)]);
+        var linked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(approved.Id, Command("6"),
+            Metadata("k-a-submit")));
+        Assert.Equal((422, "removedLines[0].lineId", SalesRuleCodes.LineRevisionLineShipped),
+            (linked.Status, Assert.Single(linked.Errors).Field, linked.Errors[0].Code));
+        world.Allocations = null;
+        var unread = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(approved.Id, Command("6"),
+            Metadata("k-a-submit-2")));
+        Assert.Equal((503, SalesDraftProblemCodesV1.RevisionImpactUnavailable), Status(unread));
+        Assert.Equal("Preparing", Assert.Single(world.Store.Drafts).ApprovalState.ToString());
+
+        // P1-1: more lines than an order holds (active + passive + added) is 422 on added, before anything changes.
+        var many = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseLinesAsync(approved.Id,
+            LineRevision("6", [.. Enumerable.Range(0, 499).Select(_ => AddedLine())]), Metadata("k-a-many")));
+        Assert.Equal((422, "added", SalesRuleCodes.TooManyLines), (many.Status, Assert.Single(many.Errors).Field, many.Errors[0].Code));
+    }
+
+    [Fact]
+    public async Task A_fason_order_with_an_unpriced_added_service_line_is_not_submitted()
+    {
+        // P3-2 (SAT-D201): the submit rule runs over the active lines, the added one included.
+        var world = new World { ItemTypes = new FakeItemTypes() };
+        var created = (await world.Service().CreateDraftAsync(Subcontract("10"), Metadata("k-a-fason"))).Detail;
+        var revised = await world.Service().ReviseLinesAsync(created.Draft.Id, LineRevision(created.Draft.Version, [AddedLine()]),
+            Metadata("k-a-fason-lines"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
+            Command(revised.Detail.Draft.Version), Metadata("k-a-fason-submit")));
+        Assert.Equal((422, "draft", SalesRuleCodes.SubcontractPriceRequired), (refused.Status, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+    }
+
     private const string SalesOrderDraft_ServiceItemType = GoymenERP.Modules.Sales.Domain.Drafts.SalesOrderDraft.ServiceItemType;
 
     [Fact]

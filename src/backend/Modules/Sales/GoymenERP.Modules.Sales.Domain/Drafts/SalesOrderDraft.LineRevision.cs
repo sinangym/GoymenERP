@@ -56,7 +56,9 @@ public sealed partial class SalesOrderDraft
             var line = lines.SingleOrDefault(candidate => candidate.Id == removal.LineId)
                 ?? throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
                     "Çıkarılan satır siparişin etkin bir satırı değil.", removal.LineId);
-            if (line.Remainder != LineRemainderState.Open)
+            // K3 review A P3-1: a line with any remainder-change history (pending, rejected or approved) has shipped; its history
+            // is restored against the active lines, so it never goes passive.
+            if (line.Remainder != LineRemainderState.Open || remainderChanges.Any(change => change.Request.LineId == line.Id))
             {
                 throw new SalesRuleException(SalesRuleCodes.LineRevisionLineShipped,
                     "Sevki olan satır silinmez ve ürünü değişmez (SAT-D167).", line.Id);
@@ -86,6 +88,13 @@ public sealed partial class SalesOrderDraft
         if (lines.Count - removals.Count + added.Count < 1)
         {
             throw new SalesRuleException(SalesRuleCodes.LineRevisionNoLinesLeft, "Siparişte en az bir etkin satır kalır.");
+        }
+
+        // K3 review A P1-1: the order's line limit counts every line it will hold — active, passive and added — before anything
+        // changes (BuildLine counts only the lines held now), so no revision writes an order the rebuild refuses.
+        if (lines.Count + removedLines.Count + added.Count > MaximumLines)
+        {
+            throw new SalesRuleException(SalesRuleCodes.TooManyLines, $"Bir sipariş pasif satırlarıyla birlikte en fazla {MaximumLines} satır taşır.");
         }
 
         // Every added line passes the create's rules before anything changes (a refusal names the added line).

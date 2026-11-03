@@ -324,7 +324,9 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        var lineIds = draft.Lines.Select(line => line.Id).ToHashSet();
+        // SAT-D167: an owner may answer a link on a passive line (opened before its removal was recorded); it is the order's
+        // line and still a link (fail-closed), never a malformed answer.
+        var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
         var result = new Dictionary<Guid, LineAllocation>();
         foreach (var entry in answer.Lines)
         {
@@ -387,7 +389,8 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        var lines = draft.Lines.ToDictionary(line => line.Id);
+        // SAT-D167: a passive line's loading is the order's (a link, fail-closed), never a malformed answer.
+        var lines = draft.AllLines.ToDictionary(line => line.Id);
         var result = new Dictionary<Guid, LineLoading>();
         foreach (var entry in answer.Lines)
         {

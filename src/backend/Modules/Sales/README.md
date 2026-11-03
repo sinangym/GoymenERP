@@ -689,10 +689,14 @@ satırın ürünü değiştirilebilir." One command, `POST /api/v1/sales/drafts/
 | Frontend | S-04 "Satır ekle / çıkar / ürün değiştir" behind the quantity-write control: per line keep / remove / change product, new lines from the Product owner's list (a fason order lists services only), price only with price-write, required reason, one keyed attempt (retry with the same key); row-named refusals; the added-in badge and the passive lines list. |
 | Evidence | Unit: `SalesOrderDraftLineRevisionTests` (incl. SAT-D212 snapshot day), `SalesDraftServiceTests.LineRevision` (incl. SAT-D211 internal and customer rejection, SAT-D212 revision day). Real SQL: `SalesOrderLineRevisionSqlServerRelationalAcceptanceTests` (3). Frontend: `SalesDraftLineRevision.test.tsx`. |
 
-Declared limits (K3 review B P3-1…P3-3): "a passive line never comes back" and "a replacement names a line of the same order" are
+Declared limits and guards (K3 review B P3-1…P3-3, review A P1-1/P2-2/P3-1): "a passive line never comes back" and "a replacement names a line of the same order" are
 held by the single writer (EF write guard, restore) — the database holds only `CK_DraftLines_LineRevision` (no trigger, like every
-other DraftLines rule); the unshipped check and the commit are not one transaction across Sales and Logistics/Inventory — an
-instruction or allocation opened in between is refused on every load (409 `order_line_state`, fail-closed); a removal leaves the
+other DraftLines rule); the unshipped check and the commit are not one transaction across Sales and Logistics/Inventory — the
+lines a revision removed are read again at its submission and approval (K3 review A P2-2: a link → 422 `removedLines[i].lineId`
+`sales_line_revision_line_shipped`, an unreadable owner 503), the owners' answers on a passive line are links of the order (never a
+malformed read), and an instruction opened after the last read is refused on every load (409 `order_line_state`, fail-closed);
+a revision never holds more than 500 lines in all, passive included (review A P1-1, 422 `added` `sales_too_many_lines`); a line with
+any remainder-change history is never removed (review A P3-1); a removal leaves the
 order's risk and open-order totals at once (not capped like a pending decrease, SAT-D104) — the shipping side follows SAT-D211.
 Decided (EK36): SAT-D210 the permission, SAT-D211 shipping a removed line during re-approval / after a rejection, SAT-D212 the
 revision day for an added line's reads — no open NEEDS-SINAN in this section.
