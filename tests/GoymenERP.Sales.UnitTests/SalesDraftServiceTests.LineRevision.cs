@@ -158,6 +158,40 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_pending_product_change_ships_neither_the_old_line_nor_its_replacement_and_a_rejection_brings_the_old_line_back()
+    {
+        // SAT-D167 product change = the old line removed + its replacement added; SAT-D211 (EK36): neither ships before approval.
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        var port = LinePort(world);
+        var replacement = AddedLine() with { ProductId = Guid.Parse("99999999-9999-4999-8999-999999999993") };
+
+        await world.Service().ReviseLinesAsync(approved.Id,
+            LineRevision("5", [replacement], [new SalesDraftLineRemovalV1(line, replacement.LineId)]), Metadata("k-pc"));
+        Assert.Equal(replacement.LineId, Assert.Single((await world.Service().GetDraftDetailAsync(approved.Id)).RemovedLines!).ReplacedByLineId);
+
+        foreach (var step in new[] { "prepared", "submitted" })
+        {
+            if (step == "submitted")
+            {
+                await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-pc-submit"));
+            }
+
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineForLoadingAsync(approved.Id, line, Day)).Outcome);
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved,
+                (await port.GetApprovedLineForLoadingAsync(approved.Id, replacement.LineId, Day)).Outcome);
+            Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
+        }
+
+        // Rejected: the old line comes back under Rev.0; the replacement never ships.
+        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-pc-reject"));
+        await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved, (await port.GetApprovedLineAsync(approved.Id, replacement.LineId)).Outcome);
+        Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
+    }
+
+    [Fact]
     public async Task A_removed_line_comes_back_under_the_last_accepted_revision_when_the_customer_rejects_the_removal()
     {
         // SAT-D211 (EK36) with SAT-D115: the customer rejects the internally approved Rev.1 that removed the line.
