@@ -226,7 +226,7 @@ describe('navigation groups are headings, never permissions', () => {
 
   it('use the approved work-area order, with no Raporlar or Belgeler group while nothing is published there', () => {
     expect(NAV_GROUPS.map((group) => group.label)).toEqual([
-      'Satış', 'Satın alma', 'Ürün ve stok', 'Üretim', 'Sevkiyat', 'Cari', 'Finans', 'Muhasebe', 'Ayarlar',
+      'Satış', 'Satın Alma', 'Üretim', 'Stok & Lojistik', 'Ürün & Hizmet', 'Cari', 'Finans & Hazine', 'Muhasebe', 'Ayarlar',
     ])
     expect(NAV_HOME).toEqual({ label: 'Ana sayfa', path: '/' })
   })
@@ -234,7 +234,7 @@ describe('navigation groups are headings, never permissions', () => {
   it('draw a group only around granted entries, and only those entries', async () => {
     const navigation = await renderShell('/', [CAPABILITY.cariPartiesList, CAPABILITY.purchasingOrdersList])
 
-    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Satın alma', 'Cari'])
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Satın Alma', 'Cari'])
     expect(within(navigation).getAllByRole('link').map((link) => link.textContent)).toEqual([
       NAV_HOME.label,
       CAPABILITY_NAV_LABEL[CAPABILITY.purchasingOrdersList],
@@ -246,10 +246,10 @@ describe('navigation groups are headings, never permissions', () => {
       .toBeNull()
   })
 
-  it('lists Açık kalemler under Finans for the open-item list capability, and never for the detail alone', async () => {
+  it('lists Açık kalemler under Finans & Hazine for the open-item list capability, and never for the detail alone', async () => {
     const navigation = await renderShell('/', [CAPABILITY.financeOpenItemsList, CAPABILITY.financeOpenItemsDetail])
 
-    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Finans'])
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Finans & Hazine'])
     const link = within(navigation).getByRole('link', { name: 'Açık kalemler' })
     expect(link.getAttribute('href')).toBe(CAPABILITY_ROUTE[CAPABILITY.financeOpenItemsList])
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.financeOpenItemsDetail]).toBe('')
@@ -321,12 +321,15 @@ describe('desktop groups open and close (UX v1.2)', () => {
     expect(groupButton(manufacturing, 'Satış').getAttribute('aria-expanded')).toBe('false')
     cleanup()
 
-    // `/lojistik/…` is shared by Satın alma and Sevkiyat: no guess, so no work area is claimed.
-    const shared = await renderShell('/lojistik/bilinmeyen', [
+    // KLN-D1: every `/lojistik/…` entry is now in Stok & Lojistik (the purchase operations list moved there from
+    // Satın Alma), so the first segment has exactly one owner and that group opens. Before, the segment was shared
+    // and no work area was claimed; the rule is unchanged, only the placement.
+    const logistics = await renderShell('/lojistik/bilinmeyen', [
       CAPABILITY.logisticsOperationsPurchase,
       CAPABILITY.logisticsOperationsSales,
     ])
-    expect(within(shared).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) })).toEqual([])
+    expect(within(logistics).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) }).map((button) => button.textContent))
+      .toEqual(['Stok & Lojistik'])
   })
 
   it('opening another group closes the open one, and a header click closes its own group', async () => {
@@ -677,15 +680,17 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   const OPENING_PATH = CAPABILITY_ROUTE[OPENING]
   const OPENING_LABEL = 'Açılış stokları'
 
-  it('has exactly one placement, in Ayarlar, after the settings entries; none left in Ürün ve stok', () => {
+  it('has exactly one placement, in Ayarlar, after the settings entries; none in Stok & Lojistik or Ürün & Hizmet', () => {
     expect(OPENING_PATH).toBe('/stok/acilis')
     expect(CAPABILITY_NAV_LABEL[OPENING]).toBe(OPENING_LABEL)
     expect(NAV_CAPABILITIES.filter((entry) => entry === OPENING)).toHaveLength(1)
     const owners = NAV_GROUPS.filter((group) => group.entries.includes(OPENING))
     expect(owners.map((group) => group.label)).toEqual(['Ayarlar'])
     expect(owners[0].entries.at(-1)).toBe(OPENING)
-    expect(NAV_GROUPS.find((group) => group.id === 'product-stock')?.entries)
-      .toEqual([CAPABILITY.productItemsList, CAPABILITY.inventoryStockPositionsList])
+    expect(NAV_GROUPS.find((group) => group.id === 'product')?.entries).toEqual([CAPABILITY.productItemsList])
+    expect(NAV_GROUPS.find((group) => group.id === 'stock-logistics')?.entries)
+      .toContain(CAPABILITY.inventoryStockPositionsList)
+    expect(NAV_GROUPS.find((group) => group.id === 'stock-logistics')?.entries).not.toContain(OPENING)
   })
 
   it('draws Ayarlar with only this entry for an actor holding just the opening-stock capability (no admin gate)', async () => {
@@ -694,10 +699,10 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ayarlar'])
     expect(within(navigation).getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')]))
       .toEqual([[NAV_HOME.label, NAV_HOME.path], [OPENING_LABEL, OPENING_PATH]])
-    expect(within(navigation).queryByRole('button', { name: /^Ürün ve stok/ })).toBeNull()
+    expect(within(navigation).queryByRole('button', { name: /^Stok & Lojistik/ })).toBeNull()
   })
 
-  it('is absent without its capability, even with every other Ayarlar and Ürün ve stok entry', async () => {
+  it('is absent without its capability, even with every other Ayarlar, Stok & Lojistik and Ürün & Hizmet entry', async () => {
     const navigation = await renderShell('/', [
       CAPABILITY.organizationSitesList, CAPABILITY.organizationWorkCentersList, CAPABILITY.identityAssignmentsList,
       CAPABILITY.productItemsList, CAPABILITY.inventoryStockPositionsList,
@@ -705,14 +710,15 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
 
     expect(within(navigation).queryByRole('link', { name: OPENING_LABEL })).toBeNull()
     expect(within(navigation).queryByRole('link', { name: 'Stok Açılışı' })).toBeNull()
-    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ürün ve stok', 'Ayarlar'])
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['Stok & Lojistik', 'Ürün & Hizmet', 'Ayarlar'])
   })
 
   it('opens Ayarlar with the exact active leaf on /stok/acilis, and Ayarlar without an active leaf below it', async () => {
     const granted = [OPENING, CAPABILITY.inventoryStockPositionsList, CAPABILITY.organizationSitesList]
     const home = await renderShell(OPENING_PATH, granted)
     expect(within(home).getByRole('button', { name: `Ayarlar${ACTIVE_HINT}` }).getAttribute('aria-expanded')).toBe('true')
-    expect(groupButton(home, 'Ürün ve stok').getAttribute('aria-expanded')).toBe('false')
+    expect(groupButton(home, 'Stok & Lojistik').getAttribute('aria-expanded')).toBe('false')
     expect(within(home).getAllByRole('link').filter((link) => link.getAttribute('aria-current') === 'page')
       .map((link) => [link.textContent, link.getAttribute('href')])).toEqual([[OPENING_LABEL, OPENING_PATH]])
     cleanup()
@@ -727,7 +733,7 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
 
     // The stock positions keep their own group and active leaf.
     const positions = await renderShell(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList], granted)
-    expect(within(positions).getByRole('button', { name: `Ürün ve stok${ACTIVE_HINT}` }).getAttribute('aria-expanded')).toBe('true')
+    expect(within(positions).getByRole('button', { name: `Stok & Lojistik${ACTIVE_HINT}` }).getAttribute('aria-expanded')).toBe('true')
     expect(groupButton(positions, 'Ayarlar').getAttribute('aria-expanded')).toBe('false')
   })
 
@@ -738,12 +744,12 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   /** Stock pages under no sidebar entry: a label card, its sub-page, the company movement timeline. */
   const STOCK_DETAIL_PAGES = ['/stok/etiket/LBL-1', '/stok/etiket/LBL-1/hareketler', '/stok/hareketler']
 
-  it('gives every non-opening stock page to Ürün ve stok through the authorised stock entry, for both-capability and positions-only actors', async () => {
+  it('gives every non-opening stock page to Stok & Lojistik through the authorised stock entry, for both-capability and positions-only actors', async () => {
     for (const granted of [[OPENING, POSITIONS], [POSITIONS], [OPENING, POSITIONS, CAPABILITY.organizationSitesList]]) {
       for (const page of STOCK_DETAIL_PAGES) {
         const navigation = await renderShell(page, granted)
-        expect(activeGroups(navigation), `${page} with ${granted.join(',')}`).toEqual(['Ürün ve stok'])
-        expect(groupButton(navigation, 'Ürün ve stok').getAttribute('aria-expanded')).toBe('true')
+        expect(activeGroups(navigation), `${page} with ${granted.join(',')}`).toEqual(['Stok & Lojistik'])
+        expect(groupButton(navigation, 'Stok & Lojistik').getAttribute('aria-expanded')).toBe('true')
         // The page is nobody's own leaf, and opening stock is not one of the daily stock leaves.
         expect(within(navigation).getAllByRole('link').filter((link) => link.getAttribute('aria-current') === 'page')).toEqual([])
         cleanup()
@@ -756,7 +762,7 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     for (const page of STOCK_DETAIL_PAGES) {
       const openingOnly = await renderShell(page, [OPENING, CAPABILITY.productItemsList])
       expect(activeGroups(openingOnly), page).toEqual([])
-      expect(within(openingOnly).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ürün ve stok', 'Ayarlar'])
+      expect(within(openingOnly).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ürün & Hizmet', 'Ayarlar'])
       cleanup()
     }
     // No stock capability at all: nothing stock-related is drawn or claimed.
@@ -779,8 +785,9 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   it('draws "İlk kurulum ve veri aktarımı" above Açılış stokları as words only, and only with that entry', async () => {
     const navigation = await renderShell(OPENING_PATH, [OPENING, CAPABILITY.organizationSitesList, POSITIONS])
     const list = groupButton(navigation, 'Ayarlar').parentElement!.querySelector('ul')!
-    // Order inside Ayarlar: the settings entry, then the label, then the entry it introduces.
-    expect([...list.children].map((item) => item.textContent)).toEqual(['Organizasyon', SUBHEADING, OPENING_LABEL])
+    // Order inside Ayarlar (KLN-D2): the Ana Veriler label, its entry, then this label and the entry it introduces.
+    expect([...list.children].map((item) => item.textContent))
+      .toEqual(['Ana Veriler', 'Organizasyon', SUBHEADING, OPENING_LABEL])
     const label = within(navigation).getByText(SUBHEADING)
     expect(label.tagName).toBe('LI')
     expect(label.getAttribute('data-nav-subheading')).toBe(OPENING)
@@ -790,8 +797,8 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     expect(within(navigation).queryByRole('link', { name: SUBHEADING })).toBeNull()
     expect(within(navigation).queryByRole('button', { name: SUBHEADING })).toBeNull()
     expect(within(navigation).getAllByText(SUBHEADING)).toHaveLength(1)
-    // It is not drawn in Ürün ve stok, whose daily leaves do not include opening stock.
-    const stock = groupButton(navigation, 'Ürün ve stok').parentElement!.querySelector('ul')!
+    // It is not drawn in Stok & Lojistik, whose daily leaves do not include opening stock.
+    const stock = groupButton(navigation, 'Stok & Lojistik').parentElement!.querySelector('ul')!
     expect([...stock.children].map((item) => item.textContent)).toEqual([CAPABILITY_NAV_LABEL[POSITIONS]])
     cleanup()
 
@@ -840,7 +847,7 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: NAV_TEXT.menuButton }))
     const drawerNav = within(screen.getByRole('dialog', { name: NAV_TEXT.drawer })).getByRole('navigation', { name: NAV_NAME })
-    expect(within(drawerNav).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ürün ve stok', 'Ayarlar'])
+    expect(within(drawerNav).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ürün & Hizmet', 'Ayarlar'])
     await user.click(within(drawerNav).getByRole('link', { name: OPENING_LABEL }))
     await waitFor(() => expect(router.state.location.pathname).toBe(OPENING_PATH))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: NAV_TEXT.drawer })).toBeNull())
