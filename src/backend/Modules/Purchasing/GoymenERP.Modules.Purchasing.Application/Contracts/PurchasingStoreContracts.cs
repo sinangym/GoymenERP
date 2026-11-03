@@ -46,15 +46,20 @@ public static class PurchasingCommands
     public const string OrderCreateV1 = "purchasing.purchase-order.create.v1";
     public const string OrderApproveV1 = "purchasing.purchase-order.approve.v1";
 
+    /// <summary>A1-3 (plan API-10, No.161 §2): Approved → Cancelled — the whole unaccepted remainder, with a reason, under <c>purchasing.orders.cancel</c>.</summary>
+    public const string OrderCancelV1 = "purchasing.purchase-order.cancel.v1";
+
     public static bool IsRequestCommand(string commandName) =>
         commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
-    public static bool IsOrderCommand(string commandName) => commandName is OrderCreateV1 or OrderApproveV1;
+    public static bool IsOrderCommand(string commandName) => commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1;
 
     public static bool IsRequestMutation(string commandName) =>
         commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
-    public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || commandName is OrderApproveV1;
+    public static bool IsOrderMutation(string commandName) => commandName is OrderApproveV1 or OrderCancelV1;
+
+    public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || IsOrderMutation(commandName);
 
     public static bool IsKnown(string commandName) => IsRequestCommand(commandName) || IsOrderCommand(commandName);
 }

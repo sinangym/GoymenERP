@@ -362,8 +362,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // submitter, a third party and a legacy request, and the one-save fact renamed for it (88f2c7a5… -> 37e3e2bd…).
             // A1-2 (plan API-02): +2 request line source SQL facts (one save + audit + rebuild + the pairing check, and the
             // Down refusal 51167), kept ordinal-sorted (37e3e2bd… -> 70c956bd…).
+            // A1-3 (plan API-10; No.161 §2): +5 order remainder cancellation SQL facts (one save after a partial receipt + both
+            // supply ports + checks, draft / fully accepted refusals, Σ-shares kept + request rejection unblocked, company
+            // isolation, Down refusal 51168), kept ordinal-sorted (70c956bd… -> ae6ee9f7…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "70c956bd76183f895cee1fb2aa08994ea8ba62ad7d9e4faedac39dcb4b8188b8",
+                "ae6ee9f768dc60f8521799e606b2b972515730b5a8e2ae843aaff923a6103436",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -552,9 +555,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // and keys unchanged. Re-measured for ALS-D47: the withdrawal check accepts the preparer or the submitter.
             // Re-measured for A1-2 (plan API-02): the request line's source columns, their pairing check and the filtered
             // source index; the line stays insert-only under the write guard; filters and keys unchanged.
+            // Re-measured for A1-3 (plan API-10, No.161 §2): the order's Cancelled status and cancellation-facts check, the line's
+            // cancelled share inside the shares check, and the write guard's allow-list for exactly those columns; filters and
+            // keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "f45607953e6c152be9049b683507d888e10e63770646cb178e4cefd02f37725a",
+                "182b5be853138b47504dd19edca70cf1cae781a1fe07aededc54f448d12c2d6f",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1417,10 +1423,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for A1-1b: the withdrawal facts written and rebuilt through the domain; same token count.
                 // Re-fingerprinted for A1-2: the request line's source written once, audited and rebuilt through the domain;
                 // same token count.
+                // Re-fingerprinted for A1-3: the order cancellation (facts and cancelled shares written, audited and rebuilt
+                // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "576348659c4efb0349ce0ed3ab7439b570855638b3747556e8f9e1843f8ed886",
+                        "10ab34c9581f8bab185669b0cceb34f5835e20837c650cc22b0d62769922ec0e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2022,6 +2030,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // A1-2 (plan API-02): one reviewed statement, before every drop. Down refuses (51167, used by no other
                 // migration) while any request line carries a source, which dropping the columns would silently turn manual.
                 // Up only adds nullable columns, a filtered index and a check.
+                // A1-3 (plan API-10, No.161 §2): one reviewed statement, before every drop. Down refuses (51168, used by no other
+                // migration) while any order is Cancelled or any line carries a cancelled share, which dropping the column would
+                // silently turn back into future supply. Up only adds columns and checks.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261103053923_AddPurchaseOrderCancellation.cs"] =
+                    new(
+                        "ee556c11702c65754f388f5f01706a9278930fdb18915fe40ffe661e14d55ea5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103012142_AddPurchaseRequestLineSource.cs"] =
                     new(

@@ -7,6 +7,12 @@ public enum PurchaseOrderStatus
 {
     Draft = 1,
     Approved = 2,
+
+    /// <summary>
+    /// A1-3 (plan API-10, No.161 §2): an approved order whose not-yet-accepted remainder was cancelled in full — on every line,
+    /// even after a partial acceptance. Terminal: no acceptance, breakdown or second cancellation follows; the accepted shares stay.
+    /// </summary>
+    Cancelled = 3,
 }
 
 /// <summary>
@@ -49,6 +55,10 @@ public sealed class PurchaseOrder
     public Guid? SourceRequestId { get; }
     public PurchaseOrderStatus Status { get; private set; } = PurchaseOrderStatus.Draft;
     public long Version { get; private set; } = 1;
+
+    /// <summary>A1-3 (No.161 §2): who cancelled the unaccepted remainder, when and why; null until <see cref="Cancel"/>.</summary>
+    public PurchaseOrderCancellation? Cancellation { get; private set; }
+
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
@@ -166,11 +176,9 @@ public sealed class PurchaseOrder
         Guid technicalProductId, Quantity slice, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        // Breakdown is open in both statuses that exist (Draft and Approved; pinned by tests), so
-        // there is no status guard here: one would be unreachable today and, the day a third
-        // status arrives, would need its own code — it must not report "not approved" for an
-        // order that was approved and then closed (ORG #288 P3-1). The slice adding that status
-        // adds the guard, its code and its test.
+        // Breakdown is open in Draft and Approved (pinned by tests). A1-3 added the third status, Cancelled, and with it this
+        // guard, its own code and its test (ORG #288 P3-1): a cancelled order is never reported as "not approved".
+        RequireNotCancelled();
         var general = FindLine(generalLineId);
         if (general.Kind != PurchaseOrderLineKind.General)
         {
@@ -209,6 +217,7 @@ public sealed class PurchaseOrder
         Quantity accepted, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
+        RequireNotCancelled();
         RequireStatus(PurchaseOrderStatus.Approved, PurchasingRuleCodes.OrderNotApproved, "Kabul payı yalnız onaylı siparişe kaydedilir.");
         Identity.Require(acceptanceId, nameof(acceptanceId));
         if (acceptances.Any(share => share.AcceptanceId == acceptanceId))
@@ -235,6 +244,64 @@ public sealed class PurchaseOrder
         return share;
     }
 
+    /// <summary>
+    /// A1-3 (plan API-10; No.161 §2, Sinan 2026-10-27): cancels the WHOLE not-yet-accepted remainder of an APPROVED order — every
+    /// line's remaining (committed − accepted − cancelled) becomes its cancelled share, even after a partial acceptance; there is
+    /// no line- or quantity-level partial cancel. The accepted shares, the lines and the source request binding stay as they are;
+    /// nothing physical or financial happens here (the remainder only leaves the future supply and the order's remaining,
+    /// master INV-006: Onaylı − İptal − KabulNet − KesinRed/İade). The reason is required, never defaulted or cut.
+    /// <para>
+    /// Refusals: a Draft or an already cancelled order is <see cref="PurchasingRuleCodes.OrderNotCancellable"/>; an order with
+    /// nothing left to cancel (every line fully accepted) is <see cref="PurchasingRuleCodes.OrderNothingToCancel"/> (fail-closed:
+    /// a cancellation that cancels nothing is not recorded). Who may cancel is the service's permission, not this record's.
+    /// </para>
+    /// </summary>
+    public void Cancel(long expectedVersion, string cancelledBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = string.IsNullOrWhiteSpace(cancelledBy) || cancelledBy.Length > MaximumActorLength
+                    || !string.Equals(cancelledBy, cancelledBy.Trim(), StringComparison.Ordinal)
+            ? throw new ArgumentException("Aktör kimliği boş, kenar boşluklu veya çok uzun olamaz.", nameof(cancelledBy))
+            : cancelledBy;
+        if (Status != PurchaseOrderStatus.Approved)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderNotCancellable,
+                "Yalnız onaylı siparişin kabul edilmemiş kalanı iptal edilir.");
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderCancellationReasonRequired, "Sipariş kalanının iptali gerekçe ister.");
+        }
+
+        if (reason.Length > MaximumReasonLength)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderCancellationReasonTooLong,
+                $"İptal gerekçesi en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+        }
+
+        if (lines.All(line => line.RemainingQuantity.IsZero))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderNothingToCancel,
+                "Siparişin kabul edilmemiş kalanı yok; iptal edilecek miktar bulunmuyor.");
+        }
+
+        foreach (var line in lines)
+        {
+            line.CancelRemainder();
+        }
+
+        Cancellation = new PurchaseOrderCancellation(actor, now.ToUniversalTime(), reason);
+        Status = PurchaseOrderStatus.Cancelled;
+        Touch(now);
+    }
+
+    /// <summary>A1-3: the bound of a cancellation reason (the request decisions' bound); a longer text is refused, never cut.</summary>
+    public const int MaximumReasonLength = 4000;
+
+    /// <summary>A1-3: the actor column's bound.</summary>
+    public const int MaximumActorLength = 128;
+
     /// <summary>What is still expected from the supplier in one unit: future supply, never stock.</summary>
     public Quantity RemainingCommitment(QuantityUnit unit) =>
         lines.Where(line => line.Quantity.Unit == unit)
@@ -249,6 +316,15 @@ public sealed class PurchaseOrder
         if (lines.Any(line => line.Id == lineId))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateLineId, "Aynı sipariş satırı kimliği ikinci kez eklenemez.");
+        }
+    }
+
+    private void RequireNotCancelled()
+    {
+        if (Status == PurchaseOrderStatus.Cancelled)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderCancelled,
+                "Kalanı iptal edilmiş siparişe kabul payı veya kırılım eklenmez.");
         }
     }
 
@@ -274,6 +350,9 @@ public sealed class PurchaseOrder
         Version = checked(Version + 1);
     }
 }
+
+/// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
+public sealed record PurchaseOrderCancellation(string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
 
 /// <summary>One recorded acceptance share. Not a receipt document and not a stock movement.</summary>
 public sealed record PurchaseAcceptanceShare(Guid AcceptanceId, Guid LineId, Quantity Quantity, DateTimeOffset RecordedAtUtc);

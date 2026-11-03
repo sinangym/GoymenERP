@@ -36,6 +36,7 @@ public sealed class PurchasingOrderReadServiceV1(
             detail.Lines)
         {
             Acceptances = detail.Acceptances,
+            Cancellation = detail.Cancellation,
         };
     }
 

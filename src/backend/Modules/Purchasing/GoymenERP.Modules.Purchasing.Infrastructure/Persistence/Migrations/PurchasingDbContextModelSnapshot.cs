@@ -356,6 +356,10 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal>("Cancelled")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
@@ -410,7 +414,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PurchaseOrderLines_LineNo", "[LineNo] >= 1");
 
-                            t.HasCheckConstraint("CK_PurchaseOrderLines_Shares", "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Technical] + [Accepted] <= [Ordered]");
+                            t.HasCheckConstraint("CK_PurchaseOrderLines_Shares", "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]");
                         });
                 });
 
@@ -418,6 +422,17 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset?>("CancelledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CancelledBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<Guid>("CompanyAccountId")
                         .HasColumnType("uniqueidentifier");
@@ -476,9 +491,11 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PurchaseOrders", "purchasing", t =>
                         {
+                            t.HasCheckConstraint("CK_PurchaseOrders_Cancellation", "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)");
+
                             t.HasCheckConstraint("CK_PurchaseOrders_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SupplierPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceRequestId] IS NULL OR [SourceRequestId] <> '00000000-0000-0000-0000-000000000000')");
 
-                            t.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2)");
+                            t.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2, 3)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
 

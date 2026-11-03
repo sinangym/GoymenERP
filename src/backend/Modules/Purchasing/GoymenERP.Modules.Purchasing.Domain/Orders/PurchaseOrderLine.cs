@@ -36,6 +36,7 @@ public sealed class PurchaseOrderLine
         SourceRequestLineId = sourceRequestLineId;
         TechnicalQuantity = Quantity.Zero(quantity.Unit);
         AcceptedQuantity = Quantity.Zero(quantity.Unit);
+        CancelledQuantity = Quantity.Zero(quantity.Unit);
     }
 
     public Guid Id { get; }
@@ -54,16 +55,22 @@ public sealed class PurchaseOrderLine
 
     public Quantity AcceptedQuantity { get; private set; }
 
+    /// <summary>A1-3 (No.161 §2): the not-yet-accepted remainder cancelled with the order (zero until then).</summary>
+    public Quantity CancelledQuantity { get; private set; }
+
     /// <summary>What this line itself still commits to: ordered minus technical slices.</summary>
     public Quantity CommittedQuantity => Quantity.Subtract(TechnicalQuantity);
 
-    /// <summary>Committed minus accepted: the future supply still expected on this line.</summary>
-    public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity);
+    /// <summary>
+    /// Committed minus accepted minus cancelled: the future supply still expected on this line (master INV-006:
+    /// Onaylı − İptal − KabulNet; the return effect arrives with A5).
+    /// </summary>
+    public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity).Subtract(CancelledQuantity);
 
     internal void AddTechnicalSlice(Quantity slice)
     {
         var next = TechnicalQuantity.Add(slice);
-        if (next.Add(AcceptedQuantity).IsGreaterThan(Quantity))
+        if (next.Add(AcceptedQuantity).Add(CancelledQuantity).IsGreaterThan(Quantity))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: teknik kırılımlar ve kabul edilen pay ilk taahhüdü aşıyor.");
@@ -75,12 +82,24 @@ public sealed class PurchaseOrderLine
     internal void AddAcceptedShare(Quantity accepted)
     {
         var next = AcceptedQuantity.Add(accepted);
-        if (next.IsGreaterThan(CommittedQuantity))
+        if (next.Add(CancelledQuantity).IsGreaterThan(CommittedQuantity))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: kabul edilen pay taahhüdü aşıyor.");
         }
 
         AcceptedQuantity = next;
+    }
+
+    /// <summary>A1-3: the line's whole remainder becomes its cancelled share (zero when nothing remains); only the aggregate calls it.</summary>
+    internal void CancelRemainder()
+    {
+        if (!CancelledQuantity.IsZero)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: satırın kalanı zaten iptal edilmiş.");
+        }
+
+        CancelledQuantity = RemainingQuantity;
     }
 }
