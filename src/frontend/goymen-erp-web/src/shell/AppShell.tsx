@@ -29,11 +29,12 @@ import {
   NAV_CAPABILITIES,
   NAV_GROUPS,
   NAV_HOME,
-  NAV_PATH_OWNERS,
   NAV_TEXT,
   type NavEntryId,
+  type NavGroup,
   type NavGroupId,
 } from './navigation'
+import { activeGroupOf, type DrawnGroup, type NavLeaf } from './activeGroup'
 import styles from './AppShell.module.css'
 
 /** The nav order is defined in `./navigation`; re-exported for the tests that read it from the shell. */
@@ -43,20 +44,6 @@ export { NAV_CAPABILITIES }
 const COMPACT_VIEWPORT = '(max-width: 767px)'
 const SIDEBAR_ID = 'shell-sidebar'
 
-interface NavLeaf {
-  readonly key: NavEntryId
-  readonly path: string
-  readonly label: string
-  /** NAV-OPENING-01: the intermediate label drawn above this entry, when its group names one. */
-  readonly subheading?: string | undefined
-}
-
-interface DrawnGroup {
-  readonly id: NavGroupId
-  readonly label: string
-  readonly leaves: readonly NavLeaf[]
-}
-
 function leafOf(entry: NavEntryId): NavLeaf {
   // #590: the price list is drawn on its OWN capability, with its own route and heading.
   if (entry === PRICE_LIST_CAPABILITY.list) {
@@ -65,46 +52,29 @@ function leafOf(entry: NavEntryId): NavLeaf {
   return { key: entry, path: CAPABILITY_ROUTE[entry], label: CAPABILITY_NAV_LABEL[entry] }
 }
 
-/** The groups this actor sees: each with only its granted entries, and none left empty. */
-function drawnGroups(state: ShellState): DrawnGroup[] {
-  return NAV_GROUPS.map((group) => ({
-    id: group.id,
-    label: group.label,
-    // A subheading travels with its granted entry, so it is never drawn on its own or for an ungranted one.
-    leaves: group.entries.filter((entry) => hasCapability(state, entry))
-      .map((entry) => ({ ...leafOf(entry), subheading: group.subheadings?.[entry] })),
-  })).filter((group) => group.leaves.length > 0)
+/**
+ * A group's granted leaves. A subheading opens a section at the entry that declares it, and the section runs to the
+ * next declaring entry (KLN-D2: Ana Veriler, Sistem Yönetimi). The label is drawn above the section's FIRST GRANTED
+ * entry, so an actor holding only a later entry of a section still sees which section it is in. A section with no
+ * granted entry draws no label: a subheading is never drawn on its own.
+ */
+function grantedLeaves(group: NavGroup, state: ShellState): NavLeaf[] {
+  const leaves: NavLeaf[] = []
+  let pending: string | undefined
+  for (const entry of group.entries) {
+    const declared = group.subheadings?.[entry]
+    if (declared !== undefined) pending = declared
+    if (!hasCapability(state, entry)) continue
+    leaves.push({ ...leafOf(entry), subheading: pending })
+    pending = undefined
+  }
+  return leaves
 }
 
-const firstSegment = (path: string) => path.split('/')[1] ?? ''
-
-/**
- * The work area the open page belongs to: the group of the longest entry path the page is or lies
- * under (`/satis/siparisler/yeni` is Satış; `/stok/acilis/yeni` is the opening-stock entry's group). A page
- * under no entry first asks `NAV_PATH_OWNERS`: a declared prefix belongs to the group that draws its owner
- * ENTRY (a label card under `/stok` is Ürün ve stok's while the stock positions are granted) and to no group
- * when that entry is not drawn — never to another group that merely shares the segment. Any other page (a
- * plan) falls back to its first path segment, but only when exactly one group owns that segment.
- */
-function activeGroupOf(groups: readonly DrawnGroup[], pathname: string): NavGroupId | null {
-  let best: { readonly id: NavGroupId; readonly length: number } | null = null
-  for (const group of groups) {
-    for (const leaf of group.leaves) {
-      const under = pathname === leaf.path || pathname.startsWith(`${leaf.path}/`)
-      if (under && (best === null || leaf.path.length > best.length)) {
-        best = { id: group.id, length: leaf.path.length }
-      }
-    }
-  }
-  if (best) return best.id
-  const declared = NAV_PATH_OWNERS.find((owner) => pathname === owner.prefix || pathname.startsWith(`${owner.prefix}/`))
-  if (declared) {
-    return groups.find((group) => group.leaves.some((leaf) => leaf.key === declared.entry))?.id ?? null
-  }
-  const segment = firstSegment(pathname)
-  if (!segment) return null
-  const owners = groups.filter((group) => group.leaves.some((leaf) => firstSegment(leaf.path) === segment))
-  return owners.length === 1 ? owners[0].id : null
+/** The groups this actor sees: each with only its granted entries, and none left empty. */
+function drawnGroups(state: ShellState): DrawnGroup[] {
+  return NAV_GROUPS.map((group) => ({ id: group.id, label: group.label, leaves: grantedLeaves(group, state) }))
+    .filter((group) => group.leaves.length > 0)
 }
 
 function subscribeCompact(onChange: () => void): () => void {
@@ -432,7 +402,7 @@ export function AppShell() {
                   <ul id={listId} className={styles.groupList} hidden={!open}>
                     {group.leaves.map((leaf) => (
                       <Fragment key={leaf.key}>
-                        {/* NAV-OPENING-01: words above the entry — not a link, not focusable, no control. */}
+                        {/* NAV-OPENING-01 / KLN-D2: words above the entry — not a link, not focusable, no control. */}
                         {leaf.subheading
                           ? <li className={styles.subheading} data-nav-subheading={leaf.key}>{leaf.subheading}</li>
                           : null}

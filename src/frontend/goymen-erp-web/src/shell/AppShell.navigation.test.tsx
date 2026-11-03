@@ -816,6 +816,32 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     expect([...onlyList.children].map((item) => item.textContent)).toEqual([SUBHEADING, OPENING_LABEL])
   })
 
+  it('draws each Ayarlar section label (KLN-D2) above the first granted entry of its section, and only then', async () => {
+    const listOf = (scope: HTMLElement) =>
+      [...groupButton(scope, 'Ayarlar').parentElement!.querySelector('ul')!.children].map((item) => item.textContent)
+    // Tax master is the last Ana Veriler entry: without Organizasyon the label moves down to it.
+    const taxOnly = await renderShell('/', [CAPABILITY.settingsTaxMaster])
+    expect(listOf(taxOnly)).toEqual(['Ana Veriler', CAPABILITY_NAV_LABEL[CAPABILITY.settingsTaxMaster]])
+    cleanup()
+    // Each section is labelled once, and Sistem Yönetimi starts at the access list.
+    const both = await renderShell('/', [
+      CAPABILITY.organizationWorkCentersList, CAPABILITY.settingsTaxMaster, CAPABILITY.identityAssignmentsList,
+    ])
+    expect(listOf(both)).toEqual([
+      'Ana Veriler',
+      CAPABILITY_NAV_LABEL[CAPABILITY.organizationWorkCentersList],
+      CAPABILITY_NAV_LABEL[CAPABILITY.settingsTaxMaster],
+      'Sistem Yönetimi',
+      CAPABILITY_NAV_LABEL[CAPABILITY.identityAssignmentsList],
+    ])
+    expect(within(both).getByText('Sistem Yönetimi').querySelector('a, button')).toBeNull()
+    cleanup()
+    // A section with nothing granted draws no label at all.
+    const accessOnly = await renderShell('/', [CAPABILITY.identityAssignmentsList])
+    expect(listOf(accessOnly)).toEqual(['Sistem Yönetimi', CAPABILITY_NAV_LABEL[CAPABILITY.identityAssignmentsList]])
+    expect(within(accessOnly).queryByText('Ana Veriler')).toBeNull()
+  })
+
   it('keeps the keyboard order: Tab goes from the previous Ayarlar entry straight to Açılış stokları', async () => {
     const user = userEvent.setup()
     const navigation = await renderShell(OPENING_PATH, [OPENING, CAPABILITY.organizationSitesList])

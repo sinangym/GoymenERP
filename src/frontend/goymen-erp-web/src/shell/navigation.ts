@@ -272,8 +272,9 @@ export interface NavGroup {
   readonly label: string
   readonly entries: readonly NavEntryId[]
   /**
-   * A visible intermediate label drawn directly above the named entry (NAV-OPENING-01). It is words only: not a
-   * link, not a control and never a permission — it is drawn exactly when its entry is, and never on its own.
+   * A visible section label (NAV-OPENING-01, KLN-D2). The named entry opens a section that runs to the next named
+   * entry; the label is drawn directly above the section's first GRANTED entry. It is words only: not a link, not a
+   * control and never a permission — it is drawn only together with a granted entry of its section, never on its own.
    */
   readonly subheadings?: Readonly<Partial<Record<NavEntryId, string>>>
 }
