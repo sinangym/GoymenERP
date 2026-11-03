@@ -66,7 +66,7 @@ Kullanıcı talimatı (2026-11-03, bu oturum):
 - **Ana rapor §4'ten sapma:** §4'te "Ana Veriler" (16) ve "Sistem Yönetimi" (17) ayrı menüdür; "Stok & Tahsis" (8) ve
   "Lojistik & Kantar" (10) ayrıdır. Kullanıcı talimatı daha yenidir ve geçerlidir. Koordinatör "karar dosyasına
   geçmeden Sinan'dan teyit al" dedi → kayıt K-1 sorusu olarak §11'de.
-- Menü yetkiye göre çizilir (DEC-GOV-007); grup başlığının kendi yetkisi yoktur.
+- Ekranların yetki kapıları menü düzeninden etkilenmez; boş menü gösterilmez (DEC-GOV-007). Bugünkü kodda grup başlığının kendi yetkisi yoktur (`navigation.ts`).
 
 Bugünkü menü (`src/frontend/goymen-erp-web/src/shell/navigation.ts` `NAV_GROUPS`): Ayarlar grubu **var**
 (Organizasyon, İş Merkezleri, Kullanıcılar ve yetkiler, İskonto limitleri, Vergi, Açılış stokları) ama alt başlıksız;
