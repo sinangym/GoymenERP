@@ -47,7 +47,7 @@ const scopeOf = (draftId: string) => `sales.draft.line-revision:${draftId}`
 
 /**
  * SAT-D167 (EK24) — "Satır ekle / çıkar / ürün değiştir" on S-04 (Order 360) behind the `sales.orders.quantity.write`
- * control (NEEDS-SINAN: no own permission name was decided): for each current line keep it, remove it (it goes passive) or
+ * control (SAT-D210, EK36: the people who revise quantities): for each current line keep it, remove it (it goes passive) or
  * change its product (a replacement line in the same revision), and add new lines chosen from the Product owner's list for the
  * order's business date (a fason order lists only service products). One keyed attempt with a required reason (the quantity
  * revision's attempt rules: an unknown outcome keeps the key and retries the same payload). A price is offered only with the

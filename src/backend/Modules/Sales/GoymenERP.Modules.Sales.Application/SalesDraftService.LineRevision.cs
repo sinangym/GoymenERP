@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <summary>
 /// SAT-D167 (EK24): the line revision — add a line, remove an unshipped line (it goes passive, never deleted) or change an unshipped
 /// line's product (a removal replaced by an added line), with a reason, under the quantity revision's name
-/// <c>sales.orders.quantity.write</c> (the order's line-change name; NEEDS-SINAN whether a separate name is wanted). DEC-SAL-002: an
+/// <c>sales.orders.quantity.write</c> (SAT-D210, EK36: the people who revise quantities; a price stays separate, SAT-D151). DEC-SAL-002: an
 /// APPROVED order is archived and goes on as the next revision, back to internal approval and a new customer acceptance.
 /// <list type="bullet">
 /// <item><b>Unshipped (SAT-D167's reading):</b> no stock allocation (Inventory) and no loading-instruction line (Logistics — every
@@ -44,9 +44,8 @@ public sealed partial class SalesDraftService
         var added = request.Added ?? [];
         var removed = request.Removed ?? [];
         // SAT-D212: the day an added line is read for — the server's business day now (an unresolvable zone is 503, never UTC).
-        // A removal alone reads nothing dated. NEEDS-SINAN (SAT-D212 follow-up): which day a REPLACEMENT line (a product change)
-        // is read for is not decided; it takes the same revision day for now. This is the one place the day is chosen (the domain
-        // takes it as `revisionDay` and checks every added line's snapshots against it), so a different rule changes here.
+        // A removal alone reads nothing dated. SAT-D212 (EK36, Q5 "Revizyon günü"): a replacement line (a product change) is read
+        // for the same revision day. The domain takes it as `revisionDay` and checks every added line's snapshots against it.
         var revisionDay = added.Count > 0 ? ServerBusinessDay() : default;
 
         // SAT-D151: a price, a discount or a tax change on an added line needs the separate price-write name of the same actor.

@@ -699,8 +699,5 @@ a revision never holds more than 500 lines in all, passive included (review A P1
 any remainder-change history is never removed (review A P3-1); a removal leaves the
 order's risk and open-order totals at once (not capped like a pending decrease, SAT-D104) — the shipping side follows SAT-D211.
 Decided (EK36): SAT-D210 the permission, SAT-D211 shipping a removed line during re-approval / after a rejection, SAT-D212 the
-revision day for an added line's reads.
-
-NEEDS-SINAN (SAT-D212 follow-up): which day a REPLACEMENT line (a product change) is read for — the revision day or the order's
-business date — is not decided. It takes the revision day like every added line for now; the day is chosen in one place
-(`SalesDraftService.ReviseLinesAsync`, `revisionDay`) and the domain checks the added lines' snapshots against what it is given.
+revision day for an added line's reads — a replacement line (a product change) included (EK36 Q5, "Revizyon günü"). No open
+NEEDS-SINAN in this section.
