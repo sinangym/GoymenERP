@@ -251,14 +251,22 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].quantity", exception.Code)]);
         }
 
-        // SAT-D167 (K3 review A P2-2): the lines this revision removed are read again at its submission and approval — an
-        // allocation or loading line opened after the revision was recorded (no transaction spans the owners) refuses the decision
-        // (422 removedLines[i].lineId sales_line_revision_line_shipped); an unreadable owner is 503 (fail-closed).
+        // SAT-D167 (K3 review A P2-2; the SAT-D128 pattern): the lines this revision removed are read again at its submission and
+        // approval — an allocation or loading line opened after the revision was recorded (no transaction spans the owners) blocks
+        // the decision (409 sales_revision_blocked, each error removedLines[i].lineId sales_line_revision_line_shipped); an
+        // unreadable owner is 503 (fail-closed).
         var removedNow = current.RemovedLines.Where(line => line.RemovedInRevision == current.Revision).OrderBy(line => line.LineNo)
             .Select(line => new SalesDraftLineRemovalV1(line.Id, null)).ToArray();
         if (removedNow.Length > 0)
         {
-            await RequireRemovedLinesUnshippedAsync(scope, permission, current, removedNow, cancellationToken, "removedLines");
+            try
+            {
+                await RequireRemovedLinesUnshippedAsync(scope, permission, current, removedNow, cancellationToken, "removedLines");
+            }
+            catch (SalesDraftServiceException exception) when (exception.Status == 422)
+            {
+                throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionBlocked, exception.Errors);
+            }
         }
     }
 }

@@ -211,13 +211,13 @@ public sealed partial class SalesDraftServiceTests
             plain with { Reason = "başka" }, Metadata("k-a")));
         Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), Status(other));
 
-        // P2-2: an allocation opened on the removed line after the revision was recorded refuses its submission (no transaction
+        // P2-2 (the SAT-D128 pattern): an allocation opened on the removed line after the revision was recorded blocks its submission (409; no transaction
         // spans the owners); an unreadable owner refuses it too (503).
         allocations.Answer = order => new(Company, order, [new SalesOrderLineAllocationV1(line, 1, 0.5m)]);
         var linked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(approved.Id, Command("6"),
             Metadata("k-a-submit")));
-        Assert.Equal((422, "removedLines[0].lineId", SalesRuleCodes.LineRevisionLineShipped),
-            (linked.Status, Assert.Single(linked.Errors).Field, linked.Errors[0].Code));
+        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked, "removedLines[0].lineId", SalesRuleCodes.LineRevisionLineShipped),
+            (linked.Status, linked.Code, Assert.Single(linked.Errors).Field, linked.Errors[0].Code));
         world.Allocations = null;
         var unread = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(approved.Id, Command("6"),
             Metadata("k-a-submit-2")));

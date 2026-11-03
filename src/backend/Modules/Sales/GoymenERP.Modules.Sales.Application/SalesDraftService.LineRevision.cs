@@ -44,7 +44,9 @@ public sealed partial class SalesDraftService
         var added = request.Added ?? [];
         var removed = request.Removed ?? [];
         // SAT-D212: the day an added line is read for — the server's business day now (an unresolvable zone is 503, never UTC).
-        // A removal alone reads nothing dated.
+        // A removal alone reads nothing dated. NEEDS-SINAN (SAT-D212 follow-up): which day a REPLACEMENT line (a product change)
+        // is read for is not decided; it takes the same revision day for now. This is the one place the day is chosen (the domain
+        // takes it as `revisionDay` and checks every added line's snapshots against it), so a different rule changes here.
         var revisionDay = added.Count > 0 ? ServerBusinessDay() : default;
 
         // SAT-D151: a price, a discount or a tax change on an added line needs the separate price-write name of the same actor.

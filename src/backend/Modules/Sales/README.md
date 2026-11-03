@@ -692,11 +692,15 @@ satırın ürünü değiştirilebilir." One command, `POST /api/v1/sales/drafts/
 Declared limits and guards (K3 review B P3-1…P3-3, review A P1-1/P2-2/P3-1): "a passive line never comes back" and "a replacement names a line of the same order" are
 held by the single writer (EF write guard, restore) — the database holds only `CK_DraftLines_LineRevision` (no trigger, like every
 other DraftLines rule); the unshipped check and the commit are not one transaction across Sales and Logistics/Inventory — the
-lines a revision removed are read again at its submission and approval (K3 review A P2-2: a link → 422 `removedLines[i].lineId`
-`sales_line_revision_line_shipped`, an unreadable owner 503), the owners' answers on a passive line are links of the order (never a
+lines a revision removed are read again at its submission and approval (K3 review A P2-2, the SAT-D128 pattern: a link → 409
+`sales_revision_blocked`, each error `removedLines[i].lineId` `sales_line_revision_line_shipped`; an unreadable owner 503), the owners' answers on a passive line are links of the order (never a
 malformed read), and an instruction opened after the last read is refused on every load (409 `order_line_state`, fail-closed);
 a revision never holds more than 500 lines in all, passive included (review A P1-1, 422 `added` `sales_too_many_lines`); a line with
 any remainder-change history is never removed (review A P3-1); a removal leaves the
 order's risk and open-order totals at once (not capped like a pending decrease, SAT-D104) — the shipping side follows SAT-D211.
 Decided (EK36): SAT-D210 the permission, SAT-D211 shipping a removed line during re-approval / after a rejection, SAT-D212 the
-revision day for an added line's reads — no open NEEDS-SINAN in this section.
+revision day for an added line's reads.
+
+NEEDS-SINAN (SAT-D212 follow-up): which day a REPLACEMENT line (a product change) is read for — the revision day or the order's
+business date — is not decided. It takes the revision day like every added line for now; the day is chosen in one place
+(`SalesDraftService.ReviseLinesAsync`, `revisionDay`) and the domain checks the added lines' snapshots against what it is given.
