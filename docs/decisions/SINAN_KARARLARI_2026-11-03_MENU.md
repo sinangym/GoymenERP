@@ -28,7 +28,7 @@ Bu belge önceki karar dosyalarını silmez; KLN-D1…KLN-D5'i ekler. Yalnız **
 | KLN-D2 | Ayarlar alt bölümleri | **Ana Veriler:** Organizasyon, birim, kur, parametre, kalite. **Sistem Yönetimi:** kullanıcı/rol/yetki, onay kuralı, entegrasyon, denetim kaydı. Kod modülleri (Organization, Settings, Identity, Audit) ayrı kalır | Ana rapor §4 sıra 16–17, §27.12 |
 | KLN-D3 | Cari ekstresi | Ekstre iki yerden açılır: Cari (kart / Cari 360) ve Muhasebe (cari hesaplar muhasebe görünümü). İkisi aynı Finans açık kalem alt defterini okur; yeni master açılmaz, Cari kartında hareket tutulmaz (FNS-D14) | FNS-D14, ana rapor §7.10 M-03 |
 | KLN-D4 | Belgeler | Belgeler hem ayrı menüdür (merkezi arşiv) hem her kaydın içinde sekme olarak bulunur | Ana rapor §4 sıra 11, §7 Belgeler |
-| KLN-D5 | Kalan modüllerin başlaması | Sinan 3 Kasım 2026'da Ayarlar (Organizasyon, Kullanıcı ve Yetki, Ana Veriler, Denetim kaydı), Cari, Ürün & Hizmet, Stok & Lojistik, Çalışma Merkezi, Belgeler, Muhasebe ve Raporlar için ayrı "Kalan Modüller" şeridini açtı ve dört şeridin bu modüllerden beklediği bağlantıların önce kapatılmasını istedi (kaynak 1'deki oturumun açılış mesajı: *"Devam eden dört şeridin (Satış, Alış, Finans, Üretim) bu modüllerden beklediği bağlantıları … oku; önce onları kapat."*). SAT-D209'daki "o modüllere başlanınca bağlantılar yeniden incelenir" koşulu bu şerit için gerçekleşmiştir: "ertelendi: <modül> başlayınca" işaretli bağlar artık Kalan Modüller şeridinde geliştirilir. Satış, Alış, Finans ve Üretim şeritleri için SAT-D209/FNS-D15/ALS-D58 kısıtı aynen sürer (bu modüllere kendileri dokunmaz); ALS-D63 istisnası (API-95/96/97) değişmez | SAT-D209, FNS-D15, ALS-D58/D65, URT-D20; `docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md` |
+| KLN-D5 | Kalan modüllerin başlaması | Sinan 3 Kasım 2026'da Ayarlar (Organizasyon, Kullanıcı ve Yetki, Ana Veriler, Denetim kaydı), Cari, Ürün & Hizmet, Stok & Lojistik, Çalışma Merkezi (İş/Onay), Belgeler ve Dijital Arşiv, Muhasebe ve Raporlar için ayrı "Kalan Modüller" şeridini açtı (modül listesi aynı açılış mesajının ilk cümlesidir: *"Bu oturum "Kalan Modüller" şeridi: Ayarlar (Organizasyon, Kullanıcı ve Yetki, Ana Veriler, Denetim kaydı), Cari, Ürün & Hizmet, Stok & Lojistik, Çalışma Merkezi (İş/Onay), Belgeler ve Dijital Arşiv, Muhasebe, Raporlar."*) ve dört şeridin bu modüllerden beklediği bağlantıların önce kapatılmasını istedi (kaynak 1'deki oturumun açılış mesajı: *"Devam eden dört şeridin (Satış, Alış, Finans, Üretim) bu modüllerden beklediği bağlantıları … oku; önce onları kapat."*). SAT-D209'daki "o modüllere başlanınca bağlantılar yeniden incelenir" koşulu bu şerit için gerçekleşmiştir: "ertelendi: <modül> başlayınca" işaretli bağlar artık Kalan Modüller şeridinde geliştirilir. Okuma (geri alınabilir; Sinan'ın metninde açıkça yazmaz): Satış, Alış, Finans ve Üretim şeritleri bu modüllerin içine dokunmaz, bağ sürümlü port/olayla kurulur — dört şeridin 2026-11-03 mesajları da böyle; ALS-D63 istisnası (API-95/96/97) değişmez | SAT-D209, FNS-D15, ALS-D58/D65, URT-D20; Kalan Modüller hazırlık planı (PR #934) |
 
 ## Ana rapor §4 (17 başlık) ile fark
 
@@ -40,5 +40,8 @@ Bu belge önceki karar dosyalarını silmez; KLN-D1…KLN-D5'i ekler. Yalnız **
 | 15 AI Merkezi | **Açık:** ayrı karar bekleniyor (koordinatör notu, 2026-11-03); bu karar AI Merkezi'ni ne ekler ne kaldırır |
 | Sıra: Ürün & Hizmet (5), Cari (7), Üretim (9) … | Yukarıdaki KLN-D1 sırası |
 
-Bu karar rol/yetki ataması, `OPEN-*` kapatma veya production aktivasyonu değildir. Menü yetkiye göre çizilir
-(DEC-GOV-007); grup başlığının kendi yetkisi yoktur.
+Bu karar rol/yetki ataması, `OPEN-*` kapatma veya production aktivasyonu değildir; ekranların yetki kapıları
+değişmez. Boş menü gösterilmez (DEC-GOV-007).
+
+Not (karar değil): ana rapor §4 sıra 16'daki "depo" Sinan'ın metninde geçmez; bugün depo Organizasyon › Lokasyon
+kaydıdır (DEC-ORG-002). Menüdeki yeri ekran tasarımında ayrıca ele alınır.
