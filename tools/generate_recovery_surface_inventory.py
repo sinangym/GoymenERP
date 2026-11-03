@@ -60,7 +60,7 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # lexical inventory while leaving its visible declaration counts unchanged.
 EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1309
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "eca876a5cdfa76bde0517e8915e29c6d97b915d7e3a5269f15112b6b87a12fe6"
+    "f42914beaacc654c1e293a035b703ba04f494ebdf74502ea5e1140364510111a"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
