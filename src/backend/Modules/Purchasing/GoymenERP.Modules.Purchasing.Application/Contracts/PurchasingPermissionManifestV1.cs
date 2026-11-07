@@ -45,11 +45,22 @@ public static class PurchasingPermissionManifestV1
     /// <summary>
     /// A1-3 (plan API-10; No.161 §2): cancel the whole unaccepted remainder of an APPROVED order with a reason, and read the
     /// cancellation's impact preview — apart from entering, approving and receiving; none confers another. Company-wide, not
-    /// critical. Registered only: the grant is a human gate (only SENTETIK browser-suite personas in disposable stacks hold it);
-    /// who should hold it is NEEDS-SINAN.
+    /// critical. Registered only: the grant is a human gate (only SENTETIK browser-suite personas in disposable stacks hold it).
+    /// ALS-D66 (EK10): it is proposed to the approvers of ALS-D53 (Satın Alma Müdürü, Genel Müdür, Admin), not to the Satın Alma
+    /// Uzmanı; ALS-D67: a single step with a reason and an audit record, no second approval.
     /// </summary>
     public const string OrdersCancel = "purchasing.orders.cancel";
 
+    /// <summary>
+    /// A2a-1 (PRS-02; plan §2.5 "Fiyatsız görünüm: Depo/kabul personeli"): see an order's prices — unit price, price unit, discount,
+    /// net unit price and line amount. It governs DISCLOSURE, not reachability: <see cref="OrdersRead"/> still shows the order, and
+    /// without this name every price field is null beside <c>PriceDisclosure: Withheld</c> (the Sales
+    /// <c>sales.orders.price.read</c> pattern; persona card: the Sevkiyatçı "fiyatları göremez"). Writing a price needs no separate
+    /// name: it is measured with <see cref="OrdersCreate"/> (ALS-D60 yorum). Holding create does not confer this name. Company-wide,
+    /// not critical. Registered only: who holds it is a human gate (NEEDS-SINAN); no role, seed or user receives it here.
+    /// </summary>
+    public const string OrdersPriceRead = "purchasing.orders.price.read";
+
     public static readonly IReadOnlyList<string> Names =
-        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel];
+        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead];
 }

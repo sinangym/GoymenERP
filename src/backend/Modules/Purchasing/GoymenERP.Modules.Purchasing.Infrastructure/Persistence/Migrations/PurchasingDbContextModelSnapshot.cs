@@ -360,6 +360,14 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("DiscountAmount")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.Property<decimal?>("DiscountPercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
@@ -371,6 +379,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(18,3)");
 
                     b.Property<Guid?>("ParentLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PriceUnitId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ProductId")
@@ -394,6 +405,10 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<bool>("UnitIsKilogram")
                         .HasColumnType("bit");
 
+                    b.Property<decimal?>("UnitPrice")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
                     b.HasKey("CompanyId", "OrderId", "LineNo");
 
                     b.HasAlternateKey("CompanyId", "OrderId", "LineId")
@@ -413,6 +428,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Kind", "([Kind] = 1 AND [ParentLineId] IS NULL) OR ([Kind] = 2 AND [ParentLineId] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_PurchaseOrderLines_LineNo", "[LineNo] >= 1");
+
+                            t.HasCheckConstraint("CK_PurchaseOrderLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> '00000000-0000-0000-0000-000000000000' AND ([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL) AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))");
 
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Shares", "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]");
                         });
@@ -453,8 +470,24 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("CurrencyCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid?>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly>("EffectiveOn")
                         .HasColumnType("date");
+
+                    b.Property<Guid?>("MoneyProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("MoneyProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("MoneyScale")
+                        .HasColumnType("int");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -494,6 +527,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseOrders_Cancellation", "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SupplierPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceRequestId] IS NULL OR [SourceRequestId] <> '00000000-0000-0000-0000-000000000000')");
+
+                            t.HasCheckConstraint("CK_PurchaseOrders_Money", "([CurrencyId] IS NULL AND [CurrencyCode] IS NULL AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [MoneyScale] IS NULL) OR ([CurrencyId] IS NOT NULL AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyCode] IS NOT NULL AND LEN([CurrencyCode]) > 0 AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] >= 1 AND [MoneyScale] IS NOT NULL AND [MoneyScale] >= 0 AND [MoneyScale] <= 28)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2, 3)");
 

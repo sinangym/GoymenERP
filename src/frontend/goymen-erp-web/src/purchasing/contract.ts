@@ -48,7 +48,32 @@ export interface PurchaseOrderLine {
   readonly remaining: string
   /** A1-3: the unaccepted remainder cancelled with the order ("0" until then); absent in a body from before A1-3. */
   readonly cancelled?: string
+  /**
+   * A2a-1 (API-20): the line's price as the backend calculator answered it; null when the line has none ("fiyat bekliyor") or
+   * when the prices are withheld (PRS-02); absent in a body from before A2a-1.
+   */
+  readonly price?: PurchaseOrderLinePrice | null
 }
+
+/** A2a-1 (ALS-D5): a priced line — exact texts; the net and the line amount are the server's, never recomputed here. */
+export interface PurchaseOrderLinePrice {
+  readonly unitPrice: string
+  readonly priceUnitId: string
+  readonly discountPercent: string | null
+  readonly discountAmount: string | null
+  readonly netUnitPrice: string
+  readonly lineAmount: string
+}
+
+/** A2a-1 (TEK-01): the order's currency as recorded at opening. */
+export interface PurchaseOrderCurrency {
+  readonly currencyId: string
+  readonly currencyCode: string
+  readonly scale: number
+}
+
+/** A2a-1 (PRS-02): `Withheld` — the caller lacks the price read; every price field is then null. */
+export type PurchaseOrderPriceDisclosure = 'Visible' | 'Withheld'
 
 /** A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder. */
 export interface PurchaseOrderCancellation {
@@ -94,6 +119,12 @@ export interface PurchaseOrderDetail {
   readonly acceptances: readonly PurchaseOrderAcceptanceHistory[]
   /** A1-3: the recorded cancellation; null unless Cancelled, absent in a body from before A1-3. */
   readonly cancellation?: PurchaseOrderCancellation | null
+  /** A2a-1: absent in a body from before A2a-1. */
+  readonly priceDisclosure?: PurchaseOrderPriceDisclosure
+  /** A2a-1: the order's currency, null without one. */
+  readonly currency?: PurchaseOrderCurrency | null
+  /** A2a-1 (ALS-D18): a general line has no price yet; null when the prices are withheld. */
+  readonly pricePending?: boolean | null
 }
 
 export interface PurchaseOrderList {
@@ -147,6 +178,13 @@ export interface PurchasingSupplierOffer {
   readonly nextCursor: string | null
 }
 
+/** A2a-1 (ALS-D5): a line's manual price; absent fields are not sent (the price unit defaults to the line's unit on the server). */
+export interface CreatePurchaseOrderLinePriceRequest {
+  readonly unitPrice: string
+  readonly discountPercent?: string
+  readonly discountAmount?: string
+}
+
 export interface CreatePurchaseOrderLineRequest {
   readonly lineId: string
   readonly productId: string
@@ -154,6 +192,8 @@ export interface CreatePurchaseOrderLineRequest {
   readonly unitId: string
   readonly quantity: string
   readonly sourceRequestLineId: string | null
+  /** A2a-1: absent = no price ("fiyat bekliyor", ALS-D18). */
+  readonly price?: CreatePurchaseOrderLinePriceRequest
 }
 
 export interface CreatePurchaseOrderRequest {
@@ -162,6 +202,19 @@ export interface CreatePurchaseOrderRequest {
   readonly sourceRequestId: string | null
   readonly effectiveOn: string
   readonly lines: readonly CreatePurchaseOrderLineRequest[]
+  /** A2a-1 (TEK-01): required by the server once a line is priced; absent otherwise. */
+  readonly currencyId?: string
+}
+
+/** A2a-1: one currency the purchasing order operation's Settings money profile answers. */
+export interface PurchasingCurrencyCandidate {
+  readonly currencyId: string
+  readonly code: string
+  readonly displayLabel: string
+}
+
+export interface PurchasingCurrencyCandidates {
+  readonly items: readonly PurchasingCurrencyCandidate[]
 }
 
 /**
@@ -398,12 +451,44 @@ const LINE_FIELDS = [
   'productVersion', 'unitId', 'ordered', 'technical', 'committed', 'accepted', 'remaining',
 ] as const
 
-/** A line before A1-3 (no `cancelled`) or after it (`cancelled` a canonical decimal); nothing else. */
+/** A2a-1: exactly a positive unit price, a price unit, at most one discount, and the server's net and line amount. */
+function decodeLinePrice(value: unknown): PurchaseOrderLinePrice | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, ['unitPrice', 'priceUnitId', 'discountPercent', 'discountAmount', 'netUnitPrice', 'lineAmount']) ||
+    !text(source.unitPrice) || !DECIMAL.test(source.unitPrice as string) || !/[1-9]/.test(source.unitPrice as string) ||
+    !guid(source.priceUnitId) ||
+    (source.discountPercent !== null && (!text(source.discountPercent) || !DECIMAL.test(source.discountPercent as string))) ||
+    (source.discountAmount !== null && (!text(source.discountAmount) || !DECIMAL.test(source.discountAmount as string))) ||
+    (source.discountPercent !== null && source.discountAmount !== null) ||
+    !text(source.netUnitPrice) || !DECIMAL.test(source.netUnitPrice as string) ||
+    !text(source.lineAmount) || !DECIMAL.test(source.lineAmount as string)
+  ) return null
+  return source as unknown as PurchaseOrderLinePrice
+}
+
+/** A2a-1: exactly a currency identity, a non-blank code and a scale within 0..28. */
+function decodeCurrency(value: unknown): PurchaseOrderCurrency | null | undefined {
+  if (value === null) return null
+  const source = record(value)
+  return source !== null && exact(source, ['currencyId', 'currencyCode', 'scale']) && guid(source.currencyId) &&
+    nonBlankText(source.currencyCode) && Number.isSafeInteger(source.scale) && (source.scale as number) >= 0 && (source.scale as number) <= 28
+    ? source as unknown as PurchaseOrderCurrency
+    : undefined
+}
+
+/**
+ * A line before A1-3 (no `cancelled`), after it (`cancelled` a canonical decimal) or after A2a-1 (`cancelled` and `price`, null or
+ * a valid price); nothing else.
+ */
 function decodeLine(value: unknown): PurchaseOrderLine | null {
   const source = record(value)
   if (source === null) return null
-  const current = exact(source, [...LINE_FIELDS, 'cancelled'])
+  const priced = exact(source, [...LINE_FIELDS, 'cancelled', 'price'])
+  const current = priced || exact(source, [...LINE_FIELDS, 'cancelled'])
   if (current && (!text(source.cancelled) || !DECIMAL.test(source.cancelled as string))) return null
+  if (priced && source.price !== null && decodeLinePrice(source.price) === null) return null
   if (
     !(current || exact(source, LINE_FIELDS)) ||
     !guid(source.lineId) || !Number.isSafeInteger(source.lineNo) || (source.lineNo as number) < 1 ||
@@ -539,13 +624,19 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
   readonly lines: readonly PurchaseOrderLine[]
   readonly acceptances: readonly PurchaseOrderAcceptanceHistory[]
   readonly cancellation?: PurchaseOrderCancellation | null
+  readonly priceDisclosure?: PurchaseOrderPriceDisclosure
+  readonly currency?: PurchaseOrderCurrency | null
+  readonly pricePending?: boolean | null
 } | null {
   const source = record(value)
   if (source === null || !Array.isArray(source.lines)) return null
   const legacy = exact(source, ['order', 'lines'])
   const withHistory = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
+  // A2a-1: the priced body adds the disclosure, the currency and "fiyat bekliyor"; every line then carries its price.
+  const priced = exact(source, ['order', 'lines', 'acceptances', 'cancellation', 'priceDisclosure', 'currency', 'pricePending'])
+    && Array.isArray(source.acceptances)
   // A1-3: the current body always carries the cancellation (null unless Cancelled) and every line its cancelled share.
-  const current = exact(source, ['order', 'lines', 'acceptances', 'cancellation']) && Array.isArray(source.acceptances)
+  const current = priced || (exact(source, ['order', 'lines', 'acceptances', 'cancellation']) && Array.isArray(source.acceptances))
   if (!legacy && !withHistory && !current) return null
   const order = summaryOf(source.order)
   const lines = source.lines.map(decodeLine)
@@ -566,9 +657,55 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
     new Set(acceptances.map((acceptance) => acceptance?.acceptanceId)).size !== acceptances.length ||
     acceptances.some((acceptance) => !acceptedLines.some((line) => line.lineId === acceptance?.lineId))
   ) return null
+  if (priced) {
+    const pricing = decodePricing(source, acceptedLines)
+    if (pricing === null) return null
+    return { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation, ...pricing }
+  }
+  if (acceptedLines.some((line) => line.price !== undefined)) return null
   return current
     ? { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation }
     : { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[] }
+}
+
+/**
+ * A2a-1 (PRS-02, ALS-D18): fails closed unless the disclosure and the prices agree — `Withheld` carries no price and no "fiyat
+ * bekliyor"; `Visible` carries a boolean that is exactly "some general line has no price"; a priced line needs the order's
+ * currency; a technical line is never priced; every line carries its `price` member.
+ */
+function decodePricing(source: JsonObject, lines: readonly PurchaseOrderLine[]): {
+  readonly priceDisclosure: PurchaseOrderPriceDisclosure
+  readonly currency: PurchaseOrderCurrency | null
+  readonly pricePending: boolean | null
+} | null {
+  const currency = decodeCurrency(source.currency)
+  if (currency === undefined || lines.some((line) => line.price === undefined)) return null
+  if (lines.some((line) => line.kind === 'Technical' && line.price !== null)) return null
+  if (source.priceDisclosure === 'Withheld') {
+    return source.pricePending === null && lines.every((line) => line.price === null)
+      ? { priceDisclosure: 'Withheld', currency, pricePending: null }
+      : null
+  }
+  if (source.priceDisclosure !== 'Visible' || typeof source.pricePending !== 'boolean') return null
+  const pending = lines.some((line) => line.kind === 'General' && line.price === null)
+  if (source.pricePending !== pending || (currency === null && lines.some((line) => line.price !== null))) return null
+  return { priceDisclosure: 'Visible', currency, pricePending: source.pricePending }
+}
+
+/** A2a-1: GET …/references/currencies; exact fields, unique currency identities. */
+export function decodePurchasingCurrencyCandidates(value: unknown): PurchasingCurrencyCandidates | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['items']) || !Array.isArray(source.items)) return null
+  const items: PurchasingCurrencyCandidate[] = []
+  for (const candidate of source.items as unknown[]) {
+    const item = record(candidate)
+    if (
+      item === null || !exact(item, ['currencyId', 'code', 'displayLabel']) || !guid(item.currencyId) ||
+      !nonBlankText(item.code) || !nonBlankText(item.displayLabel) || items.some((known) => known.currencyId === item.currencyId)
+    ) return null
+    items.push(item as unknown as PurchasingCurrencyCandidate)
+  }
+  return { items }
 }
 
 const ORDER_CANCEL_BLOCKERS = ['purchasing_order_not_cancellable', 'purchasing_order_nothing_to_cancel'] as const

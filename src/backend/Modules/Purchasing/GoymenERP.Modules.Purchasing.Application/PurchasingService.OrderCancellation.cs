@@ -13,8 +13,10 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// order with nothing left to cancel. A missing or too long reason is a 422 (not terminal). The impact preview reads the same
 /// record under the same name and changes nothing.
 /// <para>
-/// Not chosen here (fail-closed, NEEDS-SINAN): no second approval step and no maker ≠ checker rule — No.161 and the plan name a
-/// reason and an audit, not an approver; the name itself is registered only and granted to nobody.
+/// ALS-D66…D68 (EK10, Sinan 2026-11-03): the name is proposed to the approvers of ALS-D53 (Satın Alma Müdürü, Genel Müdür, Admin)
+/// and is registered only — the grant stays a human gate; the cancellation is ONE step with a reason and an audit record, with no
+/// second approval and no maker ≠ checker rule (ALS-D67); the cancelled remainder is not given back to the request line's need
+/// (ALS-D68: a new request is opened instead).
 /// </para>
 /// </summary>
 public sealed partial class PurchasingService
@@ -28,13 +30,14 @@ public sealed partial class PurchasingService
         var permission = bindings.OrderCancelPermission;
         const string commandName = PurchasingCommands.OrderCancelV1;
         var scope = await RequireAsync(permission, cancellationToken);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
         var expectedVersion = ParseVersion(request.ExpectedVersion);
         var requestHash = PurchasingRequestHash.Compute(commandName, orderId, request);
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
         if (replay is not null)
         {
-            return ReplayedOrder(replay);
+            return ReplayedOrder(replay, disclosure);
         }
 
         if (orderId == Guid.Empty)
@@ -56,17 +59,17 @@ public sealed partial class PurchasingService
         catch (PurchasingVersionConflictException)
         {
             return await CancellationTerminalAsync(scope, permission, envelope, requestHash, PurchasingProblemCodesV1.VersionConflict,
-                "expectedVersion", "version_conflict", cancellationToken);
+                "expectedVersion", "version_conflict", disclosure, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNotCancellable)
         {
             return await CancellationTerminalAsync(scope, permission, envelope, requestHash, PurchasingProblemCodesV1.OrderState,
-                "status", exception.Code, cancellationToken);
+                "status", exception.Code, disclosure, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNothingToCancel)
         {
             return await CancellationTerminalAsync(scope, permission, envelope, requestHash, PurchasingProblemCodesV1.OrderNothingToCancel,
-                "lines", exception.Code, cancellationToken);
+                "lines", exception.Code, disclosure, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.OrderCancellationReasonRequired
                                                              or PurchasingRuleCodes.OrderCancellationReasonTooLong)
@@ -84,7 +87,7 @@ public sealed partial class PurchasingService
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
             var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
-            return won is null ? throw Store(exception) : ReplayedOrder(won);
+            return won is null ? throw Store(exception) : ReplayedOrder(won, disclosure);
         }
         catch (PurchasingStoreException exception)
         {
@@ -93,7 +96,7 @@ public sealed partial class PurchasingService
 
         return result is null
             ? throw new PurchasingServiceException(404, "not_found")
-            : OrderResponse(result.Order, result.Outcome == PurchasingWriteOutcome.Replayed, result.OriginalCorrelationId);
+            : OrderResponse(result.Order, result.Outcome == PurchasingWriteOutcome.Replayed, result.OriginalCorrelationId, disclosure);
     }
 
     public async Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default)
@@ -135,7 +138,7 @@ public sealed partial class PurchasingService
     }
 
     private Task<PurchaseOrderResponse> CancellationTerminalAsync(Scope scope, string? permission, PurchasingWriteEnvelope envelope, string requestHash,
-        string code, string field, string fieldCode, CancellationToken cancellationToken) =>
+        string code, string field, string fieldCode, string disclosure, CancellationToken cancellationToken) =>
         TerminalAsync(scope, permission, envelope, requestHash, PurchasingCommands.OrderCancelV1,
-            new PurchasingTerminalRefusal(409, code, [new(field, fieldCode)]), ReplayedOrder, cancellationToken);
+            new PurchasingTerminalRefusal(409, code, [new(field, fieldCode)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
 }

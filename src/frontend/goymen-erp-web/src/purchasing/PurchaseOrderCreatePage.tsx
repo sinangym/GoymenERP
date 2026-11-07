@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { createPurchaseOrder, fetchPurchasingProductCandidates, fetchPurchasingSupplierOptions, type CreatePurchaseOrderOutcome } from './api'
+import { createPurchaseOrder, fetchPurchasingCurrencyCandidates, fetchPurchasingProductCandidates, fetchPurchasingSupplierOptions, type CreatePurchaseOrderOutcome } from './api'
 import { PURCHASING_CAPABILITY, PURCHASING_ROUTE, purchaseOrderDetailPath } from './capabilities'
-import type { CreatePurchaseOrderRequest, ProductPurchaseCandidates, PurchasingSupplierOffer } from './contract'
+import type { CreatePurchaseOrderLinePriceRequest, CreatePurchaseOrderRequest, ProductPurchaseCandidates, PurchasingCurrencyCandidates, PurchasingSupplierOffer } from './contract'
 import { pendingPurchaseOrderCreateKey, recallPendingPurchaseOrderCreate, releasePendingPurchaseOrderCreate, reservePendingPurchaseOrderCreate, type PendingPurchaseOrderCreate } from './pendingCreateStore'
 import { createRequestFence } from './requestFence'
-import { isDateOnly, parseQuantityInput } from '../sales/wirePrimitives'
+import { isDateOnly, parseDecimalInput, parseQuantityInput } from '../sales/wirePrimitives'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { Button } from '../ui/Button'
-import { CREATE_FORM_TEXT as F, ORDER_CREATE_TEXT as T } from './purchasingText'
+import { CREATE_FORM_TEXT as F, ORDER_CREATE_TEXT as T, ORDER_PRICE_TEXT as P } from './purchasingText'
 import styles from './purchasing.module.css'
 
 type ReadState<T> =
@@ -44,8 +44,36 @@ function readFailure(outcome: Exclude<Awaited<ReturnType<typeof fetchPurchasingS
 function commandFailure(outcome: Extract<CreatePurchaseOrderOutcome, { type: 'failed' }>): string {
   if (outcome.status === 401 || outcome.status === 403) return T.createDenied
   if (outcome.status === 409) return T.stateChanged(outcome.code ?? 'account_state')
+  // A2a-1: a refused price or currency names its own rule (`lines[i].price` / `currencyId`); the screen never decides it.
+  if (outcome.status === 422 && outcome.priceCode !== undefined) return P.priceRejected(outcome.priceCode)
   if (outcome.status === 422) return T.lineRejected(outcome.code ?? 'validation_failed')
   return T.notSaved(outcome.code ?? outcome.status)
+}
+
+type DiscountKind = 'none' | 'percent' | 'amount'
+
+/**
+ * A2a-1 (ALS-D5): the typed price as wire text — empty price = no price ("fiyat bekliyor", ALS-D18). Only the shape is judged
+ * here (a positive decimal, a percent within 0..100); the decimals, the unit and every amount are the server's.
+ */
+function priceOf(unitPrice: string, kind: DiscountKind, discount: string):
+  | { readonly ok: true; readonly price: CreatePurchaseOrderLinePriceRequest | null }
+  | { readonly ok: false; readonly message: string } {
+  if (unitPrice.trim() === '') {
+    return kind === 'none' || discount.trim() === '' ? { ok: true, price: null } : { ok: false, message: P.discountWithoutPrice }
+  }
+  const parsed = parseQuantityInput(unitPrice)
+  if (!parsed.ok) return { ok: false, message: P.priceInvalid }
+  if (kind === 'none') return { ok: true, price: { unitPrice: parsed.value } }
+  const value = parseDecimalInput(discount)
+  if (!value.ok || (kind === 'percent' && Number(value.value) > 100)) return { ok: false, message: P.discountInvalid }
+  return { ok: true, price: kind === 'percent' ? { unitPrice: parsed.value, discountPercent: value.value } : { unitPrice: parsed.value, discountAmount: value.value } }
+}
+
+function currencyFailure(outcome: Exclude<Awaited<ReturnType<typeof fetchPurchasingCurrencyCandidates>>, { type: 'ok-single' }>): string {
+  if (outcome.type === 'http' && outcome.status === 503) return P.currencyUnavailable
+  if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) return P.currencyDenied
+  return P.currencyFailed
 }
 
 export function PurchaseOrderCreatePage() {
@@ -73,6 +101,12 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
   const [productId, setProductId] = useState('')
   const [suppliers, setSuppliers] = useState<ReadState<PurchasingSupplierOffer>>({ type: 'loading' })
   const [products, setProducts] = useState<ReadState<ProductPurchaseCandidates>>({ type: 'idle' })
+  const [currencies, setCurrencies] = useState<ReadState<PurchasingCurrencyCandidates>>({ type: 'loading' })
+  const [currencyId, setCurrencyId] = useState('')
+  const [unitPrice, setUnitPrice] = useState('')
+  const [discountKind, setDiscountKind] = useState<DiscountKind>('none')
+  const [discount, setDiscount] = useState('')
+  const currencyFence = useRef(createRequestFence())
   const [formError, setFormError] = useState<string | null>(null)
   const supplierFence = useRef(createRequestFence())
   const productFence = useRef(createRequestFence())
@@ -112,9 +146,20 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
         : { type: 'failed', message: outcome.type === 'http' ? F.productSourceHttp(outcome.status) : F.productSourceFailed })
   }, [boundary, companyId, effectiveOn, productSearch])
 
+  // A2a-1: the purchasing currencies; a failure never blocks the form — the order is then opened without prices.
+  const readCurrencies = useCallback(async () => {
+    if (companyId === null) return
+    const token = currencyFence.current.capture()
+    setCurrencies({ type: 'loading' })
+    const outcome = await fetchPurchasingCurrencyCandidates(companyId, token.signal)
+    if (!currencyFence.current.isCurrent(token)) return
+    setCurrencies(outcome.type === 'ok-single' ? { type: 'ready', data: outcome.data } : { type: 'failed', message: currencyFailure(outcome) })
+  }, [companyId])
+
   useEffect(() => {
     void readSuppliers()
-    return () => { supplierFence.current.invalidate(); productFence.current.invalidate(); commandGeneration.current += 1 }
+    void readCurrencies()
+    return () => { supplierFence.current.invalidate(); productFence.current.invalidate(); currencyFence.current.invalidate(); commandGeneration.current += 1 }
   }, [namespace, shell.routeEntryGeneration])
 
   const send = useCallback(async (snapshot: PendingPurchaseOrderCreate, unresolvedSince?: string) => {
@@ -152,16 +197,28 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
       setFormError(T.fieldsRequired)
       return
     }
+    const priced = priceOf(unitPrice, discountKind, discount)
+    if (!priced.ok) {
+      setFormError(priced.message)
+      return
+    }
+    const currency = currencies.type === 'ready' ? currencies.data.items.find((item) => item.currencyId === currencyId) : undefined
+    if (priced.price !== null && currency === undefined) {
+      setFormError(P.currencyRequired)
+      return
+    }
     setFormError(null)
+    const line = {
+      lineId: newId(), productId: product.productId, expectedProductVersion: product.productVersion,
+      unitId: product.unitId, quantity: parsedQuantity.value, sourceRequestLineId: null,
+    }
     const payload: CreatePurchaseOrderRequest = {
       supplierPartyId: supplier.supplierPartyId,
       companyAccountId: supplier.companyAccountId,
       sourceRequestId: null,
       effectiveOn,
-      lines: [{
-        lineId: newId(), productId: product.productId, expectedProductVersion: product.productVersion,
-        unitId: product.unitId, quantity: parsedQuantity.value, sourceRequestLineId: null,
-      }],
+      lines: [priced.price === null ? line : { ...line, price: priced.price }],
+      ...(currency === undefined ? {} : { currencyId: currency.currencyId }),
     }
     void send({ actorId, companyId, payload, idempotencyKey: newId() })
   }
@@ -180,6 +237,13 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
       <fieldset disabled={frozen}><legend>{T.supplierLegend}</legend><div className={styles.searchRow}><label htmlFor="supplier-search">{T.supplierSearch}</label><input id="supplier-search" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} /><Button type="button" onClick={() => void readSuppliers()}>{F.search}</Button></div>{suppliers.type === 'loading' ? <p role="status">{T.suppliersLoading}</p> : suppliers.type === 'failed' ? <p role="alert">{suppliers.message}</p> : <><label htmlFor="supplier">{T.supplierAccount}</label><select id="supplier" value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">{F.choose}</option>{suppliers.type === 'ready' ? suppliers.data.items.map((item) => <option key={`${item.supplierPartyId}|${item.companyAccountId}`} value={`${item.supplierPartyId}|${item.companyAccountId}`}>{item.label}</option>) : null}</select>{suppliers.type === 'ready' && suppliers.data.nextCursor !== null ? <Button type="button" onClick={() => void readSuppliers(suppliers.data.nextCursor ?? undefined, true)}>{T.moreSuppliers}</Button> : null}</>}
       </fieldset>
       <fieldset disabled={frozen}><legend>{T.lineLegend}</legend><div className={styles.formGrid}><label htmlFor="effective-on">{F.businessDate}</label><input id="effective-on" type="date" value={effectiveOn} onChange={(event) => { productFence.current.invalidate(); setEffectiveOn(event.target.value); setProductId(''); setProducts({ type: 'idle' }) }} /><label htmlFor="product-search">{F.productSearch}</label><div className={styles.searchRow}><input id="product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /><Button type="button" onClick={() => void readProducts()}>{F.search}</Button></div><label htmlFor="product">{T.product}</label>{products.type === 'loading' ? <p role="status">{F.productsLoading}</p> : products.type === 'failed' ? <p role="alert">{products.message}</p> : <select id="product" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">{F.choose}</option>{products.type === 'ready' ? products.data.items.map((item) => <option key={item.productId} value={item.productId}>{F.productOption(item.code, item.name, item.unitCode)}</option>) : null}</select>} {products.type === 'ready' && products.data.searchWindowFull ? <p className={styles.note}>{T.searchWindowFull}</p> : null}<label htmlFor="quantity">{F.quantity}</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder={T.quantityPlaceholder} /></div></fieldset>
+      <fieldset disabled={frozen} data-testid="purchase-order-price"><legend>{P.legend}</legend><p className={styles.note}>{P.note}</p><div className={styles.formGrid}>
+        <label htmlFor="currency">{P.currency}</label>{currencies.type === 'loading' ? <p role="status">{P.currencyLoading}</p> : currencies.type === 'failed' ? <p role="alert">{currencies.message}</p> : currencies.type === 'ready' && currencies.data.items.length === 0 ? <p role="status">{P.currencyNone}</p> : <select id="currency" value={currencyId} onChange={(event) => setCurrencyId(event.target.value)}><option value="">{F.choose}</option>{currencies.type === 'ready' ? currencies.data.items.map((item) => <option key={item.currencyId} value={item.currencyId}>{item.displayLabel}</option>) : null}</select>}
+        <label htmlFor="unit-price">{P.unitPrice}</label><input id="unit-price" inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} placeholder={P.unitPricePlaceholder} aria-describedby="price-unit" />
+        <span />{(() => { const product = products.type === 'ready' ? products.data.items.find((item) => item.productId === productId) : undefined; return <p id="price-unit" className={styles.mono}>{product === undefined ? P.priceUnitPending : P.priceUnit(product.unitCode)}</p> })()}
+        <label htmlFor="discount-kind">{P.discountKind}</label><select id="discount-kind" value={discountKind} onChange={(event) => setDiscountKind(event.target.value as DiscountKind)}><option value="none">{P.discountNone}</option><option value="percent">{P.discountPercent}</option><option value="amount">{P.discountAmount}</option></select>
+        {discountKind === 'none' ? null : <><label htmlFor="discount-value">{P.discountValue}</label><input id="discount-value" inputMode="decimal" value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder={P.discountPlaceholder} /></>}
+      </div></fieldset>
       <div className={styles.actions}><Button type="submit" variant="primary" disabled={frozen}>{attempt.phase === 'submitting' ? F.saving : T.submit}</Button></div>
     </form>
   </main>

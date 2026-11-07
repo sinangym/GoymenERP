@@ -369,8 +369,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A1-3 (plan API-10; No.161 §2): +5 order remainder cancellation SQL facts (one save after a partial receipt + both
             // supply ports + checks, draft / fully accepted refusals, Σ-shares kept + request rejection unblocked, company
             // isolation, Down refusal 51168), kept ordinal-sorted (70c956bd… -> ae6ee9f7…).
+            // A2a-1 (plan TEK-01/API-20): +4 order line price SQL facts (one save + audit + rebuild + approval + the price/money checks,
+            // unpriced columns null + priced technical line refused, company isolation, Down refusal 51169), kept ordinal-sorted
+            // (ae6ee9f7… -> 2085f158…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "ae6ee9f768dc60f8521799e606b2b972515730b5a8e2ae843aaff923a6103436",
+                "2085f158d4311ba9307f28f7006ea8d97e97b5be49ab1f44e9a7aac6c21cee9f",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -564,9 +567,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A1-3 (plan API-10, No.161 §2): the order's Cancelled status and cancellation-facts check, the line's
             // cancelled share inside the shares check, and the write guard's allow-list for exactly those columns; filters and
             // keys unchanged.
+            // Re-measured for A2a-1 (plan TEK-01/API-20): the order's money snapshot columns and their check, the line's price
+            // columns (precisions) and their check; the write guard's allow-list is unchanged (prices never move); filters and
+            // keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "182b5be853138b47504dd19edca70cf1cae781a1fe07aededc54f448d12c2d6f",
+                "639fb4a9132ee169c2540bb0d04f259069f664a4f6cba71860429af26afd756e",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1372,7 +1378,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingModuleExtensions.cs"] =
                     new(
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
-                        "af5a23e1542bc2163d9f1de826a53154c4a2cc1c820ce51baa32aec2c61e5c6c",
+                        // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
+                        "5e9af601e67b444b2f9c480618af865757ecc4c99fd8cb573898cf7af6c7c95c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1435,10 +1442,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // same token count.
                 // Re-fingerprinted for A1-3: the order cancellation (facts and cancelled shares written, audited and rebuilt
                 // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
+                // Re-fingerprinted for A2a-1: the order's money snapshot and the line prices written once, audited and rebuilt
+                // through the domain; same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "10ab34c9581f8bab185669b0cceb34f5835e20837c650cc22b0d62769922ec0e",
+                        "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2065,6 +2074,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // A1-3 (plan API-10, No.161 §2): one reviewed statement, before every drop. Down refuses (51168, used by no other
                 // migration) while any order is Cancelled or any line carries a cancelled share, which dropping the column would
                 // silently turn back into future supply. Up only adds columns and checks.
+                // A2a-1 (plan TEK-01/API-20): one reviewed statement, before every drop. Down refuses (51169, used by no other
+                // migration) while any order has a currency or any line a price, which dropping the columns would silently turn
+                // unpriced. Up only adds nullable columns and checks.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
+                    new(
+                        "a64a27b3e67c79beacc90e9d608449f7533316731230d655f3e537689520bf40",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103053923_AddPurchaseOrderCancellation.cs"] =
                     new(
