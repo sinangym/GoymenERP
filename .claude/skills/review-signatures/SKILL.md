@@ -71,7 +71,13 @@ squash:
 git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected head sha>; echo "exit=$? main=$(git rev-parse origin/main)"
 ```
 Write the main SHA and exit code in the merge receipt. Fresh required CI must be green on that same head. Exit ≠ 0:
-do not merge — merge main into the PR, re-pin (`main-merge-resync`), rerun CI (K3: GOV-D1 for the review; K1/K2: the new head needs `DELTA-OK` per v4). P3: the
+do not merge; pick the tier (Faz 0.1). **(a)** `git diff --quiet $(git merge-base origin/main <expected head>) origin/main -- <scope paths>`
+exits ≠ 0 (main moved inside the scope): merge main into the PR, re-pin (`main-merge-resync`), rerun CI (K3: GOV-D1 for the review;
+K1/K2: the new head needs `DELTA-OK` per v4). **(b)** exits 0 (main moved only outside the scope, e.g. docs/frontend): no re-pin and no
+content re-review, but CI tests the merge ref, so a fresh one is needed. The only way is a **non-empty mechanical merge commit** of
+origin/main into the PR branch (never an empty commit, "re-run jobs" or close/reopen). `DELTA-OK` for the new head only when
+`git diff <old head> <new head>` is exactly main's incoming change (the PR's own files untouched). Write the main SHA, the tier and the new
+CI run id in the receipt. P3: the
 squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
 merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
 
