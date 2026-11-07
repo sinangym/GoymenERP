@@ -41,20 +41,27 @@ public static class AccountingPostingAccountMappingKeysV1
     public const string Receivable = "receivable";
     public const string Revenue = "revenue";
     public const string VatOutput = "vat-output";
+
+    /// <summary>
+    /// The sales-side VAT withholding the buyer keeps (KLN-D12): its counter-account is open (NEEDS-SINAN
+    /// #66 6707860683); the key only lets a company configure it, and with no row the line is unmapped.
+    /// </summary>
+    public const string WithholdingReceivable = "withholding-receivable";
     public const string Payable = "payable";
     public const string Inventory = "inventory";
     public const string VatInput = "vat-input";
     public const string WithholdingPayable = "withholding-payable";
     public const string Expense = "expense";
 
-    public static IReadOnlyList<string> SalesInvoice { get; } = [Receivable, Revenue, VatOutput];
+    public static IReadOnlyList<string> SalesInvoice { get; } = [Receivable, Revenue, VatOutput, WithholdingReceivable];
 
     public static IReadOnlyList<string> PurchaseInvoice { get; } =
         [Payable, Inventory, VatInput, WithholdingPayable, Expense];
 
     public static bool IsAllowed(string? purpose, string? key) => purpose switch
     {
-        AccountingPostingAccountMappingPurposesV1.SalesInvoice => key is Receivable or Revenue or VatOutput,
+        AccountingPostingAccountMappingPurposesV1.SalesInvoice =>
+            key is Receivable or Revenue or VatOutput or WithholdingReceivable,
         AccountingPostingAccountMappingPurposesV1.PurchaseInvoice =>
             key is Payable or Inventory or VatInput or WithholdingPayable or Expense,
         _ => false,

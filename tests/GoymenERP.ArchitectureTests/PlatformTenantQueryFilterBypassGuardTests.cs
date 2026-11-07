@@ -620,7 +620,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/AccountingDbContext.cs"] =
                 // Re-measured for B-04a: the posting account mapping versions and rows, both company-scoped with
                 // the CompanyId filter and company-leading keys; the write guard admits only activation facts.
-                "f054fd42555d795947f9c2f4d223986e7b2e21711637a13db14995f0a4911adc",
+                "e44e2ab006cc5cedb66a76856cf0290757494928d7ba1b21e422a477a5945462",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for AT-037: StockCounts and StockCountDecisions, each with the CompanyId query filter and a
@@ -2060,7 +2060,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/"
                  + "20261107140038_AddPostingAccountMappings.cs"] =
                     new(
-                        "2f50468e8042879ac15e2340448e8c7f7a45f008b398eb9c2a8d26498f326c58",
+                        "4c59513ac11ad0e19502fc1ba4944faafa6fd5b74606f83de34180ae13d9d215",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

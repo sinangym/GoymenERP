@@ -80,7 +80,7 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
 
     /// <summary>B-04a: the purposes and the mapping keys each purpose may carry (no account number).</summary>
     internal const string PostingAccountMappingRowKeyCheck =
-        "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output')) OR "
+        "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output', N'withholding-receivable')) OR "
         + "([Purpose] = N'purchase-invoice' AND [MappingKey] IN "
         + "(N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense'))";
 

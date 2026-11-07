@@ -264,7 +264,7 @@ purchase line purpose, service purchase → `expense`, scrap sale → `revenue` 
 
 - **Version**: (CompanyId, MappingVersion), `EffectiveFrom` (business date), Prepared (1) → Active (2) →
   Superseded (3). Rows are immutable. Each row has a purpose (`sales-invoice` | `purchase-invoice`) and a key
-  (`receivable`, `revenue`, `vat-output` | `payable`, `inventory`, `vat-input`, `withholding-payable`,
+  (`receivable`, `revenue`, `vat-output`, `withholding-receivable` — its account is open, NEEDS-SINAN #66 6707860683 | `payable`, `inventory`, `vat-input`, `withholding-payable`,
   `expense`). It may also name optional selectors (`ItemType`, `LinePurpose`, `IsExport`, `VatRateCode`, the
   last only on a VAT key) and an `AccountId` that must be in the ACTIVE approved account plan (its code is
   frozen on the row).
