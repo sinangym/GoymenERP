@@ -2,12 +2,12 @@
 
 Kaynak: Sinan Göymen'in 7 Kasım 2026 tarihli Claude cloud oturumunda (Alış şeridi), PR #959 (EK11 düzeltmeleri)
 review'unda açılan Muhasebe `purchasing.orders.read` / `purchasing.orders.price.read` NEEDS-SINAN çifti için verdiği
-**doğrudan cevap**. Soru **İngilizce** soruldu; soru, bütün seçenekler ve seçenek açıklamaları sorulduğu gibi aynen
+**doğrudan cevap** (makbuz: https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6707388863). Soru **İngilizce** soruldu; soru, bütün seçenekler ve seçenek açıklamaları sorulduğu gibi aynen
 aktarılmıştır, altında Türkçe karşılığı **çeviri** olarak verilmiştir (çeviri karar metni değildir; ayrılık olursa
 İngilizce metin geçerlidir). "(Önerilen)" işareti Claude'un soruyu sorarken koyduğu işarettir. Claude yalnız soruyu ve
 seçenekleri hazırlamıştır; seçimi Sinan yapmıştır.
 
-Numaralama: ALS-D69…D72 EK11'dedir. Bu dosya ALS-D73'ü içerir. EK11 (merge edildi, #957) içeriği değişmez.
+Numaralama: ALS-D69…D72 EK11'dedir. Bu dosya ALS-D73'ü içerir. EK11'in **karar** içeriği (§1) değişmez; bu PR'da yalnız etiket/atıf düzeltmesi yapıldı.
 
 ## 0. Yetki ve sınır
 
@@ -39,15 +39,15 @@ Bu bölümdeki **yorum** etiketli maddeler geri alınabilir; karar değildir.
 
 - **ALS-D73 (okuma):** `purchasing.orders.read` kart için **Muhasebe** ve **Muhasebe Müdürü**'ne **önerilir**; ikisi
   ALS-D70'teki `purchasing.orders.price.read` ile birlikte alış siparişini açar ve fiyatları görür. **Yalnız
-  okumadır:** `purchasing.orders.create`, `.approve`, `.cancel`, talep açma/geri çekme/onay ve fiyat yazma hücreleri
-  değişmez (`—` / kartta olduğu gibi).
+  okumadır:** create/approve/cancel Muhasebe ve Muhasebe Müdürü için `—` (ALS-D73 seçenek açıklaması: "They cannot
+  create, edit or approve"); talep açma/geri çekme/onay ve fiyat yazma hücreleri değişmez (`—`).
 - **SAT-D191 istisnası:** SAT-D191 Muhasebe Müdürü'ne öteki modüllerin okumalarını vermez (ana tabloda `—`). ALS-D73
   bu hücreyi **yalnız kartın "Satın alma personaları" ek tablosunda** `+` yapar; SAT-D191'in öteki modüller (stok,
   üretim, lojistik …) için `—` kuralı aynen geçerlidir.
 - **Persona kartı:** "Satın alma personaları" tablosunda `purchasing.orders.read` satırı Muhasebe `+` ve Muhasebe
   Müdürü `+` olur (ALS-D73); PR #959'da açılan NEEDS-SINAN notu ALS-D73 atfıyla değişir. Öneridir; gerçek grant insan
   kapısındadır, yalnız SENTETIK personalar test için alabilir.
-  - *Yorum:* Muhasebe Müdürü, Muhasebe personasının yetkilerini kendiliğinden almaz (kart, SAT-D188); burada seçenek
+  - *Yorum:* Muhasebe Müdürü, Muhasebe personasının yetkilerini kendiliğinden almaz (kart, SAT-D187; Muhasebe Müdürü satırı ve NS-13 gerekçesi); burada seçenek
     açıklaması ikisini ayrı ayrı adlandırdığı için ikisi de `+` alır. Geri alınabilir.
 - **Kod:** değişmez. `purchasing.orders.read` ve `.price.read` manifestte kayıtlıdır; grant yoktur.
 
