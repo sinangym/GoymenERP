@@ -1,4 +1,5 @@
-export type PurchaseOrderStatus = 'Draft' | 'Approved'
+/** A1-3 (plan API-10; No.161 §2): `Cancelled` is an approved order whose whole unaccepted remainder was cancelled. */
+export type PurchaseOrderStatus = 'Draft' | 'Approved' | 'Cancelled'
 export type PurchaseOrderLineKind = 'General' | 'Technical'
 
 export interface PurchaseOrderSummary {
@@ -45,6 +46,39 @@ export interface PurchaseOrderLine {
   readonly committed: string
   readonly accepted: string
   readonly remaining: string
+  /** A1-3: the unaccepted remainder cancelled with the order ("0" until then); absent in a body from before A1-3. */
+  readonly cancelled?: string
+}
+
+/** A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder. */
+export interface PurchaseOrderCancellation {
+  readonly cancelledBy: string
+  readonly cancelledAtUtc: string
+  readonly reason: string
+}
+
+/** A1-3 (plan API-10): GET …/orders/{id}/cancel-impact — what a cancellation at `version` would do; reads only. */
+export interface PurchaseOrderCancelImpact {
+  readonly orderId: string
+  readonly status: PurchaseOrderStatus
+  readonly version: string
+  readonly sourceRequestId: string | null
+  readonly cancellable: boolean
+  /** The refusal the command would answer: `purchasing_order_not_cancellable` | `purchasing_order_nothing_to_cancel`. */
+  readonly blocker: string | null
+  readonly hasAcceptance: boolean
+  readonly lines: readonly PurchaseOrderCancelImpactLine[]
+}
+
+export interface PurchaseOrderCancelImpactLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly kind: PurchaseOrderLineKind
+  readonly productId: string
+  readonly unitId: string
+  readonly committed: string
+  readonly accepted: string
+  readonly toCancel: string
 }
 
 export interface PurchaseOrderAcceptanceHistory {
@@ -58,6 +92,8 @@ export interface PurchaseOrderDetail {
   readonly order: PurchaseOrderSummary
   readonly lines: readonly PurchaseOrderLine[]
   readonly acceptances: readonly PurchaseOrderAcceptanceHistory[]
+  /** A1-3: the recorded cancellation; null unless Cancelled, absent in a body from before A1-3. */
+  readonly cancellation?: PurchaseOrderCancellation | null
 }
 
 export interface PurchaseOrderList {
@@ -255,7 +291,7 @@ function nullableGuid(value: unknown): value is string | null {
 }
 
 function status(value: unknown): value is PurchaseOrderStatus {
-  return value === 'Draft' || value === 'Approved'
+  return value === 'Draft' || value === 'Approved' || value === 'Cancelled'
 }
 
 function requestStatus(value: unknown): value is PurchaseRequestStatus {
@@ -357,14 +393,19 @@ function decodeSummary(value: unknown): PurchaseOrderSummary | null {
   return source as unknown as PurchaseOrderSummary
 }
 
+const LINE_FIELDS = [
+  'lineId', 'lineNo', 'kind', 'parentLineId', 'sourceRequestLineId', 'productId',
+  'productVersion', 'unitId', 'ordered', 'technical', 'committed', 'accepted', 'remaining',
+] as const
+
+/** A line before A1-3 (no `cancelled`) or after it (`cancelled` a canonical decimal); nothing else. */
 function decodeLine(value: unknown): PurchaseOrderLine | null {
   const source = record(value)
+  if (source === null) return null
+  const current = exact(source, [...LINE_FIELDS, 'cancelled'])
+  if (current && (!text(source.cancelled) || !DECIMAL.test(source.cancelled as string))) return null
   if (
-    source === null ||
-    !exact(source, [
-      'lineId', 'lineNo', 'kind', 'parentLineId', 'sourceRequestLineId', 'productId',
-      'productVersion', 'unitId', 'ordered', 'technical', 'committed', 'accepted', 'remaining',
-    ]) ||
+    !(current || exact(source, LINE_FIELDS)) ||
     !guid(source.lineId) || !Number.isSafeInteger(source.lineNo) || (source.lineNo as number) < 1 ||
     !lineKind(source.kind) || !nullableGuid(source.parentLineId) || !nullableGuid(source.sourceRequestLineId) ||
     !guid(source.productId) || !canonicalVersion(source.productVersion) || !guid(source.unitId)
@@ -385,6 +426,16 @@ function decodeAcceptanceHistory(value: unknown): PurchaseOrderAcceptanceHistory
     !instant(source.recordedAtUtc)
   ) return null
   return source as unknown as PurchaseOrderAcceptanceHistory
+}
+
+/** A1-3: null, or exactly a non-blank canceller, an instant and a non-blank reason. */
+function decodeCancellation(value: unknown): PurchaseOrderCancellation | null | undefined {
+  if (value === null) return null
+  const source = record(value)
+  return source !== null && exact(source, ['cancelledBy', 'cancelledAtUtc', 'reason']) &&
+    nonBlankText(source.cancelledBy) && instant(source.cancelledAtUtc) && nonBlankText(source.reason)
+    ? source as unknown as PurchaseOrderCancellation
+    : undefined
 }
 
 const REQUEST_SUMMARY_FIELDS = ['id', 'companyId', 'status', 'version', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount'] as const
@@ -483,17 +534,31 @@ export function decodePurchaseOrderDetail(value: unknown): PurchaseOrderReadDeta
 function decodeDetailWith<Summary extends PurchaseOrderSummary>(
   value: unknown,
   summaryOf: (value: unknown) => Summary | null,
-): { readonly order: Summary; readonly lines: readonly PurchaseOrderLine[]; readonly acceptances: readonly PurchaseOrderAcceptanceHistory[] } | null {
+): {
+  readonly order: Summary
+  readonly lines: readonly PurchaseOrderLine[]
+  readonly acceptances: readonly PurchaseOrderAcceptanceHistory[]
+  readonly cancellation?: PurchaseOrderCancellation | null
+} | null {
   const source = record(value)
   if (source === null || !Array.isArray(source.lines)) return null
   const legacy = exact(source, ['order', 'lines'])
-  const current = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
-  if (!legacy && !current) return null
+  const withHistory = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
+  // A1-3: the current body always carries the cancellation (null unless Cancelled) and every line its cancelled share.
+  const current = exact(source, ['order', 'lines', 'acceptances', 'cancellation']) && Array.isArray(source.acceptances)
+  if (!legacy && !withHistory && !current) return null
   const order = summaryOf(source.order)
   const lines = source.lines.map(decodeLine)
   if (order === null || lines.some((line) => line === null) || order.lineCount !== lines.length) return null
   const acceptedLines = lines as PurchaseOrderLine[]
-  const acceptances = current
+  const cancellation = current ? decodeCancellation(source.cancellation) : null
+  if (cancellation === undefined) return null
+  // Fail closed: the status and the cancellation agree, every line of a current body carries its share, and a body
+  // from before A1-3 can never be Cancelled.
+  if (current
+    ? (order.status === 'Cancelled') !== (cancellation !== null) || acceptedLines.some((line) => line.cancelled === undefined)
+    : order.status === 'Cancelled' || acceptedLines.some((line) => line.cancelled !== undefined)) return null
+  const acceptances = withHistory || current
     ? (source.acceptances as unknown[]).map(decodeAcceptanceHistory)
     : []
   if (
@@ -501,7 +566,41 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
     new Set(acceptances.map((acceptance) => acceptance?.acceptanceId)).size !== acceptances.length ||
     acceptances.some((acceptance) => !acceptedLines.some((line) => line.lineId === acceptance?.lineId))
   ) return null
-  return { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[] }
+  return current
+    ? { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation }
+    : { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[] }
+}
+
+const ORDER_CANCEL_BLOCKERS = ['purchasing_order_not_cancellable', 'purchasing_order_nothing_to_cancel'] as const
+
+/**
+ * A1-3 (plan API-10): GET …/cancel-impact. Fails closed: exact fields, a known blocker exactly when not cancellable, and
+ * unique lines in order; the preview is information only — the command re-measures everything.
+ */
+export function decodePurchaseOrderCancelImpact(value: unknown): PurchaseOrderCancelImpact | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, ['orderId', 'status', 'version', 'sourceRequestId', 'cancellable', 'blocker', 'hasAcceptance', 'lines']) ||
+    !guid(source.orderId) || !status(source.status) || !canonicalVersion(source.version) || !nullableGuid(source.sourceRequestId) ||
+    typeof source.cancellable !== 'boolean' || typeof source.hasAcceptance !== 'boolean' || !Array.isArray(source.lines) ||
+    (source.cancellable
+      ? source.blocker !== null
+      : !(ORDER_CANCEL_BLOCKERS as readonly unknown[]).includes(source.blocker))
+  ) return null
+  const lines: PurchaseOrderCancelImpactLine[] = []
+  for (const candidate of source.lines as unknown[]) {
+    const line = record(candidate)
+    if (
+      line === null ||
+      !exact(line, ['lineId', 'lineNo', 'kind', 'productId', 'unitId', 'committed', 'accepted', 'toCancel']) ||
+      !guid(line.lineId) || line.lineNo !== lines.length + 1 || !lineKind(line.kind) || !guid(line.productId) || !guid(line.unitId) ||
+      ![line.committed, line.accepted, line.toCancel].every((quantity) => text(quantity) && DECIMAL.test(quantity)) ||
+      lines.some((known) => known.lineId === line.lineId)
+    ) return null
+    lines.push(line as unknown as PurchaseOrderCancelImpactLine)
+  }
+  return source as unknown as PurchaseOrderCancelImpact
 }
 
 export function decodePurchaseOrderCommandResponse(value: unknown): PurchaseOrderCommandResponse | null {

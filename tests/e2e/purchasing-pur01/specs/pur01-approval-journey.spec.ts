@@ -18,7 +18,7 @@ const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 interface OrderSummary {
   readonly id: string
   readonly companyId: string
-  readonly status: 'Draft' | 'Approved'
+  readonly status: 'Draft' | 'Approved' | 'Cancelled'
   readonly version: string
   readonly supplierPartyId: string
   readonly companyAccountId: string
@@ -683,4 +683,98 @@ test('P01-WD the creator-submitter withdraws its own submitted request from the 
 
   await page.goto(REQUEST_LIST_ROUTE)
   await expect(page.getByRole('row').filter({ hasText: `…${requestId.slice(-8)}` })).toContainText('Geri çekildi')
+})
+
+test('PO-CANCEL the approver cancels an approved order\'s whole unaccepted remainder from the detail with a reason; other actors are fenced (A1-3)', async ({ page }) => {
+  // A1-3 (plan API-10/UI-05; No.161 §2): the whole not-yet-accepted remainder of an APPROVED order is cancelled with a reason;
+  // the future supply falls to zero, nothing physical happens. Only the disposable approver holds purchasing.orders.cancel.
+  const creatorHeaders = { [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json' }
+  const create = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
+    headers: { ...creatorHeaders, 'Idempotency-Key': 'browser-suite:pur01:cancellation-order-create' },
+    data: {
+      supplierPartyId, companyAccountId, sourceRequestId: null, effectiveOn: '2026-09-18',
+      lines: [{
+        lineId: '7b1c0f2e-0000-4a00-8000-0000000000c1', productId, expectedProductVersion: productVersion,
+        unitId: productUnitId, quantity: '4', sourceRequestLineId: null,
+      }],
+    },
+  })
+  expect(create.status()).toBe(201)
+  const draft = (await create.json()) as ApprovalResponse
+  const cancelOrderId = draft.detail.order.id
+  const approve = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}/${cancelOrderId}/approval`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: approverActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+      'Idempotency-Key': `browser-suite:pur01:cancellation-order-approve:${cancelOrderId}`,
+    },
+    data: { expectedVersion: draft.detail.order.version },
+  })
+  expect(approve.status()).toBe(200)
+  const approvedVersion = ((await approve.json()) as ApprovalResponse).detail.order.version
+  const cancellationPath = `${ORDERS_PATH}/${cancelOrderId}/cancellation`
+
+  // Neither the creator nor the reader holds the cancellation name: both are refused at the permission fence, preview included.
+  for (const [actor, key] of [[creatorActor, 'creator'], [readerActor, 'reader']] as const) {
+    const headers = { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId }
+    const denied = await page.request.post(`${env.apiBaseUrl}${cancellationPath}`, {
+      headers: { ...headers, 'Content-Type': 'application/json', 'Idempotency-Key': `browser-suite:pur01:${key}-cancellation-denied:${cancelOrderId}` },
+      data: { expectedVersion: approvedVersion, reason: 'SENTETIK browser-suite:pur01 başkası' },
+    })
+    expect(denied.status()).toBe(403)
+    const preview = await page.request.get(`${env.apiBaseUrl}${ORDERS_PATH}/${cancelOrderId}/cancel-impact`, { headers })
+    expect(preview.status()).toBe(403)
+  }
+  expect((await readOrder(page, readerActor, cancelOrderId)).order).toMatchObject({ status: 'Approved', version: approvedVersion })
+
+  // The approver opens the order detail, reads the impact preview and cancels through the real control.
+  await signInAs(page, approverActor)
+  await page.goto(`${LIST_ROUTE}/${cancelOrderId}`)
+  await expect(page.getByText(cancelOrderId, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { level: 2, name: 'Kabul edilmemiş kalanı iptal et' })).toBeVisible()
+  const impact = page.getByRole('table', { name: 'İptal edilecek kalan, satır bazında' })
+  await expect(impact.getByRole('row').nth(1)).toContainText('4')
+  await page.getByRole('button', { name: 'Kalanı iptal et', exact: true }).click()
+  await expect(page.getByText('İptal gerekçesi boş olamaz.')).toBeVisible()
+  const reason = 'SENTETIK browser-suite:pur01 tedarikçi kalanı gönderemiyor'
+  await page.getByLabel('İptal gerekçesi').fill(reason)
+  const cancelAnswer = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === cancellationPath)
+  await page.getByRole('button', { name: 'Kalanı iptal et', exact: true }).click()
+  const cancelResponse = await cancelAnswer
+  expect(cancelResponse.status()).toBe(200)
+  const cancelled = (await cancelResponse.json()) as {
+    readonly detail: OrderDetail & {
+      readonly cancellation: { readonly cancelledBy: string; readonly reason: string } | null
+      readonly lines: ReadonlyArray<{ readonly accepted: string; readonly cancelled: string; readonly remaining: string }>
+    }
+    readonly isReplay: boolean
+  }
+  const cancelledVersion = (BigInt(approvedVersion) + 1n).toString()
+  expect([cancelled.detail.order.id, cancelled.detail.order.status, cancelled.detail.order.version, cancelled.isReplay])
+    .toEqual([cancelOrderId, 'Cancelled', cancelledVersion, false])
+  expect([cancelled.detail.lines[0].accepted, cancelled.detail.lines[0].cancelled, cancelled.detail.lines[0].remaining]).toEqual(['0', '4', '0'])
+  expect([cancelled.detail.cancellation?.cancelledBy, cancelled.detail.cancellation?.reason]).toEqual([approverActor, reason])
+  await expect(page.getByText('Siparişin kabul edilmemiş kalanı iptal edildi ve kayıt yeniden okundu.')).toBeVisible()
+  await expect(page.getByTestId('purchase-order-cancellation-facts')).toContainText(reason)
+  await expect(page.getByRole('button', { name: 'Kalanı iptal et', exact: true })).toHaveCount(0)
+
+  // The same key and body replay the first answer; a second cancellation is refused as a state, not recorded twice.
+  const sent = cancelResponse.request()
+  const approverHeaders = { [DEVELOPMENT_USER_HEADER]: approverActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json' }
+  const replay = await page.request.post(`${env.apiBaseUrl}${cancellationPath}`, {
+    headers: { ...approverHeaders, 'Idempotency-Key': sent.headers()['idempotency-key'] ?? '' },
+    data: sent.postDataJSON() as unknown,
+  })
+  expect(replay.status()).toBe(200)
+  expect(replay.headers()['idempotency-replayed']).toBe('true')
+  const again = await page.request.post(`${env.apiBaseUrl}${cancellationPath}`, {
+    headers: { ...approverHeaders, 'Idempotency-Key': `browser-suite:pur01:cancellation-again:${cancelOrderId}` },
+    data: { expectedVersion: cancelledVersion, reason },
+  })
+  expect(again.status()).toBe(409)
+  expect(((await again.json()) as { code?: string }).code).toBe('purchasing_order_state')
+  expect((await readOrder(page, readerActor, cancelOrderId)).order).toMatchObject({ status: 'Cancelled', version: cancelledVersion })
+
+  await page.goto(`${LIST_ROUTE}?status=Cancelled`)
+  await expect(page.getByRole('row').filter({ hasText: `…${cancelOrderId.slice(-8)}` })).toContainText('Kalanı iptal edildi')
 })
