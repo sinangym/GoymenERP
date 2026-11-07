@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MASK, maskAuditJson, maskFreeText, maskKeepLastFour, sensitiveKeyRule } from './mask'
+import { MASK, MAX_DEPTH, maskAuditJson, maskFreeText, maskKeepLastFour, sensitiveKeyRule } from './mask'
 
 // SENTETIK values only: the IBAN has a valid TR shape, nothing here is a real account, person or number.
 const IBAN = 'TR330006100519786457841326'
@@ -88,5 +88,41 @@ describe('audit payload masking (Decision No 135)', () => {
     for (const bad of ['', 'not json', '{"a":1,}', '{"a":1} x', "{'a':1}", '[1,2', '01', '{"a":"\u0001"}', 'NaN']) {
       expect(maskAuditJson(bad), bad).toBeNull()
     }
+  })
+  it('masks every member of a contact channel record, as the Cari contact editor stores it (K3 review 2/2 P1)', () => {
+    const masked = maskAuditJson(
+      '{"channels":[{"kind":"phone","value":"0532 111 22 33","extension":"12"},{"kind":"email","value":"a@b.invalid"},'
+        + '{"Kind":"Address","value":"Atatürk Cd. 5","isPrimary":true}],"note":"kept"}',
+    )
+    expect(masked).not.toContain('0532')
+    expect(masked).not.toContain('"12"')
+    expect(masked).not.toContain('a@b.invalid')
+    expect(masked).not.toContain('Atatürk')
+    expect(masked).toContain('"kind": "phone"')
+    expect(masked).toContain('"isPrimary": true')
+    expect(masked).toContain('"note": "kept"')
+  })
+
+  it('masks Turkish and secret key names, but not short look-alike words', () => {
+    for (const key of ['telefon', 'gsm', 'cep', 'ePosta', 'adres', 'password', 'apiToken', 'clientSecret']) {
+      expect(sensitiveKeyRule(key), key).toBe('full')
+    }
+    for (const key of ['tcKimlikNo', 'vergiNo']) expect(sensitiveKeyRule(key), key).toBe('last-four')
+    for (const key of ['accepted', 'recipe', 'hotel', 'kind']) expect(sensitiveKeyRule(key), key).toBeNull()
+  })
+
+  it('masks TR phone and TCKN shapes in free text, and JSON stored inside a string', () => {
+    expect(maskFreeText('Ara: 0532 111 22 33 / +90 (212) 555-12-34')).toBe(`Ara: ${MASK} / ${MASK}`)
+    expect(maskFreeText('TCKN 12345678901 bitti')).toBe(`TCKN ${MASK}8901 bitti`)
+    expect(maskFreeText('Sipariş 2026-0001, adet 25')).toBe('Sipariş 2026-0001, adet 25')
+    const masked = maskAuditJson('{"payload":"{\\"phone\\":\\"05321112233\\",\\"qty\\":3}"}')
+    expect(masked).not.toContain('05321112233')
+    expect(masked).toContain('qty')
+  })
+
+  it('does not show a payload nested deeper than the limit instead of exhausting the stack', () => {
+    expect(maskAuditJson('['.repeat(MAX_DEPTH) + ']'.repeat(MAX_DEPTH))).not.toBeNull()
+    expect(maskAuditJson('['.repeat(MAX_DEPTH + 1) + ']'.repeat(MAX_DEPTH + 1))).toBeNull()
+    expect(maskAuditJson('['.repeat(5000) + ']'.repeat(5000))).toBeNull()
   })
 })

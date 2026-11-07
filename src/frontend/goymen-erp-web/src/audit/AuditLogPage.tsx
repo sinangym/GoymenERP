@@ -39,12 +39,13 @@ import {
   type AuditFilters,
 } from './capabilities'
 import type { AuditEvent, AuditEventPage } from './contract'
-import { maskAuditJson } from './mask'
+import { maskAuditJson, maskFreeText } from './mask'
 import { AUDIT_TEXT as T, FILTER_LABEL, formatInstant } from './auditText'
 import styles from './audit.module.css'
 
 /** Why a continuation did not extend the list; the rows already shown stay on screen. */
 type MoreProblem = 'unavailable' | 'malformed'
+type MoreState = 'idle' | 'loading' | MoreProblem
 
 type State =
   | { readonly type: 'loading'; readonly cursorReset: boolean }
@@ -54,7 +55,7 @@ type State =
       readonly type: 'ready'
       readonly items: readonly AuditEvent[]
       readonly nextCursor: string | null
-      readonly more: 'idle' | 'loading' | MoreProblem
+      readonly more: MoreState
       readonly cursorReset: boolean
     }
 
@@ -234,6 +235,21 @@ function AuditLogView({ companyId, filters }: { readonly companyId: string; read
     setState({ type: 'ready', items: shown, nextCursor: cursor, more: problem, cursorReset: false })
   }
 
+  // While "Daha fazla" is loading it is disabled and focus falls to the page body. When the read settles, focus goes
+  // back to the button if it is still there, else to the shown-count status, so keyboard users keep their place.
+  const moreButtonRef = useRef<HTMLButtonElement>(null)
+  const shownStatusRef = useRef<HTMLParagraphElement>(null)
+  const previousMore = useRef<MoreState | null>(null)
+  const currentMore = state.type === 'ready' ? state.more : null
+  useEffect(() => {
+    const settled = previousMore.current === 'loading' && currentMore !== 'loading'
+    previousMore.current = currentMore
+    if (!settled) return
+    const active = document.activeElement
+    if (active !== null && active !== document.body) return
+    ;(moreButtonRef.current ?? shownStatusRef.current)?.focus()
+  }, [currentMore])
+
   const cursorResetNotice =
     (state.type === 'loading' || state.type === 'ready') && state.cursorReset ? (
       <p role="status" className={styles.notice}>
@@ -302,10 +318,12 @@ function AuditLogView({ companyId, filters }: { readonly companyId: string; read
         </table>
       </div>
       <div className={styles.footer}>
-        <p role="status">{T.shownCount(items.length)}</p>
+        <p role="status" tabIndex={-1} ref={shownStatusRef}>
+          {T.shownCount(items.length)}
+        </p>
         {nextCursor === null ? <p>{T.end}</p> : null}
         {nextCursor !== null && (more === 'idle' || more === 'loading') ? (
-          <Button type="button" disabled={more === 'loading'} onClick={() => void loadMore(items, nextCursor)}>
+          <Button type="button" ref={moreButtonRef} disabled={more === 'loading'} onClick={() => void loadMore(items, nextCursor)}>
             {more === 'loading' ? T.loadingMore : T.loadMore}
           </Button>
         ) : null}
@@ -349,7 +367,8 @@ function AuditEventRows({ item }: { readonly item: AuditEvent }) {
           <span className={`${styles.code} ${styles.secondary}`}>{item.actorId}</span>
         </td>
         <td className={styles.code}>{item.permissionCode}</td>
-        <td>{item.reason === '' ? T.noValue : item.reason}</td>
+        {/* The reason is free text a person typed: the same free-text masking as the payloads applies (No 135). */}
+        <td>{item.reason === '' ? T.noValue : maskFreeText(item.reason)}</td>
         <td className={styles.code}>{item.correlationId}</td>
       </tr>
       <tr>
@@ -393,7 +412,7 @@ function Payload({ title, text }: { readonly title: string; readonly text: strin
       {masked === null ? (
         <p className={styles.muted}>{T.unreadablePayload}</p>
       ) : (
-        <pre className={styles.payload} aria-label={title} tabIndex={0}>
+        <pre className={styles.payload} role="region" aria-label={title} tabIndex={0}>
           {masked}
         </pre>
       )}

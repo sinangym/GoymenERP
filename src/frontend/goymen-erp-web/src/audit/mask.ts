@@ -11,8 +11,13 @@
  *    characters only; under phone / email / address nothing of it is shown. Key names are compared case-insensitively
  *    with separators removed (`tax_number`, `E-Mail`, `homeAddress` all match), at any depth; an object or array under
  *    such a key is masked leaf by leaf;
- *  - anywhere else, a TR IBAN-shaped string (with or without spaces) keeps its last 4 digits, and an e-mail-shaped
- *    string is fully masked;
+ *  - an object whose `kind` / `type` / `channel` member names a contact channel (phone, email, address, …) is a contact
+ *    channel record (e.g. the Cari contact editor's `{"kind":"phone","value":…,"extension":…}`): every other member of
+ *    it is fully masked, whatever its key;
+ *  - anywhere else, a TR IBAN-shaped string (with or without spaces) and an 11-digit TCKN-shaped number keep their last
+ *    4 digits, and an e-mail-shaped or TR phone-shaped (leading 0 or +90) string part is fully masked; a string that is
+ *    itself JSON text is parsed and masked by the same rules;
+ *  - nesting deeper than {@link MAX_DEPTH} levels is not shown (`null`), so a hostile payload cannot exhaust the stack;
  *  - `null` and booleans stay as they are (they disclose nothing);
  *  - a text that is not JSON is not shown at all (`null`), because it cannot be masked reliably.
  *
@@ -22,12 +27,29 @@
 
 export const MASK = '••••'
 
-const LAST_FOUR_KEYS = ['iban', 'vkn', 'tckn', 'taxnumber', 'identitynumber'] as const
-const FULL_MASK_KEYS = ['phone', 'email', 'address'] as const
+/** Matched as a part of the normalized key name. */
+const LAST_FOUR_KEYS = ['iban', 'vkn', 'tckn', 'taxnumber', 'identitynumber', 'tckimlik', 'kimlikno', 'vergino', 'vergikimlik'] as const
+const FULL_MASK_KEYS = [
+  'phone', 'email', 'address', 'telefon', 'eposta', 'adres', 'password', 'parola', 'secret', 'token', 'apikey',
+] as const
+/** Short names matched only as the whole normalized key, so `accepted` or `stellar` are not masked. */
+const FULL_MASK_EXACT_KEYS = ['tel', 'gsm', 'cep', 'mobile', 'fax', 'faks', 'mail'] as const
+/** A member with one of these names whose value names a contact channel marks its object as a channel record. */
+const CHANNEL_KIND_KEYS = ['kind', 'type', 'channel', 'channeltype'] as const
+const CHANNEL_KINDS = [
+  'phone', 'mobile', 'fax', 'email', 'address', 'telefon', 'gsm', 'cep', 'faks', 'eposta', 'adres', 'mail',
+] as const
+
+/** Deeper payloads are not shown; real audit payloads stay far below this. */
+export const MAX_DEPTH = 64
 
 /** TR + 2 check digits + 22 digits, optionally grouped by single spaces. */
 const TR_IBAN = /TR\s?\d{2}(?:\s?\d){22}/gi
 const EMAIL = /[^\s@"'<>()[\],;:]+@[^\s@"'<>()[\],;:]+\.[^\s@"'<>()[\],;:]+/g
+/** A TR phone number with its leading 0 or +90: area/operator code 2xx–5xx, then 3+2+2 digits, optionally separated. */
+const TR_PHONE = /(?<![\w+])(?:\+90|0)[\s.-]?\(?[2-5]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?!\d)/g
+/** An 11-digit TCKN-shaped number standing alone. */
+const TCKN = /(?<!\d)[1-9]\d{10}(?!\d)/g
 
 type KeyRule = 'last-four' | 'full' | null
 
@@ -56,6 +78,7 @@ function normalizeKey(key: string): string {
 export function sensitiveKeyRule(key: string): KeyRule {
   const normalized = normalizeKey(key)
   if (FULL_MASK_KEYS.some((part) => normalized.includes(part))) return 'full'
+  if ((FULL_MASK_EXACT_KEYS as readonly string[]).includes(normalized)) return 'full'
   if (LAST_FOUR_KEYS.some((part) => normalized.includes(part))) return 'last-four'
   return null
 }
@@ -66,9 +89,35 @@ export function maskKeepLastFour(value: string): string {
   return compact.length <= 4 ? MASK : `${MASK}${compact.slice(-4)}`
 }
 
-/** Masks IBAN- and e-mail-shaped parts of a free string. */
+/** Masks IBAN-, TCKN-, e-mail- and TR phone-shaped parts of a free string. */
 export function maskFreeText(value: string): string {
-  return value.replace(TR_IBAN, (match) => maskKeepLastFour(match)).replace(EMAIL, MASK)
+  return value
+    .replace(TR_IBAN, (match) => maskKeepLastFour(match))
+    .replace(EMAIL, MASK)
+    .replace(TR_PHONE, MASK)
+    .replace(TCKN, (match) => maskKeepLastFour(match))
+}
+
+function isChannelRecord(value: JsonObject): boolean {
+  return value.members.some(
+    ([key, child]) =>
+      typeof child === 'string'
+      && (CHANNEL_KIND_KEYS as readonly string[]).includes(normalizeKey(key))
+      && (CHANNEL_KINDS as readonly string[]).includes(normalizeKey(child)),
+  )
+}
+
+/** A string that is itself JSON text is masked as JSON and kept compact; any other string is masked as free text. */
+function maskString(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return renderCompact(maskValue(parseJson(trimmed)))
+    } catch {
+      // not JSON (or too deep): fall through to the free-text rules
+    }
+  }
+  return maskFreeText(value)
 }
 
 function maskUnderKey(value: JsonValue, rule: Exclude<KeyRule, null>): JsonValue {
@@ -80,11 +129,15 @@ function maskUnderKey(value: JsonValue, rule: Exclude<KeyRule, null>): JsonValue
 }
 
 function maskValue(value: JsonValue): JsonValue {
-  if (typeof value === 'string') return maskFreeText(value)
+  if (typeof value === 'string') return maskString(value)
   if (Array.isArray(value)) return value.map(maskValue)
   if (value instanceof JsonObject) {
+    const channel = isChannelRecord(value)
     return new JsonObject(
       value.members.map(([key, child]) => {
+        if (channel && !(CHANNEL_KIND_KEYS as readonly string[]).includes(normalizeKey(key))) {
+          return [key, maskUnderKey(child, 'full')]
+        }
         const rule = sensitiveKeyRule(key)
         return [key, rule === null ? maskValue(child) : maskUnderKey(child, rule)]
       }),
@@ -93,9 +146,13 @@ function maskValue(value: JsonValue): JsonValue {
   return value
 }
 
-/** A strict RFC 8259 parser that keeps numbers as source text. Throws on anything that is not one JSON value. */
+/**
+ * A strict RFC 8259 parser that keeps numbers as source text. Throws on anything that is not one JSON value and on
+ * nesting deeper than {@link MAX_DEPTH}.
+ */
 function parseJson(text: string): JsonValue {
   let index = 0
+  let depth = 0
   const fail = (): never => {
     throw new SyntaxError('not json')
   }
@@ -120,6 +177,15 @@ function parseJson(text: string): JsonValue {
   const parseValue = (): JsonValue => {
     skipSpace()
     const char = text[index]
+    if (char === '{' || char === '[') {
+      depth += 1
+      if (depth > MAX_DEPTH) fail()
+    }
+    const value = parseContainerOrScalar(char)
+    if (char === '{' || char === '[') depth -= 1
+    return value
+  }
+  const parseContainerOrScalar = (char: string): JsonValue => {
     if (char === '{') {
       index += 1
       const members: [string, JsonValue][] = []
@@ -178,6 +244,15 @@ function parseJson(text: string): JsonValue {
   skipSpace()
   if (index !== text.length) fail()
   return value
+}
+
+function renderCompact(value: JsonValue): string {
+  if (value === null) return 'null'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (value instanceof RawNumber) return value.text
+  if (Array.isArray(value)) return `[${value.map(renderCompact).join(',')}]`
+  return `{${value.members.map(([key, child]) => `${JSON.stringify(key)}:${renderCompact(child)}`).join(',')}}`
 }
 
 function render(value: JsonValue, depth: number): string {
