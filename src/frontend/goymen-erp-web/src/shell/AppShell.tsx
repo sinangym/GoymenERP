@@ -21,6 +21,8 @@ import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
+import { AI_PANEL_ID, AiPanel } from '../ai/AiPanel'
+import { AI_TEXT } from '../ai/aiText'
 import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from '../product/priceLists/capabilities'
 import { PRICE_LIST_TEXT } from '../product/priceLists/priceListText'
 import { CAPABILITY_ROUTE } from './capabilities'
@@ -307,6 +309,15 @@ export function AppShell() {
     }
   }, [drawerOpen])
 
+  // Plan AI-5: the AI panel belongs to the company it was opened in. A company switch or a gate closes it, so
+  // no panel state survives into another CompanyContext (ERP-000J §16).
+  const aiToggleRef = useRef<HTMLButtonElement>(null)
+  const [aiCompany, setAiCompany] = useState<string | null>(null)
+  const activeCompanyId = state.activeContext?.companyId ?? null
+  if (aiCompany !== null && (aiCompany !== activeCompanyId || gate !== null)) setAiCompany(null)
+  const aiOpen = aiCompany !== null
+  const closeAi = () => setAiCompany(null)
+
   if (gate) return gate
 
   const switching = state.phase === 'switching'
@@ -478,6 +489,19 @@ export function AppShell() {
           {/* AT-002: the global search box; it renders only with a searchable owner list grant. */}
           <GlobalSearchBox />
 
+          {/* Plan AI-5: the AI panel toggle is on every page; the panel itself is honest about AI being off. */}
+          <button
+            type="button"
+            ref={aiToggleRef}
+            className={styles.aiToggle}
+            aria-expanded={aiOpen}
+            aria-controls={aiOpen ? AI_PANEL_ID : undefined}
+            disabled={activeCompanyId === null}
+            onClick={() => setAiCompany(aiOpen ? null : activeCompanyId)}
+          >
+            {AI_TEXT.toggle}
+          </button>
+
           <div className={styles.user}>{identity ? identity.displayName : '…'}</div>
         </header>
 
@@ -501,6 +525,8 @@ export function AppShell() {
           />
         ) : null}
 
+        {/* inert mirrors the body's: the work area (page + AI panel) is behind an open drawer too. */}
+        <div className={styles.workArea} inert={drawerOpen}>
         <main id="main-content" className={styles.main} tabIndex={-1} ref={mainRef}>
           {switching ? (
             <StateBlock
@@ -515,6 +541,8 @@ export function AppShell() {
             <Outlet />
           )}
         </main>
+        {aiOpen ? <AiPanel onClose={closeAi} returnFocusRef={aiToggleRef} /> : null}
+        </div>
       </div>
     </div>
   )

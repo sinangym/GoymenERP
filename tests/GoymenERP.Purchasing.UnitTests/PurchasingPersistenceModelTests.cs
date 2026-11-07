@@ -202,7 +202,10 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(7, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(8, PurchasingPermissionManifestV1.Names.Count);
+        // A2a-1 (PRS-02): the price read governs disclosure only; no shell control or route is measured with it.
+        Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead));
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.orders.cancel", PurchasingPermissionManifestV1.Names);
@@ -230,12 +233,13 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_A1_2_and_A1_3_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_A1_3_and_A2a_1_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
         Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
-                "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation"],
-            context.Database.GetMigrations().TakeLast(4));
+                "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
+                "20261107063820_AddPurchaseOrderLinePrice"],
+            context.Database.GetMigrations().TakeLast(5));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -277,6 +281,54 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("[Status] IN (3, 4)", guard.Sql, StringComparison.Ordinal);
         var backfill = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Contains("purchasing.purchase-request.submit.v1", backfill.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_A2a_1_price_columns_have_their_checks_precisions_and_a_Down_that_refuses_while_a_price_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var orders = model.FindEntityType(typeof(PurchaseOrderRow))!;
+        var money = Assert.Single(orders.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrders_Money");
+        Assert.Equal(PurchasingDbContext.OrderMoneyCheck, money.Sql);
+        Assert.Contains("[CurrencyId] IS NULL AND [CurrencyCode] IS NULL AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [MoneyScale] IS NULL",
+            money.Sql, StringComparison.Ordinal);
+        Assert.Contains("[MoneyProfileVersion] >= 1 AND [MoneyScale] IS NOT NULL AND [MoneyScale] >= 0 AND [MoneyScale] <= 28", money.Sql,
+            StringComparison.Ordinal);
+        Assert.Equal(16, orders.FindProperty(nameof(PurchaseOrderRow.CurrencyCode))!.GetMaxLength());
+        foreach (var column in new[] { nameof(PurchaseOrderRow.CurrencyId), nameof(PurchaseOrderRow.CurrencyCode), nameof(PurchaseOrderRow.MoneyProfileId),
+                     nameof(PurchaseOrderRow.MoneyProfileVersion), nameof(PurchaseOrderRow.MoneyScale) })
+        {
+            Assert.True(orders.FindProperty(column)!.IsNullable);
+        }
+
+        var lines = model.FindEntityType(typeof(PurchaseOrderLineRow))!;
+        var price = Assert.Single(lines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Price");
+        Assert.Equal(PurchasingDbContext.OrderLinePriceCheck, price.Sql);
+        Assert.Contains("[UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL", price.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0", price.Sql, StringComparison.Ordinal);
+        Assert.Contains("([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL)", price.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DiscountPercent] >= 0 AND [DiscountPercent] <= 100", price.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice]", price.Sql, StringComparison.Ordinal);
+        Assert.Equal((24, 6), (lines.FindProperty(nameof(PurchaseOrderLineRow.UnitPrice))!.GetPrecision(),
+            lines.FindProperty(nameof(PurchaseOrderLineRow.UnitPrice))!.GetScale()));
+        Assert.Equal((24, 6), (lines.FindProperty(nameof(PurchaseOrderLineRow.DiscountAmount))!.GetPrecision(),
+            lines.FindProperty(nameof(PurchaseOrderLineRow.DiscountAmount))!.GetScale()));
+        Assert.Equal((9, 6), (lines.FindProperty(nameof(PurchaseOrderLineRow.DiscountPercent))!.GetPrecision(),
+            lines.FindProperty(nameof(PurchaseOrderLineRow.DiscountPercent))!.GetScale()));
+
+        // Up only adds nullable columns and the two checks (no SQL, no backfill); Down refuses (51169) before any drop while a
+        // currency or a price exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderLinePrice();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.All(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(),
+            column => Assert.True(column.IsNullable));
+        Assert.Equal(9, migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>().Count());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51169", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[CurrencyId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[UnitPrice] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]
@@ -357,6 +409,38 @@ public sealed class PurchasingPersistenceModelTests
             Assert.DoesNotContain("izinli alan", onlyShare.Message, StringComparison.Ordinal);
             Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyShare.InnerException);
             line.Ordered = 7m; // not allowed: the first commitment never moves
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task The_write_guard_never_lets_a_recorded_price_or_currency_move()
+    {
+        // A2a-1: a price is written once with the line and the currency once with the order; a later price is a revision (A2b).
+        await using (PurchasingDbContext context = Context())
+        {
+            var line = new PurchaseOrderLineRow
+            {
+                CompanyId = CompanyA, OrderId = Guid.NewGuid(), LineNo = 1, LineId = Guid.NewGuid(), Kind = 1, ProductId = Guid.NewGuid(),
+                ProductVersion = "7", UnitId = Guid.NewGuid(), UnitIsKilogram = true, Ordered = 6m, UnitPrice = 10m,
+            };
+            context.OrderLines.Attach(line);
+            line.UnitPrice = 9m;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (PurchasingDbContext context = Context())
+        {
+            var order = new PurchaseOrderRow
+            {
+                Id = Guid.NewGuid(), CompanyId = CompanyA, SupplierPartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), Status = 1, Version = 1,
+                EffectiveOn = new DateOnly(2026, 11, 7), CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow,
+                CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
+            };
+            context.Orders.Attach(order);
+            order.CurrencyId = Guid.NewGuid();
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
         }

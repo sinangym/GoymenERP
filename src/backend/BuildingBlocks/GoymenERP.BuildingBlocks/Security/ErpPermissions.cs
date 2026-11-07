@@ -684,11 +684,27 @@ public static class ErpPermissions
     /// <summary>
     /// A1-3 (plan API-10; No.161 §2): cancel the whole not-yet-accepted remainder of an APPROVED purchase order with a reason, and
     /// read its impact preview — the Purchasing owner's name (PurchasingPermissionManifestV1.OrdersCancel), apart from entering,
-    /// approving and receiving; none confers another. Who should hold it is not decided (NEEDS-SINAN; the A1-3 proposal is the
-    /// approvers of ALS-D53: Satın Alma Müdürü, Genel Müdür, Admin). Registered, not granted: no role, seed or user receives it
-    /// here (only SENTETIK browser-suite personas in disposable stacks). Company-wide only. Not Critical.
+    /// approving and receiving; none confers another. ALS-D66 (EK10, Sinan 2026-11-03): it is proposed to the approvers of
+    /// ALS-D53 — Satın Alma Müdürü, Genel Müdür, Admin — and not to the Satın Alma Uzmanı; ALS-D67: one step with a reason and
+    /// an audit record, no second approval. The proposal is not a grant: no role, seed or user receives it here (only SENTETIK
+    /// browser-suite personas in disposable stacks); the persona card and any real grant stay a human gate. Company-wide only.
+    /// Not Critical.
     /// </summary>
     public const string PurchasingOrdersCancel = "purchasing.orders.cancel";
+
+    /// <summary>
+    /// A2a-1 (PRS-02; the Purchasing owner's name, PurchasingPermissionManifestV1.OrdersPriceRead): see a purchase order's prices —
+    /// the line's unit price, price unit, discount, net unit price and line amount, and nothing adjacent (no cost, margin, bank or
+    /// Finance read). Like <see cref="SalesOrdersPriceRead"/> it governs DISCLOSURE, not reachability: <see cref="PurchasingOrdersRead"/>
+    /// already shows the order, and the persona card's Sevkiyatçı (depo/kabul) holds that read but "fiyatları göremez"; without
+    /// this name the price fields come back null beside a never-null <c>PriceDisclosure: Withheld</c>. Writing a price is measured
+    /// with <see cref="PurchasingOrdersCreate"/> (ALS-D60 yorum) and does not confer this name. Sinan (#66 6704170096): Satın Alma
+    /// Uzmanı, Satın Alma Müdürü, Genel Müdür, Admin, Muhasebe, Muhasebe Müdürü, Satış Destek and Satış Uzmanı hold it, the
+    /// Sevkiyatçı does not — recorded for the persona card only. Registered, not granted: no role, seed or user receives it here;
+    /// the grant is a human gate. Company-wide only (the module asks for a company-wide grant).
+    /// Not Critical: no source makes seeing a price a segregated duty.
+    /// </summary>
+    public const string PurchasingOrdersPriceRead = "purchasing.orders.price.read";
 
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
@@ -933,6 +949,7 @@ public static class ErpPermissions
             PurchasingRequestsApprove,
             PurchasingRequestsWithdraw,
             PurchasingOrdersCancel,
+            PurchasingOrdersPriceRead,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1088,6 +1105,7 @@ public static class ErpPermissions
             PurchasingRequestsApprove,
             PurchasingRequestsWithdraw,
             PurchasingOrdersCancel,
+            PurchasingOrdersPriceRead,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

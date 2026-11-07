@@ -281,7 +281,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // GOY-UX-TEXT-FILTER-01: +1 typed-filter pre-pagination and cursor-resume SQL fact.
             // SAT-D12 force-close: +1 active-allocation-blocks SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/inventory.txt"] =
-                "835c86ada56cbaf35a637948f92ea80324fddd7b3f9f4d92c3779da288128de8",
+                // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
+                "c005163cd329b9f98c7d07ff0bf822e3430054029ab36e8613a616346d3c2a5c",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -369,8 +370,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A1-3 (plan API-10; No.161 §2): +5 order remainder cancellation SQL facts (one save after a partial receipt + both
             // supply ports + checks, draft / fully accepted refusals, Σ-shares kept + request rejection unblocked, company
             // isolation, Down refusal 51168), kept ordinal-sorted (70c956bd… -> ae6ee9f7…).
+            // A2a-1 (plan TEK-01/API-20): +4 order line price SQL facts (one save + audit + rebuild + approval + the price/money checks,
+            // unpriced columns null + priced technical line refused, company isolation, Down refusal 51169), kept ordinal-sorted
+            // (ae6ee9f7… -> 2085f158…); +1 explicit zero price fact (Sinan #66 6704170096; 2085f158… -> c3fa56d7…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "ae6ee9f768dc60f8521799e606b2b972515730b5a8e2ae843aaff923a6103436",
+                "c3fa56d75efb7e365f4c472a1f96f6aaebb91d9171416ced71900a4beae0f0de",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -570,9 +574,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A1-3 (plan API-10, No.161 §2): the order's Cancelled status and cancellation-facts check, the line's
             // cancelled share inside the shares check, and the write guard's allow-list for exactly those columns; filters and
             // keys unchanged.
+            // Re-measured for A2a-1 (plan TEK-01/API-20): the order's money snapshot columns and their check, the line's price
+            // columns (precisions) and their check (a unit price ≥ 0: an explicit 0 is a price); the write guard's allow-list is
+            // unchanged (prices never move); filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "182b5be853138b47504dd19edca70cf1cae781a1fe07aededc54f448d12c2d6f",
+                "8112bf51baf7536d49baf3ce3f5725815da9cd107e548955db94e2d595e1adbd",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -629,7 +636,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Version/UpdatedAtUtc fields; no query filter, company-leading key or table boundary changes.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "87d1403fdacdb821f93b7a470921264467afb667066e1cdff7963e08f6121835",
+                // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
+                "b4ba4c31c800ecd28a59cb3a68eacd58dbcf6ccbb7cfe949b0bffe4886effa70",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -941,7 +949,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // port. Re-fingerprinted for ST-04: one scoped movement-timeline reader registration; the
                     // provider branch and its token counts are unchanged.
                     new(
-                        "3764bba70411637eda17af34ee42d090426d855e04e03a0c7a109ecce6793154",
+                        // Re-fingerprinted for B-01: one scoped registration of the plan-input allocation read port; provider tokens unchanged.
+                        "dc04c025d76387bd67bf92c07e65d48bd9d95f214a05ee307637a0c400c3b576",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -953,7 +962,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // context-construction or direct-database exemption.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
-                        "9aec0b823987c573ffd9d94e55192d5c80d49e29ef6ac713c02e07583ee00df7",
+                        // Re-fingerprinted for B-01: a definite shipment refuses a non-Sales (plan-input) allocation; provider tokens unchanged.
+                        "0861f73739be9690ee8063766a888b26a1508ea422c4a526599669133134009b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1020,7 +1030,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                "b2cb0ed28a010e12ff1b46d38dbeede73f0b6ed39d9ebb9cf86120e477ef3589",
+                // Re-fingerprinted for B-01: one internal audit helper for plan-input allocations; provider tokens unchanged.
+                "6c2c4bf3f1109451b8805d13488673f97612ecd782efbfb15f129c1dd161fdad",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1378,7 +1389,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingModuleExtensions.cs"] =
                     new(
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
-                        "af5a23e1542bc2163d9f1de826a53154c4a2cc1c820ce51baa32aec2c61e5c6c",
+                        // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
+                        "5e9af601e67b444b2f9c480618af865757ecc4c99fd8cb573898cf7af6c7c95c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1416,7 +1428,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
-                        "cc4dd486312f168917484c0e36379dc754a915516ac4acd611eb12fbda6165d2",
+                        // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its own plan's allocation, legacy-stable issue hash; provider tokens unchanged.
+                        "72ba6be82b3bc90940d6cdd2aae7fd1536b946a47095a4cbf0dda48ebe0c48ee",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1441,10 +1454,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // same token count.
                 // Re-fingerprinted for A1-3: the order cancellation (facts and cancelled shares written, audited and rebuilt
                 // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
+                // Re-fingerprinted for A2a-1: the order's money snapshot and the line prices written once, audited and rebuilt
+                // through the domain; same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "10ab34c9581f8bab185669b0cceb34f5835e20837c650cc22b0d62769922ec0e",
+                        "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2073,6 +2088,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // A1-3 (plan API-10, No.161 §2): one reviewed statement, before every drop. Down refuses (51168, used by no other
                 // migration) while any order is Cancelled or any line carries a cancelled share, which dropping the column would
                 // silently turn back into future supply. Up only adds columns and checks.
+                // A2a-1 (plan TEK-01/API-20): one reviewed statement, before every drop. Down refuses (51169, used by no other
+                // migration) while any order has a currency or any line a price, which dropping the columns would silently turn
+                // unpriced. Up only adds nullable columns and checks.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
+                    new(
+                        "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103053923_AddPurchaseOrderCancellation.cs"] =
                     new(
@@ -2080,6 +2106,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
+                        }),
+                // B-01: Down refuses (51211, used by no other migration) while a manufacturing plan-input allocation or
+                // a recorded ReleasedKg exists, then restores the Sales-only demand check with the trust/enabled state
+                // the widened check had, so an older migration's own Down guard still refuses rows planted with the
+                // check disabled.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261107081411_AddManufacturingPlanInputAllocations.cs"] =
+                    new(
+                        "4a2fee655c1c19c4cf4c335549e8cab5dd0035ff8446ea5c481355d1dd4d382b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
                         }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103012142_AddPurchaseRequestLineSource.cs"] =

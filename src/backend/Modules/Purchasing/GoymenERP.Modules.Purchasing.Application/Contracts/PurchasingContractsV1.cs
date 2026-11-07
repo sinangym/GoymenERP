@@ -57,17 +57,39 @@ public sealed record WithdrawPurchaseRequestRequest(string ExpectedVersion, stri
 /// opened for one APPROVED request of this company (A1-1, ALS-D2/ALS-D16) and every line MAY bind to one of that request's lines
 /// (<see cref="PurchaseOrderLineRequest.SourceRequestLineId"/>) at the share this supplier takes
 /// (multi-sourcing, Sinan #66 5738113623 §1); a bound line keeps the request line's product and unit.
-/// Without a source request no line may bind. No price (T28).
+/// Without a source request no line may bind.
+/// <para>
+/// A2a-1 (TEK-01, plan API-20, ALS-D5): <paramref name="CurrencyId"/> is the order's one currency (a Settings currency identity,
+/// verified against the money profile of <c>purchasing.order.v1</c> on <paramref name="EffectiveOn"/>); it is required as soon as
+/// one line carries a <see cref="PurchaseOrderLineRequest.Price"/> and optional otherwise (ALS-D18: an order may be opened, approved
+/// and received without prices). Both are never written when null, so the content hash of an order without them — and every
+/// ADR-011 attempt recorded before A2a-1 — is unchanged.
+/// </para>
 /// </summary>
 public sealed record CreatePurchaseOrderRequest(
     Guid SupplierPartyId,
     Guid CompanyAccountId,
     Guid? SourceRequestId,
     DateOnly EffectiveOn,
-    IReadOnlyList<PurchaseOrderLineRequest> Lines);
+    IReadOnlyList<PurchaseOrderLineRequest> Lines,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CurrencyId = null);
 
+/// <summary>One general line; A2a-1: <paramref name="Price"/> is the optional manual price (absent: "fiyat bekliyor", ALS-D18).</summary>
 public sealed record PurchaseOrderLineRequest(Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid UnitId, string Quantity,
-    Guid? SourceRequestLineId);
+    Guid? SourceRequestLineId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseOrderLinePriceRequest? Price = null);
+
+/// <summary>
+/// A2a-1 (ALS-D5 "elle, iskontolu"; ALS-D51/D60): a line's manual price as exact decimal text — <paramref name="UnitPrice"/>
+/// (zero or more — an explicit 0 is a price, apart from no price —, at most the money profile's decimals, never rounded), the <paramref name="PriceUnitId"/> it applies to (absent: the
+/// line's entry unit; any other unit is refused until a unit conversion is published, ALS-D58) and at most one discount: a percent
+/// of the unit price (0..100) or an amount (0..unit price). Absent fields are never written, so the hash is that of what was sent.
+/// </summary>
+public sealed record PurchaseOrderLinePriceRequest(
+    string UnitPrice,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? PriceUnitId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DiscountPercent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DiscountAmount = null);
 
 /// <summary>POST …/orders/{id}/approval: Draft → Approved at the expected version; the Σ-shares rule is measured in the same save.</summary>
 public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
@@ -155,6 +177,35 @@ public sealed record PurchaseOrderLineView(
     string Ordered, string Technical, string Committed, string Accepted, string Remaining)
 {
     public string Cancelled { get; init; } = "0";
+
+    /// <summary>
+    /// A2a-1: the line's price, or null — "fiyat bekliyor" (ALS-D18) when the order's <c>PriceDisclosure</c> is <c>Visible</c>,
+    /// withheld when it is <c>Withheld</c> (PRS-02). A technical line is never priced (its quantity is priced on its general line).
+    /// </summary>
+    public PurchaseOrderLinePriceView? Price { get; init; }
+}
+
+/// <summary>
+/// A2a-1 (TEK-01, API-20): a priced line's price as exact text in the order's currency — the unit price and its price unit, the
+/// discount as given (a percent or an amount, or neither), the exact net unit price (never rounded, SAT-D76) and the line amount
+/// (ordered quantity × net, rounded once half away from zero to the money profile's scale, SAT-D11), all from the one backend
+/// calculator; the screen never recomputes them.
+/// </summary>
+public sealed record PurchaseOrderLinePriceView(
+    string UnitPrice, Guid PriceUnitId, string? DiscountPercent, string? DiscountAmount, string NetUnitPrice, string LineAmount);
+
+/// <summary>A2a-1: the order's currency as recorded at opening (the Settings money profile's currency, code and scale).</summary>
+public sealed record PurchaseOrderCurrencyView(Guid CurrencyId, string CurrencyCode, int Scale);
+
+/// <summary>
+/// A2a-1 (PRS-02): whether the caller may see the order's prices. <c>Visible</c> needs <c>purchasing.orders.price.read</c>; without
+/// it every price field is null beside <c>Withheld</c> — an answer, not an omission, so a withheld price is never mistaken for a
+/// line without a price (the Sales <c>sales.orders.price.read</c> pattern).
+/// </summary>
+public static class PurchasingPriceDisclosureV1
+{
+    public const string Visible = "Visible";
+    public const string Withheld = "Withheld";
 }
 
 /// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
@@ -187,6 +238,17 @@ public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IRe
 
     /// <summary>A1-3 (No.161 §2): the recorded cancellation, null unless the order is Cancelled.</summary>
     public PurchaseOrderCancellationView? Cancellation { get; init; }
+
+    /// <summary>A2a-1 (PRS-02): <c>Visible</c> | <c>Withheld</c> (see <see cref="PurchasingPriceDisclosureV1"/>); fail-closed default.</summary>
+    public string PriceDisclosure { get; init; } = PurchasingPriceDisclosureV1.Withheld;
+
+    /// <summary>A2a-1: the order's currency, or null for an order opened without one (not a price: shown under the order read).</summary>
+    public PurchaseOrderCurrencyView? Currency { get; init; }
+
+    /// <summary>
+    /// A2a-1 (ALS-D18): true while a general line has no price ("fiyat bekliyor"); null when the prices are withheld (PRS-02).
+    /// </summary>
+    public bool? PricePending { get; init; }
 }
 
 public sealed record PurchaseOrderReadDetailViewV1(
@@ -197,11 +259,44 @@ public sealed record PurchaseOrderReadDetailViewV1(
 
     /// <summary>A1-3 (No.161 §2): the recorded cancellation, null unless the order is Cancelled.</summary>
     public PurchaseOrderCancellationView? Cancellation { get; init; }
+
+    /// <summary>A2a-1 (PRS-02): <c>Visible</c> | <c>Withheld</c> (see <see cref="PurchasingPriceDisclosureV1"/>); fail-closed default.</summary>
+    public string PriceDisclosure { get; init; } = PurchasingPriceDisclosureV1.Withheld;
+
+    /// <summary>A2a-1: the order's currency, or null for an order opened without one (not a price: shown under the order read).</summary>
+    public PurchaseOrderCurrencyView? Currency { get; init; }
+
+    /// <summary>
+    /// A2a-1 (ALS-D18): true while a general line has no price ("fiyat bekliyor"); null when the prices are withheld (PRS-02).
+    /// </summary>
+    public bool? PricePending { get; init; }
 }
 
 public sealed record PurchaseOrderResponse(PurchaseOrderDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record PurchaseOrderListResponse(IReadOnlyList<PurchaseOrderSummaryView> Items, string? NextCursor);
+
+/// <summary>
+/// A2a-1: GET …/references/currencies — the currencies whose Settings money profile answers the purchasing order operation
+/// (<c>purchasing.order.v1</c>) for the context company, as the owner lists them (undefined order; none is a default). Being listed is
+/// not validity: the order's create verifies the chosen currency again for its business date.
+/// </summary>
+public sealed record PurchasingCurrencyCandidatesResponseV1(IReadOnlyList<PurchasingCurrencyCandidateViewV1> Items);
+
+/// <summary>A2a-1: one currency candidate — the owner's identity (the only reference sent back), its code and its display label.</summary>
+public sealed record PurchasingCurrencyCandidateViewV1(Guid CurrencyId, string Code, string DisplayLabel);
+
+/// <summary>
+/// A2a-1 (TEK-01): the Purchasing operation key the Settings money port is asked with — the backend owner's technical mapping
+/// (Business #254 5654539215), in the Sales (<c>sales.order-draft.v1</c>) and Finance pattern. The key chooses no currency, scale
+/// or date. Until the Settings owner approves a money profile for it, the owner answers <c>settings_provider_unavailable</c> and a
+/// priced order is refused (fail-closed). Sinan (#66 6704170096) approved the catalog entry as a narrow ALS-D58 exception; it lands
+/// in A2a-1b (with the unit-price scale), not here.
+/// </summary>
+public static class PurchasingMoneyOperationsV1
+{
+    public const string OrderV1 = "purchasing.order.v1";
+}
 
 public sealed record PurchaseOrderReadListResponseV1(
     IReadOnlyList<PurchaseOrderReadSummaryViewV1> Items,
@@ -352,6 +447,12 @@ public static class PurchasingProblemCodesV1
     /// <summary>422: the unit is not an approved kilogram profile for this company on the date, or the quantity's scale exceeds it (Ö2).</summary>
     public const string UnsupportedUnit = "unsupported_unit";
 
+    /// <summary>
+    /// 422 (A2a-1): the currency has no Settings money profile for the purchasing order operation on the business date, or it is
+    /// inactive or outside its window; field <c>currencyId</c>.
+    /// </summary>
+    public const string UnsupportedCurrency = "unsupported_currency";
+
     /// <summary>422: the Product owner refused this selection (not purchasable, lifecycle, unit binding); field errors carry the owner's codes.</summary>
     public const string UnsupportedProduct = "unsupported_product";
 
@@ -387,7 +488,8 @@ public sealed record PurchasingServiceBindings(
     string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord,
     string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove,
     string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw,
-    string? OrderCancelPermission = PurchasingPermissionManifestV1.OrdersCancel);
+    string? OrderCancelPermission = PurchasingPermissionManifestV1.OrdersCancel,
+    string? PriceReadPermission = PurchasingPermissionManifestV1.OrdersPriceRead);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -406,6 +508,7 @@ public static class PurchasingApiV1
     public const string OrderCancelImpactPath = "/api/v1/purchasing/orders/{id}/cancel-impact";
     public const string OrderCancellationPath = "/api/v1/purchasing/orders/{id}/cancellation";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
+    public const string CurrencyCandidatesPath = "/api/v1/purchasing/references/currencies";
     public const string IdempotencyHeader = "Idempotency-Key";
 
     /// <summary>The first commit and its replay both answer 201 (ADR-011 §4; the Sales #321 decision), told apart by the replay headers.</summary>
@@ -535,6 +638,31 @@ public static class PurchasingJson
 
             RequireProductVersionShape(line.ExpectedProductVersion);
             RequireDecimalShape(line.Quantity);
+            if (line.Price is { } price)
+            {
+                // A2a-1: the shape only — exact decimal text (an explicit 0 is a price), a non-empty price unit. Whether the
+                // value is non-negative, within the money profile's decimals, in the line's unit or a valid discount is the domain's 422.
+                if (price.PriceUnitId == Guid.Empty)
+                {
+                    throw new JsonException("Invalid price unit.");
+                }
+
+                RequireAmountShape(price.UnitPrice);
+                if (price.DiscountPercent is not null)
+                {
+                    RequireAmountShape(price.DiscountPercent);
+                }
+
+                if (price.DiscountAmount is not null)
+                {
+                    RequireAmountShape(price.DiscountAmount);
+                }
+            }
+        }
+
+        if (request.CurrencyId == Guid.Empty)
+        {
+            throw new JsonException("Invalid currency.");
         }
 
         return request;
@@ -576,6 +704,15 @@ public static class PurchasingJson
             || !string.Equals(text, text.Trim(), StringComparison.Ordinal))
         {
             throw new JsonException("Invalid product version.");
+        }
+    }
+
+    /// <summary>A2a-1: plain non-negative decimal text (digits with at most one inner '.'), at most 128 characters; zero is allowed here.</summary>
+    private static void RequireAmountShape(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length > 128 || !DecimalText.IsMatch(text))
+        {
+            throw new JsonException("Invalid amount text.");
         }
     }
 

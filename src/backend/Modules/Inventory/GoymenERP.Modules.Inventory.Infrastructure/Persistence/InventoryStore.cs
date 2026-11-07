@@ -423,6 +423,13 @@ public sealed partial class InventoryStore(
         return InventoryWriteOutcome.Recorded;
     }
 
+    /// <summary>B-01: a Manufacturing plan-input allocation was created, consumed by an input issue, or released.</summary>
+    internal void AuditManufacturingPlanAllocation(InventoryCommandMetadata metadata, Guid companyId, Guid allocationId,
+        string eventType, string operation, long? versionBefore, long versionAfter, string before, string after,
+        string reason) =>
+        Audit(metadata, companyId, "Inventory.StockAllocation", allocationId, eventType, operation, versionBefore,
+            versionAfter, before, after, reason);
+
     internal void AuditDefiniteShipment(InventoryCommandMetadata metadata, Guid companyId, Guid allocationId,
         long versionBefore, long versionAfter, string before, string after)
     {

@@ -63,3 +63,8 @@ iş tanımıdır; Satış'ın kendi karar, review ve merge kapıları geçerlidi
 Alış planı TEK-03 (BuildingBlocks altında ortak komut iskeleti) ve TEK-04 (`src/commercial/` ön yüz bileşenleri) önce
 Alış için yazılır. Satış'ın bunlara geçişi ancak bu katmanlar main'e girdikten sonra ayrı bir notla istenir; bu notta
 istek yoktur.
+
+**Bilgi (A2a-1, 2026-11-07):** satır fiyatı hesabı (iskonto yüzde/tutar, tam net birim fiyat, satır tutarında tek yuvarlama;
+SAT-D11, SAT-D76) Alış için `BuildingBlocks/Monetary/CommercialLinePriceCalculator` olarak yazıldı; kurallar
+`SalesLinePriceCalculator` ile aynıdır (vade farkı A2a-2'de eklenecek). Satış dosyaları değişmedi; Satış'ın bu ortak
+hesaplayıcıya geçişi yukarıdaki gibi ileride ayrı notla istenir.
