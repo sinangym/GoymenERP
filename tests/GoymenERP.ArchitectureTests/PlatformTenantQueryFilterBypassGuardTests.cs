@@ -436,8 +436,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D211 (EK36; K3 review B P2-1): +1 SalesOrderLineRevision fact (a rejected removal brings the line back in the
             // stored order, the line port and the approved-line list; the guard admits no other reinstatement move), kept
             // ordinal-sorted (ba7de976… -> ee57b276…).
+            // SAT-D219 (EK38): +1 SalesOrderLineRevision fact (the route refuses a removal of a line with an open linked supply, asks the
+            // owner for the server company, and passes once the link is closed), kept ordinal-sorted (ee57b276… -> a2ac1f92…).
             ["tools/relational_inventory/sales.txt"] =
-                "ee57b276608727bca2be276c10d5e7d19d995cf3f1fb1667f16fbb1ff0f64d53",
+                "a2ac1f92b3558cfb379cf206f0dccceaf22313b8b004141fc5d6a8bc542b48d9",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1552,8 +1554,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
                     // Re-fingerprinted for S-1 / MOD-03: the draft service also receives the supply owners' optional linked-supply
                     // adapters (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D219 (EK38): the draft service also receives the supply owners' optional recorder
+                    // declarations (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     new(
-                        "6dc6ee1a3547ab97e1af8fc25489f15053879abaef8e50b2fc7a584b7c0fc9fc",
+                        "bf8235d251ff3a4f6f6e43ce5511faf0b6baa2355cd8d7ff287915fb75ee5cc4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

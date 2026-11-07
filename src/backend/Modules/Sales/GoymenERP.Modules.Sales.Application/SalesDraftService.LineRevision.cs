@@ -171,8 +171,11 @@ public sealed partial class SalesDraftService
 
     /// <summary>
     /// SAT-D167: every line to remove (or re-product) must be unshipped — no active allocation and no loading-instruction line, read
-    /// afresh from both owners. Unreadable → 503; a linked line → 422 on <c>removed[i].lineId</c>. An id that is not an active line
-    /// of the order is left to the domain (<c>sales_revision_lines_mismatch</c>).
+    /// afresh from both owners — and, SAT-D219 (EK38), have no OPEN linked purchase order or production order (every supply kind
+    /// read afresh, <see cref="ReadLinkedSupplyBlockedLinesAsync"/>). Unreadable → 503; a shipped line
+    /// (<c>sales_line_revision_line_shipped</c>) or a linked one (<c>sales_line_revision_line_linked</c>) → 422 on
+    /// <c>removed[i].lineId</c>. An id that is not an active line of the order is left to the domain
+    /// (<c>sales_revision_lines_mismatch</c>).
     /// </summary>
     private async Task RequireRemovedLinesUnshippedAsync(Scope scope, string? permission, SalesOrderDraft draft,
         IReadOnlyList<SalesDraftLineRemovalV1> removed, CancellationToken cancellationToken, string fieldPrefix = "removed")
@@ -181,6 +184,9 @@ public sealed partial class SalesDraftService
             ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
         var loaded = await ReadLoadingAsync(scope, permission, draft, cancellationToken)
             ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+        // SAT-D219 (EK38): the open linked purchase / production orders, read afresh from every supply kind (an unreadable kind is 503).
+        var linked = await ReadLinkedSupplyBlockedLinesAsync(scope, permission, draft, [.. removed.Select(removal => removal.LineId)],
+            cancellationToken);
         var errors = new List<SalesDraftFieldError>();
         for (var index = 0; index < removed.Count; index++)
         {
@@ -191,6 +197,10 @@ public sealed partial class SalesDraftService
                 || (loading is not null && (loading.Count > 0 || loading.Instructed > 0m || loading.Shipped > 0m)))
             {
                 errors.Add(new($"{fieldPrefix}[{index}].lineId", SalesRuleCodes.LineRevisionLineShipped));
+            }
+            else if (linked.Contains(lineId))
+            {
+                errors.Add(new($"{fieldPrefix}[{index}].lineId", SalesRuleCodes.LineRevisionLineLinked));
             }
         }
 

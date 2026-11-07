@@ -248,7 +248,78 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task SAT_D219_the_route_refuses_a_removal_of_a_line_with_an_open_linked_supply_and_asks_the_owner_for_the_server_company_on_real_sql()
+    {
+        // A SYNTHETIC Purchasing adapter of the Sales-declared linked-supply port, registered in the real host.
+        var owner = new LinkedSupplyOwner();
+        await using var run = await Run.StartAsync(services =>
+            services.AddSingleton<ISalesOrderLinkedSupplyReadPortV1>(owner));
+        var draft = await run.ApprovedDraftAsync(CompanyA, "s");
+        var first = draft.Lines[0];
+        owner.Line = first.Id;
+        var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/line-revision";
+        var writer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersQuantityWrite);
+        var removal = new SalesDraftLineRevisionRequest(draft.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "SENTETIK satır kalksın", [], [new SalesDraftLineRemovalV1(first.Id, null)]);
+
+        using var client = run.Client(writer, CompanyA);
+        // An open linked purchase order on the line: 422 on removed[0].lineId, nothing recorded, the owner asked for company A.
+        owner.Mode = "open";
+        using (var refused = await client.SendAsync(Post(path, "SENTETIK-d219-open", removal)))
+        {
+            Assert.Equal((HttpStatusCode)422, refused.StatusCode);
+            var error = (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors")[0];
+            Assert.Equal(("removed[0].lineId", "sales_line_revision_line_linked"),
+                (error.GetProperty("field").GetString(), error.GetProperty("code").GetString()));
+        }
+
+        // An unreadable owner: 503 (fail-closed, not recorded).
+        owner.Mode = "unreadable";
+        using (var unavailable = await client.SendAsync(Post(path, "SENTETIK-d219-unreadable", removal)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-lines.v1'"));
+        Assert.All(owner.Queries, query => Assert.Equal((CompanyA, draft.Id), (query.CompanyId, query.OrderId)));
+        Assert.True(owner.Queries.Count >= 2);
+
+        // Closed in its owner: the removal goes through and the line is passive.
+        owner.Mode = "none";
+        using (var revised = await client.SendAsync(Post(path, "SENTETIK-d219-none", removal)))
+        {
+            Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] = 1", ("@id", draft.Id)));
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
+
+    /// <summary>A SYNTHETIC Purchasing owner adapter: open on the line, unreadable, or no link — as the case sets it.</summary>
+    private sealed class LinkedSupplyOwner : ISalesOrderLinkedSupplyReadPortV1
+    {
+        public string Mode { get; set; } = "none";
+        public Guid Line { get; set; }
+        public List<SalesOrderLinkedSupplyQueryV1> Queries { get; } = [];
+
+        public string SupplyKind => SalesLinkedSupplyKindsV1.Purchasing;
+
+        public Task<SalesOrderLinkedSupplyAnswerV1> ReadOrderLinkedSupplyAsync(SalesOrderLinkedSupplyQueryV1 query, CancellationToken cancellationToken = default)
+        {
+            Queries.Add(query);
+            return Task.FromResult(Mode switch
+            {
+                "open" => new SalesOrderLinkedSupplyAnswerV1(SalesCancellationImpactStatusesV1.Present, query.CompanyId, query.OrderId, SupplyKind,
+                    [new SalesOrderLinkedSupplyItemV1(Guid.NewGuid(), Guid.NewGuid(), SalesLinkedSupplyDocumentTypesV1.PurchaseOrder, "SA-1", Line,
+                        "Approved", "5", KgUnit, null, null)], null),
+                "unreadable" => new SalesOrderLinkedSupplyAnswerV1(SalesCancellationImpactStatusesV1.Unreadable, query.CompanyId, query.OrderId, SupplyKind, [], "off"),
+                _ => new SalesOrderLinkedSupplyAnswerV1(SalesCancellationImpactStatusesV1.None, query.CompanyId, query.OrderId, SupplyKind, [], null),
+            });
+        }
+    }
 
     private static HttpRequestMessage Post<T>(string path, string key, T body)
     {
@@ -304,10 +375,10 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         public string Actor { get; } = "SENTETIK-preparer-" + Guid.NewGuid().ToString("N");
         public string Correlation { get; } = $"sales-lines-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(Action<IServiceCollection>? configureServices = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");

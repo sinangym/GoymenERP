@@ -245,7 +245,7 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.cancellationImpactChanged]:
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
-    'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); miktar değiştirilmedi. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+    'Siparişe bağlı kayıtlar var (tahsis, yükleme, satın alma ya da üretim); işlem yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.forceCloseBlocked]:
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
@@ -422,6 +422,11 @@ export const ORDER_DETAIL_TEXT = {
     /** SAT-D201 (EK31). */
     subcontractPriceRequired:
       'Fason siparişte kg fiyatı girilmemiş hizmet satırı var; sipariş onaya gönderilemez. Fiyatı "Fiyat revizyonu" ile kg başına girin.',
+    /** SAT-D167 / SAT-D219: a line this revision removed got a link after the revision was recorded (409 `sales_revision_blocked`). */
+    lineShipped:
+      'Bu revizyonda çıkarılan bir satıra sonradan tahsis ya da yükleme bağlanmış; işlem yapılmadı. Bağ kendi ekranında kapatıldıktan sonra yeniden deneyin.',
+    lineLinked:
+      'Bu revizyonda çıkarılan bir satıra sonradan açık satın alma ya da üretim bağlanmış; işlem yapılmadı. Bağ satın alma/üretim tarafında kapatılsın ya da çözülsün, sonra yeniden deneyin.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -549,7 +554,8 @@ export const ORDER_DETAIL_TEXT = {
       'Çıkarılan satır silinmez, pasif olur; tutar, risk ve sevkiyatın dışında kalır (çıkarma onay beklerken sevk edilmez; reddedilirse satır geri gelir ve son onaylı revizyonla sevk edilir). Vergi, satırın ürününe göre Ayarlar listelerinden belirlenir.',
     approvedWarning:
       'Onaylı siparişte satır değişikliği mevcut revizyonu gerekçesiyle arşivler; sipariş yeni revizyonla iç onaya, gerekiyorsa yeniden müşteri kabulüne girer.',
-    linkedWarning: 'Stok tahsisi ya da yükleme talimatı olan (sevki başlamış) satır çıkarılamaz ve ürünü değiştirilemez.',
+    linkedWarning:
+      'Stok tahsisi ya da yükleme talimatı olan (sevki başlamış) ya da açık satın alma siparişi / üretim emri bağlı satır çıkarılamaz ve ürünü değiştirilemez.',
     subcontractNote: 'Fason hizmet siparişinde yalnız "Hizmet" kalemli ürün eklenir; birim ve fiyat birimi kg, fiyat kg başına elle yazılır.',
     stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapanmış siparişte satır revizyonu yapılamaz.',
     revisionDay: (day: string) => `Yeni satırın ürünü, birimi ve vergisi revizyon gününün (${day}) değerleriyle okunur; mevcut satırlar değişmez.`,
@@ -594,6 +600,9 @@ export const ORDER_DETAIL_TEXT = {
     /** The server's rule codes on `added[i]…` / `removed[i]…`, named for their row. */
     ruleCode: {
       sales_line_revision_line_shipped: 'Satırın stok tahsisi ya da yükleme talimatı var (sevki başladı); çıkarılamaz, ürünü değiştirilemez.',
+      // SAT-D219 (EK38): an open linked purchase order or production order, as the owner answers it (Sales does not interpret it).
+      sales_line_revision_line_linked:
+        'Satıra açık bir satın alma siparişi ya da üretim emri bağlı; çıkarılamaz, ürünü değiştirilemez. Önce satın alma/üretim tarafında kapatılsın ya da bağı çözülsün.',
       sales_line_replacement_same_product: 'Ürün değişikliği başka bir ürün ister; aynı ürünün miktarı miktar revizyonuyla değişir.',
       sales_line_replacement_invalid: 'Ürünü değişen satırın yerine aynı revizyonda eklenen tek bir satır gelir.',
       sales_line_revision_no_lines_left: 'Siparişte en az bir etkin satır kalmalıdır.',

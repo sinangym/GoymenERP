@@ -205,6 +205,41 @@ describe('S-04 line revision (SAT-D167, EK24)', () => {
     expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
   })
 
+  it('SAT-D219: names the row an open linked purchase or production order refused, and says an unreadable owner changed nothing', async () => {
+    let answer: 'linked' | 'unreadable' = 'linked'
+    const harness = installFetch({
+      capabilities: WITH_LINES,
+      onDetail: () => json(detail()),
+      onLineRevision: () => answer === 'linked'
+        ? json({
+          status: 422, title: 'Unprocessable', code: 'validation_failed', correlationId: 'c-linked',
+          errors: [{ field: 'removed[0].lineId', code: 'sales_line_revision_line_linked' }],
+        }, 422)
+        : json({ status: 503, title: 'Unavailable', code: 'revision_impact_unavailable', correlationId: 'c-unread' }, 503),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`, sourceRecording([]))
+    const form = await openForm()
+    expect(within(form).getByText(T.linkedWarning).textContent).toContain('satın alma')
+    choose(within(form).getByTestId('sales-line-revision-row-1'), T.action, 'remove')
+    fireEvent.click(within(form).getByRole('button', { name: T.addLine }))
+    const added = within(form).getByTestId('sales-line-revision-added-1')
+    choose(added, T.product, PRODUCT_2)
+    choose(added, T.unit, KG)
+    choose(added, T.quantity, '2')
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'neden' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+
+    const alert = await within(form).findByRole('alert')
+    expect(alert.textContent).toContain(T.rowError('1. EXAMPLE-ONLY — Controlled schema example', T.ruleCode.sales_line_revision_line_linked))
+    expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
+    expect(linePosts(harness.calls)).toHaveLength(1)
+    // An owner that cannot be read refuses too (503): nothing changed, the same attempt may be retried.
+    answer = 'unreadable'
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+    await waitFor(() => expect(linePosts(harness.calls)).toHaveLength(2))
+    expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
+  })
+
   it('re-reads the order on a stale version and retries an unknown outcome with the same key', async () => {
     let answer: 'conflict' | 'unavailable' = 'unavailable'
     const harness = installFetch({

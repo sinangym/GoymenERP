@@ -338,6 +338,9 @@ public static class SalesRuleCodes
     /// <summary>SAT-D167: a product change names a line added in the same revision, and each added line replaces at most one line.</summary>
     public const string LineReplacementInvalid = "sales_line_replacement_invalid";
 
+    /// <summary>SAT-D219 (EK38): a line with an open linked purchase order or production order is neither removed nor given another product.</summary>
+    public const string LineRevisionLineLinked = "sales_line_revision_line_linked";
+
     /// <summary>SAT-D167: a product change must name another product (the same product's quantity or price has its own revision).</summary>
     public const string LineReplacementSameProduct = "sales_line_replacement_same_product";
 
