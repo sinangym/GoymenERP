@@ -22,7 +22,7 @@ This suite proves the normal Purchasing user path against the disposable real st
   "Geri çekildi" with the reason, the same key replays, the approver's and the reader's direct withdrawal calls are
   403 (neither holds the name), and the withdrawn request cannot be approved (409 `purchasing_request_decision_state`).
 - A1-3 (plan API-10/UI-05; No.161 §2): the approver — the only persona holding `purchasing.orders.cancel` (a SENTETIK stand-in;
-  who holds the name in production is NEEDS-SINAN) — opens a freshly approved order, reads the impact preview and cancels its
+  ALS-D66 proposes the name to the approvers; the production grant is a human gate) — opens a freshly approved order, reads the impact preview and cancels its
   whole unaccepted remainder with a reason ("Kalanı iptal et"); the order reads "Kalanı iptal edildi" with each line's
   cancelled share and the reason, the same key replays, a second cancellation is 409 `purchasing_order_state`, and the
   creator's and the reader's direct calls (command and preview) are 403. The detail's line table gains the "İptal"
