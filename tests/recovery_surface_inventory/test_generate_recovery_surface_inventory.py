@@ -2594,6 +2594,19 @@ internal {{declaration}} : IDocumentObjectStoreV1
                 "namespace GoymenERP.Modules.Documents.Infrastructure.Storage;\n"
                 "internal static class Path { }\n",
             ),
+            "internals-visible-to-assembly-attribute": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}VisibleProbe.cs",
+                "[assembly: System.Runtime.CompilerServices.InternalsVisibleTo(\"Hidden\")]\n"
+                "namespace Foreign.Zone;\ninternal static class VisibleProbe { }\n",
+            ),
+            "module-initializer": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}InitializerProbe.cs",
+                "namespace Foreign.Zone;\ninternal static class InitializerProbe\n{\n"
+                "    [System.Runtime.CompilerServices.ModuleInitializer]\n"
+                "    internal static void Run() { }\n}\n",
+            ),
             "global-json": mutate_snapshot(
                 self.snapshot, "global.json", lambda text: text.replace("{", '{ "x": 1,', 1)
             ),
@@ -2633,6 +2646,41 @@ internal {{declaration}} : IDocumentObjectStoreV1
         )
         self.assertNotIn(ordinary, generator._risky_source_surface_paths(self.snapshot))
         self.assertIn(ordinary, generator._risky_source_surface_paths(aliased))
+
+    def test_narrow_risky_pin_rejects_delegate_symbol_shadows(self) -> None:
+        # K3 review P2: a delegate type named like an imported type (Task, Guid) shadows it in a
+        # risky file of the same or an enclosed namespace exactly as a class would.
+        drift = "risky C# compilation source surface drifted"
+        inventory = "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        namespace = "namespace GoymenERP.Modules.Inventory.Infrastructure;\n"
+        probes = {
+            "public-delegate-task": "public delegate void Task();\n",
+            "global-namespace-guid": "delegate void Guid();\n",
+            "generic-delegate": "public delegate void Task<T>(T value);\n",
+            "internal-modifiers-attribute": (
+                "[System.Obsolete]\ninternal unsafe delegate Task<int> Guid<T>(T value) "
+                "where T : class;\n"
+            ),
+            "tuple-and-ref-return": "public delegate (int A, int B) Guid();\n",
+        }
+        baseline = generator._risky_source_surface_fingerprint(self.snapshot)
+        for label, declaration in probes.items():
+            path = f"{inventory}DelegateShadow{label.title().replace('-', '')}Probe.cs"
+            body = declaration if label == "global-namespace-guid" else namespace + declaration
+            with self.subTest(delegate=label):
+                changed = snapshot_with_file(self.snapshot, path, body)
+                self.assertNotEqual(baseline, generator._risky_source_surface_fingerprint(changed))
+                with self.assertRaisesRegex(generator.InventoryError, drift):
+                    generator._require_reviewed_source_surface(changed)
+
+        # Comments, strings and anonymous methods never declare a delegate type.
+        harmless = (
+            "// public delegate void Task();\n/* delegate void Guid(); */\n"
+            'internal static class DelegateText { const string S = "delegate void Task();"; '
+            "static void M() { System.Action a = delegate { }; a(); } }\n"
+        )
+        changed = snapshot_with_file(self.snapshot, f"{inventory}DelegateTextProbe.cs", harmless)
+        self.assertEqual(baseline, generator._risky_source_surface_fingerprint(changed))
 
     def test_narrow_risky_pin_ignores_ordinary_endpoint_and_business_changes(self) -> None:
         # Recovery pin Faz 1 positive case: ordinary backend edits do not need a re-pin, but the

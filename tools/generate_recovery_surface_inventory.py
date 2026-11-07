@@ -74,16 +74,23 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 #   * a shadow-declaration index (path, namespace, name) of every type declared in a namespace that
 #     equals or encloses a risky file's namespace (the global namespace encloses all) whose simple
 #     name occurs in such a risky file.
-# Measured over the last 21 origin/main commits touching src/backend/ up to 1e694aa3e (8310d5cba
-# .. 1e694aa3e, 2026-11-02..07): 18 of 21 would still have moved this narrow pin (16 add a
-# migration or edit a DbContext, the others edit Program.cs or an EF-using service); 3 (one K2
-# Manufacturing internal-method change and two README-only K1 commits) would not.
+# Measurement note (one-time, NOT re-run by CI): over the last 21 origin/main commits touching
+# src/backend/ up to 1e694aa3e (8310d5cba .. 1e694aa3e, 2026-11-02..07), 18 of 21 would still have
+# moved this narrow pin (16 add a migration or edit a DbContext, the others edit Program.cs or an
+# EF-using service); 3 (one K2 Manufacturing internal-method change and two README-only K1
+# commits) would not.  Reproduce: `git log --format=%h 8310d5cba^..1e694aa3e -- src/backend`, then
+# for each commit and its parent run
+# `python3 -I .claude/skills/recovery-inventory-repin/scripts/print_recovery_actuals.py` in a
+# clean worktree and compare the risky-surface fingerprint.
+# Known limits (documented, not closed): a type name assembled by a full string split is
+# invisible to the lexical token scan (reflection by concatenated string); delegate types are in
+# the shadow index.
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 545
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 572
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "bbd74f6b84f30f7ed9f84e7f329161445453e56ec0764ef7a72f3577f195f24b"
+    "2ad5816e5273f73b9c696a501fb3a7c5063c565fe7acafc108c1062f91d85681"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -103,6 +110,8 @@ RISKY_SOURCE_TOKENS = (
     "DbConnection",
     "DbCommand",
     "System.Data",
+    "InternalsVisibleTo",
+    "ModuleInitializer",
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -2997,6 +3006,12 @@ _RISKY_TYPE_DECLARATION_PATTERN = re.compile(
     r"\b(?P<kind>class|struct|interface|record|enum)\s+(?:(?:class|struct)\s+)?"
     r"@?(?P<name>[^\W\d]\w*)"
 )
+# Delegate types also declare a simple name (`public delegate void Task();`) that shadows an
+# imported type; the return type may be generic, qualified, an array, nullable or a tuple.
+_RISKY_DELEGATE_DECLARATION_PATTERN = re.compile(
+    r"\bdelegate\s+(?:ref\s+(?:readonly\s+)?)?(?:[^;(){}=]|\([^()]*\))*?"
+    r"(?<![\w@])@?(?P<name>[^\W\d]\w*)\s*(?:<(?:[^;(){}<>]|<(?:[^;(){}<>]|<[^;(){}<>]*>)*>)*>)?\s*\("
+)
 _RISKY_PARTIAL_DECLARATION_PATTERN = re.compile(
     r"\bpartial\s+(?:class|struct|interface|record(?:\s+(?:class|struct))?)\s+"
     r"@?(?P<name>[^\W\d]\w*)"
@@ -3093,10 +3108,17 @@ def _compute_risky_source_surface(
                 selected.add(path)
     structural = {path: _mask_csharp_strings(text) for path, text in csharp.items()}
     declarations = {
-        path: tuple(
-            (match.group("kind"), match.group("name"))
-            for match in _RISKY_TYPE_DECLARATION_PATTERN.finditer(text)
-            if match.group("name") not in _CSHARP_KEYWORDS
+        path: (
+            *(
+                (match.group("kind"), match.group("name"))
+                for match in _RISKY_TYPE_DECLARATION_PATTERN.finditer(text)
+                if match.group("name") not in _CSHARP_KEYWORDS
+            ),
+            *(
+                ("delegate", match.group("name"))
+                for match in _RISKY_DELEGATE_DECLARATION_PATTERN.finditer(text)
+                if match.group("name") not in _CSHARP_KEYWORDS
+            ),
         )
         for path, text in structural.items()
     }
