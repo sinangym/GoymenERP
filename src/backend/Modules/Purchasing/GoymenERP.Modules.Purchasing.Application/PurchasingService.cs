@@ -948,7 +948,7 @@ public sealed partial class PurchasingService(
         new(OrderDetail(stored, disclosure), isReplay, originalCorrelationId);
 
     /// <summary>A2a-1: the rule codes a line's price is refused with (answered on <c>lines[i].price</c>).</summary>
-    private static bool IsPriceRule(string code) => code is PurchasingRuleCodes.PriceCurrencyRequired or PurchasingRuleCodes.PriceNotPositive
+    private static bool IsPriceRule(string code) => code is PurchasingRuleCodes.PriceCurrencyRequired or PurchasingRuleCodes.PriceNegative
         or PurchasingRuleCodes.PriceScaleExceeded or PurchasingRuleCodes.PriceUnitConversionUnavailable or PurchasingRuleCodes.DiscountKindConflict
         or PurchasingRuleCodes.DiscountPercentOutOfRange or PurchasingRuleCodes.DiscountExceedsPrice or PurchasingRuleCodes.PriceOutOfRange;
 

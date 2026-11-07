@@ -337,11 +337,13 @@ public sealed class PurchaseOrder
 
     /// <summary>
     /// A2a-1: the price rules, all refused with a stable code and never repaired — the order has a currency
-    /// (<see cref="PurchasingRuleCodes.PriceCurrencyRequired"/>); the unit price is positive (ALS-D18: no price is not a zero
-    /// price); the price unit is the line's entry unit, because no conversion is published yet (ALS-D51/D58/D60,
+    /// (<see cref="PurchasingRuleCodes.PriceCurrencyRequired"/>); the unit price is zero or more — an explicit 0 is a price whose
+    /// line amount is 0, kept apart from no price ("fiyat bekliyor", ALS-D18; Sinan #66 6704170096), and on a zero price a discount
+    /// can only be a percent or a zero amount (any positive amount exceeds the price: fail-closed, never a negative net); the price unit is the line's entry unit, because no conversion is published yet (ALS-D51/D58/D60,
     /// <see cref="PurchasingRuleCodes.PriceUnitConversionUnavailable"/>); the unit price and a discount amount carry at most the
     /// money profile's decimals (Ö2, never rounded) and fit the columns; a discount is a percent (0..100) OR an amount
-    /// (0..unit price); and the line amount is computable exactly. No minimum price, margin or discount ceiling is decided for
+    /// (0..unit price); and both the net unit price and the line amount are computable exactly at write time (#944 review A P2:
+    /// a read never meets a price it cannot compute). No minimum price, margin or discount ceiling is decided for
     /// purchasing (ALS-D5 "elle"), so none is invented.
     /// </summary>
     private void RequirePrice(PurchaseOrderLinePrice price, Guid unitId, Quantity ordered)
@@ -352,10 +354,10 @@ public sealed class PurchaseOrder
         }
 
         Identity.Require(price.PriceUnitId, nameof(price));
-        if (price.UnitPrice <= 0m)
+        if (price.UnitPrice < 0m)
         {
-            throw new PurchasingRuleException(PurchasingRuleCodes.PriceNotPositive,
-                "Birim fiyat sıfırdan büyük olmalıdır; fiyatı bilinmeyen satır fiyatsız bırakılır.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceNegative,
+                "Birim fiyat negatif olamaz; fiyatı bilinmeyen satır fiyatsız bırakılır, açık 0 fiyat ayrı bir değerdir.");
         }
 
         if (price.PriceUnitId != unitId)
@@ -389,6 +391,7 @@ public sealed class PurchaseOrder
 
         try
         {
+            _ = price.NetUnitPrice;
             _ = price.LineAmount(ordered.Value, money);
         }
         catch (OverflowException)

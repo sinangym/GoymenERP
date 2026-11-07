@@ -111,8 +111,8 @@ public sealed class PurchaseOrderPricingTests
 
     [Theory]
     [InlineData("no-currency", PurchasingRuleCodes.PriceCurrencyRequired)]
-    [InlineData("zero", PurchasingRuleCodes.PriceNotPositive)]
-    [InlineData("negative", PurchasingRuleCodes.PriceNotPositive)]
+    [InlineData("negative", PurchasingRuleCodes.PriceNegative)]
+    [InlineData("zero-with-amount", PurchasingRuleCodes.DiscountExceedsPrice)]
     [InlineData("other-unit", PurchasingRuleCodes.PriceUnitConversionUnavailable)]
     [InlineData("scale", PurchasingRuleCodes.PriceScaleExceeded)]
     [InlineData("integer-digits", PurchasingRuleCodes.PriceOutOfRange)]
@@ -130,7 +130,7 @@ public sealed class PurchaseOrderPricingTests
             : PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
         var price = fault switch
         {
-            "zero" => new PurchaseOrderLinePrice(0m, Kg),
+            "zero-with-amount" => new PurchaseOrderLinePrice(0m, Kg, null, 0.01m),
             "negative" => new PurchaseOrderLinePrice(-1m, Kg),
             "other-unit" => new PurchaseOrderLinePrice(10m, Guid.NewGuid()),
             "scale" => new PurchaseOrderLinePrice(10.001m, Kg),
@@ -150,6 +150,37 @@ public sealed class PurchaseOrderPricingTests
         Assert.Equal(code, refused.Code);
         Assert.Empty(order.Lines);
         Assert.Equal(1, order.Version);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("10", null)]
+    [InlineData(null, "0")]
+    public void An_explicit_zero_price_is_a_price_with_a_zero_amount_apart_from_no_price(string? percent, string? amount)
+    {
+        // Sinan (#66 6704170096): "Satırda açıkça 0 fiyat girilebilir; satır tutarı 0 olur. Boş fiyattan ayrı tutulur." On a zero
+        // price a percent discount is allowed (net 0) and an amount only as 0 (a positive amount exceeds the price, fail-closed).
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var line = order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(10m), null, new PurchaseOrderLinePrice(0m, Kg, Parse(percent), Parse(amount)), At);
+
+        Assert.NotNull(line.Price);
+        Assert.Equal((0m, 0m), (line.Price!.NetUnitPrice, line.Price.LineAmount(line.Quantity.Value, Lira)));
+    }
+
+    [Fact]
+    public void A_net_unit_price_that_cannot_be_held_exactly_is_refused_at_write_time_not_at_read()
+    {
+        // #944 review A P2: at scale 6 the line amount of 123456789012345678.123457 × (1 − 33.333333 %) fits, but the exact net
+        // 82304526419753082.12345692707819 (32 significant digits) needs more than System.Decimal holds; it is refused when written, never a 500 on a read.
+        var wide = PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 6);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, wide, At);
+        var price = new PurchaseOrderLinePrice(123456789012345678.123457m, Kg, 33.333333m);
+        Assert.Throws<OverflowException>(() => _ = price.NetUnitPrice);
+
+        var refused = Assert.Throws<PurchasingRuleException>(() => order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1m), null, price, At));
+
+        Assert.Equal(PurchasingRuleCodes.PriceOutOfRange, refused.Code);
+        Assert.Empty(order.Lines);
     }
 
     [Fact]

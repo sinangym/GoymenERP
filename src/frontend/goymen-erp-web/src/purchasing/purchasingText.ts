@@ -170,13 +170,13 @@ export const ORDER_CREATE_TEXT = {
  */
 export const ORDER_PRICE_TEXT = {
   legend: 'Fiyat (isteğe bağlı)',
-  note: 'Fiyat boş bırakılırsa sipariş "fiyat bekliyor" olarak kaydedilir; yine onaylanır ve mal kabulü yapılır, fiyat girilene kadar faturayla eşleşmez. Net fiyat ve satır tutarı kayıttan sonra sunucudan gösterilir.',
+  note: 'Açıkça 0 girilen fiyat bir fiyattır (satır tutarı 0). Fiyat boş bırakılırsa sipariş "fiyat bekliyor" olarak kaydedilir; yine onaylanır ve mal kabulü yapılır, fiyat girilene kadar faturayla eşleşmez. Net fiyat ve satır tutarı kayıttan sonra sunucudan gösterilir.',
   currency: 'Para birimi',
   currencyLoading: 'Para birimleri yükleniyor…',
-  currencyUnavailable: 'Para birimi seçenekleri alınamadı: Ayarlar\'da alış siparişi için onaylı para profili yok. Sipariş fiyatsız açılabilir.',
-  currencyDenied: 'Para birimi seçeneklerini okuma yetkiniz yok. Sipariş fiyatsız açılabilir.',
-  currencyFailed: 'Para birimi seçenekleri okunamadı. Sipariş fiyatsız açılabilir.',
-  currencyNone: 'Alış siparişi için tanımlı para birimi yok. Sipariş fiyatsız açılabilir.',
+  currencyUnavailable: 'Para birimi seçenekleri şu an alınamıyor (hizmet kullanılamıyor). Fiyat girilemez; sipariş fiyatsız açılabilir.',
+  currencyDenied: 'Para birimi seçeneklerini okuma yetkiniz yok. Fiyat girilemez; sipariş fiyatsız açılabilir.',
+  currencyFailed: 'Para birimi seçenekleri okunamadı. Fiyat girilemez; sipariş fiyatsız açılabilir.',
+  currencyNone: 'Alış siparişi için tanımlı para birimi yok. Fiyat girilemez; sipariş fiyatsız açılabilir.',
   unitPrice: 'Birim fiyat',
   unitPricePlaceholder: 'Örn. 41,25',
   priceUnit: (unitCode: string) => `Fiyat birimi: ${unitCode} (satırın giriş birimi; birim çevrimi henüz yok)`,
@@ -188,7 +188,8 @@ export const ORDER_PRICE_TEXT = {
   discountValue: 'İskonto değeri',
   discountPlaceholder: 'Örn. 2,5',
   currencyRequired: 'Birim fiyat girildiyse para birimi seçilmelidir.',
-  priceInvalid: 'Birim fiyat sıfırdan büyük bir sayı olmalıdır (örn. 41,25).',
+  priceInvalid: 'Birim fiyat 0 veya daha büyük bir sayı olmalıdır (örn. 41,25; açıkça 0 girilebilir).',
+  ambiguousSeparator: '"1.250" gibi bir değer bin ayırıcısı mı ondalık mı belirsiz; ondalık için virgül kullanın (örn. 1,25) veya binlik ayırıcı yazmayın (örn. 1250).',
   discountInvalid: 'İskonto değeri geçerli bir sayı olmalıdır; yüzde 0 ile 100 arasındadır.',
   discountWithoutPrice: 'İskonto yalnız birim fiyatla birlikte verilebilir.',
   priceRejected: (code: string) => `Fiyat kabul edilmedi (${ORDER_PRICE_PROBLEM_TEXT[code] ?? code}).`,
@@ -197,7 +198,7 @@ export const ORDER_PRICE_TEXT = {
 /** A2a-1: the stable price refusals (`lines[i].price`) in Turkish; an unknown code is shown as received. */
 export const ORDER_PRICE_PROBLEM_TEXT: Readonly<Record<string, string>> = {
   purchasing_price_currency_required: 'fiyatlı satır para birimi ister',
-  purchasing_price_not_positive: 'birim fiyat sıfırdan büyük olmalı',
+  purchasing_price_negative: 'birim fiyat negatif olamaz',
   purchasing_price_scale_exceeded: 'para profilinin izin verdiğinden fazla ondalık; yuvarlanmaz',
   purchasing_price_unit_conversion_unavailable: 'fiyat birimi satır biriminden farklı; birim çevrimi yok, tutar hesaplanamıyor',
   purchasing_discount_kind_conflict: 'iskonto ya yüzde ya tutar olur',

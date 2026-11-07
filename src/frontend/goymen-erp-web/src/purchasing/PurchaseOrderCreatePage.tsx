@@ -62,12 +62,21 @@ function priceOf(unitPrice: string, kind: DiscountKind, discount: string):
   if (unitPrice.trim() === '') {
     return kind === 'none' || discount.trim() === '' ? { ok: true, price: null } : { ok: false, message: P.discountWithoutPrice }
   }
-  const parsed = parseQuantityInput(unitPrice)
-  if (!parsed.ok) return { ok: false, message: P.priceInvalid }
+  // Sinan (#66 6704170096): an explicit 0 is a price (line amount 0), apart from an empty price.
+  const parsed = parseDecimalInput(unitPrice)
+  if (!parsed.ok) return { ok: false, message: parsed.error === 'ambiguous-separator' ? P.ambiguousSeparator : P.priceInvalid }
   if (kind === 'none') return { ok: true, price: { unitPrice: parsed.value } }
   const value = parseDecimalInput(discount)
-  if (!value.ok || (kind === 'percent' && Number(value.value) > 100)) return { ok: false, message: P.discountInvalid }
+  if (!value.ok) return { ok: false, message: value.error === 'ambiguous-separator' ? P.ambiguousSeparator : P.discountInvalid }
+  if (kind === 'percent' && percentOver100(value.value)) return { ok: false, message: P.discountInvalid }
   return { ok: true, price: kind === 'percent' ? { unitPrice: parsed.value, discountPercent: value.value } : { unitPrice: parsed.value, discountAmount: value.value } }
+}
+
+/** #944 review P3: the percent bound compared as canonical text, never through a JS number. */
+function percentOver100(canonical: string): boolean {
+  const [integer, fraction = ''] = canonical.split('.')
+  if (integer.length !== 3) return integer.length > 3
+  return integer > '100' || (integer === '100' && /[1-9]/.test(fraction))
 }
 
 function currencyFailure(outcome: Exclude<Awaited<ReturnType<typeof fetchPurchasingCurrencyCandidates>>, { type: 'ok-single' }>): string {
@@ -197,7 +206,8 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
       setFormError(T.fieldsRequired)
       return
     }
-    const priced = priceOf(unitPrice, discountKind, discount)
+    const priceAvailable = currencies.type === 'ready' && currencies.data.items.length > 0
+    const priced = priceAvailable ? priceOf(unitPrice, discountKind, discount) : { ok: true as const, price: null }
     if (!priced.ok) {
       setFormError(priced.message)
       return
@@ -229,6 +239,8 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     return <main className={styles.page}><section className={styles.successCard} role="status"><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.saved}</h1><p className={styles.mono}>{F.version(order.id, order.version)}</p>{attempt.result.replayed ? <p>{F.replayed}</p> : null}<div className={styles.actions}>{hasCapability(shell, PURCHASING_CAPABILITY.orderDetail) ? <Link className={styles.primaryLink} to={purchaseOrderDetailPath(order.id)}>{F.openSame}</Link> : null}{hasCapability(shell, PURCHASING_CAPABILITY.orderList) ? <Link to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{F.backToList}</Link> : null}</div></section></main>
   }
   const frozen = attempt.phase === 'submitting' || attempt.phase === 'unknown' || (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
+  // #944 review P3: without a purchasing currency to choose, no price can be sent; the price inputs stay off (unpriced order).
+  const priceInputsOff = !(currencies.type === 'ready' && currencies.data.items.length > 0)
   return <main className={styles.page}><header className={styles.header}><div><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.heading}</h1></div><Link to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{T.back}</Link></header>
     {attempt.phase === 'unknown' ? <section className={styles.warningCard} role="alert"><p>{attempt.reason}</p><div className={styles.actions}><Button type="button" onClick={() => void send(attempt.snapshot, attempt.reason)}>{F.retrySameKey}</Button><Link className={styles.secondary} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{F.closeForm}</Link></div></section> : null}
     {attempt.phase === 'failed' && attempt.unresolvedSince !== undefined && attempt.snapshot !== undefined ? <section className={styles.warningCard} role="alert"><p>{attempt.message} {F.stillUnknown}</p><div className={styles.actions}><Button type="button" onClick={() => void send(attempt.snapshot!, attempt.unresolvedSince)}>{F.retrySameKey}</Button><Link className={styles.secondary} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{F.closeForm}</Link></div></section> : attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{attempt.message}</p> : null}
@@ -239,10 +251,10 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
       <fieldset disabled={frozen}><legend>{T.lineLegend}</legend><div className={styles.formGrid}><label htmlFor="effective-on">{F.businessDate}</label><input id="effective-on" type="date" value={effectiveOn} onChange={(event) => { productFence.current.invalidate(); setEffectiveOn(event.target.value); setProductId(''); setProducts({ type: 'idle' }) }} /><label htmlFor="product-search">{F.productSearch}</label><div className={styles.searchRow}><input id="product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /><Button type="button" onClick={() => void readProducts()}>{F.search}</Button></div><label htmlFor="product">{T.product}</label>{products.type === 'loading' ? <p role="status">{F.productsLoading}</p> : products.type === 'failed' ? <p role="alert">{products.message}</p> : <select id="product" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">{F.choose}</option>{products.type === 'ready' ? products.data.items.map((item) => <option key={item.productId} value={item.productId}>{F.productOption(item.code, item.name, item.unitCode)}</option>) : null}</select>} {products.type === 'ready' && products.data.searchWindowFull ? <p className={styles.note}>{T.searchWindowFull}</p> : null}<label htmlFor="quantity">{F.quantity}</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder={T.quantityPlaceholder} /></div></fieldset>
       <fieldset disabled={frozen} data-testid="purchase-order-price"><legend>{P.legend}</legend><p className={styles.note}>{P.note}</p><div className={styles.formGrid}>
         <label htmlFor="currency">{P.currency}</label>{currencies.type === 'loading' ? <p role="status">{P.currencyLoading}</p> : currencies.type === 'failed' ? <p role="alert">{currencies.message}</p> : currencies.type === 'ready' && currencies.data.items.length === 0 ? <p role="status">{P.currencyNone}</p> : <select id="currency" value={currencyId} onChange={(event) => setCurrencyId(event.target.value)}><option value="">{F.choose}</option>{currencies.type === 'ready' ? currencies.data.items.map((item) => <option key={item.currencyId} value={item.currencyId}>{item.displayLabel}</option>) : null}</select>}
-        <label htmlFor="unit-price">{P.unitPrice}</label><input id="unit-price" inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} placeholder={P.unitPricePlaceholder} aria-describedby="price-unit" />
+        <label htmlFor="unit-price">{P.unitPrice}</label><input id="unit-price" inputMode="decimal" disabled={priceInputsOff} value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} placeholder={P.unitPricePlaceholder} aria-describedby="price-unit" />
         <span />{(() => { const product = products.type === 'ready' ? products.data.items.find((item) => item.productId === productId) : undefined; return <p id="price-unit" className={styles.mono}>{product === undefined ? P.priceUnitPending : P.priceUnit(product.unitCode)}</p> })()}
-        <label htmlFor="discount-kind">{P.discountKind}</label><select id="discount-kind" value={discountKind} onChange={(event) => setDiscountKind(event.target.value as DiscountKind)}><option value="none">{P.discountNone}</option><option value="percent">{P.discountPercent}</option><option value="amount">{P.discountAmount}</option></select>
-        {discountKind === 'none' ? null : <><label htmlFor="discount-value">{P.discountValue}</label><input id="discount-value" inputMode="decimal" value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder={P.discountPlaceholder} /></>}
+        <label htmlFor="discount-kind">{P.discountKind}</label><select id="discount-kind" disabled={priceInputsOff} value={discountKind} onChange={(event) => setDiscountKind(event.target.value as DiscountKind)}><option value="none">{P.discountNone}</option><option value="percent">{P.discountPercent}</option><option value="amount">{P.discountAmount}</option></select>
+        {discountKind === 'none' ? null : <><label htmlFor="discount-value">{P.discountValue}</label><input id="discount-value" inputMode="decimal" disabled={priceInputsOff} value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder={P.discountPlaceholder} /></>}
       </div></fieldset>
       <div className={styles.actions}><Button type="submit" variant="primary" disabled={frozen}>{attempt.phase === 'submitting' ? F.saving : T.submit}</Button></div>
     </form>

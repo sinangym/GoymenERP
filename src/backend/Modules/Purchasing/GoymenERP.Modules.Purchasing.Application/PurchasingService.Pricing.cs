@@ -16,7 +16,7 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// recorded as a snapshot. Until the Settings owner approves a profile for that operation the owner answers
 /// <c>settings_provider_unavailable</c> and a priced order is refused (503, fail-closed); an order without prices needs no currency
 /// (ALS-D18).</item>
-/// <item><b>Price</b>: exact decimal text, parsed without rounding; every rule (positive, decimals, unit, discount) is the domain's
+/// <item><b>Price</b>: exact decimal text, parsed without rounding; every rule (not negative, decimals, unit, discount) is the domain's
 /// (<see cref="PurchaseOrder"/>), answered as a 422 on <c>lines[i].price</c>. Writing a price is measured with the create name
 /// (ALS-D60 yorum): no separate price-write name.</item>
 /// <item><b>Disclosure</b> (PRS-02): every order detail — a read or a command's answer — carries the prices only for a caller who

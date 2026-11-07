@@ -9,7 +9,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// A2a-1 (TEK-01, plan API-20; ALS-D5, ALS-D18) on real SQL Server: a priced order is stored in ONE save with its money snapshot
 /// and its line prices, audited with them, rebuilt through the domain and approved like any other; an unpriced order keeps every
-/// price column null; the checks refuse on a direct write what the domain refuses (a non-positive price, two discounts, a percent
+/// price column null; the checks refuse on a direct write what the domain refuses (a negative price, two discounts, a percent
 /// over 100, a discount over the price, a priced technical line, half a money snapshot); company B sees nothing; and the
 /// migration's Down refuses (51169) while a price exists. SENTETIK owners.
 /// </summary>
@@ -59,7 +59,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         // The checks refuse on a direct write what the domain refuses (547), and the price columns never move under the write guard.
         foreach (var (sql, check) in new[]
                  {
-                     ("UPDATE purchasing.PurchaseOrderLines SET UnitPrice = 0 WHERE OrderId = @id", "CK_PurchaseOrderLines_Price"),
+                     ("UPDATE purchasing.PurchaseOrderLines SET UnitPrice = -1 WHERE OrderId = @id", "CK_PurchaseOrderLines_Price"),
                      ("UPDATE purchasing.PurchaseOrderLines SET DiscountAmount = 1 WHERE OrderId = @id", "CK_PurchaseOrderLines_Price"),
                      ("UPDATE purchasing.PurchaseOrderLines SET DiscountPercent = 100.5 WHERE OrderId = @id", "CK_PurchaseOrderLines_Price"),
                      ("UPDATE purchasing.PurchaseOrderLines SET DiscountPercent = NULL, DiscountAmount = 41.26 WHERE OrderId = @id", "CK_PurchaseOrderLines_Price"),
@@ -100,6 +100,31 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             "UPDATE purchasing.PurchaseOrderLines SET Kind = 2, ParentLineId = LineId, UnitPrice = 1, PriceUnitId = UnitId WHERE OrderId = @id",
             ("@id", orderId)));
         Assert.Equal(547, technical.Number);
+        Assert.Contains("CK_PurchaseOrderLines_Price", technical.Message, StringComparison.Ordinal);
+    }
+
+    [SqlServerFact]
+    public async Task An_explicit_zero_price_is_stored_apart_from_no_price_and_a_positive_discount_amount_on_it_is_refused_by_the_check()
+    {
+        // Sinan (#66 6704170096): an explicit 0 is a price (line amount 0), apart from no price ("fiyat bekliyor").
+        await using Run run = await Run.StartAsync();
+        Owners owners = Owners.For(CompanyA);
+        Guid orderId;
+        await using (StoreScope a = run.Store(CompanyA))
+        {
+            PurchaseOrder built = PricedOrder(owners, new PurchaseOrderLinePrice(0m, KgUnit, 10m), 4m);
+            orderId = (await a.Store.StoreOrderAsync(run.Envelope("k-zero"), Hash("zero"), owners.Account, Day, () => built, VersionsOf(built)))
+                .Order.Order.Id;
+            var rebuilt = (await a.Store.FindOrderAsync(orderId))!.Order;
+            Assert.Equal((0m, 0m), (rebuilt.Lines[0].Price!.UnitPrice, rebuilt.Lines[0].Price!.LineAmount(rebuilt.Lines[0].Quantity.Value, rebuilt.Money!)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM purchasing.PurchaseOrderLines WHERE OrderId = @id AND UnitPrice = 0 AND PriceUnitId IS NOT NULL", ("@id", orderId)));
+        var amount = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE purchasing.PurchaseOrderLines SET DiscountPercent = NULL, DiscountAmount = 0.01 WHERE OrderId = @id", ("@id", orderId)));
+        Assert.Equal(547, amount.Number);
+        Assert.Contains("CK_PurchaseOrderLines_Price", amount.Message, StringComparison.Ordinal);
     }
 
     [SqlServerFact]

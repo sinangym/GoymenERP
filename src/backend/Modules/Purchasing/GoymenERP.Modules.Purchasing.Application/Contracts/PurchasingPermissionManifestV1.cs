@@ -57,7 +57,9 @@ public static class PurchasingPermissionManifestV1
     /// without this name every price field is null beside <c>PriceDisclosure: Withheld</c> (the Sales
     /// <c>sales.orders.price.read</c> pattern; persona card: the Sevkiyatçı "fiyatları göremez"). Writing a price needs no separate
     /// name: it is measured with <see cref="OrdersCreate"/> (ALS-D60 yorum). Holding create does not confer this name. Company-wide,
-    /// not critical. Registered only: who holds it is a human gate (NEEDS-SINAN); no role, seed or user receives it here.
+    /// not critical. Registered only. Sinan (#66 6704170096) named its holders: Satın Alma Uzmanı, Satın Alma Müdürü, Genel Müdür,
+    /// Admin, Muhasebe, Muhasebe Müdürü, Satış Destek and Satış Uzmanı — not the Sevkiyatçı. That is a record for the persona card;
+    /// the grant stays a human gate, so no role, seed or user receives it here.
     /// </summary>
     public const string OrdersPriceRead = "purchasing.orders.price.read";
 

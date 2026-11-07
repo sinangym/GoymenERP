@@ -689,8 +689,10 @@ public static class ErpPermissions
     /// Finance read). Like <see cref="SalesOrdersPriceRead"/> it governs DISCLOSURE, not reachability: <see cref="PurchasingOrdersRead"/>
     /// already shows the order, and the persona card's Sevkiyatçı (depo/kabul) holds that read but "fiyatları göremez"; without
     /// this name the price fields come back null beside a never-null <c>PriceDisclosure: Withheld</c>. Writing a price is measured
-    /// with <see cref="PurchasingOrdersCreate"/> (ALS-D60 yorum) and does not confer this name. Registered, not granted: no role,
-    /// seed or user receives it here; who holds it is a human gate. Company-wide only (the module asks for a company-wide grant).
+    /// with <see cref="PurchasingOrdersCreate"/> (ALS-D60 yorum) and does not confer this name. Sinan (#66 6704170096): Satın Alma
+    /// Uzmanı, Satın Alma Müdürü, Genel Müdür, Admin, Muhasebe, Muhasebe Müdürü, Satış Destek and Satış Uzmanı hold it, the
+    /// Sevkiyatçı does not — recorded for the persona card only. Registered, not granted: no role, seed or user receives it here;
+    /// the grant is a human gate. Company-wide only (the module asks for a company-wide grant).
     /// Not Critical: no source makes seeing a price a segregated duty.
     /// </summary>
     public const string PurchasingOrdersPriceRead = "purchasing.orders.price.read";

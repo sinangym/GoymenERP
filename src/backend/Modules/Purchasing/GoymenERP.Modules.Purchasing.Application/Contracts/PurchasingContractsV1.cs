@@ -81,7 +81,7 @@ public sealed record PurchaseOrderLineRequest(Guid LineId, Guid ProductId, strin
 
 /// <summary>
 /// A2a-1 (ALS-D5 "elle, iskontolu"; ALS-D51/D60): a line's manual price as exact decimal text — <paramref name="UnitPrice"/>
-/// (positive, at most the money profile's decimals, never rounded), the <paramref name="PriceUnitId"/> it applies to (absent: the
+/// (zero or more — an explicit 0 is a price, apart from no price —, at most the money profile's decimals, never rounded), the <paramref name="PriceUnitId"/> it applies to (absent: the
 /// line's entry unit; any other unit is refused until a unit conversion is published, ALS-D58) and at most one discount: a percent
 /// of the unit price (0..100) or an amount (0..unit price). Absent fields are never written, so the hash is that of what was sent.
 /// </summary>
@@ -290,7 +290,8 @@ public sealed record PurchasingCurrencyCandidateViewV1(Guid CurrencyId, string C
 /// A2a-1 (TEK-01): the Purchasing operation key the Settings money port is asked with — the backend owner's technical mapping
 /// (Business #254 5654539215), in the Sales (<c>sales.order-draft.v1</c>) and Finance pattern. The key chooses no currency, scale
 /// or date. Until the Settings owner approves a money profile for it, the owner answers <c>settings_provider_unavailable</c> and a
-/// priced order is refused (fail-closed; ALS-D58 defers Settings additions — NEEDS-SINAN).
+/// priced order is refused (fail-closed). Sinan (#66 6704170096) approved the catalog entry as a narrow ALS-D58 exception; it lands
+/// in A2a-1b (with the unit-price scale), not here.
 /// </summary>
 public static class PurchasingMoneyOperationsV1
 {
@@ -639,8 +640,8 @@ public static class PurchasingJson
             RequireDecimalShape(line.Quantity);
             if (line.Price is { } price)
             {
-                // A2a-1: the shape only — exact decimal text (zero is a shape, the domain refuses it), a non-empty price unit. Whether the
-                // value is positive, within the money profile's decimals, in the line's unit or a valid discount is the domain's 422.
+                // A2a-1: the shape only — exact decimal text (an explicit 0 is a price), a non-empty price unit. Whether the
+                // value is non-negative, within the money profile's decimals, in the line's unit or a valid discount is the domain's 422.
                 if (price.PriceUnitId == Guid.Empty)
                 {
                     throw new JsonException("Invalid price unit.");

@@ -119,11 +119,12 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   currency is verified through the existing `ISettingsPrerequisiteProvider.GetMoneyProfileAsync` for the operation key
   `purchasing.order.v1` (`PurchasingMoneyOperationsV1`) on the order's business date and recorded as a snapshot
   (`CurrencyId`, `CurrencyCode`, `MoneyProfileId`, `MoneyProfileVersion`, `MoneyScale`). **Fail-closed today:** the approved
-  Settings money catalog has no profile for `purchasing.order.v1` (ALS-D58 defers Settings additions; NEEDS-SINAN), so the
+  Settings money catalog has no profile for `purchasing.order.v1` (Sinan #66 6704170096 approved it as a narrow ALS-D58 exception; it lands in A2a-1b), so the
   owner answers `settings_provider_unavailable` and a priced order is a 503 while an unpriced one is unaffected;
   `GET references/currencies` (under `purchasing.orders.create`) lists the operation's currencies and is a 503 until then.
-  Rules (domain, 422 on `lines[i].price`): a currency is required (`purchasing_price_currency_required`); the price is positive
-  (ALS-D18: no price is "fiyat bekliyor", never a zero price; `purchasing_price_not_positive`); the price unit is the line's entry
+  Rules (domain, 422 on `lines[i].price`): a currency is required (`purchasing_price_currency_required`); the price is never negative
+  (`purchasing_price_negative`; an explicit 0 is a price with a 0 line amount, apart from no price = "fiyat bekliyor", ALS-D18 —
+  Sinan #66 6704170096; on a 0 price a discount amount above 0 is refused as exceeding the price); the price unit is the line's entry
   unit, because the Product conversion port is deferred (`purchasing_price_unit_conversion_unavailable`); the unit price and a
   discount amount carry at most min(profile scale, 6) decimals, never rounded (`purchasing_price_scale_exceeded`); a discount is a
   percent 0..100 (≤ 6 decimals) or an amount 0..unit price, never both. No minimum price, margin or discount ceiling is decided for
@@ -133,11 +134,13 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   (its quantity is priced on its general line). Prices are written once with the line (a later price is a revision, A2b) and
   are audited with the order. An unpriced order is approved and received as usual (ALS-D18) and reads `pricePending: true`.
   **PRS-02:** every order detail (read and command answer) carries `priceDisclosure`; prices are `Visible` only for a caller with
-  the new, registered-only name `purchasing.orders.price.read` (company-wide, not critical, granted to nobody), otherwise every
+  the new, registered-only name `purchasing.orders.price.read` (company-wide, not critical, granted to nobody; Sinan #66 6704170096
+  names its holders for the persona card: Satın Alma Uzmanı/Müdürü, Genel Müdür, Admin, Muhasebe, Muhasebe Müdürü, Satış Destek,
+  Satış Uzmanı — not the Sevkiyatçı), otherwise every
   price field is null beside `Withheld` (the persona card's Sevkiyatçı holds `purchasing.orders.read` and "fiyatları göremez").
   The goods-receipt reads and both supply ports carry no price. Migration `20261107063820_AddPurchaseOrderLinePrice` adds the
   nullable columns, `CK_PurchaseOrders_Money` (all five money facts or none) and `CK_PurchaseOrderLines_Price` (unpriced, or a
-  general line with a positive price and at most one bounded discount); its Down refuses (`THROW 51169`) while any order has a
+  general line with a price ≥ 0 and at most one bounded discount); its Down refuses (`THROW 51169`) while any order has a
   currency or any line a price. P-04 gains the optional price fieldset (currency, unit price, discount; the net and the amount
   are shown only after the save), P-03-DETAIL the price columns, "fiyat bekliyor" and the withheld notice.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`

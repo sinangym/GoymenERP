@@ -142,7 +142,7 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Theory]
-    [InlineData("0", null, null, null, PurchasingRuleCodes.PriceNotPositive)]
+    [InlineData("0", null, null, "0.01", PurchasingRuleCodes.DiscountExceedsPrice)]
     [InlineData("10.001", null, null, null, PurchasingRuleCodes.PriceScaleExceeded)]
     [InlineData("10.0000001", null, null, null, PurchasingRuleCodes.PriceScaleExceeded)]
     [InlineData("1234567890123456789", null, null, null, PurchasingRuleCodes.PriceOutOfRange)]
@@ -163,6 +163,18 @@ public sealed partial class PurchasingServiceTests
 
         Assert.Equal((422, "validation_failed", "lines[0].price", expected), (refused.Status, refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
         Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Fact]
+    public async Task An_explicit_zero_price_is_stored_with_a_zero_amount_and_is_not_price_pending()
+    {
+        // Sinan (#66 6704170096): an explicit 0 is a price (line amount 0), kept apart from no price.
+        var world = new World();
+
+        var order = await world.Service().CreateOrderAsync(PricedOrderOf("7", new PurchaseOrderLinePriceRequest("0")), Metadata("k-zero"));
+
+        Assert.Equal(("0", "0", "0", (bool?)false), (order.Detail.Lines[0].Price!.UnitPrice, order.Detail.Lines[0].Price!.NetUnitPrice,
+            order.Detail.Lines[0].Price!.LineAmount, order.Detail.PricePending));
     }
 
     [Fact]

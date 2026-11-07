@@ -103,8 +103,11 @@ public static class PurchasingRuleCodes
     /// <summary>A2a-1 (TEK-01, ALS-D5): a priced line needs the order's currency (the Settings money profile it was verified against).</summary>
     public const string PriceCurrencyRequired = "purchasing_price_currency_required";
 
-    /// <summary>A2a-1 (ALS-D18): a price is positive; a line without a price is "fiyat bekliyor", never a zero price.</summary>
-    public const string PriceNotPositive = "purchasing_price_not_positive";
+    /// <summary>
+    /// A2a-1: a unit price is never negative. Sinan (#66 6704170096): an explicit 0 is a price — its line amount is 0 — and stays
+    /// apart from no price ("fiyat bekliyor", ALS-D18).
+    /// </summary>
+    public const string PriceNegative = "purchasing_price_negative";
 
     /// <summary>A2a-1 (Ö2): the unit price or the discount amount carries more decimals than the money profile allows; refused, never rounded.</summary>
     public const string PriceScaleExceeded = "purchasing_price_scale_exceeded";

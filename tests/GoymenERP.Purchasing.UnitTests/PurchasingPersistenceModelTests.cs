@@ -306,7 +306,7 @@ public sealed class PurchasingPersistenceModelTests
         var price = Assert.Single(lines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Price");
         Assert.Equal(PurchasingDbContext.OrderLinePriceCheck, price.Sql);
         Assert.Contains("[UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL", price.Sql, StringComparison.Ordinal);
-        Assert.Contains("[Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] > 0", price.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0", price.Sql, StringComparison.Ordinal);
         Assert.Contains("([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL)", price.Sql, StringComparison.Ordinal);
         Assert.Contains("[DiscountPercent] >= 0 AND [DiscountPercent] <= 100", price.Sql, StringComparison.Ordinal);
         Assert.Contains("[DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice]", price.Sql, StringComparison.Ordinal);

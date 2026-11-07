@@ -9,8 +9,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
     /// A2a-1 (TEK-01, plan API-20; ALS-D5, ALS-D18, ALS-D51/D60): the purchase order's currency — the Settings money profile
     /// snapshot it was opened under (CurrencyId, CurrencyCode, MoneyProfileId, MoneyProfileVersion, MoneyScale; all five or none,
     /// <c>CK_PurchaseOrders_Money</c>) — and each general line's manual price: UnitPrice and DiscountAmount decimal(24,6),
-    /// DiscountPercent decimal(9,6), PriceUnitId; all four null for a line without a price ("fiyat bekliyor"), otherwise a positive
-    /// price on a general line with at most one discount in bounds (<c>CK_PurchaseOrderLines_Price</c>). Every column is nullable
+    /// DiscountPercent decimal(9,6), PriceUnitId; all four null for a line without a price ("fiyat bekliyor"), otherwise a price of zero
+    /// or more (an explicit 0 is a price) on a general line with at most one discount in bounds (<c>CK_PurchaseOrderLines_Price</c>). Every column is nullable
     /// and every existing row stays as it was: no order has a currency and no line a price.
     /// <para>
     /// Down refuses (<c>THROW 51169</c>, used by no other migration) while any order has a currency or any line a price: dropping
@@ -103,7 +103,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 name: "CK_PurchaseOrderLines_Price",
                 schema: "purchasing",
                 table: "PurchaseOrderLines",
-                sql: "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> '00000000-0000-0000-0000-000000000000' AND ([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL) AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))");
+                sql: "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> '00000000-0000-0000-0000-000000000000' AND ([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL) AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))");
         }
 
         /// <inheritdoc />

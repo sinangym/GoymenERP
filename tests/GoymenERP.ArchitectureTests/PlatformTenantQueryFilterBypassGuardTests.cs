@@ -371,9 +371,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // isolation, Down refusal 51168), kept ordinal-sorted (70c956bd… -> ae6ee9f7…).
             // A2a-1 (plan TEK-01/API-20): +4 order line price SQL facts (one save + audit + rebuild + approval + the price/money checks,
             // unpriced columns null + priced technical line refused, company isolation, Down refusal 51169), kept ordinal-sorted
-            // (ae6ee9f7… -> 2085f158…).
+            // (ae6ee9f7… -> 2085f158…); +1 explicit zero price fact (Sinan #66 6704170096; 2085f158… -> c3fa56d7…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "2085f158d4311ba9307f28f7006ea8d97e97b5be49ab1f44e9a7aac6c21cee9f",
+                "c3fa56d75efb7e365f4c472a1f96f6aaebb91d9171416ced71900a4beae0f0de",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -568,11 +568,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // cancelled share inside the shares check, and the write guard's allow-list for exactly those columns; filters and
             // keys unchanged.
             // Re-measured for A2a-1 (plan TEK-01/API-20): the order's money snapshot columns and their check, the line's price
-            // columns (precisions) and their check; the write guard's allow-list is unchanged (prices never move); filters and
-            // keys unchanged.
+            // columns (precisions) and their check (a unit price ≥ 0: an explicit 0 is a price); the write guard's allow-list is
+            // unchanged (prices never move); filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "639fb4a9132ee169c2540bb0d04f259069f664a4f6cba71860429af26afd756e",
+                "8112bf51baf7536d49baf3ce3f5725815da9cd107e548955db94e2d595e1adbd",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -2080,7 +2080,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
                     new(
-                        "a64a27b3e67c79beacc90e9d608449f7533316731230d655f3e537689520bf40",
+                        "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

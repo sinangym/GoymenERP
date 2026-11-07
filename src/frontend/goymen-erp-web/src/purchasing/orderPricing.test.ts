@@ -39,6 +39,11 @@ describe('A2a-1 priced order body', () => {
       .toEqual(price)
   })
 
+  it('decodes an explicit 0 price as a price, not as "fiyat bekliyor"', () => {
+    const zero = { ...price, unitPrice: '0', discountPercent: null, netUnitPrice: '0', lineAmount: '0' }
+    expect(decodePurchaseOrderDetail(body({}, [line({ price: zero })]))?.lines[0].price?.lineAmount).toBe('0')
+  })
+
   it('decodes "fiyat bekliyor" and a withheld body', () => {
     expect(decodePurchaseOrderDetail(body({ pricePending: true, currency: null }, [line({ price: null })]))?.pricePending).toBe(true)
     const withheld = decodePurchaseOrderDetail(body({ priceDisclosure: 'Withheld', pricePending: null }, [line({ price: null })]))
@@ -54,7 +59,7 @@ describe('A2a-1 priced order body', () => {
     ['an unknown disclosure', body({ priceDisclosure: 'Partial' })],
     ['a line without its price member', body({}, [line({ price: undefined })])],
     ['a priced technical line', body({}, [line({ kind: 'Technical', parentLineId: '99999999-9999-4999-8999-999999999999' })])],
-    ['a zero unit price', body({}, [line({ price: { ...price, unitPrice: '0' } })])],
+    ['a negative unit price', body({}, [line({ price: { ...price, unitPrice: '-1' } })])],
     ['two discounts', body({}, [line({ price: { ...price, discountAmount: '1' } })])],
     ['a numeric amount', body({}, [line({ price: { ...price, lineAmount: 50293.55 } })])],
     ['an extra price field', body({}, [line({ price: { ...price, vatRate: '20' } })])],

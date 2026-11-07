@@ -451,13 +451,13 @@ const LINE_FIELDS = [
   'productVersion', 'unitId', 'ordered', 'technical', 'committed', 'accepted', 'remaining',
 ] as const
 
-/** A2a-1: exactly a positive unit price, a price unit, at most one discount, and the server's net and line amount. */
+/** A2a-1: exactly a unit price of zero or more (an explicit 0 is a price), a price unit, at most one discount, and the server's net and line amount. */
 function decodeLinePrice(value: unknown): PurchaseOrderLinePrice | null {
   const source = record(value)
   if (
     source === null ||
     !exact(source, ['unitPrice', 'priceUnitId', 'discountPercent', 'discountAmount', 'netUnitPrice', 'lineAmount']) ||
-    !text(source.unitPrice) || !DECIMAL.test(source.unitPrice as string) || !/[1-9]/.test(source.unitPrice as string) ||
+    !text(source.unitPrice) || !DECIMAL.test(source.unitPrice as string) ||
     !guid(source.priceUnitId) ||
     (source.discountPercent !== null && (!text(source.discountPercent) || !DECIMAL.test(source.discountPercent as string))) ||
     (source.discountAmount !== null && (!text(source.discountAmount) || !DECIMAL.test(source.discountAmount as string))) ||

@@ -107,14 +107,15 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "AND [MoneyScale] IS NOT NULL AND [MoneyScale] >= 0 AND [MoneyScale] <= 28)";
 
     /// <summary>
-    /// A2a-1 (ALS-D5, ALS-D18): a line is unpriced (all four price columns null) or a GENERAL line with a positive unit price, a
+    /// A2a-1 (ALS-D5, ALS-D18): a line is unpriced (all four price columns null) or a GENERAL line with a unit price of zero or more
+    /// (an explicit 0 is a price, Sinan #66 6704170096), a
     /// non-empty price unit and at most one discount — a percent in 0..100 or an amount in 0..unit price. That a priced line's
     /// order has a currency spans two tables and is the domain's rule (a CHECK cannot read the header); the price unit equal to
     /// the line's unit is the domain's too (ALS-D51: a published conversion may lift it without a migration).
     /// </summary>
     internal const string OrderLinePriceCheck =
         "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) "
-        + "OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> " + EmptyGuid + " "
+        + "OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> " + EmptyGuid + " "
         + "AND ([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL) "
         + "AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) "
         + "AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))";
@@ -281,7 +282,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                 "([Kind] = 1 AND [ParentLineId] IS NULL) OR ([Kind] = 2 AND [ParentLineId] IS NOT NULL)");
             // §7.2 / §13: technical slices, the accepted share and (A1-3) the cancelled remainder never exceed the first commitment.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Shares", OrderLineSharesCheck);
-            // A2a-1 (ALS-D5, ALS-D18): unpriced, or a general line with a positive price and at most one bounded discount.
+            // A2a-1 (ALS-D5, ALS-D18): unpriced, or a general line with a price ≥ 0 and at most one bounded discount.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Price", OrderLinePriceCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
