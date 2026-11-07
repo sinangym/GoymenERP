@@ -221,8 +221,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Fresh authority: +1 real-SQL post-read refusal acceptance fact.
             // Re-fingerprinted for B-04a: +3 posting account mapping SQL facts (one save, race, Down guard)
             // (2865c0fb… -> 327c5913…).
+            // Re-fingerprinted for B-04a review P2-1: +1 cross-company mapping SQL fact (327c5913… -> 077b19a0…).
             ["tools/relational_inventory/accounting.txt"] =
-                "327c59130bf86a6fb0fd7e9e410b93dd18530daa7f11dc5aa46269ed5de81080",
+                "077b19a098d5d83abaf55829844622ee183ca899067aab2d75ba9879896a8197",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).

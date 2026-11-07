@@ -283,6 +283,18 @@ purchase line purpose, service purchase → `expense`, scrap sale → `revenue` 
 - **Migration** `20261107140038_AddPostingAccountMappings`: Down refuses with **THROW 51212** while any mapping
   version exists (forward fix); an empty store rolls back freely.
 
+### Not decided yet (B-04a, `OPEN-*` — behaviour is NOT chosen here)
+
+- **`EffectiveFrom` semantics (OPEN-*)**: a future-dated `EffectiveFrom` makes every date `Unavailable` as soon as it
+  supersedes the previous version (there is no per-date version history); a past-dated `EffectiveFrom` silently
+  re-resolves past invoices against the new version. No fallback to the superseded version and no date-range
+  history exists; the business rule is open and nothing here picks it.
+- **Resolver granularity (B-04b)**: the resolver port answers one question per call and loads the account plan on
+  every call. Lines of the same voucher draft can resolve from different versions if a version is activated in the
+  middle. Batch / version-pinned resolution is B-04b's job, not part of this slice.
+- **Known, not a defect here**: an export scrap sale resolves
+  `Ambiguous` until a business rule names the winner; the resolver never guesses.
+
 ## Rule codes and read-only views (ACC-2)
 
 - Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and

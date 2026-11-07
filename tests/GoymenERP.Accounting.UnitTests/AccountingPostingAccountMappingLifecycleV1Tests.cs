@@ -256,6 +256,81 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
     }
 
     [Fact]
+    public async Task Another_company_cannot_read_a_mapping_version_or_the_active_one_and_no_data_leaks()
+    {
+        var a = await Book.CreateAsync();
+        var b = await a.AddCompanyAsync();
+        await a.PrepareAndActivateAsync(Request(0, EffectiveFrom.AddDays(3)), "a");
+
+        Assert.Equal(AccountingApiStatus.NotFound, (await b.Open(Checker).Service.ReadAsync(1)).Status);
+        Assert.Equal(AccountingApiStatus.NotFound, (await b.Open(Checker).Service.ReadActiveAsync()).Status);
+        Assert.Equal(AccountingApiStatus.Ok, (await a.Open(Checker).Service.ReadAsync(1)).Status);
+
+        await b.PrepareAndActivateAsync(Request(0, EffectiveFrom), "b");
+        var ownB = (await b.Open(Checker).Service.ReadAsync(1)).Resource!;
+        var ownA = (await a.Open(Checker).Service.ReadAsync(1)).Resource!;
+        Assert.Equal(EffectiveFrom, ownB.EffectiveFrom);
+        Assert.Equal(EffectiveFrom.AddDays(3), ownA.EffectiveFrom);
+        Assert.Equal(ownB.MappingVersion, (await b.Open(Checker).Service.ReadActiveAsync()).Resource!.MappingVersion);
+    }
+
+    [Fact]
+    public async Task Another_company_cannot_activate_a_prepared_version_of_a_company_it_does_not_belong_to()
+    {
+        var a = await Book.CreateAsync();
+        var b = await a.AddCompanyAsync();
+        await a.Open(Preparer).Service.PrepareAsync(Request(0), "a-prepare");
+
+        var cross = await b.Open(Checker).Service.ActivateAsync(1, new(1, 0), "b-activate");
+
+        Assert.Equal(AccountingApiStatus.NotFound, cross.Status);
+        Assert.Null(cross.Resource);
+        Assert.Equal(1, await a.CountAsync(row => row.Status == 1));
+        Assert.Equal(0, await a.CountAsync(row => row.Status == 2));
+        Assert.Equal(0, await b.CountAsync(_ => true));
+
+        // Same version number prepared in both companies: B's activation touches only B's version.
+        await b.Open(Preparer).Service.PrepareAsync(Request(0), "b-prepare");
+        var own = await b.Open(Checker).Service.ActivateAsync(1, new(1, 0), "b-activate-own");
+        Assert.Equal(AccountingApiStatus.Ok, own.Status);
+        Assert.Equal(1, await a.CountAsync(row => row.Status == 1));
+        Assert.Equal(0, await a.CountAsync(row => row.Status == 2));
+        Assert.Equal(1, await b.CountAsync(row => row.Status == 2));
+    }
+
+    [Fact]
+    public async Task Active_reads_and_the_resolver_see_only_the_own_company_mapping()
+    {
+        var a = await Book.CreateAsync();
+        var b = await a.AddCompanyAsync();
+        var sales = AccountingPostingAccountMappingPurposesV1.SalesInvoice;
+        await a.PrepareAndActivateAsync(new(0, EffectiveFrom,
+            [new(sales, "revenue", null, null, null, Revenue600)]), "a");
+
+        await using (var scope = b.Open(Preparer))
+        {
+            Assert.Equal(AccountingPostingAccountMappingUnavailableReasonsV1.NoActiveMapping,
+                (await scope.Resolver.ResolveAsync(b.Company, sales, EffectiveFrom, "revenue")).UnavailableReason);
+            Assert.Equal(AccountingPostingAccountMappingUnavailableReasonsV1.CompanyContextInvalid,
+                (await scope.Resolver.ResolveAsync(a.Company, sales, EffectiveFrom, "revenue")).UnavailableReason);
+        }
+
+        await b.PrepareAndActivateAsync(new(0, EffectiveFrom,
+            [new(sales, "revenue", null, null, null, Export601)]), "b");
+
+        await using var openA = a.Open(Preparer);
+        await using var openB = b.Open(Preparer);
+        Assert.Equal(AccountingPostingAccountMappingResolutionV1.Mapped(Revenue600, 1),
+            await openA.Resolver.ResolveAsync(a.Company, sales, EffectiveFrom, "revenue"));
+        Assert.Equal(AccountingPostingAccountMappingResolutionV1.Mapped(Export601, 1),
+            await openB.Resolver.ResolveAsync(b.Company, sales, EffectiveFrom, "revenue"));
+        Assert.Equal(AccountingPostingAccountMappingUnavailableReasonsV1.CompanyContextInvalid,
+            (await openB.Resolver.ResolveAsync(a.Company, sales, EffectiveFrom, "revenue")).UnavailableReason);
+        Assert.Equal(Revenue600, (await a.Open(Checker).Service.ReadActiveAsync()).Resource!.Rows.Single().AccountId);
+        Assert.Equal(Export601, (await b.Open(Checker).Service.ReadActiveAsync()).Resource!.Rows.Single().AccountId);
+    }
+
+    [Fact]
     public async Task An_unknown_store_answer_is_unavailable_and_records_nothing()
     {
         var context = new CompanyContext();
@@ -269,6 +344,22 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
 
         Assert.Equal(AccountingApiStatus.Unavailable, result.Status);
         Assert.Equal(0, commands.Records);
+    }
+
+    [Fact]
+    public async Task The_service_refuses_a_record_of_another_company_even_if_the_store_returned_one()
+    {
+        var context = new CompanyContext();
+        context.Set(Guid.NewGuid());
+        var service = new AccountingPostingAccountMappingServiceV1(
+            new ForeignRecordStore(Guid.NewGuid()), new RecordingLog(), new GrantingAuthority(All), context,
+            new FixedUser(Checker, context.CompanyId), new FixedCorrelation("c"), new FixedTimeProvider(Now));
+
+        var byVersion = await service.ReadAsync(1);
+        var active = await service.ReadActiveAsync();
+
+        Assert.Equal((AccountingApiStatus.NotFound, null), (byVersion.Status, byVersion.Resource));
+        Assert.Equal((AccountingApiStatus.NotFound, null), (active.Status, active.Resource));
     }
 
     private static PrepareAccountingPostingAccountMappingRequestV1 Request(long expectedLatest, DateOnly? from = null) =>
@@ -290,20 +381,34 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
 
     private sealed class Book
     {
-        private readonly InMemoryDatabaseRoot root = new();
-        private readonly string database = Guid.NewGuid().ToString("N");
+        private readonly InMemoryDatabaseRoot root;
+        private readonly string database;
+
+        private Book(InMemoryDatabaseRoot root, string database)
+        {
+            this.root = root;
+            this.database = database;
+        }
 
         public Guid Company { get; } = Guid.NewGuid();
 
         public static async Task<Book> CreateAsync(bool withPlan = true)
         {
-            var book = new Book();
+            var book = new Book(new InMemoryDatabaseRoot(), Guid.NewGuid().ToString("N"));
             if (withPlan)
             {
                 await book.SeedPlanAsync();
             }
 
             return book;
+        }
+
+        /// <summary>Another company on the SAME Accounting database, with its own approved account plan.</summary>
+        public async Task<Book> AddCompanyAsync()
+        {
+            var other = new Book(root, database);
+            await other.SeedPlanAsync();
+            return other;
         }
 
         public RequestScope Open(
@@ -326,6 +431,15 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
                 store, log, authority ?? new GrantingAuthority(granted ?? All), companyContext,
                 new FixedUser(actor, Company), new FixedCorrelation(correlation ?? Guid.NewGuid().ToString("N")), time);
             return new RequestScope(dbContext, service, store);
+        }
+
+        public async Task PrepareAndActivateAsync(PrepareAccountingPostingAccountMappingRequestV1 request, string key)
+        {
+            var prepared = await Open(Preparer).Service.PrepareAsync(request, key + "-prepare");
+            Assert.Equal(AccountingApiStatus.Created, prepared.Status);
+            var activated = await Open(Checker).Service.ActivateAsync(
+                prepared.Resource!.MappingVersion, new(prepared.Resource.Version, 0), key + "-activate");
+            Assert.Equal(AccountingApiStatus.Ok, activated.Status);
         }
 
         public async Task<int> CountAsync(
@@ -430,6 +544,31 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
             DateTimeOffset preparedAtUtc, Func<CancellationToken, Task> freshAuthorityFence,
             AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             throw new AccountingStoreException("synthetic_unknown_store_answer", "Synthetic.");
+
+        public Task<AccountingPostingAccountMappingRecordV1> ActivateAsync(long mappingVersion, long expectedVersion,
+            long expectedActiveMappingVersion, Guid activatedByUserId, DateTimeOffset activatedAtUtc,
+            Func<CancellationToken, Task> freshAuthorityFence, AccountingCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>A faulty store that answers every read with a version of ANOTHER company.</summary>
+    private sealed class ForeignRecordStore(Guid foreignCompany) : IAccountingPostingAccountMappingStoreV1
+    {
+        private AccountingPostingAccountMappingRecordV1 Foreign() => new(foreignCompany, 1, EffectiveFrom,
+            AccountingPostingAccountMappingStatusV1.Active, 2, "synthetic-plan", "synthetic-sha", Preparer, Now,
+            Checker, Now, []);
+
+        public Task<AccountingPostingAccountMappingRecordV1?> ReadAsync(long mappingVersion,
+            CancellationToken cancellationToken = default) => Task.FromResult<AccountingPostingAccountMappingRecordV1?>(Foreign());
+
+        public Task<AccountingPostingAccountMappingRecordV1?> ReadActiveAsync(
+            CancellationToken cancellationToken = default) => Task.FromResult<AccountingPostingAccountMappingRecordV1?>(Foreign());
+
+        public Task<AccountingPostingAccountMappingRecordV1> PrepareAsync(long expectedLatestMappingVersion,
+            DateOnly effectiveFrom, IReadOnlyList<AccountingPostingAccountMappingDraftRowV1> rows, Guid preparedByUserId,
+            DateTimeOffset preparedAtUtc, Func<CancellationToken, Task> freshAuthorityFence,
+            AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
         public Task<AccountingPostingAccountMappingRecordV1> ActivateAsync(long mappingVersion, long expectedVersion,
             long expectedActiveMappingVersion, Guid activatedByUserId, DateTimeOffset activatedAtUtc,

@@ -32,6 +32,7 @@ public sealed class AccountingPostingAccountMappingSqlServerRelationalAcceptance
     private const string Preparer = TestUsers.CompanyA;
     private const string Checker = TestUsers.CompanyAViewer;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
+    private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Receivable120 = Guid.Parse("e0400000-0000-4000-8000-000000000120");
     private static readonly Guid Revenue600 = Guid.Parse("e0400000-0000-4000-8000-000000000600");
     private static readonly Guid Export601 = Guid.Parse("e0400000-0000-4000-8000-000000000601");
@@ -172,6 +173,82 @@ public sealed class AccountingPostingAccountMappingSqlServerRelationalAcceptance
     }
 
     [SqlServerFact]
+    public async Task Another_company_cannot_read_or_activate_a_mapping_version_and_the_resolver_stays_in_its_company()
+    {
+        await using var run = await Run.StartAsync();
+        await run.GrantAsync(Preparer, AccountingPostingAccountMappingPermissionNamesV1.Prepare);
+        await run.GrantAsync(Checker, AccountingPostingAccountMappingPermissionNamesV1.Activate,
+            AccountingPostingAccountMappingPermissionNamesV1.Read);
+        await run.GrantAsync(TestUsers.CompanyB, CompanyB, AccountingPostingAccountMappingPermissionNamesV1.Read,
+            AccountingPostingAccountMappingPermissionNamesV1.Activate);
+        using var preparerClient = run.Client(Preparer);
+        using var checkerClient = run.Client(Checker);
+        using var ofB = run.Client(TestUsers.CompanyB, CompanyB);
+
+        using (var first = await PrepareAsync(preparerClient, 0, Key("iso-1")))
+        {
+            Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        }
+
+        using (var activated = await ActivateAsync(checkerClient, 1, 1, 0, Key("iso-activate-1")))
+        {
+            Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+        }
+
+        using (var second = await PrepareAsync(preparerClient, 1, Key("iso-2")))
+        {
+            Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        }
+
+        // (a) B cannot read A's versions (prepared, active) or A's active version: 404 with nothing of A in the body.
+        foreach (var path in new[] { $"{MappingsPath}/1", $"{MappingsPath}/2", $"{MappingsPath}/active" })
+        {
+            using var read = await ofB.GetAsync(path);
+            var body = await read.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.NotFound, read.StatusCode);
+            Assert.DoesNotContain(CompanyA.ToString(), body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(Revenue600.ToString(), body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("600.01", body, StringComparison.Ordinal);
+        }
+
+        // (b) B cannot activate A's prepared version (IDOR): 404, and A's state and counts do not change.
+        using (var cross = await ActivateAsync(ofB, 2, 1, 1, Key("iso-activate-cross")))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, cross.StatusCode);
+        }
+
+        using (var crossActive = await ActivateAsync(ofB, 1, 3, 0, Key("iso-activate-cross-active")))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, crossActive.StatusCode);
+        }
+
+        Assert.Equal((2, 2L), await run.VersionAsync(1));
+        Assert.Equal((1, 1L), await run.VersionAsync(2));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.PostingAccountMappingVersions WHERE CompanyId = @c", ("@c", CompanyB)));
+        Assert.Equal(new Counts(2, 6, 3, 3), await run.CountsAsync());
+
+        // (c) the resolver sees only its own company: A maps, B has no active mapping and cannot ask for A.
+        await using var scopeB = run.Factory.Services.CreateAsyncScope();
+        scopeB.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyB);
+        var resolverB = scopeB.ServiceProvider.GetRequiredService<IAccountingPostingAccountMappingResolverV1>();
+        var date = new DateOnly(2026, 11, 2);
+        var sales = AccountingPostingAccountMappingPurposesV1.SalesInvoice;
+        Assert.Equal(AccountingPostingAccountMappingUnavailableReasonsV1.NoActiveMapping,
+            (await resolverB.ResolveAsync(CompanyB, sales, date, AccountingPostingAccountMappingKeysV1.Revenue))
+            .UnavailableReason);
+        Assert.Equal(AccountingPostingAccountMappingUnavailableReasonsV1.CompanyContextInvalid,
+            (await resolverB.ResolveAsync(CompanyA, sales, date, AccountingPostingAccountMappingKeysV1.Revenue))
+            .UnavailableReason);
+
+        await using var scopeA = run.Factory.Services.CreateAsyncScope();
+        scopeA.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+        var resolverA = scopeA.ServiceProvider.GetRequiredService<IAccountingPostingAccountMappingResolverV1>();
+        Assert.Equal(AccountingPostingAccountMappingResolutionV1.Mapped(Revenue600, 1), await resolverA.ResolveAsync(
+            CompanyA, sales, date, AccountingPostingAccountMappingKeysV1.Revenue, "Steel", null, false));
+    }
+
+    [SqlServerFact]
     public async Task The_posting_mapping_migrations_Down_passes_while_empty_and_refuses_while_a_version_exists()
     {
         await using var run = await Run.StartAsync();
@@ -279,15 +356,18 @@ public sealed class AccountingPostingAccountMappingSqlServerRelationalAcceptance
             }
         }
 
-        public HttpClient Client(string developmentUser)
+        public HttpClient Client(string developmentUser, Guid? company = null)
         {
-            var client = Factory.CreateClientFor(developmentUser, CompanyA);
+            var client = Factory.CreateClientFor(developmentUser, company ?? CompanyA);
             client.DefaultRequestHeaders.Remove("Idempotency-Key");
             client.DefaultRequestHeaders.Remove("X-Correlation-Id");
             return client;
         }
 
-        public async Task<Guid> GrantAsync(string developmentUser, params string[] permissions)
+        public Task<Guid> GrantAsync(string developmentUser, params string[] permissions) =>
+            GrantAsync(developmentUser, CompanyA, permissions);
+
+        public async Task<Guid> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -314,8 +394,8 @@ public sealed class AccountingPostingAccountMappingSqlServerRelationalAcceptance
             }
 
             var assignment = new RoleAssignment(
-                Guid.NewGuid(), actor, roleId, CompanyA, DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
-            assignment.AddScope(AccessScopeType.Company, CompanyA);
+                Guid.NewGuid(), actor, roleId, company, DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+            assignment.AddScope(AccessScopeType.Company, company);
             dbContext.Roles.Add(role);
             dbContext.RoleAssignments.Add(assignment);
             await dbContext.SaveChangesAsync();
