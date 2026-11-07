@@ -42,6 +42,18 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
+    public void S1_the_host_composes_no_linked_supply_adapter_yet_so_the_categories_stay_no_source()
+    {
+        // S-1 / MOD-03: Sales owns ISalesOrderLinkedSupplyReadPortV1; the Production (U5-a) and Purchasing (MOD-03) adapters are
+        // the owners' and not on main. The draft service resolves (an empty set, optional) and keeps "no source".
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesDraftService>());
+    }
+
+    [Fact]
     public void The_host_registers_the_approved_provider_as_the_one_Settings_port()
     {
         using var factory = Host(Gdc);

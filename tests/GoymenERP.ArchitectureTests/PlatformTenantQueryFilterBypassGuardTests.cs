@@ -429,11 +429,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
-            // SAT-D32: +5 SalesOrderUserClose facts (the ready route's one save and replay, main's not-ready 409 / 403 / 404, the
-            // store with the write guard and constraints, the 51212 rollback refusal and the free rollback), kept ordinal-sorted
-            // (1f679068… -> 95e16c66…).
             ["tools/relational_inventory/sales.txt"] =
-                "95e16c66ee11c21a1f7283559dcde636c77bf6320469be3a6040193420f44f67",
+                "1f679068e55e0a30d83cf29e6497cedc6eb1efd7ce3b079bc80f05ccc3aa9b62",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -445,9 +442,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "afa915d57531b4cdde513bf9023f03d0dedf2dc38011838c10b2d0dc07cd880d";
+        "94aff226746606fa3ace79d73071ab27b66ac9f167fae6c87ac2d6bb8a5eac54";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "41d35d452fecd53aecd791c55c552cdb40a3ff0b686ba3e7506edd51e1a3f1b1";
+        "ca724232706fb285d9a6d0dd057dbfd27fcad0cadd65f0f767eb869acc2ba072";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -546,7 +543,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (CK_DraftLines_ItemType); the write guard is NOT widened (the flag and the item type never change after the insert).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "53aee4a44027be009b198d83f7cefa598fb6e1fea6892815673f9531d76ac86d",
+                "c9363c0337d70bec52dd5111ea2e8513e242a9f55386ee73e79e6ed89678d9e1",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1541,8 +1538,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // rate-day port (DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the draft service also receives the optional Product item type reader and
                     // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
+                    // Re-fingerprinted for S-1 / MOD-03: the draft service also receives the supply owners' optional linked-supply
+                    // adapters (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     new(
-                        "6c441384e46068ffbcd70862a554350a089acf9060865f9bdb28f225345b8ab8",
+                        "6dc6ee1a3547ab97e1af8fc25489f15053879abaef8e50b2fc7a584b7c0fc9fc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1590,7 +1589,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
                     // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
                     new(
-                        "33c17b1071c8d8643445685f1887162613d6c93c7788a0fd41d4234408d4bda3",
+                        "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2286,12 +2285,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
                     new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
-                        new Dictionary<string, int>(StringComparer.Ordinal)
-                        { ["Sql"] = 1 }),
-                // SAT-D32: the Down's only raw SQL is Sales' refusal (51212, used by no other migration) while any user closure row or
-                // recorded close attempt exists; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
-                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261103073447_AddDraftUserClosures.cs"] =
-                    new("586dd38857e8a9c76bb654243710782e28d627ce64abc58ea7783f6c8b5c0d97",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

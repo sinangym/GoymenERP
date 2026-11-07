@@ -177,7 +177,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>(),
         // SAT-D32: the source (MOD-05), invoicing (S5) and financial-closure (MOD-04) axes; nothing registers it on main, so they
         // stay "NoSource" and "kapanmaya hazır" stays false (the user closure is 409), never an assumed complete axis.
-        serviceProvider.GetService<ISalesOrderOwnerAxesSourceV1>());
+        serviceProvider.GetService<ISalesOrderOwnerAxesSourceV1>(),
+        // S-1 / MOD-03 (DEC-SAL-005, No 30 / SAT-D12): the supply owners' linked-supply adapters (Production U5-a, Purchasing
+        // MOD-03), one per supply kind; none is registered yet, so "bağlı üretim / satın alma" stays "no source" as before.
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
