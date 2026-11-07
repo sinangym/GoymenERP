@@ -64,7 +64,10 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
     public Guid? SourceDocumentLineId { get; set; }
 }
 
-/// <summary>The order header (the commitment towards one supplier); only Status, Version and UpdatedAtUtc move after the first commit.</summary>
+/// <summary>
+/// The order header (the commitment towards one supplier); only Status, Version and UpdatedAtUtc move after the first commit,
+/// and A1-3's cancellation facts (CancelledBy, CancelledAtUtc, CancellationReason) with the Approved → Cancelled move (No.161 §2).
+/// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
     public Guid Id { get; set; }
@@ -80,12 +83,16 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+    public string? CancelledBy { get; set; }
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public string? CancellationReason { get; set; }
 }
 
 /// <summary>
 /// One order line with its shares as stored totals (§7.2, §13): Ordered is the first commitment, Technical the
-/// part moved into technical lines, Accepted the accepted share; committed = Ordered − Technical and remaining =
-/// committed − Accepted are derived. The request binding (SourceRequestLineId) is the share this supplier takes.
+/// part moved into technical lines, Accepted the accepted share, Cancelled (A1-3, No.161 §2) the unaccepted remainder
+/// cancelled with the order; committed = Ordered − Technical and remaining = committed − Accepted − Cancelled are derived
+/// (master INV-006). The request binding (SourceRequestLineId) is the share this supplier takes.
 /// </summary>
 internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
 {
@@ -103,6 +110,7 @@ internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
     public decimal Ordered { get; set; }
     public decimal Technical { get; set; }
     public decimal Accepted { get; set; }
+    public decimal Cancelled { get; set; }
 }
 
 /// <summary>ADR-011 attempt record (the Sales shape): the key hash, the content hash, the actor, the outcome and the result (a request, an order or a refusal).</summary>

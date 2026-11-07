@@ -11,7 +11,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// caller's server context — the consumer (INV-AL-1) measures its own authority before asking — and creates
 /// nothing. An APPROVED order's line answers its remaining commitment (committed − accepted) as expected
 /// supply, never as stock; a Draft order's line is <see cref="PurchaseSupplyReferenceOutcomeV1.NotApproved"/>
-/// with the status name (Draft orders reserve nothing, ASSUMPTION-PUR4-2); another company's order is
+/// with the status name (Draft orders reserve nothing, ASSUMPTION-PUR4-2) — and so is a Cancelled one (A1-3, No.161 §2: the
+/// cancelled remainder leaves the future supply; status "Cancelled"); another company's order is
 /// invisible under the tenant filter and answers <see cref="PurchaseSupplyReferenceOutcomeV1.NotFound"/>, never 403.
 /// </summary>
 public sealed class PurchaseSupplyReferencePort(IPurchasingStore store) : IPurchaseSupplyReferencePortV1

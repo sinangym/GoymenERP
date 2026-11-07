@@ -7,7 +7,9 @@ import type { PurchaseOrderAcceptanceHistory, PurchaseOrderLine } from './contra
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 
 const scenario = vi.hoisted(() => ({
-  status: 'Draft' as 'Draft' | 'Approved',
+  status: 'Draft' as 'Draft' | 'Approved' | 'Cancelled',
+  cancellation: undefined as { cancelledBy: string; cancelledAtUtc: string; reason: string } | null | undefined,
+  cancelPanelMounts: [] as Array<Record<string, unknown>>,
   canApprove: true,
   canReadSourceRequest: true,
   capabilities: [] as string[],
@@ -47,7 +49,7 @@ function summary() {
     id: scenario.detailOrderId,
     companyId: scenario.detailCompanyId,
     status: scenario.status,
-    version: scenario.status === 'Approved' ? '3' : '2',
+    version: scenario.status === 'Cancelled' ? '4' : scenario.status === 'Approved' ? '3' : '2',
     supplierPartyId: '44444444-4444-4444-8444-444444444444',
     companyAccountId: '55555555-5555-4555-8555-555555555555',
     sourceRequestId: scenario.sourceRequestId,
@@ -98,7 +100,10 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({
     isPending: false,
     isFetching: false,
-    data: { type: 'ok-single', data: { order: summary(), lines: scenario.lines, acceptances: scenario.acceptances } },
+    data: { type: 'ok-single', data: {
+      order: summary(), lines: scenario.lines, acceptances: scenario.acceptances,
+      ...(scenario.cancellation === undefined ? {} : { cancellation: scenario.cancellation }),
+    } },
     refetch: vi.fn(async () => undefined),
   }),
 }))
@@ -125,6 +130,13 @@ vi.mock('./GoodsReceiptDetail', () => ({
       <button type="button" data-binding={props.binding} data-order={props.detail.order.id}
         data-acceptance={props.acceptanceId} aria-label={props.name}>Ayrıntı</button>
     </td></tr>,
+}))
+
+vi.mock('./PurchaseOrderCancellationPanel', () => ({
+  PurchaseOrderCancellationPanel: (props: Record<string, unknown>) => {
+    scenario.cancelPanelMounts.push(props)
+    return <section aria-label="Kalan iptali paneli">İptal</section>
+  },
 }))
 
 vi.mock('../documents/DocumentsPanel', () => ({
@@ -156,6 +168,8 @@ function renderDetail() {
 
 beforeEach(() => {
   scenario.status = 'Draft'
+  scenario.cancellation = undefined
+  scenario.cancelPanelMounts = []
   scenario.canApprove = true
   scenario.canReadSourceRequest = true
   scenario.capabilities = []
@@ -495,7 +509,8 @@ describe('PurchaseOrderDetailPage on the design system (PURCHASING-DS-DETAIL-01)
     const start = source.lastIndexOf(`\n${selector} {`)
     return start < 0 ? '' : source.slice(start, source.indexOf('}', start))
   }
-  const LINE_LABELS = ['No', T.productId, T.unitId, T.ordered, T.technical, T.committed, T.accepted, T.remaining]
+  // A1-3 (No.161 §2): the cancelled share sits between the accepted share and the remaining future supply.
+  const LINE_LABELS = ['No', T.productId, T.unitId, T.ordered, T.technical, T.committed, T.accepted, T.cancelledShare, T.remaining]
   const ACCEPTANCE_LABELS = [T.acceptanceId, T.lineNo, T.quantity, T.recordedAtUtc]
 
   it('is one labelled region under its own heading, not a second main landmark', () => {
@@ -529,7 +544,7 @@ describe('PurchaseOrderDetailPage on the design system (PURCHASING-DS-DETAIL-01)
     // The label a card shows is the column's own name, in the column's own position.
     expect(cells.map((cell) => cell.getAttribute('data-label'))).toEqual(LINE_LABELS)
     expect(cells.map((cell) => cell.textContent)).toEqual([
-      '7', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '10', '0', '10', '4.2500', '5.7500',
+      '7', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '10', '0', '10', '4.2500', '0', '5.7500',
     ])
     expect(cells.every((cell) => cell.tagName === 'TD' && cell.getAttribute('role') === 'cell')).toBe(true)
   })
@@ -601,5 +616,50 @@ describe('PurchaseOrderDetailPage on the design system (PURCHASING-DS-DETAIL-01)
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/)
     // From 768 px the table scrolls inside its own area instead of widening the page.
     expect(rule(css, '.tableWrap')).toMatch(/overflow-x:\s*auto/)
+  })
+})
+
+describe('PurchaseOrderDetailPage remainder cancellation (A1-3, plan API-10/UI-05; No.161 §2)', () => {
+  it('mounts the cancellation control only behind the purchasing.orders.cancel child capability, with the order and the fence', () => {
+    scenario.status = 'Approved'
+    const first = renderDetail()
+    expect(screen.queryByRole('region', { name: 'Kalan iptali paneli' })).toBeNull()
+    expect(scenario.cancelPanelMounts).toHaveLength(0)
+    first.unmount()
+
+    scenario.capabilities = ['purchasing.orders.cancel']
+    renderDetail()
+    expect(screen.getByRole('region', { name: 'Kalan iptali paneli' })).toBeTruthy()
+    const props = scenario.cancelPanelMounts.at(-1)!
+    expect([props.actorId, props.companyId, props.sessionEpoch, props.fenceKey]).toEqual([ACTOR, COMPANY, 1, 'fixture::1'])
+    expect((props.order as { readonly version: string }).version).toBe('3')
+  })
+
+  it('shows a cancelled order as cancelled, with each line\u2019s cancelled share and the recorded cancellation', () => {
+    scenario.status = 'Cancelled'
+    scenario.lines = [{
+      lineId: LINE, lineNo: 7, kind: 'General', parentLineId: null, sourceRequestLineId: null,
+      productId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', productVersion: '3', unitId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      ordered: '10', technical: '0', committed: '10', accepted: '4', remaining: '0', cancelled: '6',
+    }]
+    scenario.cancellation = { cancelledBy: 'SENTETIK-manager', cancelledAtUtc: '2026-11-03T09:00:00Z', reason: 'SENTETIK kalan gelmeyecek' }
+    renderDetail()
+    expect(screen.getByText(T.cancelledStatus)).toBeTruthy()
+    const cells = within(screen.getByTestId('purchase-order-line-7')).getAllByRole('cell')
+    expect(cells.slice(-3).map((cell) => cell.textContent)).toEqual(['4', '6', '0'])
+    const facts = screen.getByTestId('purchase-order-cancellation-facts')
+    expect(facts.textContent).toContain('SENTETIK-manager')
+    expect(facts.textContent).toContain('SENTETIK kalan gelmeyecek')
+    expect(facts.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-03T09:00:00Z')
+    // A cancelled order offers no approval.
+    expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+  })
+
+  it('shows no cancellation facts for an order that is not cancelled', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    renderDetail()
+    expect(screen.queryByTestId('purchase-order-cancellation-facts')).toBeNull()
+    expect(screen.getByText(T.approved)).toBeTruthy()
   })
 })

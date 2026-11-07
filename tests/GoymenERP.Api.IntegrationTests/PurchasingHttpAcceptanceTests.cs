@@ -422,7 +422,11 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         AssertPrivateNoStore(response);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(new[] { "order", "lines", "acceptances" }, body.RootElement.EnumerateObject().Select(property => property.Name));
+        // A1-3 (No.161 §2): the cancellation is always on the wire, null unless the order is Cancelled; each line carries its
+        // cancelled remainder ("0" until then).
+        Assert.Equal(new[] { "order", "lines", "acceptances", "cancellation" }, body.RootElement.EnumerateObject().Select(property => property.Name));
+        Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("cancellation").ValueKind);
+        Assert.Equal("0", body.RootElement.GetProperty("lines")[0].GetProperty("cancelled").GetString());
         var acceptances = body.RootElement.GetProperty("acceptances");
         Assert.Equal(2, acceptances.GetArrayLength());
         Assert.Equal(new[] { "acceptanceId", "lineId", "quantity", "recordedAtUtc" },
@@ -783,6 +787,171 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         }
     }
 
+    [Fact]
+    public async Task An_order_remainder_is_cancelled_over_its_own_route_with_a_strict_body_and_replayed_terminal_refusals()
+    {
+        // A1-3 (plan API-10; No.161 §2): POST …/cancellation answers 200 with the Cancelled order, each line's cancelled remainder and
+        // the recorded cancellation; a terminal refusal (409, §7) replays with the first attempt's headers; a malformed body never
+        // reaches the service; a blank reason is the domain's 422 on the reason field.
+        var id = Guid.NewGuid();
+        var cancelledAt = new DateTimeOffset(2026, 11, 3, 9, 0, 0, TimeSpan.Zero);
+        CancelPurchaseOrderRequest? seen = null;
+        var service = new StubService
+        {
+            CancelOrder = (orderId, body) =>
+            {
+                seen = body;
+                var detail = OrderDetail(orderId, "Cancelled", "5");
+                return Task.FromResult(new PurchaseOrderResponse(detail with
+                {
+                    Lines = [detail.Lines[0] with { Accepted = "2", Remaining = "0", Cancelled = "4" }],
+                    Cancellation = new PurchaseOrderCancellationView("SENTETIK-canceller", cancelledAt, body.Reason),
+                }, false, "SENTETIK-corr-cancel"));
+            },
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation", "SENTETIK-order-cancel",
+                   """{"expectedVersion":"4","reason":"SENTETIK tedarikçi kalanı gönderemiyor"}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            AssertPrivateNoStore(response);
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(("Cancelled", "5"), (detail.GetProperty("order").GetProperty("status").GetString(), detail.GetProperty("order").GetProperty("version").GetString()));
+            var line = detail.GetProperty("lines")[0];
+            Assert.Equal(("2", "4", "0"), (line.GetProperty("accepted").GetString(), line.GetProperty("cancelled").GetString(), line.GetProperty("remaining").GetString()));
+            Assert.Equal("SENTETIK-canceller", detail.GetProperty("cancellation").GetProperty("cancelledBy").GetString());
+            Assert.Equal("SENTETIK tedarikçi kalanı gönderemiyor", detail.GetProperty("cancellation").GetProperty("reason").GetString());
+        }
+
+        Assert.Equal(("4", "SENTETIK tedarikçi kalanı gönderemiyor"), (seen!.ExpectedVersion, seen.Reason));
+        var calls = service.Calls;
+        foreach (var body in new[]
+                 {
+                     """{"expectedVersion":"4"}""",
+                     """{"expectedVersion":"4","reason":null}""",
+                     """{"expectedVersion":"0","reason":"x"}""",
+                     """{"expectedVersion":4,"reason":"x"}""",
+                     """{"expectedVersion":"4","reason":"x","lines":[]}""",
+                     """{"expectedVersion":"4","reason":"x","quantity":"1"}""",
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation", $"SENTETIK-bad-{Guid.NewGuid():N}", body));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var missingKey = new HttpRequestMessage(HttpMethod.Post, $"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation")
+               {
+                   Content = new StringContent("""{"expectedVersion":"4","reason":"x"}""", Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(missingKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        service.CancelOrder = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.OrderNothingToCancel,
+            [new("lines", "purchasing_order_nothing_to_cancel")], isReplay: true, originalCorrelationId: "SENTETIK-first-cancel");
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation", "SENTETIK-order-cancel-full",
+                   """{"expectedVersion":"4","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first-cancel", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            Assert.Equal(PurchasingProblemCodesV1.OrderNothingToCancel, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.CancelOrder = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.OrderState,
+            [new("status", "purchasing_order_not_cancellable")]);
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation", "SENTETIK-order-cancel-draft",
+                   """{"expectedVersion":"2","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(PurchasingProblemCodesV1.OrderState, problem.GetProperty("code").GetString());
+            Assert.Equal("purchasing_order_not_cancellable", problem.GetProperty("errors")[0].GetProperty("code").GetString());
+        }
+
+        service.CancelOrder = (_, _) => throw new PurchasingServiceException(422, PurchasingProblemCodesV1.OrderCancellationReasonRequired,
+            [new("reason", "purchasing_order_cancellation_reason_required")]);
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation", "SENTETIK-order-cancel-blank",
+                   """{"expectedVersion":"4","reason":" "}""")))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(PurchasingProblemCodesV1.OrderCancellationReasonRequired, problem.GetProperty("code").GetString());
+            Assert.Equal("reason", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task The_cancel_impact_preview_answers_the_owners_view_privately_and_refuses_a_query_before_the_service()
+    {
+        // A1-3 (plan API-10): GET …/cancel-impact reads only; the preview carries the blocker the command would answer and each
+        // line's remainder to cancel; an unknown query is a 400 before the service; 403 / 404 stay the platform's shapes.
+        var id = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubService
+        {
+            CancelImpact = orderId => Task.FromResult(new PurchaseOrderCancelImpactView(orderId, "Approved", "4", null, true, null, true,
+                [new PurchaseOrderCancelImpactLineView(lineId, 1, "General", ProductId, UnitId, "6", "2", "4")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{id:D}/cancel-impact"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateNoStore(response);
+            var impact = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.True(impact.GetProperty("cancellable").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, impact.GetProperty("blocker").ValueKind);
+            Assert.True(impact.GetProperty("hasAcceptance").GetBoolean());
+            Assert.Equal("4", impact.GetProperty("lines")[0].GetProperty("toCancel").GetString());
+        }
+
+        var calls = service.Calls;
+        using (var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{id:D}/cancel-impact?quantity=1"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+        foreach (var (status, code) in new[] { (403, "forbidden"), (404, "not_found") })
+        {
+            service.CancelImpact = _ => throw new PurchasingServiceException(status, code);
+            using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{id:D}/cancel-impact");
+            Assert.Equal((HttpStatusCode)status, response.StatusCode);
+            var payload = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(id.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("lines", payload, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(403, "forbidden")]
+    [InlineData(404, "not_found")]
+    public async Task The_cancellation_route_maps_the_services_403_and_404_directly_and_releases_no_order(int status, string code)
+    {
+        var id = Guid.NewGuid();
+        var service = new StubService { CancelOrder = (_, _) => throw new PurchasingServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{id:D}/cancellation", $"SENTETIK-cancel-{status}",
+            """{"expectedVersion":"4","reason":"SENTETIK"}"""));
+
+        Assert.Equal((HttpStatusCode)status, response.StatusCode);
+        Assert.Equal(1, service.Calls);
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(id.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"detail\":{", payload, StringComparison.Ordinal);
+    }
+
     private static string OrderBody(bool sourceRequest = true, bool boundLine = true)
     {
         var source = sourceRequest ? $"\"{Guid.NewGuid():D}\"" : "null";
@@ -867,6 +1036,9 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> CreateOrder { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> Approve { get; set; } = () => throw new InvalidOperationException("not expected");
+        public Func<Guid, CancelPurchaseOrderRequest, Task<PurchaseOrderResponse>> CancelOrder { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
+        public Func<Guid, Task<PurchaseOrderCancelImpactView>> CancelImpact { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
@@ -955,6 +1127,19 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             Calls++;
             return GetOrder(orderId);
+        }
+
+        public Task<PurchaseOrderResponse> CancelOrderAsync(Guid orderId, CancelPurchaseOrderRequest request, PurchasingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return CancelOrder(orderId, request);
+        }
+
+        public Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return CancelImpact(orderId);
         }
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>
