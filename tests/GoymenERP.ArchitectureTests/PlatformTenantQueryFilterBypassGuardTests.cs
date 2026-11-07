@@ -309,7 +309,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // cancellation; slitting approval with net width, line speed and label) and +3
                 // ManufacturingSqlServerRelationalAcceptanceTests facts (rejection replay, lifecycle migration, store rules)
                 // (7f38855d… -> f5bf9d89…).
-                "f5bf9d89c3846bad54f7054f58986784703ebccee8eb111b55e8eaf627adac8d",
+                // Üretim U2-b1: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (process spec save, revision,
+                // approval capture) and +1 ManufacturingSqlServerRelationalAcceptanceTests fact (process spec migration)
+                // (f5bf9d89… -> e5d404de…). U2-b1 review: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact
+                // (process spec preview, oversized value, idempotency key) (e5d404de… -> 1a881db5…).
+                "1a881db5dd73e8f6c77786994e1877586b6179fc236c4dc86790b90f29f09984",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -577,7 +581,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/ManufacturingDbContext.cs"] =
                 // Üretim U2-a: the append-only PlanRejections carry the same CompanyId filter and company-leading key and FK;
                 // the plan row admits only its cancellation columns beside the approval; the order index becomes unique.
-                "5a558c630d5155cb44fc949bf0bb64af0dcb75fd48d4d1a90a2f2d6fd4d44f53",
+                // Üretim U2-b1: the plan and revision rows gain the nullable process spec columns and their checks (no new
+                // table, filter, key or bypass).
+                "22ba3bbe36a852feb31884fca74e5761c81421cbfedb5935d5673e537ddd7208",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1237,10 +1243,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Üretim U2-a: the rejection and cancellation writes, the plan rebuilt with its rejections, cancellation and
                 // one order, and the unique (company, plan) order index's 2601/2627 recognised by name as the plan's own
                 // rule; still recognition only, no connection, command or raw SQL; SqlClient count unchanged (1).
+                // Üretim U2-b1: the process spec is written on the plan and revision rows and restored with them through the
+                // same filtered context; SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "38d7a0ad00395960036f1b4f97cfe97f151eb8eb4121381d7f1e07cfec3ec52a",
+                        "8701f6d5b933e1f3d1878a5f4e3516c8aaa31b2d8a0a75c3459bf79515d57183",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1855,6 +1863,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 2
+                        }),
+                // Üretim U2-b1: Down's only raw SQL refuses (51189) while any plan-entered process value, or a plan-sourced
+                // snapshot value other than the U2-a line speed, exists (forward fix), before anything is dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261102224501_AddManufacturingPlanProcessSpecs.cs"] =
+                    new(
+                        "94fa32cf0ecbe4a0d8b172a7e73ef62d9d41c2964b59eed1a6b69341bbe11eeb",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
                         }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
