@@ -2381,6 +2381,48 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
     }
 
+    [Fact]
+    public async Task The_preparer_is_refused_rejection_before_any_owner_read_and_the_key_stays_unrecorded()
+    {
+        // Üretim U2-d (URT-D2), the rejection's twin of the approval test above: the preparer gets 422 before the
+        // Settings read and before the lifecycle store runs (it would throw); nothing is recorded.
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        plan.RecordPreparer(Actor.ToString("D"));
+        fixture.Store.Plans[plan.Id] = plan;
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            planLifecycle: new ThrowingLifecycleStore());
+
+        foreach (var _ in new[] { 1, 2 })
+        {
+            var result = await service.RejectPlanAsync(plan.Id, new RejectPlanRequestV1(plan.Version, "Uygun değil"),
+                "key-1", "manufacturing.plans.approve", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanSelfApproval, false),
+                (result.Status, result.Code, result.IsReplay));
+        }
+
+        Assert.All(fixture.Calls, call => Assert.Equal("authority", call));
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
+    }
+
+    private sealed class ThrowingLifecycleStore : IManufacturingPlanLifecycleStore
+    {
+        public Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId,
+            DateTimeOffset rejectedAt, string reason, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("The preparer must be refused before the lifecycle store runs.");
+
+        public Task<ProductionPlan> CancelPlanAsync(Guid planId, long expectedVersion, Guid cancelledByUserId,
+            DateTimeOffset cancelledAt, string reason, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Not used.");
+    }
+
     private sealed class Fixture
     {
         public Fixture(bool withWorkCenters = true)

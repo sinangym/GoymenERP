@@ -1398,6 +1398,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             if (!approvers.TryGetValue(company, out var approver))
             {
+                // SiteAuditReader is only a second configured identity here: it gets a fresh role with the preparer's
+                // own grants, so it differs from the preparer by identity alone (URT-D2), not by its audit role.
                 await GrantAsync(TestUsers.SiteAuditReader, company, [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
                 approver = ClientFor(TestUsers.SiteAuditReader, company);
                 approvers[company] = approver;
@@ -1530,10 +1532,6 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             return (await response.Content.ReadFromJsonAsync<OrderViewV1>())!;
         }
 
-        /// <summary>
-        /// A synthetic role with exactly these permissions in one company, assigned to a configured
-        /// development user (linked to a new ERP account first if it has none). Returns the header value.
-        /// </summary>
         /// <summary>The server user id of a development user (the actor id the API records).</summary>
         public async Task<Guid> UserIdOfAsync(string developmentUser)
         {
@@ -1543,6 +1541,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 x => x.Issuer == BootstrapIdentityOptions.Issuer && x.Subject == developmentUser)).UserId;
         }
 
+        /// <summary>
+        /// A synthetic role with exactly these permissions in one company, assigned to a configured
+        /// development user (linked to a new ERP account first if it has none). Returns the header value.
+        /// </summary>
         public async Task<string> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();
