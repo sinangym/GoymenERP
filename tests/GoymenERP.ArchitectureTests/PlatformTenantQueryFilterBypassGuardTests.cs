@@ -281,7 +281,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // GOY-UX-TEXT-FILTER-01: +1 typed-filter pre-pagination and cursor-resume SQL fact.
             // SAT-D12 force-close: +1 active-allocation-blocks SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/inventory.txt"] =
-                "835c86ada56cbaf35a637948f92ea80324fddd7b3f9f4d92c3779da288128de8",
+                // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
+                "c005163cd329b9f98c7d07ff0bf822e3430054029ab36e8613a616346d3c2a5c",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -949,7 +950,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // context-construction or direct-database exemption.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
-                        "9aec0b823987c573ffd9d94e55192d5c80d49e29ef6ac713c02e07583ee00df7",
+                        // Re-fingerprinted for B-01: a definite shipment refuses a non-Sales (plan-input) allocation; provider tokens unchanged.
+                        "0861f73739be9690ee8063766a888b26a1508ea422c4a526599669133134009b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1413,8 +1415,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
-                        // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its allocation, legacy-stable issue hash; provider tokens unchanged.
-                        "9f6bf356b5a43458c505938335c642a7494808e976dfb5b8bc9b28652bf6015b",
+                        // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its own plan's allocation, legacy-stable issue hash; provider tokens unchanged.
+                        "72ba6be82b3bc90940d6cdd2aae7fd1536b946a47095a4cbf0dda48ebe0c48ee",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
