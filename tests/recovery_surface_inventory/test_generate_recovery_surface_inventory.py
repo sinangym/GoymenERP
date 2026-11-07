@@ -436,7 +436,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 131, "durableStores": 25},
+            {"dbContexts": 18, "migrations": 132, "durableStores": 25},
             self.inventory["counts"],
         )
         actual = {
@@ -1921,7 +1921,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(131, len(migrations))
+        self.assertEqual(132, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2262,7 +2262,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1350, len(source_paths))
+        self.assertEqual(1348, len(source_paths))
         # API-41 / API-42: the Sales report contracts, the draft service's report half and its open-order report, the store's
         # report queries and the report routes (five compilation files).
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
