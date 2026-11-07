@@ -577,6 +577,46 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputAllocationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ParentRollId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AllocatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("AllocatedKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("AllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("LabelVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("PlanVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "PlanId", "ParentRollId");
+
+                    b.HasIndex("CompanyId", "AllocationId")
+                        .IsUnique();
+
+                    b.ToTable("PlanInputAllocations", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PlanInputAllocations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000' AND [AllocationId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PlanInputAllocations_Values", "[LabelVersionAfter] >= 1 AND [AllocatedKg] > 0 AND [PlanVersion] >= 2");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1346,6 +1386,16 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanCutLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PlanId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputAllocationRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
                         .WithMany()
