@@ -30,6 +30,7 @@ import {
 import { APPROVAL_STATE_TEXT, ORDER_STATUS_TEXT as T } from './salesText'
 import { orderUnitCodes } from './unitNames'
 import { UnitName } from './UnitName'
+import { SalesOverDeliveryApproval } from './SalesOverDeliveryApproval'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
@@ -39,8 +40,12 @@ import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import pages from './SalesPages.module.css'
 import styles from './SalesOrderStatusAxes.module.css'
 
-/** The container: gates the read on the bound company and the S-04 detail capability, then reads once per open. */
-export function SalesOrderStatusAxes({ detail }: { readonly detail: DraftDetail }) {
+/**
+ * The container: gates the read on the bound company and the S-04 detail capability, then reads once per open. SAT-D30: when
+ * the parent gives `onRecorded`, the over-delivery approval control is offered under the realization detail (its own shell
+ * control decides whether it shows); a recorded approval re-reads the detail and with it this status.
+ */
+export function SalesOrderStatusAxes({ detail, onRecorded }: { readonly detail: DraftDetail; readonly onRecorded?: () => void }) {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
@@ -66,7 +71,23 @@ export function SalesOrderStatusAxes({ detail }: { readonly detail: DraftDetail 
     },
   })
   if (!canRead) return null
-  return <OrderStatusCard detail={detail} outcome={query.data} onRetry={() => void query.refetch()} />
+  const overDelivery = onRecorded === undefined || companyId === null
+    ? undefined
+    : (status: OrderStatus) => (
+      <SalesOverDeliveryApproval
+        shell={shell}
+        detail={detail}
+        status={status}
+        companyId={companyId}
+        onRecorded={() => {
+          // The detail is read again (a recorded approval moves its version); the status is read again even when the version
+          // did not move (a refused approval: the shipped total or the shipper may have changed in Logistics).
+          onRecorded()
+          void query.refetch()
+        }}
+      />
+    )
+  return <OrderStatusCard detail={detail} outcome={query.data} onRetry={() => void query.refetch()} overDelivery={overDelivery} />
 }
 
 /**
@@ -77,15 +98,23 @@ export function OrderStatusCard({
   detail,
   outcome,
   onRetry,
+  overDelivery,
 }: {
   readonly detail: DraftDetail
   readonly outcome: ViewOutcome<OrderStatus> | undefined
   readonly onRetry: () => void
+  /** SAT-D30: the over-delivery approval control for a decoded status (absent: none is offered). */
+  readonly overDelivery?: (status: OrderStatus) => React.ReactNode
 }) {
   const headingId = useId()
   let body
   if (outcome?.type === 'ok-single') {
-    body = <StatusBody detail={detail} status={outcome.data} />
+    body = (
+      <>
+        <StatusBody detail={detail} status={outcome.data} />
+        {overDelivery === undefined ? null : overDelivery(outcome.data)}
+      </>
+    )
   } else {
     const problem = outcome?.type === 'http' ? decodeProblem(outcome.body, outcome.status) : null
     body = (
