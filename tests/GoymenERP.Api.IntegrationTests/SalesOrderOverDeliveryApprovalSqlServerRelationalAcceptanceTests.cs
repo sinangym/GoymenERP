@@ -266,6 +266,77 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
             ("@company", CompanyA), ("@id", draft.Id), ("@line", line.Id), ("@no", 2), ("@version", 5L)))).Number);
     }
 
+    [SqlServerFact]
+    public async Task Two_concurrent_approvals_of_the_same_line_leave_one_record_and_the_loser_is_a_concurrent_change_on_real_sql()
+    {
+        await using var run = await Run.StartAsync(owner: null);
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var line = Assert.Single(draft.Lines);
+        var meet = Meeting();
+        // Both writers read the order at version 4 and meet before either saves: exactly one save can win.
+        async Task<SalesDraftStateResult?> ApproveAsync(string key, string actor)
+        {
+            await using var scope = run.SalesStore(CompanyA);
+            return await scope.Store.ApproveOverDeliveryAsync(run.SalesEnvelope(key, actor), Hash(key), SalesDraftCommands.ApproveOverDeliveryV1,
+                draft.Id, (d, input, now) => d.ApproveOverDelivery(4, actor, input, now), OverDeliveryApproved,
+                async (_, _) =>
+                {
+                    await meet();
+                    return new OverDeliveryApprovalInput(line.Id, 0, "100", 102.5m, [Shipper]);
+                });
+        }
+
+        var outcomes = await Task.WhenAll(Outcome(ApproveAsync("k-a", "SENTETIK-approver-a")), Outcome(ApproveAsync("k-b", "SENTETIK-approver-b")));
+
+        Assert.Single(outcomes, outcome => outcome is null);
+        Assert.Equal(SalesDraftStoreCodes.ConcurrentChange,
+            Assert.IsType<SalesDraftStoreException>(Assert.Single(outcomes, outcome => outcome is not null)).Code);
+        var effects = await run.EffectsAsync(draft.Id);
+        Assert.Equal((1, 5L), (effects.Approvals, effects.DraftVersion));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.approve-over-delivery.v1' AND [Outcome] = 1"));
+    }
+
+    [SqlServerFact]
+    public async Task An_approval_racing_a_quantity_revision_leaves_exactly_one_of_them_on_real_sql()
+    {
+        await using var run = await Run.StartAsync(owner: null);
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var line = Assert.Single(draft.Lines);
+        var meet = Meeting();
+        async Task<SalesDraftStateResult?> ApproveAsync()
+        {
+            await using var scope = run.SalesStore(CompanyA);
+            return await scope.Store.ApproveOverDeliveryAsync(run.SalesEnvelope("k-over", "SENTETIK-approver-2"), Hash("k-over"),
+                SalesDraftCommands.ApproveOverDeliveryV1, draft.Id, (d, input, now) => d.ApproveOverDelivery(4, "SENTETIK-approver-2", input, now),
+                OverDeliveryApproved, async (_, _) =>
+                {
+                    await meet();
+                    return new OverDeliveryApprovalInput(line.Id, 0, "100", 102.5m, [Shipper]);
+                });
+        }
+
+        async Task<SalesDraftStateResult?> ReviseAsync()
+        {
+            await using var scope = run.SalesStore(CompanyA);
+            return await scope.Store.ReviseDraftQuantityAsync(run.SalesEnvelope("k-qty", "SENTETIK-reviser"), Hash("k-qty"),
+                SalesDraftCommands.ReviseQuantityV1, draft.Id,
+                (d, now) => d.ReviseQuantities(4, [new LineQuantityInput(line.Id, "101", 101m)], "SENTETIK-reviser", "SENTETIK neden", now),
+                QuantityRevised, (_, _) => meet());
+        }
+
+        var outcomes = await Task.WhenAll(Outcome(ApproveAsync()), Outcome(ReviseAsync()));
+
+        // One of them committed at version 5; the other lost the row-version race and wrote nothing.
+        Assert.Single(outcomes, outcome => outcome is null);
+        Assert.Equal(SalesDraftStoreCodes.ConcurrentChange,
+            Assert.IsType<SalesDraftStoreException>(Assert.Single(outcomes, outcome => outcome is not null)).Code);
+        var effects = await run.EffectsAsync(draft.Id);
+        var revisions = await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id));
+        Assert.Equal(5L, effects.DraftVersion);
+        Assert.True((effects.Approvals, revisions) is (1, 0) or (0, 1), $"approvals={effects.Approvals}, revision={revisions}");
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static (string? State, string? Band, bool Approved) LineOf(JsonElement status)
@@ -284,6 +355,39 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
         request.Headers.Add("Idempotency-Key", key);
         request.Headers.Add("X-Correlation-Id", $"SENTETIK-{Guid.NewGuid():N}");
         return request;
+    }
+
+    private static readonly SalesDraftStateAudit QuantityRevised =
+        new("sales.order-draft.quantity-revised.v1", "ReviseQuantities", "SENTETIK miktar revize edildi");
+
+    /// <summary>A two-party meeting point: each call waits until the other has arrived (at most 30 s), so both writers read first.</summary>
+    private static Func<Task> Meeting()
+    {
+        var arrived = 0;
+        var both = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        return async () =>
+        {
+            if (Interlocked.Increment(ref arrived) == 2)
+            {
+                both.SetResult();
+            }
+
+            await both.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        };
+    }
+
+    /// <summary>The exception a write ended with, or null when it committed.</summary>
+    private static async Task<Exception?> Outcome(Task<SalesDraftStateResult?> write)
+    {
+        try
+        {
+            await write;
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
     }
 
     private static LogisticsQuantity Kg(decimal value) => LogisticsQuantity.Of(value, LogisticsQuantityUnit.Kilogram);

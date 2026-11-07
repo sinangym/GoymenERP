@@ -194,4 +194,141 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(refusals, world.Store.Refusals.Count);
         Assert.Empty(world.Store.OverDeliveryApprovals);
     }
+
+    [Fact]
+    public async Task An_unregistered_over_delivery_name_is_a_503_setup_fault_and_nothing_is_read_or_recorded()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        var second = approved.Lines[1].LineId;
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.295m, 0m, [Shipper])]));
+        world.Deliveries = deliveries;
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+        world.Bindings = world.Bindings with { OverDeliveryApprovePermission = "sales.synthetic.unregistered" };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("5", second, "2.295"), Metadata("k-over")));
+
+        // A setup gap, never a grant and never a 403: nothing is read, nothing is recorded.
+        Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), Status(refused));
+        Assert.Empty(deliveries.Asked);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+    }
+
+    [Fact]
+    public async Task Authority_lost_between_the_owner_reads_and_the_write_is_403_and_nothing_is_approved()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        var second = approved.Lines[1].LineId;
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.295m, 0m, [Shipper])]));
+        world.Deliveries = deliveries;
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+        // Granted for the first measurements (the fence, the replay read, the write fence and the delivery read), lost afterwards:
+        // the fence after an owner read refuses before anything is written.
+        world.Authority.LostLater = (OverDeliveryPermission, world.Authority.Calls + 3);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("5", second, "2.295"), Metadata("k-over")));
+
+        Assert.Equal(403, refused.Status);
+        Assert.Single(deliveries.Asked);
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Equal("5", (await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Draft.Version);
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("blank")]
+    [InlineData("too-long")]
+    [InlineData("one-entry-unnamed")]
+    public async Task A_shipper_set_the_owner_does_not_name_fully_is_the_recorded_fail_closed_409(string shape)
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        var second = approved.Lines[1].LineId;
+        // The line's shipped total 2.295 (2 % over, approval band), named in one or two entries as the case shapes it.
+        SalesOrderLineDeliveryV1[] entries = shape switch
+        {
+            "empty" => [new(second, KgUnit, 2.295m, 0m, [])],
+            "blank" => [new(second, KgUnit, 2.295m, 0m, [" "])],
+            "too-long" => [new(second, KgUnit, 2.295m, 0m, [new string('x', 129)])],
+            _ => [new(second, KgUnit, 2m, 0m, [Shipper]), new(second, KgUnit, 0.295m, 0m)],
+        };
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, entries));
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("5", second, "2.295"), Metadata("k-over")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.OverDeliveryShipperUnverified), Status(refused));
+        Assert.Equal(SalesDraftProblemCodesV1.OverDeliveryShipperUnverified, Assert.Single(world.Store.Refusals).Refusal.Code);
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+    }
+
+    [Fact]
+    public async Task No_composed_delivery_owner_is_503_and_nothing_is_recorded()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        world.Deliveries = null;
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("5", approved.Lines[1].LineId, "2.295"), Metadata("k-over")));
+
+        Assert.Equal((503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable), Status(refused));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+    }
+
+    [Fact]
+    public async Task A_force_closed_order_and_a_never_approved_order_are_the_recorded_state_conflict_asking_no_owner()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        Owners(world);
+        var preview = await world.Service().GetForceCloseImpactAsync(approved.Draft.Id);
+        await world.Service().ForceCloseDraftAsync(approved.Draft.Id, new SalesDraftForceCloseRequest("5", "SENTETIK neden", preview.ImpactToken),
+            Metadata("k-close"));
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(approved.Lines[1].LineId, KgUnit, 2.295m, 0m, [Shipper])]));
+        world.Deliveries = deliveries;
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+
+        var closed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("6", approved.Lines[1].LineId, "2.295"), Metadata("k-over-closed")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(closed));
+
+        var draft = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-create-2"))).Detail;
+        var never = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(draft.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest(draft.Draft.Version, draft.Lines[1].LineId, "2.295"), Metadata("k-over-never")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(never));
+        Assert.Empty(deliveries.Asked);
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+    }
+
+    [Fact]
+    public async Task A_lost_race_at_the_store_with_no_winner_under_the_key_is_409_concurrent_change_and_nothing_is_approved()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        var second = approved.Lines[1].LineId;
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.295m, 0m, [Shipper])]));
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+        // Another write moved the order between this command's read and its save (the store's row-version race).
+        world.Store.Race = "version-at-store";
+
+        var raced = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("5", second, "2.295"), Metadata("k-over")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.ConcurrentChange), Status(raced));
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+        // Not recorded: the same request with a new key can be decided again.
+        var retried = await world.Service().ApproveOverDeliveryAsync(approved.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("5", second, "2.295"), Metadata("k-over-2"));
+        Assert.Equal("6", retried.Detail.Draft.Version);
+        Assert.Single(world.Store.OverDeliveryApprovals);
+    }
 }

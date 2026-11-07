@@ -400,6 +400,9 @@ public sealed partial class SalesDraftService
                     }
                 }
 
+                // SAT-D30: the report's basis is the ACCEPTED quantity, not the status read's measurement basis, so an approval judged
+                // against another quantity does not match here; that is harmless — Remaining only judges short-shipped lines, where an
+                // over-delivery approval never applies (IsOverDeliveryApproved is false whenever shipped ≤ the basis).
                 var (remaining, completedWithinTolerance) = Remaining(accepted, shipped, tolerance,
                     order.IsOverDeliveryApproved(line.Id, accepted, shipped));
                 if (remaining.IsZero && awaiting.IsZero)

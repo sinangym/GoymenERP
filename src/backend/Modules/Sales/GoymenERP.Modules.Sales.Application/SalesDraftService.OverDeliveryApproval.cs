@@ -176,8 +176,9 @@ public sealed partial class SalesDraftService
             throw new OverDeliveryRefused(SalesDraftProblemCodesV1.OverDeliveryShippedChanged, "shipped");
         }
 
-        var closed = draft.State == SalesDraftState.Closed;
-        if (!SalesRealizationCalculator.NeedsTolerance(shipped, closed))
+        // RequireOverDeliveryApprovable already refused a cancelled or force-closed order (409 state conflict), so the line is
+        // open here: the calculator judges it as an open line.
+        if (!SalesRealizationCalculator.NeedsTolerance(shipped, lineClosed: false))
         {
             throw new OverDeliveryRefused(SalesDraftProblemCodesV1.OverDeliveryNotAwaitingApproval, "lineId");
         }
@@ -188,7 +189,7 @@ public sealed partial class SalesDraftService
         LineRealization realization;
         try
         {
-            realization = SalesRealizationCalculator.Line(basisQuantity, shipped, closed, policy.Tolerance,
+            realization = SalesRealizationCalculator.Line(basisQuantity, shipped, lineClosed: false, policy.Tolerance,
                 draft.IsOverDeliveryApproved(line.Id, basisQuantity, shipped));
         }
         catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
@@ -215,14 +216,17 @@ public sealed partial class SalesDraftService
 
     /// <summary>
     /// SAT-D216: the actors the delivery owner names for the line's definite shipments (every entry with a shipped total), or null
-    /// when any such entry names none (the owner does not tell) or names a blank actor — fail-closed, never "nobody shipped".
+    /// when any such entry names none (the owner does not tell), names a blank actor or one longer than an actor id can be
+    /// (<see cref="SalesOrderDraft.MaximumActorLength"/>) — fail-closed (the recorded 409), never "nobody shipped" and never a 400.
+    /// The comparison with the approver is ordinal on the trimmed id: the owner must name shippers in the Sales actor id format.
     /// </summary>
     private static IReadOnlyCollection<string>? Shippers(SalesOrderDeliveryReadAnswerV1 answer, Guid lineId)
     {
         var shippers = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in answer.Lines.Where(entry => entry.OrderLineId == lineId && entry.ShippedQuantity > 0m))
         {
-            if (entry.ShippedBy is not { Count: > 0 } named || named.Any(string.IsNullOrWhiteSpace))
+            if (entry.ShippedBy is not { Count: > 0 } named
+                || named.Any(shipper => string.IsNullOrWhiteSpace(shipper) || shipper.Trim().Length > SalesOrderDraft.MaximumActorLength))
             {
                 return null;
             }

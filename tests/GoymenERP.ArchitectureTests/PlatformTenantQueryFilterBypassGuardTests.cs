@@ -431,9 +431,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
             // SAT-D30 / SAT-D213 / SAT-D216: +4 SalesOrderOverDeliveryApproval facts (the one-save approval through the real route with
             // replay; the real Logistics owner's fail-closed refusal; 404 / 403 / self-approval; the 51213 rollback refusal), kept
-            // ordinal-sorted (1f679068… -> 3b3cde9a…).
+            // ordinal-sorted (1f679068… -> 3b3cde9a…). K3 review B P2-1: +2 race facts (two concurrent approvals of one line; an
+            // approval racing a quantity revision), kept ordinal-sorted (3b3cde9a… -> e8e95cdc…).
             ["tools/relational_inventory/sales.txt"] =
-                "3b3cde9a405ce8d4286bbfe6ff047c114339d18254a4b3bd0e802fa94a71a8c4",
+                "e8e95cdc0f3781776b632955a9408739eecf44ba9b1cb027e7825f06396eebc0",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

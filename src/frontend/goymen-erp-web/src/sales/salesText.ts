@@ -922,7 +922,6 @@ export function partyDisplayText(party: { readonly code: string; readonly legalN
   return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
 }
 
-/** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
 /** SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval on S-04 (inside the realization detail of the status card). */
 export const OVER_DELIVERY_TEXT = {
   heading: 'Onay bekleyen fazla teslim',
@@ -953,6 +952,7 @@ export const OVER_DELIVERY_TEXT = {
   unexpected: 'Onay verilmedi. Beklenmeyen bir yanıt alındı.',
 } as const
 
+/** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
 export const FORCE_CLOSE_TEXT = {
   heading: 'Siparişi kapat',
   description:
