@@ -111,6 +111,25 @@ Second approval, adım yükseltme ve kalıcı audit/security-event yönlendirmes
 `OPEN-020`, `OPEN-018` ve `OPEN-021` durumları korunur. Yeni grant, rol, secret, saklama/imha
 davranışı, ücretli fallback veya production etkisi eklenmez.
 
+## Runtime dilimine devredilen yükümlülükler (AI-1 K3 review'larından)
+
+Bu sözleşme katmanı yapısal sınırları taşır; aşağıdakiler gateway/runtime (plan AI-3) ve WRITE (AI-10)
+dilimlerinde **zorunlu** kabul kriteridir:
+
+1. `AiOwnerEvidenceBindingV1` ve `AiOwnerDefinitiveNoEffectEvidenceV1` public kurucuları yalnız şekil
+   doğrular. Gateway bunları kendisi üretemez; yalnız sahip modül adaptörü, kalıcı yürütme kaydından üretir
+   (owner token/factory ile kısıtlanır). Ağ hatası "etki yok" sayılmaz.
+2. `approvedPreviewIdentityJson` ve `AiAuditContextV1` onay kanıtı kalıcı onay deposundan yüklenir; çağıranın
+   aynı nesnelerden yeniden hesapladığı değer onay sayılmaz.
+3. No 156 önizleme geçerliliği (15 dk) politika/ayar kaydından okunur ve `expires - created ≤ TTL` gateway'de
+   zorlanır; kod sabiti olmaz.
+4. `ai:<previewId>` anahtarı sahip modülün idempotency deposunda (CompanyId, komut türü, anahtar) üçlüsüyle
+   saklanır; şirketler/araçlar arası çakışma bu üçlüyle önlenir.
+5. Başarılı READ sonucunda kaynak (`AiSourceV1`) zorunluluğu katalog seviyesinde araç bazında belirlenir;
+   kaynaksız içerik kullanıcıya "kaynak yok" olarak işaretlenir.
+6. Komut ve fark JSON'u için nesne kökü zorunluluğu ve kanonik JSON kodlayıcısının sabitlenmesi (golden vektör)
+   runtime diliminde eklenir.
+
 ## Entegrasyon ve kabul durumu
 
 Teslim: üç BuildingBlocks kaynağı (`Ai/AiToolContractsV1.cs`, `Ai/AiCanonicalJson.cs`,

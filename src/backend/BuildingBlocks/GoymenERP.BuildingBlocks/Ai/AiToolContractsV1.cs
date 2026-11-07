@@ -191,8 +191,11 @@ public sealed record AiOwnerCommandRequestV1
     }
 }
 
-public sealed record AiCommandResultV1
+public sealed partial record AiCommandResultV1
 {
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9_.-]{1,64}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex RefusalCodePattern();
+
     public AiCommandOutcomeV1 Outcome { get; }
     public string? ResultVersion { get; }
     public string? RefusalCode { get; }
@@ -204,7 +207,8 @@ public sealed record AiCommandResultV1
             || (outcome == AiCommandOutcomeV1.Refused) != (refusalCode is not null)
             || (isReplay && outcome != AiCommandOutcomeV1.Applied)) throw new ArgumentException("Invalid owner execution result.");
         if (resultVersion is not null) AiContractGuard.Text(resultVersion);
-        if (refusalCode is not null) AiContractGuard.Text(refusalCode);
+        // A refusal is a closed code, never free text that could carry record content.
+        if (refusalCode is not null && !RefusalCodePattern().IsMatch(refusalCode)) throw new ArgumentException("Invalid owner execution result.");
         Outcome = outcome; ResultVersion = resultVersion; RefusalCode = refusalCode; IsReplay = isReplay;
     }
 }

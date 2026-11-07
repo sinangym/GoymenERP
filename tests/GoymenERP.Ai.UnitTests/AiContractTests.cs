@@ -45,6 +45,8 @@ public sealed class AiContractTests
     [InlineData("{\"a\":1,\"a\":2}")]
     [InlineData("{\"a\":1,\"\\u0061\":2}")]
     [InlineData("{\"outer\":[{\"x\":1,\"x\":2}]}")]
+    [InlineData("\"\\ud800\"")]
+    [InlineData("{\"\\ud800\":1}")]
     public void Malformed_or_ambiguous_json_is_rejected(string json) =>
         Assert.ThrowsAny<JsonException>(() => AiCanonicalJson.Canonicalize(json));
 
@@ -210,6 +212,8 @@ public sealed class AiContractTests
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, isReplay: true));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Applied));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused));
+        Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: "customer secret text"));
+        Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: new string('A', 65)));
     }
 
     [Fact]

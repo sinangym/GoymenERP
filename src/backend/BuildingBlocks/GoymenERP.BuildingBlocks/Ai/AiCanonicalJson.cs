@@ -17,7 +17,15 @@ public static class AiCanonicalJson
             MaxDepth = 32, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow,
         });
         using var buffer = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(buffer)) Write(writer, document.RootElement);
+        try
+        {
+            using (var writer = new Utf8JsonWriter(buffer)) Write(writer, document.RootElement);
+        }
+        catch (InvalidOperationException exception)
+        {
+            // A lone surrogate decodes but cannot be re-encoded; it is malformed input, not a runtime fault.
+            throw new JsonException("Invalid JSON string content.", exception);
+        }
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
