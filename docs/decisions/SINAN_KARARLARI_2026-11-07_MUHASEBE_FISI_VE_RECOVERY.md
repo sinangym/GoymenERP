@@ -95,10 +95,11 @@ Koordinatörün aktardığı ve Satış/Alış/Finans şeritleriyle uzlaşılan 
   kuyruğuna düşer; hesap asla tahmin edilmez; fatura kesinleşmesi engellenmez (Alış tarafı fail-closed yaklaşımını
   bıraktı).
 - Satış tutarları satır başına yuvarlar; Muhasebe tutarları yeniden hesaplamaz, gelen satır tutarlarını kullanır
-  (KLN-D14 TL karşılığı yuvarlaması ve son satır farkı bunun üzerine uygulanır). Koordinatör bu nota SAT-D206/D207'yi
-  kaynak olarak verdi; ancak bu iki karar risk hesabındaki döviz çevrimi yuvarlamasıdır ve kendi metinlerinde
-  "faturayı etkilemez" der. Fatura satırı yuvarlamasının karar kaynağı (SAT-D11/SAT-D172) Satış şeridiyle teyit
-  edilmelidir.
+  (KLN-D14 TL karşılığı yuvarlaması ve son satır farkı bunun üzerine uygulanır). Satış kaynakları (Satış şeridi teyidi,
+  7 Kasım): SAT-D11 (satır tutarı 2 ondalık, AwayFromZero; KDV ve tevkifat satır bazında, toplamlar satırlardan),
+  SAT-D76 (yalnız satır tutarı bir kez yuvarlanır), SAT-D75 (tevkifat = kuruşa yuvarlanmış satır KDV'si × oran, kuruşa
+  yuvarlanır; tevkifatlı satırda alanlar dolu gelir), SAT-D172 (faturanın kuru sabittir). SAT-D206/D207 risk döviz
+  çevrimi içindir, faturaya uygulanmaz.
 
 ## Cevaplanan sorular
 
