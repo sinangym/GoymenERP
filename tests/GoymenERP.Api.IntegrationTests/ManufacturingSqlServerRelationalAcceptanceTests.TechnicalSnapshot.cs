@@ -21,6 +21,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private const string PlanParameterSnapshots = "20261102121844_AddManufacturingPlanParameterSnapshots";
     private const string PlanLifecycle = "20261102181335_AddManufacturingPlanLifecycle";
     private const string PlanProcessSpecs = "20261102224501_AddManufacturingPlanProcessSpecs";
+    private const string PlanPreparer = "20261107082508_AddManufacturingPlanPreparer";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -47,14 +48,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(PlanProcessSpecs, reapplied[^1]);
-            Assert.Equal(PlanLifecycle, reapplied[^2]);
-            Assert.Equal(PlanParameterSnapshots, reapplied[^3]);
-            Assert.Equal(TechnicalLengthSnapshots, reapplied[^4]);
-            Assert.Equal(PlanCutLines, reapplied[^5]);
-            Assert.Equal(CommercialContexts, reapplied[^6]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^7]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^8]);
+            Assert.Equal(PlanPreparer, reapplied[^1]);
+            Assert.Equal(PlanProcessSpecs, reapplied[^2]);
+            Assert.Equal(PlanLifecycle, reapplied[^3]);
+            Assert.Equal(PlanParameterSnapshots, reapplied[^4]);
+            Assert.Equal(TechnicalLengthSnapshots, reapplied[^5]);
+            Assert.Equal(PlanCutLines, reapplied[^6]);
+            Assert.Equal(CommercialContexts, reapplied[^7]);
+            Assert.Equal(TechnicalSnapshots, reapplied[^8]);
+            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^9]);
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
@@ -87,6 +89,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(TechnicalSnapshots);
             Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
             var error = await Assert.ThrowsAsync<SqlException>(

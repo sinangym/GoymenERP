@@ -2355,6 +2355,32 @@ public sealed class ManufacturingCommandServiceTests
         }
     }
 
+    [Fact]
+    public async Task The_preparer_is_refused_approval_before_any_owner_read_and_the_key_stays_unrecorded()
+    {
+        // Üretim U2-d (URT-D2): the preparer of the current Draft version gets 422 before Settings, the final fence or
+        // Inventory is asked and before the store's approval runs (this fake store would throw); nothing is recorded,
+        // so a retry of the same key is decided again rather than replayed.
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        plan.RecordPreparer(Actor.ToString("D"));
+        fixture.Store.Plans[plan.Id] = plan;
+
+        foreach (var _ in new[] { 1, 2 })
+        {
+            var result = await fixture.Service.ApprovePlanAsync(plan.Id, new ApprovePlanRequestV1(plan.Version), "key-1",
+                "manufacturing.plans.approve", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanSelfApproval, false),
+                (result.Status, result.Code, result.IsReplay));
+        }
+
+        Assert.All(fixture.Calls, call => Assert.Equal("authority", call));
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
+    }
+
     private sealed class Fixture
     {
         public Fixture(bool withWorkCenters = true)

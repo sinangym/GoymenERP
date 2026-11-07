@@ -173,6 +173,10 @@ export function lifecycleFailureText(kind: LifecycleKind, status: number, code: 
   if (status === 401 || status === 403) return `${subject} yetkiniz artık geçerli değil.`
   if (status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
   if (status === 409) return `${subject} uygulanmadı (${code ?? 'conflict'}).`
+  // U2-d (URT-D2): the preparer of the current version may not approve it; another user decides.
+  if (status === 422 && code === 'manufacturing_plan_self_approval') {
+    return 'Planın bu sürümünü siz hazırladınız; onayı başka bir kullanıcı vermelidir.'
+  }
   if (status === 422) return `${subject} iş kuralı tarafından reddedildi (${code ?? 'rule_refusal'}).`
   return `${subject} uygulanmadı (${code ?? status}).`
 }
