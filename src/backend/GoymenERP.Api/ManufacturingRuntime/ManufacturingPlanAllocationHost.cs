@@ -7,7 +7,7 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -212,7 +212,7 @@ internal sealed class ManufacturingPlanAllocationHost(
         {
             await transaction.RollbackAsync(CancellationToken.None);
         }
-        catch (Exception rollback) when (rollback is InvalidOperationException or SqlException)
+        catch (Exception rollback) when (rollback is InvalidOperationException or DbException)
         {
             manufacturing.ChangeTracker.Clear();
             throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,

@@ -136,7 +136,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // hosted-service change.
         // DEC-FIN-010 / SAT-D169 maps the Settings exchange-rate routes; no registration, generation, network or hosted-service
         // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
-        "d219b1f55a22def9d2be84284f8879dbedfca95e9404fbe19086ef430c619e77";
+        "60617dbed4ad4a842398feaeaf18dfdcc99ff0ba19916c1ea6a1c6d43331bd9b";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -717,6 +717,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "Persistence/ApprovedAccountingSourceCatalogStoreV1.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingPlanAllocationHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingPlanAllocationHost.cs";
     private const string ReviewedManufacturingInventoryReturnOutputHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
     private const string ReviewedProductRuntimeExtensionsPath =
@@ -992,10 +994,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "a475668fb5a8e99dfe771a2b453c454b3c919cc9263720669af3cb9a92b14201",
+                        "33399d74a08dc682c165e8b619809be89145c9c54d79cfc3ee8d8b7a58ecdab1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 1
+                        }),
+                // Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure open one Manufacturing
+                // transaction and enlist Inventory's plan-allocation participant on its connection; no context is built.
+                [ReviewedManufacturingPlanAllocationHostPath] =
+                    new(
+                        "b8fe85c23662407e67b052418e396d7df84ef3a32154ee9256c21c8d366a35f0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
                             ["GetDbConnection"] = 1
                         }),
                 // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
