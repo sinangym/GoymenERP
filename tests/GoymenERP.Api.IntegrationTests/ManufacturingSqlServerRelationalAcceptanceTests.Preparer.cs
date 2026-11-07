@@ -10,7 +10,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// Üretim U2-d (URT-D2 "hazırlayan ≠ onaylayan") at the store on a REAL SQL Server: the saving actor is kept as the plan's
 /// preparer, its approval and rejection are refused and store nothing, a reviser becomes the preparer of the version it
-/// produced, a plan stored before U2-d (no preparer) is decided as before, and the preparer migration travels Down and Up.
+/// produced, a plan stored before U2-d and never revised (no preparer) is decided as before, and the preparer migration
+/// refuses Down (51190) while a Draft never revised records its preparer, and otherwise travels Down and Up.
 /// </summary>
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
@@ -82,18 +83,50 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task A_plan_without_a_recorded_preparer_is_decided_as_before_and_the_preparer_migration_round_trips()
+    public async Task The_preparer_rollback_refuses_while_an_unrevised_draft_records_it_and_a_legacy_plan_is_decided_as_before()
     {
         await using var run = await Run.StartAsync();
         var workCenter = await run.WorkCenterOfAsync(CompanyA);
-        var legacy = NewPlan(CompanyA, workCenter);
+        var draft = NewPlan(CompanyA, workCenter);
         await using (var store = run.Store(CompanyA))
         {
-            await store.Plans.SavePlanAsync(legacy, Metadata(run));
+            await store.Plans.SavePlanAsync(draft, Metadata(run));
         }
 
-        // The preparer migration travels Down with plans present (the creating actor is also on the plan's audit
-        // event) and Up again; a plan saved before it carries no preparer.
+        // A Draft never revised has its preparer only on the plan row: Down refuses (51190) and keeps everything, so
+        // its creator can never decide it after a later Up.
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(
+                () => context.GetService<IMigrator>().MigrateAsync(BeforePlanPreparer));
+            Assert.Equal(51190, error.Number);
+            Assert.EndsWith("_AddManufacturingPlanPreparer", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+                StringComparison.Ordinal);
+        }
+
+        Assert.Equal(run.Actor.ToString("D"), await run.ScalarAsync<string>(
+            "SELECT CreatedBy FROM manufacturing.Plans WHERE Id = @p", ("@p", draft.Id)));
+
+        // Once that plan is decided (another user approves it) and the other Draft was revised by a second user (its
+        // preparer is on the revision row), Down drops the column and Up adds it back empty.
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.ApprovePlanAsync(draft.Id, 1, run.Approver, At, Metadata(run));
+        }
+
+        var revisedDraft = NewPlan(CompanyA, workCenter);
+        var reviser = Guid.NewGuid();
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.SavePlanAsync(revisedDraft, Metadata(run));
+        }
+
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Revisions.RevisePlanAsync(revisedDraft.Id, 1, workCenter, ManufacturingProcess.Slitting,
+                [new PlannedInput(RollA, Kg(9_000m), 7)], null, "miktar düzeltildi", MetadataOf(run, reviser));
+        }
+
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
@@ -107,13 +140,37 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 StringComparison.Ordinal);
         }
 
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.Plans WHERE Id = @p AND CreatedBy IS NULL", ("@p", legacy.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Plans WHERE Id IN (@a, @b) AND CreatedBy IS NULL",
+            ("@a", draft.Id), ("@b", revisedDraft.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.created.v1' "
-            + "AND EntityId = @p AND ActorId = @a", ("@p", legacy.Id.ToString("D")), ("@a", run.Actor.ToString("D"))));
+            + "AND EntityId = @p AND ActorId = @a", ("@p", draft.Id.ToString("D")), ("@a", run.Actor.ToString("D"))));
 
-        // Without a preparer the plan is decided as before U2-d, by the user who saved it too.
+        // The revised Draft keeps its preparer from the revision row: the reviser is refused, the creator decides it.
+        await using (var store = run.Store(CompanyA))
+        {
+            Assert.Equal(reviser.ToString("D"), (await store.Plans.FindPlanAsync(revisedDraft.Id))!.PreparedBy);
+            Assert.Equal(ManufacturingRuleCodes.PlanSelfApproval, (await Assert.ThrowsAsync<ManufacturingRuleException>(
+                () => store.Plans.ApprovePlanAsync(revisedDraft.Id, 2, reviser, At, MetadataOf(run, reviser)))).Code);
+        }
+
+        await using (var store = run.Store(CompanyA))
+        {
+            var approved = await store.Plans.ApprovePlanAsync(revisedDraft.Id, 2, run.Actor, At, Metadata(run));
+            Assert.Equal(PlanStatus.Approved, approved.Status);
+        }
+
+        // A Draft stored before U2-d and never revised has no preparer (the row is written as such a row was) and is
+        // decided as before U2-d, by the user who saved it too.
+        var legacy = NewPlan(CompanyA, workCenter);
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.SavePlanAsync(legacy, Metadata(run));
+        }
+
+        await run.ScalarAsync<int>("UPDATE manufacturing.Plans SET CreatedBy = NULL WHERE Id = @p; SELECT 1",
+            ("@p", legacy.Id));
         await using (var store = run.Store(CompanyA))
         {
             var stored = (await store.Plans.FindPlanAsync(legacy.Id))!;

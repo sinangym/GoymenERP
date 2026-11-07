@@ -205,7 +205,7 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// <see cref="Rejections"/> every recorded rejection (oldest first) and <see cref="Cancellation"/> the cancellation of a
 /// Cancelled plan. Üretim U2-d (additive, URT-D2): <see cref="PreparedBy"/> is the actor id of who prepared the current
 /// version (its last reviser, else who saved it) — that user cannot approve or reject it; null for a plan stored before
-/// U2-d. An id only, never a name.
+/// U2-d and never revised. An id only, never a name.
 /// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,

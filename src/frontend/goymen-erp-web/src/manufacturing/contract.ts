@@ -246,7 +246,8 @@ export interface ProductionPlanView {
   readonly processSpec: PlanProcessSpecView | null
   /**
    * U2-d (URT-D2): the actor id of who prepared the current version (its last reviser, else who saved it); that user
-   * cannot approve or reject it. Null for a plan stored before U2-d and for legacy JSON. An id only, never a name.
+   * cannot approve or reject it. Null for a plan stored before U2-d and never revised, and for legacy JSON. An id only,
+   * never a name.
    */
   readonly preparedBy: string | null
 }
@@ -825,7 +826,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
 const PREPARED_BY_MAXIMUM_LENGTH = 128
 
 /**
- * U2-d: an omitted or null preparer is none (a plan stored before U2-d, legacy JSON); otherwise a trimmed, non-empty actor
+ * U2-d: an omitted or null preparer is none (a plan stored before U2-d and never revised, legacy JSON); otherwise a trimmed,
+ * non-empty actor
  * id without control characters, at most 128 characters. Anything else is `undefined` and refuses the plan.
  */
 function decodePreparedBy(value: unknown): string | null | undefined {

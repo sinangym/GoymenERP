@@ -185,7 +185,7 @@ public sealed class ProductionPlan
 
     /// <summary>
     /// Üretim U2-d (URT-D2): who prepared the plan's CURRENT version — the actor who recorded its last Draft revision, else
-    /// the actor who saved it — or null for a plan stored before U2-d (no preparer was kept) and for a plan built in memory
+    /// the actor who saved it — or null for a plan stored before U2-d and never revised (no preparer was kept) and for a plan built in memory
     /// only. The approval and the rejection refuse this user (<see cref="ManufacturingRuleCodes.PlanSelfApproval"/>).
     /// Not part of the plan's content and not a change of the plan: its version does not move.
     /// </summary>
@@ -207,16 +207,16 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
-    /// Üretim U2-d (URT-D2 "hazırlayan ≠ onaylayan"): refuses the decision of the user who prepared the current version.
-    /// A plan without a recorded preparer (stored before U2-d) is not refused.
-    /// </summary>
-    /// <summary>
     /// Üretim U2-d: true when <paramref name="userId"/> prepared the current version (a plan without a recorded preparer
     /// answers false).
     /// </summary>
     public bool IsPreparedBy(Guid userId) =>
         PreparedBy is { } preparedBy && Guid.TryParse(preparedBy, out var preparer) && preparer == userId;
 
+    /// <summary>
+    /// Üretim U2-d (URT-D2 "hazırlayan ≠ onaylayan"): refuses the decision of the user who prepared the current version.
+    /// A plan without a recorded preparer (stored before U2-d and never revised) is not refused.
+    /// </summary>
     private void RequireDeciderIsNotPreparer(Guid deciderUserId)
     {
         if (IsPreparedBy(deciderUserId))

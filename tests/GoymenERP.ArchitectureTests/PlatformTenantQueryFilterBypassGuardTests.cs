@@ -315,8 +315,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (f5bf9d89… -> e5d404de…). U2-b1 review: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact
                 // (process spec preview, oversized value, idempotency key) (e5d404de… -> 1a881db5…).
                 // Üretim U2-d: +2 ManufacturingSqlServerRelationalAcceptanceTests facts (preparer refusal and revision,
-                // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…).
-                "ab2bcb333cb388b95ff2a7e435709fcf47eb89acec85c20071cca78a24206830",
+                // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…). U2-d review: the migration fact
+                // renamed (Down refusal 51190) and +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the
+                // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
+                "0df4c0f37a425273955ed12bab380ff896ae0c0a6b0dba076abdf5b64404814b",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).

@@ -1534,6 +1534,15 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         /// A synthetic role with exactly these permissions in one company, assigned to a configured
         /// development user (linked to a new ERP account first if it has none). Returns the header value.
         /// </summary>
+        /// <summary>The server user id of a development user (the actor id the API records).</summary>
+        public async Task<Guid> UserIdOfAsync(string developmentUser)
+        {
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            return (await dbContext.ExternalIdentities.SingleAsync(
+                x => x.Issuer == BootstrapIdentityOptions.Issuer && x.Subject == developmentUser)).UserId;
+        }
+
         public async Task<string> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();

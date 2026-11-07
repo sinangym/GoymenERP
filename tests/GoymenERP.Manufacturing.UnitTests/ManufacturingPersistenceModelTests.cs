@@ -128,7 +128,7 @@ public sealed class ManufacturingPersistenceModelTests
     }
 
     [Fact]
-    public void The_plan_preparer_is_a_nullable_bounded_actor_id_and_its_migration_rolls_back_without_a_guard()
+    public void The_plan_preparer_is_a_nullable_bounded_actor_id_and_its_rollback_refuses_while_an_unrevised_draft_records_it()
     {
         // Üretim U2-d (URT-D2): Plans.CreatedBy is the saving actor, null for a plan stored before U2-d, never empty.
         using var context = Context();
@@ -139,11 +139,14 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Equal("[CreatedBy] IS NULL OR LEN([CreatedBy]) > 0",
             plan.GetCheckConstraints().Single(check => check.Name == "CK_Plans_CreatedBy").Sql);
 
-        // Up is pure DDL; Down drops the column with no refusal, because the creating actor is also on the plan's audit
-        // event and a rollback must stay possible while plans exist.
+        // Up is pure DDL; Down refuses (THROW 51190) while an unrevised Draft records its preparer, before it drops the
+        // column, because dropping it would let that Draft's creator decide it after a later Up.
         var migration = new AddManufacturingPlanPreparer();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
-        Assert.DoesNotContain(migration.DownOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51190", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[p].[Status] = 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[PlanRevisions]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
             { Table: "Plans", Name: "CreatedBy" });
     }

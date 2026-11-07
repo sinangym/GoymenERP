@@ -28,10 +28,18 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // Üretim U2-d (URT-D2): the preparer is a control datum, not plan content: the creating actor is also on the
-            // plan's audit event (manufacturing.plan.created.v1) and each reviser on its revision row. Down drops it so a
-            // rollback stays possible while plans exist. After a later Up, a plan never revised has no preparer and is
-            // decided by anyone holding the approval (the pre-U2-d behaviour); a revised plan keeps its last reviser.
+            // Üretim U2-d (URT-D2): the preparer decides who may approve or reject a Draft. Dropping it from a Draft that
+            // was never revised would let its creator decide the plan after a later Up, so Down refuses (THROW 51190)
+            // while such a Draft exists (forward fix). An approved or cancelled plan takes no further decision, and a
+            // revised Draft keeps its preparer on its last revision row, so their CreatedBy may go.
+            migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM [manufacturing].[Plans] AS [p] WHERE [p].[CreatedBy] IS NOT NULL
+                        AND [p].[Status] = 1
+                        AND NOT EXISTS (SELECT 1 FROM [manufacturing].[PlanRevisions] AS [r]
+                            WHERE [r].[CompanyId] = [p].[CompanyId] AND [r].[PlanId] = [p].[Id]))
+                    THROW 51190, 'An unrevised Manufacturing draft plan records its preparer; forward-fix before downgrade.', 1;
+                """);
+
             migrationBuilder.DropCheckConstraint(
                 name: "CK_Plans_CreatedBy",
                 schema: "manufacturing",
