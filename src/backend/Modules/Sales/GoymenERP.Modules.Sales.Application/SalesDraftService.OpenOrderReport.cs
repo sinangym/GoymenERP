@@ -400,7 +400,8 @@ public sealed partial class SalesDraftService
                     }
                 }
 
-                var (remaining, completedWithinTolerance) = Remaining(accepted, shipped, tolerance);
+                var (remaining, completedWithinTolerance) = Remaining(accepted, shipped, tolerance,
+                    order.IsOverDeliveryApproved(line.Id, accepted, shipped));
                 if (remaining.IsZero && awaiting.IsZero)
                 {
                     // Closed history: nothing open, nothing awaiting — not part of the report.
@@ -509,7 +510,12 @@ public sealed partial class SalesDraftService
     /// The open remainder: none when shipped in full (or more) or when nothing is accepted; the SAT-D5 judgement of the
     /// realization calculator when shipped short (Completed → none, SAT-D130; else accepted − shipped); all of it when nothing shipped.
     /// </summary>
-    private static (Quantity Remaining, bool CompletedWithinTolerance) Remaining(Quantity accepted, Quantity shipped, ToleranceRead? tolerance)
+    /// <remarks>
+    /// SAT-D30: <paramref name="overDeliveryApproved"/> is fed to the calculator as every caller feeds it; an approval only
+    /// changes an OVER-delivery, which has nothing open here, so it never moves this report's answer.
+    /// </remarks>
+    private static (Quantity Remaining, bool CompletedWithinTolerance) Remaining(Quantity accepted, Quantity shipped, ToleranceRead? tolerance,
+        bool overDeliveryApproved)
     {
         try
         {
@@ -523,7 +529,8 @@ public sealed partial class SalesDraftService
                 return (accepted, false);
             }
 
-            var realization = SalesRealizationCalculator.Line(accepted, shipped, lineClosed: false, tolerance!.Tolerance);
+            var realization = SalesRealizationCalculator.Line(accepted, shipped, lineClosed: false, tolerance!.Tolerance,
+                overDeliveryApproved);
             return realization.State == LineRealizationState.Completed
                 ? (Quantity.Zero(accepted.Unit), true)
                 : (accepted.Subtract(shipped), false);

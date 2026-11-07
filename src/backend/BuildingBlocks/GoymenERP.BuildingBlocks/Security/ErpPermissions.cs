@@ -487,6 +487,15 @@ public static class ErpPermissions
     public const string SalesOrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D30 / SAT-D168 (EK24), SAT-D187–D190 (EK28): approve an over-delivery in the tolerance approval band (Sales owner
+    /// name SalesPermissionManifestV1.OrdersOverDeliveryApprove). Its own name: no other Sales name confers it and it confers
+    /// none. Registration grants nothing: no seeded role and no real user receives it; the persona mapping (Satış Uzmanı, Satış
+    /// Müdürü, Genel Müdür, Admin) stays a human gate. Company-wide only, like the other Sales names. Not Critical: no approved
+    /// source adds grant-time dual control. SAT-D216 (the shipper does not approve) is enforced by the Sales command.
+    /// </summary>
+    public const string SalesOrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -872,6 +881,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersOverDeliveryApprove,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1026,6 +1036,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersOverDeliveryApprove,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,

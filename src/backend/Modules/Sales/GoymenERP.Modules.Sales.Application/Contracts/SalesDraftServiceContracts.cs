@@ -174,6 +174,41 @@ public static class SalesDraftProblemCodesV1
     public const string ForceCloseImpactChanged = "sales_force_close_impact_changed";
 
     /// <summary>
+    /// 409 (SAT-D30): the line is not an over-delivery awaiting approval under the Settings tolerance (nothing shipped above the
+    /// measured quantity, within or in the warn band, already covered by an approval, or a revision awaits re-approval). Terminal
+    /// for the key (recorded, replayed).
+    /// </summary>
+    public const string OverDeliveryNotAwaitingApproval = "sales_over_delivery_not_awaiting_approval";
+
+    /// <summary>
+    /// 422 (SAT-D30 / SAT-D15): the line's over-delivery is in the BLOCK band — never approvable ("blok"); not recorded, the
+    /// realization axis shows it as outside the tolerance.
+    /// </summary>
+    public const string OverDeliveryBlocked = "sales_over_delivery_blocked";
+
+    /// <summary>
+    /// 409 (SAT-D213): the delivery owner's shipped total of the line now differs from the total the command names — nothing is
+    /// approved over a total the user did not see. Terminal for the key; the user reads the status again.
+    /// </summary>
+    public const string OverDeliveryShippedChanged = "sales_over_delivery_shipped_changed";
+
+    /// <summary>
+    /// 409 (SAT-D216, fail-closed): the delivery owner does not name who made the line's shipments, so the approver cannot be told
+    /// apart from the shipper — nothing is approved. On main the Logistics owner does not name them (SAT-D209: no new Logistics
+    /// connection yet; NEEDS-SINAN in the Sales README). Terminal for the key (recorded, replayed).
+    /// </summary>
+    public const string OverDeliveryShipperUnverified = "sales_over_delivery_shipper_unverified";
+
+    /// <summary>409 (SAT-D216): the approver made a shipment of the line; another person approves. Terminal for the key.</summary>
+    public const string OverDeliverySelfApproval = "sales_over_delivery_self_approval";
+
+    /// <summary>
+    /// 503 (SAT-D30): the Settings delivery tolerance of the order's business date is missing, refused or invalid at the command —
+    /// no band is judged without it (never a default). Code-less on the wire.
+    /// </summary>
+    public const string OverDeliveryPolicyUnavailable = "over_delivery_policy_unavailable";
+
+    /// <summary>
     /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
     /// a loading-instruction line) that a changed quantity would leave inconsistent — the fail-closed reading refuses the
     /// revision, exactly like the cancellation; the field errors name each blocking source. Terminal for the key (recorded,
@@ -260,6 +295,8 @@ public sealed record SalesDraftServiceBindings(
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
     string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
     string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose,
+    // SAT-D30 / SAT-D168: the approval-band over-delivery approval name (a grant, never implied here).
+    string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove,
     // API-20 / API-21: the sales request names (record, read, decide).
     string? RequestWritePermission = SalesPermissionManifestV1.RequestsWrite,
     string? RequestReadPermission = SalesPermissionManifestV1.RequestsRead,

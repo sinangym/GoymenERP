@@ -115,6 +115,16 @@ public static class SalesPermissionManifestV1
     public const string OrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D30 / SAT-D168 (EK24), SAT-D187–D190 (EK28): approving an over-delivery in the tolerance APPROVAL band — POST
+    /// …/{id}/over-delivery-approval. The decision names Satış Uzmanı, Satış Müdürü, Genel Müdür and Admin; which persona holds
+    /// it is a human gate (registered, granted to no role). Its own name: the create, approve, price, schedule, quantity, cancel
+    /// and force-close names do NOT confer it and it confers none of them. SAT-D216 (the shipper does not approve their own
+    /// over-delivery) is a rule of the command, not of the catalogue. Company-wide; not Critical (no approved source adds
+    /// grant-time dual control).
+    /// </summary>
+    public const string OrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
+
+    /// <summary>
     /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
     /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
     /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
@@ -171,7 +181,7 @@ public static class SalesPermissionManifestV1
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersOverDeliveryApprove, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }
