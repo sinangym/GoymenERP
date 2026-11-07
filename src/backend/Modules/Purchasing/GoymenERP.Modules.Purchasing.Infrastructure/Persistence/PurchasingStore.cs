@@ -302,6 +302,12 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             UpdatedAtUtc = order.UpdatedAtUtc,
             CreatedBy = actorId,
             CorrelationId = envelope.CorrelationId.Trim(),
+            // A2a-1 (TEK-01): the money snapshot the order was opened under, all five facts or none.
+            CurrencyId = order.Money?.CurrencyId,
+            CurrencyCode = order.Money?.CurrencyCode,
+            MoneyProfileId = order.Money?.ProfileId,
+            MoneyProfileVersion = order.Money?.ProfileVersion,
+            MoneyScale = order.Money?.Scale,
         });
         var lineNo = 0;
         foreach (var line in order.Lines)
@@ -323,6 +329,10 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 Technical = 0m,
                 Accepted = 0m,
                 Cancelled = 0m,
+                UnitPrice = line.Price?.UnitPrice,
+                PriceUnitId = line.Price?.PriceUnitId,
+                DiscountPercent = line.Price?.DiscountPercent,
+                DiscountAmount = line.Price?.DiscountAmount,
             });
         }
 
@@ -422,9 +432,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     /// line, plus this order's, never exceed the request line's quantity. Measured in the approval's save; the
     /// request's sourcing version moves with every passing approval so a concurrent approval collides and measures again.
     /// <para>
-    /// A1-3 (fail-closed, NEEDS-SINAN): a CANCELLED order keeps counting with its full ordered share — No.161 §2 removes the
-    /// cancelled remainder only from the future supply and the order's remaining, and does not say it re-opens the request
-    /// line's need for another supplier; until that is decided the need is not freed (no over-sourcing by cancel-and-reorder).
+    /// A1-3, ALS-D68 (EK10, Sinan 2026-11-03: "Hayır, yeni talep gerekir"): a CANCELLED order keeps counting with its full ordered
+    /// share — No.161 §2 removes the cancelled remainder only from the future supply and the order's remaining; the request line's
+    /// need is NOT given back, so the cancelled quantity is bought from another supplier through a new request.
     /// </para>
     /// </summary>
     private async Task RequireSharesWithinNeedAsync(PurchaseOrder order, Guid sourceRequestId, CancellationToken cancellationToken)
@@ -713,18 +723,25 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         IReadOnlyList<PurchaseOrderLineRow> lines,
         IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null)
     {
+        var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
-            ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, row.CreatedAtUtc)
-            : PurchaseOrder.Create(row.Id, row.CompanyId, row.SupplierPartyId, row.CreatedAtUtc);
+            ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, money, row.CreatedAtUtc)
+            : PurchaseOrder.Create(row.Id, row.CompanyId, row.SupplierPartyId, money, row.CreatedAtUtc);
         foreach (var line in lines)
         {
             var quantity = Quantity.Of(line.Ordered, UnitOf(line.UnitIsKilogram));
             switch ((PurchaseOrderLineKind)line.Kind)
             {
                 case PurchaseOrderLineKind.General:
-                    order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId, row.CreatedAtUtc);
+                    order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId, PriceOf(line),
+                        row.CreatedAtUtc);
                     break;
                 case PurchaseOrderLineKind.Technical:
+                    if (PriceOf(line) is not null)
+                    {
+                        throw new InvalidOperationException("Kayıtlı teknik satır fiyat taşıyor; fiyat genel satırdadır.");
+                    }
+
                     order.BreakDown(order.Version, line.ParentLineId ?? Guid.Empty, line.LineId, line.ProductId, quantity, row.UpdatedAtUtc);
                     break;
                 default:
@@ -795,6 +812,24 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
     private static QuantityUnit UnitOf(bool isKilogram) => isKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
 
+    /// <summary>A2a-1: the stored money snapshot, or null when the order has none (the CHECK keeps the five facts together).</summary>
+    private static PurchaseOrderMoney? MoneyOf(PurchaseOrderRow row) =>
+        row.CurrencyId is { } currencyId
+            ? PurchaseOrderMoney.Of(currencyId,
+                row.CurrencyCode ?? throw new InvalidOperationException("Kayıtlı para profilinin kodu yok."),
+                row.MoneyProfileId ?? throw new InvalidOperationException("Kayıtlı para profilinin kimliği yok."),
+                row.MoneyProfileVersion ?? throw new InvalidOperationException("Kayıtlı para profilinin sürümü yok."),
+                row.MoneyScale ?? throw new InvalidOperationException("Kayıtlı para profilinin ölçeği yok."))
+            : null;
+
+    /// <summary>A2a-1: the stored line price, or null for an unpriced line (rebuilt through the domain, which checks it again).</summary>
+    private static PurchaseOrderLinePrice? PriceOf(PurchaseOrderLineRow line) =>
+        line.UnitPrice is { } unitPrice
+            ? new PurchaseOrderLinePrice(unitPrice,
+                line.PriceUnitId ?? throw new InvalidOperationException("Kayıtlı fiyatın fiyat birimi yok."),
+                line.DiscountPercent, line.DiscountAmount)
+            : null;
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private Task<PurchaseAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
@@ -858,6 +893,10 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         status = order.Status.ToString(),
         version = order.Version,
         sourceRequestId = order.SourceRequestId,
+        // A2a-1 (TEK-01): the currency snapshot and each line's price are part of the audited record.
+        currency = order.Money is { } money
+            ? new { currencyId = money.CurrencyId, currencyCode = money.CurrencyCode, profileId = money.ProfileId, profileVersion = money.ProfileVersion, scale = money.Scale }
+            : null,
         // A1-3 (No.161 §2): the cancellation facts and each line's cancelled remainder are part of the audited record.
         cancellation = order.Cancellation is { } cancellation
             ? new { cancelledBy = cancellation.CancelledBy, cancelledAtUtc = cancellation.CancelledAtUtc, reason = cancellation.Reason }
@@ -866,6 +905,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         {
             lineId = line.Id, ordered = line.Quantity.Value, technical = line.TechnicalQuantity.Value, accepted = line.AcceptedQuantity.Value,
             cancelled = line.CancelledQuantity.Value, sourceRequestLineId = line.SourceRequestLineId,
+            price = line.Price is { } price
+                ? new { unitPrice = price.UnitPrice, priceUnitId = price.PriceUnitId, discountPercent = price.DiscountPercent, discountAmount = price.DiscountAmount }
+                : null,
         }),
     }, Json);
 

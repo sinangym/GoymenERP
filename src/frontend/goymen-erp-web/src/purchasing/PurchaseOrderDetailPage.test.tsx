@@ -22,6 +22,7 @@ const scenario = vi.hoisted(() => ({
   acceptances: [] as PurchaseOrderAcceptanceHistory[],
   documentMounts: [] as Array<Record<string, unknown>>,
   supplierDisplay: undefined as unknown,
+  pricing: undefined as undefined | Record<string, unknown>,
 }))
 const COMPANY = '22222222-2222-4222-8222-222222222222'
 const ORDER = '11111111-1111-4111-8111-111111111111'
@@ -103,6 +104,7 @@ vi.mock('@tanstack/react-query', () => ({
     data: { type: 'ok-single', data: {
       order: summary(), lines: scenario.lines, acceptances: scenario.acceptances,
       ...(scenario.cancellation === undefined ? {} : { cancellation: scenario.cancellation }),
+      ...(scenario.pricing ?? {}),
     } },
     refetch: vi.fn(async () => undefined),
   }),
@@ -169,6 +171,7 @@ function renderDetail() {
 beforeEach(() => {
   scenario.status = 'Draft'
   scenario.cancellation = undefined
+  scenario.pricing = undefined
   scenario.cancelPanelMounts = []
   scenario.canApprove = true
   scenario.canReadSourceRequest = true
@@ -653,6 +656,48 @@ describe('PurchaseOrderDetailPage remainder cancellation (A1-3, plan API-10/UI-0
     expect(facts.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-03T09:00:00Z')
     // A cancelled order offers no approval.
     expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+  })
+
+  it('A2a-1: draws the server’s price, discount, net and line amount in the order currency when the prices are visible', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [
+      { ...serverLine(), cancelled: '0', price: { unitPrice: '41.25', priceUnitId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', discountPercent: '2.5', discountAmount: null, netUnitPrice: '40.21875', lineAmount: '402.19' } },
+      { ...serverLine(), lineId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', lineNo: 8, cancelled: '0', price: null },
+    ]
+    scenario.pricing = { priceDisclosure: 'Visible', currency: { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }, pricePending: true }
+    renderDetail()
+    const header = within(screen.getByRole('table', { name: T.linesCaption })).getAllByRole('columnheader').map((cell) => cell.textContent)
+    expect(header.slice(-4)).toEqual([T.unitPrice, T.discount, T.netUnitPrice, T.lineAmount])
+    expect(within(screen.getByRole('table', { name: T.linesCaption })).getAllByRole('columnheader').every((cell) => cell.getAttribute('scope') === 'col')).toBe(true)
+    const priced = within(screen.getByTestId('purchase-order-line-7')).getAllByRole('cell').slice(-4).map((cell) => cell.textContent)
+    expect(priced).toEqual(['41.25 TRY', '%2.5', '40.21875 TRY', '402.19 TRY'])
+    const pending = within(screen.getByTestId('purchase-order-line-8')).getAllByRole('cell').slice(-4).map((cell) => cell.textContent)
+    expect(pending).toEqual([T.pricePendingCell, T.pricePendingCell, T.pricePendingCell, T.pricePendingCell])
+    expect(screen.getByTestId('purchase-order-price-pending').textContent).toBe(T.pricePending)
+    expect(screen.getByTestId('purchase-order-status-facts').textContent).toContain('TRY')
+  })
+
+  it('A2a-1 (PRS-02): with the prices withheld no price column or amount is drawn, only the notice', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0', price: null }]
+    scenario.pricing = { priceDisclosure: 'Withheld', currency: { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }, pricePending: null }
+    renderDetail()
+    expect(screen.getByTestId('purchase-order-prices-withheld').textContent).toBe(T.pricesWithheld)
+    expect(screen.queryByRole('columnheader', { name: T.unitPrice })).toBeNull()
+    expect(screen.queryByTestId('purchase-order-price-pending')).toBeNull()
+    expect(screen.queryByText(T.pricePendingCell)).toBeNull()
+  })
+
+  it('A2a-1: a body from before A2a-1 shows neither a price column nor a currency fact', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0' }]
+    scenario.pricing = undefined
+    renderDetail()
+    expect(screen.queryByRole('columnheader', { name: T.unitPrice })).toBeNull()
+    expect(screen.getByTestId('purchase-order-status-facts').textContent).not.toContain(T.currency)
   })
 
   it('shows no cancellation facts for an order that is not cancelled', () => {

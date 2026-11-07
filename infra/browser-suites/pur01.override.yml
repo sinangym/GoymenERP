@@ -22,8 +22,9 @@
 # purchasing.requests.withdraw so the browser journey can withdraw its own submitted request from the request detail.
 # Only this SENTETIK creator holds it; no real user, production role or seeded role receives purchasing.requests.withdraw.
 # A1-3 (plan API-10, No.161 §2): the disposable approver (the manager persona's stand-in) also holds purchasing.orders.cancel
-# so the browser journey can cancel an approved order's unaccepted remainder from the order detail. Who should hold the
-# name is NEEDS-SINAN; only this SENTETIK approver holds it here and no real user, production role or seeded role receives it.
+# so the browser journey can cancel an approved order's unaccepted remainder from the order detail. ALS-D66 (EK10) proposes
+# the name to the approvers (Satın Alma Müdürü, Genel Müdür, Admin); the real grant stays a human gate, so only this SENTETIK
+# approver holds it here and no real user, production role or seeded role receives it.
 services:
   api:
     environment:
