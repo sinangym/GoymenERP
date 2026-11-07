@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -121,7 +122,30 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanCutLines", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanPreparer", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void The_plan_preparer_is_a_nullable_bounded_actor_id_and_its_migration_rolls_back_without_a_guard()
+    {
+        // Üretim U2-d (URT-D2): Plans.CreatedBy is the saving actor, null for a plan stored before U2-d, never empty.
+        using var context = Context();
+        var plan = context.Model.FindEntityType(typeof(PlanRow))!;
+        var createdBy = plan.FindProperty(nameof(PlanRow.CreatedBy))!;
+        Assert.True(createdBy.IsNullable);
+        Assert.Equal(ProductionPlan.PreparedByMaximumLength, createdBy.GetMaxLength());
+        Assert.Equal("[CreatedBy] IS NULL OR LEN([CreatedBy]) > 0",
+            plan.GetCheckConstraints().Single(check => check.Name == "CK_Plans_CreatedBy").Sql);
+
+        // Up is pure DDL; Down drops the column with no refusal, because the creating actor is also on the plan's audit
+        // event and a rollback must stay possible while plans exist.
+        var migration = new AddManufacturingPlanPreparer();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.DoesNotContain(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Plans", Name: "CreatedBy" });
     }
 
     [Fact]
