@@ -7,6 +7,7 @@ using System.Text.Json;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
