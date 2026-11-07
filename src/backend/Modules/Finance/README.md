@@ -411,16 +411,17 @@ Finance conversation's work; Purchasing's incoming-invoice finalisation, Purchas
 | Part | What |
 |---|---|
 | `FinanceOpenItemDirectionV1` | `Receivable` (the party owes the company — a sales invoice installment, THP 120) / `Payable` (the company owes the party — a purchase invoice installment, THP 320). Never caller-chosen: `FinanceOpenItemDirections.FromSourceKind` is the one mapping |
-| Source kinds | `official.invoice-installment.v1` → receivable (unchanged); `official.incoming-invoice-installment.v1` → payable, **reserved**: its producer is the Purchasing invoice-finalisation port (MOD-04, F2). The CSV import still admits sales installments only |
+| Source kinds | `official.invoice-installment.v1` → receivable (unchanged); `official.incoming-invoice-installment.v1` → payable; written by the MOD-04 invoice admission port (below) once Purchasing's finalisation (A5) calls it. The CSV import still admits sales installments only |
 | Migration `20261102134844_AddOpenItemDirection` | Adds `OpenItems.Direction`, fills 1 on every stored row (FNS-D7), then NOT NULL with no database default; the C# property is `required` too, so no writer can forget it. `CK_OpenItems_Direction`: 1 or 2, and each official kind only with its own direction. `Down` refuses with `THROW 51051` while any payable exists (forward fix) |
 | Read (FI04) | `FinanceOpenItemViewV1.Direction` (stored metadata, shown without the amount grant); an unknown stored value fails closed |
 | Party ledger | A payable is its own kind `PayableOpenItem` in the **credit** column; a receivable stays `OpenItem` in the debit column. Both rows stay; nothing is netted |
 | Sales risk (MOD-01) | Reads only receivables; a payable of the same party is neither added nor makes the figure unavailable |
 | Allocation (F-03) | A receipt closes only a receivable: `finance_allocation_direction_mismatch` otherwise. Closing a payable with a receipt is an offset (plan API-07), its own approved operation |
 
-Not in this slice (plan F1b/F2/F3): the balance summary read (API-04), the direction quarantine for direction-less
-imports (No 22, with a CSV v2), payable allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the
-risk read still nets every recorded outgoing payment to the account as a refund), and the MOD-04 admission port.
+Not in this slice (plan F2/F3): the direction quarantine for direction-less imports (No 22, with a CSV v2), payable
+allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the risk read still nets every recorded
+outgoing payment to the account as a refund). The balance summary (API-04) and the MOD-04 admission port are the next
+sections.
 
 ## F1b / API-04: party balance summary (cari bakiye özeti) — FNS-D6, FNS-D10
 
@@ -432,3 +433,20 @@ is refused 422 `finance_party_balance_too_many_facts`, never summed from a cut s
 amount and the balance side are withheld. Currencies are never converted or added; nothing is netted for risk
 (ALS-D42); nothing is written. A money-event kind the ledger does not know, a reversal whose original is missing, an unknown
 direction or an unreadable amount makes the summary — and the ledger itself — 503 rather than a wrong figure. Screen: the card above the party ledger (`PartyLedger.tsx`).
+
+## MOD-04: finalised invoice → open items (F2a) — FNS-D2, FNS-D7, DEC-FIN-005
+
+Plan: `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §5.2 (API-10/11/12). The invoice core (import from Mikro, matching,
+finalisation) belongs to Sales and Purchasing (ALS-D44); Finance only admits the finalised result.
+
+| Part | What |
+|---|---|
+| `IFinanceInvoiceOpenItemAdmissionPortV1` | Synchronous, idempotent in-process port (no HTTP surface). `Producer` fixes the kind and direction: `Sales` → `official.invoice-installment.v1` receivable, `Purchasing` → `official.incoming-invoice-installment.v1` payable. The producer measures its own finalisation grant and Finance fences every admission with its host-owned authority (row below); the caller's company and actor must equal the server context |
+| Authority | Every admission is fenced twice (before any read and right before the save) by the host-owned `IFinanceInvoiceOpenItemAdmissionAuthorityV1` (F-03 pattern; no grant named here; an unmapped composition is unavailable). Binding the caller to its `Producer` and the audit permission code are decided when S5/A5 wire the port |
+| Installments | One open item per installment, numbered 1…n, positive exact amounts, a due date each (SAT-D86, ALS-D24) |
+| Foreign currency | The invoice's one rate (SAT-D172 / ALS-D41) in `ExchangeRateText` and each installment's TL equivalent, computed by the producer's calculator, in `FunctionalAmountText`; both null for a TL invoice. `CK_OpenItems_Exchange` enforces all-or-none with explicit `IS NOT NULL` (a CHECK passes on UNKNOWN). Both columns are immutable after admission |
+| Idempotency | One save writes the receipt (`OpenItemSourceBatches`: key hash, payload hash, actor, result), the open items and the audit event `finance.invoice-open-items.admitted.v1`. Same key + payload + actor replays; same key with another payload or actor is `IdempotencyConflict`; the same `AdmissionId` under a new key (a resend by another authorised user, SAT-D208) replays with the same payload and is refused `finance_invoice_admission_identity_conflict` otherwise; the same invoice with the same rows under a new admission is a reuse (no second open item); with other rows it is refused `finance_invoice_already_admitted` — a changed invoice is cancelled and re-issued by its owner (SAT-D96, F2b) |
+| Migration `20261102220923_AddOpenItemInvoiceExchange` | Adds the two nullable columns and the constraint. `Down` refuses with `THROW 51051` while any row carries exchange data (forward fix) |
+
+Not registered in the host yet: the producers' finalisation ports (Sales S5, Purchasing A5) wire it when they exist.
+Not in this slice: invoice cancellation / reversal (F2b), opening balances (API-14), currency revaluation (API-95).

@@ -6,6 +6,7 @@ import { MemoryRouter, useLocation, useNavigate, type Location, type NavigateFun
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PurchaseOrderListPage } from './PurchaseOrderListPage'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
+import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 
 const COMPANY_A = '22222222-2222-4222-8222-222222222222'
 const COMPANY_B = '99999999-9999-4999-8999-999999999999'
@@ -315,7 +316,9 @@ describe('PurchaseOrderListPage on the design system (PURCHASING-DS-LIST-01)', (
       const status = row.querySelector('[data-tone]') as HTMLElement
       return [status.textContent, status.getAttribute('data-tone')]
     })
-    expect(tones).toEqual([['Taslak', 'neutral'], ['Onaylandı', 'success']])
+    // #932 review P3: the list and the detail share one tone map (purchaseOrderStatus.ts): a Draft awaits approval.
+    expect(tones).toEqual([['Taslak', PURCHASE_ORDER_STATUS_TONE.Draft], ['Onaylandı', PURCHASE_ORDER_STATUS_TONE.Approved]])
+    expect(PURCHASE_ORDER_STATUS_TONE).toEqual({ Draft: 'warning', Approved: 'success', Cancelled: 'neutral' })
   })
 
   it('never reformats a business date the contract refuses: the whole page fails closed instead', async () => {

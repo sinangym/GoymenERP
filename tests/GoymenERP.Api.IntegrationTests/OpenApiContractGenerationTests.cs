@@ -951,6 +951,8 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordPurchaseGoodsReceiptV1",
             ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/purchasing/references/currencies", "GetPurchasingCurrencyCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/purchasing/references/products", "GetPurchasingProductCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -1494,6 +1496,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetPurchaseGoodsReceiptQuantityComparisonV1"] = "ref:PurchaseGoodsReceiptQuantityComparisonV1",
             ["GetPurchaseGoodsReceiptOptionsV1"] = "ref:PurchaseGoodsReceiptOptionsV1",
             ["RecordPurchaseGoodsReceiptV1"] = "ref:PurchaseGoodsReceiptResponseV1",
+            ["GetPurchasingCurrencyCandidatesV1"] = "ref:PurchasingCurrencyCandidatesResponseV1",
             ["GetPurchasingProductCandidatesV1"] = "ref:ProductPurchaseCandidatesV1",
             ["GetAccountingPeriodsV1"] = "ref:PeriodPageV1",
             ["ProposeAccountingPeriodV1"] = "ref:PeriodViewV1",
@@ -1805,6 +1808,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseGoodsReceiptQuantityComparisonV1",
         "GetPurchaseGoodsReceiptOptionsV1",
         "RecordPurchaseGoodsReceiptV1",
+        "GetPurchasingCurrencyCandidatesV1",
         "GetPurchasingProductCandidatesV1",
         "GetAccountingPeriodsV1",
         "ProposeAccountingPeriodV1",
@@ -2985,6 +2989,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetManufacturingOutputLocationCandidatesV1:400"] =
                 [GoymenERP.Modules.Manufacturing.Application.ManufacturingOutputSelectionCodesV1.InvalidQuery],
             ["GetPurchasingProductCandidatesV1:400"] = ["validation_failed"],
+            ["GetPurchasingCurrencyCandidatesV1:400"] = ["validation_failed"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
                 ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
@@ -3364,7 +3369,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetPurchaseOrdersV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreatePurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreatePurchaseOrderV1:409"] = ["account_state", "concurrent_change", "purchasing_request_state", "same_key_payload_mismatch", "version_conflict"],
-            ["CreatePurchaseOrderV1:422"] = ["unsupported_product", "unsupported_unit", "validation_failed"],
+            ["CreatePurchaseOrderV1:422"] = ["unsupported_currency", "unsupported_product", "unsupported_unit", "validation_failed"],
             ["ApprovePurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ApprovePurchaseOrderV1:409"] = ["concurrent_change", "purchasing_order_state", "purchasing_request_line_over_sourced", "purchasing_request_state", "same_key_payload_mismatch", "version_conflict"],
             ["ApprovePurchaseOrderV1:422"] = ["validation_failed"],
@@ -4139,7 +4144,33 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lines", "type:array;items:ref:PurchaseOrderLineView"),
                     ("acceptances", "type:array;items:ref:PurchaseOrderAcceptanceHistoryView"),
                     // A1-3 (No.161 §2): the recorded cancellation, null unless the order is Cancelled.
-                    ("cancellation", "oneOf:ref:PurchaseOrderCancellationView|type:null")),
+                    ("cancellation", "oneOf:ref:PurchaseOrderCancellationView|type:null"),
+                    // A2a-1 (PRS-02): the price disclosure, the order's currency and "fiyat bekliyor" (null when withheld).
+                    ("priceDisclosure", "type:string"),
+                    ("currency", "oneOf:ref:PurchaseOrderCurrencyView|type:null"),
+                    ("pricePending", "type:boolean|null")),
+                // A2a-1 (TEK-01, API-20): the order's currency snapshot and a priced line's price, all from the backend calculator.
+                ["PurchaseOrderCurrencyView"] = ObjectSchema(
+                    ["currencyId", "currencyCode", "scale"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("currencyCode", "type:string"),
+                    ("scale", "type:integer|string;format:int32")),
+                ["PurchaseOrderLinePriceView"] = ObjectSchema(
+                    ["unitPrice", "priceUnitId", "discountPercent", "discountAmount", "netUnitPrice", "lineAmount"],
+                    ("unitPrice", "type:string"),
+                    ("priceUnitId", "type:string;format:uuid"),
+                    ("discountPercent", "type:null|string"),
+                    ("discountAmount", "type:null|string"),
+                    ("netUnitPrice", "type:string"),
+                    ("lineAmount", "type:string")),
+                ["PurchasingCurrencyCandidatesResponseV1"] = ObjectSchema(
+                    ["items"],
+                    ("items", "type:array;items:ref:PurchasingCurrencyCandidateViewV1")),
+                ["PurchasingCurrencyCandidateViewV1"] = ObjectSchema(
+                    ["currencyId", "code", "displayLabel"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("displayLabel", "type:string")),
                 ["PurchaseOrderCancellationView"] = ObjectSchema(
                     ["cancelledBy", "cancelledAtUtc", "reason"],
                     ("cancelledBy", "type:string"),
@@ -4251,7 +4282,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("accepted", "type:string"),
                     ("remaining", "type:string"),
                     // A1-3 (No.161 §2): the unaccepted remainder cancelled with the order, "0" until then.
-                    ("cancelled", "type:string")),
+                    ("cancelled", "type:string"),
+                    // A2a-1: the line's price, null when it has none ("fiyat bekliyor") or when it is withheld (PRS-02).
+                    ("price", "oneOf:ref:PurchaseOrderLinePriceView|type:null")),
                 ["PurchaseOrderResponse"] = ObjectSchema(
                     ["detail", "isReplay", "originalCorrelationId"],
                     ("detail", "ref:PurchaseOrderDetailView"),
@@ -4262,7 +4295,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("order", "ref:PurchaseOrderReadSummaryViewV1"),
                     ("lines", "type:array;items:ref:PurchaseOrderLineView"),
                     ("acceptances", "type:array;items:ref:PurchaseOrderAcceptanceHistoryView"),
-                    ("cancellation", "oneOf:ref:PurchaseOrderCancellationView|type:null")),
+                    ("cancellation", "oneOf:ref:PurchaseOrderCancellationView|type:null"),
+                    // A2a-1 (PRS-02): the price disclosure, the order's currency and "fiyat bekliyor" (null when withheld).
+                    ("priceDisclosure", "type:string"),
+                    ("currency", "oneOf:ref:PurchaseOrderCurrencyView|type:null"),
+                    ("pricePending", "type:boolean|null")),
                 ["PurchaseOrderReadListResponseV1"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:PurchaseOrderReadSummaryViewV1"),
@@ -7733,7 +7770,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("companyAccountId", "type:string;format:uuid"),
                     ("sourceRequestId", "type:null|string;format:uuid"),
                     ("effectiveOn", "type:string;format:date"),
-                    ("lines", "type:array;items:ref:PurchaseOrderLineRequest")),
+                    ("lines", "type:array;items:ref:PurchaseOrderLineRequest"),
+                    // A2a-1 (TEK-01): optional; required by the service once a line is priced.
+                    ("currencyId", "type:null|string;format:uuid")),
                 ["CreatePurchaseRequestRequest"] = ObjectSchema(
                     ["effectiveOn", "lines"],
                     ("effectiveOn", "type:string;format:date"),
@@ -7745,7 +7784,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("expectedProductVersion", "type:string"),
                     ("unitId", "type:string;format:uuid"),
                     ("quantity", "type:string"),
-                    ("sourceRequestLineId", "type:null|string;format:uuid")),
+                    ("sourceRequestLineId", "type:null|string;format:uuid"),
+                    // A2a-1 (ALS-D5, ALS-D18): optional; absent or null is a line without a price.
+                    ("price", "oneOf:ref:PurchaseOrderLinePriceRequest|type:null")),
+                ["PurchaseOrderLinePriceRequest"] = ObjectSchema(
+                    ["unitPrice"],
+                    ("unitPrice", "type:string"),
+                    ("priceUnitId", "type:null|string;format:uuid"),
+                    ("discountPercent", "type:null|string"),
+                    ("discountAmount", "type:null|string")),
                 ["PurchaseRequestLineRequest"] = ObjectSchema(
                     ["lineId", "productId", "expectedProductVersion", "unitId", "quantity"],
                     ("lineId", "type:string;format:uuid"),

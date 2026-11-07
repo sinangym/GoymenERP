@@ -49,18 +49,18 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 128
+EXPECTED_MIGRATION_COUNT = 130
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "4ee40f72464d6292c410cce1c58d150afca220165f5a8133b8bd5de2bb6ee24d"
+    "6b13234389d3ce9c86e14cf5c394f7ac3dbb7800f1fd09c3970175bfbe7aa61e"
 )
 EXPECTED_DURABLE_STORE_COUNT = 24
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1322
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1331
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "7b56ee1b99dd3a0a45b127788bf314cf6824f13602e2950f24b4fc0c4a987200"
+    "b2f0be603d7ab15ad52ca8cdc9b8a7e293a8f2778fae71c27ac601c00d52169f"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -791,7 +791,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
-    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "10ab34c9581f8bab185669b0cceb34f5835e20837c650cc22b0d62769922ec0e",
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
