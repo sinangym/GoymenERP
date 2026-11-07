@@ -1006,7 +1006,6 @@ def _strip_csharp_comments(content: str) -> str:
 
 
 def _strip_csharp_comments_uncached(content: str) -> str:
-
     result: list[str] = []
     index = 0
     length = len(content)
@@ -1194,7 +1193,6 @@ def _live_csharp_code(content: str) -> str:
 
 
 def _live_csharp_code_uncached(content: str) -> str:
-
     without_literals = _mask_csharp_strings(content)
     if without_literals.startswith("\ufeff"):
         without_literals = " " + without_literals[1:]
