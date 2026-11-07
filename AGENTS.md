@@ -115,10 +115,10 @@ kapıları prosedürel olarak doğrular ve kanıtı GitHub'a yazmadan merge yapm
 
 **Merge öncesi main tazelik kontrolü (Faz 0; 7 Kasım 2026 kullanıcı kararı GOV-D2/GOV-D3,
 `docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`):** `src/backend/`,
-bir migration'a veya recovery envanterine (`tools/generate_recovery_surface_inventory.py`,
+bir migration'a, kök build-control dosyalarına (`tools/generate_recovery_surface_inventory.py` içindeki `REPOSITORY_BUILD_CONTROL_PATHS`: `Directory.Build.*`, `Directory.Packages.*`, `NuGet.Config`, `global.json`, `.editorconfig`/`.globalconfig`, `src/.editorconfig` vb.) veya recovery envanterine (`tools/generate_recovery_surface_inventory.py`,
 `contracts/recovery/**`, `tests/recovery_surface_inventory/**`, `tests/release_manifest/**`)
 dokunan PR'ı merge eden herkes (`CODEX-ORCHESTRATOR` ve Claude şeridi) expected-head squash'tan
-hemen önce `git fetch origin main && git merge-base --is-ancestor origin/main <expected-head>`
+hemen önce `git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected-head>`
 çalıştırır; kullandığı main SHA'sını ve exit code'u merge makbuzuna yazar. Fresh zorunlu CI aynı
 head'de yeşil olmalıdır. Exit ≠ 0 ise merge yapılmaz: main PR'a merge edilir, pin'ler yeniden
 üretilir, CI yeniden koşar (K3'te GOV-D1'e göre review). Squash'taki `sha=` parametresi yalnız

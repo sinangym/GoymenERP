@@ -61,15 +61,17 @@ expected head); fresh required CI green on that head (not for doc-only); no open
 locked decisions only, no open policy chosen.
 
 **Main freshness check (Faz 0, GOV-D2/GOV-D3 — `docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`,
-AGENTS.md).** For any PR touching `src/backend/`, a migration or the recovery inventory
+AGENTS.md).** For any PR touching `src/backend/`, a migration, a root build-control file (`REPOSITORY_BUILD_CONTROL_PATHS` in
+`tools/generate_recovery_surface_inventory.py`: `Directory.Build.*`, `Directory.Packages.*`, `NuGet.Config`, `global.json`,
+`.editorconfig`/`.globalconfig`, `src/.editorconfig` …) or the recovery inventory
 (`tools/generate_recovery_surface_inventory.py`, `contracts/recovery/**`, `tests/recovery_surface_inventory/**`,
 `tests/release_manifest/**`), every merger (`CODEX-ORCHESTRATOR` and the Claude lane) runs, immediately before the
 squash:
 ```bash
-git fetch origin main && git merge-base --is-ancestor origin/main <expected head sha>; echo "exit=$? main=$(git rev-parse origin/main)"
+git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected head sha>; echo "exit=$? main=$(git rev-parse origin/main)"
 ```
 Write the main SHA and exit code in the merge receipt. Fresh required CI must be green on that same head. Exit ≠ 0:
-do not merge — merge main into the PR, re-pin (`main-merge-resync`), rerun CI (K3: GOV-D1 for the review). P3: the
+do not merge — merge main into the PR, re-pin (`main-merge-resync`), rerun CI (K3: GOV-D1 for the review; K1/K2: the new head needs `DELTA-OK` per v4). P3: the
 squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
 merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
 
