@@ -487,6 +487,15 @@ public static class ErpPermissions
     public const string SalesOrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D32 / SAT-D168 (EK24) / SAT-D215 (EK37): close a "kapanmaya hazır" order on the user's action (Sales owner name
+    /// SalesPermissionManifestV1.OrdersClose; no reason). Its own name: create, approve, cancel and force-close names do not
+    /// confer it, and it confers none of them. Registration grants nothing: no seeded role and no real user receives it
+    /// (SAT-D168/D188/D190 name the personas; the grant is a human gate). Company-wide only, like the other Sales names. Not
+    /// Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersClose = "sales.orders.close";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -757,6 +766,20 @@ public static class ErpPermissions
     public const string AccountingApprovedSourceCatalogActivate = "accounting.approved-source-catalog.activate";
 
     /// <summary>
+    /// B-04a (Sinan, #66 6707619685): the Accounting owner's posting account mapping catalog names (read, prepare,
+    /// activate). Registered, not granted: which persona reads, prepares or activates the mapping is a human grant
+    /// decision. Company-wide only; not Critical. Maker-checker (the activator is not the preparer) is enforced by
+    /// the Accounting lifecycle and a database check, not by this catalogue.
+    /// </summary>
+    public const string AccountingPostingMappingsRead = "accounting.posting-mappings.read";
+
+    /// <inheritdoc cref="AccountingPostingMappingsRead"/>
+    public const string AccountingPostingMappingsPrepare = "accounting.posting-mappings.prepare";
+
+    /// <inheritdoc cref="AccountingPostingMappingsRead"/>
+    public const string AccountingPostingMappingsActivate = "accounting.posting-mappings.activate";
+
+    /// <summary>
     /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
     /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
     /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
@@ -888,6 +911,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -952,6 +976,9 @@ public static class ErpPermissions
             AccountingJournalReverseApprove,
             AccountingApprovedSourceCatalogPrepare,
             AccountingApprovedSourceCatalogActivate,
+            AccountingPostingMappingsRead,
+            AccountingPostingMappingsPrepare,
+            AccountingPostingMappingsActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -1043,6 +1070,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1107,6 +1135,9 @@ public static class ErpPermissions
             AccountingJournalReverseApprove,
             AccountingApprovedSourceCatalogPrepare,
             AccountingApprovedSourceCatalogActivate,
+            AccountingPostingMappingsRead,
+            AccountingPostingMappingsPrepare,
+            AccountingPostingMappingsActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
