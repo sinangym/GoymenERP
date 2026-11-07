@@ -486,6 +486,8 @@ def _recovery_inventory(
             "migrations": inventory["counts"]["migrations"],
             "durableStores": inventory["counts"]["durableStores"],
         },
+        # The manifest sourceSurface is post-hoc evidence, not a merge block (recovery pin Faz 1).
+        "sourceSurface": dict(inventory["sourceSurface"]),
         "sources": sources,
     }
     return record, inventory
