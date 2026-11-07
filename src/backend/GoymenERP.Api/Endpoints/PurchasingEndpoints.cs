@@ -19,7 +19,8 @@ namespace GoymenERP.Api.Endpoints;
 /// → 200 under <c>purchasing.requests.approve</c>, and A1-1b's POST withdrawal → 200 under
 /// <c>purchasing.requests.withdraw</c>) and purchase orders (POST
 /// create → 201 + Location, GET list, GET detail, POST approval → 200, and A1-3's GET cancel-impact / POST cancellation → 200
-/// under <c>purchasing.orders.cancel</c>). The route reads nothing but the
+/// under <c>purchasing.orders.cancel</c>), and A2a-1's GET references/currencies (the purchasing order operation's currency
+/// candidates, under <c>purchasing.orders.create</c>). The route reads nothing but the
 /// server context and the wire body; <see cref="IPurchasingService"/> decides, with a fresh central
 /// measurement of the Purchasing permission at every fence (#276). The same attempt again answers the same
 /// status with the replay headers (ADR-011 §4); a recorded terminal refusal (409) replays with the same
@@ -41,7 +42,42 @@ public static class PurchasingEndpoints
     {
         MapRequests(endpoints);
         MapOrders(endpoints);
+        MapCurrencyCandidates(endpoints);
         return endpoints;
+    }
+
+    /// <summary>
+    /// A2a-1 (TEK-01): the currencies whose Settings money profile answers <c>purchasing.order.v1</c>, for the order form's picker.
+    /// No query is accepted; an owner that has no approved profile for the operation is a code-less 503 (fail-closed).
+    /// </summary>
+    private static void MapCurrencyCandidates(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(PurchasingApiV1.CurrencyCandidatesPath, async (HttpContext httpContext, [FromServices] IPurchasingService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (httpContext.Request.Query.Count != 0)
+                {
+                    return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+                }
+
+                try
+                {
+                    return Results.Json(await service.GetCurrencyCandidatesAsync(cancellationToken), PurchasingJson.Options);
+                }
+                catch (PurchasingServiceException exception)
+                {
+                    return Problem(httpContext, exception, correlation);
+                }
+            })
+            .WithTags("Purchasing")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithName("GetPurchasingCurrencyCandidatesV1")
+            .Produces<PurchasingCurrencyCandidatesResponseV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
     }
 
     private static void MapRequests(IEndpointRouteBuilder endpoints)
@@ -215,7 +251,8 @@ public static class PurchasingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(PurchasingProblemCodesV1.AccountState, PurchasingProblemCodesV1.RequestState, PurchasingProblemCodesV1.VersionConflict,
                 PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
-            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.UnsupportedUnit, PurchasingProblemCodesV1.UnsupportedProduct)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.UnsupportedUnit, PurchasingProblemCodesV1.UnsupportedProduct,
+                PurchasingProblemCodesV1.UnsupportedCurrency)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
