@@ -271,6 +271,7 @@ kendi tarafını bu şeridin portuna bağlar.
 | B-31 | Cari bağlarının yeniden incelenmesi (5d/5e/5f/5h) ve Ürün bağlarının (5a–5c) yeniden incelenmesi — "ertelendi: <modül> başlayınca" | Satış | Cari, Ürün | mevcut portlar | K2 | 🟡 SQL testleri Satış'ta |
 | B-27 | Maliyet izi (süre, hat, fire, lot ham verisi) | Üretim, Finans | Muhasebe | — | — | ⛔ OPEN-008 (yöntem açık karar; yapılmaz) |
 | B-32 | Minimum stoktan satın alma talebi önerisi (MINSTOK) — "Stok başlayınca ayrıca ele alınır" | Alış (ALS-D61) | Stok | — | — | ⛔ kapsam kararı Sinan'da (§11 K-7) |
+| B-33 | Teslim portu yanıtındaki isteğe bağlı `ShippedBy` (sevk eden kullanıcı kimliği/kimlikleri) alanını doldurmak — SAT-D216 (sevk eden kendi fazla teslimini onaylayamaz) için gerekli; Satış şeridinin bildirdiği Sinan kararı (SAT-D222; Satış karar PR'ı henüz merge edilmedi) gereği Lojistik bunu sağlayana kadar fazla teslim onayı kapalı kalır. Yeni port açılmaz (SAT-D209); alan Satış'ın mevcut teslim portuna açık PR #963 ile ekleniyor (merge bekliyor). Öncelik: Stok & Lojistik dalgası başlayınca | Satış | Lojistik | mevcut teslim portu, `ShippedBy` alanı (açık PR #963) | K3 (onay/yetki) | ❌ |
 
 Değiştirilmeyecek çalışan bağlar (dokunmadan önce sahibine haber): mal kabul → stok ortak işlemi
 (`IPurchaseGoodsReceiptTransactionV1` / `IInventoryGoodsReceiptParticipantV1`), `IDocumentOwnerLinkPortV1`
@@ -447,6 +448,13 @@ Rol/yetki ataması, OPEN-* kapatma, production açma bu planla seçilmez.
 - K0-2 üretim girdi tahsisi (B-01) PR #949: iki tam K3 review APPROVE, CI son işte; merge sonrası Üretim U3-a bağlanır.
 - C1–C12 ortak koda taşıma işi plana "Dalga OK" olarak eklendi (#946/#950 merge edildi).
 - K3'te DELTA-OK yalnız mekanik delta için geçerli (GOV-D1, `SINAN_KARARLARI_2026-11-07_K3_DELTA.md`, #953).
+- B-04 (120/320 taslak fiş) karar engeli kalktı: Sinan beş maddeye ve dokuz ek soruya "Önerildiği gibi" dedi
+  (KLN-D6…D19, `SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`, #66 yorumları 6707619685 ve 6707864938);
+  K0-5 kodlanabilir (K3). Satış tarafı tevkifat izleme hesabı açık NEEDS-SINAN (#66 yorum 6707860683; eşleme yoksa
+  fiş kuyruğa düşer).
+- B-33 (Lojistik `ShippedBy`, SAT-D216/D222) bağ listesine eklendi; Stok & Lojistik dalgasında.
+- Recovery pin önerisi (#962) kararlandı (GOV-D2…D4): Faz 0 merge öncesi main tazelik kuralı AGENTS.md ve
+  `review-signatures`'a eklendi; Faz 1 (dar riskli-yüzey pin'i, K3) Faz 0 merge edildikten sonra başlar.
 
 ## 12a. Durum (2026-11-03)
 
