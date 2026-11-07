@@ -1692,14 +1692,20 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings);
+                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies);
         }
 
         /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
         public IProductItemTypeReaderV1? ItemTypes { get; set; }
 
+        /// <summary>SAT-D32: the owner-less axes seam (null = not composed: NoSource, never ready).</summary>
+        public ISalesOrderOwnerAxesSourceV1? OwnerAxes { get; set; }
+
         /// <summary>SAT-D175: the Production / customer-goods binding hook (null = not composed).</summary>
         public ISalesSubcontractOrderBindingReadPortV1? SubcontractBindings { get; set; }
+
+        /// <summary>S-1 / MOD-03: the supply owners' linked-supply adapters (none by default, as on the host).</summary>
+        public List<ISalesOrderLinkedSupplyReadPortV1> LinkedSupplies { get; } = [];
 
         public SalesDraftReadServiceV1 ReadService()
         {
@@ -2175,6 +2181,22 @@ public sealed partial class SalesDraftServiceTests
                 (target, now) => recorded = mutate(target, plan!, now), audit,
                 async token => plan = await beforeWrite(draft!, token), cancellationToken);
             if (recorded is not null) ForceClosures.Add(recorded);
+            return result;
+        }
+
+        public List<UserClosureFacts> UserClosures { get; } = [];
+
+        public async Task<SalesDraftStateResult?> CloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, UserClosureFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.CloseV1) throw new ArgumentException("wrong command", nameof(commandName));
+            UserClosureFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) UserClosures.Add(recorded);
             return result;
         }
 

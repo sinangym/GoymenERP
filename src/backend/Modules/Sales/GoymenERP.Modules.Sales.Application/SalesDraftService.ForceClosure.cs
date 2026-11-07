@@ -245,14 +245,21 @@ public sealed partial class SalesDraftService
             : loadingImpact.ActiveApprovedDispatchNoteCount > 0
                 ? SalesCancellationImpactStatusesV1.Present
                 : SalesCancellationImpactStatusesV1.None;
+        var purchasingStatus = await ReadLinkedSupplyStatusAsync(scope, permission, draft, SalesLinkedSupplyKindsV1.Purchasing,
+            cancellationToken);
+        var productionStatus = await ReadLinkedSupplyStatusAsync(scope, permission, draft, SalesLinkedSupplyKindsV1.Production,
+            cancellationToken);
         var sources = SalesCancellationImpactSourcesV1.All.Select(source =>
         {
             var status = source switch
             {
                 SalesCancellationImpactSourcesV1.ActiveAllocations => allocationStatus,
+                // S-1 / MOD-03: no adapter → no source (not a blocker, as before); SAT-D12 keeps a present link blocking.
+                SalesCancellationImpactSourcesV1.LinkedPurchasing => purchasingStatus,
+                SalesCancellationImpactSourcesV1.LinkedProduction => productionStatus,
                 SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote => loadingStatus,
                 SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes => dispatchNoteStatus,
-                // No module on main records these remaining links to a Sales order: no owner to ask — not zero, not a blocker.
+                // No module on main records the remaining link to a Sales order: no owner to ask — not zero, not a blocker.
                 _ => SalesCancellationImpactStatusesV1.NoSource,
             };
             return new SalesDraftForceCloseImpactSourceV1(source, status, ForceCloseBlocks(source, status));

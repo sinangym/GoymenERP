@@ -487,6 +487,15 @@ public static class ErpPermissions
     public const string SalesOrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D32 / SAT-D168 (EK24) / SAT-D215 (EK37): close a "kapanmaya hazır" order on the user's action (Sales owner name
+    /// SalesPermissionManifestV1.OrdersClose; no reason). Its own name: create, approve, cancel and force-close names do not
+    /// confer it, and it confers none of them. Registration grants nothing: no seeded role and no real user receives it
+    /// (SAT-D168/D188/D190 name the personas; the grant is a human gate). Company-wide only, like the other Sales names. Not
+    /// Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersClose = "sales.orders.close";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -902,6 +911,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1060,6 +1070,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,

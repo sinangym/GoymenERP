@@ -126,6 +126,7 @@ import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftForceClose } from './SalesDraftForceClose'
+import { SalesDraftUserClose } from './SalesDraftUserClose'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import { SalesPartyDisplay } from './SalesDraftListPage'
@@ -425,6 +426,17 @@ export function SalesDraftDetailPage() {
           />
         )
       }
+      userClose={
+        companyId === null ? null : (
+          <SalesDraftUserClose
+            key={`user-close:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
       forceClose={
         companyId === null ? null : (
           <SalesDraftForceClose
@@ -484,6 +496,7 @@ export function DraftView({
   linkedEffects = null,
   cancellation = null,
   forceClose = null,
+  userClose = null,
   documents = null,
   pdfAction = null,
   activeTab,
@@ -530,6 +543,8 @@ export function DraftView({
   readonly cancellation?: React.ReactNode
   /** No 30 / SAT-D12: the force-close preview and command, or the recorded closure of a closed order. */
   readonly forceClose?: React.ReactNode
+  /** SAT-D32: "Siparişi kapat" for a "kapanmaya hazır" order (shown only when the server says it is ready). */
+  readonly userClose?: React.ReactNode
   /**
    * UI-11 / UI-71 (S-11): the "Sözleşme / Belgeler" workspace — the order's and the customer's Document Vault panels and
    * their timeline; null when no single company is bound.
@@ -757,6 +772,7 @@ export function DraftView({
       </section>
 
       {cancellation}
+      {userClose}
       {forceClose}
 
       <SalesOrderTabs
