@@ -447,6 +447,11 @@ Rol/yetki ataması, OPEN-* kapatma, production açma bu planla seçilmez.
 - K0-2 üretim girdi tahsisi (B-01) PR #949: iki tam K3 review APPROVE, CI son işte; merge sonrası Üretim U3-a bağlanır.
 - C1–C12 ortak koda taşıma işi plana "Dalga OK" olarak eklendi (#946/#950 merge edildi).
 - K3'te DELTA-OK yalnız mekanik delta için geçerli (GOV-D1, `SINAN_KARARLARI_2026-11-07_K3_DELTA.md`, #953).
+- B-04 (120/320 taslak fiş) karar engeli kalktı: Sinan beş maddeye "Önerildiği gibi" dedi (KLN-D6…D10,
+  `SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`, #66 yorum 6707619685); K0-5 kodlanabilir (K3). Satış
+  tarafı tevkifat karşı hesabı açık (yapılandırılabilir, etkinleştirme NEEDS-SINAN).
+- Recovery pin önerisi (#962) kararlandı (GOV-D2…D4): Faz 0 merge öncesi main tazelik kuralı AGENTS.md ve
+  `review-signatures`'a eklendi; Faz 1 (dar riskli-yüzey pin'i, K3) Faz 0 merge edildikten sonra başlar.
 
 ## 12a. Durum (2026-11-03)
 
