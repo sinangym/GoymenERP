@@ -6,7 +6,7 @@
  * DEC-AI-001). Yetenek varsa da runtime gelene kadar aynı durum gösterilir; ERP akışı panelden bağımsızdır.
  */
 
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 import { hasCapability } from '../shell/shellState'
 import { useShellState } from '../shell/shellContext'
 import { AI_PANEL_CAPABILITY } from './aiCapabilities'
@@ -23,29 +23,42 @@ export function AiPanel({
   readonly returnFocusRef: RefObject<HTMLButtonElement | null>
 }) {
   const state = useShellState()
+  const panelRef = useRef<HTMLElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   // Yetenek okunur ama bu dilimde çalışan bir AI yolu yoktur; iki durumda da aynı dürüst metin çizilir.
   const capabilityGranted = hasCapability(state, AI_PANEL_CAPABILITY)
 
   useEffect(() => {
     headingRef.current?.focus()
+  }, [])
+
+  // Focus goes back to the toggle only when it was inside the panel; a company switch or a page action that
+  // closes the panel must not pull focus away from where the user is working.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
     const returnTo = returnFocusRef.current
-    return () => returnTo?.focus()
+    return () => {
+      if (panel?.contains(document.activeElement)) returnTo?.focus()
+    }
   }, [returnFocusRef])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      // A shell dialog (the nav drawer, the switch confirmation) owns Escape while it is open.
-      if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('[aria-modal="true"]') !== null) return
-      onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  // Escape belongs to the panel only while focus is in it: Escape in a page form keeps the panel open, and a
+  // shell dialog (nav drawer, switch confirmation) keeps its own Escape.
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return
+    if (document.querySelector('[aria-modal="true"]') !== null) return
+    event.preventDefault()
+    onClose()
+  }
 
   return (
-    <aside id={AI_PANEL_ID} className={styles.panel} aria-labelledby="ai-panel-heading">
+    <aside
+      id={AI_PANEL_ID}
+      ref={panelRef}
+      className={styles.panel}
+      aria-labelledby="ai-panel-heading"
+      onKeyDown={onKeyDown}
+    >
       <div className={styles.header}>
         <h2 id="ai-panel-heading" className={styles.heading} tabIndex={-1} ref={headingRef}>
           {AI_TEXT.heading}

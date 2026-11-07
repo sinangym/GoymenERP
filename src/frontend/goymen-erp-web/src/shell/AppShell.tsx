@@ -13,7 +13,7 @@
  * hidden navigation for the keyboard or a screen reader to find.
  */
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { capabilityFailClosed, hasCapability, type ShellState } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
@@ -346,8 +346,7 @@ export function AppShell() {
   const activeCompanyId = state.activeContext?.companyId ?? null
   if (aiCompany !== null && (aiCompany !== activeCompanyId || gate !== null)) setAiCompany(null)
   const aiOpen = aiCompany !== null
-  const setAiOpen = (next: (open: boolean) => boolean) => setAiCompany(next(aiOpen) ? activeCompanyId : null)
-  const closeAi = useCallback(() => setAiCompany(null), [])
+  const closeAi = () => setAiCompany(null)
 
   if (gate) return gate
 
@@ -527,7 +526,8 @@ export function AppShell() {
             className={styles.aiToggle}
             aria-expanded={aiOpen}
             aria-controls={aiOpen ? AI_PANEL_ID : undefined}
-            onClick={() => setAiOpen((open) => !open)}
+            disabled={activeCompanyId === null}
+            onClick={() => setAiCompany(aiOpen ? null : activeCompanyId)}
           >
             {AI_TEXT.toggle}
           </button>

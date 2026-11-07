@@ -120,14 +120,32 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     expect(document.activeElement).toBe(toggle)
   })
 
+  it('Escape panel dışındayken (sayfada) paneli kapatmaz; panel kapanınca odak dışarıdaysa yerinde kalır', async () => {
+    installFetch()
+    renderShell()
+    const toggle = await screen.findByRole('button', { name: AI_TEXT.toggle })
+    await userEvent.click(toggle)
+    const main = screen.getByRole('main')
+    main.focus()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('complementary', { name: AI_TEXT.panelLabel })).toBeTruthy()
+    // Closing from the toggle while focus is on the toggle: focus stays on the toggle.
+    await userEvent.click(toggle)
+    expect(screen.queryByRole('complementary', { name: AI_TEXT.panelLabel })).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+  })
+
   it('şirket değişince panel kapanır; panel durumu başka şirket bağlamına taşınmaz', async () => {
     installFetch()
     renderShell()
     await userEvent.click(await screen.findByRole('button', { name: AI_TEXT.toggle }))
     expect(screen.getByRole('complementary', { name: AI_TEXT.panelLabel })).toBeTruthy()
 
-    await userEvent.selectOptions(screen.getByRole('combobox'), B_ID)
+    const picker = screen.getByRole('combobox')
+    await userEvent.selectOptions(picker, B_ID)
     await waitFor(() => expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe(B_ID))
+    // Focus was on the company picker, not in the panel: closing the panel does not move it to the AI toggle.
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: AI_TEXT.toggle }))
     await waitFor(() => expect(screen.queryByRole('complementary', { name: AI_TEXT.panelLabel })).toBeNull())
     expect(screen.getByRole('button', { name: AI_TEXT.toggle }).getAttribute('aria-expanded')).toBe('false')
   })
