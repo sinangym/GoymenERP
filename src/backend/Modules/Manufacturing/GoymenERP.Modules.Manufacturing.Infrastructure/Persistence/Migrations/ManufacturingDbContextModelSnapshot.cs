@@ -1040,6 +1040,28 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("decimal(18,6)");
 
+                    b.Property<int?>("PackageCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PaintColorCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PaintDescription")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal?>("PerimeterMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("PieceLengthMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int?>("PiecesPerPackage")
+                        .HasColumnType("int");
+
                     b.Property<long>("PlanVersion")
                         .HasColumnType("bigint");
 
@@ -1063,6 +1085,14 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("TargetThicknessMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("UnitKg")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
                     b.Property<Guid>("WorkCenterId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1075,6 +1105,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PlanRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000' AND [RevisionNo] >= 1 AND [PlanVersion] >= 2");
 
                             t.HasCheckConstraint("CK_PlanRevisions_LineSpeed", "[LineSpeedMetresPerMinute] IS NULL OR [LineSpeedMetresPerMinute] > 0");
+
+                            t.HasCheckConstraint("CK_PlanRevisions_ProcessSpecValues", "([PackageCount] IS NULL OR [PackageCount] >= 1) AND ([PiecesPerPackage] IS NULL OR [PiecesPerPackage] >= 1) AND ([PieceLengthMm] IS NULL OR [PieceLengthMm] > 0) AND ([UnitKg] IS NULL OR [UnitKg] > 0) AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
 
                             t.HasCheckConstraint("CK_PlanRevisions_Target", "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
 
@@ -1117,11 +1149,33 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("PackageCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PaintColorCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PaintDescription")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("PayloadHash")
                         .IsRequired()
                         .HasMaxLength(64)
                         .IsUnicode(false)
                         .HasColumnType("varchar(64)");
+
+                    b.Property<decimal?>("PerimeterMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("PieceLengthMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int?>("PiecesPerPackage")
+                        .HasColumnType("int");
 
                     b.Property<int>("Process")
                         .HasColumnType("int");
@@ -1141,6 +1195,14 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<decimal?>("TargetKg")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("TargetThicknessMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("UnitKg")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -1173,6 +1235,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Plans_LineSpeed", "[LineSpeedMetresPerMinute] IS NULL OR ([LineSpeedMetresPerMinute] > 0 AND [Process] IN (1, 3))");
 
                             t.HasCheckConstraint("CK_Plans_NetUsableWidth", "[NetUsableWidthMm] IS NULL OR ([NetUsableWidthMm] > 0 AND [Process] = 1)");
+
+                            t.HasCheckConstraint("CK_Plans_ProcessSpecProcess", "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) AND ([UnitKg] IS NULL OR [Process] = 3) AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL OR [Process] = 4) AND ([TargetThicknessMm] IS NULL OR [Process] = 2) AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL AND [PaintColorCode] IS NULL))");
+
+                            t.HasCheckConstraint("CK_Plans_ProcessSpecValues", "([PackageCount] IS NULL OR [PackageCount] >= 1) AND ([PiecesPerPackage] IS NULL OR [PiecesPerPackage] >= 1) AND ([PieceLengthMm] IS NULL OR [PieceLengthMm] > 0) AND ([UnitKg] IS NULL OR [UnitKg] > 0) AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
 
                             t.HasCheckConstraint("CK_Plans_Target", "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
 

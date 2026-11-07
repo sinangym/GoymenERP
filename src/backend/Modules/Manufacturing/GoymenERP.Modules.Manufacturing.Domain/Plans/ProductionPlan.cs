@@ -52,7 +52,8 @@ public sealed class ProductionPlan
         ProductionTarget? target = null,
         SlittingSpec? spec = null,
         CutToLengthSpec? cutToLengthSpec = null,
-        decimal? lineSpeedMetresPerMinute = null)
+        decimal? lineSpeedMetresPerMinute = null,
+        PlanProcessSpec? processSpec = null)
     {
         Id = RequireId(id, nameof(id));
         CompanyId = RequireId(companyId, nameof(companyId));
@@ -94,12 +95,14 @@ public sealed class ProductionPlan
 
         RequireConsistentCommercialContext(_inputs, nameof(inputs));
         RequireLineSpeed(process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
+        processSpec?.RequireAllowedFor(process, nameof(processSpec));
         RequireNetWidthWithinParents(spec, _inputs);
 
         Target = target;
         Spec = spec;
         CutToLengthSpec = cutToLengthSpec;
         LineSpeedMetresPerMinute = lineSpeedMetresPerMinute;
+        ProcessSpec = processSpec;
         Status = PlanStatus.Draft;
     }
 
@@ -134,6 +137,13 @@ public sealed class ProductionPlan
     /// with source <c>Plan</c>. Part of the plan's content: a Draft revision replaces it with the rest.
     /// </summary>
     public decimal? LineSpeedMetresPerMinute { get; private set; }
+
+    /// <summary>
+    /// Üretim U2-b1 (API-12): the Tube / Profile, Paint or Cold Rolling values entered on the plan, or null. Part of the
+    /// plan's content: a Draft revision replaces it with the rest; its numbers are captured at approval with source
+    /// <c>Plan</c>.
+    /// </summary>
+    public PlanProcessSpec? ProcessSpec { get; private set; }
 
     public PlanStatus Status { get; private set; }
 
@@ -195,7 +205,8 @@ public sealed class ProductionPlan
         decimal? lineSpeedMetresPerMinute = null,
         IEnumerable<PlanRejection>? rejections = null,
         PlanCancellation? cancellation = null,
-        Guid? orderId = null)
+        Guid? orderId = null,
+        PlanProcessSpec? processSpec = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -216,7 +227,7 @@ public sealed class ProductionPlan
         try
         {
             plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec, cutToLengthSpec,
-                lineSpeedMetresPerMinute);
+                lineSpeedMetresPerMinute, processSpec);
         }
         catch (ArgumentException)
         {
@@ -258,7 +269,7 @@ public sealed class ProductionPlan
             try
             {
                 plan.Revise(plan.Version, revision.WorkCenterId, process, revision.Inputs, revision.Target,
-                    revision.CutToLengthSpec, revision.LineSpeedMetresPerMinute);
+                    revision.CutToLengthSpec, revision.LineSpeedMetresPerMinute, revision.ProcessSpec);
             }
             catch (Exception exception) when (exception is ManufacturingRuleException or ArgumentException)
             {
@@ -456,21 +467,45 @@ public sealed class ProductionPlan
         OrderId = RequireId(orderId, nameof(orderId));
     }
 
-    /// <summary>The profile snapshot as this plan captures it: its plan-entered line speed replaces the profile's.</summary>
-    private PlanParameterSnapshotV1 CaptureWithPlanValues(PlanParameterSnapshotV1 snapshot) =>
-        LineSpeedMetresPerMinute is { } speed ? snapshot.WithPlanValue(LineSpeedParameter, LineSpeedUnit, speed) : snapshot;
-
-    /// <summary>A stored snapshot carries a plan-entered value exactly when this plan has it, with this plan's number.</summary>
-    private bool MatchesPlanValues(PlanParameterSnapshotV1 snapshot)
+    /// <summary>
+    /// The numbers this plan entered itself for its engines: the line speed (U2-a) and the process spec's values (U2-b1).
+    /// </summary>
+    public IReadOnlyList<PlanEnteredValue> PlanEnteredValues()
     {
-        var planValues = snapshot.Values.Where(value => value.Source is not null).ToArray();
-        if (LineSpeedMetresPerMinute is not { } speed)
+        var values = new List<PlanEnteredValue>();
+        if (LineSpeedMetresPerMinute is { } speed)
         {
-            return planValues.Length == 0;
+            values.Add(new PlanEnteredValue(LineSpeedParameter, LineSpeedUnit, speed));
         }
 
-        return planValues.Length == 1 && planValues[0].Key == LineSpeedParameter && planValues[0].Unit == LineSpeedUnit
-               && planValues[0].Number == speed;
+        if (ProcessSpec is { } processSpec)
+        {
+            values.AddRange(processSpec.EngineValues(Process));
+        }
+
+        return values;
+    }
+
+    /// <summary>
+    /// The profile snapshot as this plan captures it: each plan-entered value replaces the profile's (keeping the
+    /// profile's unit for that key when it has one) or is added.
+    /// </summary>
+    private PlanParameterSnapshotV1 CaptureWithPlanValues(PlanParameterSnapshotV1 snapshot) =>
+        PlanEnteredValues().Aggregate(snapshot, (captured, value) =>
+            captured.WithPlanValue(value.Key, value.Unit, value.Number));
+
+    /// <summary>A stored snapshot carries exactly this plan's entered values (by key and number), each with source Plan.</summary>
+    private bool MatchesPlanValues(PlanParameterSnapshotV1 snapshot)
+    {
+        var stored = snapshot.Values.Where(value => value.Source is not null)
+            .OrderBy(value => value.Key, StringComparer.Ordinal)
+            .Select(value => (value.Key, value.Number))
+            .ToArray();
+        var entered = PlanEnteredValues()
+            .OrderBy(value => value.Key, StringComparer.Ordinal)
+            .Select(value => (value.Key, (decimal?)value.Number))
+            .ToArray();
+        return stored.SequenceEqual(entered);
     }
 
     /// <summary>
@@ -494,7 +529,7 @@ public sealed class ProductionPlan
     /// </summary>
     public void Revise(long expectedVersion, Guid workCenterId, ManufacturingProcess workCenterProcess,
         IEnumerable<PlannedInput> inputs, ProductionTarget? target, CutToLengthSpec? cutToLengthSpec = null,
-        decimal? lineSpeedMetresPerMinute = null)
+        decimal? lineSpeedMetresPerMinute = null, PlanProcessSpec? processSpec = null)
     {
         RequireRevisable(expectedVersion);
         var newWorkCenter = RequireId(workCenterId, nameof(workCenterId));
@@ -536,9 +571,11 @@ public sealed class ProductionPlan
 
         RequireConsistentCommercialContext(newInputs, nameof(inputs));
         RequireLineSpeed(Process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
+        processSpec?.RequireAllowedFor(Process, nameof(processSpec));
 
         if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs)
-            && CutSpecsEqual(cutToLengthSpec, CutToLengthSpec) && lineSpeedMetresPerMinute == LineSpeedMetresPerMinute)
+            && CutSpecsEqual(cutToLengthSpec, CutToLengthSpec) && lineSpeedMetresPerMinute == LineSpeedMetresPerMinute
+            && Equals(processSpec, ProcessSpec))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanRevisionNoChange,
                 "Düzenleme planda hiçbir şeyi değiştirmiyor.");
@@ -548,6 +585,7 @@ public sealed class ProductionPlan
         Target = target;
         CutToLengthSpec = cutToLengthSpec;
         LineSpeedMetresPerMinute = lineSpeedMetresPerMinute;
+        ProcessSpec = processSpec;
         _inputs.Clear();
         _inputs.AddRange(newInputs);
         RevisionCount++;
@@ -689,4 +727,5 @@ public sealed class ProductionPlan
 /// replaced the previous ones as a whole. <see cref="ProductionPlan.Restore"/> replays them in their order.
 /// </summary>
 public sealed record PlanRevisionContent(Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
-    CutToLengthSpec? CutToLengthSpec = null, decimal? LineSpeedMetresPerMinute = null, long? PlanVersion = null);
+    CutToLengthSpec? CutToLengthSpec = null, decimal? LineSpeedMetresPerMinute = null, long? PlanVersion = null,
+    PlanProcessSpec? ProcessSpec = null);

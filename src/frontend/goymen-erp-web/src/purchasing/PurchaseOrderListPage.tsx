@@ -45,7 +45,7 @@ import { ORDER_LIST_TEXT as LIST_TEXT, PURCHASE_ORDER_STATUS_LABEL as STATUS } f
 import styles from './PurchaseOrderListPage.module.css'
 
 /** The dot's colour only — the status text carries the meaning. */
-const STATUS_TONE: Record<PurchaseOrderStatus, StatusTone> = { Draft: 'neutral', Approved: 'success' }
+const STATUS_TONE: Record<PurchaseOrderStatus, StatusTone> = { Draft: 'neutral', Approved: 'success', Cancelled: 'warning' }
 
 const HEADING_ID = 'purchase-order-list-heading'
 const SUPPLIER_FILTER_VALUE_ID = 'purchase-order-supplier-filter-value'
@@ -55,10 +55,13 @@ const SUPPLIER_PARAM = 'supplierPartyId'
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 
-/** Only the server's two states are a status filter; anything else in the address is no filter. */
+/** Only the server's states are a status filter; anything else in the address is no filter. */
+function knownStatus(value: string | null): PurchaseOrderStatus | null {
+  return value === 'Draft' || value === 'Approved' || value === 'Cancelled' ? value : null
+}
+
 function statusOf(params: URLSearchParams): PurchaseOrderStatus | null {
-  const value = params.get(STATUS_PARAM)
-  return value === 'Draft' || value === 'Approved' ? value : null
+  return knownStatus(params.get(STATUS_PARAM))
 }
 
 /** Only a real, non-empty party id is a supplier filter; it is compared in the server's lower-case form. */
@@ -268,7 +271,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
 
   /** The filter is the server's (`status`); changing it restarts the list and keeps the supplier filter. */
   function chooseStatus(value: string) {
-    showFilters(value === 'Draft' || value === 'Approved' ? value : null, supplierPartyId, supplierLabel)
+    showFilters(knownStatus(value), supplierPartyId, supplierLabel)
   }
 
   /** The row's own record-bound supplier becomes the server filter; a row without one offers no filter. */
@@ -300,6 +303,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
               <option value="">{LIST_TEXT.filterAll}</option>
               <option value="Draft">{STATUS.Draft}</option>
               <option value="Approved">{STATUS.Approved}</option>
+              <option value="Cancelled">{STATUS.Cancelled}</option>
             </select>
           )}
         </Field>

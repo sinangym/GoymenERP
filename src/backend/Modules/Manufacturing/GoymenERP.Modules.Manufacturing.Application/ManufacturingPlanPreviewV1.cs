@@ -11,12 +11,13 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 /// <summary>
 /// The plan content to preview: the plan save's grammar without the plan id (nothing is created) — the work center,
 /// the planned inputs with the Inventory label version the screen read, the optional target and, since U2-a, the
-/// optional plan-entered line speed (Slitting, Tube / Profile).
+/// optional plan-entered line speed (Slitting, Tube / Profile) and, since U2-b1, the optional process spec (Tube / Profile,
+/// Paint, Cold Rolling).
 /// </summary>
 public sealed record PlanPreviewRequestV1(
     Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
     SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null,
-    string? LineSpeedMetresPerMinute = null);
+    string? LineSpeedMetresPerMinute = null, PlanProcessSpecRequestV1? ProcessSpec = null);
 
 /// <summary>One named, unrounded value as lossless invariant text.</summary>
 public sealed record PlanCalculatedValueViewV1(string Name, string Value);
@@ -94,6 +95,12 @@ public sealed partial class ManufacturingCommandService
             return Invalid<PlanPreviewViewV1>("lineSpeedMetresPerMinute");
         }
 
+        var processSpec = ParseProcessSpec(request.ProcessSpec);
+        if (processSpec.Invalid)
+        {
+            return Invalid<PlanPreviewViewV1>(ProcessSpecField);
+        }
+
         // The save's grant, measured fresh before any owner is asked (#276).
         if (await FenceCapturedAsync<PlanPreviewViewV1>(permission, companyId, actorId, cancellationToken) is { } denied)
         {
@@ -120,6 +127,11 @@ public sealed partial class ManufacturingCommandService
         if (lineSpeed.Value is not null && !LineSpeedAllowed(process.Value))
         {
             return Invalid<PlanPreviewViewV1>("lineSpeedMetresPerMinute");
+        }
+
+        if (!ProcessSpecAllowed(processSpec.Value, process.Value))
+        {
+            return Invalid<PlanPreviewViewV1>(ProcessSpecField);
         }
 
         var verified = await VerifyPlanContentAsync(
@@ -156,7 +168,7 @@ public sealed partial class ManufacturingCommandService
             plan = new ProductionPlan(Guid.NewGuid(), companyId, request.WorkCenterId, process.Value,
                 PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
                 BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget),
-                BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value);
+                BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value, processSpec.Value);
         }
         catch (ManufacturingRuleException exception)
         {

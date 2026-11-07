@@ -39,6 +39,16 @@ Değişmeyenler:
   "proje modülleri" konuşması, Alış tarafını başka bir konuşma yapar; bu şerit o modüllerin dosyalarını
   değiştirmez, görev notu bırakır: `docs/handoffs/URETIM_SATIS_DEVIR_v1.md`, `docs/handoffs/URETIM_ALIS_DEVIR_v1.md`.
   Üretim tarafındaki portlar karşı taraf gelene kadar fail-closed çalışır.
+- **Kalan Modüller şeridi (2026-11-03, SAT-D209, KLN-D1…D5):** Sinan Ayarlar, Cari, Ürün & Hizmet, Stok & Lojistik,
+  Çalışma Merkezi, Belgeler, Muhasebe ve Raporlar için ayrı bir şerit açtı. Böylece URT-D20'deki "Stok tarafını bu şerit
+  yapar" kısmı **yerini bu kurala bıraktı**: Stok dosyalarını artık Kalan Modüller şeridi yazar, Üretim şeridi yalnız
+  Üretim tarafını bağlar. Üretim'in bu modüllerdeki ihtiyaçları o şeridin planında (`#934` §3: B-01 tahsis, B-03 soy
+  ağacı/etiket sınıfı, B-08 paket + boya ürünü, B-14 renk/fire listesi, B-15 vardiya takvimi, B-22 fason transferi).
+  Bu modüllere düşen kısımlar için Üretim yeni port/tablo açmaz; değer planda elle girilir veya fail-closed kalır
+  ve "ertelendi: <modül> başlayınca" diye işaretlenir.
+- **AI araçları (2026-11-03, AI-D1…D6):** her yeni Üretim ucu veya ekranı PR'ında, AI'ın ihtiyaç duyacağı okuma ve
+  taslak araçlarını gösteren bir "AI araçları" satırı bulunur. Onay, iptal, emir açma, stok hareketi ve kapanış
+  AI'a açılmaz. Gönderilen liste: `manufacturing.plan.explain`, `.plan.simulate`, `.order.variance.explain` (ilk 3).
 
 ---
 
@@ -362,18 +372,18 @@ Kalıcı kural: modül başka modülün tablosuna yazmaz; bağ yalnız sürüml�
 | 1b | Bağlı üretim → Satış iptal/zorla kapatma | Üretim → Satış | Üretim: `IManufacturingSalesOrderLinkReadPortV1`; Satış: `ISalesOrderLinkedSupplyReadPortV1` | 🟡 Satış'ta `NoSource` | Üretim tarafı U5-a; Satış tarafı Satış şeridi (S-1) |
 | 2a | Fason hizmet satış siparişi okuma | Satış → Üretim | `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`, #898) | 🟡 Satış'ta hazır, Üretim tüketmiyor | U5-b |
 | 2b | Fason sipariş carisi kilidi | Üretim+Stok → Satış | `ISalesSubcontractOrderBindingReadPortV1` (host adaptörü) | 🟡 adaptör yok, Satış 503 fail-closed | U5-b |
-| 3a | Üretim girdi tahsisi (URT-D21/D22) | Üretim → Stok | `manufacturing.plan-input` talep türü + müşteri malı (yalnız kendi fason siparişi) | ❌ | U3-a |
+| 3a | Üretim girdi tahsisi (URT-D21/D22) | Üretim → Stok | `manufacturing.plan-input` talep türü + müşteri malı (yalnız kendi fason siparişi) | ❌ Stok tarafı Kalan Modüller B-01; port biçimi görüşüldü (onayla aynı transaction'da stage önerildi, 2026-11-03) | Stok: Kalan Modüller B-01; Üretim bağlantısı U3-a |
 | 3b | Girdi çıkışı / iade / çıktı | Stok ↔ Üretim | `IInventoryManufacturingRealizationParticipantV1` | ✅ | – |
-| 3c | Çıktı soy ağacı (AT-050) | Üretim → Stok | genealogy kenarı (üretim türü) | 🟡 yalnız parent izi | U3-b |
-| 3d | 2. kalite / hurda etiket sınıfı (URT-D8/D14) | Üretim → Stok | `InventoryLabelClassificationV1` çıktı sınıfından | 🟡 sınıf yazılmıyor | U3-b |
-| 4a | Satın alma talebinde "üretim" kaynağı (P-01) | Üretim → Alış | talep satırı kaynak alanı | ❌ Alış'ta yok | Alış şeridi (A-2); Üretim eylemi U5-c |
+| 3c | Çıktı soy ağacı (AT-050) | Üretim → Stok | genealogy kenarı (üretim türü) | 🟡 yalnız parent izi | Stok: Kalan Modüller B-03; Üretim U3-b |
+| 3d | 2. kalite / hurda etiket sınıfı (URT-D8/D14) | Üretim → Stok | `InventoryLabelClassificationV1` çıktı sınıfından | 🟡 sınıf yazılmıyor | Stok: Kalan Modüller B-03; Üretim U3-b |
+| 4a | Satın alma talebinde "üretim" kaynağı (P-01) | Üretim → Alış | talep satırı kaynak alanı `source{kind:"Production", documentId: plan, documentLineId: plan girdisi}` | ✅ Alış'ta var (#928); kimlikler opak, Alış doğrulamaz | Üretim eylemi U5-c (plan/satır geçerliliğini Üretim doğrular) |
 | 4b | Giden fason hizmet alış siparişi | Alış → Üretim | `IPurchaseSubcontractOrderReadPortV1` | ❌ Alış A4 dalgası | Alış şeridi (A-1); Üretim dönüş dengesi U5-c |
 | 5 | Maliyet izi (DEC-PRDCT-009) | Üretim → Finans/maliyet | ham maliyet verisi (süre, hat, duruş, fire, lot maliyeti) | ❌ bilinçli ertelendi; `CostResult` kullanılmıyor | U4 (zaman kayıtları) + U5 rapor (API-42); yöntem `OPEN-008` |
 | 6 | Parametre / tolerans profilleri | Ayarlar → Üretim | `ISettingsManufacturingParameterProviderV1`, kapsamlı tolerans okuması | ✅ (#905) | – |
 | 7a | Ürün teknik snapshot'ı | Ürün → Üretim | `IProductManufacturingTechnicalSnapshotV1` | ✅ | – |
-| 7b | Paket içi adet (URT-D27), boya ürünü (URT-D25) | Ürün → Üretim | paket standardı / boya ürün sınıfı | ❌ Ürün'de kaynak yok (`ProductPackageStandardStatusV2 = Unavailable`) | U2-b: planda elle + öneri kaynağı gelince bağlanır |
+| 7b | Paket içi adet (URT-D27), boya ürünü (URT-D25) | Ürün → Üretim | paket standardı / boya ürün sınıfı | ❌ Ürün'de kaynak yok (`ProductPackageStandardStatusV2 = Unavailable`) | 🟡 U2-b1: planda elle giriliyor (`processSpec`); öneri kaynağı **ertelendi: Ürün başlayınca** |
 | 7c | Çıktı ürün/lokasyon adayları | Ürün/Org → Üretim | `IProductStockCandidatesV1`, `IOrganizationLocationCandidatesV1` | ✅ | – |
-| 8 | İş merkezi / kapasite | Organizasyon → Üretim | `IOrganizationWorkCenterPlanningReferenceV1` | ✅ referans / ❌ kapasite-vardiya | U4 |
+| 8 | İş merkezi / kapasite | Organizasyon → Üretim | `IOrganizationWorkCenterPlanningReferenceV1` | ✅ referans / ❌ kapasite-vardiya | Vardiya takvimi: Kalan Modüller B-15; Üretim kuyruğu U4 |
 | 9 | Onay kutusu (plan onayı, kapanış istisnası) | Üretim → Work | Work native approval sözleşmesi | ❌ | U5-d |
 | 10 | Entegrasyon olayları (outbox) | Üretim → herkes | `manufacturing.output.declared.v1` vb. | ❌ | U3-c (ERP-000F'e bağlı) |
 
@@ -381,7 +391,7 @@ Karşı şeritlere iletilenler (2026-11-02, send_message): Satış — S-1 bağl
 S-2 kaynak planı; Alış — A-2 talep kaynak alanı, A-1 fason alış siparişi + okuma portu (ALIS planındaki `ALIS_URETIM_DEVIR_v1.md`
 yerine `docs/handoffs/URETIM_ALIS_DEVIR_v1.md` geçerli); Finans — doğrudan bağ yok, maliyet yöntemi `OPEN-008` bekliyor.
 
-## 12. Durum (2026-11-02)
+## 12. Durum (2026-11-07)
 
 Bu bölüm iş takibidir; karar değildir.
 
@@ -393,6 +403,7 @@ Bu bölüm iş takibidir; karar değildir.
 | U0: TEK-03 metin dosyaları (#878 üzerine) | #879 | taslak PR |
 | U1-a: API-01/02 + MOD-01 — Ayarlar'da sürümlü parametre profili (başlık + tipli değer satırı), tolerans profili yazma yolu (hazırla → onayla → yayımla), URT-D6/D7/D9/D10 başlangıç değerleri katalog sürüm 0 | branch `claude/uretim-u1-parametre` | #890 (review) |
 | U1-b: Üretim parametre profilini önizleme/kayıt/onayda okur, onayda snapshot'lar (DEC-PRDCT-008); tolerans hat kapsamı (iş merkezi → proses → sürüm-0 katalog, URT-D6/D23), açık uçlu yayımlı sürümün halefle kapanması; kapanışta fire azamisi + ±kütle dengesi toleransı (URT-D5/D7), kaynak+sürüm kapanış kaydında | #905 | merge edildi; açık: planda yetkili tolerans değişikliği (yeni izin). Dilmede net en / hat hızı ve onayda etiket okuması U2-a'da |
-| U2-a (K3): API-10 plan reddi, API-11 plan iptali (`manufacturing.plans.cancel`, hiçbir role verilmedi), API-15 tek plan = tek emir (URT-D1, SQL'de tekil indeks), dilme spec'inde planda girilen net en (ana rulo eninden büyük olamaz), Dilme/Boru planında girilen hat hızı (profili ezer, onay snapshot'ında kaynak `Plan`, URT-D9), onayda Inventory'den güncel etiket durumu, plan listesinde Taslak/Onaylı/İptal filtresi; migration `AddManufacturingPlanLifecycle` | branch `claude/uretim-u2a-plan` | geliştirmede (PR açılmadı); açık: hazırlayan ≠ onaylayan henüz zorlanmıyor (plan hazırlayanı saklamıyor; tarayıcı paketleri ve SQL testleri tek kullanıcıyla onaylıyor), boru planında profil yoksa hat hızı yalnız plan içeriğinde |
+| U2-a (K3): API-10 plan reddi, API-11 plan iptali (`manufacturing.plans.cancel`, hiçbir role verilmedi), API-15 tek plan = tek emir (URT-D1, SQL'de tekil indeks), dilme spec'inde planda girilen net en (ana rulo eninden büyük olamaz), Dilme/Boru planında girilen hat hızı (profili ezer, onay snapshot'ında kaynak `Plan`, URT-D9), onayda Inventory'den güncel etiket durumu, plan listesinde Taslak/Onaylı/İptal filtresi; migration `AddManufacturingPlanLifecycle` | branch `claude/uretim-u2a-plan` | #921 merge edildi (`342fb0ed`); açık: hazırlayan ≠ onaylayan henüz zorlanmıyor (plan hazırlayanı saklamıyor; tarayıcı paketleri ve SQL testleri tek kullanıcıyla onaylıyor), boru planında profil yoksa hat hızı yalnız plan içeriğinde |
+| U2-b1 (K3): API-12 süreç ayrıntısı — Boru/Profil (paket adedi, paket içi adet, boy, birim kg), Boyama (paket, adet, profil boyu, çevre, boya cinsi/tedarikçi zorunlu, renk kodu isteğe bağlı), Soğuk Hadde (hedef kalınlık, tek adım); kayıt, revizyon, önizleme, geçmiş; motorlara plan değeri olarak girer, onay snapshot'ında kaynak `Plan`; migration `AddManufacturingPlanProcessSpecs` (Down 51189). U2-a review düzeltmeleri: README yarış cümlesi, dilme onayının Stok okuma izni bağımlılığı belgelendi, `/rejection` 403 testi, snapshot birimi profilden | #930 | merge edildi (`93769821`); paket standardı, boya ürünü ve varsayılan renk **ertelendi: Ürün/Ayarlar başlayınca** (planda elle giriş) |
 
 Sıradaki işler: U0 kalanı — FZL-01 + FZL-03 (CI doğrulamalı), TEK-01 dosya bölme, TEK-05/06 ortak altyapı, #876 merge'ünden sonra belge PR'ları.

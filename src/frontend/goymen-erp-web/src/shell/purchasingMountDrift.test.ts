@@ -33,6 +33,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestApprove)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestWithdraw)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderApprove)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderCancel)
   })
 
   it('agrees with the lane on every route and never reads a static create segment as a record id', () => {

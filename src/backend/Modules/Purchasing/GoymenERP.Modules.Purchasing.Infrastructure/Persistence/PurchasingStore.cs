@@ -322,6 +322,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 Ordered = RequireFits(line.Quantity.Value),
                 Technical = 0m,
                 Accepted = 0m,
+                Cancelled = 0m,
             });
         }
 
@@ -342,9 +343,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         RequireHash(requestHash);
         RequireCommand(commandName);
         RequireAudit(audit);
-        if (commandName != PurchasingCommands.OrderApproveV1)
+        if (!PurchasingCommands.IsOrderMutation(commandName))
         {
-            throw new ArgumentException("Yalnız onay komutu bir siparişi değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız onay ve kalan iptali komutları bir siparişi değiştirir.", nameof(commandName));
         }
 
         var companyId = RequireResolvedCompany();
@@ -398,11 +399,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         row.Status = (int)order.Status;
         row.Version = order.Version;
         row.UpdatedAtUtc = order.UpdatedAtUtc;
+        row.CancelledBy = order.Cancellation?.CancelledBy;
+        row.CancelledAtUtc = order.Cancellation?.CancelledAtUtc;
+        row.CancellationReason = order.Cancellation?.Reason;
         foreach (var lineRow in lineRows)
         {
             var line = order.Lines.Single(candidate => candidate.Id == lineRow.LineId);
             lineRow.Technical = line.TechnicalQuantity.Value;
             lineRow.Accepted = line.AcceptedQuantity.Value;
+            lineRow.Cancelled = line.CancelledQuantity.Value;
         }
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
@@ -416,6 +421,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     /// Sinan #66 5738113623 §1: the ordered quantities of the APPROVED orders' general lines bound to one request
     /// line, plus this order's, never exceed the request line's quantity. Measured in the approval's save; the
     /// request's sourcing version moves with every passing approval so a concurrent approval collides and measures again.
+    /// <para>
+    /// A1-3 (fail-closed, NEEDS-SINAN): a CANCELLED order keeps counting with its full ordered share — No.161 §2 removes the
+    /// cancelled remainder only from the future supply and the order's remaining, and does not say it re-opens the request
+    /// line's need for another supplier; until that is decided the need is not freed (no over-sourcing by cancel-and-reorder).
+    /// </para>
     /// </summary>
     private async Task RequireSharesWithinNeedAsync(PurchaseOrder order, Guid sourceRequestId, CancellationToken cancellationToken)
     {
@@ -432,8 +442,10 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         var requestLines = await dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == sourceRequestId).ToListAsync(cancellationToken);
         var approvedStatus = (int)PurchaseOrderStatus.Approved;
+        var cancelledStatus = (int)PurchaseOrderStatus.Cancelled;
         var otherApprovedOrderIds = await dbContext.Orders.AsNoTracking()
-            .Where(candidate => candidate.SourceRequestId == sourceRequestId && candidate.Status == approvedStatus && candidate.Id != order.Id)
+            .Where(candidate => candidate.SourceRequestId == sourceRequestId
+                                && (candidate.Status == approvedStatus || candidate.Status == cancelledStatus) && candidate.Id != order.Id)
             .Select(candidate => candidate.Id)
             .ToListAsync(cancellationToken);
         var generalKind = (int)PurchaseOrderLineKind.General;
@@ -720,7 +732,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             }
         }
 
-        if (row.Status == (int)PurchaseOrderStatus.Approved)
+        if (row.Status is (int)PurchaseOrderStatus.Approved or (int)PurchaseOrderStatus.Cancelled)
         {
             order.Approve(order.Version, row.UpdatedAtUtc);
         }
@@ -754,6 +766,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             expectedVersionAfter = checked(expectedVersionAfter + 1);
         }
 
+        if (row.Status == (int)PurchaseOrderStatus.Cancelled)
+        {
+            // A1-3: the cancellation follows every acceptance share (none is recorded on a cancelled order); the remainder it
+            // cancelled is rebuilt by the domain and must equal the stored Cancelled totals below.
+            order.Cancel(order.Version, row.CancelledBy ?? throw new InvalidOperationException("Kayıtlı sipariş iptalinin aktörü yok."),
+                row.CancellationReason,
+                row.CancelledAtUtc ?? throw new InvalidOperationException("Kayıtlı sipariş iptalinin zamanı yok."));
+        }
+
         if (order.Version != row.Version || order.Status != (PurchaseOrderStatus)row.Status)
         {
             throw new InvalidOperationException("Kayıtlı siparişin sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
@@ -762,7 +783,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         foreach (var line in lines)
         {
             var rebuilt = order.Lines.Single(candidate => candidate.Id == line.LineId);
-            if (rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted)
+            if (rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted
+                || rebuilt.CancelledQuantity.Value != line.Cancelled)
             {
                 throw new InvalidOperationException("Kayıtlı satır toplamları yeniden kurulan toplamlarla uyuşmuyor.");
             }
@@ -836,10 +858,14 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         status = order.Status.ToString(),
         version = order.Version,
         sourceRequestId = order.SourceRequestId,
+        // A1-3 (No.161 §2): the cancellation facts and each line's cancelled remainder are part of the audited record.
+        cancellation = order.Cancellation is { } cancellation
+            ? new { cancelledBy = cancellation.CancelledBy, cancelledAtUtc = cancellation.CancelledAtUtc, reason = cancellation.Reason }
+            : null,
         lines = order.Lines.Select(line => new
         {
             lineId = line.Id, ordered = line.Quantity.Value, technical = line.TechnicalQuantity.Value, accepted = line.AcceptedQuantity.Value,
-            sourceRequestLineId = line.SourceRequestLineId,
+            cancelled = line.CancelledQuantity.Value, sourceRequestLineId = line.SourceRequestLineId,
         }),
     }, Json);
 

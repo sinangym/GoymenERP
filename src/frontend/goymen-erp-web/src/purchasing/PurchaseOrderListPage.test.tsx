@@ -368,7 +368,7 @@ describe('PurchaseOrderListPage on the design system (PURCHASING-DS-LIST-01)', (
     const filter = screen.getByLabelText('Durum') as HTMLSelectElement
     expect(filter.tagName).toBe('SELECT')
     expect([...filter.options].map((option) => [option.value, option.textContent])).toEqual([
-      ['', 'Tümü'], ['Draft', 'Taslak'], ['Approved', 'Onaylandı'],
+      ['', 'Tümü'], ['Draft', 'Taslak'], ['Approved', 'Onaylandı'], ['Cancelled', 'Kalanı iptal edildi'],
     ])
     expect(filter.value).toBe('')
   })
@@ -997,7 +997,7 @@ describe('PurchaseOrderListPage filters in the address (PURCHASING-SUPPLIER-FILT
   it.each([
     ['a value that is not an id', '?supplierPartyId=CAR-000007'],
     ['the empty id', '?supplierPartyId=00000000-0000-0000-0000-000000000000'],
-    ['an unknown status', '?status=Cancelled'],
+    ['an unknown status', '?status=Closed'],
     ['an empty supplier', '?supplierPartyId='],
   ])('ignores %s in the address: the list is read unfiltered and shows no filter', async (_name, search) => {
     const calls = serve()
