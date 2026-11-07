@@ -83,10 +83,16 @@ public static class SalesCancellationImpactSourcesV1
     /// <summary>"aktif tahsis" — Inventory's active physical allocations (owner port <see cref="ISalesOrderAllocationReadPortV1"/>).</summary>
     public const string ActiveAllocations = "inventory.active-allocations";
 
-    /// <summary>"bağlı satın alma" — no module on main links a purchase order to a Sales order line: no source.</summary>
+    /// <summary>
+    /// "bağlı satın alma" — the Purchasing owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (MOD-03); until it is
+    /// registered: no source.
+    /// </summary>
     public const string LinkedPurchasing = "purchasing.linked-orders";
 
-    /// <summary>"bağlı üretim" — no module on main links a production plan/order to a Sales order line: no source.</summary>
+    /// <summary>
+    /// "bağlı üretim" — the Production owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (S-1, U5-a); until it is
+    /// registered: no source.
+    /// </summary>
     public const string LinkedProduction = "manufacturing.linked-orders";
 
     /// <summary>"irsaliyesiz yükleme" — Logistics's loading-instruction lines (owner port <see cref="ISalesOrderLoadingReadPortV1"/>).</summary>
