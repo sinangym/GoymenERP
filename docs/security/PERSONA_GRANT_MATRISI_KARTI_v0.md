@@ -61,7 +61,7 @@ eşlemesi" ve kartın sonundaki NEEDS-SINAN listesi.
 kapattı. **NS-13 (SAT-D204):** fatura taslağı onayını (API-33) ve SAT-D106 tolerans farkı onayını (API-35) **Muhasebe,
 Muhasebe Müdürü, Genel Müdür ve Admin** verir; taslağı hazırlayan kişi onu onaylayamaz (SAT-D88/D106, kayıt kuralı).
 **NS-14 (SAT-D205):** `settings.exchange-rates.import` (elle "şimdi çek") **Muhasebe, Muhasebe Müdürü, Genel Müdür ve
-Admin**'dedir — kuru düzeltebilen kişilerle aynı. Kartta açık `NEEDS-SINAN` hücresi kalmadı.
+Admin**'dedir — kuru düzeltebilen kişilerle aynı. Kartta açık `NEEDS-SINAN` hücresi kalmadı. *(7 Kasım 2026: Alış ek tablosunda açılan Muhasebe `purchasing.orders.read` / `price.read` çifti aynı gün EK12 ALS-D73 ile kapandı; bu cümle doğrudur.)*
 
 **Güncelleme (7 Kasım 2026, Alış EK8/EK10/EK11 — satın alma personaları):** Alış şeridinin
 [EK8](../decisions/SINAN_KARARLARI_2026-11-02_ALIS_EK8.md) kararları (ALS-D53, ALS-D54, ALS-D56) **Satın Alma Uzmanı**
@@ -402,7 +402,7 @@ yapabilir (SAT-D187, SAT-D196) ama **kendi kaydını onaylayamaz** (P6, kayıt k
 yalnız alış adlarında anlam taşıdığı için bu ek tabloyla eklendi; ana tablonun öteki bütün alış dışı satırlarında ikisi
 de yalnız SAT-D191 temel okumalarını alır, öteki her hücre **`—`** (deny-first; EK8 §3). Bu tablo ana tablonun
 `purchasing.*` satırlarına üstündür. Kaynak eşleme: EK8 §3 "Kart için not" (ALS-D53, ALS-D54, ALS-D56), EK10 §2
-(ALS-D66), EK11 §2 (ALS-D70). Hücrelerdeki *yorum* işaretleri karar dosyalarındaki yorumların aynısıdır (geri alınabilir).
+(ALS-D66), EK11 §2 (ALS-D70), EK12 §2 (ALS-D73). Hücrelerdeki *yorum* işaretleri karar dosyalarındaki yorumların aynısıdır (geri alınabilir).
 
 | İzin adı | Admin | Satın Alma Uzmanı | Satın Alma Müdürü | Satış Destek | Satış Uzmanı | Genel Müdür | Muhasebe | Muhasebe Müdürü | Sevkiyatçı | Satış Müdürü |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -410,7 +410,7 @@ de yalnız SAT-D191 temel okumalarını alır, öteki her hücre **`—`** (deny
 | `purchasing.requests.withdraw` | + | + *(ALS-D54, ALS-D47)* | + *(ALS-D54, ALS-D47)* | + *(ALS-D54, ALS-D47)* | + *(ALS-D54, ALS-D47)* | ? *(talep açarsa; yukarıdaki satıra bağlı)* | — *(ALS-D54)* | — *(ALS-D54)* | — *(EK8 §3)* | — *(EK8 §3)* |
 | `purchasing.requests.approve` | + | — *(ALS-D53)* | + *(ALS-D2, ALS-D53)* | — | — | + *(ALS-D53, SAT-D188)* | — *(ALS-D53)* | — *(ALS-D53)* | — | — *(EK8 §3)* |
 | `purchasing.orders.create` | + | + *(ALS-D53)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi; SAT-D194 benzetmesi)* | + *(kart §4)* | + *(kart, SAT-D141)* | + *(SAT-D188 soru 9)* | ? *(ana tabloda olduğu gibi)* | — *(SAT-D191)* | — | — *(SAT-D191)* |
-| `purchasing.orders.read` | + | + *(yorum: hazırlamanın gerektirdiği okuma)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi)* | + *(kart)* | + *(kart)* | + | ? *(ana tabloda olduğu gibi; price.read ile çift NEEDS-SINAN, aşağıda)* | — *(SAT-D191)* | + *(kart §4; fiyatlar `Withheld`, PRS-02 — aşağıda "engeller" 2. madde)* | — *(SAT-D191)* |
+| `purchasing.orders.read` | + | + *(yorum: hazırlamanın gerektirdiği okuma)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi)* | + *(kart)* | + *(kart)* | + | + *(ALS-D73; yalnız okuma)* | + *(ALS-D73; yalnız bu tabloda SAT-D191 `—` yerine)* | + *(kart §4; fiyatlar `Withheld`, PRS-02 — aşağıda "engeller" 2. madde)* | — *(SAT-D191)* |
 | `purchasing.orders.approve` | + | — *(ALS-D53)* | + *(ALS-D3, ALS-D53)* | **—** | **—** | + *(ALS-D53, SAT-D188)* | — *(ALS-D53)* | — *(ALS-D53)* | — | — *(SAT-D187/D188 alış)* |
 | `purchasing.orders.cancel` (A1-3, PR #932) | + *(ALS-D66)* | — *(ALS-D66)* | + *(ALS-D66)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* | + *(ALS-D66)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* |
 | `purchasing.orders.price.read` (A2a-1, PR #944) | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | **—** *(ALS-D70, PRS-02; kart §4 "fiyatları göremez")* | — *(yorum, EK11 §2: seçenek saymaz)* |
@@ -420,12 +420,12 @@ de yalnız SAT-D191 temel okumalarını alır, öteki her hücre **`—`** (deny
   "Satış Destek de görsün" seçeneğini seçti; seçenek açıklaması "alış siparişi girebilen Satış Destek ve Satış Uzmanı"
   der. Satış Müdürü sayılmadığı için `—` (yorum; geri alınabilir). Finans Uzmanı / Finans Müdürü bu satırda da `—`
   (kartın finans dışı satır kuralı).
-- **Muhasebe: `price.read` `+`, `orders.read` `?` — NEEDS-SINAN.** ALS-D70 Muhasebe'ye fiyat okumasını verir, ama
-  fiyat yalnız sipariş detayında açılır ve detaya `purchasing.orders.read` ile ulaşılır (PRS-02 açıklama izni, erişim
-  izni değil). `orders.read` olmadan `price.read` işe yaramaz. Muhasebe'nin `purchasing.orders.read` hücresi hiçbir
-  kararda bağlanmadı (ana tabloda `?`); bu çift tahminle doldurulmaz, **NEEDS-SINAN** olarak açık kalır ve o zamana
-  kadar fiilen hiçbir şey açmaz.
-- `purchasing.goods-receipts.record` (depo kabul, PRS-02): EK8 §3'te `?` / sorulmadı; bu tabloya satır eklenmedi ve
+- **Muhasebe ve Muhasebe Müdürü alış siparişini okur (ALS-D73, [EK12](../decisions/SINAN_KARARLARI_2026-11-07_ALIS_EK12.md)).**
+  Fiyat yalnız sipariş detayında açılır ve detaya `purchasing.orders.read` ile ulaşılır (PRS-02 açıklama izni, erişim
+  izni değil); ALS-D73 bu yüzden ALS-D70'in fiyat okumasını sipariş okumasıyla tamamlar. **Yalnız okuma:** oluşturma,
+  düzenleme, onay ve iptal hücreleri değişmez. Muhasebe Müdürü hücresi SAT-D191'in `—` kuralını **yalnız bu tabloda**
+  aşar (ana tablo ve öteki modüller aynen). Öneridir; gerçek grant insan kapısındadır.
+- `purchasing.goods-receipts.record` (depo kabul, PRS-02): EK8 §3'te iki satın alma personası için `?` (sorulmadı); bu tabloya satır eklenmedi ve
   deny-first altında kimseye önerilmemiş sayılır.
 - **Gerçek grant insan kapısıdır.** Bu tablodaki adlar manifestte yalnız **kayıtlıdır**; SENTETIK browser-suite
   personaları dışında kimse taşımaz. Bir kişiye hem Satın Alma Müdürü hem başka bir persona verilmesi (SAT-D187) de
@@ -665,7 +665,7 @@ SAT-D188 "bir hücre bu sınıflara açıkça girmiyorsa persona kartı PR'ında
 grubu `? NS-n` olarak işaretlendi; EK29 (SAT-D191…D195) on birini, EK32 (SAT-D202) on ikincisini (NS-11) kapattı.
 EK31/EK32 güncellemesi iki yeni grup açtı (NS-13, NS-14); EK33 (SAT-D204, SAT-D205) ikisini de kapattı.
 
-**Açık kalan: yok** (2 Kasım 2026, EK33'ten sonra). Kartta `NEEDS-SINAN` hücresi kalmadı; `?` hücreleri (kararın
+**Açık kalan: yok** (2 Kasım 2026, EK33'ten sonra; 7 Kasım 2026'da Alış ek tablosunda açılan Muhasebe okuma çifti aynı gün EK12 ALS-D73 ile kapandı). Kartta `NEEDS-SINAN` hücresi kalmadı; `?` hücreleri (kararın
 değinmediği persona) ve ad bekleyen satırlar hiçbir şey açmaz.
 
 **EK33 ile kapananlar** (EK31/EK32 güncellemesinde açılmıştı):
