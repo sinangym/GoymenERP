@@ -82,6 +82,9 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}"),
+                // SAT-D32: the user-closure control of the detail.
+                (SalesShellCapabilityProvider.CloseCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersClose}"),
                 (SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId,
                     SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}"),

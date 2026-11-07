@@ -405,6 +405,11 @@ public static class SalesDraftApiV1
     public const string ForceCloseImpactPath = "/api/v1/sales/drafts/{id}/force-close-impact";
     public const string ForceClosePath = "/api/v1/sales/drafts/{id}/force-close";
 
+    // SAT-D32 / SAT-D215: the user closure of a "kapanmaya hazır" order (POST, the close name; 200 with the detail after the
+    // change; same-key replay 200 + `Idempotency-Replayed`) and the recorded user closure (GET, the draft read). The detail
+    // wire is unchanged apart from the lifecycle `state` ("Closed", the force-closure's state; the record tells them apart).
+    public const string ClosePath = "/api/v1/sales/drafts/{id}/close";
+
     // Partial delivery (user decision 2026-09-30): the remainder change of a partly delivered line — requested (POST, the
     // quantity-write name), approved or rejected by an approver (POST, the approve name; 200 with the detail after the step,
     // same-key replay 200 + `Idempotency-Replayed`), and the lines' remainder facts with every recorded change (GET, the draft
@@ -610,6 +615,20 @@ public static class SalesDraftJson
             throw new JsonException("Invalid reason.");
         if (string.IsNullOrWhiteSpace(request.ImpactToken) || request.ImpactToken.Length > 128)
             throw new JsonException("Invalid impact token.");
+        return request;
+    }
+
+    /// <summary>
+    /// SAT-D32 / SAT-D215: the strict close body — the expected version (canonical positive integer text) and nothing else; a
+    /// reason is an unknown member (shape error).
+    /// </summary>
+    public static SalesDraftCloseRequest ReadClose(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftCloseRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
         return request;
     }
 

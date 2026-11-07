@@ -46,6 +46,9 @@ public sealed class SalesShellCapabilityProviderTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
                 ("sales.orders.cancel", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}", "sales.drafts.detail"),
+                // SAT-D32: the user-closure CONTROL of the detail (read + its own name, never the force-close name).
+                ("sales.orders.close", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersClose}", "sales.drafts.detail"),
                 ("sales.orders.customer-acceptance.record", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}", "sales.drafts.detail"),
                 ("sales.orders.delivery-schedule.write", "/satis/siparisler/:draftId",

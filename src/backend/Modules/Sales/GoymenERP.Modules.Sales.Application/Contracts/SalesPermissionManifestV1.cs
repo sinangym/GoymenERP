@@ -12,8 +12,9 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write.
-    public const int Version = 18;
+    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write; v19 (SAT-D32 /
+    // SAT-D168): sales.orders.close.
+    public const int Version = 19;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -115,6 +116,15 @@ public static class SalesPermissionManifestV1
     public const string OrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D32 / SAT-D168 (EK24) / SAT-D215 (EK37): closing a "kapanmaya hazır" order on the user's action — POST …/{id}/close
+    /// (no reason). Its own name: the create, approve, cancel and force-close names do NOT confer it and it confers none of them
+    /// (a force-close is a different act on an order that is NOT ready). Company-wide; not Critical (no approved source adds
+    /// grant-time dual control); registered, granted to no role — SAT-D168/D188/D190 name the personas (Satış Uzmanı, Satış
+    /// Müdürü, Genel Müdür, Admin), the grant itself is a human gate.
+    /// </summary>
+    public const string OrdersClose = "sales.orders.close";
+
+    /// <summary>
     /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
     /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
     /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
@@ -171,7 +181,7 @@ public static class SalesPermissionManifestV1
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }
