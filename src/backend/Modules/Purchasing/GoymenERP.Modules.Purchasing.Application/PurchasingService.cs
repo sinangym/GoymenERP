@@ -27,8 +27,9 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// verifier-before-line contract becomes an invariant here (README PUR-3 dependency_wait).</item>
 /// <item><b>Terminal refusals</b> (§7): a stale version, a wrong state, a stale product version and the
 /// Σ-shares rule at approval (Sinan #66 5738113623 §1) are recorded under the key and replayed.</item>
-/// <item><b>Not here</b>: nothing physical (receipt, kantar, stock-in are PUR-4b + Inventory T09), no
-/// price (T28), no approval policy (§8), no re-approval after a breakdown (§8).</item>
+/// <item><b>Not here</b>: nothing physical (receipt, kantar, stock-in are PUR-4b + Inventory T09), no tax, exchange
+/// rate or totals (later A2a slices; the A2a-1 line price is <c>PurchasingService.Pricing.cs</c>), no approval policy (§8),
+/// no re-approval after a breakdown (§8).</item>
 /// </list>
 /// </summary>
 public sealed partial class PurchasingService(
@@ -43,7 +44,9 @@ public sealed partial class PurchasingService(
     PurchasingServiceBindings bindings,
     TimeProvider timeProvider,
     IPurchaseGoodsReceiptTransactionV1? goodsReceipts = null,
-    IPurchaseGoodsReceiptReadsV1? receiptReads = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseGoodsReceiptReadsV1? receiptReads = null,
+    ISettingsPrerequisiteProvider? moneyProfiles = null,
+    ISettingsMoneyCandidateReaderV2? currencyCandidates = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
 {
     private const int DefaultPageSize = 50;
@@ -246,19 +249,32 @@ public sealed partial class PurchasingService(
         cancellationToken.ThrowIfCancellationRequested();
 
         var scope = await RequireAsync(bindings.CreatePermission, cancellationToken);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
         var requestHash = PurchasingRequestHash.Compute(PurchasingCommands.OrderCreateV1, request);
         var envelope = Envelope(scope, metadata, bindings.CreatePermission!);
         var replay = await FindReplayAsync(scope, bindings.CreatePermission, envelope, requestHash, PurchasingCommands.OrderCreateV1, cancellationToken);
         if (replay is not null)
         {
-            return ReplayedOrder(replay);
+            return ReplayedOrder(replay, disclosure);
         }
 
+        // A2a-1 (TEK-01): a priced line needs the order's currency; refused before any owner is asked.
+        var unpricedCurrency = request.CurrencyId is null
+            ? request.Lines.Select((line, index) => (line, index)).Where(pair => pair.line.Price is not null)
+                .Select(pair => new PurchasingFieldError($"lines[{pair.index}].price", PurchasingRuleCodes.PriceCurrencyRequired)).ToArray()
+            : [];
+        if (unpricedCurrency.Length > 0)
+        {
+            throw new PurchasingServiceException(422, "validation_failed", unpricedCurrency);
+        }
+
+        var prices = request.Lines.Select(PriceOf).ToArray();
         await RequireSupplierAsync(scope, bindings.CreatePermission, request.SupplierPartyId, request.CompanyAccountId, cancellationToken);
         var source = request.SourceRequestId is { } sourceRequestId
             ? await ReadSourceRequestAsync(scope, request, sourceRequestId, cancellationToken)
             : null;
-        var lines = new List<(PurchaseOrderLineRequest Line, string ProductVersion, Quantity Quantity)>(request.Lines.Count);
+        var money = await ResolveOrderMoneyAsync(scope, request.CurrencyId, request.EffectiveOn, cancellationToken);
+        var lines = new List<(PurchaseOrderLineRequest Line, string ProductVersion, Quantity Quantity, PurchaseOrderLinePrice? Price)>(request.Lines.Count);
         try
         {
             for (var index = 0; index < request.Lines.Count; index++)
@@ -268,12 +284,12 @@ public sealed partial class PurchasingService(
                     line.ExpectedProductVersion, line.UnitId, request.EffectiveOn, index, cancellationToken);
                 var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn, $"lines[{index}]",
                     cancellationToken);
-                lines.Add((line, productVersion, quantity));
+                lines.Add((line, productVersion, quantity, prices[index]));
             }
         }
         catch (ReplayWinnerException winner)
         {
-            return ReplayedOrder(winner.Replay);
+            return ReplayedOrder(winner.Replay, disclosure);
         }
 
         await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
@@ -285,11 +301,19 @@ public sealed partial class PurchasingService(
             stored = await store.StoreOrderAsync(envelope, requestHash, request.CompanyAccountId, request.EffectiveOn, () =>
             {
                 var order = source is { } sourced
-                    ? PurchaseOrder.CreateForRequest(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, sourced.Request.Id, now)
-                    : PurchaseOrder.Create(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, now);
-                foreach (var (line, _, quantity) in lines)
+                    ? PurchaseOrder.CreateForRequest(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, sourced.Request.Id, money, now)
+                    : PurchaseOrder.Create(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, money, now);
+                for (var index = 0; index < lines.Count; index++)
                 {
-                    order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId, now);
+                    var (line, _, quantity, price) = lines[index];
+                    try
+                    {
+                        order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId, price, now);
+                    }
+                    catch (PurchasingRuleException exception) when (price is not null && IsPriceRule(exception.Code))
+                    {
+                        throw new PurchasingServiceException(422, "validation_failed", [new($"lines[{index}].price", exception.Code)]);
+                    }
                 }
 
                 return order;
@@ -306,14 +330,14 @@ public sealed partial class PurchasingService(
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
             var won = await FindReplayAsync(scope, bindings.CreatePermission, envelope, requestHash, PurchasingCommands.OrderCreateV1, cancellationToken);
-            return won is null ? throw Store(exception) : ReplayedOrder(won);
+            return won is null ? throw Store(exception) : ReplayedOrder(won, disclosure);
         }
         catch (PurchasingStoreException exception)
         {
             throw Store(exception);
         }
 
-        return OrderResponse(stored.Order, stored.Outcome == PurchasingWriteOutcome.Replayed, stored.OriginalCorrelationId);
+        return OrderResponse(stored.Order, stored.Outcome == PurchasingWriteOutcome.Replayed, stored.OriginalCorrelationId, disclosure);
     }
 
     public async Task<PurchaseOrderResponse> ApproveOrderAsync(Guid orderId, ApprovePurchaseOrderRequest request, PurchasingCommandMetadata metadata,
@@ -323,13 +347,14 @@ public sealed partial class PurchasingService(
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
         var scope = await RequireAsync(bindings.ApprovePermission, cancellationToken);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
         var expectedVersion = ParseVersion(request.ExpectedVersion);
         var requestHash = PurchasingRequestHash.Compute(PurchasingCommands.OrderApproveV1, orderId, request);
         var envelope = Envelope(scope, metadata, bindings.ApprovePermission!);
         var replay = await FindReplayAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1, cancellationToken);
         if (replay is not null)
         {
-            return ReplayedOrder(replay);
+            return ReplayedOrder(replay, disclosure);
         }
 
         if (orderId == Guid.Empty)
@@ -348,12 +373,12 @@ public sealed partial class PurchasingService(
         catch (PurchasingVersionConflictException)
         {
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
-                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), ReplayedOrder, cancellationToken);
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNotDraft)
         {
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
-                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), ReplayedOrder, cancellationToken);
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
         catch (PurchasingRuleException exception)
         {
@@ -368,19 +393,19 @@ public sealed partial class PurchasingService(
             // A1-1 (ALS-D2, fail-closed): the source request is no longer (or not yet) APPROVED; terminal for this key (§7).
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestState,
-                    exception.Errors.Count > 0 ? exception.Errors : [new("sourceRequestId", "not_approved")]), ReplayedOrder, cancellationToken);
+                    exception.Errors.Count > 0 ? exception.Errors : [new("sourceRequestId", "not_approved")]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.RequestLineOverSourced)
         {
             // Sinan 5738113623 §1: the shares of a request line never exceed its need; terminal for this key (§7).
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestLineOverSourced,
-                    exception.Errors.Count > 0 ? exception.Errors : [new("lines", exception.Code)]), ReplayedOrder, cancellationToken);
+                    exception.Errors.Count > 0 ? exception.Errors : [new("lines", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
             var won = await FindReplayAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1, cancellationToken);
-            return won is null ? throw Store(exception) : ReplayedOrder(won);
+            return won is null ? throw Store(exception) : ReplayedOrder(won, disclosure);
         }
         catch (PurchasingStoreException exception)
         {
@@ -389,13 +414,14 @@ public sealed partial class PurchasingService(
 
         return result is null
             ? throw new PurchasingServiceException(404, "not_found")
-            : OrderResponse(result.Order, result.Outcome == PurchasingWriteOutcome.Replayed, result.OriginalCorrelationId);
+            : OrderResponse(result.Order, result.Outcome == PurchasingWriteOutcome.Replayed, result.OriginalCorrelationId, disclosure);
     }
 
     public async Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var scope = await RequireAsync(bindings.ReadPermission, cancellationToken);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
         if (orderId == Guid.Empty)
         {
             throw new PurchasingServiceException(404, "not_found");
@@ -411,7 +437,7 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        return stored is null ? throw new PurchasingServiceException(404, "not_found") : OrderDetail(stored);
+        return stored is null ? throw new PurchasingServiceException(404, "not_found") : OrderDetail(stored, disclosure);
     }
 
     public async Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default)
@@ -684,11 +710,11 @@ public sealed partial class PurchasingService(
             : throw new PurchasingServiceException(503, "service_unavailable");
     }
 
-    private static PurchaseOrderResponse ReplayedOrder(PurchasingReplay replay)
+    private static PurchaseOrderResponse ReplayedOrder(PurchasingReplay replay, string disclosure)
     {
         ThrowIfRefusal(replay);
         return replay.Order is { } order
-            ? OrderResponse(order, isReplay: true, replay.OriginalCorrelationId)
+            ? OrderResponse(order, isReplay: true, replay.OriginalCorrelationId, disclosure)
             : throw new PurchasingServiceException(503, "service_unavailable");
     }
 
@@ -918,8 +944,13 @@ public sealed partial class PurchasingService(
     private static PurchaseRequestDecisionView? Decision(PurchaseRequestDecision? decision) =>
         decision is null ? null : new PurchaseRequestDecisionView(decision.DecidedBy, decision.DecidedAtUtc, decision.Reason);
 
-    private static PurchaseOrderResponse OrderResponse(StoredPurchaseOrder stored, bool isReplay, string originalCorrelationId) =>
-        new(OrderDetail(stored), isReplay, originalCorrelationId);
+    private static PurchaseOrderResponse OrderResponse(StoredPurchaseOrder stored, bool isReplay, string originalCorrelationId, string disclosure) =>
+        new(OrderDetail(stored, disclosure), isReplay, originalCorrelationId);
+
+    /// <summary>A2a-1: the rule codes a line's price is refused with (answered on <c>lines[i].price</c>).</summary>
+    private static bool IsPriceRule(string code) => code is PurchasingRuleCodes.PriceCurrencyRequired or PurchasingRuleCodes.PriceNegative
+        or PurchasingRuleCodes.PriceScaleExceeded or PurchasingRuleCodes.PriceUnitConversionUnavailable or PurchasingRuleCodes.DiscountKindConflict
+        or PurchasingRuleCodes.DiscountPercentOutOfRange or PurchasingRuleCodes.DiscountExceedsPrice or PurchasingRuleCodes.PriceOutOfRange;
 
     private static PurchaseOrderSummaryView OrderSummary(StoredPurchaseOrder stored)
     {
@@ -928,19 +959,32 @@ public sealed partial class PurchasingService(
             order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count);
     }
 
-    private static PurchaseOrderDetailView OrderDetail(StoredPurchaseOrder stored) =>
-        new(OrderSummary(stored),
+    /// <summary>
+    /// The order as the caller may see it. A2a-1 (PRS-02): with <paramref name="disclosure"/> <c>Withheld</c> every line's price and
+    /// the "fiyat bekliyor" flag are null; the currency is not a price and stays.
+    /// </summary>
+    private static PurchaseOrderDetailView OrderDetail(StoredPurchaseOrder stored, string disclosure)
+    {
+        var visible = string.Equals(disclosure, PurchasingPriceDisclosureV1.Visible, StringComparison.Ordinal);
+        return new(OrderSummary(stored),
             [.. stored.Order.Lines.Select((line, index) => new PurchaseOrderLineView(line.Id, index + 1, line.Kind.ToString(), line.ParentLineId,
                 line.SourceRequestLineId, line.ProductId, VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity),
                 Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity))
             {
                 Cancelled = Text(line.CancelledQuantity),
+                Price = visible ? PriceView(line, stored.Order.Money) : null,
             })])
         {
+            PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
+            Currency = CurrencyView(stored.Order.Money),
+            PricePending = visible
+                ? stored.Order.Lines.Any(line => line.Kind == PurchaseOrderLineKind.General && line.Price is null)
+                : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation
                 ? new PurchaseOrderCancellationView(cancellation.CancelledBy, cancellation.CancelledAtUtc, cancellation.Reason)
                 : null,
         };
+    }
 }

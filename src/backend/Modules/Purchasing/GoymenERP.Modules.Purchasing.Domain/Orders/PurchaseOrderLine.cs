@@ -25,8 +25,9 @@ public enum PurchaseOrderLineKind
 public sealed class PurchaseOrderLine
 {
     internal PurchaseOrderLine(Guid id, Guid productId, Guid unitId, Quantity quantity, PurchaseOrderLineKind kind,
-        Guid? parentLineId, Guid? sourceRequestLineId)
+        Guid? parentLineId, Guid? sourceRequestLineId, PurchaseOrderLinePrice? price = null)
     {
+        Price = price;
         Id = id;
         ProductId = productId;
         UnitId = unitId;
@@ -49,6 +50,13 @@ public sealed class PurchaseOrderLine
     public PurchaseOrderLineKind Kind { get; }
     public Guid? ParentLineId { get; }
     public Guid? SourceRequestLineId { get; }
+
+    /// <summary>
+    /// A2a-1 (ALS-D5, ALS-D18): the line's manual price in the order's currency, or null — "fiyat bekliyor". Written once with
+    /// the line (a later price is a revision, ALS-D9/D18, A2b); a technical line never carries one (its quantity is priced on
+    /// its general line).
+    /// </summary>
+    public PurchaseOrderLinePrice? Price { get; }
 
     /// <summary>General lines only: the part already carved into technical lines.</summary>
     public Quantity TechnicalQuantity { get; private set; }

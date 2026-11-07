@@ -37,6 +37,10 @@ public sealed class PurchasingOrderReadServiceV1(
         {
             Acceptances = detail.Acceptances,
             Cancellation = detail.Cancellation,
+            // A2a-1 (PRS-02): the owner's disclosure decision is carried as answered; nothing is added or recomputed here.
+            PriceDisclosure = detail.PriceDisclosure,
+            Currency = detail.Currency,
+            PricePending = detail.PricePending,
         };
     }
 
