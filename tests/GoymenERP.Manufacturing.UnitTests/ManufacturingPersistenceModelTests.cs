@@ -132,7 +132,7 @@ public sealed class ManufacturingPersistenceModelTests
     {
         // Üretim U2-d (URT-D2): Plans.CreatedBy is the saving actor, null for a plan stored before U2-d, never empty.
         using var context = Context();
-        var plan = context.Model.FindEntityType(typeof(PlanRow))!;
+        var plan = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PlanRow))!;
         var createdBy = plan.FindProperty(nameof(PlanRow.CreatedBy))!;
         Assert.True(createdBy.IsNullable);
         Assert.Equal(ProductionPlan.PreparedByMaximumLength, createdBy.GetMaxLength());
