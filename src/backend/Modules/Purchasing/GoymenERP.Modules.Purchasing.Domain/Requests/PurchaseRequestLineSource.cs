@@ -10,7 +10,11 @@ public enum PurchaseRequestSourceKind
     /// <summary>A stock need (Inventory). No producer exists yet (ALS-D58, ALS-D61); the identity is carried as given.</summary>
     Stock = 1,
 
-    /// <summary>A sales order line's need (Sales; S-A1/MOD-03 reads it back through a later adaptor).</summary>
+    /// <summary>
+    /// A sales order line's need (Sales; S-A1/MOD-03). A1-2b (SAT-D219, SAT-D220): CLOSED for new lines until MOD-03 reads
+    /// <c>ISalesOrderLineReferencePortV1</c> (refusing a line that is not Approved) and wires the Sales linked-supply read
+    /// adaptor in the same delivery; a line recorded before A1-2b keeps this value and stays readable.
+    /// </summary>
     Sales = 2,
 
     /// <summary>A production plan input's need (Manufacturing; Üretim U5-c calls the create route with it, ALS-D16).</summary>
@@ -46,4 +50,23 @@ public sealed record PurchaseRequestLineSource
         Enum.IsDefined(kind)
             ? new PurchaseRequestLineSource(kind, Identity.Require(documentId, nameof(documentId)), Identity.Require(documentLineId, nameof(documentLineId)))
             : throw new ArgumentOutOfRangeException(nameof(kind), "Talep satırı kaynağı tanımlı değil.");
+
+    /// <summary>
+    /// A1-2b (SAT-D219, SAT-D220; fail-closed): whether a NEW line may record this kind. <see cref="PurchaseRequestSourceKind.Sales"/>
+    /// may not: Sales requires the line to be read through its reference port (only an Approved sales order line is linked) and
+    /// the linked-supply read adaptor to exist from the first recorded link, and neither exists until MOD-03. Stock and
+    /// Production are unaffected. A stored line is read back through <see cref="Of"/>, which this never narrows.
+    /// </summary>
+    public static bool IsOpenForNewLines(PurchaseRequestSourceKind kind) =>
+        kind is PurchaseRequestSourceKind.Stock or PurchaseRequestSourceKind.Production;
+
+    /// <summary>
+    /// A1-2b: the source of a line being created now — <see cref="Of"/> plus <see cref="IsOpenForNewLines"/>; a defined kind
+    /// that is closed is a <see cref="PurchasingRuleException"/> (<see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>).
+    /// </summary>
+    public static PurchaseRequestLineSource ForNewLine(PurchaseRequestSourceKind kind, Guid documentId, Guid documentLineId) =>
+        Enum.IsDefined(kind) && !IsOpenForNewLines(kind)
+            ? throw new PurchasingRuleException(PurchasingRuleCodes.RequestSourceSalesUnavailable,
+                "Satış kaynaklı talep satırı, Satış sipariş satırı doğrulaması ve bağlı tedarik okuma bağdaştırıcısı (MOD-03) gelene kadar kaydedilemez.")
+            : Of(kind, documentId, documentLineId);
 }

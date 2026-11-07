@@ -17,6 +17,16 @@ iş tanımıdır; Satış'ın kendi karar, review ve merge kapıları geçerlidi
   girdi şirket + satış siparişi (ve/veya satır) kimliği; çıktı bağlı alış kayıtları (sipariş kimliği, satır, durum,
   açık miktar) ve Satış'ın mevcut `SalesCancellationImpactStatusesV1` sözlüğüyle durum (`None` / `Present` /
   `Unreadable` / `NoSource`). Okunamayan durum "yok" (`None`) sayılmaz.
+- **A1-2b — `Sales` kaynağı MOD-03'e kadar kapalı (SAT-D219 EK38 #941, SAT-D220 EK39 #948; fail-closed):** Alış
+  talep satırına artık `source.kind = "Sales"` kaydetmez: `POST /api/v1/purchasing/requests` bu satırı 422
+  `validation_failed`, alan `lines[i].source` = `purchasing_request_source_sales_unavailable` ile reddeder (sahip
+  okumalarından önce; deneme kaydı yok). `Stock` ve `Production` değişmedi. A1-2b öncesi kaydedilmiş `Sales` satırları
+  (main'de yalnız test verisi) okunur kalır. Bu yüzden bugün Satış'ın bağ kaydı yoktur ve Alış tarafında okunamayacak
+  bir `Sales` bağı doğmaz. **MOD-03 bu kapıyı açarken aynı PR'da** (SAT-D219/D220): (1) satış sipariş satırı bağını
+  kaydetmeden önce `ISalesOrderLineReferencePortV1`'i okur ve **`Approved` olmayan** her satırı reddeder (testli;
+  kaldırılması onay bekleyen satıra yeni bağ kurulmaz, SAT-D220); (2) `ISalesOrderLinkedSupplyReadPortV1` adaptörünü
+  Api kompozisyonunda kaydeder — adaptörsüz bağ kaydı Satış'ta tür `Unreadable` sayılır ve iptal/kaldırmayı bloklar.
+  Biri olmadan diğeri açılmaz.
 - **Alış tarafı:** sözleşme merge edilince Alış, bu sözleşmeye bir **adaptör** yazar ve `purchasing.linked-orders`
   kategorisini gerçek cevaba çevirir (plan A4). Sözleşme dosyasına Alış dokunmaz; adaptör kaydı Api kompozisyonunda.
   Alış'ta satış siparişi bağı (talep kaynağı, API-02) bu adaptörün veri kaynağıdır.

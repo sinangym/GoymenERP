@@ -83,6 +83,15 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   Sales adaptor (S-A1/MOD-03) and the Üretim action (A-2/U5-c) will need; its Down refuses (`THROW 51167`) while any line
   carries a source (dropping the columns would silently turn it manual). The P-01 form opens manual requests only; the
   detail and list show the source read-only. The plan's "istenen tarih" (requested date) of API-02 is not in this slice.
+  **A1-2b — `Sales` closed for new lines until MOD-03 (Sales SAT-D219, SAT-D220; fail-closed):** a new line with
+  `source.kind` `Sales` is refused before any owner read with 422 `validation_failed`, field `lines[i].source` =
+  `purchasing_request_source_sales_unavailable` (no attempt recorded, so the same key may be retried with a corrected
+  body); the domain carries the same rule (`PurchaseRequestLineSource.ForNewLine` / `IsOpenForNewLines`), while stored
+  lines are rebuilt through `Of`, so a `Sales` line recorded before A1-2b stays readable. `Sales` is still a well-formed
+  kind on the wire (strict JSON unchanged); `Stock`, `Production` and manual lines, their content hashes and the OpenAPI
+  contract are unchanged; no migration. MOD-03 reopens it only together with reading `ISalesOrderLineReferencePortV1`
+  (refusing every sales order line that is not `Approved`) and wiring the `ISalesOrderLinkedSupplyReadPortV1` adaptor in
+  the same delivery — a link without the adaptor reads as `Unreadable` in Sales and blocks its cancellation/removal.
 - **Order creation:** an order is created with or without a source request (`CreatePurchaseOrderRequest.SourceRequestId`
   is optional); when given, the request must be **Approved** (A1-1, ALS-D2/ALS-D16; 409 `purchasing_request_state`,
   field `sourceRequestId` = `not_approved`) and of the same company (`PurchasingService.ReadSourceRequestAsync`). An

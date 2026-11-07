@@ -31,6 +31,12 @@ public static class PurchasingRuleCodes
     public const string RequestNotSubmitted = "purchasing_request_not_submitted";
     public const string RequestWithoutLines = "purchasing_request_without_lines";
 
+    /// <summary>
+    /// A1-2b (SAT-D219, SAT-D220; fail-closed): a new request line cannot record a Sales source until MOD-03 validates it through
+    /// the Sales order line reference port and wires the linked-supply read adaptor in the same delivery.
+    /// </summary>
+    public const string RequestSourceSalesUnavailable = "purchasing_request_source_sales_unavailable";
+
     /// <summary>A1-1 (ALS-D2, ALS-D16): an order is opened only for an APPROVED request.</summary>
     public const string RequestNotApproved = "purchasing_request_not_approved";
 
