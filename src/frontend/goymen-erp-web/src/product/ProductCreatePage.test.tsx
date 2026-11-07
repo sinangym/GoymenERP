@@ -1285,6 +1285,75 @@ describe('technical card: fixed family facts and the three open unit roles (P03.
     expect(post.references.units).toEqual({ stock: KG })
   })
 
+  /**
+   * P03.2: the accepted GDC templates (`ProductInitialTechnicalDefinitionV1`). The cut-sheet one adds a required
+   * `length-mm` with role `length`; the coil/strip one has no length field at all.
+   */
+  const measure = (key: string, role: string) => ({ key, kind: 'measureMillimetre', role, required: true, dictionary: null,
+    allowsCandidate: false, appliesWhenField: null, appliesWhenCode: null, parentField: null })
+  const gdcOptions = (fields: readonly unknown[]) => referenceOptions({
+    templates: [{ id: TEMPLATE, version: '1', displayName: 'GDC Sıcak Haddelenmiş Kesilmiş Sac/Levha Teknik Kartı', fields }],
+    familyFacts: [{ id: FAMILY_FLAT, code: 'HR-SHEET', displayName: 'Kesilmiş sac/levha', cins: 'Metal', tur: 'Sac', tip: 'Levha',
+      templateId: TEMPLATE, templateVersion: '1' }],
+    dictionaries: [],
+    units: [{ id: KG, displayName: 'Kilogram', symbol: 'kg', isKilogram: true }],
+  })
+  const CUT_SHEET = [measure('thickness-mm', 'thickness'), measure('width-mm', 'width'), measure('length-mm', 'length')]
+  const COIL = [measure('thickness-mm', 'thickness'), measure('width-mm', 'width')]
+
+  async function chooseFamily() {
+    renderProductApp('/urun/yeni')
+    await screen.findByRole('heading', { name: 'Yeni ürün' })
+    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Kesilmiş sac 3 mm')
+    await screen.findByRole('option', { name: /Sac \(SAC\)/ })
+    await userEvent.selectOptions(screen.getByLabelText(/Kod grubu/), GROUP_SAC)
+    await screen.findByRole('option', { name: 'Soğuk hadde' })
+    await userEvent.selectOptions(screen.getByLabelText('Ürün ailesi', { exact: false }), FAMILY_FLAT)
+  }
+
+  it('names the cut sheet’s nominal thickness, width and length in Turkish and sends the typed digits', async () => {
+    const { calls } = installFetch({ capabilities: [PRODUCT_CAPABILITY.productsCreate], onOptions: () => json(gdcOptions(CUT_SHEET)) })
+    await chooseFamily()
+    const labels = ['Nominal kalınlık (mm) *', 'Nominal en (mm) *', 'Nominal boy (mm) *']
+    for (const label of labels) expect(screen.getByLabelText(label)).toBeTruthy()
+    // The machine key is never the visible name.
+    expect(screen.queryByText(/length-mm|thickness-mm|width-mm/)).toBeNull()
+    await userEvent.type(screen.getByLabelText(labels[0]), '3')
+    await userEvent.type(screen.getByLabelText(labels[1]), '1500')
+    await userEvent.type(screen.getByLabelText(labels[2]), '2500,125')
+    await userEvent.selectOptions(screen.getByLabelText('Stok birimi (kg)'), KG)
+    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await screen.findByRole('heading', { name: 'Taslak kaydedildi' })
+    const post = JSON.parse(calls.find(c => c.method === 'POST')!.body!)
+    expect(post.references.attributes).toEqual({ 'thickness-mm': 3, 'width-mm': 1500, 'length-mm': 2500.125 })
+  })
+
+  it('offers no piece length for a coil or strip family', async () => {
+    installFetch({ capabilities: [PRODUCT_CAPABILITY.productsCreate], onOptions: () => json(gdcOptions(COIL)) })
+    await chooseFamily()
+    expect(screen.getByLabelText('Nominal kalınlık (mm) *')).toBeTruthy()
+    expect(screen.getByLabelText('Nominal en (mm) *')).toBeTruthy()
+    expect(screen.queryByLabelText(/Nominal boy/)).toBeNull()
+  })
+
+  it('shows the server’s family rule on the length field in Turkish, keeping what was typed', async () => {
+    installFetch({
+      capabilities: [PRODUCT_CAPABILITY.productsCreate],
+      onOptions: () => json(gdcOptions(CUT_SHEET)),
+      onCreate: () => json({ code: 'validation_failed', errors: [
+        { field: 'references.attributes.length-mm', code: 'family_invalid_value' },
+      ] }, 400),
+    })
+    await chooseFamily()
+    await userEvent.type(screen.getByLabelText('Nominal kalınlık (mm) *'), '3')
+    await userEvent.type(screen.getByLabelText('Nominal en (mm) *'), '1500')
+    await userEvent.type(screen.getByLabelText('Nominal boy (mm) *'), '2500')
+    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    expect(await screen.findByText('Değer geçersiz; sıfırdan büyük bir ölçü yazın.')).toBeTruthy()
+    expect((screen.getByLabelText('Nominal boy (mm) *') as HTMLInputElement).value).toBe('2500')
+    expect(screen.queryByText('Sunucu bu alanı reddetti.')).toBeNull()
+  })
+
   it('shows no family facts while the family catalogue is unavailable', async () => {
     installFetch({ capabilities: [PRODUCT_CAPABILITY.productsCreate],
       onOptions: () => json({ ...technicalOptions(), unavailableCatalogs: ['families'] }) })
