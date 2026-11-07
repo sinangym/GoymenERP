@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain.Orders;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
@@ -94,6 +95,30 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
     /// </summary>
     internal const string OrderLineSharesCheck =
         "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]";
+
+    /// <summary>
+    /// A2a-1 (TEK-01): the order's money snapshot is all five facts or none — a non-empty currency and profile, a non-blank code, a
+    /// version from 1 and a scale within System.Decimal's 0..28. A CHECK passes on UNKNOWN, so every column is tested with IS [NOT] NULL.
+    /// </summary>
+    internal const string OrderMoneyCheck =
+        "([CurrencyId] IS NULL AND [CurrencyCode] IS NULL AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [MoneyScale] IS NULL) "
+        + "OR ([CurrencyId] IS NOT NULL AND [CurrencyId] <> " + EmptyGuid + " AND [CurrencyCode] IS NOT NULL AND LEN([CurrencyCode]) > 0 "
+        + "AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> " + EmptyGuid + " AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] >= 1 "
+        + "AND [MoneyScale] IS NOT NULL AND [MoneyScale] >= 0 AND [MoneyScale] <= 28)";
+
+    /// <summary>
+    /// A2a-1 (ALS-D5, ALS-D18): a line is unpriced (all four price columns null) or a GENERAL line with a unit price of zero or more
+    /// (an explicit 0 is a price, Sinan #66 6704170096), a
+    /// non-empty price unit and at most one discount — a percent in 0..100 or an amount in 0..unit price. That a priced line's
+    /// order has a currency spans two tables and is the domain's rule (a CHECK cannot read the header); the price unit equal to
+    /// the line's unit is the domain's too (ALS-D51: a published conversion may lift it without a migration).
+    /// </summary>
+    internal const string OrderLinePriceCheck =
+        "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) "
+        + "OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> " + EmptyGuid + " "
+        + "AND ([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL) "
+        + "AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) "
+        + "AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))";
 
     /// <summary>One create attempt per stored order; the approve command's attempts share the order id.</summary>
     internal static readonly string OrderCreateAttemptFilter =
@@ -217,6 +242,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseOrders_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
             // A1-3 (No.161 §2): the cancellation facts match the status.
             table.HasCheckConstraint("CK_PurchaseOrders_Cancellation", OrderCancellationCheck);
+            // A2a-1 (TEK-01): the money snapshot is complete or absent.
+            table.HasCheckConstraint("CK_PurchaseOrders_Money", OrderMoneyCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -228,6 +255,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CancelledBy).HasMaxLength(128);
         entity.Property(x => x.CancellationReason).HasMaxLength(4000);
+        entity.Property(x => x.CurrencyCode).HasMaxLength(PurchaseOrderMoney.MaximumCurrencyCodeLength);
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_Status_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.SourceRequestId }).HasDatabaseName("IX_PurchaseOrders_CompanyId_SourceRequestId");
@@ -254,6 +282,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                 "([Kind] = 1 AND [ParentLineId] IS NULL) OR ([Kind] = 2 AND [ParentLineId] IS NOT NULL)");
             // §7.2 / §13: technical slices, the accepted share and (A1-3) the cancelled remainder never exceed the first commitment.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Shares", OrderLineSharesCheck);
+            // A2a-1 (ALS-D5, ALS-D18): unpriced, or a general line with a price ≥ 0 and at most one bounded discount.
+            table.HasCheckConstraint("CK_PurchaseOrderLines_Price", OrderLinePriceCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
         entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId })
@@ -269,6 +299,11 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         {
             entity.Property<decimal>(quantity).HasPrecision(18, 3);
         }
+
+        // A2a-1: decimal(24,6) holds 18 integer digits and PurchaseOrderMoney.MaximumPriceScale decimals; the domain refuses wider values.
+        entity.Property(x => x.UnitPrice).HasPrecision(24, PurchaseOrderMoney.MaximumPriceScale);
+        entity.Property(x => x.DiscountAmount).HasPrecision(24, PurchaseOrderMoney.MaximumPriceScale);
+        entity.Property(x => x.DiscountPercent).HasPrecision(9, PurchaseOrderLinePrice.PercentScale);
 
         entity.HasOne<PurchaseOrderRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.OrderId })

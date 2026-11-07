@@ -140,9 +140,17 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         string payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         // A1-3 (API-10) adds "cancellation" to every detail; it is null while the remainder is not cancelled.
-        Assert.Equal(["order", "lines", "acceptances", "cancellation"],
+        // A2a-1 (PRS-02) adds the price disclosure, the currency and "fiyat bekliyor". This reader holds only
+        // purchasing.orders.read (not purchasing.orders.price.read): the prices are Withheld, so "fiyat bekliyor" and every line's
+        // price are null; the order was opened without a currency.
+        Assert.Equal(["order", "lines", "acceptances", "cancellation", "priceDisclosure", "currency", "pricePending"],
             document.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
         Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("cancellation").ValueKind);
+        Assert.Equal("Withheld", document.RootElement.GetProperty("priceDisclosure").GetString());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("currency").ValueKind);
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("pricePending").ValueKind);
+        Assert.All(document.RootElement.GetProperty("lines").EnumerateArray(),
+            line => Assert.Equal(JsonValueKind.Null, line.GetProperty("price").ValueKind));
         return JsonSerializer.Deserialize<PurchaseOrderDetailView>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidOperationException("Native purchase order detail payload could not be decoded.");
     }

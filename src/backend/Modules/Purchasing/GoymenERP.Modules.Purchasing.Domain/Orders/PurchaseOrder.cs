@@ -20,7 +20,9 @@ public enum PurchaseOrderStatus
 /// order is FUTURE supply: it is not physical stock and it books nothing in Inventory. What this
 /// record tracks is shares only — ordered, broken down into technical lines, accepted, remaining.
 /// The physical receipt, its lot/label and the stock movement belong to Inventory (T09), and a
-/// second allocation engine is deliberately not built here. Price, tax and currency are T28.
+/// second allocation engine is deliberately not built here. A2a-1 (TEK-01, ALS-D5): the order carries one currency (its Settings
+/// money profile, <see cref="Money"/>) and each general line an optional manual price with a discount; tax, exchange rate, payment
+/// plan and totals are later A2a slices.
 /// Approval here is a state transition only; which approvals a purchase needs is policy (§8)
 /// and is not chosen by this type.
 /// <para>
@@ -34,8 +36,10 @@ public sealed class PurchaseOrder
     private readonly List<PurchaseOrderLine> lines = [];
     private readonly List<PurchaseAcceptanceShare> acceptances = [];
 
-    private PurchaseOrder(Guid id, Guid companyId, Guid supplierPartyId, Guid? sourceRequestId, DateTimeOffset now)
+    private PurchaseOrder(Guid id, Guid companyId, Guid supplierPartyId, Guid? sourceRequestId, DateTimeOffset now,
+        PurchaseOrderMoney? money = null)
     {
+        Money = money;
         Id = Identity.Require(id, nameof(id));
         CompanyId = Identity.Require(companyId, nameof(companyId));
         SupplierPartyId = Identity.Require(supplierPartyId, nameof(supplierPartyId));
@@ -54,6 +58,13 @@ public sealed class PurchaseOrder
     public Guid SupplierPartyId { get; }
     public Guid? SourceRequestId { get; }
     public PurchaseOrderStatus Status { get; private set; } = PurchaseOrderStatus.Draft;
+
+    /// <summary>
+    /// A2a-1 (TEK-01): the order's currency as the Settings money profile verified at opening, or null for an order opened
+    /// without one (every line then "fiyat bekliyor", ALS-D18). Set once with the order; never changed here (a currency change is
+    /// a header revision, API-12/A2b).
+    /// </summary>
+    public PurchaseOrderMoney? Money { get; }
     public long Version { get; private set; } = 1;
 
     /// <summary>A1-3 (No.161 §2): who cancelled the unaccepted remainder, when and why; null until <see cref="Cancel"/>.</summary>
@@ -70,6 +81,10 @@ public sealed class PurchaseOrder
     public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, DateTimeOffset now) =>
         new(id, companyId, supplierPartyId, null, now);
 
+    /// <summary>A2a-1: an order opened in <paramref name="money"/>'s currency (null: no currency; no line may then be priced).</summary>
+    public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, PurchaseOrderMoney? money, DateTimeOffset now) =>
+        new(id, companyId, supplierPartyId, null, now, money);
+
     /// <summary>
     /// PUR-4a: an order opened towards a supplier for ONE request (A1-1: an APPROVED one, read by the service), whose lines bind to that request's
     /// lines at the quantity this supplier takes (multi-sourcing, Sinan #66 5738113623 §1: a request line may
@@ -78,6 +93,11 @@ public sealed class PurchaseOrder
     /// </summary>
     public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, DateTimeOffset now) =>
         new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now);
+
+    /// <summary>A2a-1: <see cref="CreateForRequest(Guid, Guid, Guid, Guid, DateTimeOffset)"/> in <paramref name="money"/>'s currency.</summary>
+    public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, PurchaseOrderMoney? money,
+        DateTimeOffset now) =>
+        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now, money);
 
     /// <summary>
     /// Sources an order from an APPROVED request of the SAME company (A1-1, ALS-D2/ALS-D16: an order is opened only
@@ -115,7 +135,15 @@ public sealed class PurchaseOrder
     /// is bound at most once per order (<see cref="PurchasingRuleCodes.DuplicateSourceLine"/>).
     /// </summary>
     public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, Guid? sourceRequestLineId,
-        DateTimeOffset now)
+        DateTimeOffset now) =>
+        AddLine(expectedVersion, lineId, productId, unitId, ordered, sourceRequestLineId, price: null, now);
+
+    /// <summary>
+    /// A2a-1 (TEK-01, ALS-D5, ALS-D18): a general line with an optional manual price (see <see cref="RequirePrice"/>); without one
+    /// the line is "fiyat bekliyor" and the order is still approvable and receivable (ALS-D18).
+    /// </summary>
+    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, Guid? sourceRequestLineId,
+        PurchaseOrderLinePrice? price, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak siparişe satır eklenebilir.");
@@ -144,7 +172,12 @@ public sealed class PurchaseOrder
         }
 
         RequireNewLineId(lineId);
-        var line = new PurchaseOrderLine(lineId, productId, unitId, ordered, PurchaseOrderLineKind.General, null, sourceRequestLineId);
+        if (price is not null)
+        {
+            RequirePrice(price, unitId, ordered);
+        }
+
+        var line = new PurchaseOrderLine(lineId, productId, unitId, ordered, PurchaseOrderLineKind.General, null, sourceRequestLineId, price);
         lines.Add(line);
         Touch(now);
         return line;
@@ -301,6 +334,85 @@ public sealed class PurchaseOrder
 
     /// <summary>A1-3: the actor column's bound.</summary>
     public const int MaximumActorLength = 128;
+
+    /// <summary>
+    /// A2a-1: the price rules, all refused with a stable code and never repaired — the order has a currency
+    /// (<see cref="PurchasingRuleCodes.PriceCurrencyRequired"/>); the unit price is zero or more — an explicit 0 is a price whose
+    /// line amount is 0, kept apart from no price ("fiyat bekliyor", ALS-D18; Sinan #66 6704170096), and on a zero price a discount
+    /// can only be a percent or a zero amount (any positive amount exceeds the price: fail-closed, never a negative net); the price unit is the line's entry unit, because no conversion is published yet (ALS-D51/D58/D60,
+    /// <see cref="PurchasingRuleCodes.PriceUnitConversionUnavailable"/>); the unit price and a discount amount carry at most the
+    /// money profile's decimals (Ö2, never rounded) and fit the columns; a discount is a percent (0..100) OR an amount
+    /// (0..unit price); and both the net unit price and the line amount are computable exactly at write time (#944 review A P2:
+    /// a read never meets a price it cannot compute). No minimum price, margin or discount ceiling is decided for
+    /// purchasing (ALS-D5 "elle"), so none is invented.
+    /// </summary>
+    private void RequirePrice(PurchaseOrderLinePrice price, Guid unitId, Quantity ordered)
+    {
+        if (Money is not { } money)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceCurrencyRequired, "Fiyatlı satır siparişin para birimini ister.");
+        }
+
+        Identity.Require(price.PriceUnitId, nameof(price));
+        if (price.UnitPrice < 0m)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceNegative,
+                "Birim fiyat negatif olamaz; fiyatı bilinmeyen satır fiyatsız bırakılır, açık 0 fiyat ayrı bir değerdir.");
+        }
+
+        if (price.PriceUnitId != unitId)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceUnitConversionUnavailable,
+                "Fiyat birimi satırın giriş birimi olmalıdır; birim çevrimi henüz yayımlanmadı, tutar hesaplanamıyor.");
+        }
+
+        RequireMoneyText(price.UnitPrice, money.PriceScale);
+        if (price.DiscountPercent is not null && price.DiscountAmount is not null)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.DiscountKindConflict, "İskonto ya yüzde ya tutar olarak verilir; ikisi birden verilmez.");
+        }
+
+        if (price.DiscountPercent is { } percent
+            && (percent < 0m || percent > 100m || BuildingBlocks.Monetary.Money.SignificantDecimals(percent) > PurchaseOrderLinePrice.PercentScale))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.DiscountPercentOutOfRange,
+                $"İskonto yüzdesi 0 ile 100 arasında ve en fazla {PurchaseOrderLinePrice.PercentScale} ondalık olmalıdır.");
+        }
+
+        if (price.DiscountAmount is { } amount)
+        {
+            if (amount < 0m || amount > price.UnitPrice)
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.DiscountExceedsPrice, "İskonto tutarı negatif olamaz ve birim fiyatı aşamaz.");
+            }
+
+            RequireMoneyText(amount, money.PriceScale);
+        }
+
+        try
+        {
+            _ = price.NetUnitPrice;
+            _ = price.LineAmount(ordered.Value, money);
+        }
+        catch (OverflowException)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceOutOfRange, "Fiyat, miktar ve iskonto hesabı decimal sınırını aşıyor.");
+        }
+    }
+
+    private static void RequireMoneyText(decimal value, int scale)
+    {
+        if (BuildingBlocks.Monetary.Money.SignificantDecimals(value) > scale)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceScaleExceeded,
+                $"Tutar en fazla {scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+        }
+
+        if (decimal.Truncate(decimal.Abs(value)).ToString(System.Globalization.CultureInfo.InvariantCulture).Length > PurchaseOrderLinePrice.MaximumIntegerDigits)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.PriceOutOfRange, "Tutar saklanan alanın tam sayı basamağını aşıyor.");
+        }
+    }
 
     /// <summary>What is still expected from the supplier in one unit: future supply, never stock.</summary>
     public Quantity RemainingCommitment(QuantityUnit unit) =>

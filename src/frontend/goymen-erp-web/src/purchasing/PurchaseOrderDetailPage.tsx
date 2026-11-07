@@ -22,10 +22,11 @@ import { CAPABILITY } from '../shell/capabilities'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
-import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
+import { StatusIndicator } from '../ui/StatusIndicator'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
-import { ORDER_CANCELLATION_TEXT } from './purchasingText'
-import type { PurchaseOrderStatus } from './contract'
+import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
+import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
+import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
 
 const HEADING_ID = 'purchase-order-detail-heading'
 
@@ -81,8 +82,30 @@ const LINE_COLUMNS = [
   { name: T.ordered, numeric: true }, { name: T.technical, numeric: true }, { name: T.committed, numeric: true },
   { name: T.accepted, numeric: true }, { name: T.cancelledShare, numeric: true }, { name: T.remaining, numeric: true },
 ] as const
-const STATUS_TONE: Record<PurchaseOrderStatus, StatusTone> = { Draft: 'warning', Approved: 'success', Cancelled: 'neutral' }
-const STATUS_TEXT: Record<PurchaseOrderStatus, string> = { Draft: T.draft, Approved: T.approved, Cancelled: T.cancelledStatus }
+/** A2a-1 (API-20): drawn only when the server discloses the prices (PRS-02); the values are the server's exact texts. */
+const PRICE_COLUMNS = [
+  { name: T.unitPrice, numeric: true }, { name: T.discount, numeric: true }, { name: T.netUnitPrice, numeric: true },
+  { name: T.lineAmount, numeric: true },
+] as const
+
+/** A2a-1: one line's price cells; a general line without a price is "fiyat bekliyor", a technical line is priced on its general line. */
+function PriceCells({ line, currency }: { readonly line: PurchaseOrderLine; readonly currency: PurchaseOrderCurrency | null }) {
+  const price = line.price ?? null
+  if (price === null || currency === null) {
+    const text = line.kind === 'Technical' ? T.technicalPriceCell : T.pricePendingCell
+    return <>{PRICE_COLUMNS.map((column) => <Cell key={column.name} label={column.name} numeric>{text}</Cell>)}</>
+  }
+  const discount = price.discountPercent !== null
+    ? T.discountPercentValue(price.discountPercent)
+    : price.discountAmount !== null ? T.money(price.discountAmount, currency.currencyCode) : T.noDiscount
+  return <>
+    <Cell label={T.unitPrice} numeric>{T.money(price.unitPrice, currency.currencyCode)}</Cell>
+    <Cell label={T.discount} numeric>{discount}</Cell>
+    <Cell label={T.netUnitPrice} numeric>{T.money(price.netUnitPrice, currency.currencyCode)}</Cell>
+    <Cell label={T.lineAmount} numeric>{T.money(price.lineAmount, currency.currencyCode)}</Cell>
+  </>
+}
+
 const ACCEPTANCE_COLUMNS = [
   { name: T.acceptanceId }, { name: T.lineNo }, { name: T.quantity, numeric: true }, { name: T.recordedAtUtc },
 ] as const
@@ -180,6 +203,9 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />)
   const { order, lines, acceptances } = state.data
   const cancellation = state.data.cancellation ?? null
+  // A2a-1 (PRS-02): prices are drawn only when the server says Visible; a body from before A2a-1 carries none.
+  const pricesVisible = state.data.priceDisclosure === 'Visible'
+  const currency = state.data.currency ?? null
   const isCurrentDetail = order.id === orderId && order.companyId === companyId
   const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
   const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
@@ -195,6 +221,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         <div><dt>{T.orderId}</dt><dd className={styles.identifier}>{order.id}</dd></div>
         <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
         <div><dt>{T.businessDate}</dt><dd><time dateTime={order.effectiveOn}>{formatBusinessDate(order.effectiveOn)}</time></dd></div>
+        {state.data.priceDisclosure === undefined ? null : <div><dt>{T.currency}</dt><dd>{currency === null ? T.currencyNone : currency.currencyCode}</dd></div>}
         <div><dt>{T.sourceRequest}</dt><dd className={styles.identifier}>{order.sourceRequestId === null ? T.sourceNotLinked : canReadSourceRequest && namespace !== null && order.id === orderId && order.companyId === companyId ? <Link className={styles.link} to={purchaseRequestDetailPath(order.sourceRequestId)} state={{ ns: namespace, requestId: order.sourceRequestId, orderId: order.id }}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div>
       </dl>
       <h3>{T.supplierHeading}</h3>
@@ -206,7 +233,9 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     </section>
     <section className={styles.section} aria-labelledby="purchase-order-lines-heading" data-testid="purchase-order-lines">
       <h2 id="purchase-order-lines-heading">{T.linesHeading}</h2>
-      <RecordTable label={T.linesCaption} columns={LINE_COLUMNS}>
+      {state.data.priceDisclosure === 'Withheld' ? <p data-testid="purchase-order-prices-withheld">{T.pricesWithheld}</p> : null}
+      {pricesVisible && state.data.pricePending === true ? <p role="status" className={styles.warning} data-testid="purchase-order-price-pending">{T.pricePending}</p> : null}
+      <RecordTable label={T.linesCaption} columns={pricesVisible ? [...LINE_COLUMNS, ...PRICE_COLUMNS] : LINE_COLUMNS}>
         {lines.map((line) => <tr key={line.lineId} role="row" data-testid={`purchase-order-line-${line.lineNo}`}>
           <Cell label={LINE_NO}>{line.lineNo}</Cell>
           <Cell label={T.productId} identifier>{line.productId}</Cell>
@@ -217,6 +246,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
           <Cell label={T.accepted} numeric>{line.accepted}</Cell>
           <Cell label={T.cancelledShare} numeric>{line.cancelled ?? '0'}</Cell>
           <Cell label={T.remaining} numeric>{line.remaining}</Cell>
+          {pricesVisible ? <PriceCells line={line} currency={currency} /> : null}
         </tr>)}
       </RecordTable>
     </section>
@@ -266,5 +296,5 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       ? <div className={styles.section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
           binding={namespace} attemptBinding={receiptAttempt} detail={state.data} onRecorded={() => void query.refetch()} /></div>
       : null}
-  </>, <StatusIndicator className={styles.status} tone={STATUS_TONE[order.status]}>{STATUS_TEXT[order.status]}</StatusIndicator>)
+  </>, <StatusIndicator className={styles.status} tone={PURCHASE_ORDER_STATUS_TONE[order.status]}>{PURCHASE_ORDER_STATUS_LABEL[order.status]}</StatusIndicator>)
 }
