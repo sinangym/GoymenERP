@@ -240,6 +240,69 @@ public sealed class PurchaseOrderPricingTests
         Assert.Throws<InvalidOperationException>(() => PurchasingStore.RestoreOrder(header, [line, technical]));
     }
 
+    // ---- A2a-1c (ALS-D72): the unit-price scale --------------------------------------------------------------------------------
+
+    [Fact]
+    public void A_unit_price_scale_of_4_takes_four_decimals_refuses_a_fifth_and_still_rounds_the_line_amount_once_to_the_amount_scale()
+    {
+        var lira4 = PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 2, unitPriceScale: 4);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, lira4, At);
+        Assert.Equal((4, (int?)4, 2), (lira4.PriceScale, lira4.UnitPriceScale, lira4.Scale));
+
+        // 41.2575 x 1250.5 = 51592.50375 -> 51592.50 (once, half away from zero, SAT-D11); the net is never rounded (SAT-D76).
+        var line = order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1250.5m), null, new PurchaseOrderLinePrice(41.2575m, Kg), At);
+        Assert.Equal((41.2575m, 51592.50m), (line.Price!.NetUnitPrice, line.Price.LineAmount(line.Quantity.Value, lira4)));
+        Assert.Equal(CommercialLinePriceCalculator.LineAmount(1250.5m, 41.2575m, null, null, 2), line.Price.LineAmount(line.Quantity.Value, lira4));
+
+        // A discount amount is a per-unit amount taken from the unit price: the same four decimals.
+        order.AddLine(2, Guid.NewGuid(), Product, Kg, Kilos(1m), null, new PurchaseOrderLinePrice(10.1234m, Kg, null, 0.0001m), At);
+        foreach (var price in new[] { new PurchaseOrderLinePrice(10.12345m, Kg), new PurchaseOrderLinePrice(10m, Kg, null, 0.00001m) })
+        {
+            var refused = Assert.Throws<PurchasingRuleException>(() => order.AddLine(order.Version, Guid.NewGuid(), Product, Kg, Kilos(1m), null, price, At));
+            Assert.Equal(PurchasingRuleCodes.PriceScaleExceeded, refused.Code);
+        }
+    }
+
+    [Fact]
+    public void Without_a_unit_price_scale_the_unit_price_keeps_the_amount_scale_and_a_wide_one_is_capped_by_the_columns()
+    {
+        // A legacy (A2a-1) snapshot or a profile that answers none: the amount scale, as before.
+        Assert.Equal((2, (int?)null), (Lira.PriceScale, Lira.UnitPriceScale));
+        var legacy = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        Assert.Equal(PurchasingRuleCodes.PriceScaleExceeded, Assert.Throws<PurchasingRuleException>(() =>
+            legacy.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1m), null, new PurchaseOrderLinePrice(10.123m, Kg), At)).Code);
+
+        // A unit-price scale wider than decimal(24,6) is capped at the columns' six decimals.
+        Assert.Equal(6, PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 2, unitPriceScale: 9).PriceScale);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 2, unitPriceScale: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 2, unitPriceScale: 29));
+    }
+
+    [Fact]
+    public void A_stored_unit_price_scale_is_rebuilt_and_a_four_decimal_price_is_rebuilt_through_the_domain()
+    {
+        var orderId = Guid.NewGuid();
+        var header = new PurchaseOrderRow
+        {
+            Id = orderId, CompanyId = Company, SupplierPartyId = Supplier, CompanyAccountId = Guid.NewGuid(), Status = 1, Version = 2,
+            EffectiveOn = new DateOnly(2026, 11, 7), CreatedAtUtc = At, UpdatedAtUtc = At, CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
+            CurrencyId = Currency, CurrencyCode = "TRY", MoneyProfileId = Profile, MoneyProfileVersion = 1, MoneyScale = 2, UnitPriceScale = 4,
+        };
+        var line = new PurchaseOrderLineRow
+        {
+            CompanyId = Company, OrderId = orderId, LineNo = 1, LineId = Guid.NewGuid(), Kind = 1, ProductId = Product, ProductVersion = "7", UnitId = Kg,
+            UnitIsKilogram = true, Ordered = 10m, UnitPrice = 41.2575m, PriceUnitId = Kg,
+        };
+
+        var restored = PurchasingStore.RestoreOrder(header, [line]);
+
+        Assert.Equal(PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 2, 4), restored.Money);
+        Assert.Equal(41.2575m, restored.Lines[0].Price!.UnitPrice);
+        // The same row without the scale (a hand-edited legacy row) cannot hold a four-decimal price: refused, never shown.
+        header.UnitPriceScale = null;
+        Assert.ThrowsAny<Exception>(() => PurchasingStore.RestoreOrder(header, [line]));
+    }
+
     private static Quantity Kilos(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
 
     private static decimal? Parse(string? text) =>

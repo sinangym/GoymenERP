@@ -107,6 +107,14 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "AND [MoneyScale] IS NOT NULL AND [MoneyScale] >= 0 AND [MoneyScale] <= 28)";
 
     /// <summary>
+    /// A2a-1c (ALS-D72): the order's unit-price scale is absent, or present only beside a money snapshot and within System.Decimal's
+    /// 0..28. It is kept apart from <see cref="OrderMoneyCheck"/>, which stays as A2a-1 wrote it: a legacy priced order has no
+    /// unit-price scale and keeps the amount scale for its unit prices.
+    /// </summary>
+    internal const string OrderUnitPriceScaleCheck =
+        "[UnitPriceScale] IS NULL OR ([CurrencyId] IS NOT NULL AND [UnitPriceScale] >= 0 AND [UnitPriceScale] <= 28)";
+
+    /// <summary>
     /// A2a-1 (ALS-D5, ALS-D18): a line is unpriced (all four price columns null) or a GENERAL line with a unit price of zero or more
     /// (an explicit 0 is a price, Sinan #66 6704170096), a
     /// non-empty price unit and at most one discount — a percent in 0..100 or an amount in 0..unit price. That a priced line's
@@ -244,6 +252,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseOrders_Cancellation", OrderCancellationCheck);
             // A2a-1 (TEK-01): the money snapshot is complete or absent.
             table.HasCheckConstraint("CK_PurchaseOrders_Money", OrderMoneyCheck);
+            // A2a-1c (ALS-D72): the unit-price scale only beside a money snapshot.
+            table.HasCheckConstraint("CK_PurchaseOrders_UnitPriceScale", OrderUnitPriceScaleCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });

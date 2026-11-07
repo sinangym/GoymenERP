@@ -143,6 +143,16 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   general line with a price ≥ 0 and at most one bounded discount); its Down refuses (`THROW 51169`) while any order has a
   currency or any line a price. P-04 gains the optional price fieldset (currency, unit price, discount; the net and the amount
   are shown only after the save), P-03-DETAIL the price columns, "fiyat bekliyor" and the withheld notice.
+- **Unit-price scale (A2a-1b, A2a-1c; ALS-D63, ALS-D72):** since A2a-1b the approved Settings money catalog answers
+  `purchasing.order.v1` (GDC, GSP, GIN; TRY, amount scale 2) with `MoneyProfileV1.UnitPriceScale` 4, so the fail-closed note above
+  no longer holds. A2a-1c snapshots that scale with the order (`UnitPriceScale`, nullable) and holds a unit price and a discount
+  amount to min(unit-price scale, 6) decimals — 4 for TRY (`41.2575`; `10.12345` is `purchasing_price_scale_exceeded`). Without a
+  unit-price scale (a profile that answers none, or an order recorded before A2a-1c) the A2a-1 rule stays: min(amount scale, 6).
+  The line amount is still rounded once to the amount scale (SAT-D11) and the net is exact (SAT-D76). An answered scale outside
+  0..28 is `reference_provider_invalid`. The wire is unchanged (`currency.scale` stays the amount scale). Migration
+  `20261107131321_AddPurchaseOrderUnitPriceScale` adds the column and `CK_PurchaseOrders_UnitPriceScale` (null, or beside a
+  currency within 0..28; `CK_PurchaseOrders_Money` unchanged, no backfill); its Down refuses (`THROW 51170`) while any order has a
+  unit-price scale.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay

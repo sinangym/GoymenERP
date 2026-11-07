@@ -8,9 +8,9 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// <summary>
 /// A2a-1b (ALS-D63 narrow exception, Sinan #66 6704170096): the service composed with the REAL approved Settings provider, not a
 /// fake, for the seed companies. The Settings catalog now answers <c>purchasing.order.v1</c> with each company's TRY profile, so a
-/// priced order opens and records that profile as its money snapshot. The profile also publishes a unit-price scale of 4 for this
-/// operation; the Purchasing pricing path does not read it yet (the stored snapshot has no column for it), so a unit price is still
-/// held to the amount scale — pinned below so the follow-up flips it deliberately. SENTETIK / NOT_ENV.
+/// priced order opens and records that profile as its money snapshot. A2a-1c (ALS-D72): the profile's unit-price scale of 4 for this
+/// operation is snapshotted with the order, so a unit price takes four decimals and a fifth is refused; the line amount is still
+/// rounded once to the amount scale (2). SENTETIK / NOT_ENV.
 /// </summary>
 public sealed partial class PurchasingServiceTests
 {
@@ -36,8 +36,8 @@ public sealed partial class PurchasingServiceTests
         var price = Assert.Single(order.Detail.Lines).Price!;
         Assert.Equal(("41.25", "40.21875", "50293.55"), (price.UnitPrice, price.NetUnitPrice, price.LineAmount));
         var stored = (await world.Store.FindOrderAsync(order.Detail.Order.Id))!.Order.Money!;
-        Assert.Equal((SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", entry.ProfileId, 1L, 2),
-            (stored.CurrencyId, stored.CurrencyCode, stored.ProfileId, stored.ProfileVersion, stored.Scale));
+        Assert.Equal((SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", entry.ProfileId, 1L, 2, (int?)4),
+            (stored.CurrencyId, stored.CurrencyCode, stored.ProfileId, stored.ProfileVersion, stored.Scale, stored.UnitPriceScale));
     }
 
     [Theory]
@@ -66,16 +66,31 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task A_four_decimal_unit_price_is_still_held_to_the_amount_scale_until_Purchasing_reads_the_unit_price_scale()
+    public async Task A_four_decimal_unit_price_is_accepted_and_the_line_amount_is_rounded_once_to_the_amount_scale()
     {
-        // The Settings answer carries UnitPriceScale 4 for purchasing.order.v1 (A2a-1b); the order snapshot has no column for it yet,
-        // so the pricing path keeps min(amount scale, 6) = 2. This pin flips in the follow-up that persists and honours it.
+        // A2a-1c flipped the A2a-1b pin: ALS-D72 "birim fiyat en fazla 4 ondalik; satir tutari bir kez kurusa yuvarlanir".
         var world = SeedWorld(SeedGdc);
-        var answered = await world.MoneyOwner!.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, PurchasingMoneyOperationsV1.OrderV1, CatalogDay);
-        Assert.Equal((2, (int?)4), (answered.Scale, answered.UnitPriceScale));
+
+        var order = await world.Service().CreateOrderAsync(
+            SeedPricedOrderOf("1250.5", new PurchaseOrderLinePriceRequest("10.1234", DiscountAmount: "0.0004")), Metadata("k-seed-four"));
+
+        // net = 10.1234 - 0.0004 = 10.123 (never rounded); amount = 1250.5 x 10.123 = 12658.8115 -> 12658.81.
+        var price = order.Detail.Lines[0].Price!;
+        Assert.Equal(("10.1234", "0.0004", "10.123", "12658.81"), (price.UnitPrice, price.DiscountAmount, price.NetUnitPrice, price.LineAmount));
+        Assert.Equal(new PurchaseOrderCurrencyView(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", 2), order.Detail.Currency);
+        var detail = await world.Service().GetOrderDetailAsync(order.Detail.Order.Id);
+        Assert.Equal(("10.1234", "12658.81"), (detail.Lines[0].Price!.UnitPrice, detail.Lines[0].Price!.LineAmount));
+    }
+
+    [Theory]
+    [InlineData("10.12345", null)]
+    [InlineData("10", "0.00001")]
+    public async Task A_fifth_decimal_on_the_unit_price_or_the_discount_amount_is_refused_and_nothing_is_stored(string unitPrice, string? discountAmount)
+    {
+        var world = SeedWorld(SeedGdc);
 
         var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateOrderAsync(
-            SeedPricedOrderOf("5", new PurchaseOrderLinePriceRequest("10.1234")), Metadata("k-seed-four")));
+            SeedPricedOrderOf("5", new PurchaseOrderLinePriceRequest(unitPrice, DiscountAmount: discountAmount)), Metadata("k-seed-five-" + unitPrice)));
 
         Assert.Equal((422, "lines[0].price", PurchasingRuleCodes.PriceScaleExceeded), (refused.Status, refused.Errors[0].Field, refused.Errors[0].Code));
         Assert.Empty(world.Store.Envelopes);

@@ -341,7 +341,8 @@ public sealed class PurchaseOrder
     /// line amount is 0, kept apart from no price ("fiyat bekliyor", ALS-D18; Sinan #66 6704170096), and on a zero price a discount
     /// can only be a percent or a zero amount (any positive amount exceeds the price: fail-closed, never a negative net); the price unit is the line's entry unit, because no conversion is published yet (ALS-D51/D58/D60,
     /// <see cref="PurchasingRuleCodes.PriceUnitConversionUnavailable"/>); the unit price and a discount amount carry at most the
-    /// money profile's decimals (Ö2, never rounded) and fit the columns; a discount is a percent (0..100) OR an amount
+    /// snapshot's <see cref="PurchaseOrderMoney.PriceScale"/> (A2a-1c, ALS-D72: the profile's unit-price scale, 4 for TRY; without
+    /// one the amount scale, Ö2; never rounded) and fit the columns; a discount is a percent (0..100) OR an amount
     /// (0..unit price); and both the net unit price and the line amount are computable exactly at write time (#944 review A P2:
     /// a read never meets a price it cannot compute). No minimum price, margin or discount ceiling is decided for
     /// purchasing (ALS-D5 "elle"), so none is invented.
