@@ -92,9 +92,10 @@ Bu bölümdeki **yorum** etiketli maddeler geri alınabilir; karar değildir.
     iptal edilen kalan gelecek arzdan ve sipariş kalanından düşer; yalnız talep satırındaki pay geri açılmaz.
     No.161 §1 (bağlı Onaylı sipariş varken talep reddedilmez/geri çekilmez) yalnız Onaylı siparişi sayar; iptal
     edilmiş sipariş bu engeli kaldırır (PR #932). Geri alınabilir.
-- **Kod takibi (bu dosyanın parçası değil):** PR #932'deki ve kaynak kod yorumlarındaki (ör. `ErpPermissions.cs`,
-  Purchasing domain/servis yorumları, `DURUM_MAKINELERI.md` A1-3 satırı) No.161 `NEEDS-SINAN` notları sonraki bir kod
-  PR'ında ALS-D66…D68'e çevrilir. Bu belge PR'ı kaynak kodu değiştirmez.
+- **Kod takibi (bu dosyanın parçası değil):** PR #932 (merge `cbba0469`) ile gelen kaynak kod ve test yorumlarındaki
+  (ör. `ErpPermissions.cs`, Purchasing domain/servis yorumları, browser-suite override) No.161 `NEEDS-SINAN` notları
+  sonraki bir kod PR'ında ALS-D66…D68'e çevrilir. Belge tarafı (`DURUM_MAKINELERI.md` A1-3 satırı, plan §12 A1-3
+  satırı) bu belge PR'ında güncellendi; kaynak kod değişmedi.
 - **ERP-000F ve Work (§0.1 madde 1; süreç, ALS-D57):** ALS-D44'teki dağıtıcı görevi Alış'tan çıkar; ERP-000F
   dağıtıcısı ve Work modülü (runtime'ın açılması dahil, #934 B-24) **Kalan Modüller** şeridindedir. Alış **yalnız
   kendi outbox kayıtlarını** yazar (A5-0, MOD-12). ALS-D62/D64 (dağıtıcı gelene kadar Finans kabul portu ayrı adımda

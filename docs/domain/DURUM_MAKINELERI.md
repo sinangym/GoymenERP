@@ -14,11 +14,11 @@ Durum geçişleri backend’de tanımlanır; UI renkleri kural değildir.
 
 ## Satın Alma
 
-Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_ALIS*.md`,
+Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_ALIS*.md`, `SINAN_KARARLARI_2026-11-03_ALIS_EK10.md`,
 `SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md`, plan `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md`.
 **Mevcut** satırlar kodda çalışır; **Hedef** satırlar karara bağlanmış ama uygulanmamıştır.
 
-**Mevcut (2026-11-03, A1-1, A1-1b, A1-2 ve A1-3 dahil; A1-3 taslak PR'da):**
+**Mevcut (2026-11-03, A1-1, A1-1b, A1-2 ve A1-3 dahil; A1-3 #932 ile merge edildi):**
 
 - Talep: Taslak → Gönderildi → Onaylı / Reddedildi (`PurchaseRequestStatus` Draft / Submitted / Approved / Rejected;
   A1-1). Talep taahhüt değildir. Onay yalnız Gönderildi talepte; ret Gönderildi veya Onaylı talepte, gerekçe zorunlu,
@@ -40,9 +40,10 @@ Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_A
   veya para olayı yok; `Alış Kalan = Onaylı − İptal − KabulNet − KesinRed/İade` (INV-006): iptal edilen kalan gelecek
   arzdan (iki Alış okuma portu) ve sipariş kalanından düşer. İptal edilmiş siparişe kabul payı veya kırılım eklenmez.
   İptal edilmiş sipariş talebin reddini/geri çekilmesini engellemez (No.161 §1 yalnız Onaylı siparişi sayar); talep
-  satırının Σ-payında tam sipariş miktarıyla sayılmaya devam eder (fail-closed, NEEDS-SINAN). Yetki
-  `purchasing.orders.cancel` (öneri; yalnız kayıt, gerçek kullanıcıya grant insan kapısında; kim alacağı NEEDS-SINAN);
-  ikinci onay adımı yok; audit aynı kayıtta.
+  satırının Σ-payında tam sipariş miktarıyla sayılmaya devam eder (ALS-D68: iptal edilen miktar için aynı talepten yeni
+  sipariş açılmaz; başka tedarikçiden almak için yeni talep). Yetki `purchasing.orders.cancel` (yalnız kayıt; ALS-D66:
+  Satın Alma Müdürü, Genel Müdür, Admin önerilir, Satın Alma Uzmanı değil; gerçek kullanıcıya grant insan kapısında);
+  ikinci onay adımı yok (ALS-D67: tek adım, gerekçe + audit); audit aynı kayıtta.
 - Kabul payı: yalnız Onaylı siparişin satırına; kalan = taahhüt − kabul − iptal; kalanı aşan kabul reddedilir (tolerans
   yok). Yeni kabul stoğa `Free` blokla girer. Genel/teknik kırılım Taslak ve Onaylı'da açıktır (yalnız domain).
 
