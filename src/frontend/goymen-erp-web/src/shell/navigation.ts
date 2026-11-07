@@ -259,9 +259,9 @@ export type NavEntryId = CapabilityId | PriceListNavEntry
 export type NavGroupId =
   | 'sales'
   | 'purchasing'
-  | 'product-stock'
   | 'manufacturing'
-  | 'logistics'
+  | 'stock-logistics'
+  | 'product'
   | 'cari'
   | 'finance'
   | 'accounting'
@@ -272,16 +272,20 @@ export interface NavGroup {
   readonly label: string
   readonly entries: readonly NavEntryId[]
   /**
-   * A visible intermediate label drawn directly above the named entry (NAV-OPENING-01). It is words only: not a
-   * link, not a control and never a permission — it is drawn exactly when its entry is, and never on its own.
+   * A visible section label (NAV-OPENING-01, KLN-D2). The named entry opens a section that runs to the next named
+   * entry; the label is drawn directly above the section's first GRANTED entry. It is words only: not a link, not a
+   * control and never a permission — it is drawn only together with a granted entry of its section, never on its own.
    */
   readonly subheadings?: Readonly<Partial<Record<NavEntryId, string>>>
 }
 
 /**
- * The sidebar's work-area groups, in drawn order (UX v1.2, approved by Sinan on 7 October 2026;
- * coordinator record 12 for P1-b). "Ana sayfa" is not a group: it is the single `NAV_HOME` link above
- * them.
+ * The sidebar's work-area groups, in drawn order. KLN-D1/D2 (Sinan, 3 November 2026,
+ * `docs/decisions/SINAN_KARARLARI_2026-11-03_MENU.md`) replaced the UX v1.2 order: Satış · Satın Alma · Üretim ·
+ * Stok & Lojistik · Ürün & Hizmet · Cari · Finans & Hazine · Muhasebe · Ayarlar (Ana Veriler / Sistem Yönetimi).
+ * Çalışma Merkezi, Belgeler and Raporlar are menu headings in KLN-D1 too, but no published entry belongs to them
+ * yet, so they are not drawn (below). "Ana sayfa" is not a group: it is the single `NAV_HOME` link above them.
+ * Only WHERE entries are drawn changed; every capability, route and leaf label is the same.
  *
  * A group is a HEADING, never a permission. It has no capability of its own and is drawn exactly when
  * at least one of its entries is granted, so an authorised entry can never be lost to its group, and a
@@ -299,26 +303,27 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Satış',
     entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.reports.view', 'price-lists.list'],
   },
-  {
-    id: 'purchasing',
-    label: 'Satın alma',
-    entries: ['purchasing.requests.list', 'purchasing.orders.list', 'logistics.operations-work.purchase'],
-  },
-  {
-    id: 'product-stock',
-    label: 'Ürün ve stok',
-    entries: ['product.items.list', 'inventory.stock-positions.list'],
-  },
+  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
   {
-    id: 'logistics',
-    label: 'Sevkiyat',
-    entries: ['logistics.operations-work.sales', 'logistics.instructions.list'],
+    id: 'stock-logistics',
+    /**
+     * KLN-D1: stock, allocation, loading, shipment, weighing and goods receipt are one menu. The purchase side of the
+     * operations work list (L-09, expected receipts) is logistics work, so it moved here from Satın Alma.
+     */
+    label: 'Stok & Lojistik',
+    entries: [
+      'inventory.stock-positions.list',
+      'logistics.operations-work.sales',
+      'logistics.instructions.list',
+      'logistics.operations-work.purchase',
+    ],
   },
+  { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list'] },
   { id: 'cari', label: 'Cari', entries: ['cari.parties.list', 'cari.accounts.link'] },
   {
     id: 'finance',
-    label: 'Finans',
+    label: 'Finans & Hazine',
     entries: [
       'finance.receipts.list',
       'finance.manual-bank-payments.list',
@@ -340,20 +345,27 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     id: 'settings',
     label: 'Ayarlar',
     /**
+     * KLN-D2: two sections, Ana Veriler (organization, units, rates, parameters, quality) and Sistem Yönetimi (users,
+     * roles, approval rules, integrations, audit log). The subheadings are words only, drawn with their entry.
+     *
      * NAV-OPENING-01 (coordinator allocation 2026-10-10): the opening stock count — first set-up and data transfer,
-     * not daily stock work — moved here from Ürün ve stok, as the last Ayarlar entry. Its route (`/stok/acilis` and
-     * its children), capability and screens are unchanged. Ayarlar stays a heading: holding the opening-stock
-     * capability alone draws Ayarlar with just this entry, and no admin or Settings permission is asked for.
+     * not daily stock work — stays the last Ayarlar entry. Its route (`/stok/acilis` and its children), capability
+     * and screens are unchanged. Ayarlar stays a heading: holding the opening-stock capability alone draws Ayarlar
+     * with just this entry, and no admin or Settings permission is asked for.
      */
     entries: [
       'organization.sites.list',
       'organization.work-centers.list',
-      'identity.assignments.list',
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
+      'identity.assignments.list',
       'inventory.opening-stock.record',
     ],
-    subheadings: { 'inventory.opening-stock.record': 'İlk kurulum ve veri aktarımı' },
+    subheadings: {
+      'organization.sites.list': 'Ana Veriler',
+      'identity.assignments.list': 'Sistem Yönetimi',
+      'inventory.opening-stock.record': 'İlk kurulum ve veri aktarımı',
+    },
   },
 ]
 
