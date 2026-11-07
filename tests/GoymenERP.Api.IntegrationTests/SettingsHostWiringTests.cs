@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
@@ -295,6 +296,8 @@ public sealed class SettingsHostWiringTests
                 FinanceMoneyOperations.ManualBankPaymentV1, FinanceMoneyOperations.ManualBankReceiptV1,
                 SalesMoneyOperations.OrderDraftV1,
                 AccountingMoneyOperations.JournalAmountV1,
+                // A2a-1b: the Purchasing owner's key (ALS-D63 narrow exception).
+                PurchasingMoneyOperationsV1.OrderV1,
             }.Order(StringComparer.Ordinal),
             ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
@@ -340,10 +343,11 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_owner_s_published_key()
+    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_and_Purchasing_owners_published_keys()
     {
-        Assert.Equal([SalesMoneyOperations.OrderDraftV1], ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.ToArray());
-        Assert.Equal([SalesMoneyOperations.OrderDraftV1], ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.ToArray());
+        var expected = new[] { SalesMoneyOperations.OrderDraftV1, PurchasingMoneyOperationsV1.OrderV1 }.Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+        Assert.Equal(expected, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
 
     [Fact]

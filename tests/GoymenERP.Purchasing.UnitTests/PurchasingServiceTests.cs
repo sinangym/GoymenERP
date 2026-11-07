@@ -480,12 +480,18 @@ public sealed partial class PurchasingServiceTests
         public FakeSettings Settings { get; init; } = new();
         public FakeStore Store { get; init; } = new();
         public FakeMoney Money { get; init; } = new();
+
+        /// <summary>A2a-1b: the money owner the service is composed with instead of <see cref="Money"/> (e.g. the real approved Settings provider).</summary>
+        public ISettingsPrerequisiteProvider? MoneyOwner { get; set; }
+
+        /// <summary>A2a-1b: the candidate read the service is composed with instead of <see cref="Money"/>.</summary>
+        public ISettingsMoneyCandidateReaderV2? CandidateOwner { get; set; }
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
-                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, Money, Money);
+                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
@@ -518,7 +524,8 @@ public sealed partial class PurchasingServiceTests
         public bool IsAuthenticated => true;
         public string CurrentActor { get; set; } = Actor;
         public string? UserId => CurrentActor;
-        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa") };
+        public HashSet<Guid> Allowed { get; } = [Company, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")];
+        public IReadOnlySet<Guid> AllowedCompanyIds => Allowed;
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 
@@ -573,6 +580,8 @@ public sealed partial class PurchasingServiceTests
 
     private sealed class FakeAccounts : IPurchasingPartyAccountPortV1
     {
+        /// <summary>A2a-1b: the company the owner answers for (the synthetic company unless a test composes another one).</summary>
+        public Guid OwnerCompany { get; init; } = Company;
         public string Fault { get; set; } = "";
         public int Calls { get; set; }
 
@@ -585,7 +594,7 @@ public sealed partial class PurchasingServiceTests
                 "denied" => new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Denied, null),
                 "unavailable" => new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Unavailable, null),
                 _ => new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Found, new PurchasingPartyAccountV1(partyId, companyAccountId,
-                    Fault == "other-company" ? Guid.NewGuid() : Company, true, Fault != "passive-account", Fault != "not-supplier", "3", "2")),
+                    Fault == "other-company" ? Guid.NewGuid() : OwnerCompany, true, Fault != "passive-account", Fault != "not-supplier", "3", "2")),
             });
         }
     }
@@ -616,6 +625,8 @@ public sealed partial class PurchasingServiceTests
 
     private sealed class FakeSettings : ISettingsPrerequisiteProvider
     {
+        /// <summary>A2a-1b: the company the owner answers for (the synthetic company unless a test composes another one).</summary>
+        public Guid OwnerCompany { get; init; } = Company;
         public string Fault { get; set; } = "";
         public int Calls { get; set; }
 
@@ -627,7 +638,7 @@ public sealed partial class PurchasingServiceTests
                 "unit-not-found" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound)),
                 "unit-access-denied" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_access_denied")),
                 "unit-unavailable" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
-                _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : Company, unitId,
+                _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : OwnerCompany, unitId,
                     Fault == "unit-piece" ? "adet" : "kg", Fault == "unit-piece" ? "count" : "weight", Fault != "unit-piece",
                     new ProfileVersionV1(KgProfile, 4), 3, true, new DateOnly(2026, 9, 1), null)),
             };
