@@ -300,7 +300,8 @@ public sealed class PurchaseOrderPricingTests
         Assert.Equal(41.2575m, restored.Lines[0].Price!.UnitPrice);
         // The same row without the scale (a hand-edited legacy row) cannot hold a four-decimal price: refused, never shown.
         header.UnitPriceScale = null;
-        Assert.ThrowsAny<Exception>(() => PurchasingStore.RestoreOrder(header, [line]));
+        var refused = Assert.Throws<PurchasingRuleException>(() => PurchasingStore.RestoreOrder(header, [line]));
+        Assert.Equal(PurchasingRuleCodes.PriceScaleExceeded, refused.Code);
     }
 
     private static Quantity Kilos(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
