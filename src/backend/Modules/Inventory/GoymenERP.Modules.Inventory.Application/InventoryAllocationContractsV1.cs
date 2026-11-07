@@ -10,6 +10,12 @@ namespace GoymenERP.Modules.Inventory.Application;
 public static class InventoryAllocationDemandKindsV1
 {
     public const string SalesOrderLine = "sales.order-line";
+
+    /// <summary>
+    /// URT-D3/D21: a Manufacturing plan's input, held from plan approval until the input issue consumes it or the
+    /// plan cancel / order close releases the remainder. DemandId is the plan, DemandLineId the input label.
+    /// </summary>
+    public const string ManufacturingPlanInput = "manufacturing.plan-input";
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

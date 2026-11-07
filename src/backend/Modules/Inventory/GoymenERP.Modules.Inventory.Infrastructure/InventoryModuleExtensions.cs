@@ -57,6 +57,7 @@ public static class InventoryModuleExtensions
         // DEC-SAL-005: Inventory answers the Sales-declared active-allocation read over its own company-filtered allocations.
         // Registered here, in the owner's module (no host file), so that Sales reads allocations only through this port.
         services.AddScoped<ISalesOrderAllocationReadPortV1, InventorySalesOrderAllocationReadPort>();
+        services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();
         services.TryAddScoped<IInventoryLabelGenealogyReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.

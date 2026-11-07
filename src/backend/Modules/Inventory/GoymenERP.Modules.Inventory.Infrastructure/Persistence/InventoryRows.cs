@@ -215,6 +215,9 @@ internal sealed class AllocationRow : IInventoryTenantRow
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public DateTimeOffset? ReleasedAtUtc { get; set; }
     public string? ReleaseReason { get; set; }
+
+    /// <summary>B-01: the kg a plan-input release returned to free stock, so consumed = allocated − remaining − released.</summary>
+    public decimal? ReleasedKg { get; set; }
 }
 
 /// <summary>
