@@ -181,6 +181,24 @@ describe('P-04 purchase order create form', () => {
     expect('currencyId' in api.create.mock.calls[0][0]).toBe(false)
   })
 
+  it('A2a-1: a price typed before the currency list turns unavailable is cleared and said so, never silently dropped', async () => {
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'TRY' })
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '41,25')
+    api.currencies.mockResolvedValueOnce({ type: 'http', status: 503, body: null })
+    await user.click(screen.getByRole('button', { name: 'Para birimlerini yenile' }))
+    expect((await screen.findByTestId('purchase-order-price-cleared')).textContent)
+      .toBe('Para birimi artık seçilemediği için girilen fiyat ve iskonto temizlendi; sipariş fiyatsız kaydedilir.')
+    expect((screen.getByLabelText('Birim fiyat') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Birim fiyat') as HTMLInputElement).disabled).toBe(true)
+    await fillAndSubmit(user)
+    await screen.findByRole('heading', { name: 'Satın alma siparişi kaydedildi' })
+    expect('price' in api.create.mock.calls[0][0].lines[0]).toBe(false)
+  })
+
   it('A2a-1: a refused price names the server rule in Turkish', async () => {
     api.create.mockResolvedValue({ type: 'failed', status: 422, code: 'validation_failed', replayed: false, priceCode: 'purchasing_price_scale_exceeded' })
     const user = userEvent.setup()

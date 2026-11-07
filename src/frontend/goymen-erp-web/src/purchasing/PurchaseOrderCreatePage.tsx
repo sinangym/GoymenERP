@@ -116,6 +116,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
   const [discountKind, setDiscountKind] = useState<DiscountKind>('none')
   const [discount, setDiscount] = useState('')
   const currencyFence = useRef(createRequestFence())
+  const [priceCleared, setPriceCleared] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const supplierFence = useRef(createRequestFence())
   const productFence = useRef(createRequestFence())
@@ -162,6 +163,20 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     setCurrencies({ type: 'loading' })
     const outcome = await fetchPurchasingCurrencyCandidates(companyId, token.signal)
     if (!currencyFence.current.isCurrent(token)) return
+    const available = outcome.type === 'ok-single' && outcome.data.items.length > 0
+    if (!available) {
+      // #944 review B P3: the price inputs turn off without a currency; a price typed before is cleared and said so, never
+      // silently dropped from the payload.
+      setUnitPrice((typed) => {
+        if (typed.trim() !== '') setPriceCleared(true)
+        return ''
+      })
+      setDiscountKind('none')
+      setDiscount('')
+      setCurrencyId('')
+    } else {
+      setPriceCleared(false)
+    }
     setCurrencies(outcome.type === 'ok-single' ? { type: 'ready', data: outcome.data } : { type: 'failed', message: currencyFailure(outcome) })
   }, [companyId])
 
@@ -249,8 +264,8 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
       <fieldset disabled={frozen}><legend>{T.supplierLegend}</legend><div className={styles.searchRow}><label htmlFor="supplier-search">{T.supplierSearch}</label><input id="supplier-search" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} /><Button type="button" onClick={() => void readSuppliers()}>{F.search}</Button></div>{suppliers.type === 'loading' ? <p role="status">{T.suppliersLoading}</p> : suppliers.type === 'failed' ? <p role="alert">{suppliers.message}</p> : <><label htmlFor="supplier">{T.supplierAccount}</label><select id="supplier" value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">{F.choose}</option>{suppliers.type === 'ready' ? suppliers.data.items.map((item) => <option key={`${item.supplierPartyId}|${item.companyAccountId}`} value={`${item.supplierPartyId}|${item.companyAccountId}`}>{item.label}</option>) : null}</select>{suppliers.type === 'ready' && suppliers.data.nextCursor !== null ? <Button type="button" onClick={() => void readSuppliers(suppliers.data.nextCursor ?? undefined, true)}>{T.moreSuppliers}</Button> : null}</>}
       </fieldset>
       <fieldset disabled={frozen}><legend>{T.lineLegend}</legend><div className={styles.formGrid}><label htmlFor="effective-on">{F.businessDate}</label><input id="effective-on" type="date" value={effectiveOn} onChange={(event) => { productFence.current.invalidate(); setEffectiveOn(event.target.value); setProductId(''); setProducts({ type: 'idle' }) }} /><label htmlFor="product-search">{F.productSearch}</label><div className={styles.searchRow}><input id="product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /><Button type="button" onClick={() => void readProducts()}>{F.search}</Button></div><label htmlFor="product">{T.product}</label>{products.type === 'loading' ? <p role="status">{F.productsLoading}</p> : products.type === 'failed' ? <p role="alert">{products.message}</p> : <select id="product" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">{F.choose}</option>{products.type === 'ready' ? products.data.items.map((item) => <option key={item.productId} value={item.productId}>{F.productOption(item.code, item.name, item.unitCode)}</option>) : null}</select>} {products.type === 'ready' && products.data.searchWindowFull ? <p className={styles.note}>{T.searchWindowFull}</p> : null}<label htmlFor="quantity">{F.quantity}</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder={T.quantityPlaceholder} /></div></fieldset>
-      <fieldset disabled={frozen} data-testid="purchase-order-price"><legend>{P.legend}</legend><p className={styles.note}>{P.note}</p><div className={styles.formGrid}>
-        <label htmlFor="currency">{P.currency}</label>{currencies.type === 'loading' ? <p role="status">{P.currencyLoading}</p> : currencies.type === 'failed' ? <p role="alert">{currencies.message}</p> : currencies.type === 'ready' && currencies.data.items.length === 0 ? <p role="status">{P.currencyNone}</p> : <select id="currency" value={currencyId} onChange={(event) => setCurrencyId(event.target.value)}><option value="">{F.choose}</option>{currencies.type === 'ready' ? currencies.data.items.map((item) => <option key={item.currencyId} value={item.currencyId}>{item.displayLabel}</option>) : null}</select>}
+      <fieldset disabled={frozen} data-testid="purchase-order-price"><legend>{P.legend}</legend><p className={styles.note}>{P.note}</p>{priceCleared ? <p role="status" data-testid="purchase-order-price-cleared">{P.priceCleared}</p> : null}<div className={styles.formGrid}>
+        <label htmlFor="currency">{P.currency}</label><div>{currencies.type === 'loading' ? <p role="status">{P.currencyLoading}</p> : currencies.type === 'failed' ? <p role="alert">{currencies.message}</p> : currencies.type === 'ready' && currencies.data.items.length === 0 ? <p role="status">{P.currencyNone}</p> : <select id="currency" value={currencyId} onChange={(event) => setCurrencyId(event.target.value)}><option value="">{F.choose}</option>{currencies.type === 'ready' ? currencies.data.items.map((item) => <option key={item.currencyId} value={item.currencyId}>{item.displayLabel}</option>) : null}</select>}{currencies.type === 'loading' ? null : <Button type="button" onClick={() => void readCurrencies()}>{P.currencyRefresh}</Button>}</div>
         <label htmlFor="unit-price">{P.unitPrice}</label><input id="unit-price" inputMode="decimal" disabled={priceInputsOff} value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} placeholder={P.unitPricePlaceholder} aria-describedby="price-unit" />
         <span />{(() => { const product = products.type === 'ready' ? products.data.items.find((item) => item.productId === productId) : undefined; return <p id="price-unit" className={styles.mono}>{product === undefined ? P.priceUnitPending : P.priceUnit(product.unitCode)}</p> })()}
         <label htmlFor="discount-kind">{P.discountKind}</label><select id="discount-kind" disabled={priceInputsOff} value={discountKind} onChange={(event) => setDiscountKind(event.target.value as DiscountKind)}><option value="none">{P.discountNone}</option><option value="percent">{P.discountPercent}</option><option value="amount">{P.discountAmount}</option></select>

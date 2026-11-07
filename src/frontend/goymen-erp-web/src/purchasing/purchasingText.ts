@@ -176,6 +176,8 @@ export const ORDER_PRICE_TEXT = {
   currencyUnavailable: 'Para birimi seçenekleri şu an alınamıyor (hizmet kullanılamıyor). Fiyat girilemez; sipariş fiyatsız açılabilir.',
   currencyDenied: 'Para birimi seçeneklerini okuma yetkiniz yok. Fiyat girilemez; sipariş fiyatsız açılabilir.',
   currencyFailed: 'Para birimi seçenekleri okunamadı. Fiyat girilemez; sipariş fiyatsız açılabilir.',
+  currencyRefresh: 'Para birimlerini yenile',
+  priceCleared: 'Para birimi artık seçilemediği için girilen fiyat ve iskonto temizlendi; sipariş fiyatsız kaydedilir.',
   currencyNone: 'Alış siparişi için tanımlı para birimi yok. Fiyat girilemez; sipariş fiyatsız açılabilir.',
   unitPrice: 'Birim fiyat',
   unitPricePlaceholder: 'Örn. 41,25',
