@@ -146,7 +146,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:uv2o_1siSWBk-My9fauOtUDdHB8CNh_kTRthGZ3Smtg";
+        "sha256:vY1dzhzjZnbRiU-2i_1sXlzaYl7dRSQdFXxPRHPj344";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -182,7 +182,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:dhRWW52_s2vtEd0nHH90aWhnnSKvLskq7llDxWDvMpE";
+        "sha256:H-KfQWFQmTFm99Nj3eSVCvBBiT_0D1QbAOj2-KhspuA";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -409,6 +409,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // NOTE (A1-3, plan API-10/UI-05; No.161 §2): Purchasing 1.7 adds the order remainder cancellation control
     // (purchasing.orders.cancel, a child of the P-03 order detail). The same six live Purchasing rows were re-derived IN PLACE
     // again by ShellCapabilityRegistry.ComputeCandidateRevision over the real providers (drift-test "Actual:"); names stay historical.
+    // NOTE (B-05, KLN-D3): Finance 1.7 adds the party-ledger routes /muhasebe/cari-hesaplar (M-03) and /cari/hesap-takibi
+    // (C-04) under finance.party-ledger.read; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
     // NOTE (A1-1b, plan API-01b; ALS-D46): Purchasing 1.6 adds the request withdrawal control (purchasing.requests.withdraw, a
     // child of the P-01 request detail). The same six live Purchasing rows were re-derived IN PLACE again by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the real providers (drift-test "Actual:"); names stay historical.
@@ -426,27 +428,27 @@ internal static class ShellCapabilityRegistryAuthorities
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:KIwEyEJ6IwwdPnpT98wQFXtcsNqMotBoh7BIDh9saQk";
+        "sha256:Nr_oYNsw-CacBhs3D2vCC1kX5tsb1cjEV30JEPQDyrE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:zhJM468niWQx7awEuH4d8R4Kb4jkKOPIU9YCdo7jXf8";
+        "sha256:YTBGEy_5KhNfIsuNN0yw5DlEvhe5QcyUBBeQ0buA9_g";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:oK1LI-rDg0MbUCni2oIYVh1n4G8WEbqgPJeJwd93P0Q";
+        "sha256:_0pi4jQjULDLBGpHzw18uVdsobNT1XY3jSsqueSRfHE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:LQ26swLreZLBs3J97cEE1ysp8IPWJcJK4XNgUujGQ88";
+        "sha256:QjtIW4T7_ZVXHPYExOI_GEspPy_j5WtLsP7ZURyTLVM";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:uBDwDo3W2boKG68tDaYrRq7NDmsbMaxbUAuEVSLRTgc";
+        "sha256:WNktBqq_Ya8e3qsRL-7O6xi3OuAepxsrKCWdW8Vy9m8";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:bTVvmo8Yl9Slyr_0HwaWkCNIO-h_JHRlepm3MPTX0SI";
+        "sha256:c8hJMvHhYOPH_OII8ukE41WPzdOHY9d61h0SMRIcfk4";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -455,7 +457,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:ZvGMIZaGHEREu7XjEShDUdqjOhqQ-SGh5jOlBEmMA9Y";
+        "sha256:tk0R7QZOMNGp9uhMV0r29vRlPwU3jUHWMTuzN6ind94";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

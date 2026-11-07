@@ -40,6 +40,8 @@ const ROUTED = [
   [CAPABILITY.financeAllocationsList, FINANCE_CAPABILITY.allocationsList, FINANCE_ROUTE.allocationsList],
   [CAPABILITY.financeOpenItemsList, FINANCE_CAPABILITY.openItemsList, FINANCE_ROUTE.openItemsList],
   [CAPABILITY.financeOpenItemsDetail, FINANCE_CAPABILITY.openItemsDetail, FINANCE_ROUTE.openItemsDetail],
+  [CAPABILITY.financePartyLedgerAccounting, FINANCE_CAPABILITY.partyLedgerAccounting, FINANCE_ROUTE.partyLedgerAccounting],
+  [CAPABILITY.financePartyLedgerCari, FINANCE_CAPABILITY.partyLedgerCari, FINANCE_ROUTE.partyLedgerCari],
   [
     CAPABILITY.financeReceiptsReverseApprove,
     FINANCE_CAPABILITY.receiptsReverseApprove,
@@ -161,6 +163,8 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.allocations.list': 'Finansal Dağıtımlar',
       'finance.open-items.list': 'Açık kalemler',
       'finance.open-items.detail': '',
+      'finance.party-ledger.accounting': 'Cari Hesaplar',
+      'finance.party-ledger.cari': 'Cari Hesap Takibi',
       'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',
