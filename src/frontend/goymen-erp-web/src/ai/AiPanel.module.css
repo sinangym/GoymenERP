@@ -1,0 +1,80 @@
+/* Plan AI-5 — sağ AI paneli. UI_DESIGN_SYSTEM §7: masaüstünde 320–380 px sağ panel, telefonda tam genişlik. */
+
+.panel {
+  flex: 0 0 360px;
+  width: 360px;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border-left: 1px solid var(--shell-border, #d5dbe6);
+  color: #1a2233;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.heading:focus-visible,
+.closeButton:focus-visible {
+  outline: 2px solid var(--shell-action, #1f5fd0);
+  outline-offset: 2px;
+}
+
+.closeButton {
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--shell-border, #d5dbe6);
+  border-radius: 6px;
+  background: #fff;
+  color: #1a2233;
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.state {
+  padding: 12px;
+  border: 1px solid var(--shell-border, #d5dbe6);
+  border-radius: 6px;
+  background: #f4f6fa;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.state p {
+  margin: 0 0 8px;
+}
+
+.state p:last-child {
+  margin-bottom: 0;
+}
+
+.stateTitle {
+  font-weight: 600;
+}
+
+.hint {
+  color: #55607a;
+}
+
+@media (max-width: 767px) {
+  .panel {
+    flex-basis: auto;
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid var(--shell-border, #d5dbe6);
+  }
+}

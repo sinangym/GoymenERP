@@ -294,9 +294,38 @@
   color: #55607a;
 }
 
+.workArea {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
 .main {
   padding: 24px 20px;
   flex: 1;
+  min-width: 0;
+}
+
+/* Plan AI-5: the AI panel toggle; always present, the panel tells the truth about AI availability. */
+.aiToggle {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: #fff;
+  color: #1a2233;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.aiToggle[aria-expanded="true"] {
+  border-color: var(--shell-action);
+  color: var(--shell-action);
+}
+.aiToggle:focus-visible {
+  outline: 2px solid var(--shell-action);
+  outline-offset: 2px;
 }
 
 .main:focus {
@@ -324,6 +353,9 @@
 @media (max-width: 767px) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .workArea {
+    flex-direction: column;
   }
   .drawer {
     position: fixed;

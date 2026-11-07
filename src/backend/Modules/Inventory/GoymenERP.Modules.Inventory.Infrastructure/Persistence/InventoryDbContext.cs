@@ -451,7 +451,17 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [DemandLineId] IS NOT NULL AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
-                + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0)");
+                + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0) "
+                // B-01 (URT-D21): a Manufacturing plan input. The plan keys its input by the label, so the demand line
+                // IS the allocated label; it holds until consumed or released, never until a date.
+                + "OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'manufacturing.plan-input' "
+                + "AND [DemandId] IS NOT NULL AND [DemandId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandLineId] IS NOT NULL AND [DemandLineId] = [LabelId] "
+                + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
+                + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND [ReservedUntilUtc] IS NULL)");
+            table.HasCheckConstraint("CK_Allocations_ReleasedKg",
+                "[ReleasedKg] IS NULL OR ([Status] = 3 AND [ReleasedKg] > 0 AND [ReleasedKg] <= [AllocatedKg])");
             table.HasCheckConstraint("CK_Allocations_Release",
                 "([Status] = 3 AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL "
                 + "AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0) "
@@ -462,6 +472,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.AllocatedKg).HasPrecision(18, 3);
         entity.Property(x => x.RemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.ReleasedKg).HasPrecision(18, 3);
         entity.Property(x => x.DemandKind).HasMaxLength(64).IsUnicode(false);
         entity.Property(x => x.DemandProductVersion).HasMaxLength(128).IsUnicode(false);
         entity.Property(x => x.Reason).HasMaxLength(1000);
@@ -473,6 +484,11 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         }).HasDatabaseName("IX_Allocations_ActivePosition");
         entity.HasIndex(x => new { x.CompanyId, x.DemandKind, x.DemandId, x.DemandLineId, x.Status })
             .HasDatabaseName("IX_Allocations_Demand");
+        // B-01: one active allocation per plan input (plan + label); a released or consumed one does not block a new one.
+        entity.HasIndex(x => new { x.CompanyId, x.DemandId, x.DemandLineId })
+            .IsUnique()
+            .HasFilter("[Status] = 1 AND [DemandKind] = 'manufacturing.plan-input'")
+            .HasDatabaseName("UX_Allocations_ActivePlanInput");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         LabelOf(entity);
@@ -984,6 +1000,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(AllocationRow.RemainingKg), nameof(AllocationRow.Status),
                         nameof(AllocationRow.Version), nameof(AllocationRow.UpdatedAtUtc),
                         nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),
+                        // B-01: a plan-input release records the kg it returned to free stock.
+                        nameof(AllocationRow.ReleasedKg),
                     ],
                     InventoryTransferRow =>
                     [
