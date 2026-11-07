@@ -120,15 +120,30 @@ bir migration'a, kök build-control dosyalarına (`tools/generate_recovery_surfa
 dokunan PR'ı merge eden herkes (`CODEX-ORCHESTRATOR` ve Claude şeridi) expected-head squash'tan
 hemen önce `git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected-head>`
 çalıştırır; kullandığı main SHA'sını ve exit code'u merge makbuzuna yazar. Fresh zorunlu CI aynı
-head'de yeşil olmalıdır. Exit ≠ 0 ise merge yapılmaz; iki kademe (Faz 0.1, #976 ölçümü ve Koordinatör
-kararı): **(a)** `git diff --quiet $(git merge-base origin/main <expected-head>) origin/main -- <kapsam yolları>`
-exit ≠ 0 ise main bu kapsamın içinde ilerlemiştir: main PR'a merge edilir, pin'ler yeniden üretilir, CI
-yeniden koşar (K3'te GOV-D1'e göre review). **(b)** exit 0 ise main yalnız kapsam dışında (docs, frontend…)
-ilerlemiştir: re-pin gerekmez ve içerik yeniden review edilmez; ama CI birleşik ağacı test ettiğinden taze
-merge ref gerekir. Bunun tek yolu **boş olmayan mekanik merge commit'idir** (origin/main PR dalına merge
-edilir; boş commit, "re-run jobs" ve kapat-aç yasaktır). Yeni head için `DELTA-OK` yalnız şu kanıtla verilir:
-`git diff <eski-head> <yeni-head>` yalnız main'in getirdiği değişikliktir (PR'ın kendi dosyaları değişmemiştir).
-Merge makbuzuna main SHA'sı, (a)/(b) kararı ve yeni CI run kimliği yazılır. Squash'taki `sha=` parametresi yalnız
+head'de yeşil olmalıdır. Exit ≠ 0 ise merge yapılmaz; iki kademe (GOV-D3 kapsam mantığı, #976 ölçümü).
+Kapsam, yeniden üretilen pin'lerin girdileridir:
+```
+SCOPE=(src/backend/ .editorconfig .globalconfig Directory.Build.props Directory.Build.targets Directory.Build.rsp \
+  Directory.Packages.props Directory.Packages.targets Directory.Solution.props Directory.Solution.targets \
+  MSBuild.rsp NuGet.Config global.json src/.editorconfig src/.globalconfig src/Directory.Build.props \
+  src/Directory.Build.targets src/Directory.Packages.props src/Directory.Packages.targets \
+  src/Directory.Solution.props src/Directory.Solution.targets src/MSBuild.rsp src/NuGet.Config src/global.json \
+  tools/generate_recovery_surface_inventory.py contracts/recovery/ tests/recovery_surface_inventory/ \
+  tests/release_manifest/ contracts/openapi/ 'tests/GoymenERP.*' tools/relational_inventory/)
+git diff --quiet "$(git merge-base origin/main <expected-head>)" origin/main -- "${SCOPE[@]}"
+```
+**(a)** exit ≠ 0 ise main kapsamın içinde ilerlemiştir: main PR'a merge edilir, pin'ler yeniden
+üretilir, CI yeniden koşar (K3'te GOV-D1'e göre iki review). **(b)** exit 0 ise main yalnız kapsam
+dışında (docs, frontend…) ilerlemiştir: re-pin beklenmez; CI kırmızı çıkarsa (a)'ya (`main-merge-resync`)
+geçilir. CI birleşik ağacı test ettiğinden taze merge ref gerekir. Taze merge ref'in tek yolu **boş
+olmayan mekanik merge commit'idir**: origin/main PR dalına çakışmasız merge edilir; boş commit,
+"re-run jobs" ve kapat-aç yasaktır. Yeni head'de zorunlu CI yeşil olmadan merge yoktur. `DELTA-OK`
+kanıtı: `git rev-parse <yeni-head>^1` = `<eski-head>` ve `git diff <eski-head> <yeni-head>` çıktısı
+`git diff $(git merge-base origin/main <eski-head>) origin/main` çıktısıyla aynıdır (çakışma
+çözümü gerekirse eşitlik bozulur, (b) dışına çıkılır). Bağımsız reviewer imzalar ve `--stat` ile
+sınıfı yazar; yazar veya merge eden kendi merge'üne `DELTA-OK` veremez. K3'te iki exact-head review
+şartı aynen sürer, (b) yalnız mekanik delta'yı kapsar. Makbuza main SHA'sı, (a)/(b) kararı ve yeni
+yeşil CI run kimliği yazılır. Squash'taki `sha=` parametresi yalnız
 head'i doğrular, base'i doğrulamaz; kontrol ile merge çağrısı arasında saniyelik bir yarış kalır.
 Merge eden, çağrıdan önce main ilerlediyse kontrolü yineler. GitHub "Require branches to be up to
 date" ayarı şimdilik kapalıdır (GOV-D3); açılması insan kapısıdır.
