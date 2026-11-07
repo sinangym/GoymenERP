@@ -1218,8 +1218,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     var reinstatedIn = entry.Property(nameof(DraftLineRow.ReinstatedInRevision));
                     var removal = removedIn.IsModified && removedIn.OriginalValue is null && removedIn.CurrentValue is not null
                         && !reinstatedIn.IsModified && (!replacedBy.IsModified || replacedBy.OriginalValue is null);
+                    // The reinstatement's final value is what counts, not whether the column "moved": a line removed again in the SAME
+                    // revision and reverted by that revision's second rejection (or by the next revision after a customer rejection)
+                    // writes the same value (R -> R), which EF does not report as modified.
                     var reinstatement = removedIn.IsModified && removedIn.OriginalValue is int revision && removedIn.CurrentValue is null
-                        && replacedBy.CurrentValue is null && reinstatedIn.IsModified && reinstatedIn.CurrentValue is int back && back == revision;
+                        && replacedBy.CurrentValue is null && reinstatedIn.CurrentValue is int back && back == revision;
                     if ((removedIn.IsModified || replacedBy.IsModified || reinstatedIn.IsModified) && !removal && !reinstatement)
                     {
                         throw new InvalidOperationException(

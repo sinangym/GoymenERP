@@ -51,6 +51,8 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit LinesRevised = new("sales.order-draft.lines-revised.v1", "ReviseLines", "SENTETIK satır");
     private static readonly SalesDraftStateAudit Rejected = new("sales.order-draft.rejected.v1", "Reject", "SENTETIK reddedildi");
+    private static readonly SalesDraftStateAudit Accepted = new("sales.order-draft.customer-accepted.v1", "RecordCustomerAcceptance", "SENTETIK musteri kabul");
+    private static readonly SalesDraftStateAudit CustomerRejected = new("sales.order-draft.customer-rejected.v1", "RecordCustomerRejection", "SENTETIK musteri ret");
     private static readonly SalesDraftStateAudit Rescheduled = new("sales.order-draft.delivery-rescheduled.v1", "RescheduleDelivery", "SENTETIK termin");
 
     [SqlServerFact]
@@ -249,6 +251,86 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task SAT_D211_a_line_removed_again_in_the_rejected_revision_is_reverted_by_its_second_rejection_on_real_sql()
+    {
+        // K3 review A/B P1-1: the second rejection writes ReinstatedInRevision R -> R (EF reports it unmodified); the guard must admit it.
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "t");
+        var first = draft.Lines[0];
+        await using var scope = run.SalesStore(CompanyA);
+
+        async Task RemoveAsync(string key) => await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope(key), Hash(key), SalesDraftCommands.ReviseLinesV1,
+            draft.Id, (d, now) => d.ReviseLines(d.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK-reviser", "SENTETIK", now, Day), LinesRevised,
+            (_, _) => Task.CompletedTask);
+        async Task SubmitAsync(string key) => await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope(key), Hash(key), SalesDraftCommands.SubmitV1,
+            draft.Id, (d, now) => d.Submit(d.Version, run.Actor, now), Submitted);
+        async Task RejectAsync(string key) => await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope(key, "SENTETIK-approver"), Hash(key),
+            SalesDraftCommands.RejectV1, draft.Id, (d, now) => d.Reject(d.Version, "SENTETIK-approver", "SENTETIK ret", now), Rejected);
+
+        await RemoveAsync("t-remove-1");
+        await SubmitAsync("t-submit-1");
+        await RejectAsync("t-reject-1");
+        await RemoveAsync("t-remove-2");
+
+        // Between the removal and the second rejection the row carries both columns (removed again, reinstated before) and rebuilds.
+        var between = (await scope.Store.FindDraftAsync(draft.Id))!;
+        Assert.Equal((1, 1), (between.Lines.Count, between.RemovedLines.Count));
+        Assert.Equal((first.Id, 1, 1), (between.RemovedLines[0].Id, between.RemovedLines[0].RemovedInRevision!.Value, between.RemovedLines[0].ReinstatedInRevision!.Value));
+
+        await SubmitAsync("t-submit-2");
+        await RejectAsync("t-reject-2");
+
+        var stored = (await scope.Store.FindDraftAsync(draft.Id))!;
+        Assert.Equal((2, 0), (stored.Lines.Count, stored.RemovedLines.Count));
+        Assert.Equal(1, stored.Lines.Single(line => line.Id == first.Id).ReinstatedInRevision);
+        Assert.Equal((0, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] IS NOT NULL", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [ReinstatedInRevision] = 1", ("@id", draft.Id))));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_D211_a_customer_rejection_after_a_second_removal_lets_the_next_revision_open_on_real_sql()
+    {
+        // K3 review A/B P1-1, customer path: the next revision of a customer-rejected one reverts its removals (R -> R again).
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "u", customerAcceptance: true);
+        var first = draft.Lines[0];
+        await using var scope = run.SalesStore(CompanyA);
+
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("u-accept", "SENTETIK-sales"), Hash("u-accept"), SalesDraftCommands.RecordCustomerAcceptanceV1,
+            draft.Id, (d, now) => d.RecordCustomerAcceptance(d.Version, "SENTETIK-sales", now), Accepted);
+        async Task RemoveAsync(string key) => await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope(key), Hash(key), SalesDraftCommands.ReviseLinesV1,
+            draft.Id, (d, now) => d.ReviseLines(d.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK-reviser", "SENTETIK", now, Day), LinesRevised,
+            (_, _) => Task.CompletedTask);
+        async Task SubmitAsync(string key) => await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope(key), Hash(key), SalesDraftCommands.SubmitV1,
+            draft.Id, (d, now) => d.Submit(d.Version, run.Actor, now), Submitted);
+
+        await RemoveAsync("u-remove-1");
+        await SubmitAsync("u-submit-1");
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("u-reject", "SENTETIK-approver"), Hash("u-reject"), SalesDraftCommands.RejectV1, draft.Id,
+            (d, now) => d.Reject(d.Version, "SENTETIK-approver", "SENTETIK ret", now), Rejected);
+        await RemoveAsync("u-remove-2");
+        await SubmitAsync("u-submit-2");
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("u-approve-r1", "SENTETIK-approver"), Hash("u-approve-r1"), SalesDraftCommands.ApproveV1, draft.Id,
+            (d, now) => d.Approve(d.Version, "SENTETIK-approver", now), Approved);
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("u-customer-reject", "SENTETIK-sales"), Hash("u-customer-reject"),
+            SalesDraftCommands.RecordCustomerRejectionV1, draft.Id,
+            (d, now) => d.RecordCustomerRejection(d.Version, "SENTETIK-sales", "SENTETIK musteri istemedi", now), CustomerRejected);
+
+        // The next revision (a line added) opens: Rev.1 is archived as approved (without the line) and its removal is reverted.
+        var added = Line(CompanyA, ProductB, "3");
+        var opened = await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope("u-rev2"), Hash("u-rev2"), SalesDraftCommands.ReviseLinesV1, draft.Id,
+            (d, now) => d.ReviseLines(d.Version, [added], [], "SENTETIK-reviser", "SENTETIK", now, Day), LinesRevised, (_, _) => Task.CompletedTask);
+        Assert.Equal((2, "Preparing"), (opened!.Draft.Revision, opened.Draft.ApprovalState.ToString()));
+
+        var stored = (await scope.Store.FindDraftAsync(draft.Id))!;
+        Assert.Equal(3, stored.Lines.Count);
+        Assert.Equal(1, stored.Lines.Single(line => line.Id == first.Id).ReinstatedInRevision);
+        Assert.DoesNotContain(stored.ArchivedRevisions.Single(revision => revision.Revision == 1).Lines, line => line.LineId == first.Id);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] IS NOT NULL", ("@id", draft.Id)));
+    }
+
+    [SqlServerFact]
     public async Task SAT_D219_the_route_refuses_a_removal_of_a_line_with_an_open_linked_supply_and_asks_the_owner_for_the_server_company_on_real_sql()
     {
         // A SYNTHETIC Purchasing adapter of the Sales-declared linked-supply port, registered in the real host.
@@ -294,6 +376,71 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] = 1", ("@id", draft.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_D219_the_submission_and_the_approval_read_the_linked_supply_of_the_removed_line_again_through_the_real_routes_on_real_sql()
+    {
+        // K3 review B P2-2: the re-read at the decision (409 sales_revision_blocked, 503 unreadable) on real routes and real SQL.
+        var owner = new LinkedSupplyOwner();
+        await using var run = await Run.StartAsync(services => services.AddSingleton<ISalesOrderLinkedSupplyReadPortV1>(owner));
+        var draft = await run.ApprovedDraftAsync(CompanyA, "w");
+        var first = draft.Lines[0];
+        owner.Line = first.Id;
+        var basePath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
+        var writer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.OrdersQuantityWrite);
+        var approver = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersApprove);
+        using var writerClient = run.Client(writer, CompanyA);
+        using var approverClient = run.Client(approver, CompanyA);
+        var version = draft.Version;
+
+        // The removal is recorded while no link is open (Rev.1, Preparing, version + 1).
+        owner.Mode = "none";
+        using (var revised = await writerClient.SendAsync(Post($"{basePath}/line-revision", "SENTETIK-d219w-remove",
+            new SalesDraftLineRevisionRequest(version.ToString(System.Globalization.CultureInfo.InvariantCulture), "SENTETIK satir kalksin", [],
+                [new SalesDraftLineRemovalV1(first.Id, null)]))))
+        {
+            Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
+        }
+
+        string Version(long offset) => (version + offset).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        async Task<(HttpStatusCode Status, string Code, string Field, string FieldCode)> SendAsync(HttpClient client, string path, string key, long offset)
+        {
+            using var response = await client.SendAsync(Post(path, key, new SalesDraftStateCommandRequest(Version(offset))));
+            var body = response.StatusCode == HttpStatusCode.OK ? default : await response.Content.ReadFromJsonAsync<JsonElement>();
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                return (response.StatusCode, "", "", "");
+            }
+
+            var errors = body.TryGetProperty("errors", out var list) && list.GetArrayLength() > 0 ? list[0] : default;
+            return (response.StatusCode, body.TryGetProperty("code", out var code) ? code.GetString() ?? "" : "",
+                errors.ValueKind == JsonValueKind.Object ? errors.GetProperty("field").GetString()! : "",
+                errors.ValueKind == JsonValueKind.Object ? errors.GetProperty("code").GetString()! : "");
+        }
+
+        // A purchase order opened on the (now passive, but known) line before the submission: 409, nothing moves.
+        owner.Mode = "open";
+        Assert.Equal((HttpStatusCode.Conflict, "sales_revision_blocked", "removedLines[0].lineId", "sales_line_revision_line_linked"),
+            await SendAsync(writerClient, $"{basePath}/submission", "SENTETIK-d219w-submit-1", 1));
+        // Closed: the submission passes; opened again before the approval: the approval is refused, then unreadable is 503.
+        owner.Mode = "none";
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(writerClient, $"{basePath}/submission", "SENTETIK-d219w-submit-2", 1)).Status);
+        owner.Mode = "open";
+        Assert.Equal((HttpStatusCode.Conflict, "sales_revision_blocked", "removedLines[0].lineId", "sales_line_revision_line_linked"),
+            await SendAsync(approverClient, $"{basePath}/approval", "SENTETIK-d219w-approve-1", 2));
+        owner.Mode = "unreadable";
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await SendAsync(approverClient, $"{basePath}/approval", "SENTETIK-d219w-approve-2", 2)).Status);
+        Assert.Equal((2, 1), (
+            await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] = 1", ("@id", draft.Id))));
+
+        // Closed in its owner: the approval goes through (company A asked every time).
+        owner.Mode = "none";
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(approverClient, $"{basePath}/approval", "SENTETIK-d219w-approve-3", 2)).Status);
+        Assert.All(owner.Queries, query => Assert.Equal((CompanyA, draft.Id), (query.CompanyId, query.OrderId)));
     }
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -343,12 +490,12 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>A draft with two unpriced lines (A 10 kg, B 20 kg) for the normal buyer, from SYNTHETIC owner snapshots.</summary>
-    private static SalesOrderDraft Draft(Guid company, string documentNo)
+    private static SalesOrderDraft Draft(Guid company, string documentNo, bool customerAcceptance = false)
     {
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30,
             BuyerTax: SalesBuyerTax.Create(TaxBuyerSituationsV1.Normal));
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0, customerAcceptanceRequired: customerAcceptance);
         draft.AddLine(draft.Version, Line(company, ProductA, "10"), T0);
         draft.AddLine(draft.Version, Line(company, ProductB, "20"), T0);
         return draft;
@@ -387,11 +534,11 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A stored order of the company with two lines (A 10 kg, B 20 kg), submitted and approved (version 5).</summary>
-        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, string keyPrefix)
+        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, string keyPrefix, bool customerAcceptance = false)
         {
             await using var scope = SalesStore(company);
             var draft = (await scope.Store.StoreDraftAsync(SalesEnvelope($"{keyPrefix}-create"), Hash($"{keyPrefix}-create"),
-                documentNo => Draft(company, documentNo))).Draft;
+                documentNo => Draft(company, documentNo, customerAcceptance))).Draft;
             await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit"), Hash($"{keyPrefix}-submit"), SalesDraftCommands.SubmitV1,
                 draft.Id, (d, now) => d.Submit(d.Version, Actor, now), Submitted);
             return (await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-approve", "SENTETIK-approver"), Hash($"{keyPrefix}-approve"),

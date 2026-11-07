@@ -438,8 +438,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (ba7de976… -> ee57b276…).
             // SAT-D219 (EK38): +1 SalesOrderLineRevision fact (the route refuses a removal of a line with an open linked supply, asks the
             // owner for the server company, and passes once the link is closed), kept ordinal-sorted (ee57b276… -> a2ac1f92…).
+            // K3 review A/B P1-1 + B P2-2 (SAT-D211 / SAT-D219): +3 SalesOrderLineRevision facts (the second rejection of one revision, a
+            // customer rejection after a second removal, the submission and approval re-read of the linked supply on the real routes),
+            // kept ordinal-sorted (a2ac1f92… -> a58234a1…).
             ["tools/relational_inventory/sales.txt"] =
-                "a2ac1f92b3558cfb379cf206f0dccceaf22313b8b004141fc5d6a8bc542b48d9",
+                "a58234a137998102195eac1636c953da7ab7a5e56692231f5ec2d0925ae5eb2a",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -555,9 +558,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // and a removal is never undone or changed (a passive line never comes back).
             // Re-fingerprinted for SAT-D211 (EK36): DraftLines.ReinstatedInRevision (in CK_DraftLines_LineRevision); the guard admits it
             // and exactly one way back — RemovedInRevision R → null with the replacement cleared and ReinstatedInRevision → R.
+            // Re-fingerprinted for K3 review A/B P1-1: the way back judges ReinstatedInRevision's FINAL value (== R), not whether EF
+            // reports it modified (a line removed again in the same revision and reverted again writes R -> R).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "cde0688c7ff9e1510986f9db5f43dfa22d3264af01ad5241af415240f96ec75f",
+                "eda9a888251bda233662d3294443f2ab6ed6520edf353c5bae21cc1ad2692ea9",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1610,8 +1615,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D211 (EK36): a rejection (and the next revision of a customer-rejected one) writes the
                     // reverted lines' revision columns (ReinstatedInRevision) through the same filtered context, checked move by move;
                     // the restore rebuilds reinstatements; SqlClient count unchanged.
+                    // Re-fingerprinted for K3 review A/B P1-1: the line revision's audit picture also carries ReinstatedInRevision.
                     new(
-                        "bd5daa3f27d8428a9eff4c8fb684cc8238f184cfa049755dd30e441fd9628ee6",
+                        "f06a8d6e682c9fb694066735f3509f2d50310a2e4d225ac50caf2f736d137d22",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

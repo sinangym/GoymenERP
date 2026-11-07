@@ -680,7 +680,7 @@ public sealed partial class SalesStore(
         {
             line.LineNo, line.Id, line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, quantity = line.QuantityText,
             line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent, line.ItemType,
-            line.AddedInRevision, line.RemovedInRevision, line.ReplacedByLineId,
+            line.AddedInRevision, line.RemovedInRevision, line.ReplacedByLineId, line.ReinstatedInRevision,
         }).ToArray(),
     };
 

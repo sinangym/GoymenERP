@@ -177,4 +177,28 @@ public sealed partial class SalesDraftServiceTests
         var done = await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve-3"));
         Assert.Equal("Approved", done.Detail.Draft.ApprovalState);
     }
+
+    [Fact]
+    public async Task A_never_approved_orders_removed_line_is_read_again_at_its_submission_too()
+    {
+        // K3 review A P2-1: the re-read does not need an archived approved revision (Rev.0, Preparing).
+        var world = new World();
+        Owners(world);
+        var (purchasing, _) = SupplyOwners(world);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-d219-r0"))).Detail;
+        var firstLine = created.Lines[0].LineId;
+        await world.Service().ReviseLinesAsync(created.Draft.Id, LineRevision(created.Draft.Version, [AddedLine()], [new SalesDraftLineRemovalV1(firstLine)]),
+            Metadata("k-d219-r0-lines"));
+        Assert.Equal(0, Assert.Single(world.Store.Drafts).Revision);
+
+        purchasing.Answer = (query, kind) => Answer(query, kind, OpenPurchaseOrder(firstLine));
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
+            Command("3"), Metadata("k-d219-r0-submit")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked, "removedLines[0].lineId", SalesRuleCodes.LineRevisionLineLinked),
+            (refused.Status, refused.Code, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+
+        purchasing.Answer = (query, kind) => Answer(query, kind);
+        var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-d219-r0-submit-2"));
+        Assert.Equal("PendingApproval", submitted.Detail.Draft.ApprovalState);
+    }
 }
