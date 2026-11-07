@@ -113,7 +113,7 @@ GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır (tek i
 25 Ekim 2026 Claude şeridi kararı); coordinator — ve bu istisnada Claude şeridi — aynı
 kapıları prosedürel olarak doğrular ve kanıtı GitHub'a yazmadan merge yapmaz.
 
-**Merge öncesi main tazelik kontrolü (Faz 0; 7 Kasım 2026 kullanıcı kararı GOV-D2/GOV-D3,
+**Merge öncesi main tazelik kontrolü (Faz 0; 7 Kasım 2026 kullanıcı kararı GOV-D2/GOV-D3'e dayanır, kapsam ve Claude şeridine uygulanması uygulama ayrıntısıdır,
 `docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`):** `src/backend/`,
 bir migration'a, kök build-control dosyalarına (`tools/generate_recovery_surface_inventory.py` içindeki `REPOSITORY_BUILD_CONTROL_PATHS`: `Directory.Build.*`, `Directory.Packages.*`, `NuGet.Config`, `global.json`, `.editorconfig`/`.globalconfig`, `src/.editorconfig` vb.) veya recovery envanterine (`tools/generate_recovery_surface_inventory.py`,
 `contracts/recovery/**`, `tests/recovery_surface_inventory/**`, `tests/release_manifest/**`)
