@@ -32,7 +32,7 @@ import type {
   CustomerInstrumentStatusChangeRequest,
 } from './customerInstrumentContract'
 import type { DraftContextRequest } from './draftContext'
-import type { PartyLedgerRequest } from './partyLedgerContract'
+import type { PartyBalanceRequest, PartyLedgerRequest } from './partyLedgerContract'
 import type { HttpReadReply } from './http'
 import type {
   ApproveManualBankPaymentRequest,
@@ -103,6 +103,9 @@ export interface FinanceReceiptPort {
    * `ReadResult<PartyLedgerView>`, or the refusal marker `{ partyLedgerRefusal }` for 400 / 422 (partyLedgerContract.ts).
    */
   partyLedger(scope: FinanceScope, request: PartyLedgerRequest, signal: AbortSignal): Promise<PortReply>
+
+  /** F1b / API-04 (read-only): `GET /finance/party-balance?partyId&companyAccountId` → `ReadResult<PartyBalanceView>`. */
+  partyBalance(scope: FinanceScope, request: PartyBalanceRequest, signal: AbortSignal): Promise<PortReply>
 
   /** FS0 — `IFinanceBankAccountReader.ListAuthorizedAsync` → `ReadResult<BankAccountPage>`. */
   listBankAccounts(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
