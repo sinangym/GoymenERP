@@ -24,6 +24,8 @@ Satış ile aynı port: `IFinanceInvoiceOpenItemAdmissionPortV1`, `Producer = Pu
   bekliyor" durumuyla commit eder, sonra portu çağırır, hatada aynı anahtarla yeniden dener. ALS-D62'nin işlem sınırı
   ayrıntısı A5'te bu öneriyle netleşir.
 - Tedarikçi borcu satış riskinden düşülmez (ALS-D42).
+- Yeniden gönderim ve yetki çiti FS-1 ile aynıdır (yeni anahtar + aynı `AdmissionId` → replay;
+  `IFinanceInvoiceOpenItemAdmissionAuthorityV1`); bağlantı A5'te.
 
 ## FA-3 · Sipariş başlığında bakiye (MOD-02)
 
