@@ -11,7 +11,8 @@
  *    token, so an order is never closed on an impact the user did not see.
  *  - One idempotent attempt per snapshot (the cancellation's rules): an unknown outcome keeps its key, a retry resends the
  *    same snapshot, and a recorded closure re-reads the detail.
- * A closed order shows its recorded closure under the draft read. Nothing here releases another module's record.
+ * A closed order shows its recorded closure under the draft read (SAT-D32: the user closure's record when the order was closed
+ * by the user, else the force-closure's). Nothing here releases another module's record.
  */
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -42,6 +43,7 @@ import {
   type OrderAttemptState,
 } from './orderAttempt'
 import { SALES_CAPABILITY, SALES_FORCE_CLOSE_CAPABILITY } from './capabilities'
+import { ClosedOrderRecord } from './SalesDraftUserClose'
 import { formatInstant } from './format'
 import { FORCE_CLOSE_TEXT as T, ORDER_DETAIL_TEXT, problemCodeText } from './salesText'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
@@ -68,7 +70,13 @@ export function SalesDraftForceClose({
   readonly companyId: string
   readonly onRecorded: () => void
 }) {
-  if (detail.draft.state === CLOSED_STATE) return <ForceClosureRecordView shell={shell} detail={detail} companyId={companyId} />
+  // SAT-D32: a closed order shows its user closure when it has one, otherwise the force-closure record below.
+  if (detail.draft.state === CLOSED_STATE) {
+    return (
+      <ClosedOrderRecord shell={shell} detail={detail} companyId={companyId}
+        fallback={<ForceClosureRecordView shell={shell} detail={detail} companyId={companyId} />} />
+    )
+  }
   if (
     detail.draft.state !== DRAFT_STATE ||
     detail.draft.approvalState !== APPROVAL_STATE.approved ||

@@ -249,6 +249,10 @@ export interface HarnessConfig {
   readonly onForceClose?: (call: RecordedCall) => Response | Promise<Response>
   /** No 30: GET `/sales/drafts/{id}/force-close`; default: no recorded closure. */
   readonly onForceClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** SAT-D32: a POST on `/sales/drafts/{id}/close`. */
+  readonly onUserClose?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D32: GET `/sales/drafts/{id}/close`; default: no recorded user closure. */
+  readonly onUserClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-005: a POST on `/sales/drafts/{id}/cancellation`. */
   readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
@@ -352,6 +356,13 @@ export function installFetch(config: HarnessConfig = {}) {
             return config.onForceClose(call)
           }
           return config.onForceClosure?.(url, call.companyId) ?? json({ forceClosure: null })
+        }
+        if (/\/sales\/drafts\/[^/?]+\/close$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onUserClose === undefined) throw new Error('unexpected user close')
+            return config.onUserClose(call)
+          }
+          return config.onUserClosure?.(url, call.companyId) ?? json({ userClosure: null })
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
           if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')

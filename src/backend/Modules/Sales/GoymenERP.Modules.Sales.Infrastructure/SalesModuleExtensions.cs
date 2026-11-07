@@ -172,7 +172,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<IProductItemTypeReaderV1>(),
         // SAT-D175 (EK25): the Production / customer-goods binding of a subcontract service order (host adapter, the Production
         // lane's); until it is composed, the customer of such an order does not change (503, fail-closed).
-        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>());
+        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>(),
+        // SAT-D32: the source (MOD-05), invoicing (S5) and financial-closure (MOD-04) axes; nothing registers it on main, so they
+        // stay "NoSource" and "kapanmaya hazır" stays false (the user closure is 409), never an assumed complete axis.
+        serviceProvider.GetService<ISalesOrderOwnerAxesSourceV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

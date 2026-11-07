@@ -215,6 +215,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>No 30 / SAT-D12: the recorded force-closures (append-only, at most one per draft).</summary>
     internal DbSet<DraftForceClosureRow> DraftForceClosures => Set<DraftForceClosureRow>();
 
+    /// <summary>SAT-D32: the recorded user closures of "kapanmaya hazır" orders (append-only, at most one per draft).</summary>
+    internal DbSet<DraftUserClosureRow> DraftUserClosures => Set<DraftUserClosureRow>();
+
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
 
@@ -290,6 +293,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([Reason]) > 0 "
         + "AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0";
 
+    /// <summary>
+    /// CK_DraftUserClosures_Identity: identities, the revision counter, the smallest version a user closure can produce (create
+    /// 1, one line 2, submit 3, approve 4, close 5) and non-blank texts.
+    /// </summary>
+    internal const string UserClosureIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -308,6 +319,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftCancellations(modelBuilder);
         ConfigureDraftCustomerRejections(modelBuilder);
         ConfigureDraftForceClosures(modelBuilder);
+        ConfigureDraftUserClosures(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
@@ -937,6 +949,23 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D32: the recorded user closure of a "kapanmaya hazır" order — append-only history beside the draft, at most one per
+    // draft; no reason (SAT-D215), no remainder.
+    private void ConfigureDraftUserClosures(ModelBuilder modelBuilder)
+    {
+        var closure = modelBuilder.Entity<DraftUserClosureRow>();
+        closure.ToTable("DraftUserClosures", Schema, table =>
+            table.HasCheckConstraint("CK_DraftUserClosures_Identity", UserClosureIdentityConstraint));
+        closure.HasKey(x => new { x.CompanyId, x.DraftId });
+        closure.Property(x => x.ClosedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        closure.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        closure.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -1162,6 +1191,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftCustomerRejectionRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
+                    // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.
+                    DraftUserClosureRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],

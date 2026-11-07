@@ -70,7 +70,8 @@ public sealed partial class SalesDraftService(
     ISettingsTaxRateListReaderV1? rateLists = null,
     ISettingsExchangeRateResolverV1? exchangeRates = null,
     IProductItemTypeReaderV1? itemTypes = null,
-    ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null,
+    ISalesOrderOwnerAxesSourceV1? ownerAxes = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;

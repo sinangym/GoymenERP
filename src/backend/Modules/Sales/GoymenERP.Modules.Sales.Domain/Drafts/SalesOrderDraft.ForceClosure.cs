@@ -111,7 +111,8 @@ public sealed partial class SalesOrderDraft
     {
         ArgumentNullException.ThrowIfNull(facts);
         RequireApprovalNotRestored();
-        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || facts.Revision != Revision
+        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || UserClosure is not null
+            || facts.Revision != Revision
             || string.IsNullOrWhiteSpace(facts.ClosedBy) || facts.ClosedBy.Length > MaximumActorLength
             || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumForceCloseReasonLength
             || !IsForceClosureImpact(facts.Impact) || !FitsLines(facts.Lines))

@@ -250,6 +250,8 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
     'Kapatma etkisi siz gördükten sonra değişti; sipariş kapatılmadı. Güncel etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.orderNotReadyToClose]:
+    'Sipariş kapanmaya hazır değil; kapatılmadı. Bütün durum eksenleri tamamlandığında yeniden deneyin.',
   [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
 }
@@ -913,7 +915,7 @@ export function partyDisplayText(party: { readonly code: string; readonly legalN
 
 /** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
 export const FORCE_CLOSE_TEXT = {
-  heading: 'Siparişi kapat',
+  heading: 'Siparişi zorla kapat',
   description:
     'Teslim edilmeyen kalan "iptal edilen kalan" olarak kapatılır; teslim edilen bölüm, satırlar ve geçmiş değişmez. ' +
     'Açık tahsis, sevk edilmemiş yükleme ya da okunamayan bir kaynak varken kapatma yapılmaz. Faturalanmamış irsaliye ' +
@@ -934,7 +936,7 @@ export const FORCE_CLOSE_TEXT = {
   warning: 'Faturalanmamış irsaliye var. Kapatma bunu engellemez; fatura işi açık kalır.',
   reasonLabel: 'Kapatma nedeni (zorunlu)',
   reasonRequired: 'Kapatma nedeni zorunludur.',
-  submit: 'Siparişi kapat',
+  submit: 'Siparişi zorla kapat',
   submitting: 'Kapatma gönderiliyor…',
   unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir kapatma oluşturmaz.',
   completed: 'Sipariş kapatıldı; kalan iptal edilen kalan olarak kaydedildi.',
@@ -948,7 +950,7 @@ export const FORCE_CLOSE_TEXT = {
   versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
   validation: 'Kapatma uygulanmadı; gönderilen bilgi geçerli değil.',
   unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
-  recordHeading: 'Kapatma kaydı',
+  recordHeading: 'Zorla kapatma kaydı',
   recordSubject: 'kapatma kaydı',
   closedBy: 'Kapatan',
   closedAt: 'Kapatma zamanı',
@@ -965,6 +967,40 @@ export const FORCE_CLOSE_TEXT = {
     Unreadable: 'Okunamadı; sıfır varsayılmaz',
     NoSource: 'Kaynak yok; bu bağı tutan modül henüz yok',
   } satisfies Record<CancellationStatus, string>,
+} as const
+
+/**
+ * SAT-D32 / SAT-D168 / SAT-D215: the user closure of a "kapanmaya hazır" order ("Siparişi kapat") and its record. The same
+ * "Kapalı" lifecycle as a force-closure; the record's own label tells them apart.
+ */
+export const USER_CLOSE_TEXT = {
+  heading: 'Siparişi kapat',
+  description:
+    'Sipariş kapanmaya hazır: bütün durum eksenleri tamamlandı. Sipariş kendiliğinden kapanmaz; kapatmak sizin işleminizdir. ' +
+    'Gerekçe istenmez. Kapatılan siparişe yeni sevk yapılmaz; satırlar ve geçmiş değişmez, stok ve para hareketi oluşmaz.',
+  submit: 'Siparişi kapat',
+  submitting: 'Kapatma gönderiliyor…',
+  unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir kapatma oluşturmaz.',
+  completed: 'Sipariş kapatıldı.',
+  replayed: 'Bu kapatma daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  retry: 'Aynı kapatmayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; kapatma uygulanmadı.',
+  forbidden: 'Bu şirkette sipariş kapatma yetkiniz yok; kapatma uygulanmadı.',
+  notFound: 'Sipariş bulunamadı; kapatma uygulanmadı.',
+  conflict: 'Kapatma uygulanmadı; sipariş ve durumu yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  validation: 'Kapatma uygulanmadı; gönderilen bilgi geçerli değil.',
+  unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
+  statusSubject: 'kapanmaya hazır bilgisi',
+  recordHeading: 'Kapatma kaydı (kullanıcı kapattı)',
+  recordSubject: 'kapatma kaydı',
+  recordNote:
+    'Sipariş kapanmaya hazırken kullanıcı tarafından kapatıldı (zorla kapatma değil). Onay bilgileri, satırlar ve geçmiş ' +
+    'silinmez; sipariş başka işlem kabul etmez.',
+  closedBy: 'Kapatan',
+  closedAt: 'Kapatma zamanı',
+  revision: 'Kapatılan revizyon',
 } as const
 
 /** AT-024: the partly delivered remainder panel (`SalesDraftRemainderChangePanel`). */
