@@ -721,7 +721,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         expected_business = set(generator.NON_MESSAGE_DELIVERY_TABLES)
         discovered = set(generator._discover_message_delivery_tables(self.snapshot))
         self.assertTrue(expected_message.isdisjoint(expected_business))
-        self.assertEqual(8, len(discovered))
+        # SAT-D30: + sales.DraftOverDeliveryApprovals, a business table whose name matches "deliver".
+        self.assertEqual(9, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
