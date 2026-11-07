@@ -104,7 +104,8 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 /// cancelled with the order; committed = Ordered − Technical and remaining = committed − Accepted − Cancelled are derived
 /// (master INV-006). The request binding (SourceRequestLineId) is the share this supplier takes.
 /// A2a-1 (ALS-D5): the general line's manual price (UnitPrice, PriceUnitId, DiscountPercent or DiscountAmount), all null for a line
-/// without a price ("fiyat bekliyor", ALS-D18) and always null on a technical line; written once with the line.
+/// without a price ("fiyat bekliyor", ALS-D18) and always null on a technical line; written once with the line. A2a-2 (ALS-D38,
+/// ALS-D75): the maturity surcharge (DeferralPercent or DeferralAmount), only beside a unit price above 0; written once with the price.
 /// </summary>
 internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
 {
@@ -127,6 +128,8 @@ internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
     public Guid? PriceUnitId { get; set; }
     public decimal? DiscountPercent { get; set; }
     public decimal? DiscountAmount { get; set; }
+    public decimal? DeferralPercent { get; set; }
+    public decimal? DeferralAmount { get; set; }
 }
 
 /// <summary>ADR-011 attempt record (the Sales shape): the key hash, the content hash, the actor, the outcome and the result (a request, an order or a refusal).</summary>

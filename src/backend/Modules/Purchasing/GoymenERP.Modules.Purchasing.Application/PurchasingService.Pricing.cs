@@ -122,6 +122,12 @@ public sealed partial class PurchasingService
                 : null,
             price.DiscountAmount is { } amount
                 ? ReadPriceText(amount, PurchaseOrderMoney.MaximumPriceScale, PurchasingRuleCodes.PriceScaleExceeded, field)
+                : null,
+            price.DeferralPercent is { } deferralPercent
+                ? ReadPriceText(deferralPercent, PurchaseOrderLinePrice.PercentScale, PurchasingRuleCodes.DeferralPercentOutOfRange, field)
+                : null,
+            price.DeferralAmount is { } deferralAmount
+                ? ReadPriceText(deferralAmount, PurchaseOrderMoney.MaximumPriceScale, PurchasingRuleCodes.PriceScaleExceeded, field)
                 : null);
     }
 
@@ -178,7 +184,11 @@ public sealed partial class PurchasingService
             price.DiscountPercent is { } percent ? CommercialLinePriceCalculator.Format(percent) : null,
             price.DiscountAmount is { } amount ? CommercialLinePriceCalculator.Format(amount) : null,
             CommercialLinePriceCalculator.Format(price.NetUnitPrice),
-            CommercialLinePriceCalculator.Format(price.LineAmount(line.Quantity.Value, currency)));
+            CommercialLinePriceCalculator.Format(price.LineAmount(line.Quantity.Value, currency)))
+        {
+            DeferralPercent = price.DeferralPercent is { } deferralPercent ? CommercialLinePriceCalculator.Format(deferralPercent) : null,
+            DeferralAmount = price.DeferralAmount is { } deferralAmount ? CommercialLinePriceCalculator.Format(deferralAmount) : null,
+        };
     }
 
     private static PurchaseOrderCurrencyView? CurrencyView(PurchaseOrderMoney? money) =>

@@ -153,6 +153,27 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `20261107131321_AddPurchaseOrderUnitPriceScale` adds the column and `CK_PurchaseOrders_UnitPriceScale` (null, or beside a
   currency within 0..28; `CK_PurchaseOrders_Money` unchanged, no backfill); its Down refuses (`THROW 51170`) while any order has a
   unit-price scale.
+- **Maturity surcharge, totals and "fiyat bekliyor" on the list (A2a-2, plan API-20; ALS-D38, ALS-D74…D77, EK13 #66
+  6708738330 / 6708953113):** a line price may carry at most one maturity surcharge (vade farkı) — `deferralPercent` of the
+  DISCOUNTED unit price (0..100, ≤ 6 decimals) or `deferralAmount` per unit (≥ 0, the unit-price scale) — added after the discount,
+  as Sales does (ALS-D75 "Satış'la aynı"); never on a 0 price (`purchasing_deferral_on_zero_price`); two at once is
+  `purchasing_deferral_kind_conflict`, a percent out of bounds `purchasing_deferral_percent_out_of_range`, a negative amount
+  `purchasing_deferral_amount_negative` (all 422 on `lines[i].price`). A deferred price typed directly is a plain price with no flag
+  (ALS-D76). The detail's price carries `deferralPercent` / `deferralAmount`; the net unit price includes the surcharge (exact).
+  `GET orders/{id}/totals` (under `purchasing.orders.read`) answers the general lines' amounts and their sum, the VAT per line and its
+  sum, and the gross amount through the shared `BuildingBlocks/Monetary/CommercialTaxTotalsCalculator` (the Sales totals rules —
+  VAT per line rounded once, withholding from the rounded VAT, SAT-D75 — pinned to `SalesOrderTotalsCalculator` by a golden parity
+  test; moving Sales onto it is a TEK-03 hand-off). The VAT rate is the item type's default from the existing Settings
+  `ISettingsLineTaxResolverV1` for buyer situation `Normal` on the order's business date (ALS-D74; `Exempt`/`ZeroRated` = 0 %); a
+  product without an item type or default, or an unreadable port, makes that line's VAT `NotComputable` (with the Settings reason)
+  and the document VAT `NotComputable` with the count — never guessed. VAT is computed on the line amount INCLUDING the surcharge
+  (ALS-D77 "Vade farkı dahil hesaplansın"; it replaces ALS-D38's EK3 note). Purchase withholding is always `NotComputable`
+  (`withholding_unconfirmed`, N-20), so the withheld VAT and the payable amount are null; supplier exemptions are not modelled yet. An
+  unpriced line makes the totals `Incomplete`. PRS-02: without `purchasing.orders.price.read` every state is `Withheld`, every amount
+  null and no line is listed. The order list carries `pricePending` per item for a holder of the price read only (never written
+  otherwise). Migration `20261107151838_AddPurchaseOrderLineDeferral` adds `DeferralPercent` decimal(9,6) and `DeferralAmount`
+  decimal(24,6) and `CK_PurchaseOrderLines_Deferral` (none, or one in bounds beside a unit price above 0; `CK_PurchaseOrderLines_Price`
+  unchanged, no backfill); its Down refuses (`THROW 51171`) while any line carries a surcharge.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay

@@ -72,6 +72,64 @@ public sealed class PurchasingPricingGuardTests
         Assert.Equal(("TRY", 2, (int?)null), (sales.CurrencyCode, sales.Scale, sales.UnitPriceScale));
     }
 
+    // A2a-2 (ALS-D74, ALS-D75): golden parity of the shared totals calculator with the Sales one — line amounts with a discount and a
+    // maturity surcharge, VAT per line, withholding from the rounded VAT (SAT-D75), gross and payable, and the document sums.
+    [Theory]
+    [InlineData("41.25", "2.5", null, "3", null, "1250.5", "20", "0.5", 2)]
+    [InlineData("10.01", null, "0.01", null, "0.25", "0.5", "10", null, 2)]
+    [InlineData("33.33", "33.333333", null, null, null, "7.125", "1", "0.2", 2)]
+    [InlineData("0", "10", null, null, null, "4", "20", null, 2)]
+    [InlineData("1.5", null, "1.5", null, "0.000001", "7", "18", "0.9", 6)]
+    [InlineData("99.99", null, null, "100", null, "3", "0", null, 0)]
+    public void The_shared_totals_calculator_answers_exactly_what_the_Sales_totals_calculator_answers(string price, string? discountPercent,
+        string? discountAmount, string? surchargePercent, string? surchargeAmount, string quantity, string vat, string? share, int scale)
+    {
+        var unit = Guid.NewGuid();
+        var currency = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var rate = SalesLineTaxRate.Of(Parse(vat)!.Value, Parse(share));
+        var commercial = new CommercialDraftFields(price, unit, discountPercent, DiscountAmount: discountAmount, SurchargePercent: surchargePercent,
+            SurchargeAmount: surchargeAmount);
+        var sales = SalesOrderTotalsCalculator.Calculate(
+            [
+                new SalesTotalsLineInput(first, 1, unit, Parse(quantity)!.Value, commercial),
+                new SalesTotalsLineInput(second, 2, unit, 2m, new CommercialDraftFields("12.5", unit, null)),
+            ], currency, scale, _ => rate);
+        var priceInput = new CommercialLinePriceInput(Parse(price)!.Value, Parse(discountPercent), Parse(discountAmount), Parse(surchargePercent),
+            Parse(surchargeAmount));
+        var tax = CommercialLineTaxInput.Vat(rate.VatPercent, rate.WithholdingShare);
+        var shared = CommercialTaxTotalsCalculator.Calculate(
+            [
+                new CommercialTotalsLineInput(first, Parse(quantity)!.Value, priceInput, tax),
+                new CommercialTotalsLineInput(second, 2m, new CommercialLinePriceInput(12.5m), tax),
+            ], scale);
+
+        for (var index = 0; index < 2; index++)
+        {
+            var (expected, actual) = (sales.Lines[index], shared.Lines[index]);
+            Assert.Equal((expected.NetUnitPrice, expected.NetAmount?.Amount, expected.VatAmount?.Amount, expected.WithheldVatAmount?.Amount,
+                    expected.GrossAmount?.Amount, expected.PayableAmount?.Amount),
+                (actual.NetUnitPrice, actual.NetAmount, actual.VatAmount, actual.WithheldVatAmount, actual.GrossAmount, actual.PayableAmount));
+        }
+
+        Assert.Equal((sales.Document.NetAmount?.Amount, sales.Document.VatAmount?.Amount, sales.Document.WithheldVatAmount?.Amount,
+                sales.Document.GrossAmount?.Amount, sales.Document.PayableAmount?.Amount),
+            (shared.Document.NetAmount, shared.Document.VatAmount, shared.Document.WithheldVatAmount, shared.Document.GrossAmount,
+                shared.Document.PayableAmount));
+
+        // An unpriced line leaves both documents without a sum; a line without a rate leaves both without the VAT sums.
+        var salesUnpriced = SalesOrderTotalsCalculator.Calculate([new SalesTotalsLineInput(first, 1, unit, 1m, CommercialDraftFields.None)], currency,
+            scale, _ => rate);
+        var sharedUnpriced = CommercialTaxTotalsCalculator.Calculate([new CommercialTotalsLineInput(first, 1m, null, tax)], scale);
+        Assert.Equal((salesUnpriced.Document.NetAmount?.Amount, 1), (sharedUnpriced.Document.NetAmount, sharedUnpriced.Document.UnpricedLineCount));
+        var salesNoRate = SalesOrderTotalsCalculator.Calculate([new SalesTotalsLineInput(first, 1, unit, 1m, commercial)], currency, scale, _ => null);
+        var sharedNoRate = CommercialTaxTotalsCalculator.Calculate(
+            [new CommercialTotalsLineInput(first, 1m, priceInput, CommercialLineTaxInput.VatNotComputable("synthetic"))], scale);
+        Assert.Equal((salesNoRate.Document.NetAmount?.Amount, salesNoRate.Document.VatAmount?.Amount),
+            (sharedNoRate.Document.NetAmount, sharedNoRate.Document.VatAmount));
+    }
+
     private static decimal? Parse(string? text) => text is null ? null : decimal.Parse(text, CultureInfo.InvariantCulture);
 
     private sealed class SyntheticUser(Guid company) : ICurrentUser

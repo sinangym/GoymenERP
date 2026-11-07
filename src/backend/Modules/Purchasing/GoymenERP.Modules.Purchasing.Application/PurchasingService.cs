@@ -46,7 +46,8 @@ public sealed partial class PurchasingService(
     IPurchaseGoodsReceiptTransactionV1? goodsReceipts = null,
     IPurchaseGoodsReceiptReadsV1? receiptReads = null,
     ISettingsPrerequisiteProvider? moneyProfiles = null,
-    ISettingsMoneyCandidateReaderV2? currencyCandidates = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    ISettingsMoneyCandidateReaderV2? currencyCandidates = null,
+    ISettingsLineTaxResolverV1? lineTaxes = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
 {
     private const int DefaultPageSize = 50;
@@ -452,6 +453,7 @@ public sealed partial class PurchasingService(
             throw new PurchasingServiceException(400, "validation_failed");
         }
 
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
         PurchasingOrderPage page;
         try
         {
@@ -464,7 +466,13 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        return new PurchaseOrderListResponse([.. page.Items.Select(OrderSummary)], page.NextCursor);
+        // A2a-2 (plan A2a-2 "listede fiyat bekliyor"; PRS-02): each item says whether a general line has no price, only to a holder of
+        // the price read; otherwise the flag is not written.
+        var visible = string.Equals(disclosure, PurchasingPriceDisclosureV1.Visible, StringComparison.Ordinal);
+        return new PurchaseOrderListResponse([.. page.Items.Select(stored => OrderSummary(stored) with
+        {
+            PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
+        })], page.NextCursor);
     }
 
     // ---- owners ---------------------------------------------------------------------------------
@@ -950,7 +958,13 @@ public sealed partial class PurchasingService(
     /// <summary>A2a-1: the rule codes a line's price is refused with (answered on <c>lines[i].price</c>).</summary>
     private static bool IsPriceRule(string code) => code is PurchasingRuleCodes.PriceCurrencyRequired or PurchasingRuleCodes.PriceNegative
         or PurchasingRuleCodes.PriceScaleExceeded or PurchasingRuleCodes.PriceUnitConversionUnavailable or PurchasingRuleCodes.DiscountKindConflict
-        or PurchasingRuleCodes.DiscountPercentOutOfRange or PurchasingRuleCodes.DiscountExceedsPrice or PurchasingRuleCodes.PriceOutOfRange;
+        or PurchasingRuleCodes.DiscountPercentOutOfRange or PurchasingRuleCodes.DiscountExceedsPrice or PurchasingRuleCodes.PriceOutOfRange
+        or PurchasingRuleCodes.DeferralKindConflict or PurchasingRuleCodes.DeferralOnZeroPrice or PurchasingRuleCodes.DeferralPercentOutOfRange
+        or PurchasingRuleCodes.DeferralAmountNegative;
+
+    /// <summary>ALS-D18: "fiyat bekliyor" — a general line has no price (a technical line is never priced).</summary>
+    private static bool HasUnpricedGeneralLine(PurchaseOrder order) =>
+        order.Lines.Any(line => line.Kind == PurchaseOrderLineKind.General && line.Price is null);
 
     private static PurchaseOrderSummaryView OrderSummary(StoredPurchaseOrder stored)
     {
@@ -977,9 +991,7 @@ public sealed partial class PurchasingService(
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
             Currency = CurrencyView(stored.Order.Money),
-            PricePending = visible
-                ? stored.Order.Lines.Any(line => line.Kind == PurchaseOrderLineKind.General && line.Price is null)
-                : null,
+            PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation

@@ -321,6 +321,22 @@ describe('PurchaseOrderListPage on the design system (PURCHASING-DS-LIST-01)', (
     expect(PURCHASE_ORDER_STATUS_TONE).toEqual({ Draft: 'warning', Approved: 'success', Cancelled: 'neutral' })
   })
 
+  it('says "Fiyat bekliyor" beside the status only when the server flags the order (A2a-2, ALS-D18)', async () => {
+    installFetch(() => json({
+      items: [
+        order(ORDER_1, COMPANY_A, long, { pricePending: true }),
+        order(ORDER_2, COMPANY_A, short, { supplierPartyId: PARTY_2, pricePending: false }),
+      ],
+      nextCursor: null,
+    }))
+    mount()
+    const table = await screen.findByRole('table')
+    const rows = [...table.querySelectorAll('tbody tr')]
+    expect(rows[0].querySelectorAll('td')[1].textContent).toBe('Taslak Fiyat bekliyor')
+    expect(screen.getByTestId(`purchase-order-price-pending-${ORDER_1}`).textContent).toBe('Fiyat bekliyor')
+    expect(screen.queryByTestId(`purchase-order-price-pending-${ORDER_2}`)).toBeNull()
+  })
+
   it('never reformats a business date the contract refuses: the whole page fails closed instead', async () => {
     installFetch(() => json({ items: [order(ORDER_1, COMPANY_A, long, { effectiveOn: '2026-9-5' })], nextCursor: null }))
     mount()
