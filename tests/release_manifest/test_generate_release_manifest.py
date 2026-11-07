@@ -92,6 +92,27 @@ class ReleaseManifestTests(unittest.TestCase):
             ],
             [item["path"] for item in recovery["sources"]],
         )
+        # Recovery pin Faz 1: the manifest sourceSurface is post-hoc evidence, not a merge block.
+        recovery_inventory = self.recovery_module.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT)
+        self.assertEqual(recovery_inventory["sourceSurface"], recovery["sourceSurface"])
+        self.assertIs(False, recovery["sourceSurface"]["blocking"])
+        self.assertEqual(
+            (
+                self.recovery_module.EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT,
+                self.recovery_module.EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT,
+            ),
+            (recovery["sourceSurface"]["riskyFileCount"], recovery["sourceSurface"]["riskySha256"]),
+        )
+        backend_component = next(
+            item for item in self.manifest["components"] if item["id"] == "backend-api"
+        )
+        self.assertLessEqual(
+            backend_component["sourceFileCount"], recovery["sourceSurface"]["fileCount"]
+        )
+        forged = copy.deepcopy(self.manifest)
+        forged["recoveryInventory"]["sourceSurface"]["blocking"] = True
+        with self.assertRaises(generator.ReleaseManifestError):
+            generator._validate_schema(self.recovery_module, forged, self.schema)
         for record in recovery["sources"]:
             entry = self.snapshot.entries[record["path"]]
             self.assertEqual(entry.object_id, record["gitBlob"])
