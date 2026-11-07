@@ -106,6 +106,36 @@ public static class PurchasingRuleCodes
     /// <summary>PUR-4a (store, at approval): the approved shares of a request line across orders would exceed its need (Sinan 5738113623 §1).</summary>
     public const string RequestLineOverSourced = "purchasing_request_line_over_sourced";
 
+    /// <summary>A2a-1 (TEK-01, ALS-D5): a priced line needs the order's currency (the Settings money profile it was verified against).</summary>
+    public const string PriceCurrencyRequired = "purchasing_price_currency_required";
+
+    /// <summary>
+    /// A2a-1: a unit price is never negative. Sinan (#66 6704170096): an explicit 0 is a price — its line amount is 0 — and stays
+    /// apart from no price ("fiyat bekliyor", ALS-D18).
+    /// </summary>
+    public const string PriceNegative = "purchasing_price_negative";
+
+    /// <summary>A2a-1 (Ö2): the unit price or the discount amount carries more decimals than the money profile allows; refused, never rounded.</summary>
+    public const string PriceScaleExceeded = "purchasing_price_scale_exceeded";
+
+    /// <summary>
+    /// A2a-1 (ALS-D51, ALS-D58, ALS-D60): the price unit is not the line's entry unit and no unit conversion is published (the
+    /// Product conversion port is deferred), so the line amount cannot be computed; fail-closed, never a guessed factor.
+    /// </summary>
+    public const string PriceUnitConversionUnavailable = "purchasing_price_unit_conversion_unavailable";
+
+    /// <summary>A2a-1 (ALS-D5): a discount is a percent OR an amount, never both.</summary>
+    public const string DiscountKindConflict = "purchasing_discount_kind_conflict";
+
+    /// <summary>A2a-1: a discount percent is 0..100 with at most <see cref="Orders.PurchaseOrderLinePrice.PercentScale"/> decimals.</summary>
+    public const string DiscountPercentOutOfRange = "purchasing_discount_percent_out_of_range";
+
+    /// <summary>A2a-1: a discount amount is never negative and never above the unit price (the net never goes below zero).</summary>
+    public const string DiscountExceedsPrice = "purchasing_discount_exceeds_price";
+
+    /// <summary>A2a-1: the price, quantity and discount cannot be computed exactly within System.Decimal or the stored columns.</summary>
+    public const string PriceOutOfRange = "purchasing_price_out_of_range";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority for every share bound; this code marks the second,

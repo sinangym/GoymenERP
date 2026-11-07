@@ -452,7 +452,13 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         // A1-3 (No.161 §2): the cancellation is always on the wire, null unless the order is Cancelled; each line carries its
         // cancelled remainder ("0" until then).
-        Assert.Equal(new[] { "order", "lines", "acceptances", "cancellation" }, body.RootElement.EnumerateObject().Select(property => property.Name));
+        // A2a-1 (PRS-02): the price disclosure, the currency and "fiyat bekliyor" are always on the wire; a Withheld detail carries
+        // no price on any line (null, never a zero), and the owner's disclosure is passed through as answered.
+        Assert.Equal(new[] { "order", "lines", "acceptances", "cancellation", "priceDisclosure", "currency", "pricePending" },
+            body.RootElement.EnumerateObject().Select(property => property.Name));
+        Assert.Equal("Withheld", body.RootElement.GetProperty("priceDisclosure").GetString());
+        Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("pricePending").ValueKind);
+        Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("lines")[0].GetProperty("price").ValueKind);
         Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("cancellation").ValueKind);
         Assert.Equal("0", body.RootElement.GetProperty("lines")[0].GetProperty("cancelled").GetString());
         var acceptances = body.RootElement.GetProperty("acceptances");
@@ -464,7 +470,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
                 acceptances[0].GetProperty("quantity").GetString(), acceptances[0].GetProperty("recordedAtUtc").GetDateTimeOffset()));
         Assert.Equal(second, acceptances[1].GetProperty("acceptanceId").GetGuid());
         string payload = body.RootElement.GetRawText();
-        foreach (string forbidden in new[] { "price", "currency", "tax", "payment", "schedule", "invoice", "openItem" })
+        foreach (string forbidden in new[] { "unitPrice", "lineAmount", "discount", "tax", "payment", "schedule", "invoice", "openItem" })
         {
             Assert.DoesNotContain(forbidden, payload, StringComparison.OrdinalIgnoreCase);
         }
@@ -980,6 +986,85 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         Assert.DoesNotContain("\"detail\":{", payload, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_priced_order_body_binds_its_currency_and_line_price_and_a_malformed_price_is_a_400_before_the_service()
+    {
+        // A2a-1 (TEK-01, ALS-D5): currencyId and each line's price are strict wire members — an unknown member, an empty price
+        // unit or currency, or a price that is not plain decimal text is refused at the shape, before the service.
+        var id = Guid.NewGuid();
+        var service = new StubService { CreateOrder = () => Task.FromResult(new PurchaseOrderResponse(OrderDetail(id), false, "SENTETIK-priced")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var currency = Guid.NewGuid();
+        var priced = $$"""{"unitPrice":"41.25","discountPercent":"2.5"}""";
+
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.OrdersPath, "SENTETIK-priced-1", PricedOrderBody(currency, priced))))
+        {
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
+
+        var bound = service.LastCreateOrder!;
+        Assert.Equal(currency, bound.CurrencyId);
+        Assert.Equal(new PurchaseOrderLinePriceRequest("41.25", null, "2.5", null), bound.Lines[0].Price);
+        var calls = service.Calls;
+        foreach (var (key, body) in new[]
+                 {
+                     ("bad-member", PricedOrderBody(currency, """{"unitPrice":"1","vatRate":"20"}""")),
+                     ("empty-unit", PricedOrderBody(currency, $$"""{"unitPrice":"1","priceUnitId":"{{Guid.Empty:D}}"}""")),
+                     ("number", PricedOrderBody(currency, """{"unitPrice":1}""")),
+                     ("signed", PricedOrderBody(currency, """{"unitPrice":"-1"}""")),
+                     ("comma", PricedOrderBody(currency, """{"unitPrice":"1,5"}""")),
+                     ("no-price", PricedOrderBody(currency, """{"discountPercent":"1"}""")),
+                     ("bad-discount", PricedOrderBody(currency, """{"unitPrice":"1","discountAmount":"x"}""")),
+                     ("empty-currency", PricedOrderBody(Guid.Empty, priced)),
+                 })
+        {
+            using var response = await client.SendAsync(Post(PurchasingApiV1.OrdersPath, "SENTETIK-priced-" + key, body));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+    }
+
+    [Fact]
+    public async Task The_currency_candidates_answer_privately_refuse_a_query_and_keep_an_unavailable_owner_code_less()
+    {
+        // A2a-1: GET …/references/currencies lists the owner's purchasing currencies; an owner without one is a code-less 503.
+        var currency = Guid.NewGuid();
+        var service = new StubService
+        {
+            Currencies = () => Task.FromResult(new PurchasingCurrencyCandidatesResponseV1([new PurchasingCurrencyCandidateViewV1(currency, "TRY", "TRY")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync(PurchasingApiV1.CurrencyCandidatesPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateNoStore(response);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var item = body.GetProperty("items")[0];
+            Assert.Equal((currency.ToString("D"), "TRY"), (item.GetProperty("currencyId").GetString(), item.GetProperty("code").GetString()));
+        }
+
+        var calls = service.Calls;
+        using (var response = await client.GetAsync(PurchasingApiV1.CurrencyCandidatesPath + "?operation=sales.order-draft.v1"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+        service.Currencies = () => throw new PurchasingServiceException(503, "settings_provider_unavailable");
+        using (var response = await client.GetAsync(PurchasingApiV1.CurrencyCandidatesPath))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.DoesNotContain("settings_provider_unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    private static string PricedOrderBody(Guid currency, string price) =>
+        $$"""{"supplierPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","sourceRequestId":null,"effectiveOn":"2026-11-07","lines":[{"lineId":"{{Guid.NewGuid():D}}","productId":"{{Guid.NewGuid():D}}","expectedProductVersion":"7","unitId":"{{Guid.NewGuid():D}}","quantity":"6","sourceRequestLineId":null,"price":{{price}}}],"currencyId":"{{currency:D}}"}""";
+
     private static string OrderBody(bool sourceRequest = true, bool boundLine = true)
     {
         var source = sourceRequest ? $"\"{Guid.NewGuid():D}\"" : "null";
@@ -1063,6 +1148,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Guid, WithdrawPurchaseRequestRequest, Task<PurchaseRequestResponse>> WithdrawRequest { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> CreateOrder { get; set; } = () => throw new InvalidOperationException("not expected");
+        public Func<Task<PurchasingCurrencyCandidatesResponseV1>> Currencies { get; set; } = () => throw new InvalidOperationException("not expected");
+        public CreatePurchaseOrderRequest? LastCreateOrder { get; private set; }
         public Func<Task<PurchaseOrderResponse>> Approve { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Guid, CancelPurchaseOrderRequest, Task<PurchaseOrderResponse>> CancelOrder { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
@@ -1142,7 +1229,14 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Task<PurchaseOrderResponse> CreateOrderAsync(CreatePurchaseOrderRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastCreateOrder = request;
             return CreateOrder();
+        }
+
+        public Task<PurchasingCurrencyCandidatesResponseV1> GetCurrencyCandidatesAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Currencies();
         }
 
         public Task<PurchaseOrderResponse> ApproveOrderAsync(Guid orderId, ApprovePurchaseOrderRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)

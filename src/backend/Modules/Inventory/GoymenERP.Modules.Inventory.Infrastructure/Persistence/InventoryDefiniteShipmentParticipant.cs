@@ -124,6 +124,14 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
 
         var allocationRow = await context.Allocations.SingleOrDefaultAsync(row => row.Id == request.AllocationId,
             cancellationToken) ?? throw Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference);
+        // B-01: a definite shipment consumes only a Sales order line's allocation (or a legacy row without demand); a
+        // Manufacturing plan input is never shipped, whatever id the caller supplies.
+        if (allocationRow.DemandKind is not null
+            && !string.Equals(allocationRow.DemandKind, InventoryAllocationDemandKindsV1.SalesOrderLine,
+                StringComparison.Ordinal))
+        {
+            throw Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference);
+        }
         var labelRow = await context.Labels.SingleOrDefaultAsync(row => row.Id == request.LabelId, cancellationToken)
             ?? throw Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference);
         var expectedAllocationVersion = long.Parse(request.ExpectedAllocationVersion, CultureInfo.InvariantCulture);

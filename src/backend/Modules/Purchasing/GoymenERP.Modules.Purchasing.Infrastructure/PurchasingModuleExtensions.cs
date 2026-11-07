@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,7 +74,10 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<PurchasingServiceBindings>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptTransactionV1>(),
-        serviceProvider.GetService<IPurchaseGoodsReceiptReadsV1>());
+        serviceProvider.GetService<IPurchaseGoodsReceiptReadsV1>(),
+        // A2a-1 (TEK-01): the existing Settings money port and its operation-aware candidate read (ALS-D58: no new Settings port).
+        serviceProvider.GetService<ISettingsPrerequisiteProvider>(),
+        serviceProvider.GetService<ISettingsMoneyCandidateReaderV2>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
