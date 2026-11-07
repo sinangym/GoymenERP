@@ -4,6 +4,8 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -218,5 +220,20 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Allocations WHERE LabelId = @label AND Status = 3 "
             + "AND ReleaseReason = N'manufacturing.order-closed' AND ReleasedKg = 400",
             ("@label", issuedRoll)));
+    }
+
+    [SqlServerFact]
+    public async Task The_plan_input_allocation_migrations_Down_passes_without_rows_and_refuses_while_one_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddManufacturingPlanInputAllocations().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        await run.OpenOrderAsync(user);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanInputAllocations"));
+        var refused = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51191, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanInputAllocations"));
     }
 }

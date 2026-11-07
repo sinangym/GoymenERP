@@ -50,6 +50,14 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Üretim U3-a (URT-D21, B-01): a row names an allocation Inventory still holds for the plan's input; dropping
+            // it would leave the order's input issue unable to name its allocation. Down refuses (THROW 51191) while any
+            // row exists (forward fix); an empty table rolls back freely.
+            migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM [manufacturing].[PlanInputAllocations])
+                    THROW 51191, 'A Manufacturing plan input allocation is recorded; forward-fix before downgrade.', 1;
+                """);
+
             migrationBuilder.DropTable(
                 name: "PlanInputAllocations",
                 schema: "manufacturing");
