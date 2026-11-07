@@ -424,8 +424,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
+            // SAT-D30 / SAT-D213 / SAT-D216: +4 SalesOrderOverDeliveryApproval facts (the one-save approval through the real route with
+            // replay; the real Logistics owner's fail-closed refusal; 404 / 403 / self-approval; the 51213 rollback refusal), kept
+            // ordinal-sorted (1f679068… -> 3b3cde9a…).
             ["tools/relational_inventory/sales.txt"] =
-                "1f679068e55e0a30d83cf29e6497cedc6eb1efd7ce3b079bc80f05ccc3aa9b62",
+                "3b3cde9a405ce8d4286bbfe6ff047c114339d18254a4b3bd0e802fa94a71a8c4",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -536,9 +539,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Drafts.BuyerTaxJson and DraftLines.TaxJson; no query-filter bypass or direct database surface.
             // Re-fingerprinted for SAT-D175/D176 (EK25): Drafts / DraftRevisionHeaders.IsSubcontractService and DraftLines.ItemType
             // (CK_DraftLines_ItemType); the write guard is NOT widened (the flag and the item type never change after the insert).
+            // Re-fingerprinted for SAT-D30 / SAT-D213: the company-filtered DraftOverDeliveryApprovals table (company-leading key, FKs
+            // to the draft and its line, CK_DraftOverDeliveryApprovals_Identity, append-only in the write guard); no query-filter
+            // bypass or direct database surface.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "c9363c0337d70bec52dd5111ea2e8513e242a9f55386ee73e79e6ed89678d9e1",
+                "626050d3a5e73ee488d700f3c359b31f3a3a79871297a1f5af60b5bd1f6cbc11",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1555,8 +1561,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
                     // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D30 / SAT-D213: the over-delivery approval write (one save: approval row, header version,
+                    // attempt, audit) and its restore through the same filtered context; SqlClient count unchanged.
                     new(
-                        "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
+                        "7abfe387f7c2d0bf4a8ab644330cda5486b6e64b574c00e3f12dbb1d41ff68a9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2229,6 +2237,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
                     new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D30 / SAT-D213: the Down's only raw SQL is Sales' refusal (51213, used by no other migration) while any
+                // over-delivery approval is recorded; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261107103824_AddDraftOverDeliveryApprovals.cs"] =
+                    new("666f5e3e6cc223d58cc46874a5ea36d36c79a55f66f33c331fd6e487a81786d4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
