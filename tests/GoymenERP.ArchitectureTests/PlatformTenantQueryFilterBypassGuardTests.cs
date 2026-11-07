@@ -2255,7 +2255,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D32: the Down's only raw SQL is Sales' refusal (51212, used by no other migration) while any user closure row or
                 // recorded close attempt exists; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261103073447_AddDraftUserClosures.cs"] =
-                    new("8203f52c0b1b2adba346bfa94fae865f3e3afe10f90f03c2253ae7f01ea6e550",
+                    new("586dd38857e8a9c76bb654243710782e28d627ce64abc58ea7783f6c8b5c0d97",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
