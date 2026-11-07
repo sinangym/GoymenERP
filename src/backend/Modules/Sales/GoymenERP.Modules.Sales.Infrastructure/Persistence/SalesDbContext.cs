@@ -444,6 +444,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
             // SAT-D176 (EK25): only a subcontract service order's line records its confirmed item type, and that is a service.
             table.HasCheckConstraint("CK_DraftLines_ItemType", "[ItemType] IS NULL OR [ItemType] = N'" + SalesOrderDraft.ServiceItemType + "'");
+            // SAT-D167 (EK24): revision numbers are never negative; a replacement exists only beside a removal and names another line.
+            table.HasCheckConstraint("CK_DraftLines_LineRevision",
+                "([AddedInRevision] IS NULL OR [AddedInRevision] >= 0) AND ([RemovedInRevision] IS NULL OR [RemovedInRevision] >= 0) "
+                + "AND ([ReinstatedInRevision] IS NULL OR [ReinstatedInRevision] >= 0) "
+                + "AND ([ReplacedByLineId] IS NULL OR ([RemovedInRevision] IS NOT NULL AND [ReplacedByLineId] <> [LineId] "
+                + "AND [ReplacedByLineId] <> '00000000-0000-0000-0000-000000000000'))");
             table.HasCheckConstraint("CK_DraftLines_Window",
                 "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
         });
@@ -1148,6 +1154,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(DraftLineRow.Quantity), nameof(DraftLineRow.QuantityText),
                         // MOD-03 → Sales (SAT-D93/D97/D105): the tax snapshot moves under a commercial revision or a buyer tax change.
                         nameof(DraftLineRow.TaxJson),
+                        // SAT-D167 (EK24): a line revision passivates a line — its removal revision and replacement, null → value once
+                        // (checked below); the line is never deleted and nothing else of it moves with them.
+                        nameof(DraftLineRow.RemovedInRevision), nameof(DraftLineRow.ReplacedByLineId),
+                        // SAT-D211 (EK36): a rejection reverts the rejected revision's removal — RemovedInRevision R → null with
+                        // ReinstatedInRevision → R (checked below); nothing else of the line moves with them.
+                        nameof(DraftLineRow.ReinstatedInRevision),
                     ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
                     // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an
@@ -1196,6 +1208,28 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     RequestAttemptRow => [],
                     _ => [],
                 };
+                if (entry.Entity is DraftLineRow)
+                {
+                    // SAT-D167: a line goes passive by a removal (RemovedInRevision null → R, with its replacement). SAT-D211
+                    // (EK36): the ONLY way back is the rejection of that same revision — RemovedInRevision R → null, the replacement
+                    // cleared, ReinstatedInRevision → R. Nothing else moves these columns.
+                    var removedIn = entry.Property(nameof(DraftLineRow.RemovedInRevision));
+                    var replacedBy = entry.Property(nameof(DraftLineRow.ReplacedByLineId));
+                    var reinstatedIn = entry.Property(nameof(DraftLineRow.ReinstatedInRevision));
+                    var removal = removedIn.IsModified && removedIn.OriginalValue is null && removedIn.CurrentValue is not null
+                        && !reinstatedIn.IsModified && (!replacedBy.IsModified || replacedBy.OriginalValue is null);
+                    // The reinstatement's final value is what counts, not whether the column "moved": a line removed again in the SAME
+                    // revision and reverted by that revision's second rejection (or by the next revision after a customer rejection)
+                    // writes the same value (R -> R), which EF does not report as modified.
+                    var reinstatement = removedIn.IsModified && removedIn.OriginalValue is int revision && removedIn.CurrentValue is null
+                        && replacedBy.CurrentValue is null && reinstatedIn.CurrentValue is int back && back == revision;
+                    if ((removedIn.IsModified || replacedBy.IsModified || reinstatedIn.IsModified) && !removal && !reinstatement)
+                    {
+                        throw new InvalidOperationException(
+                            "Satış sipariş satırı bir kez pasif olur ve yalnız o revizyonun reddiyle geri döner.");
+                    }
+                }
+
                 if (entry.Entity is RequestRow)
                 {
                     // API-21: a decision is taken once — Submitted → Approved | Rejected, Approved → Rejected; nothing else.

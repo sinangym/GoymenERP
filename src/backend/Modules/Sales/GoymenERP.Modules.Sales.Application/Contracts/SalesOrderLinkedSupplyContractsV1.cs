@@ -105,3 +105,18 @@ public interface ISalesOrderLinkedSupplyReadPortV1
     Task<SalesOrderLinkedSupplyAnswerV1> ReadOrderLinkedSupplyAsync(SalesOrderLinkedSupplyQueryV1 query,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// SAT-D219 (EK38): the declaration a SUPPLY OWNER registers, in its own module, when it RECORDS links to Sales order lines for a
+/// <see cref="SupplyKind"/> (Purchasing: a purchase order line carrying a Sales order line as its source; Production: a plan or
+/// order). Sales cannot see another module's tables, so this is how it knows "no module records a link" (the kind is
+/// <c>NoSource</c> and blocks nothing) from "a module records links but its adapter of
+/// <see cref="ISalesOrderLinkedSupplyReadPortV1"/> is not registered" (the kind is <c>Unreadable</c>: removing a line or changing
+/// its product is refused, as are the cancellation and the force-close, fail-closed). A module that starts recording links delivers
+/// this declaration with its adapter in the same change; nothing is declared today. It carries no authority and reads nothing.
+/// </summary>
+public interface ISalesOrderLinkedSupplyRecorderV1
+{
+    /// <summary>One of <see cref="SalesLinkedSupplyKindsV1"/>.</summary>
+    string SupplyKind { get; }
+}

@@ -220,12 +220,14 @@ public sealed partial class SalesDraftService
     /// owner not composed or unreadable → 503 (not recorded). A stale version, another lifecycle or another approval state
     /// asks no owner: the domain refuses those itself (the key's terminal 409). Residual race (declared, README): a load
     /// committed in Logistics between this read and the Sales save is not seen — a window of the command's own duration, closed
-    /// on the shipping side by Logistics' shipment-time cap.
+    /// on the shipping side by Logistics' shipment-time cap. SAT-D167 / SAT-D219: whatever the revision, the lines it removed are
+    /// read again for a shipment link (allocation, loading) and an open linked purchase / production order (409
+    /// <c>sales_revision_blocked</c>).
     /// </summary>
     private async Task RequireReapprovalFloorAsync(Scope scope, string? permission, SalesOrderDraft current, long expectedVersion,
         string commandName, CancellationToken cancellationToken)
     {
-        if (current.ArchivedRevisions.Count == 0 || current.State != SalesDraftState.Draft || current.Version != expectedVersion)
+        if (current.State != SalesDraftState.Draft || current.Version != expectedVersion)
         {
             return;
         }
@@ -238,17 +240,40 @@ public sealed partial class SalesDraftService
             return;
         }
 
-        var loading = await ReadLoadingAsync(scope, permission, current, cancellationToken)
-            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
-        var lines = current.Lines.OrderBy(line => line.LineNo).ToArray();
-        try
+        // The quantity floor belongs to a re-approval (an archived approved revision to measure against).
+        if (current.ArchivedRevisions.Count > 0)
         {
-            RequireRevisionFloor(current, [.. lines.Select(line => new LineQuantityInput(line.Id, line.QuantityText, line.Quantity.Value))], loading);
+            var loading = await ReadLoadingAsync(scope, permission, current, cancellationToken)
+                ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+            var lines = current.Lines.OrderBy(line => line.LineNo).ToArray();
+            try
+            {
+                RequireRevisionFloor(current, [.. lines.Select(line => new LineQuantityInput(line.Id, line.QuantityText, line.Quantity.Value))], loading);
+            }
+            catch (SalesRuleException exception) when (exception.LineId is { } lineId)
+            {
+                var index = Array.FindIndex(lines, line => line.Id == lineId);
+                throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].quantity", exception.Code)]);
+            }
         }
-        catch (SalesRuleException exception) when (exception.LineId is { } lineId)
+
+        // SAT-D167 (K3 review A P2-2; the SAT-D128 pattern): the lines this revision removed are read again at its submission and
+        // approval — an allocation or loading line opened after the revision was recorded (no transaction spans the owners) blocks
+        // the decision (409 sales_revision_blocked, each error removedLines[i].lineId sales_line_revision_line_shipped); an
+        // unreadable owner is 503 (fail-closed). SAT-D219 (EK38; K3 review A P2-1): this re-read does not depend on an archived
+        // approved revision — a never-approved (Rev.0) order whose draft removed a line is read again too.
+        var removedNow = current.RemovedLines.Where(line => line.RemovedInRevision == current.Revision).OrderBy(line => line.LineNo)
+            .Select(line => new SalesDraftLineRemovalV1(line.Id, null)).ToArray();
+        if (removedNow.Length > 0)
         {
-            var index = Array.FindIndex(lines, line => line.Id == lineId);
-            throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].quantity", exception.Code)]);
+            try
+            {
+                await RequireRemovedLinesUnshippedAsync(scope, permission, current, removedNow, cancellationToken, "removedLines");
+            }
+            catch (SalesDraftServiceException exception) when (exception.Status == 422)
+            {
+                throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionBlocked, exception.Errors);
+            }
         }
     }
 }

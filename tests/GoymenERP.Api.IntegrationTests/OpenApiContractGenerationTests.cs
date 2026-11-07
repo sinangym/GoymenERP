@@ -676,6 +676,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/sales/drafts/{id}/quantity-revision", "ReviseSalesOrderDraftQuantityV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftQuantityRevisionRequest", ["path:id:true:type:string;format:uuid"]),
+        // SAT-D167 (EK24): the line revision of an order (add a line, remove an unshipped line, change its product; Rev.N, re-approval).
+        new("post", "/api/v1/sales/drafts/{id}/line-revision", "ReviseSalesOrderDraftLinesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftLineRevisionRequest", ["path:id:true:type:string;format:uuid"]),
         // API-04: the header revision of an order (customer, currency, due terms, sales owner, delivery; Rev.N, re-approval) and
         // the read of its revisable header.
         new("get", "/api/v1/sales/drafts/{id}/header", "GetSalesOrderDraftHeaderV1",
@@ -1413,6 +1417,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveSalesOrderDraftPriceFloorExceptionsV1"] = "ref:SalesOrderDraftResponse",
             ["ApproveSalesOrderDraftDiscountExceptionsV1"] = "ref:SalesOrderDraftResponse",
             ["ReviseSalesOrderDraftQuantityV1"] = "ref:SalesOrderDraftResponse",
+            ["ReviseSalesOrderDraftLinesV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftHeaderV1"] = "ref:SalesDraftHeaderV1",
             ["ReviseSalesOrderDraftHeaderV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftRevisionsV1"] = "ref:SalesOrderDraftRevisionsResponse",
@@ -1725,6 +1730,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftPriceFloorExceptionsV1",
         "ApproveSalesOrderDraftDiscountExceptionsV1",
         "ReviseSalesOrderDraftQuantityV1",
+        "ReviseSalesOrderDraftLinesV1",
         "GetSalesOrderDraftHeaderV1",
         "ReviseSalesOrderDraftHeaderV1",
         "GetSalesOrderDraftRevisionsV1",
@@ -1972,6 +1978,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftPriceFloorExceptionsV1",
         "ApproveSalesOrderDraftDiscountExceptionsV1",
         "ReviseSalesOrderDraftQuantityV1",
+        "ReviseSalesOrderDraftLinesV1",
         "ReviseSalesOrderDraftHeaderV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "CancelSalesOrderDraftV1",
@@ -2221,6 +2228,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["WithdrawSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ReviseSalesOrderDraftCommercialV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ReviseSalesOrderDraftQuantityV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ReviseSalesOrderDraftLinesV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ReviseSalesOrderDraftHeaderV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RescheduleSalesOrderDraftDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CancelSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -2442,6 +2450,7 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSalesOrderDraftV1",
         "ReviseSalesOrderDraftCommercialV1",
         "ReviseSalesOrderDraftQuantityV1",
+        "ReviseSalesOrderDraftLinesV1",
         "GetSalesOrderDraftHeaderV1",
         "ReviseSalesOrderDraftHeaderV1",
         "GetSalesOrderDraftRevisionsV1",
@@ -2642,6 +2651,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftPriceFloorExceptionsV1:404",
         "ApproveSalesOrderDraftDiscountExceptionsV1:404",
         "ReviseSalesOrderDraftQuantityV1:404",
+        "ReviseSalesOrderDraftLinesV1:404",
         "GetSalesOrderDraftHeaderV1:404",
         "ReviseSalesOrderDraftHeaderV1:404",
         "GetSalesOrderDraftRevisionsV1:404",
@@ -3203,8 +3213,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["PublishPriceListVersionV1:422"] = ["validation_failed"],
             ["PublishPriceListVersionV1:503"] = ["product_price_list_permission_unregistered", "product_price_list_unavailable"],
             ["ReviseSalesOrderDraftQuantityV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ReviseSalesOrderDraftLinesV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ReviseSalesOrderDraftQuantityV1:409"] = ["concurrent_change", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ReviseSalesOrderDraftLinesV1:409"] = ["concurrent_change", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftQuantityV1:422"] = ["validation_failed"],
+            ["ReviseSalesOrderDraftLinesV1:422"] = ["validation_failed"],
             ["ReviseSalesOrderDraftHeaderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ReviseSalesOrderDraftHeaderV1:409"] = ["account_state", "concurrent_change", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftHeaderV1:422"] = ["owner_reference_invalid", "unsupported_currency", "validation_failed"],
@@ -4972,6 +4985,17 @@ public sealed partial class OpenApiContractGenerationTests
                     ("orderUnitId", "type:string;format:uuid"),
                     ("ordered", "type:string"),
                     ("approvedReturned", "type:string")),
+                ["SalesOrderDraftRemovedLineV1"] = ObjectSchema(
+                    ["lineId", "lineNo", "productId", "productCode", "productName", "quantity", "orderUnitCode", "removedInRevision", "replacedByLineId"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productCode", "type:string"),
+                    ("productName", "type:string"),
+                    ("quantity", "type:string"),
+                    ("orderUnitCode", "type:null|string"),
+                    ("removedInRevision", "type:string"),
+                    ("replacedByLineId", "type:null|string;format:uuid")),
                 ["SalesOrderDraftRemainderChangesResponse"] = ObjectSchema(
                     ["draftVersion", "floorStatus", "lines", "items"],
                     ("draftVersion", "type:string"),
@@ -5199,7 +5223,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("approval", "ref:SalesDraftApprovalV1"),
                     ("customerAcceptance", "ref:SalesDraftCustomerAcceptanceV1"),
                     ("isOwnDraft", "type:boolean"),
-                    ("isOwnDecisionRestricted", "type:boolean")),
+                    ("isOwnDecisionRestricted", "type:boolean"),
+                    // SAT-D167 (EK24): the order's passive (removed) lines, optional — absent when none.
+                    ("removedLines", "type:array|null;items:ref:SalesOrderDraftRemovedLineV1")),
                 ["SalesOrderDraftReadDetailViewV1"] = ObjectSchema(
                     ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "customerAcceptance", "isOwnDraft", "isOwnDecisionRestricted", "partyDisplay", "userDisplays"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
@@ -5217,7 +5243,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isOwnDraft", "type:boolean"),
                     ("isOwnDecisionRestricted", "type:boolean"),
                     ("partyDisplay", "ref:SalesPartyDisplayV1"),
-                    ("userDisplays", "type:array;items:ref:SalesUserDisplayV1")),
+                    ("userDisplays", "type:array;items:ref:SalesUserDisplayV1"),
+                    // SAT-D167 (EK24): the same passive lines (the generator inlines the item schema here).
+                    ("removedLines", "type:array|null;items:type:object")),
                 ["SalesOrderDraftLineDetail"] = ObjectSchema(
                     ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent", "priceDisclosure"],
                     ("lineId", "type:string;format:uuid"),
@@ -5239,7 +5267,9 @@ public sealed partial class OpenApiContractGenerationTests
                     // this marker is what says WHY, so "withheld" stays distinguishable from "unpriced". A
                     // nullable marker would have reintroduced the very ambiguity it exists to remove.
                     ("priceDisclosure", "ref:SalesPriceDisclosure"),
-                    ("orderUnitCode", "type:null|string")),
+                    ("orderUnitCode", "type:null|string"),
+                    // SAT-D167 (EK24): "Rev.N" on a line a line revision added, optional.
+                    ("addedInRevision", "type:null|string")),
                 ["SalesOrderDraftListResponse"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:SalesOrderDraftSummaryView"),
@@ -8096,6 +8126,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion"],
                     ("expectedVersion", "type:string"),
                     ("reason", "type:null|string")),
+                ["SalesDraftLineRevisionRequest"] = ObjectSchema(
+                    ["expectedVersion", "reason", "added", "removed"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string"),
+                    ("added", "type:array;items:ref:SalesOrderDraftLineRequest"),
+                    ("removed", "type:array;items:ref:SalesDraftLineRemovalV1")),
+                ["SalesDraftLineRemovalV1"] = ObjectSchema(
+                    ["lineId"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("replacedByLineId", "type:null|string;format:uuid")),
                 ["SalesDraftQuantityRevisionRequest"] = ObjectSchema(
                     ["expectedVersion", "reason", "lines"],
                     ("expectedVersion", "type:string"),

@@ -177,7 +177,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>(),
         // S-1 / MOD-03 (DEC-SAL-005, No 30 / SAT-D12): the supply owners' linked-supply adapters (Production U5-a, Purchasing
         // MOD-03), one per supply kind; none is registered yet, so "bağlı üretim / satın alma" stays "no source" as before.
-        serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>(),
+        // SAT-D219 (EK38): the declarations of the supply owners that RECORD links to Sales order lines (none yet): a recorded kind
+        // without an adapter is Unreadable, and only a kind nobody records is "no source".
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

@@ -71,7 +71,8 @@ public sealed partial class SalesDraftService(
     ISettingsExchangeRateResolverV1? exchangeRates = null,
     IProductItemTypeReaderV1? itemTypes = null,
     ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null,
-    IEnumerable<ISalesOrderLinkedSupplyReadPortV1>? linkedSupplies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    IEnumerable<ISalesOrderLinkedSupplyReadPortV1>? linkedSupplies = null,
+    IEnumerable<ISalesOrderLinkedSupplyRecorderV1>? linkedSupplyRecorders = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -1788,7 +1789,8 @@ public sealed partial class SalesDraftService(
                     ? null
                     : [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftDeliverySliceV1(slice.SliceId, line.OrderUnit.UnitId,
                         slice.QuantityText, slice.RequestedDeliveryDate))],
-                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode))],
+                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode,
+                line.AddedInRevision is { } added ? SalesDraftApiV1.RevisionText(added) : null))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
@@ -1798,7 +1800,10 @@ public sealed partial class SalesDraftService(
                 draft.CustomerAcceptance?.AcceptedBy, draft.CustomerAcceptance?.AcceptedAtUtc, draft.IsCustomerAccepted,
                 [.. draft.CustomerRejections.Select(rejection => new SalesDraftCustomerRejectionV1(
                     SalesDraftApiV1.RevisionText(rejection.Revision), rejection.RejectedBy, rejection.RejectedAtUtc, rejection.Reason))]),
-            isOwnDraft, isOwnDecisionRestricted);
+            isOwnDraft, isOwnDecisionRestricted,
+            draft.RemovedLines.Count == 0 ? null : [.. draft.RemovedLines.Select(line => new SalesOrderDraftRemovedLineV1(line.Id, line.LineNo,
+                line.Product.ProductId, line.Product.Code, line.Product.Name, line.QuantityText, line.OrderUnit.UnitCode,
+                SalesDraftApiV1.RevisionText(line.RemovedInRevision!.Value), line.ReplacedByLineId))]);
 
     private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>
         new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,

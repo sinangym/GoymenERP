@@ -68,6 +68,7 @@ import {
   salesDraftDetailPath,
   salesDraftRevisionsPath,
   salesDraftQuantityRevisionPath,
+  salesDraftLineRevisionPath,
   type ApprovalState,
   type ContactInformationOptions,
   type CurrencyOption,
@@ -76,6 +77,7 @@ import {
   type DraftCommercialRevisionRequest,
   type DraftPriceFloorExceptionApprovalRequest,
   type DraftQuantityRevisionRequest,
+  type DraftLineRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
   type DeliveryProgress,
@@ -985,6 +987,49 @@ export async function sendDraftQuantityRevision(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftQuantityRevisionPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D167 (EK24): the line revision — the quantity revision's keyed-attempt and strict response rules. Success is the draft
+ * after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftLineRevision(
+  payload: DraftLineRevisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftLineRevisionPath(context.draftId),
     {
       method: 'POST',
       headers: {
