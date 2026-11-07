@@ -157,11 +157,18 @@ public sealed record PlanParameterSnapshotV1
     /// <summary>
     /// Üretim U2-a (URT-D9): the same snapshot with <paramref name="key"/> taken from the plan — the plan's value replaces
     /// the profile's (or is added when the profile has none) and carries <see cref="PlanParameterValueV1.PlanSource"/>.
+    /// U2-b1: a replaced value keeps the profile's unit for that key, so the snapshot never mixes units for one key;
+    /// <paramref name="unit"/> applies only to a key the profile does not carry.
     /// </summary>
-    public PlanParameterSnapshotV1 WithPlanValue(string key, string unit, decimal number) =>
-        new(ProfileId, ProfileVersion, Source, Process, WorkCenterId, EffectiveFrom, EffectiveThrough, SelectedForDate,
+    public PlanParameterSnapshotV1 WithPlanValue(string key, string unit, decimal number)
+    {
+        var replaced = Values.FirstOrDefault(value => string.Equals(value.Key, key, StringComparison.Ordinal));
+        return new(ProfileId, ProfileVersion, Source, Process, WorkCenterId, EffectiveFrom, EffectiveThrough,
+            SelectedForDate,
             Values.Where(value => !string.Equals(value.Key, key, StringComparison.Ordinal))
-                .Append(new PlanParameterValueV1(key, unit, number, choice: null, PlanParameterValueV1.PlanSource)));
+                .Append(new PlanParameterValueV1(key, replaced?.Unit ?? unit, number, choice: null,
+                    PlanParameterValueV1.PlanSource)));
+    }
 
     /// <summary>The numeric values by engine parameter name (choices are not engine numbers and are left out).</summary>
     public IReadOnlyDictionary<string, decimal> Numbers() =>

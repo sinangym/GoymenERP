@@ -481,6 +481,32 @@ describe('decodePlan', () => {
       rejectedAtUtc: approved.approvedAtUtc, planVersion: 2 }] }))).toBeNull()
   })
 
+  // Üretim U2-b1: the plan-entered process values (API-12).
+  it('reads the U2-b1 process spec and refuses any other shape', () => {
+    const paint = {
+      packageCount: 10, piecesPerPackage: 25, pieceLengthMm: '6000', unitKg: null, perimeterMm: '160.5',
+      targetThicknessMm: null, paintDescription: 'Polyester RAL / Akzo', paintColorCode: 'RAL 9016',
+    }
+    expect(decodePlan(plan({ process: 'Paint', processSpec: paint }))?.processSpec).toEqual(paint)
+    // The legacy omission and the server's null are none.
+    expect(decodePlan(plan())?.processSpec).toBeNull()
+    const { processSpec: _omitted, ...legacy } = plan() as Record<string, unknown>
+    expect(decodePlan(legacy)?.processSpec).toBeNull()
+    for (const broken of [
+      { ...paint, packageCount: 0 },
+      { ...paint, piecesPerPackage: 1.5 },
+      { ...paint, pieceLengthMm: '-1' },
+      { ...paint, perimeterMm: 160 },
+      { ...paint, paintDescription: ' padded ' },
+      { ...paint, paintColorCode: 'x'.repeat(33) },
+      { ...paint, extra: true },
+      { packageCount: null, piecesPerPackage: null, pieceLengthMm: null, unitKg: null, perimeterMm: null,
+        targetThicknessMm: null, paintDescription: null, paintColorCode: null },
+    ]) {
+      expect(decodePlan(plan({ processSpec: broken }))).toBeNull()
+    }
+  })
+
   it.each([
     ['an empty line list', { lines: [], windingTargetKg: null }],
     ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],

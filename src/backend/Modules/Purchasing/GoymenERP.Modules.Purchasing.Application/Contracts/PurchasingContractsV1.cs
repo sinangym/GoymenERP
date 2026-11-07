@@ -72,6 +72,13 @@ public sealed record PurchaseOrderLineRequest(Guid LineId, Guid ProductId, strin
 /// <summary>POST …/orders/{id}/approval: Draft → Approved at the expected version; the Σ-shares rule is measured in the same save.</summary>
 public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 
+/// <summary>
+/// A1-3 (plan API-10; No.161 §2): POST …/orders/{id}/cancellation — Approved → Cancelled at the expected version: the WHOLE
+/// not-yet-accepted remainder of every line is cancelled (even after a partial acceptance; no line- or quantity-level partial
+/// cancel), with the reason (required, at most 4000 characters, never cut). Nothing physical or financial is recorded.
+/// </summary>
+public sealed record CancelPurchaseOrderRequest(string ExpectedVersion, string Reason);
+
 // ---- views --------------------------------------------------------------------------------------
 
 /// <summary>
@@ -137,11 +144,38 @@ public sealed record PurchaseOrderReadSummaryViewV1(
     DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount,
     PurchasingSupplierDisplayV1 SupplierDisplay);
 
-/// <summary>The line's shares as exact text (§7.2, §13): ordered, moved into technical lines, committed (= ordered − technical), accepted, remaining (= committed − accepted, the expected supply).</summary>
+/// <summary>
+/// The line's shares as exact text (§7.2, §13): ordered, moved into technical lines, committed (= ordered − technical), accepted,
+/// remaining (= committed − accepted − cancelled, the expected supply; master INV-006). A1-3: <see cref="Cancelled"/> is the
+/// unaccepted remainder cancelled with the order (No.161 §2), "0" until then.
+/// </summary>
 public sealed record PurchaseOrderLineView(
     Guid LineId, int LineNo, string Kind, Guid? ParentLineId, Guid? SourceRequestLineId,
     Guid ProductId, string ProductVersion, Guid UnitId,
-    string Ordered, string Technical, string Committed, string Accepted, string Remaining);
+    string Ordered, string Technical, string Committed, string Accepted, string Remaining)
+{
+    public string Cancelled { get; init; } = "0";
+}
+
+/// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
+public sealed record PurchaseOrderCancellationView(string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
+
+/// <summary>
+/// A1-3 (plan API-10): GET …/orders/{id}/cancel-impact — what a cancellation at <see cref="Version"/> would do, read under
+/// <c>purchasing.orders.cancel</c> and changing nothing. <see cref="Cancellable"/> is true only for an APPROVED order with an
+/// unaccepted remainder; otherwise <see cref="Blocker"/> is the refusal the command would answer
+/// (<c>purchasing_order_not_cancellable</c> | <c>purchasing_order_nothing_to_cancel</c>). Every line shows its committed and
+/// accepted shares and the remainder that would be cancelled (<see cref="PurchaseOrderCancelImpactLineView.ToCancel"/>);
+/// <see cref="HasAcceptance"/> says a partial acceptance exists (it stays: No.161 §2). The effect is the future supply only —
+/// no stock, receipt or money (<see cref="SourceRequestId"/> is the request whose binding is kept).
+/// </summary>
+public sealed record PurchaseOrderCancelImpactView(
+    Guid OrderId, string Status, string Version, Guid? SourceRequestId, bool Cancellable, string? Blocker, bool HasAcceptance,
+    IReadOnlyList<PurchaseOrderCancelImpactLineView> Lines);
+
+/// <summary>A1-3: one line of the impact preview; quantities are exact text in the line's unit.</summary>
+public sealed record PurchaseOrderCancelImpactLineView(
+    Guid LineId, int LineNo, string Kind, Guid ProductId, Guid UnitId, string Committed, string Accepted, string ToCancel);
 
 /// <summary>One immutable goods-acceptance share in the persisted order sequence; quantity is exact text in the order line's unit.</summary>
 public sealed record PurchaseOrderAcceptanceHistoryView(
@@ -150,6 +184,9 @@ public sealed record PurchaseOrderAcceptanceHistoryView(
 public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IReadOnlyList<PurchaseOrderLineView> Lines)
 {
     public IReadOnlyList<PurchaseOrderAcceptanceHistoryView> Acceptances { get; init; } = [];
+
+    /// <summary>A1-3 (No.161 §2): the recorded cancellation, null unless the order is Cancelled.</summary>
+    public PurchaseOrderCancellationView? Cancellation { get; init; }
 }
 
 public sealed record PurchaseOrderReadDetailViewV1(
@@ -157,6 +194,9 @@ public sealed record PurchaseOrderReadDetailViewV1(
     IReadOnlyList<PurchaseOrderLineView> Lines)
 {
     public IReadOnlyList<PurchaseOrderAcceptanceHistoryView> Acceptances { get; init; } = [];
+
+    /// <summary>A1-3 (No.161 §2): the recorded cancellation, null unless the order is Cancelled.</summary>
+    public PurchaseOrderCancellationView? Cancellation { get; init; }
 }
 
 public sealed record PurchaseOrderResponse(PurchaseOrderDetailView Detail, bool IsReplay, string OriginalCorrelationId);
@@ -167,7 +207,7 @@ public sealed record PurchaseOrderReadListResponseV1(
     IReadOnlyList<PurchaseOrderReadSummaryViewV1> Items,
     string? NextCursor);
 
-/// <param name="Status">An exact status name ("Draft" | "Approved") to narrow the list to, or null.</param>
+/// <param name="Status">An exact status name ("Draft" | "Approved" | "Cancelled") to narrow the list to, or null.</param>
 /// <param name="SupplierPartyId">The exact supplier Party identity to narrow the list to, or null.</param>
 public sealed record PurchaseOrderListQuery(
     int PageSize = 50,
@@ -285,8 +325,20 @@ public static class PurchasingProblemCodesV1
     /// <summary>409, terminal (§7): the expected version is stale.</summary>
     public const string VersionConflict = "version_conflict";
 
-    /// <summary>409, terminal (§7): the order is not in the state the command needs (an Approved order cannot be approved again).</summary>
+    /// <summary>
+    /// 409, terminal (§7): the order is not in the state the command needs (an Approved order cannot be approved again; A1-3:
+    /// only an Approved order's remainder is cancelled — field <c>status</c> = <c>purchasing_order_not_cancellable</c>).
+    /// </summary>
     public const string OrderState = "purchasing_order_state";
+
+    /// <summary>409, terminal (§7; A1-3 fail-closed): every line of the order is fully accepted; there is no remainder to cancel.</summary>
+    public const string OrderNothingToCancel = "purchasing_order_nothing_to_cancel";
+
+    /// <summary>422 (A1-3, No.161 §2): the cancellation reason is missing or blank.</summary>
+    public const string OrderCancellationReasonRequired = "purchasing_order_cancellation_reason_required";
+
+    /// <summary>422 (A1-3): the cancellation reason is longer than 4000 characters (refused, never cut).</summary>
+    public const string OrderCancellationReasonTooLong = "purchasing_order_cancellation_reason_too_long";
 
     /// <summary>409, terminal (§7): the request is not in the state the command needs (a Submitted request cannot be submitted again).</summary>
     public const string RequestNotDraft = "purchasing_request_not_draft";
@@ -334,7 +386,8 @@ public sealed record PurchasingServiceBindings(
     string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove,
     string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord,
     string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove,
-    string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw);
+    string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw,
+    string? OrderCancelPermission = PurchasingPermissionManifestV1.OrdersCancel);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -350,6 +403,8 @@ public static class PurchasingApiV1
     public const string OrdersPath = "/api/v1/purchasing/orders";
     public const string OrderDetailPath = "/api/v1/purchasing/orders/{id}";
     public const string OrderApprovalPath = "/api/v1/purchasing/orders/{id}/approval";
+    public const string OrderCancelImpactPath = "/api/v1/purchasing/orders/{id}/cancel-impact";
+    public const string OrderCancellationPath = "/api/v1/purchasing/orders/{id}/cancellation";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string IdempotencyHeader = "Idempotency-Key";
 
@@ -490,6 +545,20 @@ public static class PurchasingJson
         var request = JsonSerializer.Deserialize<ApprovePurchaseOrderRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersionShape(request.ExpectedVersion);
+        return request;
+    }
+
+    /// <summary>A1-3: the reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
+    public static CancelPurchaseOrderRequest ReadCancelOrder(string json)
+    {
+        var request = JsonSerializer.Deserialize<CancelPurchaseOrderRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
         return request;
     }
 

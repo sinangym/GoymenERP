@@ -102,6 +102,8 @@ function server(
         inputs: body.inputs.map((input) => plannedInput(input.parentRollId, input.plannedKg)),
         target: body.target,
         cutToLengthSpec: body.cutToLengthSpec ?? null,
+        lineSpeedMetresPerMinute: body.lineSpeedMetresPerMinute ?? null,
+        processSpec: body.processSpec ?? null,
       })
       history = [...history, planRevision({
         revision: history.length,
@@ -118,6 +120,8 @@ function server(
         revisedBy: ACTOR,
         recordedAtUtc: '2026-09-27T09:30:00Z',
         cutToLengthSpec: body.cutToLengthSpec ?? null,
+        lineSpeedMetresPerMinute: body.lineSpeedMetresPerMinute ?? null,
+        processSpec: body.processSpec ?? null,
       })]
       return json(storedPlan, 200, revisions > 1 ? {
         'Idempotency-Replayed': 'true',
@@ -323,6 +327,52 @@ describe('plan edit on the detail screen', () => {
     const second = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')[1]
     expect(second.body).toMatchObject({ expectedVersion: 2, workCenterId: OTHER_LINE, cutToLengthSpec: { lines: STORED_CUT_LINES } })
     expect(fake.stored().history.at(-1)).toMatchObject({ cutToLengthSpec: { lines: STORED_CUT_LINES } })
+  })
+
+  it('keeps the stored process spec unchanged when only a planned kg is edited', async () => {
+    const user = userEvent.setup()
+    const paint = {
+      packageCount: 12,
+      piecesPerPackage: 25,
+      pieceLengthMm: '6000',
+      unitKg: null,
+      perimeterMm: '160.5',
+      targetThicknessMm: null,
+      paintDescription: 'Polyester toz boya, Tedarikçi A',
+      paintColorCode: 'RAL 9010',
+    }
+    const fake = server(undefined, [planRevision({ processSpec: paint })], plan({ process: 'Paint', processSpec: paint }))
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    await changeFirstRollKg(user, '900', 'Yalnız kg değişti')
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [sent] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    expect((sent.body as RevisePlanRequest).processSpec).toEqual(paint)
+    expect(sent.body).not.toHaveProperty('lineSpeedMetresPerMinute')
+    expect(fake.stored().plan.processSpec).toEqual(paint)
+  })
+
+  it('keeps the stored line speed unchanged when only a planned kg is edited', async () => {
+    const user = userEvent.setup()
+    const fake = server(
+      undefined,
+      [planRevision({ lineSpeedMetresPerMinute: '42.5' })],
+      plan({ lineSpeedMetresPerMinute: '42.5' }),
+    )
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    await changeFirstRollKg(user, '900', 'Yalnız kg değişti')
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [sent] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    expect((sent.body as RevisePlanRequest).lineSpeedMetresPerMinute).toBe('42.5')
+    expect(sent.body).not.toHaveProperty('processSpec')
+    expect(fake.stored().plan.lineSpeedMetresPerMinute).toBe('42.5')
   })
 
   it('previews exactly the cut lines the revision then saves, never a calculation without them', async () => {
@@ -783,6 +833,35 @@ describe('plan revision contract and transport', () => {
       planRevisions([planRevision({ inputs: [technicalOnlyInput] })]),
       planRevisions([planRevision({ extra: true })]),
       { ...planRevisions(), extra: 1 },
+    ]
+    for (const body of refused) expect(decodePlanRevisions(body)).toBeNull()
+  })
+
+  it('decodes the revision process spec and refuses a malformed one', () => {
+    const tube = {
+      packageCount: 40,
+      piecesPerPackage: 50,
+      pieceLengthMm: '6000',
+      unitKg: '4.25',
+      perimeterMm: null,
+      targetThicknessMm: null,
+      paintDescription: null,
+      paintColorCode: null,
+    }
+    const edit = planRevision({ revision: 1, planVersion: 2, reason: 'Gerekçe', revisedBy: ACTOR, processSpec: tube })
+    const decoded = decodePlanRevisions(planRevisions([planRevision(), edit]))
+    expect(decoded?.revisions.map((revision) => revision.processSpec)).toEqual([null, tube])
+
+    const { processSpec: _omitted, ...legacy } = planRevision()
+    expect(decodePlanRevisions(planRevisions([legacy]))?.revisions[0].processSpec).toBeNull()
+
+    const refused: unknown[] = [
+      planRevisions([planRevision({ processSpec: { ...tube, extra: 1 } })]),
+      planRevisions([planRevision({ processSpec: { ...tube, packageCount: 0 } })]),
+      planRevisions([planRevision({ processSpec: { ...tube, pieceLengthMm: '6000.0' } })]),
+      planRevisions([planRevision({ processSpec: { ...tube, unitKg: '-1' } })]),
+      planRevisions([planRevision({ processSpec: Object.fromEntries(Object.keys(tube).map((key) => [key, null])) })]),
+      planRevisions([planRevision({ processSpec: 'none' })]),
     ]
     for (const body of refused) expect(decodePlanRevisions(body)).toBeNull()
   })

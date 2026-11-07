@@ -673,6 +673,15 @@ public static class ErpPermissions
     public const string PurchasingRequestsWithdraw = "purchasing.requests.withdraw";
 
     /// <summary>
+    /// A1-3 (plan API-10; No.161 §2): cancel the whole not-yet-accepted remainder of an APPROVED purchase order with a reason, and
+    /// read its impact preview — the Purchasing owner's name (PurchasingPermissionManifestV1.OrdersCancel), apart from entering,
+    /// approving and receiving; none confers another. Who should hold it is not decided (NEEDS-SINAN; the A1-3 proposal is the
+    /// approvers of ALS-D53: Satın Alma Müdürü, Genel Müdür, Admin). Registered, not granted: no role, seed or user receives it
+    /// here (only SENTETIK browser-suite personas in disposable stacks). Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingOrdersCancel = "purchasing.orders.cancel";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -913,6 +922,7 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsRecord,
             PurchasingRequestsApprove,
             PurchasingRequestsWithdraw,
+            PurchasingOrdersCancel,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1066,6 +1076,7 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsRecord,
             PurchasingRequestsApprove,
             PurchasingRequestsWithdraw,
+            PurchasingOrdersCancel,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

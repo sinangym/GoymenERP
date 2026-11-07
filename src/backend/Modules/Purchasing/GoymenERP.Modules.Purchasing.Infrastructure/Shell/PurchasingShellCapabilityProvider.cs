@@ -30,11 +30,16 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// child of the request detail, measured with its own name <see cref="PurchasingPermissionManifestV1.RequestsWithdraw"/>;
 /// "only the preparer or the submitter" (ALS-D47) is the service's rule on the command (the screen shows it only to them).
 /// </para>
+/// <para>
+/// 1.7 (A1-3, plan API-10/UI-05; No.161 §2): the order remainder cancellation control (<see cref="CancelCapabilityId"/>) is a
+/// child of the order detail, measured with its own name <see cref="PurchasingPermissionManifestV1.OrdersCancel"/>; it carries
+/// the impact preview and the cancellation of the whole unaccepted remainder.
+/// </para>
 /// </summary>
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
 
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -58,6 +63,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string DetailCapabilityId = "purchasing.orders.detail";
     public const string ApproveCapabilityId = "purchasing.orders.approve";
     public const string GoodsReceiptCapabilityId = "purchasing.goods-receipts.record";
+    public const string CancelCapabilityId = "purchasing.orders.cancel";
     public const string DetailRoutePath = "/satinalma/siparisler/:orderId";
     public const string DetailScreenId = "P-03-DETAIL";
 
@@ -120,6 +126,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = GoodsReceiptCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
+            },
+            detail with
+            {
+                CapabilityId = CancelCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCancel],
             },
         ];
     }
