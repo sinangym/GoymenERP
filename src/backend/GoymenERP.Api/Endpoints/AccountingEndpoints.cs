@@ -107,6 +107,28 @@ public static class AccountingEndpoints
         ApprovedAccountingSourcePackageCodesV1.DomainInvalid,
     ];
 
+    private static readonly string[] PostingAccountMappingPrepareConflictCodes =
+    [
+        AccountingApiCodes.IdempotencyConflict,
+        AccountingStoreCodes.ConcurrentChange,
+        AccountingPostingAccountMappingCodesV1.SequenceConflict,
+        AccountingPostingAccountMappingCodesV1.AccountPlanUnavailable,
+    ];
+
+    private static readonly string[] PostingAccountMappingActivateConflictCodes =
+    [
+        AccountingApiCodes.IdempotencyConflict,
+        AccountingApiCodes.VersionConflict,
+        AccountingStoreCodes.ConcurrentChange,
+        AccountingPostingAccountMappingCodesV1.SequenceConflict,
+        AccountingPostingAccountMappingCodesV1.AccountPlanUnavailable,
+        AccountingPostingAccountMappingCodesV1.AccountNotInActivePlan,
+        AccountingPostingAccountMappingCodesV1.NotPrepared,
+    ];
+
+    private static readonly string[] PostingAccountMappingPrepareUnprocessableCodes =
+        [.. AccountingPostingAccountMappingCodesV1.PrepareUnprocessable];
+
     private static readonly string[] PeriodUnprocessableCodes =
     [
         AccountingErrorCodes.PeriodNotProposed,
@@ -307,6 +329,71 @@ public static class AccountingEndpoints
             .Produces<ApprovedAccountingSourceCatalogViewV1>(StatusCodes.Status200OK)
             .WithApprovedSourceCatalogProblems(notFound: true, unsupportedMediaType: true);
 
+        // B-04a: the posting account mapping catalog (data only; the Ayarlar screen is a later slice).
+        group.MapPost("/posting-account-mappings", async (
+                PrepareAccountingPostingAccountMappingRequestV1 request,
+                AccountingPostingAccountMappingServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.PrepareAsync(request, key, cancellationToken),
+                mapping => $"/api/v1/accounting/posting-account-mappings/{mapping.MappingVersion:D}"))
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingPostingAccountMappingPermissionNamesV1.Prepare)
+            .WithIdempotencyContract(StatusCodes.Status201Created, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .WithName("PrepareAccountingPostingAccountMappingV1")
+            .Accepts<PrepareAccountingPostingAccountMappingRequestV1>("application/json")
+            .Produces<AccountingPostingAccountMappingViewV1>(StatusCodes.Status201Created)
+            .WithPostingAccountMappingProblems(PostingAccountMappingPrepareConflictCodes,
+                PostingAccountMappingPrepareUnprocessableCodes, notFound: false);
+
+        group.MapGet("/posting-account-mappings/active", async (
+                AccountingPostingAccountMappingServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadActiveAsync(cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingPostingAccountMappingPermissionNamesV1.Read)
+            .WithName("GetAccountingActivePostingAccountMappingV1")
+            .Produces<AccountingPostingAccountMappingViewV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: true);
+
+        group.MapGet("/posting-account-mappings/{mappingVersion:long}", async (
+                long mappingVersion,
+                AccountingPostingAccountMappingServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadAsync(mappingVersion, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingPostingAccountMappingPermissionNamesV1.Read)
+            .WithName("GetAccountingPostingAccountMappingV1")
+            .Produces<AccountingPostingAccountMappingViewV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: true);
+
+        group.MapPost("/posting-account-mappings/{mappingVersion:long}/activation", async (
+                long mappingVersion,
+                ActivateAccountingPostingAccountMappingRequestV1 request,
+                AccountingPostingAccountMappingServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.ActivateAsync(mappingVersion, request, key, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingPostingAccountMappingPermissionNamesV1.Activate)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status403Forbidden,
+                StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ActivateAccountingPostingAccountMappingV1")
+            .Accepts<ActivateAccountingPostingAccountMappingRequestV1>("application/json")
+            .Produces<AccountingPostingAccountMappingViewV1>(StatusCodes.Status200OK)
+            .WithPostingAccountMappingProblems(PostingAccountMappingActivateConflictCodes, null, notFound: true);
+
         group.MapGet("/normal-journal-draft-sources/{sourceId:guid}", async (
                 Guid sourceId,
                 NormalJournalDraftSourceReadServiceV1 service,
@@ -480,6 +567,24 @@ public static class AccountingEndpoints
         if (unsupportedMediaType)
         {
             builder.ProducesErpUnsupportedMediaType();
+        }
+
+        return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
+    }
+
+    private static RouteHandlerBuilder WithPostingAccountMappingProblems(
+        this RouteHandlerBuilder builder, string[] conflictCodes, string[]? unprocessableCodes, bool notFound)
+    {
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(conflictCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+        if (unprocessableCodes is not null)
+        {
+            builder.ProducesErpUnprocessableEntity(unprocessableCodes);
         }
 
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
