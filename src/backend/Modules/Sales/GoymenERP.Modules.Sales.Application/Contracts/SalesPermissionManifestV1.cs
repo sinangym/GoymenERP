@@ -12,8 +12,9 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write.
-    public const int Version = 18;
+    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write;
+    // v19 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve.
+    public const int Version = 19;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>

@@ -295,8 +295,6 @@ public sealed record SalesDraftServiceBindings(
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
     string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
     string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose,
-    // SAT-D30 / SAT-D168: the approval-band over-delivery approval name (a grant, never implied here).
-    string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove,
     // API-20 / API-21: the sales request names (record, read, decide).
     string? RequestWritePermission = SalesPermissionManifestV1.RequestsWrite,
     string? RequestReadPermission = SalesPermissionManifestV1.RequestsRead,
@@ -313,4 +311,6 @@ public sealed record SalesDraftServiceBindings(
     // SAT-D27 (1): the name a person must hold to be an order's sales owner (the sales-owner picker's eligibility, decided).
     string? SalesOwnerEligibilityPermission = SalesPermissionManifestV1.DraftsCreate,
     // API-41 / API-42: the Sales reports' own read name (a report's amount additionally needs the price read).
-    string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead);
+    string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead,
+    // SAT-D30 / SAT-D168: the approval-band over-delivery approval name (a grant, never implied here).
+    string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove);

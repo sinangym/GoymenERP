@@ -52,13 +52,20 @@ public sealed partial class SalesOrderDraft
     }
 
     /// <summary>
-    /// The approval's own preconditions WITHOUT the fact — the expected version, the lifecycle (neither cancelled nor closed) and
-    /// the line — so the caller refuses a stale, terminal or unknown-line command before it asks any owner.
+    /// The approval's own preconditions WITHOUT the fact — the expected version, the lifecycle (neither cancelled nor closed), an
+    /// order approved at least once (its current revision, or an earlier one archived by a revision awaiting re-approval: nothing
+    /// ships on an order never approved, a withdrawn one included) and the line — so the caller refuses a stale, terminal,
+    /// never-approved or unknown-line command before it asks any owner.
     /// </summary>
     public SalesOrderDraftLine RequireOverDeliveryApprovable(long expectedVersion, Guid lineId)
     {
         RequireVersion(expectedVersion);
         RequireNotCancelled("İptal edilmiş siparişte fazla teslim onaylanmaz.");
+        if (ApprovalState != InternalApprovalState.Approved && archivedRevisions.Count == 0)
+        {
+            throw StateConflict("Hiç onaylanmamış siparişte fazla teslim onaylanmaz.");
+        }
+
         return lines.SingleOrDefault(line => line.Id == lineId)
             ?? throw new SalesRuleException(SalesRuleCodes.OverDeliveryLineUnknown, "Fazla teslim onayı siparişin bir satırını adlandırır.");
     }

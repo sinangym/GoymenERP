@@ -312,7 +312,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
-        Assert.Equal((18, 21), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
+        Assert.Equal("sales.orders.over-delivery.approve", SalesPermissionManifestV1.OrdersOverDeliveryApprove);
+        Assert.Equal((19, 22), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -326,6 +328,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,
+                SalesPermissionManifestV1.OrdersOverDeliveryApprove,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersHeaderWrite,
                 SalesPermissionManifestV1.RequestsWrite,
