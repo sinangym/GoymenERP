@@ -254,8 +254,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-15 / FNS-D7: +1 party-ledger direction fact (payable credit row, CK_OpenItems_Direction, receivable-only
             // risk), ordinal-sorted (7dc420a3… -> cf9cecf6…).
             // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
+            // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
             ["tools/relational_inventory/finance.txt"] =
-                "c7ce4f0fb5bb6eb6745b65182dd012504f7aaf197f73ffb523702c3922bcce87",
+                "4575e2292c5b12945010675b92bee90e55272d41a9f5de85e27aade82fc3814e",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -370,8 +371,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A1-3 (plan API-10; No.161 §2): +5 order remainder cancellation SQL facts (one save after a partial receipt + both
             // supply ports + checks, draft / fully accepted refusals, Σ-shares kept + request rejection unblocked, company
             // isolation, Down refusal 51168), kept ordinal-sorted (70c956bd… -> ae6ee9f7…).
+            // A2a-1 (plan TEK-01/API-20): +4 order line price SQL facts (one save + audit + rebuild + approval + the price/money checks,
+            // unpriced columns null + priced technical line refused, company isolation, Down refusal 51169), kept ordinal-sorted
+            // (ae6ee9f7… -> 2085f158…); +1 explicit zero price fact (Sinan #66 6704170096; 2085f158… -> c3fa56d7…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "ae6ee9f768dc60f8521799e606b2b972515730b5a8e2ae843aaff923a6103436",
+                "c3fa56d75efb7e365f4c472a1f96f6aaebb91d9171416ced71900a4beae0f0de",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -577,9 +581,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A1-3 (plan API-10, No.161 §2): the order's Cancelled status and cancellation-facts check, the line's
             // cancelled share inside the shares check, and the write guard's allow-list for exactly those columns; filters and
             // keys unchanged.
+            // Re-measured for A2a-1 (plan TEK-01/API-20): the order's money snapshot columns and their check, the line's price
+            // columns (precisions) and their check (a unit price ≥ 0: an explicit 0 is a price); the write guard's allow-list is
+            // unchanged (prices never move); filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "182b5be853138b47504dd19edca70cf1cae781a1fe07aededc54f448d12c2d6f",
+                "8112bf51baf7536d49baf3ce3f5725815da9cd107e548955db94e2d595e1adbd",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -613,7 +620,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // batch/receipt relationships and an immutable-write guard.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "0f2336ecf5f3013f21cea0f19275459139d9a7eff818fe4cd8e23c498ff0bf39",
+            "973395d3a6ffdd30305ae3edd889f3149f826b585bacde1dfa8161587572cb86",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -702,6 +709,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedFinanceInvoiceOpenItemAdmissionServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceInvoiceOpenItemAdmissionService.cs";
     private const string ReviewedFinanceOpenItemReadServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemReadService.cs";
@@ -740,6 +750,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
                 [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                // MOD-04 (F2a) invoice admission: the one counted site is a target-typed refusal result.
+                [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] = ("FinanceDbContext", 1),
                 // Target-typed DTO/cursor/ReadResult return sites are conservatively counted as context
                 // constructions. FI04 has four exact sites; all database access is tenant-filtered EF/DI.
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
@@ -1175,6 +1187,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // MOD-04 (F2a) invoice admission uses the tenant-filtered FinanceDbContext like F-03's source
+                // admission. SqlClient is referenced only to classify 2601/2627 races after SaveChanges; there is
+                // no direct connection, command, raw SQL or query-filter bypass surface.
+                [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] =
+                    new(
+                        "57b8d750d7f405956a20aa5a339cb066a8a55f4f0b510aa7983db9d5857bb91b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // FI04 adds a separate read-only scoped service. No raw SQL, connection, save or filter bypass.
                 [ReviewedFinanceOpenItemReadServicePath] =
                     new(
@@ -1389,7 +1411,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingModuleExtensions.cs"] =
                     new(
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
-                        "af5a23e1542bc2163d9f1de826a53154c4a2cc1c820ce51baa32aec2c61e5c6c",
+                        // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
+                        "5e9af601e67b444b2f9c480618af865757ecc4c99fd8cb573898cf7af6c7c95c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1453,10 +1476,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // same token count.
                 // Re-fingerprinted for A1-3: the order cancellation (facts and cancelled shares written, audited and rebuilt
                 // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
+                // Re-fingerprinted for A2a-1: the order's money snapshot and the line prices written once, audited and rebuilt
+                // through the domain; same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "10ab34c9581f8bab185669b0cceb34f5835e20837c650cc22b0d62769922ec0e",
+                        "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2089,6 +2114,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // A1-3 (plan API-10, No.161 §2): one reviewed statement, before every drop. Down refuses (51168, used by no other
                 // migration) while any order is Cancelled or any line carries a cancelled share, which dropping the column would
                 // silently turn back into future supply. Up only adds columns and checks.
+                // A2a-1 (plan TEK-01/API-20): one reviewed statement, before every drop. Down refuses (51169, used by no other
+                // migration) while any order has a currency or any line a price, which dropping the columns would silently turn
+                // unpriced. Up only adds nullable columns and checks.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
+                    new(
+                        "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103053923_AddPurchaseOrderCancellation.cs"] =
                     new(
@@ -2356,6 +2392,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // MOD-04 (F2a): the Down's only raw SQL is Finance's module refusal (51051) while any open item carries
+                // an exchange rate or functional amount; the THROW precedes the constraint and column drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261102220923_AddOpenItemInvoiceExchange.cs"] =
+                    new("00f75a4ac79800b13816a01d05a1632e5572d14026f0fdf300a64b7df430e02f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // DEC-FIN-016: the Down's only raw SQL is Finance's module refusal (51051) while any customer
                 // instrument, instrument command or collection money event is stored; the THROW is the Down's first
                 // statement, before every drop. Forward fix.

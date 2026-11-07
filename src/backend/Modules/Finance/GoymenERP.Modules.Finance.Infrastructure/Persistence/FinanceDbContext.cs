@@ -474,6 +474,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "' OR [Direction] = 1) AND "
                 + "([SourceKind] <> '" + FinanceOpenItemSourceKinds.ApprovedOfficialIncomingInvoiceInstallment
                 + "' OR [Direction] = 2)");
+            // F2a: a foreign-currency invoice row carries both its rate and its TL equivalent; a TL row carries neither.
+            // IS NOT NULL is explicit: a CHECK passes on UNKNOWN, so LEN(NULL) > 0 alone would admit a half-filled row.
+            table.HasCheckConstraint("CK_OpenItems_Exchange",
+                "([ExchangeRateText] IS NULL AND [FunctionalAmountText] IS NULL) OR "
+                + "([ExchangeRateText] IS NOT NULL AND [FunctionalAmountText] IS NOT NULL "
+                + "AND LEN([ExchangeRateText]) > 0 AND LEN([FunctionalAmountText]) > 0)");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -485,6 +491,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.SourceBatchChecksum).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
         entity.Property(x => x.OriginalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
         entity.Property(x => x.OutstandingAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ExchangeRateText).HasMaxLength(FinanceOpenItemExchange.RateMaximumLength).IsUnicode(false);
+        entity.Property(x => x.FunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false);
         entity.Property(x => x.DueOn).HasColumnType("date");
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.CreatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
