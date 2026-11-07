@@ -254,6 +254,35 @@ migration and `AccountingStore`.
 - the integration-test project reference;
 - the SQL verifier's broad counts.
 
+## B-04a: posting account mapping catalog (backend only)
+
+Sinan #66 6707619685: invoice finalization makes a DRAFT voucher whose accounts are mapped in Settings
+("Ayarlar") per product type, never hard-coded. This slice stores that mapping in Accounting; the Ayarlar
+screen and the voucher draft (B-04b) come later. #66 6707864938 says how a company fills it (150/153 by the
+purchase line purpose, service purchase → `expense`, scrap sale → `revenue` with `ItemType=Scrap`, 601 by
+`IsExport`, 391/191 optionally per `VatRateCode`). Those are data rows of a version, not code.
+
+- **Version**: (CompanyId, MappingVersion), `EffectiveFrom` (business date), Prepared (1) → Active (2) →
+  Superseded (3). Rows are immutable. Each row has a purpose (`sales-invoice` | `purchase-invoice`) and a key
+  (`receivable`, `revenue`, `vat-output` | `payable`, `inventory`, `vat-input`, `withholding-payable`,
+  `expense`). It may also name optional selectors (`ItemType`, `LinePurpose`, `IsExport`, `VatRateCode`, the
+  last only on a VAT key) and an `AccountId` that must be in the ACTIVE approved account plan (its code is
+  frozen on the row).
+- **Resolution** (`IAccountingPostingAccountMappingResolverV1`, active version only): the matching row with
+  the most named selectors wins. Equally specific matches are `Ambiguous` and no match is `Unmapped`; neither
+  falls back to an account. A date before `EffectiveFrom`, a missing active version or plan, or an account
+  no longer in the active plan is `Unavailable`.
+- **Commands**: `POST /api/v1/accounting/posting-account-mappings` (prepare, `expectedLatestMappingVersion`),
+  `POST …/{mappingVersion}/activation` (`expectedVersion`, `expectedActiveMappingVersion`; the preparer is
+  refused, 403 `accounting_posting_mapping_self_activation`, recorded), `GET …/active`,
+  `GET …/{mappingVersion}`. Permissions `accounting.posting-mappings.read|prepare|activate` are registered,
+  not granted.
+- **Database**: `PostingAccountMappingVersions` (filtered unique `UX_PostingAccountMappingVersions_Active`
+  = one active version per company; `CK_…_MakerChecker`) and `PostingAccountMappingRows` (unfiltered unique
+  selector index: NULL selectors compare equal; key-per-purpose and VAT-rate checks).
+- **Migration** `20261107140038_AddPostingAccountMappings`: Down refuses with **THROW 51212** while any mapping
+  version exists (forward fix); an empty store rolls back freely.
+
 ## Rule codes and read-only views (ACC-2)
 
 - Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and
