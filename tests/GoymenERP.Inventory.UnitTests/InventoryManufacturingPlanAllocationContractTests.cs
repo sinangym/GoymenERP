@@ -107,6 +107,28 @@ public sealed class InventoryManufacturingPlanAllocationContractTests
         }
     }
 
+    [Fact]
+    public void An_issue_names_its_plan_exactly_when_it_names_an_allocation()
+    {
+        var issue = new InventoryManufacturingInputIssueRequestV1(Company, Id(10), Id(11), "3", Id(1), "2", Id(12),
+            "5", At);
+        _ = InventoryManufacturingRealizationContractV1.Validate(issue, Metadata(), Company);
+        _ = InventoryManufacturingRealizationContractV1.Validate(issue with { AllocationId = Id(13), PlanId = Id(3) },
+            Metadata(), Company);
+        foreach (var invalid in new[]
+                 {
+                     issue with { AllocationId = Id(13) },
+                     issue with { PlanId = Id(3) },
+                     issue with { AllocationId = Guid.Empty, PlanId = Id(3) },
+                     issue with { AllocationId = Id(13), PlanId = Guid.Empty },
+                 })
+        {
+            var error = Assert.Throws<InventoryManufacturingRealizationException>(() =>
+                InventoryManufacturingRealizationContractV1.Validate(invalid, Metadata(), Company));
+            Assert.Equal((400, InventoryManufacturingRealizationCodesV1.InvalidRequest), (error.Status, error.Code));
+        }
+    }
+
     private static void AssertInvalid(InventoryManufacturingPlanAllocationRequestV1 request)
     {
         var error = Assert.Throws<InventoryManufacturingRealizationException>(() =>

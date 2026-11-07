@@ -154,15 +154,25 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ManufacturingMetadata(run, "consume-unallocated"), 409,
             InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, ManufacturingSettings(run));
         await AssertIssueRefusalAsync(run,
-            IssueRequest(orderId, parent.Label.Id, "4", "1") with { AllocationId = otherAllocationId },
+            IssueRequest(orderId, parent.Label.Id, "4", "1") with { AllocationId = otherAllocationId, PlanId = planId },
             ManufacturingMetadata(run, "consume-wrong-label"), 409,
             InventoryManufacturingRealizationCodesV1.AllocationNotUsable, ManufacturingSettings(run));
         await AssertIssueRefusalAsync(run,
-            IssueRequest(orderId, parent.Label.Id, "4", "60.001") with { AllocationId = allocationId },
+            IssueRequest(orderId, parent.Label.Id, "4", "60.001") with { AllocationId = allocationId, PlanId = planId },
             ManufacturingMetadata(run, "consume-over"), 409,
             InventoryManufacturingRealizationCodesV1.AllocationExceeded, ManufacturingSettings(run));
 
-        var issue = IssueRequest(orderId, parent.Label.Id, "4", "25") with { AllocationId = allocationId };
+        // An order may consume only its own plan's allocation, and an allocation always names its plan.
+        await AssertIssueRefusalAsync(run,
+            IssueRequest(orderId, parent.Label.Id, "4", "1") with { AllocationId = allocationId, PlanId = Guid.NewGuid() },
+            ManufacturingMetadata(run, "consume-other-plan"), 409,
+            InventoryManufacturingRealizationCodesV1.AllocationNotUsable, ManufacturingSettings(run));
+        await AssertIssueRefusalAsync(run,
+            IssueRequest(orderId, parent.Label.Id, "4", "1") with { AllocationId = allocationId },
+            ManufacturingMetadata(run, "consume-no-plan"), 400,
+            InventoryManufacturingRealizationCodesV1.InvalidRequest, ManufacturingSettings(run));
+
+        var issue = IssueRequest(orderId, parent.Label.Id, "4", "25") with { AllocationId = allocationId, PlanId = planId };
         var issueMetadata = ManufacturingMetadata(run, "consume-part");
         var issued = await CommitIssueAsync(run, issue, issueMetadata);
         Assert.Equal("5", issued.ParentLabelVersion);
@@ -228,6 +238,53 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.__EFMigrationsHistory "
             + "WHERE MigrationId LIKE N'%_AddManufacturingPlanInputAllocations'"));
+    }
+
+    [SqlServerFact]
+    public async Task Sales_paths_never_release_or_ship_a_plan_allocation_and_another_company_cannot_read_it()
+    {
+        await using var run = await Run.StartAsync();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-PLAN-FENCE", 20m);
+        var planId = Guid.NewGuid();
+        var allocated = await CommitPlanAllocationAsync(run,
+            PlanRequest(planId, CompanyLine(parent.Label.Id, "2", "12")), ManufacturingMetadata(run, "fence"));
+        var allocationId = allocated.Allocations.Single().AllocationId;
+
+        // The Sales release by id answers as if the allocation were not a Sales one.
+        await using (var scope = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<InventoryAllocationException>(() => scope.Store.ReleaseAsync(
+                allocationId, new ReleasePhysicalAllocationV1("1", "Satış iptali (sentetik)"), Metadata(run)));
+            Assert.Equal((422, InventoryAllocationCodesV1.InvalidReference), (refused.Status, refused.Code));
+        }
+
+        // A definite shipment named with the plan allocation's id ships nothing.
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventoryDefiniteShipmentParticipant.EnlistAsync(connection,
+                transaction, CompanyA, Settings(run, CompanyA));
+            var shipment = new InventoryDefiniteShipmentRequestV1(CompanyA, Guid.NewGuid(), Guid.NewGuid(),
+                Guid.NewGuid(), allocationId, "1", parent.Label.Id, "3", Guid.NewGuid(), "1", ManufacturingAt);
+            var hidden = await Assert.ThrowsAsync<InventoryDefiniteShipmentException>(() =>
+                participant.StageAsync(shipment, Metadata(run)));
+            Assert.Equal((404, InventoryDefiniteShipmentCodesV1.InvalidReference), (hidden.Status, hidden.Code));
+            await transaction.RollbackAsync();
+        }
+
+        Assert.Equal((1, 12m), (
+            await run.ScalarAsync<int>("SELECT Status FROM inventory.Allocations WHERE Id = @id", ("@id", allocationId)),
+            await run.ScalarAsync<decimal>("SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id",
+                ("@id", allocationId))));
+
+        // The plan read port is company-filtered: another company sees no allocation of this plan.
+        await using (var context = run.Context(CompanyB))
+        {
+            var company = new CompanyContext();
+            company.Set(CompanyB);
+            Assert.Empty(await new InventoryManufacturingPlanAllocationReadPort(context, company).GetForPlanAsync(planId));
+        }
     }
 
     private static InventoryManufacturingPlanAllocationRequestV1 PlanRequest(Guid planId,

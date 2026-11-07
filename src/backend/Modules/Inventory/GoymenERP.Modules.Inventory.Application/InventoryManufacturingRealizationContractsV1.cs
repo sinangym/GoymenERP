@@ -35,8 +35,9 @@ public interface IInventoryManufacturingRealizationParticipantV1 : IAsyncDisposa
 /// effect time and advances it with the movement.
 /// <para>
 /// B-01 / API-21: with <see cref="AllocationId"/> the issue consumes that plan-input allocation (never more than its
-/// remaining kg, never more than the physical stock) and the allocation's own kg count as available to it. Without
-/// it the issue may take only the unreserved kg, as before.
+/// remaining kg, never more than the physical stock) and the allocation's own kg count as available to it. The
+/// allocation must belong to <see cref="PlanId"/>, which is required with it, so an order can never consume another
+/// plan's allocation on the same label. Without an allocation the issue may take only the unreserved kg, as before.
 /// </para>
 /// </summary>
 public sealed record InventoryManufacturingInputIssueRequestV1(
@@ -49,7 +50,8 @@ public sealed record InventoryManufacturingInputIssueRequestV1(
     Guid MovementId,
     string QuantityKg,
     DateTimeOffset OccurredAtUtc,
-    Guid? AllocationId = null);
+    Guid? AllocationId = null,
+    Guid? PlanId = null);
 
 public sealed record InventoryManufacturingInputIssueResultV1(
     Guid CompanyId,
@@ -233,6 +235,12 @@ public static class InventoryManufacturingRealizationContractV1
         ValidateInput(request.CompanyId, request.ManufacturingOrderId, request.IssueId,
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
+        if ((request.AllocationId is null) != (request.PlanId is null)
+            || request.AllocationId == Guid.Empty || request.PlanId == Guid.Empty)
+        {
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
+        }
+
         return Quantity(request.QuantityKg);
     }
 

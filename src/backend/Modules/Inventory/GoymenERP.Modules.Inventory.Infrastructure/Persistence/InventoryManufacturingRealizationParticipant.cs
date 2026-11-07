@@ -126,7 +126,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: true, cancellationToken);
         var position = request.AllocationId is { } allocationId
-            ? await ConsumePlanAllocationAsync(allocationId, parent, quantity, metadata, cancellationToken)
+            ? await ConsumePlanAllocationAsync(allocationId, request.PlanId!.Value, parent, quantity, metadata,
+                cancellationToken)
             : await CurrentFreePositionAsync(parent.Label, quantity, cancellationToken);
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
             request.OccurredAtUtc,

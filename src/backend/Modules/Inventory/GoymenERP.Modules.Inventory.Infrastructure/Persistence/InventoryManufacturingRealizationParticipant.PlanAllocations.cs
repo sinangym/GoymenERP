@@ -166,7 +166,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
                 throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
             }
 
-            row.ReleasedAtUtc = request.OccurredAtUtc;
+            // Server time, as every Sales release and change records it; the caller's time stays in the audit trail.
+            row.ReleasedAtUtc = now;
             row.ReleaseReason = reasonCode;
             row.ReleasedKg = kilograms.Value;
             row.UpdatedAtUtc = now;
@@ -191,13 +192,13 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// plan input of this exact label and position; the issue may take at most its remaining kg, and the physical
     /// balance must still cover it after every OTHER active allocation of the position.
     /// </summary>
-    private async Task<StockPosition> ConsumePlanAllocationAsync(Guid allocationId, ParentLabel parent,
+    private async Task<StockPosition> ConsumePlanAllocationAsync(Guid allocationId, Guid planId, ParentLabel parent,
         Kilograms quantity, InventoryCommandMetadata metadata, CancellationToken cancellationToken)
     {
         var row = await context.Allocations.SingleOrDefaultAsync(candidate => candidate.Id == allocationId,
             cancellationToken);
         if (row is null || row.DemandKind != InventoryAllocationDemandKindsV1.ManufacturingPlanInput
-            || row.LabelId != parent.Label.Id || row.Status != (int)StockAllocationStatus.Active
+            || row.DemandId != planId || row.LabelId != parent.Label.Id || row.Status != (int)StockAllocationStatus.Active
             || row.Block != (int)BlockState.Free)
         {
             throw Refused(409, InventoryManufacturingRealizationCodesV1.AllocationNotUsable);
