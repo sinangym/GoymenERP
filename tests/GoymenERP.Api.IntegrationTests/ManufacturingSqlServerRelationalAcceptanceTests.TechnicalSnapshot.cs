@@ -89,6 +89,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(TechnicalSnapshots);
             Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
             var error = await Assert.ThrowsAsync<SqlException>(

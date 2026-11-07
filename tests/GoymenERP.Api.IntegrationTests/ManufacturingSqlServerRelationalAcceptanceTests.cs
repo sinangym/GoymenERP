@@ -110,6 +110,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(beforeLabelVersions);
             Assert.Equal(beforeLabelVersions, (await context.Database.GetAppliedMigrationsAsync()).Last());
             Assert.Equal(0, await run.ScalarAsync<int>(
@@ -595,6 +596,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(beforeSpecs);
             Assert.Equal(beforeSpecs, (await context.Database.GetAppliedMigrationsAsync()).Last());
             Assert.Equal(0, await run.ScalarAsync<int>(
@@ -610,6 +612,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeSpecs));
             Assert.Equal(51047, error.Number);
             Assert.EndsWith("_AddPlanSlittingSpecs", (await context.Database.GetAppliedMigrationsAsync()).Last(),
@@ -735,6 +738,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         async Task AssertDownRefusedBeforeMutation()
         {
             await using var context = run.Context(CompanyA);
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(beforeProcesses));
             Assert.Equal(51047, error.Number);
@@ -751,6 +755,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         async Task MoveToProcessMigrationAsync()
         {
             await using var context = run.Context(CompanyA);
+            await run.ForgetPlanPreparersBeforeRollbackAsync();
             await context.GetService<IMigrator>().MigrateAsync(processMigration);
             Assert.Equal(processMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
             await CaptureConstraintsAsync();
@@ -899,6 +904,16 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c AND Kind = @kind ORDER BY Id",
                 ("@c", company), ("@kind", kind));
+
+        /// <summary>
+        /// Üretim U2-d: plans a rollback test saves through the current store record their preparer, and the preparer
+        /// migration's Down refuses (51190) while a Draft never revised does. A test that rolls back to an EARLIER
+        /// migration under test first makes its rows rows stored before U2-d (no preparer), so the rollback reaches the
+        /// migration it tests; the preparer guard itself is tested in the Preparer part.
+        /// </summary>
+        public Task<int> ForgetPlanPreparersBeforeRollbackAsync() => ScalarAsync<int>(
+            "IF COL_LENGTH(N'manufacturing.Plans', N'CreatedBy') IS NOT NULL "
+            + "EXEC(N'UPDATE manufacturing.Plans SET CreatedBy = NULL'); SELECT 1");
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {
