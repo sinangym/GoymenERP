@@ -22,7 +22,13 @@ kendi karar, review ve merge kapıları geçerlidir.
 - **İşlem sınırı:** Finans kendi işleminde yazar (tek `SaveChanges`); Satış'ın veritabanı işlemine katılmaz. Satış
   kesinleşmeyi "Finans kabulü bekliyor" durumuyla commit eder, sonra portu aynı anahtarla çağırır; hata ya da zaman
   aşımında aynı anahtarla yeniden dener.
-- **Yetki:** port kendi yetkisini taşımaz; Satış kendi kesinleştirme yetkisini ölçer. Bağlamdaki şirket ve kullanıcı
+- **Yeniden gönderim:** aynı kullanıcı aynı anahtarla tekrar dener; başka bir yetkili kullanıcı ya da arka plan taraması
+  (SAT-D208) **yeni anahtar ve aynı `AdmissionId`** ile gönderir → aynı payload replay olur, farklı payload
+  `finance_invoice_admission_identity_conflict` ile reddedilir. Satış `AdmissionId`, `OpenItemId`'ler ve payload'u
+  "Finans kabulü bekliyor" durumuyla birlikte kalıcı saklar (payload hash bu id'leri içerir).
+- **Yetki:** Satış kendi kesinleştirme yetkisini ölçer; Finans ayrıca host'un sağladığı
+  `IFinanceInvoiceOpenItemAdmissionAuthorityV1` ile her kabulü iki kez çitler (eşlenmemiş kompozisyon = unavailable).
+  Hangi yetkinin cevap vereceği ve çağıranın `Producer` ile bağlanması S5 bağlantısında belirlenir. Bağlamdaki şirket ve kullanıcı
   sunucu bağlamına eşit olmalıdır.
 - **Taşıma:** ERP-000F dağıtıcısı gelene kadar senkron port (SINAN 10-21 No 55). Dağıtıcıdan sonra aynı payload
   `sales.invoice.finalized.v1` olur; Finans inbox/dedup ile aynı servisi çağırır. Matrah/KDV/tevkifat, belge no/tarih ve

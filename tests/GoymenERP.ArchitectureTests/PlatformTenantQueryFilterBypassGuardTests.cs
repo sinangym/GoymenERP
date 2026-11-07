@@ -254,8 +254,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-15 / FNS-D7: +1 party-ledger direction fact (payable credit row, CK_OpenItems_Direction, receivable-only
             // risk), ordinal-sorted (7dc420a3… -> cf9cecf6…).
             // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
+            // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
             ["tools/relational_inventory/finance.txt"] =
-                "c7ce4f0fb5bb6eb6745b65182dd012504f7aaf197f73ffb523702c3922bcce87",
+                "4575e2292c5b12945010675b92bee90e55272d41a9f5de85e27aade82fc3814e",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -613,7 +614,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // batch/receipt relationships and an immutable-write guard.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "0f2336ecf5f3013f21cea0f19275459139d9a7eff818fe4cd8e23c498ff0bf39",
+            "973395d3a6ffdd30305ae3edd889f3149f826b585bacde1dfa8161587572cb86",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -702,6 +703,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedFinanceInvoiceOpenItemAdmissionServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceInvoiceOpenItemAdmissionService.cs";
     private const string ReviewedFinanceOpenItemReadServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemReadService.cs";
@@ -740,6 +744,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
                 [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                // MOD-04 (F2a) invoice admission: the one counted site is a target-typed refusal result.
+                [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] = ("FinanceDbContext", 1),
                 // Target-typed DTO/cursor/ReadResult return sites are conservatively counted as context
                 // constructions. FI04 has four exact sites; all database access is tenant-filtered EF/DI.
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
@@ -1171,6 +1177,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
                     new(
                         "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // MOD-04 (F2a) invoice admission uses the tenant-filtered FinanceDbContext like F-03's source
+                // admission. SqlClient is referenced only to classify 2601/2627 races after SaveChanges; there is
+                // no direct connection, command, raw SQL or query-filter bypass surface.
+                [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] =
+                    new(
+                        "57b8d750d7f405956a20aa5a339cb066a8a55f4f0b510aa7983db9d5857bb91b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2366,6 +2382,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // MOD-04 (F2a): the Down's only raw SQL is Finance's module refusal (51051) while any open item carries
+                // an exchange rate or functional amount; the THROW precedes the constraint and column drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261102220923_AddOpenItemInvoiceExchange.cs"] =
+                    new("00f75a4ac79800b13816a01d05a1632e5572d14026f0fdf300a64b7df430e02f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // DEC-FIN-016: the Down's only raw SQL is Finance's module refusal (51051) while any customer
                 // instrument, instrument command or collection money event is stored; the THROW is the Down's first
                 // statement, before every drop. Forward fix.
