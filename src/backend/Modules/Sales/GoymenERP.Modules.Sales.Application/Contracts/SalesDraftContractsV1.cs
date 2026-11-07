@@ -210,6 +210,26 @@ public sealed record SalesDraftLineQuantityV1(Guid LineId, string Quantity);
 /// </summary>
 public sealed record SalesDraftQuantityRevisionRequest(string ExpectedVersion, string Reason, IReadOnlyList<SalesDraftLineQuantityV1> Lines);
 
+/// <summary>SAT-D167 (EK24): one unshipped line to remove (it goes passive); for a product change, the added line replacing it.</summary>
+public sealed record SalesDraftLineRemovalV1(
+    Guid LineId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? ReplacedByLineId = null);
+
+/// <summary>
+/// SAT-D167 (EK24): POST …/{id}/line-revision — the expected version, the reason (required) and the line changes: <c>added</c>
+/// lines in the create's line shape (product, version, order unit, quantity, optional price / discount / dates / slices / note /
+/// tax change), <c>removed</c> unshipped lines (passive), and a product change as a removal whose <c>replacedByLineId</c> names
+/// an added line. At least one change, unless a customer-rejected revision's removed lines wait to be reinstated (SAT-D211: then
+/// an empty request opens the next revision). An approved order goes to the next revision for re-approval and customer acceptance.
+/// </summary>
+public sealed record SalesDraftLineRevisionRequest(string ExpectedVersion, string Reason,
+    IReadOnlyList<SalesOrderDraftLineRequest> Added, IReadOnlyList<SalesDraftLineRemovalV1> Removed);
+
+/// <summary>SAT-D167: a line a line revision removed (passive): history only, out of the order's totals, risk and shipping.</summary>
+public sealed record SalesOrderDraftRemovedLineV1(Guid LineId, int LineNo, Guid ProductId, string ProductCode, string ProductName,
+    string Quantity, string? OrderUnitCode, string RemovedInRevision, Guid? ReplacedByLineId);
+
 /// <summary>DEC-SAL-003: one existing slice's new requested delivery date, addressed by its client slice id.</summary>
 public sealed record SalesDraftSliceScheduleV1(Guid SliceId, DateOnly RequestedDeliveryDate);
 
@@ -284,7 +304,10 @@ public sealed record SalesOrderDraftLineDetail(
     string? DiscountPercent,
     SalesPriceDisclosure PriceDisclosure,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? OrderUnitCode = null);
+    string? OrderUnitCode = null,
+    // SAT-D167 (EK24): the revision a line revision added this line in ("Rev.N"); omitted for a line that came with the create.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? AddedInRevision = null);
 
 /// <summary>
 /// D2 (Sinan 5749046401): <c>IsOwnDraft</c> is the RELATIONSHIP, computed on the server for the caller — "the caller is
@@ -305,7 +328,10 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftApprovalV1 Approval,
     SalesDraftCustomerAcceptanceV1 CustomerAcceptance,
     bool IsOwnDraft,
-    bool IsOwnDecisionRestricted);
+    bool IsOwnDecisionRestricted,
+    // SAT-D167 (EK24): the lines a line revision removed (passive, history); omitted when there is none.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<SalesOrderDraftRemovedLineV1>? RemovedLines = null);
 
 public sealed record SalesOrderDraftResponse(
     SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId);
@@ -363,6 +389,9 @@ public static class SalesDraftApiV1
     // `Idempotency-Replayed`). The detail wire is unchanged (the line's `quantity` carries the new text); the superseded
     // approved revision, with its reason, is read on the revisions route.
     public const string QuantityRevisionPath = "/api/v1/sales/drafts/{id}/quantity-revision";
+
+    /// <summary>SAT-D167 (EK24): add lines, remove unshipped lines (passive) or change an unshipped line's product, with a reason.</summary>
+    public const string LineRevisionPath = "/api/v1/sales/drafts/{id}/line-revision";
 
     // DEC-SAL-003: the delivery-schedule update (200 with the detail after the change; same-key replay 200 +
     // `Idempotency-Replayed`) and the read of the schedule history. The detail wire is unchanged: it carries the
@@ -539,6 +568,55 @@ public static class SalesDraftJson
             if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId))
                 throw new JsonException("Invalid line fields.");
             RequireDecimalShape(line.Quantity, positive: true);
+        }
+
+        return request;
+    }
+
+    /// <summary>
+    /// SAT-D167 (EK24): the strict body of a line revision — the expected version, the reason present (at most 4000), up to 500
+    /// added lines in the create's line shape (each id once) and up to 500 removals (each line once; a replacement names an added
+    /// line, once). No change at all is the domain's refusal unless a reinstatement waits (SAT-D211). The domain and the owners decide the rest.
+    /// </summary>
+    public static SalesDraftLineRevisionRequest ReadLineRevision(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftLineRevisionRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Reason is null || request.Reason.Length > 4000)
+            throw new JsonException("Invalid reason.");
+        // Both lists may be empty: that is the revision that opens the next one of a customer-rejected revision and reinstates its
+        // removed lines (SAT-D211); the domain refuses an empty revision when nothing waits to be reinstated (no change).
+        if (request.Added is null || request.Removed is null || request.Added.Count > 500 || request.Removed.Count > 500)
+            throw new JsonException("Invalid line changes.");
+        var ids = new HashSet<Guid>();
+        foreach (var line in request.Added)
+        {
+            if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId)
+                || line.ProductId == Guid.Empty || line.OrderUnitId == Guid.Empty
+                || string.IsNullOrWhiteSpace(line.ExpectedProductVersion)
+                || line.ExpectedProductVersion.Length > 128 || line.Note?.Length > 4000
+                || line.PriceUnitId == Guid.Empty
+                || (line.UnitPrice is null) != (line.PriceUnitId is null))
+                throw new JsonException("Invalid added line fields.");
+            RequireDecimalShape(line.Quantity, positive: true);
+            if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
+            if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+            if (line.TaxOverride is { } tax)
+                SalesDraftTaxApiV1.RequireOverrideShape(tax.BuyerSituation, tax.Reason, tax.ItemType, tax.ExemptionCode, tax.VatRateCode,
+                    tax.WithholdingRatioCode);
+            SalesDraftDeliveryPlanV1.GetUnscheduledQuantity(line);
+        }
+
+        var removedIds = new HashSet<Guid>();
+        var replacements = new HashSet<Guid>();
+        foreach (var removal in request.Removed)
+        {
+            if (removal is null || removal.LineId == Guid.Empty || !removedIds.Add(removal.LineId) || ids.Contains(removal.LineId)
+                || (removal.ReplacedByLineId is { } replacement && (!ids.Contains(replacement) || !replacements.Add(replacement))))
+                throw new JsonException("Invalid removal fields.");
         }
 
         return request;

@@ -16,7 +16,7 @@ import {
   type OrderAttemptState,
 } from './orderAttempt'
 import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
-import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT as T, ORDER_TAX_TEXT, problemCodeText } from './salesText'
+import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT as T, ORDER_TAX_TEXT, problemCodeText, reinstatementPendingText } from './salesText'
 import { recallCommercialRevisionAttempt, rememberCommercialRevisionAttempt } from './pendingCommercialRevisions'
 import { useDraftLinePricing } from './useDraftLinePricing'
 import { useTaxOptions } from './useTaxOptions'
@@ -307,7 +307,8 @@ function revisionNotice(attempt: RevisionAttempt): string | null {
             : attempt.failure === 'conflict' ? text.conflict
               : attempt.failure === 'validation' ? text.validation
                 : text.unexpected
-      return codeText === null ? base : `${base} ${codeText}`
+      const pending = attempt.failure === 'validation' ? reinstatementPendingText(attempt.problem?.errors ?? []) : ''
+      return [base, codeText, pending].filter((part) => part !== null && part !== '').join(' ')
     }
     default: return null
   }

@@ -330,7 +330,9 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        var lineIds = draft.Lines.Select(line => line.Id).ToHashSet();
+        // SAT-D167: an owner may answer a link on a passive line (opened before its removal was recorded); it is the order's
+        // line and still a link (fail-closed), never a malformed answer.
+        var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
         var result = new Dictionary<Guid, LineAllocation>();
         foreach (var entry in answer.Lines)
         {
@@ -364,17 +366,30 @@ public sealed partial class SalesDraftService
     /// Unreadable for these categories).
     /// </summary>
     private async Task<string> ReadLinkedSupplyStatusAsync(Scope scope, string? permission, SalesOrderDraft draft, string kind,
+        CancellationToken cancellationToken) =>
+        (await ReadLinkedSupplyAsync(scope, permission, draft, kind, cancellationToken)).Status;
+
+    /// <summary>
+    /// What one supply kind answers for an order: its status in the cancellation preview's vocabulary and, for <c>Present</c>, the
+    /// owner's open items. SAT-D219 (EK38): no adapter of the kind is <c>NoSource</c> ONLY while no module declares that it records
+    /// links of the kind (<see cref="ISalesOrderLinkedSupplyRecorderV1"/>); a declared recorder without an adapter is
+    /// <c>Unreadable</c> (fail-closed). An item may name a PASSIVE line of the order (a line a revision removed) — it is the
+    /// order's line and still an open link, never a malformed answer.
+    /// </summary>
+    private async Task<LinkedSupplyRead> ReadLinkedSupplyAsync(Scope scope, string? permission, SalesOrderDraft draft, string kind,
         CancellationToken cancellationToken)
     {
+        var noItems = (IReadOnlyList<SalesOrderLinkedSupplyItemV1>)[];
         var adapters = (linkedSupplies ?? []).Where(adapter => adapter is not null && adapter.SupplyKind == kind).ToArray();
         if (adapters.Length == 0)
         {
-            return SalesCancellationImpactStatusesV1.NoSource;
+            var recorded = (linkedSupplyRecorders ?? []).Any(recorder => recorder is not null && recorder.SupplyKind == kind);
+            return new(recorded ? SalesCancellationImpactStatusesV1.Unreadable : SalesCancellationImpactStatusesV1.NoSource, noItems);
         }
 
         if (adapters.Length > 1)
         {
-            return SalesCancellationImpactStatusesV1.Unreadable;
+            return new(SalesCancellationImpactStatusesV1.Unreadable, noItems);
         }
 
         var query = new SalesOrderLinkedSupplyQueryV1(scope.CompanyId, draft.Id, null);
@@ -386,7 +401,7 @@ public sealed partial class SalesDraftService
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
         {
-            return SalesCancellationImpactStatusesV1.Unreadable;
+            return new(SalesCancellationImpactStatusesV1.Unreadable, noItems);
         }
 
         if (answer is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id || answer.SupplyKind != kind
@@ -395,10 +410,10 @@ public sealed partial class SalesDraftService
             || (answer.Status == SalesCancellationImpactStatusesV1.Present) != (answer.OpenItems.Count > 0))
         {
             // Unreadable, NoSource from an adapter, an unknown status, or a status contradicting the items: fail-closed.
-            return SalesCancellationImpactStatusesV1.Unreadable;
+            return new(SalesCancellationImpactStatusesV1.Unreadable, noItems);
         }
 
-        var lineIds = draft.Lines.Select(line => line.Id).ToHashSet();
+        var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
         var seen = new HashSet<(Guid, Guid?)>();
         foreach (var item in answer.OpenItems)
         {
@@ -412,11 +427,50 @@ public sealed partial class SalesDraftService
                 || item.OpenQuantityUnitId == Guid.Empty
                 || !QuantityTextIsValid(item.PlannedKg) || !QuantityTextIsValid(item.ActualKg))
             {
-                return SalesCancellationImpactStatusesV1.Unreadable;
+                return new(SalesCancellationImpactStatusesV1.Unreadable, noItems);
             }
         }
 
-        return answer.Status;
+        return new(answer.Status, answer.OpenItems);
+    }
+
+    /// <summary>One supply kind's validated answer: its status and (for Present) the owner's open items.</summary>
+    private sealed record LinkedSupplyRead(string Status, IReadOnlyList<SalesOrderLinkedSupplyItemV1> OpenItems);
+
+    /// <summary>
+    /// SAT-D219 (EK38): a line with an OPEN linked purchase order or production order is neither removed nor given another
+    /// product (the shipped-line rule of SAT-D167). Every supply kind is read afresh under the caller's name (fenced after each
+    /// owner): <c>None</c> and <c>NoSource</c> (no module records links of the kind) pass; an open item naming one of
+    /// <paramref name="lineIds"/> — or the whole order, which cannot be told from any line and so counts for every line — blocks;
+    /// an unreadable kind (its owner failed, answered malformed, is ambiguous, or records links without an adapter) is 503
+    /// <c>revision_impact_unavailable</c>. Returns the ids of the blocked lines; the caller names them in its refusal.
+    /// </summary>
+    private async Task<HashSet<Guid>> ReadLinkedSupplyBlockedLinesAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        IReadOnlyCollection<Guid> lineIds, CancellationToken cancellationToken)
+    {
+        var blocked = new HashSet<Guid>();
+        foreach (var kind in SalesLinkedSupplyKindsV1.All)
+        {
+            var read = await ReadLinkedSupplyAsync(scope, permission, draft, kind, cancellationToken);
+            if (read.Status == SalesCancellationImpactStatusesV1.Unreadable)
+            {
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+            }
+
+            foreach (var item in read.OpenItems)
+            {
+                if (item.OrderLineId is null)
+                {
+                    blocked.UnionWith(lineIds);
+                }
+                else if (lineIds.Contains(item.OrderLineId.Value))
+                {
+                    blocked.Add(item.OrderLineId.Value);
+                }
+            }
+        }
+
+        return blocked;
     }
 
     /// <summary>An owner's quantity text: absent, or a non-negative exact decimal text (no sign, no exponent, no grouping).</summary>
@@ -472,7 +526,8 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        var lines = draft.Lines.ToDictionary(line => line.Id);
+        // SAT-D167: a passive line's loading is the order's (a link, fail-closed), never a malformed answer.
+        var lines = draft.AllLines.ToDictionary(line => line.Id);
         var result = new Dictionary<Guid, LineLoading>();
         foreach (var entry in answer.Lines)
         {

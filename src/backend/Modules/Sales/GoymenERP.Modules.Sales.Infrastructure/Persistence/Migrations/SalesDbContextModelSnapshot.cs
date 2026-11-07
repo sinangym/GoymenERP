@@ -561,6 +561,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<int>("LineNo")
                         .HasColumnType("int");
 
+                    b.Property<int?>("AddedInRevision")
+                        .HasColumnType("int");
+
                     b.Property<string>("DiscountPercent")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -668,6 +671,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<int?>("ReinstatedInRevision")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RemovedInRevision")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ReplacedByLineId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly?>("RequestedDeliveryDate")
                         .HasColumnType("date");
 
@@ -719,6 +731,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DraftLines_ItemType", "[ItemType] IS NULL OR [ItemType] = N'Service'");
 
                             t.HasCheckConstraint("CK_DraftLines_LineNo", "[LineNo] >= 1");
+
+                            t.HasCheckConstraint("CK_DraftLines_LineRevision", "([AddedInRevision] IS NULL OR [AddedInRevision] >= 0) AND ([RemovedInRevision] IS NULL OR [RemovedInRevision] >= 0) AND ([ReinstatedInRevision] IS NULL OR [ReinstatedInRevision] >= 0) AND ([ReplacedByLineId] IS NULL OR ([RemovedInRevision] IS NOT NULL AND [ReplacedByLineId] <> [LineId] AND [ReplacedByLineId] <> '00000000-0000-0000-0000-000000000000'))");
 
                             t.HasCheckConstraint("CK_DraftLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
 

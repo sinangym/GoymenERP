@@ -245,7 +245,7 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.cancellationImpactChanged]:
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
-    'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); miktar değiştirilmedi. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+    'Siparişe bağlı kayıtlar var (tahsis, yükleme, satın alma ya da üretim); işlem yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.forceCloseBlocked]:
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
@@ -278,6 +278,16 @@ const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
   sales_discount_out_of_range: 'İskonto yüzdesi 0 ile 100 arasında olmalıdır.',
   sales_discount_without_price: 'İskonto için birim fiyat gerekir.',
 }
+
+/**
+ * SAT-D211 (EK36): a quantity, price or header revision refused because the customer-rejected revision's removed lines wait to be
+ * reinstated (422 `sales_revision_reinstatement_pending`); the way forward is the line revision's empty request.
+ */
+export const REINSTATEMENT_PENDING_CODE = 'sales_revision_reinstatement_pending'
+export const REINSTATEMENT_PENDING_TEXT =
+  'Müşterinin reddettiği revizyonda çıkarılan satır geri gelmeden miktar, fiyat ya da başlık revizyonu yapılamaz. Önce "Satır revizyonu" ile (satır değiştirmeden) yeni revizyonu açın; satır geri gelir.'
+export const reinstatementPendingText = (errors: readonly { readonly code: string }[]): string =>
+  errors.some((error) => error.code === REINSTATEMENT_PENDING_CODE) ? REINSTATEMENT_PENDING_TEXT : ''
 
 /** A server field error's text on the create form: the stable problem codes first, then the line-price rule codes. */
 export function createFieldErrorText(code: string | null): string | null {
@@ -424,6 +434,11 @@ export const ORDER_DETAIL_TEXT = {
     /** SAT-D201 (EK31). */
     subcontractPriceRequired:
       'Fason siparişte kg fiyatı girilmemiş hizmet satırı var; sipariş onaya gönderilemez. Fiyatı "Fiyat revizyonu" ile kg başına girin.',
+    /** SAT-D167 / SAT-D219: a line this revision removed got a link after the revision was recorded (409 `sales_revision_blocked`). */
+    lineShipped:
+      'Bu revizyonda çıkarılan bir satıra sonradan tahsis ya da yükleme bağlanmış; işlem yapılmadı. Bağ kendi ekranında kapatıldıktan sonra yeniden deneyin.',
+    lineLinked:
+      'Bu revizyonda çıkarılan bir satıra sonradan açık satın alma ya da üretim bağlanmış; işlem yapılmadı. Bağ satın alma/üretim tarafında kapatılsın ya da çözülsün, sonra yeniden deneyin.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -537,6 +552,94 @@ export const ORDER_DETAIL_TEXT = {
       reason === 'reason-required' ? 'Revizyon gerekçesi zorunludur.'
         : reason === 'no-change' ? 'Hiçbir satırın miktarı değişmedi; onay boşuna düşürülmez.'
           : `${lineNo ?? ''}. satırın miktarı sıfırdan büyük, noktayla yazılmış bir sayı olmalıdır.`,
+  },
+  /**
+   * SAT-D167 (EK24): the line revision — add a line, remove an unshipped line (it goes passive), change an unshipped line's
+   * product. Texts only; every rule is the server's.
+   */
+  lineRevision: {
+    heading: 'Satır revizyonu',
+    open: 'Satır ekle / çıkar / ürün değiştir',
+    close: 'Satır revizyonundan vazgeç',
+    description:
+      'Siparişe yeni satır ekleyin, sevk edilmemiş bir satırı çıkarın ya da sevk edilmemiş bir satırın ürününü değiştirin. ' +
+      'Çıkarılan satır silinmez, pasif olur; tutar, risk ve sevkiyatın dışında kalır (çıkarma onay beklerken sevk edilmez; reddedilirse satır geri gelir ve son onaylı revizyonla sevk edilir). Vergi, satırın ürününe göre Ayarlar listelerinden belirlenir.',
+    approvedWarning:
+      'Onaylı siparişte satır değişikliği mevcut revizyonu gerekçesiyle arşivler; sipariş yeni revizyonla iç onaya, gerekiyorsa yeniden müşteri kabulüne girer.',
+    linkedWarning:
+      'Stok tahsisi ya da yükleme talimatı olan (sevki başlamış) ya da açık satın alma siparişi / üretim emri bağlı satır çıkarılamaz ve ürünü değiştirilemez.',
+    reinstatementNote:
+      'Müşteri, çıkarılan satır(lar) içeren revizyonu reddetti. Satır değiştirmeden gönderirseniz yeni revizyon açılır ve çıkarılan satır(lar) geri gelir; miktar, fiyat ve başlık revizyonu bundan sonra yapılır.',
+    subcontractNote: 'Fason hizmet siparişinde yalnız "Hizmet" kalemli ürün eklenir; birim ve fiyat birimi kg, fiyat kg başına elle yazılır.',
+    stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapanmış siparişte satır revizyonu yapılamaz.',
+    revisionDay: (day: string) => `Yeni satırın ürünü, birimi ve vergisi revizyon gününün (${day}) değerleriyle okunur; mevcut satırlar değişmez.`,
+    action: 'Bu satır',
+    actions: { keep: 'Değişmesin', remove: 'Satırı çıkar (pasif)', replace: 'Ürününü değiştir' } as const,
+    replacementHeading: 'Yerine gelecek satır',
+    addedHeading: (n: number) => `Yeni satır +${n}`,
+    addLine: 'Yeni satır ekle',
+    removeAdded: 'Bu yeni satırı kaldır',
+    noAdded: 'Henüz yeni satır eklenmedi.',
+    product: 'Ürün',
+    productChoose: 'Ürün seçin',
+    productSearch: 'Ürün ara',
+    productSearchSubmit: 'Ara',
+    productsLoading: 'Ürün listesi okunuyor…',
+    productsUnavailable: 'Ürün listesi okunamadı; yeni satır ve ürün değişikliği şu anda yapılamaz.',
+    productsRetry: 'Ürün listesini yeniden oku',
+    productsEmpty: 'Bu tarih için satılabilir ürün listelenmiyor.',
+    unit: 'Sipariş birimi',
+    unitChoose: 'Birim seçin',
+    quantity: 'Miktar',
+    unitPrice: 'Birim fiyat (boş bırakılabilir)',
+    priceUnit: 'Fiyat birimi',
+    reason: 'Revizyon gerekçesi',
+    reasonHint: 'Zorunlu; en fazla 4000 karakter.',
+    submit: 'Satır revizyonunu kaydet',
+    submitting: 'Satır revizyonu gönderiliyor…',
+    unknown: 'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi aynı anahtarla tekrar deneyin.',
+    completed: 'Satır revizyonu kaydedildi. Sipariş yeniden onaya gönderilmelidir.',
+    completedUnapproved: 'Satır revizyonu kaydedildi.',
+    replayed: 'Bu satır revizyonu daha önce kaydedilmişti; güncel sipariş gösteriliyor.',
+    retry: 'Aynı revizyonu tekrar dene',
+    abandon: 'Bu denemeyi bırak',
+    unauthenticated: 'Oturumunuz sona erdi; satır revizyonu uygulanmadı.',
+    forbidden: 'Bu şirkette satır revizyonu ya da fiyat yazma yetkiniz yok; işlem uygulanmadı.',
+    notFound: 'Sipariş taslağı bulunamadı; işlem uygulanmadı.',
+    conflict: 'Satır revizyonu uygulanmadı; güncel kayıt yeniden okunuyor.',
+    versionConflict: 'Kayıt sürümü değişti; güncel satırları yeniden inceleyin.',
+    validation: 'Satır revizyonu uygulanmadı; satırları ve gerekçeyi kontrol edin.',
+    unavailable: 'Bağlı kayıt sahiplerine (stok, sevkiyat, ürün, ayarlar) şu anda ulaşılamıyor; satırlar değiştirilmedi. Daha sonra tekrar deneyin.',
+    unexpected: 'Satır revizyonu uygulanmadı. Beklenmeyen bir yanıt alındı.',
+    /** The server's rule codes on `added[i]…` / `removed[i]…`, named for their row. */
+    ruleCode: {
+      sales_line_revision_line_shipped: 'Satırın stok tahsisi ya da yükleme talimatı var (sevki başladı); çıkarılamaz, ürünü değiştirilemez.',
+      // SAT-D219 (EK38): an open linked purchase order or production order, as the owner answers it (Sales does not interpret it).
+      sales_line_revision_line_linked:
+        'Satıra açık bir satın alma siparişi ya da üretim emri bağlı; çıkarılamaz, ürünü değiştirilemez. Önce satın alma/üretim tarafında kapatılsın ya da bağı çözülsün.',
+      sales_line_replacement_same_product: 'Ürün değişikliği başka bir ürün ister; aynı ürünün miktarı miktar revizyonuyla değişir.',
+      sales_line_replacement_invalid: 'Ürünü değişen satırın yerine aynı revizyonda eklenen tek bir satır gelir.',
+      sales_line_revision_no_lines_left: 'Siparişte en az bir etkin satır kalmalıdır.',
+      sales_revision_lines_mismatch: 'Çıkarılan satır siparişin etkin bir satırı değil; güncel siparişi yeniden okuyun.',
+      sales_duplicate_line_id: 'Aynı satır kimliği ikinci kez gönderildi.',
+      sales_subcontract_line_not_service: 'Fason hizmet siparişine yalnız kalem tipi "Hizmet" olan ürün eklenir.',
+      sales_subcontract_unit_not_kilogram: 'Fason hizmet satırının birimi ve fiyat birimi kg olmalıdır.',
+      sales_subcontract_price_list_not_used: 'Fason hizmet satırında fiyat listesi kullanılmaz; fiyatı kg başına elle yazın.',
+    } as Readonly<Record<string, string>>,
+    rowError: (row: string | null, text: string) => (row === null ? text : `${row}: ${text}`),
+    localError: (row: string | null, problem: string) => {
+      const text = problem === 'reason-required' ? 'Revizyon gerekçesi zorunludur.'
+        : problem === 'no-change' ? 'Hiçbir satır eklenmedi, çıkarılmadı ya da ürünü değişmedi; onay boşuna düşürülmez.'
+          : problem === 'no-lines-left' ? 'Siparişte en az bir etkin satır kalmalıdır.'
+            : problem === 'product-required' ? 'Listeden bir ürün seçin.'
+              : problem === 'unit-required' ? 'Ürünün sunduğu birimlerden birini seçin.'
+                : problem === 'quantity-format' ? 'Miktar sıfırdan büyük bir sayı olmalıdır.'
+                  : problem === 'price-format' ? 'Birim fiyat geçerli bir sayı olmalıdır.'
+                    : problem === 'price-unit-required' ? 'Birim fiyat için ürünün birimlerinden bir fiyat birimi seçin.'
+                      : problem === 'same-product' ? 'Ürün değişikliği için mevcut üründen farklı bir ürün seçin.'
+                        : 'Satır revizyonu gönderilemedi.'
+      return row === null ? text : `${row}: ${text}`
+    },
   },
   /**
    * DEC-SAL-003: the planner's delivery-date update (dates only, no re-approval, audited). Texts only; the rules are the
@@ -721,6 +824,14 @@ export const ORDER_DETAIL_TEXT = {
   note: 'İç açıklama',
   commercialHeading: 'Ticari bilgiler',
   linesHeading: 'Sipariş satırları',
+  /** SAT-D167 (EK24): a line a line revision added, and the passive (removed) lines kept as history. */
+  addedInRevision: (revision: string) => `${revision} ile eklendi`,
+  removedLines: {
+    heading: 'Pasif satırlar',
+    description: 'Satır revizyonuyla çıkarılan satırlar silinmez; tutar, risk, vergi ve sevkiyatın dışında kalır, geçmiş olarak görünür.',
+    removedIn: (revision: string) => `${revision} ile çıkarıldı`,
+    replacedBy: (lineNo: number | null) => (lineNo === null ? 'Ürün değişikliğiyle yerine yeni satır geldi' : `Ürün değişikliği: yerine ${lineNo}. satır geldi`),
+  },
   lineNo: '#',
   product: 'Ürün',
   productVersion: 'Ürün sürümü',

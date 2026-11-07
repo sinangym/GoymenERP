@@ -421,6 +421,8 @@ public static partial class SalesEndpoints
         MapDiscountExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
         MapQuantityRevisionCommand(drafts);
+        // SAT-D167 (EK24): add a line, remove an unshipped line (passive) or change its product — a revision.
+        MapLineRevisionCommand(drafts);
         MapHeaderRevisionEndpoints(drafts);
         MapDeliveryScheduleCommand(drafts);
         MapDeliverySchedules(drafts);
@@ -448,7 +450,10 @@ public static partial class SalesEndpoints
         // covers is no longer approved (409 sales_quote_request_not_approved, not recorded).
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: ["validation_failed"], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
+            // SAT-D167 / SAT-D219: the lines a revision removed are read again for a shipment link or an open linked supply (409
+            // sales_revision_blocked, not recorded); the same read runs at the approval.
+            unprocessableCodes: ["validation_failed"],
+            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [],
@@ -771,6 +776,83 @@ public static partial class SalesEndpoints
                 SalesDraftProblemCodesV1.RevisionBlocked, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
                 SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// SAT-D167 (EK24) line revision: the source-owned service enforces <c>sales.orders.quantity.write</c> (and the price-write
+    /// name for a priced added line), version/state/idempotency, the reason, the create's rules for every added line, the
+    /// unshipped rule for every removed line (the owners read afresh, fail-closed) and the re-approval. The route owns only the
+    /// strict HTTP envelope (the quantity revision's).
+    /// </summary>
+    private static void MapLineRevisionCommand(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/line-revision", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftLineRevisionRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftJson.ReadLineRevision(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.ReviseLinesAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("ReviseSalesOrderDraftLinesV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftLineRevisionRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            // The line revision's own refusals are 422 (a shipped or linked line) and 503 (an unreadable owner); 409 revision_blocked is
+            // the submission's and the approval's, not this command's.
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", "unsupported_product", "unsupported_unit")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }

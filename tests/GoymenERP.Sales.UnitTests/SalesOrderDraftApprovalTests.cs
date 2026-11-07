@@ -166,7 +166,9 @@ public sealed class SalesOrderDraftApprovalTests
             "CloseByUser", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected is the only read in the population (a query).
             "IsCustomerRejected", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
-            "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader", "ReviseQuantities", "Submit", "Withdraw"], entries);
+            "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader",
+            // SAT-D167 (EK24): so is the line revision (it reuses RequireQuantityRevisable, which only reads).
+            "ReviseLines", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
@@ -201,6 +203,9 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveRemainderChange(3, 1,
             new RemainderFloor(1m, 1m, 1m), Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RejectRemainderChange(3, 1, Approver, "SENTETIK", T0)));
+        // SAT-D167: a withdrawn draft's lines are neither added nor removed.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseLines(3, [Line()],
+            [new LineRemovalInput(draft.Lines[0].Id)], "synthetic-reviser", "SENTETIK", T0, DateOnly.FromDateTime(T0.UtcDateTime))));
         // API-04: a withdrawn draft's header does not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseHeader(3, new SalesHeaderRevisionInput(draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, null, null, null, Guid.NewGuid(), null), "synthetic-reviser", "SENTETIK", T0)));
