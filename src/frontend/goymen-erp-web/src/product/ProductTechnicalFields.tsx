@@ -1,5 +1,5 @@
 import type { ProductReferenceOptions } from './contract'
-import { UNIT_ROLE_LABEL } from './productText'
+import { technicalFieldLabel, UNIT_ROLE_LABEL } from './productText'
 import {
   CLOSED_UNIT_ROLES, editableTemplate, familyFactsOf, fieldApplies, OPEN_UNIT_ROLES, TECHNICAL_TEXT, technicalDraft,
   type TechnicalDraft,
@@ -47,7 +47,7 @@ export function ProductTechnicalFields({ familyId, options, value, frozen, onCha
       const id = `references.attributes.${field.key}`
       const entries = options?.technical?.dictionaries.find(d => d.name === field.dictionary)?.entries ?? []
       return <div className={styles.field} key={field.key}>
-        <label htmlFor={id}>{field.key}{field.kind === 'measureMillimetre' ? ' (mm)' : ''}{field.required ? ' *' : ''}</label>
+        <label htmlFor={id}>{technicalFieldLabel(field.key, field.role)}{field.kind === 'measureMillimetre' ? ' (mm)' : ''}{field.required ? ' *' : ''}</label>
         {field.kind === 'measureMillimetre'
           ? <input id={id} inputMode="decimal" value={String(draft.attributes[field.key] ?? '')}
             onChange={e => changeAttribute(field.key, e.target.value)} aria-invalid={Boolean(errors[id]) || undefined} />
