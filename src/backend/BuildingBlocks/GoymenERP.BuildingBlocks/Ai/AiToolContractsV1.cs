@@ -193,7 +193,7 @@ public sealed record AiOwnerCommandRequestV1
 
 public sealed partial record AiCommandResultV1
 {
-    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9_.-]{1,64}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    [System.Text.RegularExpressions.GeneratedRegex(@"\A[A-Za-z0-9_.-]{1,64}\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
     private static partial System.Text.RegularExpressions.Regex RefusalCodePattern();
 
     public AiCommandOutcomeV1 Outcome { get; }

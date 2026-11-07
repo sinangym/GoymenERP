@@ -214,6 +214,7 @@ public sealed class AiContractTests
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: "customer secret text"));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: new string('A', 65)));
+        Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: "ABC\n"));
     }
 
     [Fact]
