@@ -195,7 +195,7 @@ public static class SalesDraftProblemCodesV1
     /// <summary>
     /// 409 (SAT-D216, fail-closed): the delivery owner does not name who made the line's shipments, so the approver cannot be told
     /// apart from the shipper — nothing is approved. On main the Logistics owner does not name them (SAT-D209: no new Logistics
-    /// connection yet; NEEDS-SINAN in the Sales README). Terminal for the key (recorded, replayed).
+    /// connection yet), and SAT-D222 (EK41) keeps the approval closed until it does. Terminal for the key (recorded, replayed).
     /// </summary>
     public const string OverDeliveryShipperUnverified = "sales_over_delivery_shipper_unverified";
 
