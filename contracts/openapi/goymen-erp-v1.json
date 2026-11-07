@@ -42631,6 +42631,8 @@
               }
             },
             "x-erp-problem-codes": [
+              "unsupported_product",
+              "unsupported_unit",
               "validation_failed"
             ]
           },
