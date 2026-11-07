@@ -32,6 +32,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsRecord, ErpPermissions.PurchasingGoodsReceiptsRecord)]
     [InlineData(PurchasingPermissionManifestV1.RequestsApprove, ErpPermissions.PurchasingRequestsApprove)]
     [InlineData(PurchasingPermissionManifestV1.RequestsWithdraw, ErpPermissions.PurchasingRequestsWithdraw)]
+    [InlineData(PurchasingPermissionManifestV1.OrdersCancel, ErpPermissions.PurchasingOrdersCancel)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -81,11 +82,12 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(11, purchasing.Length);
+        Assert.Equal(12, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
+            PurchasingShellCapabilityProvider.CancelCapabilityId,
             PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
@@ -150,6 +152,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(requestDetail.ContextRequirement, requestWithdraw.ContextRequirement);
         Assert.Equal(requestDetail.ScopeRequirement, requestWithdraw.ScopeRequirement);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsWithdraw], requestWithdraw.RequiredPermissions);
+
+        // A1-3 (plan API-10/UI-05): the remainder cancellation control is a child of the order detail with its own name.
+        var cancel = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CancelCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, cancel.ParentCapabilityId);
+        Assert.Equal(detail.RoutePath, cancel.RoutePath);
+        Assert.Equal(detail.ContextRequirement, cancel.ContextRequirement);
+        Assert.Equal(detail.ScopeRequirement, cancel.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCancel], cancel.RequiredPermissions);
     }
 
     [Fact]

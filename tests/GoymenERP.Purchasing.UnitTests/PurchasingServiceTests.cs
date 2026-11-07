@@ -756,6 +756,7 @@ public sealed partial class PurchasingServiceTests
             mutate(stored.Order, TimeProvider.System.GetUtcNow());
             _attempts[(commandName, envelope.IdempotencyKey)] = new Attempt(envelope.ActorId, requestHash, null, stored, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
+            Audits.Add(audit);
             Transitions.Add((commandName, orderId, before, stored.Order.Version));
             return Task.FromResult<PurchasingOrderStoreResult?>(new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId));
         }

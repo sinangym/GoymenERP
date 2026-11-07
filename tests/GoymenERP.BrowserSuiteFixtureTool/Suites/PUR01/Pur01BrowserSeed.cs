@@ -47,6 +47,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string RequestApproveCapability = "purchasing.requests.approve";
     // A1-1b (plan API-01b, ALS-D46): the request withdrawal control; only the disposable creator (preparer and submitter) holds it.
     private const string RequestWithdrawCapability = "purchasing.requests.withdraw";
+    // A1-3 (plan API-10, No.161 §2): the order remainder cancellation control; only the disposable approver holds it.
+    private const string OrderCancelCapability = "purchasing.orders.cancel";
     private const string StockLabelCapability = "inventory.stock-positions.list";
     private const string SupplierLegalName =
         "Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi";
@@ -187,6 +189,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || creator.Contains(ApproveCapability, StringComparer.Ordinal)
             || creator.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || !creator.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
+            || creator.Contains(OrderCancelCapability, StringComparer.Ordinal)
             || creator.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
@@ -199,10 +202,12 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !approver.Contains(ApproveCapability, StringComparer.Ordinal)
             || !approver.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || approver.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
+            || !approver.Contains(OrderCancelCapability, StringComparer.Ordinal)
             || approver.Contains(CreateCapability, StringComparer.Ordinal)
             || approver.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The approver needs list/detail/approve and the request decision, and must not receive the create screen or goods receipt.");
+            throw new InvalidOperationException(
+                "The approver needs list/detail/approve, the request decision and the order remainder cancellation, and must not receive the create screen or goods receipt.");
         }
 
         string[] reader = await CapabilitiesAsync(context, ReaderActor, cancellationToken);
@@ -211,6 +216,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || reader.Contains(ApproveCapability, StringComparer.Ordinal)
             || reader.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || reader.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
+            || reader.Contains(OrderCancelCapability, StringComparer.Ordinal)
             || reader.Contains(CreateCapability, StringComparer.Ordinal)
             || reader.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
@@ -226,6 +232,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || receiver.Contains(ApproveCapability, StringComparer.Ordinal)
             || receiver.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || receiver.Contains(RequestWithdrawCapability, StringComparer.Ordinal)
+            || receiver.Contains(OrderCancelCapability, StringComparer.Ordinal)
             || receiver.Contains(CreateCapability, StringComparer.Ordinal)
             || receiver.Contains(StockLabelCapability, StringComparer.Ordinal))
         {

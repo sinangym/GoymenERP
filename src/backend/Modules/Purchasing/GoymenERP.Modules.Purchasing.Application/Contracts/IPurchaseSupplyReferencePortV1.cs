@@ -7,7 +7,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// remaining commitment (committed − accepted) as EXPECTED SUPPLY, never as stock: an approved order books
 /// nothing in Inventory, and the physical receipt is Inventory's own event (T09, PUR-4b). A Draft order's
 /// line is <see cref="PurchaseSupplyReferenceOutcomeV1.NotApproved"/> (Draft orders reserve nothing,
-/// ASSUMPTION-PUR4-2); an unknown or another company's order or line is
+/// ASSUMPTION-PUR4-2), and so is a Cancelled order's line (A1-3, No.161 §2: its unaccepted remainder was cancelled and is
+/// no future supply; <see cref="PurchaseSupplyReferenceAnswerV1.Status"/> = "Cancelled"); an unknown or another company's order or line is
 /// <see cref="PurchaseSupplyReferenceOutcomeV1.NotFound"/> (never 403). Reading here creates nothing.
 /// </summary>
 public interface IPurchaseSupplyReferencePortV1
@@ -33,7 +34,7 @@ public sealed record PurchaseSupplyReferenceAnswerV1(PurchaseSupplyReferenceOutc
 /// The approved line's facts as stored: the company, the order and the line, the supplier (party + company
 /// account), the product and its version as the Product owner answered it, the Settings unit, the line's
 /// kind, and the exact quantity texts (Ö2): committed (ordered − technical slices), accepted (shares) and
-/// remaining = committed − accepted (the expected supply). Identities and text only — no price, no stock.
+/// remaining = committed − accepted (the expected supply; an Approved line has no cancelled share, A1-3). Identities and text only — no price, no stock.
 /// </summary>
 public sealed record PurchaseSupplyLineReferenceV1(
     Guid CompanyId,

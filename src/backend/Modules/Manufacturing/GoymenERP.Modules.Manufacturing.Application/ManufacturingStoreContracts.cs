@@ -249,7 +249,7 @@ public interface IManufacturingPlanListStore
 public sealed record ManufacturingPlanRevision(
     int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
     string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc, CutToLengthSpec? CutToLengthSpec = null,
-    decimal? LineSpeedMetresPerMinute = null);
+    decimal? LineSpeedMetresPerMinute = null, PlanProcessSpec? ProcessSpec = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: the Draft edit of a stored plan and its history. A port of its own, beside
@@ -278,16 +278,17 @@ public interface IManufacturingPlanRevisionStore
 
     /// <summary>
     /// Üretim U2-a: the revision with the plan-entered line speed (URT-D9) beside the rest of the content. A store that
-    /// cannot keep a line speed refuses one rather than dropping it.
+    /// cannot keep a line speed refuses one rather than dropping it. U2-b1: the same for the plan-entered process spec.
     /// </summary>
     Task<ProductionPlan> RevisePlanContentAsync(Guid planId, long expectedVersion, Guid workCenterId,
         ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
         CutToLengthSpec? cutToLengthSpec, decimal? lineSpeedMetresPerMinute, string reason,
-        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-        lineSpeedMetresPerMinute is null
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default,
+        PlanProcessSpec? processSpec = null) =>
+        lineSpeedMetresPerMinute is null && processSpec is null
             ? RevisePlanWithCutLinesAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target,
                 cutToLengthSpec, reason, metadata, cancellationToken)
-            : throw new NotSupportedException("Bu plan deposu planda girilen hat hızını saklamıyor.");
+            : throw new NotSupportedException("Bu plan deposu planda girilen hat hızını veya süreç ayrıntısını saklamıyor.");
 
     /// <summary>
     /// The plan's history, oldest first (revision 0 = as created), or null when the company has no such plan
