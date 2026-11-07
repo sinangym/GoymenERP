@@ -656,6 +656,15 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateOnly?>("DueOn")
                     .HasColumnType("date");
 
+                b.Property<string>("ExchangeRateText")
+                    .HasMaxLength(64)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(64)");
+
+                b.Property<string>("FunctionalAmountText")
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(max)");
+
                 b.Property<string>("OriginalAmountText")
                     .IsRequired()
                     .IsUnicode(false)
@@ -731,6 +740,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("OpenItems", "finance", t =>
                     {
                         t.HasCheckConstraint("CK_OpenItems_Direction", "[Direction] IN (1, 2) AND ([SourceKind] <> 'official.invoice-installment.v1' OR [Direction] = 1) AND ([SourceKind] <> 'official.incoming-invoice-installment.v1' OR [Direction] = 2)");
+
+                        t.HasCheckConstraint("CK_OpenItems_Exchange", "([ExchangeRateText] IS NULL AND [FunctionalAmountText] IS NULL) OR ([ExchangeRateText] IS NOT NULL AND [FunctionalAmountText] IS NOT NULL AND LEN([ExchangeRateText]) > 0 AND LEN([FunctionalAmountText]) > 0)");
 
                         t.HasCheckConstraint("CK_OpenItems_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceBatchId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 
