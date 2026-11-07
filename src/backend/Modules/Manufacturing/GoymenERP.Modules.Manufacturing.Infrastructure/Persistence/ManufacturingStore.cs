@@ -694,6 +694,24 @@ public sealed class ManufacturingStore(
         // rebuilt plan carries the order it already opened. Racing writers meet the unique (company, plan) index.
         var order = ProductionOrder.FromApprovedPlan(orderId, plan);
 
+        // U3-a (URT-D21, B-01): an input allocated at the plan's approval enters the order at the label version Inventory
+        // returned with the allocation, so the order's first input issue revalidates the label Inventory last moved.
+        var allocatedVersions = await dbContext.PlanInputAllocations.AsNoTracking()
+            .Where(allocation => allocation.PlanId == planId)
+            .ToDictionaryAsync(allocation => allocation.ParentRollId, allocation => allocation.LabelVersionAfter,
+                cancellationToken);
+        if (allocatedVersions.Count > 0)
+        {
+            order = ProductionOrder.Restore(order.Id, order.PlanId, order.CompanyId, order.WorkCenterId, order.Process,
+                order.Target,
+                order.PlannedInputs.Select(input => new PlannedInput(input.ParentRollId, input.PlannedMass,
+                    allocatedVersions.TryGetValue(input.ParentRollId, out var allocated)
+                        ? allocated
+                        : input.ExpectedLabelVersion,
+                    input.TechnicalSnapshot, input.CommercialContext)),
+                [], [], [], [], null, null, order.Version, null, null);
+        }
+
         var now = timeProvider.GetUtcNow();
         planRow.UpdatedAtUtc = now;
         dbContext.Orders.Add(new OrderRow
@@ -746,6 +764,57 @@ public sealed class ManufacturingStore(
         Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
+    }
+
+    /// <summary>
+    /// Üretim U3-a (URT-D21, B-01): records the allocations Inventory wrote for the plan's inputs. It is called by the
+    /// allocation host inside the plan approval's transaction, after the approval's own save; the rows are append-only.
+    /// </summary>
+    public async Task RecordPlanInputAllocationsAsync(Guid planId, long planVersion,
+        IReadOnlyList<ManufacturingPlanInputAllocationV1> allocations, DateTimeOffset allocatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(allocations);
+        var companyId = RequireResolvedCompany();
+        if (planId == Guid.Empty || planVersion < 2 || allocations.Count == 0
+            || allocations.Any(allocation => allocation is null || allocation.ParentRollId == Guid.Empty
+                || allocation.AllocationId == Guid.Empty || allocation.LabelVersionAfter < 1
+                || allocation.AllocatedKg.Value <= 0m)
+            || allocations.Select(allocation => allocation.ParentRollId).Distinct().Count() != allocations.Count
+            || allocations.Select(allocation => allocation.AllocationId).Distinct().Count() != allocations.Count)
+        {
+            throw new ArgumentException("Plan girdi tahsisleri eksik ya da tekrarlı.", nameof(allocations));
+        }
+
+        foreach (var allocation in allocations)
+        {
+            dbContext.PlanInputAllocations.Add(new PlanInputAllocationRow
+            {
+                CompanyId = companyId,
+                PlanId = planId,
+                ParentRollId = allocation.ParentRollId,
+                AllocationId = allocation.AllocationId,
+                LabelVersionAfter = allocation.LabelVersionAfter,
+                AllocatedKg = allocation.AllocatedKg.Value,
+                PlanVersion = planVersion,
+                AllocatedAtUtc = allocatedAt.ToUniversalTime(),
+            });
+        }
+
+        await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Üretim U3-a: the allocation Manufacturing recorded for one plan input, or null when none was written.</summary>
+    public async Task<ManufacturingPlanInputAllocationV1?> FindPlanInputAllocationAsync(Guid planId, Guid parentRollId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.PlanInputAllocations.AsNoTracking().SingleOrDefaultAsync(
+            allocation => allocation.PlanId == planId && allocation.ParentRollId == parentRollId, cancellationToken);
+        return row is null
+            ? null
+            : new ManufacturingPlanInputAllocationV1(row.ParentRollId, row.AllocationId, row.LabelVersionAfter,
+                new Kilograms(row.AllocatedKg));
     }
 
     public Task<ManufacturingWriteOutcome> IssueInputAsync(Guid orderId, long expectedVersion, Guid issueId,

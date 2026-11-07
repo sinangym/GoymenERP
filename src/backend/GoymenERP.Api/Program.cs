@@ -310,6 +310,9 @@ builder.Services.AddManufacturingModule(
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
 builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1, ManufacturingInventoryReturnOutputHost>();
+// Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure commit with Inventory's
+// plan-input allocation or its release in one transaction.
+builder.Services.AddScoped<IManufacturingPlanAllocationPortV1, ManufacturingPlanAllocationHost>();
 builder.Services.AddScoped<IManufacturingOutputSelectionV1, ManufacturingOutputSelectionReader>();
 builder.Services.AddSalesModule(
     builder.Configuration,
