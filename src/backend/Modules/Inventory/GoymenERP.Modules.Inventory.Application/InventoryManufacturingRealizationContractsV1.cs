@@ -33,6 +33,12 @@ public interface IInventoryManufacturingRealizationParticipantV1 : IAsyncDisposa
 /// Inventory consumes the exact, already-authorized parent label. The host must preserve the
 /// label version captured when the Manufacturing order was created; Inventory revalidates it at
 /// effect time and advances it with the movement.
+/// <para>
+/// B-01 / API-21: with <see cref="AllocationId"/> the issue consumes that plan-input allocation (never more than its
+/// remaining kg, never more than the physical stock) and the allocation's own kg count as available to it. The
+/// allocation must belong to <see cref="PlanId"/>, which is required with it, so an order can never consume another
+/// plan's allocation on the same label. Without an allocation the issue may take only the unreserved kg, as before.
+/// </para>
 /// </summary>
 public sealed record InventoryManufacturingInputIssueRequestV1(
     Guid CompanyId,
@@ -43,7 +49,9 @@ public sealed record InventoryManufacturingInputIssueRequestV1(
     string ExpectedParentLabelVersion,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    Guid? AllocationId = null,
+    Guid? PlanId = null);
 
 public sealed record InventoryManufacturingInputIssueResultV1(
     Guid CompanyId,
@@ -166,13 +174,26 @@ public static class InventoryManufacturingRealizationCodesV1
     public const string QuantityProfileUnavailable = "inventory_manufacturing_quantity_profile_unavailable";
     public const string Unavailable = "inventory_manufacturing_realization_unavailable";
 
+    /// <summary>B-01: the plan input asks for more than the label's Free kg left after every active allocation.</summary>
+    public const string AllocationInsufficientFreeStock = "inventory_manufacturing_allocation_insufficient_free_stock";
+
+    /// <summary>URT-D22: the stock owner is not the one the plan input names (company stock, or that customer's).</summary>
+    public const string AllocationOwnerMismatch = "inventory_manufacturing_allocation_owner_mismatch";
+
+    /// <summary>The named allocation is not an active plan input of this label.</summary>
+    public const string AllocationNotUsable = "inventory_manufacturing_allocation_not_usable";
+
+    /// <summary>API-21: an input issue may not take more than the remaining kg of its own allocation.</summary>
+    public const string AllocationExceeded = "inventory_manufacturing_allocation_exceeded";
+
     public static bool IsDefined(int status, string code) => status switch
     {
         400 => code is InvalidRequest or InvalidVersion or InvalidQuantity,
         404 => code == InvalidReference,
         409 => code is LabelVersionConflict or ParentLabelNotReleasable or ParentLabelContextConflict
             or PhysicalStockInsufficient or ParentInputNotIssued or ReturnExceedsIssued or OutputLabelAlreadyRegistered
-            or OutputLotOrLabelConflict or IdempotencyConflict or ConcurrentChange,
+            or OutputLotOrLabelConflict or IdempotencyConflict or ConcurrentChange or AllocationInsufficientFreeStock
+            or AllocationOwnerMismatch or AllocationNotUsable or AllocationExceeded,
         503 => code is QuantityProfileUnavailable or Unavailable,
         _ => false,
     };
@@ -214,6 +235,12 @@ public static class InventoryManufacturingRealizationContractV1
         ValidateInput(request.CompanyId, request.ManufacturingOrderId, request.IssueId,
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
+        if ((request.AllocationId is null) != (request.PlanId is null)
+            || request.AllocationId == Guid.Empty || request.PlanId == Guid.Empty)
+        {
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
+        }
+
         return Quantity(request.QuantityKg);
     }
 
@@ -287,7 +314,7 @@ public static class InventoryManufacturingRealizationContractV1
         }
     }
 
-    private static Kilograms Quantity(string value)
+    internal static Kilograms Quantity(string value)
     {
         if (string.IsNullOrEmpty(value) || value.Length > 40
             || value.Any(character => !char.IsAsciiDigit(character) && character != '.')
@@ -308,7 +335,7 @@ public static class InventoryManufacturingRealizationContractV1
         }
     }
 
-    private static void RequireVersion(string value)
+    internal static void RequireVersion(string value)
     {
         if (string.IsNullOrEmpty(value) || value.Length > 19 || value[0] is < '1' or > '9'
             || value.Any(character => character is < '0' or > '9')
@@ -318,7 +345,7 @@ public static class InventoryManufacturingRealizationContractV1
         }
     }
 
-    private static void RequireMetadata(InventoryCommandMetadata metadata)
+    internal static void RequireMetadata(InventoryCommandMetadata metadata)
     {
         RequireIdentity(metadata.ActorId);
         RequireIdentity(metadata.PermissionCode);

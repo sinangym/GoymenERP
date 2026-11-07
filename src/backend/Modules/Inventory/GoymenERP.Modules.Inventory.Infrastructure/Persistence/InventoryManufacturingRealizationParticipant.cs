@@ -28,8 +28,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// Inventory's single-use participant in a Manufacturing transaction. It stages and flushes only
 /// Inventory facts. The host remains the sole owner of commit, rollback and borrowed handles.
 /// </summary>
-public sealed class InventoryManufacturingRealizationParticipant
-    : IInventoryManufacturingRealizationParticipantV1
+public sealed partial class InventoryManufacturingRealizationParticipant
+    : IInventoryManufacturingRealizationParticipantV1, IInventoryManufacturingPlanAllocationParticipantV1
 {
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
@@ -125,7 +125,10 @@ public sealed class InventoryManufacturingRealizationParticipant
 
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: true, cancellationToken);
-        var position = await CurrentFreePositionAsync(parent.Label, quantity, cancellationToken);
+        var position = request.AllocationId is { } allocationId
+            ? await ConsumePlanAllocationAsync(allocationId, request.PlanId!.Value, parent, quantity, metadata,
+                cancellationToken)
+            : await CurrentFreePositionAsync(parent.Label, quantity, cancellationToken);
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
             request.OccurredAtUtc,
             new StockSourceReference(InventoryManufacturingRealizationContractV1.InputIssueSourceKind,
@@ -637,6 +640,25 @@ public sealed class InventoryManufacturingRealizationParticipant
     }
 
     private static string RequestHash<T>(T request) => Hash(JsonSerializer.Serialize(request, Json));
+
+    /// <summary>
+    /// An issue without an allocation hashes exactly as it did before B-01 added <c>AllocationId</c>, so a replay of an
+    /// issue recorded earlier still matches its stored payload hash.
+    /// </summary>
+    private static string RequestHash(InventoryManufacturingInputIssueRequestV1 request) => request.AllocationId is null
+        ? Hash(JsonSerializer.Serialize(new
+        {
+            request.CompanyId,
+            request.ManufacturingOrderId,
+            request.IssueId,
+            request.ManufacturingOrderVersionAfter,
+            request.ParentLabelId,
+            request.ExpectedParentLabelVersion,
+            request.MovementId,
+            request.QuantityKg,
+            request.OccurredAtUtc,
+        }, Json))
+        : Hash(JsonSerializer.Serialize(request, Json));
 
     private static string RequestHash(InventoryManufacturingOutputRequestV1 request) => Hash(
         JsonSerializer.Serialize(new
