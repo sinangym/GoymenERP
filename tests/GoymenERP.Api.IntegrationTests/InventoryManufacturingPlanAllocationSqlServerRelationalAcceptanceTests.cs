@@ -234,7 +234,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var context = run.Context(CompanyA);
         var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()
             .MigrateAsync("20261002110000_AddInventoryLabelClassification"));
-        Assert.Equal(547, error.Number);
+        Assert.Equal(51211, error.Number);
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.__EFMigrationsHistory "
             + "WHERE MigrationId LIKE N'%_AddManufacturingPlanInputAllocations'"));
