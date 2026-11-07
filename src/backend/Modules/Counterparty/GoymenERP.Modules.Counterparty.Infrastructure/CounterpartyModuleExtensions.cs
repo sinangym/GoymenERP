@@ -58,6 +58,9 @@ public static class CounterpartyModuleExtensions
             ICounterpartyLocationOperatorEligibilitySourceV1,
             CounterpartyLocationOperatorEligibilitySourceV1>();
         services.AddScoped<
+            ICounterpartyOrganizationLocationOperatorReadSourceV1,
+            CounterpartyOrganizationLocationOperatorReadSourceV1>();
+        services.AddScoped<
             ICounterpartyManufacturingPartyAccountSourceV1,
             CounterpartyManufacturingPartyAccountSourceV1>();
         services.AddScoped<
@@ -84,6 +87,9 @@ public static class CounterpartyModuleExtensions
         services.TryAddSingleton<
             ICounterpartyLocationOperatorEligibilitySqlObserver,
             NullCounterpartyLocationOperatorEligibilitySqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartyOrganizationLocationOperatorReadSqlObserver,
+            NullCounterpartyOrganizationLocationOperatorReadSqlObserver>();
         services.TryAddSingleton<
             ICounterpartyLinkCandidateSqlObserver,
             NullCounterpartyLinkCandidateSqlObserver>();
