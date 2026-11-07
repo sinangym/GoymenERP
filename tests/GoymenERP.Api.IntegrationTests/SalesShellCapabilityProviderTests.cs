@@ -56,6 +56,9 @@ public sealed class SalesShellCapabilityProviderTests
                 // API-04: the header-revision CONTROL of the detail (read + its own name).
                 ("sales.orders.header.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersHeaderWrite}", "sales.drafts.detail"),
+                // SAT-D30: the over-delivery approval CONTROL of the detail (read + its own name).
+                ("sales.orders.over-delivery.approve", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersOverDeliveryApprove}", "sales.drafts.detail"),
                 ("sales.orders.price-floor-exception.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove}", "sales.drafts.detail"),
                 ("sales.orders.price.write", "/satis/siparisler/:draftId",

@@ -1707,9 +1707,11 @@ public sealed partial class SalesOrderDraft
         }
 
         var customerRejectionTransitions = (long)customerRejections.Count;
+        // SAT-D30 / SAT-D213: every recorded over-delivery approval was one step of its own (restored just before this).
+        var overDeliveryApprovalTransitions = (long)overDeliveryApprovals.Count;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
             + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions
-            + customerRejectionTransitions);
+            + customerRejectionTransitions + overDeliveryApprovalTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

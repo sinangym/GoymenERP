@@ -58,5 +58,13 @@ public sealed record SalesOrderDeliveryReadAnswerV1(Guid CompanyId, Guid OrderId
 /// One Sales order line's recorded totals in one unit, exact (Ö2: kilograms ≤ 3 decimals, pieces whole; never rounded):
 /// <paramref name="ShippedQuantity"/> — definitely shipped (the stock left); <paramref name="DeliveredQuantity"/> —
 /// delivered to the customer, always bound to a recorded shipment, so never more than shipped.
+/// <para>
+/// <paramref name="ShippedBy"/> (SAT-D216, EK37: "sevki yapan kişi kendi fazla tesliminin onayını veremez"): the actors who
+/// recorded the definite shipments counted in <paramref name="ShippedQuantity"/>, when the owner names them; <c>null</c> means
+/// the owner does not name them, and the Sales over-delivery approval then cannot tell the shipper from the approver and refuses
+/// (fail-closed). Optional and Sales-owned: the Logistics owner on main does not fill it (SAT-D209: no new Logistics connection
+/// before Logistics development starts — "ertelendi: Lojistik başlayınca"), so its answer keeps the default <c>null</c>.
+/// </para>
 /// </summary>
-public sealed record SalesOrderLineDeliveryV1(Guid OrderLineId, Guid UnitId, decimal ShippedQuantity, decimal DeliveredQuantity);
+public sealed record SalesOrderLineDeliveryV1(Guid OrderLineId, Guid UnitId, decimal ShippedQuantity, decimal DeliveredQuantity,
+    IReadOnlyList<string>? ShippedBy = null);

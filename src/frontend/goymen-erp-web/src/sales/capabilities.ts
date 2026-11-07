@@ -67,6 +67,13 @@ export const SALES_QUANTITY_WRITE_CAPABILITY = 'sales.orders.quantity.write' as 
  */
 export const SALES_HEADER_WRITE_CAPABILITY = 'sales.orders.header.write' as const
 
+/**
+ * SAT-D30 / SAT-D168: the over-delivery approval CONTROL on S-04 ("Fazla teslimi onayla") for a line awaiting approval in the
+ * tolerance approval band. The shell publishes it only to an actor holding `sales.orders.over-delivery.approve` beside the
+ * read; no other Sales name confers it.
+ */
+export const SALES_OVER_DELIVERY_APPROVE_CAPABILITY = 'sales.orders.over-delivery.approve' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -74,6 +81,7 @@ export type SalesCapabilityId =
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
   | typeof SALES_FORCE_CLOSE_CAPABILITY
+  | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY

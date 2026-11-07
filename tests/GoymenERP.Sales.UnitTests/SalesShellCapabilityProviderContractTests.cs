@@ -30,8 +30,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // SAT-D24 / SAT-D44 merged over 1.9 (1.10): the expired-quote conversion approval control of the quote detail.
         // UI-80 (1.11): the Sales reports screen.
         // API-04 (1.12, merged after 1.11): the header-revision control of the detail.
-        Assert.Equal(("SALES", "1.12"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(25, declarations.Count);
+        // SAT-D30 / SAT-D168 (1.13): the over-delivery approval control of the detail.
+        Assert.Equal(("SALES", "1.13"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(26, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -126,6 +127,15 @@ public sealed class SalesShellCapabilityProviderContractTests
             (forceClose.RouteId, forceClose.RoutePath, forceClose.ScreenId, forceClose.RoutePrecedence, forceClose.ContextRequirement, forceClose.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, forceClose.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose], forceClose.RequiredPermissions);
+
+        // SAT-D30 / SAT-D168: the over-delivery approval is a control of the detail — the read plus its own name only.
+        var overDelivery = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.OverDeliveryApproveCapabilityId);
+        Assert.Equal("sales.orders.over-delivery.approve", overDelivery.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (overDelivery.RouteId, overDelivery.RoutePath, overDelivery.ScreenId, overDelivery.RoutePrecedence, overDelivery.ContextRequirement,
+                overDelivery.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, overDelivery.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersOverDeliveryApprove], overDelivery.RequiredPermissions);
 
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
@@ -312,7 +322,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
-        Assert.Equal((18, 21), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
+        Assert.Equal("sales.orders.over-delivery.approve", SalesPermissionManifestV1.OrdersOverDeliveryApprove);
+        Assert.Equal((19, 22), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -326,6 +338,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,
+                SalesPermissionManifestV1.OrdersOverDeliveryApprove,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersHeaderWrite,
                 SalesPermissionManifestV1.RequestsWrite,

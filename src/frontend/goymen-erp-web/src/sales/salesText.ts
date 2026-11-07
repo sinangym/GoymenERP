@@ -250,6 +250,17 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
     'Kapatma etkisi siz gördükten sonra değişti; sipariş kapatılmadı. Güncel etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.overDeliveryNotAwaitingApproval]:
+    'Bu satır artık onay bekleyen bir fazla teslim değil; fazla teslim onaylanmadı. Güncel durum gösteriliyor.',
+  [SALES_PROBLEM_CODE.overDeliveryBlocked]:
+    'Fazla teslim blok eşiğini aşıyor; bu fazla teslim onaylanamaz.',
+  [SALES_PROBLEM_CODE.overDeliveryShippedChanged]:
+    'Satırın sevk toplamı siz gördükten sonra değişti; fazla teslim onaylanmadı. Güncel toplamı okuyup yeniden onaylayın.',
+  [SALES_PROBLEM_CODE.overDeliveryShipperUnverified]:
+    'Sevki kimin yaptığı Lojistik kaydından okunamıyor; sevki yapanın kendi fazla teslimini onaylamaması kuralı (SAT-D216) ' +
+    'doğrulanamadığı için onay verilmedi.',
+  [SALES_PROBLEM_CODE.overDeliverySelfApproval]:
+    'Bu satırın sevkini siz yaptınız; kendi fazla tesliminizi onaylayamazsınız. Başka bir yetkili onaylamalı (SAT-D216).',
   [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
 }
@@ -912,6 +923,36 @@ export function partyDisplayText(party: { readonly code: string; readonly legalN
 }
 
 /** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
+/** SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval on S-04 (inside the realization detail of the status card). */
+export const OVER_DELIVERY_TEXT = {
+  heading: 'Onay bekleyen fazla teslim',
+  description:
+    'Bu satırlarda sevk edilen miktar, tolerans onay eşiğini aşıyor ama blok eşiğinin altında. Onay, şu anki sevk toplamını ' +
+    'kapsar; sonradan fazlalık artarsa yeniden onay gerekir (SAT-D213). Sevki yapan kişi kendi fazla teslimini onaylayamaz (SAT-D216).',
+  caption: 'Onay bekleyen fazla teslim satırları',
+  lineNo: 'Satır',
+  ordered: 'Sipariş',
+  shipped: 'Sevk edilen',
+  excess: 'Fazlalık',
+  action: 'İşlem',
+  approve: 'Fazla teslimi onayla',
+  approveLabel: (lineNo: number) => `${lineNo}. satırın fazla teslimini onayla`,
+  empty: 'Onay bekleyen fazla teslim yok.',
+  submitting: 'Onay gönderiliyor…',
+  unknown: 'Onayın sonucu alınamadı; kaydedilmiş olabilir. Aynı onayı tekrar göndermek ikinci bir onay oluşturmaz.',
+  completed: 'Fazla teslim onaylandı; satır "Tamamlandı + onaylı fazla teslim" olarak gösterilir.',
+  replayed: 'Bu onay daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  retry: 'Aynı onayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; onay verilmedi.',
+  forbidden: 'Bu şirkette fazla teslim onaylama yetkiniz yok; onay verilmedi.',
+  notFound: 'Sipariş bulunamadı; onay verilmedi.',
+  conflict: 'Onay verilmedi; sipariş ve durum yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  validation: 'Onay verilmedi; gönderilen bilgi geçerli değil.',
+  unexpected: 'Onay verilmedi. Beklenmeyen bir yanıt alındı.',
+} as const
+
 export const FORCE_CLOSE_TEXT = {
   heading: 'Siparişi kapat',
   description:
