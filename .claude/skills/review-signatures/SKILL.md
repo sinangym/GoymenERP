@@ -13,7 +13,7 @@ Sources: `AGENTS.md`, `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v4.md` §1/§3,
 
 | Level | Scope | Reviews | CI |
 |---|---|---|---|
-| **K3** | DB migration/constraint · money/formula/tolerance · permission/role · cross-module contract · `.github/**` · production activation | two independent **full** exact-head reviews (A, B); **no delta mode**: every new head needs two new full reviews | fresh required CI on the head + real SQL/browser/failure evidence |
+| **K3** | DB migration/constraint · money/formula/tolerance · permission/role · cross-module contract · `.github/**` · production activation | two independent **full** exact-head reviews (A, B); a later head may take `DELTA-OK` **only if the delta is mechanical**: (1) conflict-free main merge, (2) conflicts only in generator-owned files resolved by re-running the generator, (3) test rename/format with byte-identical asserts, (4) comments/docs; hand-resolved conflicts in `src/**`, `tests/**` or migrations are not mechanical — any business logic, migration, money, permission, contract, `.github/**` or production change needs two new full reviews (GOV-D1, 2026-11-07) | fresh required CI on the head + real SQL/browser/failure evidence |
 | **K1/K2** | everything else | one independent exact-head review; later heads by `DELTA-OK` | fresh required CI |
 | **Docs/governance** | `docs/**`, `AGENTS.md`, `.claude/**` (and decisions) | two independent exact-head reviews | none for doc/settings-only; `docs/decisions/**`, `docs/backlog/**`, `.github/**` need the local light checks (`decision-docs-validation`) recorded in the PR |
 
@@ -30,7 +30,7 @@ K2-REVIEW APPROVE <40-char head sha>          # K1 uses the same form
 DOCS-REVIEW-1 APPROVE <40-char head sha>
 DOCS-REVIEW-2 APPROVE <40-char head sha>
 REVIEW-READY <40-char sha>                    # author, K1/K2: freezes the head; no push until reviewed
-DELTA-OK <40-char new head sha>               # reviewer, K1/K2 only: read git diff <REVIEW-READY sha>..<new head>
+DELTA-OK <40-char new head sha>               # reviewer: read git diff <approved sha>..<new head>; K3 only for a mechanical delta (GOV-D1): paste `git diff --stat` and the class (1–4) of each file
 ```
 Use `REQUEST-CHANGES` in place of `APPROVE` when a P0/P1 (or a blocking P2) is open. Examples on main: #902
 (`K3-REVIEW-A APPROVE 3ef10bb…`), #872 (`K2-REVIEW APPROVE 5ed23b1…`), #933 (`DOCS-REVIEW-1 APPROVE 3bc18a0…`).
@@ -90,8 +90,8 @@ form (slice, owner, base, exact files, K level).
 
 ## Pitfalls
 
-- A signature for an older sha is not a signature for the head; re-sign after every push (K3: full review again).
+- A signature for an older sha is not a signature for the head; re-sign after every push (K3: full review again unless GOV-D1 mechanical delta).
 - Short shas are fine in prose, but the first-line signature uses the full 40-char sha.
-- Main practice drifted: #902/#914/#928 recorded `DELTA-OK` on K3 heads although v4 §1 and the 21 Oct decision say
-  K3 has no delta mode. Follow the written rule (two new full reviews) until Sinan decides otherwise.
+- GOV-D1 (`docs/decisions/SINAN_KARARLARI_2026-11-07_K3_DELTA.md`): K3 `DELTA-OK` is allowed only for a mechanical
+  delta, written by one of the A/B reviewers, who says why it is mechanical. When in doubt, two full reviews.
 - Do not write review evidence only in the PR body; it must be a review/comment by the reviewer agent.
