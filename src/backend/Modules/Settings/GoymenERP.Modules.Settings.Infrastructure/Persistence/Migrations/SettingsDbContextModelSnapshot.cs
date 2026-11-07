@@ -395,7 +395,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Source", "[Source] = 'Tcmb'");
 
-                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_State", "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified')) OR ([Kind] = 'Bulletin' AND [Provenance] = 'Manual' AND [State] = 'Published') OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined'))");
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_State", "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified', 'NotFound')) OR ([Kind] = 'Bulletin' AND [Provenance] = 'Manual' AND [State] = 'Published') OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined')) OR ([Kind] = 'HalfDay' AND [Provenance] = 'Manual' AND [State] IN ('FullDay', 'HalfDay'))");
 
                             t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Version", "[RecordVersion] > 0");
                         });

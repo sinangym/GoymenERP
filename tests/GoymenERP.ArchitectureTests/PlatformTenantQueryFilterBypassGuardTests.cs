@@ -310,7 +310,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // cancellation; slitting approval with net width, line speed and label) and +3
                 // ManufacturingSqlServerRelationalAcceptanceTests facts (rejection replay, lifecycle migration, store rules)
                 // (7f38855d… -> f5bf9d89…).
-                "f5bf9d89c3846bad54f7054f58986784703ebccee8eb111b55e8eaf627adac8d",
+                // Üretim U2-b1: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (process spec save, revision,
+                // approval capture) and +1 ManufacturingSqlServerRelationalAcceptanceTests fact (process spec migration)
+                // (f5bf9d89… -> e5d404de…). U2-b1 review: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact
+                // (process spec preview, oversized value, idempotency key) (e5d404de… -> 1a881db5…).
+                "1a881db5dd73e8f6c77786994e1877586b6179fc236c4dc86790b90f29f09984",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -363,8 +367,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // submitter, a third party and a legacy request, and the one-save fact renamed for it (88f2c7a5… -> 37e3e2bd…).
             // A1-2 (plan API-02): +2 request line source SQL facts (one save + audit + rebuild + the pairing check, and the
             // Down refusal 51167), kept ordinal-sorted (37e3e2bd… -> 70c956bd…).
+            // A1-3 (plan API-10; No.161 §2): +5 order remainder cancellation SQL facts (one save after a partial receipt + both
+            // supply ports + checks, draft / fully accepted refusals, Σ-shares kept + request rejection unblocked, company
+            // isolation, Down refusal 51168), kept ordinal-sorted (70c956bd… -> ae6ee9f7…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "70c956bd76183f895cee1fb2aa08994ea8ba62ad7d9e4faedac39dcb4b8188b8",
+                "ae6ee9f768dc60f8521799e606b2b972515730b5a8e2ae843aaff923a6103436",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -491,7 +498,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for DEC-FIN-010 / KUR_GUNU / SAT-D169…D171: the company-filtered exchange-rate record (day fence,
                 // append-only records and their rate lines; company inside every key and foreign key) joins the write fence
                 // (records and rate lines immutable, every row in the context company).
-                "4c558a477888627dffdfacc253aa659a98bba06a68bc867e5e10a699d04437f3",
+                // Re-fingerprinted for review B P2 / EK31 SAT-D198: the record state check admits the official NotFound bulletin
+                // state and the reasoned manual half-day mark; the write fence is unchanged.
+                "91e5f6643ba97019862dddd3b491ddd2125ba67c6166b68dfe9248cba0996c6e",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -553,9 +562,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // and keys unchanged. Re-measured for ALS-D47: the withdrawal check accepts the preparer or the submitter.
             // Re-measured for A1-2 (plan API-02): the request line's source columns, their pairing check and the filtered
             // source index; the line stays insert-only under the write guard; filters and keys unchanged.
+            // Re-measured for A1-3 (plan API-10, No.161 §2): the order's Cancelled status and cancellation-facts check, the line's
+            // cancelled share inside the shares check, and the write guard's allow-list for exactly those columns; filters and
+            // keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "f45607953e6c152be9049b683507d888e10e63770646cb178e4cefd02f37725a",
+                "182b5be853138b47504dd19edca70cf1cae781a1fe07aededc54f448d12c2d6f",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -576,7 +588,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/ManufacturingDbContext.cs"] =
                 // Üretim U2-a: the append-only PlanRejections carry the same CompanyId filter and company-leading key and FK;
                 // the plan row admits only its cancellation columns beside the approval; the order index becomes unique.
-                "5a558c630d5155cb44fc949bf0bb64af0dcb75fd48d4d1a90a2f2d6fd4d44f53",
+                // Üretim U2-b1: the plan and revision rows gain the nullable process spec columns and their checks (no new
+                // table, filter, key or bypass).
+                "22ba3bbe36a852feb31884fca74e5761c81421cbfedb5935d5673e537ddd7208",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1251,10 +1265,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Üretim U2-a: the rejection and cancellation writes, the plan rebuilt with its rejections, cancellation and
                 // one order, and the unique (company, plan) order index's 2601/2627 recognised by name as the plan's own
                 // rule; still recognition only, no connection, command or raw SQL; SqlClient count unchanged (1).
+                // Üretim U2-b1: the process spec is written on the plan and revision rows and restored with them through the
+                // same filtered context; SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "38d7a0ad00395960036f1b4f97cfe97f151eb8eb4121381d7f1e07cfec3ec52a",
+                        "8701f6d5b933e1f3d1878a5f4e3516c8aaa31b2d8a0a75c3459bf79515d57183",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1433,10 +1449,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for A1-1b: the withdrawal facts written and rebuilt through the domain; same token count.
                 // Re-fingerprinted for A1-2: the request line's source written once, audited and rebuilt through the domain;
                 // same token count.
+                // Re-fingerprinted for A1-3: the order cancellation (facts and cancelled shares written, audited and rebuilt
+                // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "576348659c4efb0349ce0ed3ab7439b570855638b3747556e8f9e1843f8ed886",
+                        "10ab34c9581f8bab185669b0cceb34f5835e20837c650cc22b0d62769922ec0e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1501,10 +1519,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
                     // Re-fingerprinted for SAT-D47 (DEC-FIN-010): the draft service also receives the optional Settings rate-day port
                     // (DI-only); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D90 / SAT-D101: the dispatch read service also receives the optional Settings
+                    // rate-day port (DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the draft service also receives the optional Product item type reader and
                     // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
                     new(
-                        "5b0ba111a28f9c6a697c83812e58ffa8486d5801a6911956213adc68efd29de9",
+                        "a1ded5bac4daf1e5a0f7d751da264c22c434770748e986a10e502c6668161ae8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1806,6 +1826,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 3
                         }),
+                // Review B P2 / EK31 SAT-D198: Down refuses (51202) while a NotFound or manual half-day record exists (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261102192125_AmendExchangeRateRecordStates.cs"] =
+                    new(
+                        "bd0810226629d0334ff06ba2844363b837bf86e72a1c733b8b098d45150da156",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // DEC-FIN-010 / SAT-D169…D171: Down refuses (51201) while any exchange-rate record exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261102143743_AddExchangeRateRecords.cs"] =
@@ -1858,6 +1887,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 2
+                        }),
+                // Üretim U2-b1: Down's only raw SQL refuses (51189) while any plan-entered process value, or a plan-sourced
+                // snapshot value other than the U2-a line speed, exists (forward fix), before anything is dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261102224501_AddManufacturingPlanProcessSpecs.cs"] =
+                    new(
+                        "94fa32cf0ecbe4a0d8b172a7e73ef62d9d41c2964b59eed1a6b69341bbe11eeb",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
                         }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
@@ -2038,6 +2078,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // A1-2 (plan API-02): one reviewed statement, before every drop. Down refuses (51167, used by no other
                 // migration) while any request line carries a source, which dropping the columns would silently turn manual.
                 // Up only adds nullable columns, a filtered index and a check.
+                // A1-3 (plan API-10, No.161 §2): one reviewed statement, before every drop. Down refuses (51168, used by no other
+                // migration) while any order is Cancelled or any line carries a cancelled share, which dropping the column would
+                // silently turn back into future supply. Up only adds columns and checks.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261103053923_AddPurchaseOrderCancellation.cs"] =
+                    new(
+                        "ee556c11702c65754f388f5f01706a9278930fdb18915fe40ffe661e14d55ea5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103012142_AddPurchaseRequestLineSource.cs"] =
                     new(

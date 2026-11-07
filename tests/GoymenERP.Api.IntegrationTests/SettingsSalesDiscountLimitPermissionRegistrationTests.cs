@@ -24,8 +24,8 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
         // MOD-03 adds the tax master's own name beside it (SettingsTaxMasterPermissionRegistrationTests); Üretim U1-a adds the
         // Manufacturing parameter / tolerance profile names (SettingsManufacturingProfilePermissionRegistrationTests); DEC-FIN-010
         // the three exchange-rate record names (SettingsExchangeRateSourceTests).
-        Assert.Equal([SettingsExchangeRatePermissionManifestV1.Correct, SettingsExchangeRatePermissionManifestV1.Import,
-                SettingsExchangeRatePermissionManifestV1.Read, SettingsPermissionManifestV1.SalesDiscountLimitsManage,
+        Assert.Equal([SettingsExchangeRatePermissionManifestV1.Correct, SettingsExchangeRatePermissionManifestV1.MarkHalfDay,
+                SettingsExchangeRatePermissionManifestV1.Import, SettingsExchangeRatePermissionManifestV1.Read, SettingsPermissionManifestV1.SalesDiscountLimitsManage,
                 SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
             ErpPermissions.All.Where(name => name.StartsWith("settings.", StringComparison.Ordinal)
                     && !name.StartsWith("settings.manufacturing-", StringComparison.Ordinal))

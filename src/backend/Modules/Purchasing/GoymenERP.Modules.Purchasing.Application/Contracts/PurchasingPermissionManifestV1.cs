@@ -42,6 +42,14 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string RequestsWithdraw = "purchasing.requests.withdraw";
 
+    /// <summary>
+    /// A1-3 (plan API-10; No.161 §2): cancel the whole unaccepted remainder of an APPROVED order with a reason, and read the
+    /// cancellation's impact preview — apart from entering, approving and receiving; none confers another. Company-wide, not
+    /// critical. Registered only: the grant is a human gate (only SENTETIK browser-suite personas in disposable stacks hold it);
+    /// who should hold it is NEEDS-SINAN.
+    /// </summary>
+    public const string OrdersCancel = "purchasing.orders.cancel";
+
     public static readonly IReadOnlyList<string> Names =
-        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw];
+        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel];
 }

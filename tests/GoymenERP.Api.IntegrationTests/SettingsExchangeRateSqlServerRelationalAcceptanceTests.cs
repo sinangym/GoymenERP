@@ -36,9 +36,11 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private const string Root = SettingsExchangeRateEndpoints.ExchangeRatesPath;
     private const string Migration = "20261102143743_AddExchangeRateRecords";
+    private const string AmendmentMigration = "20261102192125_AmendExchangeRateRecordStates";
     private const string Read = SettingsExchangeRatePermissionManifestV1.Read;
     private const string Correct = SettingsExchangeRatePermissionManifestV1.Correct;
     private const string Import = SettingsExchangeRatePermissionManifestV1.Import;
+    private const string MarkHalfDay = SettingsExchangeRatePermissionManifestV1.MarkHalfDay;
 
     // Thu 15 .. Thu 22 October 2026 (all before the run's today). Tue 20 is a synthetic arife; Wed 21 and Thu 22 unverified.
     private static readonly IReadOnlyDictionary<DateOnly, ExchangeRateBulletinFetchV1> Bulletins =
@@ -56,7 +58,7 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
     public async Task Exchange_rate_record_import_resolution_correction_isolation_and_audit_on_real_sql()
     {
         var bulletins = new SyntheticBulletinSource(Bulletins);
-        var halfDays = new SyntheticHalfDaySource(new Dictionary<DateOnly, string>
+        var halfDayAnswers = new Dictionary<DateOnly, string>
         {
             [Day("2026-10-15")] = ExchangeRateHalfDayStatesV1.FullDay,
             [Day("2026-10-16")] = ExchangeRateHalfDayStatesV1.FullDay,
@@ -66,7 +68,8 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             [Day("2026-10-20")] = ExchangeRateHalfDayStatesV1.HalfDay,
             [Day("2026-10-21")] = ExchangeRateHalfDayStatesV1.FullDay,
             [Day("2026-10-22")] = ExchangeRateHalfDayStatesV1.FullDay,
-        });
+        };
+        var halfDays = new SyntheticHalfDaySource(halfDayAnswers);
         await using var run = await HostRun.StartAsync(services =>
         {
             services.RemoveAll<IExchangeRateBulletinSourceV1>();
@@ -74,9 +77,9 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             services.RemoveAll<IExchangeRateHalfDaySourceV1>();
             services.AddSingleton<IExchangeRateHalfDaySourceV1>(halfDays);
         });
-        var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Read, Correct, Import);
+        var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Read, Correct, Import, MarkHalfDay);
         var (viewerSubject, _) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, Read);
-        var (editorBSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Read, Correct, Import);
+        var (editorBSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Read, Correct, Import, MarkHalfDay);
         using var editor = run.Client(editorSubject, CompanyA);
         using var viewer = run.Client(viewerSubject, CompanyA);
         using var editorB = run.Client(editorBSubject, CompanyB);
@@ -117,9 +120,25 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         Assert.Equal(16, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords]"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [Kind] = 'Bulletin' AND [State] = 'Unverified'"));
+        // Review B P2: the first 404 (Sat 17 / Sun 18) is only NotFound — not yet a holiday; the resolver stops on it.
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [Kind] = 'Bulletin' AND [State] = 'NotFound'"));
+        Assert.Equal(RateDayCode("exchange_rate_day_unconfirmed", "2026-10-18"), Failure(await Resolve(editor, run, "2026-10-19", "USD")));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.exchange-rate.imported.v1' AND [CompanyId] = @c "
             + "AND [PermissionCode] = N'settings.exchange-rates.import'", ("@c", CompanyA)));
+
+        // A second run sees the 404 again while a later bulletin (Mon 19) exists: now a final "no bulletin". Final days (Published)
+        // are not asked again (B P3-1); the unverified days are.
+        var second = await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-2", importBody, HttpStatusCode.OK);
+        var secondOutcomes = second.GetProperty("days").EnumerateArray()
+            .ToDictionary(day => day.GetProperty("date").GetString()!, day => day.GetProperty("bulletinOutcome").GetString());
+        Assert.Equal((ExchangeRateImportOutcomesV1.Recorded, ExchangeRateImportOutcomesV1.Recorded),
+            (secondOutcomes["2026-10-17"], secondOutcomes["2026-10-18"]));
+        Assert.All(secondOutcomes.Where(pair => pair.Key is not ("2026-10-17" or "2026-10-18")),
+            pair => Assert.Equal(ExchangeRateImportOutcomesV1.Unchanged, pair.Value));
+        Assert.Equal([Day("2026-10-17"), Day("2026-10-18"), Day("2026-10-21"), Day("2026-10-22")], bulletins.Asked.Skip(8));
+        Assert.Equal(18, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords]"));
 
         // The list: per day state, half-day state and the per-one-unit rates (JPY normalised by the source to one unit).
         var list = await run.JsonAsync(editor, $"{Root}?from=2026-10-14&to=2026-10-22");
@@ -128,7 +147,7 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         Assert.True(list.GetProperty("bulletinSourceEnabled").GetBoolean());
         Assert.Equal((ExchangeRateBulletinStatesV1.NotRecorded, ExchangeRateHalfDayStatesV1.Undetermined, "0"),
             DayState(days["2026-10-14"]));
-        Assert.Equal((ExchangeRateBulletinStatesV1.NoBulletin, ExchangeRateHalfDayStatesV1.FullDay, "2"), DayState(days["2026-10-17"]));
+        Assert.Equal((ExchangeRateBulletinStatesV1.NoBulletin, ExchangeRateHalfDayStatesV1.FullDay, "3"), DayState(days["2026-10-17"]));
         Assert.Equal((ExchangeRateBulletinStatesV1.Published, ExchangeRateHalfDayStatesV1.HalfDay, "2"), DayState(days["2026-10-20"]));
         Assert.Equal((ExchangeRateBulletinStatesV1.Unverified, ExchangeRateHalfDayStatesV1.FullDay, "2"),
             DayState(days["2026-10-21"]));
@@ -153,18 +172,18 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(badCurrency, HttpStatusCode.BadRequest, ExchangeRateProblemCodesV1.RequestInvalid);
         }
 
-        // A re-import never asks again for a day whose official answer is final (B P3-1): only the two unverified days are asked,
-        // nothing changes (even though the source would now answer differently for a final day), no audit.
+        // A third run asks only the still-unverified days; nothing changes (even though the source would now answer differently
+        // for a final day), no audit.
         bulletins.Override(Day("2026-10-15"), Published("2026-10-15", ("USD", "99"), ("EUR", "48.25")));
-        var again = await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-2", importBody, HttpStatusCode.OK);
+        var again = await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-3", importBody, HttpStatusCode.OK);
         Assert.All(again.GetProperty("days").EnumerateArray(), day =>
         {
             Assert.Equal(ExchangeRateImportOutcomesV1.Unchanged, day.GetProperty("bulletinOutcome").GetString());
             Assert.Equal(ExchangeRateImportOutcomesV1.Unchanged, day.GetProperty("halfDayOutcome").GetString());
         });
-        Assert.Equal([Day("2026-10-21"), Day("2026-10-22")], bulletins.Asked.Skip(8));
-        Assert.Equal(16, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords]"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
+        Assert.Equal([Day("2026-10-21"), Day("2026-10-22")], bulletins.Asked.Skip(12));
+        Assert.Equal(18, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords]"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.exchange-rate.imported.v1'"));
 
         // SAT-D169 correction: reason, version, key; only on a day TCMB published.
@@ -182,7 +201,7 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         }
 
         using (var holiday = await editor.SendAsync(Json(HttpMethod.Post, $"{Root}/days/2026-10-17/corrections", "k-c-holiday",
-                   new CorrectExchangeRateRequestV1("2", "USD", "41.65", "SENTETIK"))))
+                   new CorrectExchangeRateRequestV1("3", "USD", "41.65", "SENTETIK"))))
         {
             await AssertProblemAsync(holiday, HttpStatusCode.UnprocessableEntity, ExchangeRateProblemCodesV1.DayNotPublished);
         }
@@ -243,8 +262,8 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(crossCompany, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
         }
 
-        // B P2-2: a 404 is final only once a LATER bulletin exists. Sat/Sun 24-25 alone: 404 → still unverified (asked again);
-        // once Monday 26 is published in the same run, the 404s are recorded as "no bulletin".
+        // B P2-2: a 404 is final only when seen again in a later run while a LATER bulletin exists. Sat/Sun 24-25 alone: 404 →
+        // NotFound (asked again); in the next run, with Monday 26 published, the second 404 makes them "no bulletin".
         bulletins.Override(Day("2026-10-24"), NoBulletin("2026-10-24"));
         bulletins.Override(Day("2026-10-25"), NoBulletin("2026-10-25"));
         var weekend = await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-weekend",
@@ -253,7 +272,7 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             Assert.Equal(ExchangeRateImportOutcomesV1.Recorded, day.GetProperty("bulletinOutcome").GetString()));
         var weekendDays = (await run.JsonAsync(editor, $"{Root}?from=2026-10-24&to=2026-10-26")).GetProperty("days").EnumerateArray()
             .ToDictionary(day => day.GetProperty("date").GetString()!, day => day.GetProperty("bulletinState").GetString());
-        Assert.Equal((ExchangeRateBulletinStatesV1.Unverified, ExchangeRateBulletinStatesV1.Unverified),
+        Assert.Equal((ExchangeRateBulletinStatesV1.NotFound, ExchangeRateBulletinStatesV1.NotFound),
             (weekendDays["2026-10-24"], weekendDays["2026-10-25"]));
         bulletins.Override(Day("2026-10-26"), Published("2026-10-26", ("USD", "41.9")));
         await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-monday",
@@ -263,13 +282,161 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         Assert.Equal((ExchangeRateBulletinStatesV1.NoBulletin, ExchangeRateBulletinStatesV1.NoBulletin, ExchangeRateBulletinStatesV1.Published),
             (weekendDays["2026-10-24"], weekendDays["2026-10-25"], weekendDays["2026-10-26"]));
 
-        // The rollback is refused while rate records exist (forward fix, 51201); nothing is dropped.
+        // EK31 SAT-D198: Tue 27 has no automatic half-day answer → "kur belirlenemedi"; a reasoned manual mark resolves it.
+        Assert.Equal(RateDayCode("exchange_rate_half_day_undetermined", "2026-10-27"),
+            Failure(await Resolve(editor, run, "2026-10-27", "USD")));
+        var tuesday = $"{Root}/days/2026-10-27/half-day-marks";
+        using (var forbidden = await viewer.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-forbidden",
+                   new MarkExchangeRateHalfDayRequestV1("0", "FullDay", "SENTETIK"))))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+
+        using (var noReason = await editor.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-noreason",
+                   new MarkExchangeRateHalfDayRequestV1("0", "FullDay", " "))))
+        {
+            await AssertProblemAsync(noReason, HttpStatusCode.BadRequest, ExchangeRateProblemCodesV1.ReasonRequired);
+        }
+
+        using (var undetermined = await editor.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-state",
+                   new MarkExchangeRateHalfDayRequestV1("0", "Undetermined", "SENTETIK"))))
+        {
+            await AssertProblemAsync(undetermined, HttpStatusCode.BadRequest, ExchangeRateProblemCodesV1.RequestInvalid);
+        }
+
+        // Review A P3-4: a day that has not come yet is not marked (422, nothing stored).
+        using (var future = await editor.SendAsync(Json(HttpMethod.Post, $"{Root}/days/{run.Today.AddDays(1):yyyy-MM-dd}/half-day-marks",
+                   "k-m-future", new MarkExchangeRateHalfDayRequestV1("0", "FullDay", "SENTETIK"))))
+        {
+            await AssertProblemAsync(future, HttpStatusCode.UnprocessableEntity, ExchangeRateProblemCodesV1.MarkFutureDay);
+        }
+
+        var mark = new MarkExchangeRateHalfDayRequestV1("0", "FullDay", "SENTETIK takvim teyidi");
+        await run.CommandAsync(editor, HttpMethod.Post, tuesday, "k-m-1", mark, HttpStatusCode.NoContent);
+        await run.CommandAsync(editor, HttpMethod.Post, tuesday, "k-m-1", mark, HttpStatusCode.NoContent, replayed: true);
+        // Review B P3-4: the same key with another body is 409 and changes nothing.
+        using (var reused = await editor.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-1", mark with { State = "HalfDay" })))
+        {
+            await AssertProblemAsync(reused, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.IdempotencyConflict);
+        }
+
+        using (var stale = await editor.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-stale", mark with { State = "HalfDay" })))
+        {
+            await AssertProblemAsync(stale, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
+        }
+
+        Assert.Equal(("Resolved", "2026-10-26", "41.9", "Official", false), Summary(await Resolve(editor, run, "2026-10-27", "USD")));
+        var marked = (await run.JsonAsync(editor, $"{Root}?from=2026-10-27&to=2026-10-27")).GetProperty("days")[0];
+        Assert.Equal((ExchangeRateHalfDayStatesV1.FullDay, ExchangeRateProvenancesV1.Manual), (marked.GetProperty("halfDayState").GetString(),
+            marked.GetProperty("halfDayProvenance").GetString()));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.exchange-rate.half-day-marked.v1' "
+            + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK takvim teyidi' "
+            + "AND [PermissionCode] = N'settings.exchange-rates.half-day.mark'"));
+        // A definite automatic answer is never overridden by a mark (Mon 19 is FullDay from the source).
+        using (var determined = await editor.SendAsync(Json(HttpMethod.Post, $"{Root}/days/2026-10-19/half-day-marks", "k-m-det",
+                   new MarkExchangeRateHalfDayRequestV1("2", "HalfDay", "SENTETIK"))))
+        {
+            await AssertProblemAsync(determined, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.HalfDayDetermined);
+        }
+
+        // ... and an automatic answer arriving later wins over the mark: the source now says Tue 27 is an arife.
+        halfDayAnswers[Day("2026-10-27")] = ExchangeRateHalfDayStatesV1.HalfDay;
+        bulletins.Override(Day("2026-10-27"), Published("2026-10-27", ("USD", "42")));
+        await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-tuesday",
+            new ImportExchangeRatesRequestV1(Day("2026-10-27"), Day("2026-10-27")), HttpStatusCode.OK);
+        var official = (await run.JsonAsync(editor, $"{Root}?from=2026-10-27&to=2026-10-27")).GetProperty("days")[0];
+        Assert.Equal((ExchangeRateHalfDayStatesV1.HalfDay, ExchangeRateProvenancesV1.Official), (official.GetProperty("halfDayState").GetString(),
+            official.GetProperty("halfDayProvenance").GetString()));
+        // The arife rule now applies: the previous full business day Mon 26 has no half-day answer → "belirlenemedi".
+        Assert.Equal(RateDayCode("exchange_rate_half_day_undetermined", "2026-10-26"),
+            Failure(await Resolve(editor, run, "2026-10-27", "USD")));
+
+        // Review B P2: re-verification reopens a final TCMB answer (audited, under the import name); fail-closed until re-imported.
+        var reverify = $"{Root}/days/2026-10-16/reverification";
+        using (var notFinal = await editor.SendAsync(Json(HttpMethod.Post, $"{Root}/days/2026-10-21/reverification", "k-r-open",
+                   new ReverifyExchangeRateDayRequestV1("2", "SENTETIK"))))
+        {
+            await AssertProblemAsync(notFinal, HttpStatusCode.UnprocessableEntity, ExchangeRateProblemCodesV1.DayNotFinal);
+        }
+
+        using (var stale = await editor.SendAsync(Json(HttpMethod.Post, reverify, "k-r-stale",
+                   new ReverifyExchangeRateDayRequestV1("2", "SENTETIK"))))
+        {
+            await AssertProblemAsync(stale, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
+        }
+
+        var reopen = new ReverifyExchangeRateDayRequestV1("3", "SENTETIK geçici TCMB cevabı şüphesi");
+        await run.CommandAsync(editor, HttpMethod.Post, reverify, "k-r-1", reopen, HttpStatusCode.NoContent);
+        await run.CommandAsync(editor, HttpMethod.Post, reverify, "k-r-1", reopen, HttpStatusCode.NoContent, replayed: true);
+        using (var reused = await editor.SendAsync(Json(HttpMethod.Post, reverify, "k-r-1", reopen with { Reason = "SENTETIK başka" })))
+        {
+            await AssertProblemAsync(reused, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.IdempotencyConflict);
+        }
+
+        // Fri 16 is no longer an official published day: its manual rate stops the walk (fail-closed), nothing older is used.
+        Assert.Equal(RateDayCode("exchange_rate_manual_conflict", "2026-10-16"), Failure(await Resolve(editor, run, "2026-10-19", "USD")));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.exchange-rate.reverification-requested.v1' "
+            + "AND JSON_VALUE([BeforeJson], '$.bulletinState') = N'Published' AND [PermissionCode] = N'settings.exchange-rates.import'"));
+        // The next import asks TCMB again for that day; its bulletin restores it and the manual correction applies again.
+        await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-friday",
+            new ImportExchangeRatesRequestV1(Day("2026-10-16"), Day("2026-10-16")), HttpStatusCode.OK);
+        Assert.Equal(("Resolved", "2026-10-16", "41.65", "Manual", false), Summary(await Resolve(editor, run, "2026-10-19", "USD")));
+
+        // Review B P3-4: company B naming A's days with A's versions reaches only its own (empty) days: 409, A unchanged.
+        var aRecords = await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [CompanyId] = @c",
+            ("@c", CompanyA));
+        using (var crossMark = await editorB.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-b",
+                   new MarkExchangeRateHalfDayRequestV1("3", "HalfDay", "SENTETIK"))))
+        {
+            await AssertProblemAsync(crossMark, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
+        }
+
+        using (var crossReverify = await editorB.SendAsync(Json(HttpMethod.Post, reverify, "k-r-b",
+                   new ReverifyExchangeRateDayRequestV1("5", "SENTETIK"))))
+        {
+            await AssertProblemAsync(crossReverify, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
+        }
+
+        Assert.Equal(aRecords, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [CompanyId] = @c", ("@c", CompanyA)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [CompanyId] = @c", ("@c", CompanyB)));
+
+        // Review A P2-2: a day TCMB once published never becomes "no bulletin" automatically. Thu 15 is re-verified and then
+        // answers 404 in two runs while later bulletins exist: it stays NotFound, so a Friday rate day stops on it (fail-closed)
+        // instead of sliding onto an older rate.
+        await run.CommandAsync(editor, HttpMethod.Post, $"{Root}/days/2026-10-15/reverification", "k-r-15",
+            new ReverifyExchangeRateDayRequestV1("2", "SENTETIK"), HttpStatusCode.NoContent);
+        bulletins.Override(Day("2026-10-15"), NoBulletin("2026-10-15"));
+        foreach (var key in new[] { "k-import-15a", "k-import-15b" })
+        {
+            await run.CommandJsonAsync(editor, $"{Root}/imports", key,
+                new ImportExchangeRatesRequestV1(Day("2026-10-15"), Day("2026-10-15")), HttpStatusCode.OK);
+        }
+
+        var thursday = (await run.JsonAsync(editor, $"{Root}?from=2026-10-15&to=2026-10-15")).GetProperty("days")[0];
+        Assert.Equal(ExchangeRateBulletinStatesV1.NotFound, thursday.GetProperty("bulletinState").GetString());
+        Assert.Equal(RateDayCode("exchange_rate_day_unconfirmed", "2026-10-15"), Failure(await Resolve(editor, run, "2026-10-16", "USD")));
+
+        // The rollback is refused while rate records exist (forward fix); nothing is dropped. The state amendment refuses first
+        // (51202: NotFound and manual half-day records exist), so every exchange-rate migration stays applied.
         await using var context = run.SettingsContext(CompanyA, out _);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var index = Array.IndexOf(applied, Migration);
-        Assert.True(index > 0);
+        var amendment = Array.IndexOf(applied, AmendmentMigration);
+        Assert.True(index > 0 && amendment > index);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
-        Assert.Equal(51201, rollback.Number);
+        Assert.Equal(51202, rollback.Number);
+        Assert.Equal(applied.Take(amendment + 1), await context.Database.GetAppliedMigrationsAsync());
+
+        // Without those records the amendment rolls back, and AddExchangeRateRecords refuses while records remain (51201).
+        await run.ExecuteAsync("DELETE r FROM [settings].[ExchangeRateRecordRates] r JOIN [settings].[ExchangeRateRecords] x "
+            + "ON x.[CompanyId] = r.[CompanyId] AND x.[Id] = r.[RecordId] WHERE x.[State] = 'NotFound' OR (x.[Kind] = 'HalfDay' AND x.[Provenance] = 'Manual');"
+            + "DELETE FROM [settings].[ExchangeRateRecords] WHERE [State] = 'NotFound' OR ([Kind] = 'HalfDay' AND [Provenance] = 'Manual');");
+        var older = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
+        Assert.Equal(51201, older.Number);
         Assert.Equal(applied.Take(index + 1), await context.Database.GetAppliedMigrationsAsync());
     }
 
@@ -285,6 +452,13 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         {
             // The platform answers every 503 with its own public code; the list read says the source is disabled.
             await AssertProblemAsync(disabled, HttpStatusCode.ServiceUnavailable, "service_unavailable");
+        }
+
+        // Review A P2-1: without an enabled source a day is not reopened (503, nothing recorded).
+        using (var reverify = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/days/2026-10-15/reverification", "k-r-disabled",
+                   new ReverifyExchangeRateDayRequestV1("0", "SENTETIK"))))
+        {
+            await AssertProblemAsync(reverify, HttpStatusCode.ServiceUnavailable, "service_unavailable");
         }
 
         var list = await run.JsonAsync(client, $"{Root}?from=2026-10-15&to=2026-10-16");
@@ -518,6 +692,14 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             }
 
             return (T)(await command.ExecuteScalarAsync())!;
+        }
+
+        public async Task ExecuteAsync(string sql)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            await command.ExecuteNonQueryAsync();
         }
 
         public async ValueTask DisposeAsync()
