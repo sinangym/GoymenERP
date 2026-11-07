@@ -115,6 +115,7 @@
         "inventoryMode",
         "inventorySha256",
         "counts",
+        "sourceSurface",
         "sources"
       ],
       "properties": {
@@ -148,6 +149,39 @@
             "durableStores": {
               "type": "integer",
               "minimum": 1
+            }
+          }
+        },
+        "sourceSurface": {
+          "description": "Copied from the recovery inventory. The manifest sourceSurface is post-hoc evidence, not a merge block: the full src/backend byte digest is recorded for later review and never pinned.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fileCount",
+            "sha256",
+            "riskyFileCount",
+            "riskySha256",
+            "blocking"
+          ],
+          "properties": {
+            "fileCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "riskyFileCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "riskySha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "blocking": {
+              "const": false
             }
           }
         },
