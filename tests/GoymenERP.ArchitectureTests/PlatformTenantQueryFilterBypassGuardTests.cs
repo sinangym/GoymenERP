@@ -2079,6 +2079,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
+                // B-01: Down refuses (51211, used by no other migration) while a manufacturing plan-input allocation or
+                // a recorded ReleasedKg exists, then restores the Sales-only demand check with the trust/enabled state
+                // the widened check had, so an older migration's own Down guard still refuses rows planted with the
+                // check disabled.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261107081411_AddManufacturingPlanInputAllocations.cs"] =
+                    new(
+                        "4a2fee655c1c19c4cf4c335549e8cab5dd0035ff8446ea5c481355d1dd4d382b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261103012142_AddPurchaseRequestLineSource.cs"] =
                     new(
