@@ -390,6 +390,18 @@ ekranı (UI-K08) · kur farkı değerlemesi kaynağı. KDV/M-02/M-08/M-09 karar 
 Rapor merkezi iskeleti (UI-K11) · Satış raporlarının merkeze bağlanması · Alış/Üretim/Finans rapor uçları geldikçe
 kayıt · stok raporları · R-05 kuyrukta dışa aktarım.
 
+**Dalga OK — Ortak koda taşıma (C1–C12, `docs/governance/ORTAK_DESENLER_v1.md`)**
+Koordinatör aktarımıyla (2026-11-07) bu şeride verildi. Kural: yalnız teknik kod ortaklaşır, iş kuralı modülde kalır;
+her aday ayrı PR. Sıra rehberdeki gibi düşük riskten yükseğe: C11 → C12 → C9 → C2 → C1(A) → C6 → C7 → C10 → C4 → C3 →
+C8 → C5. K dalgalarıyla şöyle örülür:
+- K1 adaylar (C11 test harness'ları, C12 istek çiti) K0 dilimlerinin arasında, frontend boşluklarında.
+- C9, C2, C6, C10 (K2) K1 dalgası (Ayarlar) ile birlikte.
+- C1(A), C3, C4, C8 (K3) K1 dalgası sonrasında, iki tam review ile.
+- C5 (yetki çiti, K3 yüksek risk) en sonda, modül modül; her modül ayrı PR.
+Değişmezler: C1'de davranışı ya da hata kodu farklı gruplar birleştirilmez (bu bir Sinan kararıdır, taşıma PR'ı
+seçmez); C7'de request-hash girdisi değişmez (eski idempotency anahtarları replay olmalı); C5'te yetki adı/kapsamı
+değişmez.
+
 ## 9. Codex'in bayat taslak PR'ları (2026-10-26'dan beri)
 
 Bu şeridin modüllerine dokunanlar donör olarak okunur; işe yarayan kısım güncel main üzerinde yeni `claude/*` dalında
@@ -428,7 +440,14 @@ yolu kanıtı (fail-closed). Port değişikliğinde sözleşme sürüm testi ve 
 
 Rol/yetki ataması, OPEN-* kapatma, production açma bu planla seçilmez.
 
-## 12. Durum (2026-11-03)
+## 12. Durum (2026-11-07)
+
+- K0-1 menü düzeni merge edildi (#938, KLN-D1/D2).
+- K0-2 üretim girdi tahsisi (B-01) PR #949: iki tam K3 review APPROVE, CI son işte; merge sonrası Üretim U3-a bağlanır.
+- C1–C12 ortak koda taşıma işi plana "Dalga OK" olarak eklendi (#946/#950 merge edildi).
+- K3'te DELTA-OK yalnız mekanik delta için geçerli (GOV-D1, `SINAN_KARARLARI_2026-11-07_K3_DELTA.md`, #953).
+
+## 12a. Durum (2026-11-03)
 
 - Plan #934 ve menü kararı #935 merge edildi. Transfer kararları main'e taşındı (K-4).
 - Codex taslakları: kaynak olarak kullanılır; alınan PR "yerine geçti: #…" notuyla kapatılır; kod kör kopyalanmaz
