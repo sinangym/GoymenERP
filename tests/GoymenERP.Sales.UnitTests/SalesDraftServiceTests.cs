@@ -1692,7 +1692,7 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings);
+                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, LinkedSupplies);
         }
 
         /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
@@ -1700,6 +1700,9 @@ public sealed partial class SalesDraftServiceTests
 
         /// <summary>SAT-D175: the Production / customer-goods binding hook (null = not composed).</summary>
         public ISalesSubcontractOrderBindingReadPortV1? SubcontractBindings { get; set; }
+
+        /// <summary>S-1 / MOD-03: the supply owners' linked-supply adapters (none by default, as on the host).</summary>
+        public List<ISalesOrderLinkedSupplyReadPortV1> LinkedSupplies { get; } = [];
 
         public SalesDraftReadServiceV1 ReadService()
         {

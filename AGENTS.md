@@ -113,6 +113,19 @@ GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır (tek i
 25 Ekim 2026 Claude şeridi kararı); coordinator — ve bu istisnada Claude şeridi — aynı
 kapıları prosedürel olarak doğrular ve kanıtı GitHub'a yazmadan merge yapmaz.
 
+**Merge öncesi main tazelik kontrolü (Faz 0; 7 Kasım 2026 kullanıcı kararı GOV-D2/GOV-D3'e dayanır, kapsam ve Claude şeridine uygulanması uygulama ayrıntısıdır,
+`docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`):** `src/backend/`,
+bir migration'a, kök build-control dosyalarına (`tools/generate_recovery_surface_inventory.py` içindeki `REPOSITORY_BUILD_CONTROL_PATHS`: `Directory.Build.*`, `Directory.Packages.*`, `NuGet.Config`, `global.json`, `.editorconfig`/`.globalconfig`, `src/.editorconfig` vb.) veya recovery envanterine (`tools/generate_recovery_surface_inventory.py`,
+`contracts/recovery/**`, `tests/recovery_surface_inventory/**`, `tests/release_manifest/**`)
+dokunan PR'ı merge eden herkes (`CODEX-ORCHESTRATOR` ve Claude şeridi) expected-head squash'tan
+hemen önce `git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected-head>`
+çalıştırır; kullandığı main SHA'sını ve exit code'u merge makbuzuna yazar. Fresh zorunlu CI aynı
+head'de yeşil olmalıdır. Exit ≠ 0 ise merge yapılmaz: main PR'a merge edilir, pin'ler yeniden
+üretilir, CI yeniden koşar (K3'te GOV-D1'e göre review). Squash'taki `sha=` parametresi yalnız
+head'i doğrular, base'i doğrulamaz; kontrol ile merge çağrısı arasında saniyelik bir yarış kalır.
+Merge eden, çağrıdan önce main ilerlediyse kontrolü yineler. GitHub "Require branches to be up to
+date" ayarı şimdilik kapalıdır (GOV-D3); açılması insan kapısıdır.
+
 ## Mimari değişmezler
 
 - Modüler monolit; modül sınırları kod, şema ve servis sözleşmesinde korunur.
