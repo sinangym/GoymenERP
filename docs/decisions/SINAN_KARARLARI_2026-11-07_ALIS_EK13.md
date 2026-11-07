@@ -1,0 +1,69 @@
+# Sinan Kararları — 2026-11-07 Alış EK13 (A2a-2: alış satırı KDV oranı, vade farkı hesabı, doğrudan girilen vadeli fiyat)
+
+Kaynak: Sinan Göymen'in 7 Kasım 2026 tarihli Claude cloud oturumunda (Alış şeridi), A2a-2 (ALS-D38 vade farkı ve
+API-20 `GET orders/{id}/totals`) için sorulan üç soruya verdiği **doğrudan cevaplar** (makbuz:
+https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6708738330). Sorular Türkçe soruldu; sorular, bütün
+seçenekler ve seçenek açıklamaları aynen aktarılmıştır. "(Önerilen)" işareti Claude'un soruyu sorarken koyduğu
+işarettir. Claude yalnız soruları ve seçenekleri hazırlamıştır; seçimi Sinan yapmıştır.
+
+Numaralama: ALS-D73 EK12'dedir. Bu dosya ALS-D74…D76'yı içerir. EK11 ve EK12'nin karar içeriği (§1) değişmez.
+
+## 0. Yetki ve sınır
+
+- `SINAN_KARARLARI_2026-11-02_ALIS.md` §0 (ALS-D45 ile daraltılmış hâliyle), EK8 §0, EK9 §0 (ALS-D57), EK10 §0,
+  EK11 §0 ve EK12 §0 geçerlidir. ALS-D74…D76'da seçilen seçenekler doğrudan kullanıcı cevabıdır.
+- **Değişmeyen insan kapıları:** production aktivasyonu, secret/deployment, Ayarlar'da gerçek vergi/para kaydı
+  aktivasyonu, grant/rol/Critical ve `OPEN-*` kapatma insanda kalır (AGENTS.md).
+- **Mali müşavir teyidi (N-20) açık kalır:** alışta tevkifat, satıcı muafiyeti, ihraç kayıtlı/teşvikli KDV, vade
+  farkının matraha girişi ve "ödenecek tutar" tanımı bu dosyayla kapanmaz. Bu dosya hiçbir `OPEN-*` kimliğini
+  kapatmaz, grant/rol vermez.
+
+## 1. Kararlar
+
+| No | Konu | Soru (aynen) | Seçenekler (aynen) | Seçilen (aynen) | Önceki durum | Bağlı kimlik |
+|---|---|---|---|---|---|---|
+| ALS-D74 | Alış satırı KDV oranı | **"Alış siparişi satırında KDV oranı nereden gelsin? (Tevkifat zaten mali müşavir teyidine kadar hesaplanmıyor.)"** | **"Ürün türü varsayılanı (Önerilen)"** — "Satıştaki gibi ürün türünün KDV oranı (çelik/hurda/hizmet) kullanılır, sipariş toplamında KDV gösterilir. Tedarikçinin muafiyeti (ihraç kayıtlı vb.) sonra eklenir."; **"Teyide kadar hesaplanmasın"** — "Mali müşavir teyidi (N-20) gelene kadar alış siparişinde KDV de 'hesaplanamıyor' görünür; yalnız net tutar toplanır." | **"Ürün türü varsayılanı (Önerilen)"** | Plan A2a bölünmesi: API-20 toplamı ortak vergi calculator'ı ve mevcut Ayarlar vergi masterıyla; N-20 teyidine kadar alış tevkifatı "hesaplanamıyor". Alış siparişinde KDV yoktu | N-20, API-20, A2a-2, SAT-D139/D140 (Satış emsali), ALS-D58 |
+| ALS-D75 | Vade farkının hesabı | **"Vade farkı alış siparişinde nasıl hesaplansın?"** | **"Satış'la aynı (Önerilen)"** — "Vade farkı iskonto sonrası peşin fiyata eklenir; yüzde ise iskontolu fiyatın yüzdesi, tutar ise birim başına. 0 fiyatlı satırda vade farkı girilemez."; **"İskontodan önce"** — "Vade farkı liste (peşin) fiyata eklenir, iskonto sonra uygulanır." | **"Satış'la aynı (Önerilen)"** | ALS-D38 (EK3): satırda peşin + vade farkı ya da tek vadeli fiyat; hesap biçimi yazılı değildi. PR #944: satırda vade farkı yok | ALS-D38, ALS-D5, ALS-D71, SAT-D35/SAT-D42 (benzetme), SAT-D76, N-20, A2a-2 |
+| ALS-D76 | Doğrudan girilen vadeli fiyat | **"Satıra peşin fiyat yerine doğrudan 'vadeli fiyat' girilirse, bu satır vadeli olarak işaretlensin mi?"** | **"Evet, işaretlensin (Önerilen)"** — "Satırda 'vadeli fiyat' işareti olur; vade farkı olan satır gibi davranır (fatura kontrolünde vadeli sayılır)."; **"Hayır, düz fiyat"** — "Doğrudan girilen fiyat normal fiyat sayılır; ayrı bir vadeli işareti tutulmaz." | **"Hayır, düz fiyat"** (önerilen seçeneğe karşı) | ALS-D38'in "tek fiyatta … vadeli alış fiyatı" yolu; işaret tutulup tutulmayacağı yazılı değildi | ALS-D38, ALS-D8 (fatura farkı), A2a-2 |
+
+## 2. Etkiler ve yorumlar
+
+Bu bölümdeki **yorum** etiketli maddeler geri alınabilir; karar değildir.
+
+- **ALS-D74 (KDV oranı):** Alış siparişi satırının KDV oranı, Satış'taki gibi **ürün türünün varsayılan KDV'sidir**
+  (çelik/hurda/hizmet); sipariş toplamında KDV gösterilir. Tedarikçi muafiyeti (ihraç kayıtlı vb.) **sonra** eklenir
+  (N-20 teyidiyle). Tevkifat N-20 teyidine kadar **"hesaplanamıyor"** kalır (soru metni; plan A2a bölünmesi).
+  - *Yorum (uygulama ayrıntısı, A2a-2):* oran mevcut Ayarlar portu `ISettingsLineTaxResolverV1` ile okunur (ürün
+    türünün varsayılanı; Satış'taki gibi), alıcı durumu **`Normal`** olarak verilir — alış tarafında "alıcı" Göymen'in
+    kendisidir ve muafiyet seçimi henüz yoktur. Ayarlar'da yeni kayıt yoktur (ALS-D58). Geri alınabilir.
+  - *Yorum:* **ürün türü olmayan satır** (ör. ürüne bağlanamayan genel satır) ya da Ayarlar'ın `Unresolved` döndürdüğü
+    satır için KDV **"hesaplanamıyor"** görünür; 0 ya da tahmin yazılmaz (port sözleşmesi: "never 0 and never a guessed
+    default"). Geri alınabilir.
+- **ALS-D75 (vade farkı Satış'la aynı):** Vade farkı **iskonto sonrası peşin fiyata eklenir**. Yüzde girilirse
+  **iskontolu fiyatın yüzdesidir**; tutar girilirse **birim başınadır**. **0 fiyatlı satırda vade farkı girilemez**
+  (ALS-D71'in açık 0 fiyatı için). İskonto önce, vade farkı sonra; "İskontodan önce" seçilmedi.
+  - *Yorum (SAT-D42 benzetmesi):* Satış'ta iskonto ölçümü vade farkı eklenmeden önceki iskontolu fiyata bakar
+    (SAT-D35/SAT-D42; vade farkı iskontoyu gizleyemez). Alış'ta iskonto limiti yoktur (ALS-D5), ama sıra aynıdır. Net
+    birim fiyat (iskonto + vade farkı sonrası) yuvarlanmaz, satır tutarı bir kez yuvarlanır (SAT-D76 benzetmesi; EK11
+    ALS-D72 yorumu). Geri alınabilir.
+  - Vade farkının KDV matrahına girişi N-20'dedir; bu dosya onu karara bağlamaz.
+- **ALS-D76 (doğrudan vadeli fiyat = düz fiyat; Sinan önerilene karşı seçti):** ALS-D38'in ikinci yolu ("tek fiyatta …
+  vadeli alış fiyatı") **normal fiyat** olarak girilir; satırda ayrı bir "vadeli" işareti **tutulmaz**. Böyle bir satır
+  vade farkı olan satır gibi davranmaz; fatura kontrolünde (ALS-D8) normal fiyat olarak karşılaştırılır.
+  - Kayıt: Claude'un önerdiği seçenek **"Evet, işaretlensin"** idi; Sinan **"Hayır, düz fiyat"** seçti.
+  - *Yorum:* Vade farkı alanı yalnız ALS-D38'in birinci yolu (peşin + vade farkı) için doludur; tek vadeli fiyat
+    girilen satırda boştur. Geri alınabilir.
+- **Kod:** uygulama **A2a-2** dilimidir (plan §12, sürüyor). Bu belge kod değiştirmez.
+
+## 3. Değişmeyenler
+
+- ALS-D38 (EK3; iki giriş yolu) aynen; ALS-D74…D76 yalnız KDV oranının kaynağını, vade farkı hesabını ve doğrudan
+  vadeli fiyatın işaretsiz olduğunu seçer. ALS-D5, ALS-D8, ALS-D18, ALS-D58, ALS-D69…D72 aynen.
+- N-20 (tevkifat, satıcı muafiyeti, ihraç kayıtlı/teşvikli KDV, vade farkının matraha girişi, "ödenecek tutar") açık.
+- **EK12 §2 atıf notu (#959 review P3):** EK12 §2'deki "create/approve/cancel … `—` (ALS-D73 seçenek açıklaması)"
+  cümlesinde **iptal** (`purchasing.orders.cancel`) hücresinin dayanağı ALS-D73 değil, **ALS-D66 / EK10 §2**'dir
+  (kalan iptali onaycılarda; Muhasebe ve Muhasebe Müdürü onaycı değil). ALS-D73'ün seçenek açıklaması "create, edit or
+  approve" der, iptali saymaz. EK12'nin karar içeriği değişmedi; persona kartındaki iptal hücreleri ve not ALS-D66 /
+  EK10 §2'ye dayandırıldı.
+- Grant/rol ataması, Ayarlar'da gerçek kayıt aktivasyonu, production aktivasyonu, secret/deployment ve `OPEN-*`
+  kapatma insan kapısıdır.
