@@ -53,8 +53,11 @@ token; a lost race surfaces as `ConcurrentChange`.
 
 ## Endpoint (GoymenERP.Api/Endpoints/<M>Endpoints.cs)
 
-- `TryReadIdempotencyKey`: exactly one header, non-blank, canonical (no surrounding whitespace), ≤ 128 chars, no
-  comma → else 400 `command_metadata_invalid`. Strict JSON body (unknown fields → 400).
+- Idempotency header: follow the **module's existing reader** — there are four behaviours today (Purchasing/Logistics/
+  Sales/Inventory/Finance/ProductPriceList reject surrounding whitespace with 400 `command_metadata_invalid`;
+  Accounting/Manufacturing trim and accept; Organization uses `TryCanonicalizeIdempotencyKey`; Documents uses
+  `DocumentsApiV1.IdempotencyHeader`). For a new module copy group (a): one header, non-blank, canonical, ≤ 128 chars,
+  no comma. Never change an existing module's behaviour in passing: it changes the HTTP contract and stored keys. Strict JSON body (unknown fields → 400).
 - `Metadata(idempotencyKey, correlation)` → `<M>CommandMetadata(key, correlationId, causationId, UtcNow)`.
 - Replay → headers `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`.
 - `Problem(...)`: 401/403/404/503 are **code-less** (`Results.Problem(statusCode)`); other statuses carry `code` and

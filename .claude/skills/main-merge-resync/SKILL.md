@@ -20,6 +20,8 @@ are hashes or generated outputs of the **combined** tree; a textual merge of the
      ```bash
      git checkout --theirs -- contracts/openapi/goymen-erp-v1.json
      ```
+     `goymen-erp-v1.json` is never edited by hand: after taking main's copy, regenerate it (`openapi-regenerate`)
+     so your endpoints come back from the build, not from a manual re-apply.
    - `tools/relational_inventory/<module>.txt`: union of lines, re-sorted (`LC_ALL=C sort`, see
      `test-naming-and-groups`).
 3. Commit the merge (worktree must be clean for the generators).
