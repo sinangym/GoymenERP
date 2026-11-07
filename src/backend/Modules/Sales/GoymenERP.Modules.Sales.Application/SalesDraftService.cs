@@ -71,6 +71,7 @@ public sealed partial class SalesDraftService(
     ISettingsExchangeRateResolverV1? exchangeRates = null,
     IProductItemTypeReaderV1? itemTypes = null,
     ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null,
+    ISalesOrderOwnerAxesSourceV1? ownerAxes = null,
     IEnumerable<ISalesOrderLinkedSupplyReadPortV1>? linkedSupplies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;

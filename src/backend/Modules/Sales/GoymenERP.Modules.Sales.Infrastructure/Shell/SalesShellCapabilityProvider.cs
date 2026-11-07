@@ -6,8 +6,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// <summary>
 /// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) — and, since shell contract 1.8,
 /// the six S-01 request / quote pool screens of UI-20 with their controls, and since 1.9 the S-07 dispatch list and the S-08
-/// invoice candidates (UI-60 / UI-61), since 1.11 the UI-80 Sales reports screen and since 1.12 the header-revision control
-/// of the detail (API-04) — to the
+/// invoice candidates (UI-60 / UI-61), since 1.11 the UI-80 Sales reports screen, since 1.12 the header-revision control
+/// of the detail (API-04) and since 1.13 the user-closure control of the detail (SAT-D32) — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.13";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -84,6 +84,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// force-closure of an approved order. Create, approve, price, schedule, quantity and cancel never confer it (shell contract 1.7).
     /// </summary>
     public const string ForceCloseCapabilityId = "sales.orders.force-close";
+
+    /// <summary>
+    /// SAT-D32 / SAT-D168: the user-closure CONTROL of the S-04 detail (read + the close name) — "Siparişi kapat" for a
+    /// "kapanmaya hazır" order. Create, approve, cancel and force-close never confer it (shell contract 1.13).
+    /// </summary>
+    public const string CloseCapabilityId = "sales.orders.close";
 
     /// <summary>
     /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
@@ -261,6 +267,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = ForceCloseCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose],
+        },
+        // SAT-D32: the user closure is a control of the detail, like the force-closure.
+        detail with
+        {
+            CapabilityId = CloseCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersClose],
         },
         .. RequestDeclarations(),
         .. QuoteDeclarations(),

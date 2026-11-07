@@ -711,6 +711,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/drafts/{id}/force-close", "GetSalesOrderDraftForceClosureV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        // SAT-D32 / SAT-D215: the user closure of a "kapanmaya hazır" order and its record.
+        new("post", "/api/v1/sales/drafts/{id}/close", "CloseSalesOrderDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftCloseRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/sales/drafts/{id}/close", "GetSalesOrderDraftUserClosureV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         // API-20 / API-21 (plan §3.2, S-01): the sales request — create, list, detail and its decision.
         new("get", "/api/v1/sales/requests", "GetSalesRequestsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
@@ -1434,6 +1441,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesOrderDraftForceCloseImpactV1"] = "ref:SalesOrderDraftForceCloseImpactResponse",
             ["ForceCloseSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftForceClosureV1"] = "ref:SalesOrderDraftForceClosureResponse",
+            ["CloseSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["GetSalesOrderDraftUserClosureV1"] = "ref:SalesOrderDraftUserClosureResponse",
             ["GetSalesRequestsV1"] = "ref:SalesRequestListResponse",
             ["CreateSalesRequestV1"] = "ref:SalesRequestResponse",
             ["GetSalesRequestV1"] = "ref:SalesRequestDetailView",
@@ -1746,6 +1755,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftForceCloseImpactV1",
         "ForceCloseSalesOrderDraftV1",
         "GetSalesOrderDraftForceClosureV1",
+        "CloseSalesOrderDraftV1",
+        "GetSalesOrderDraftUserClosureV1",
         "GetSalesRequestsV1",
         "CreateSalesRequestV1",
         "GetSalesRequestV1",
@@ -1976,6 +1987,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RescheduleSalesOrderDraftDeliveryV1",
         "CancelSalesOrderDraftV1",
         "ForceCloseSalesOrderDraftV1",
+        "CloseSalesOrderDraftV1",
         "CreateSalesRequestV1",
         "ApproveSalesRequestV1",
         "RejectSalesRequestV1",
@@ -2225,6 +2237,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RescheduleSalesOrderDraftDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CancelSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ForceCloseSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CloseSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreateSalesRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["ApproveSalesRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RejectSalesRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -2459,6 +2472,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftForceCloseImpactV1",
         "ForceCloseSalesOrderDraftV1",
         "GetSalesOrderDraftForceClosureV1",
+        "CloseSalesOrderDraftV1",
+        "GetSalesOrderDraftUserClosureV1",
         "GetSalesRequestsV1",
         "CreateSalesRequestV1",
         "ApproveSalesRequestV1",
@@ -2659,6 +2674,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftForceCloseImpactV1:404",
         "ForceCloseSalesOrderDraftV1:404",
         "GetSalesOrderDraftForceClosureV1:404",
+        "CloseSalesOrderDraftV1:404",
+        "GetSalesOrderDraftUserClosureV1:404",
         "GetSalesRequestV1:404",
         "ApproveSalesRequestV1:404",
         "RejectSalesRequestV1:404",
@@ -3219,6 +3236,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["ForceCloseSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ForceCloseSalesOrderDraftV1:409"] = ["concurrent_change", "sales_force_close_blocked", "sales_force_close_impact_changed", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ForceCloseSalesOrderDraftV1:422"] = ["validation_failed"],
+            ["CloseSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CloseSalesOrderDraftV1:409"] = ["concurrent_change", "sales_order_not_ready_to_close", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["CloseSalesOrderDraftV1:422"] = ["validation_failed"],
             ["GetSalesRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreateSalesRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreateSalesRequestV1:409"] = ["account_state", "concurrent_change", "same_key_payload_mismatch", "version_conflict"],
@@ -5088,6 +5108,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("impactToken", "type:string"),
                     ("sources", "type:array;items:ref:SalesDraftForceCloseImpactSourceV1"),
                     ("lines", "type:array;items:ref:SalesDraftForceClosureLineV1")),
+                // SAT-D32: the recorded user closure — who, when, which revision; no reason, no remainder.
+                ["SalesOrderDraftUserClosureResponse"] = ObjectSchema(
+                    ["userClosure"],
+                    ("userClosure", "oneOf:ref:SalesDraftUserClosureV1|type:null")),
+                ["SalesDraftUserClosureV1"] = ObjectSchema(
+                    ["revision", "closedBy", "closedAtUtc"],
+                    ("revision", "type:string"),
+                    ("closedBy", "type:string"),
+                    ("closedAtUtc", "type:string;format:date-time")),
                 ["SalesDraftForceClosureLineV1"] = ObjectSchema(
                     ["lineId", "lineNo", "ordered", "shipped", "closedRemainder"],
                     ("lineId", "type:string;format:uuid"),
@@ -8182,6 +8211,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("expectedVersion", "type:string"),
                     ("reason", "type:string"),
                     ("impactToken", "type:string")),
+                // SAT-D32 / SAT-D215: the user closure names the version only (no reason).
+                ["SalesDraftCloseRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
                 // No 30: the force-close command names the version, the reason and the preview token it was decided on.
                 ["SalesDraftForceCloseRequest"] = ObjectSchema(
                     ["expectedVersion", "reason", "impactToken"],

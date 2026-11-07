@@ -174,6 +174,14 @@ public static class SalesDraftProblemCodesV1
     public const string ForceCloseImpactChanged = "sales_force_close_impact_changed";
 
     /// <summary>
+    /// 409 (SAT-D32, contract delta): the order is not "kapanmaya hazır" — the status read's <c>readyToClose</c>, recomputed
+    /// inside the save from the same calculation, is false (an axis is incomplete, NoSource, Unreadable or PolicyUnavailable).
+    /// While the source, invoicing and financial-closure owners do not exist on main this is every user closure's answer.
+    /// Terminal for the key (recorded, replayed): once the order is ready the user closes with a new key.
+    /// </summary>
+    public const string OrderNotReadyToClose = "sales_order_not_ready_to_close";
+
+    /// <summary>
     /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
     /// a loading-instruction line) that a changed quantity would leave inconsistent — the fail-closed reading refuses the
     /// revision, exactly like the cancellation; the field errors name each blocking source. Terminal for the key (recorded,
@@ -276,4 +284,6 @@ public sealed record SalesDraftServiceBindings(
     // SAT-D27 (1): the name a person must hold to be an order's sales owner (the sales-owner picker's eligibility, decided).
     string? SalesOwnerEligibilityPermission = SalesPermissionManifestV1.DraftsCreate,
     // API-41 / API-42: the Sales reports' own read name (a report's amount additionally needs the price read).
-    string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead);
+    string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead,
+    // SAT-D32 / SAT-D168: the user closure's own name (a grant, never implied here).
+    string? ClosePermission = SalesPermissionManifestV1.OrdersClose);
