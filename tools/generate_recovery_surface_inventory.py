@@ -49,7 +49,7 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 129
+EXPECTED_MIGRATION_COUNT = 130
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "d3186bb4666e4eee9b52683ae6f29f39a37277a24a1fb34c06af91a7e445dbd0"
 )
@@ -58,7 +58,7 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1333
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1337
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
     "0d5e1f2e932439b4b87d68e81732ea5ee24fd140e47799020650e5cc55b32963"
 )

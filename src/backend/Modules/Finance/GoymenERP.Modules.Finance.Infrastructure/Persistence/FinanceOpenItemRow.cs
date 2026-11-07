@@ -32,6 +32,15 @@ internal sealed class FinanceOpenItemRow : IFinanceTenantRow
     public Guid CurrencyId { get; set; }
     public string OriginalAmountText { get; set; } = string.Empty;
     public string OutstandingAmountText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// F2a (SAT-D172, ALS-D41): the invoice's single exchange rate for a foreign-currency invoice, exact text; null for a TL
+    /// invoice and for every row admitted before F2a. Present exactly when <see cref="FunctionalAmountText"/> is.
+    /// </summary>
+    public string? ExchangeRateText { get; set; }
+
+    /// <summary>F2a: the installment's functional-currency (TL) equivalent at that rate, as the producer computed it.</summary>
+    public string? FunctionalAmountText { get; set; }
     public DateOnly? DueOn { get; set; }
     public int Status { get; set; }
     public long Version { get; set; }
@@ -49,6 +58,12 @@ internal static class FinanceOpenItemDirectionCodes
     /// <summary>The stored value for a source kind, or <c>null</c> for a kind Finance does not know.</summary>
     public static int? ForSourceKind(string? sourceKind) =>
         Contracts.FinanceOpenItemDirections.FromSourceKind(sourceKind) is { } direction ? (int)direction : null;
+}
+
+/// <summary>F2a: the stored length of an invoice exchange rate (<c>OpenItems.ExchangeRateText</c>).</summary>
+internal static class FinanceOpenItemExchange
+{
+    public const int RateMaximumLength = 64;
 }
 
 internal static class FinanceOpenItemStatuses
