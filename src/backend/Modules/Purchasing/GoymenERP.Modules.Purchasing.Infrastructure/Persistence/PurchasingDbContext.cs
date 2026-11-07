@@ -11,8 +11,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// SALES-P2 / Logistics LOG-4a shape). Every row is a tenant row of the record's company: a global query
 /// filter on the server-resolved company and a write guard that refuses any row of another company, any
 /// company change, any delete and any column move outside the axis a command may move (a header's status /
-/// version / time, a request's sourcing version; an order line's technical and accepted totals; attempts append
-/// only). The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key
+/// version / time, a request's sourcing version; an order line's technical, accepted and (A1-3) cancelled totals; attempts
+/// append only). The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key
 /// is never stored. The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// Nothing here is physical: an approved order is expected supply, never stock.
 /// </summary>
@@ -78,6 +78,22 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         "([SourceKind] IS NULL AND [SourceDocumentId] IS NULL AND [SourceDocumentLineId] IS NULL) "
         + "OR ([SourceKind] IS NOT NULL AND [SourceKind] IN (1, 2, 3) AND [SourceDocumentId] IS NOT NULL AND [SourceDocumentId] <> " + EmptyGuid
         + " AND [SourceDocumentLineId] IS NOT NULL AND [SourceDocumentLineId] <> " + EmptyGuid + ")";
+
+    /// <summary>
+    /// A1-3 (plan API-10, No.161 §2): a Cancelled (3) order has its canceller, the time and a non-blank reason; any other status
+    /// has none of the three. A CHECK passes on UNKNOWN, so every fact is tested with IS [NOT] NULL.
+    /// </summary>
+    internal const string OrderCancellationCheck =
+        "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL "
+        + "AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) "
+        + "OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)";
+
+    /// <summary>
+    /// §7.2 / §13 and A1-3 (master INV-006): technical slices, the accepted share and the cancelled remainder are never negative
+    /// and together never exceed the first commitment.
+    /// </summary>
+    internal const string OrderLineSharesCheck =
+        "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]";
 
     /// <summary>One create attempt per stored order; the approve command's attempts share the order id.</summary>
     internal static readonly string OrderCreateAttemptFilter =
@@ -196,9 +212,11 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseOrders_Identity",
                 $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [SupplierPartyId] <> {EmptyGuid} AND [CompanyAccountId] <> {EmptyGuid} "
                 + $"AND ([SourceRequestId] IS NULL OR [SourceRequestId] <> {EmptyGuid})");
-            table.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_PurchaseOrders_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_PurchaseOrders_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            // A1-3 (No.161 §2): the cancellation facts match the status.
+            table.HasCheckConstraint("CK_PurchaseOrders_Cancellation", OrderCancellationCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -208,6 +226,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.Property(x => x.EffectiveOn).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CancelledBy).HasMaxLength(128);
+        entity.Property(x => x.CancellationReason).HasMaxLength(4000);
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_Status_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.SourceRequestId }).HasDatabaseName("IX_PurchaseOrders_CompanyId_SourceRequestId");
@@ -232,9 +252,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             // A general line has no parent; a technical line is a slice of one general line (§7.2).
             table.HasCheckConstraint("CK_PurchaseOrderLines_Kind",
                 "([Kind] = 1 AND [ParentLineId] IS NULL) OR ([Kind] = 2 AND [ParentLineId] IS NOT NULL)");
-            // §7.2 / §13: technical slices and the accepted share never exceed the first commitment.
-            table.HasCheckConstraint("CK_PurchaseOrderLines_Shares",
-                "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Technical] + [Accepted] <= [Ordered]");
+            // §7.2 / §13: technical slices, the accepted share and (A1-3) the cancelled remainder never exceed the first commitment.
+            table.HasCheckConstraint("CK_PurchaseOrderLines_Shares", OrderLineSharesCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
         entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId })
@@ -242,7 +261,11 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.LineId }).IsUnique().HasDatabaseName("UX_PurchaseOrderLines_LineId");
         entity.HasIndex(x => new { x.CompanyId, x.SourceRequestLineId }).HasDatabaseName("IX_PurchaseOrderLines_SourceRequestLine");
         entity.Property(x => x.ProductVersion).HasMaxLength(64).IsRequired();
-        foreach (var quantity in new[] { nameof(PurchaseOrderLineRow.Ordered), nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted) })
+        foreach (var quantity in new[]
+                 {
+                     nameof(PurchaseOrderLineRow.Ordered), nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted),
+                     nameof(PurchaseOrderLineRow.Cancelled),
+                 })
         {
             entity.Property<decimal>(quantity).HasPrecision(18, 3);
         }
@@ -366,8 +389,13 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                         nameof(PurchaseRequestRow.RejectedBy), nameof(PurchaseRequestRow.RejectedAtUtc), nameof(PurchaseRequestRow.RejectionReason),
                         nameof(PurchaseRequestRow.WithdrawnBy), nameof(PurchaseRequestRow.WithdrawnAtUtc), nameof(PurchaseRequestRow.WithdrawalReason),
                     ],
-                    PurchaseOrderRow => [nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc)],
-                    PurchaseOrderLineRow => [nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted)],
+                    PurchaseOrderRow =>
+                    [
+                        nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc),
+                        nameof(PurchaseOrderRow.CancelledBy), nameof(PurchaseOrderRow.CancelledAtUtc), nameof(PurchaseOrderRow.CancellationReason),
+                    ],
+                    PurchaseOrderLineRow =>
+                        [nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled)],
                     _ => [],
                 };
                 var changed = entry.Properties

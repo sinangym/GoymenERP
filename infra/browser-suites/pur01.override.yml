@@ -21,6 +21,9 @@
 # A1-1b (plan API-01b, ALS-D46): the disposable creator, who prepares and submits its requests, also holds
 # purchasing.requests.withdraw so the browser journey can withdraw its own submitted request from the request detail.
 # Only this SENTETIK creator holds it; no real user, production role or seeded role receives purchasing.requests.withdraw.
+# A1-3 (plan API-10, No.161 §2): the disposable approver (the manager persona's stand-in) also holds purchasing.orders.cancel
+# so the browser journey can cancel an approved order's unaccepted remainder from the order detail. Who should hold the
+# name is NEEDS-SINAN; only this SENTETIK approver holds it here and no real user, production role or seeded role receives it.
 services:
   api:
     environment:
@@ -80,6 +83,7 @@ services:
       IdentitySeed__Roles__5__Permissions__0: purchasing.orders.read
       IdentitySeed__Roles__5__Permissions__1: purchasing.orders.approve
       IdentitySeed__Roles__5__Permissions__2: purchasing.requests.approve
+      IdentitySeed__Roles__5__Permissions__3: purchasing.orders.cancel
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000602
       IdentitySeed__Roles__6__Code: BROWSER_PUR01_READER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:pur01 Purchasing reader

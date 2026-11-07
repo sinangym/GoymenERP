@@ -1081,6 +1081,7 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.balances.read",
                 "purchasing.requests.approve",
                 "purchasing.requests.withdraw",
+                "purchasing.orders.cancel",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
@@ -1123,7 +1124,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(["IdentitySeed__Roles__7__Permissions__6"], holders)
 
         approver_with_withdrawal = dict(environment)
-        approver_with_withdrawal["IdentitySeed__Roles__5__Permissions__3"] = "purchasing.requests.withdraw"
+        approver_with_withdrawal["IdentitySeed__Roles__5__Permissions__4"] = "purchasing.requests.withdraw"
         with self.assertRaisesRegex(ValueError, "pur01-approver requires its exact isolated permissions"):
             validator.validate_suite_extensions("pur01", approver_with_withdrawal)
 
@@ -1131,6 +1132,28 @@ class WorkflowTests(unittest.TestCase):
         del creator_without_withdrawal["IdentitySeed__Roles__7__Permissions__6"]
         with self.assertRaisesRegex(ValueError, "pur01-creator requires its exact isolated permissions"):
             validator.validate_suite_extensions("pur01", creator_without_withdrawal)
+
+    def test_pur01_order_cancellation_belongs_only_to_the_approver(self):
+        # A1-3 (plan API-10, No.161 §2): only the disposable approver (the manager persona's stand-in) cancels a remainder.
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        holders = sorted(
+            key for key, value in environment.items()
+            if key.startswith("IdentitySeed__Roles__") and value == "purchasing.orders.cancel"
+        )
+        self.assertEqual(["IdentitySeed__Roles__5__Permissions__3"], holders)
+
+        creator_with_cancel = dict(environment)
+        creator_with_cancel["IdentitySeed__Roles__7__Permissions__7"] = "purchasing.orders.cancel"
+        with self.assertRaisesRegex(ValueError, "pur01-creator requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", creator_with_cancel)
+
+        approver_without_cancel = dict(environment)
+        del approver_without_cancel["IdentitySeed__Roles__5__Permissions__3"]
+        with self.assertRaisesRegex(ValueError, "pur01-approver requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", approver_without_cancel)
 
     def test_pur01_document_permissions_belong_only_to_creator(self):
         environment = self._pur01_environment()

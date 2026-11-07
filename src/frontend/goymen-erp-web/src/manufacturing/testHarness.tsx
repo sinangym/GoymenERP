@@ -169,6 +169,8 @@ export function plan(overrides: Record<string, unknown> = {}) {
     orderId: null,
     rejections: [],
     cancellation: null,
+    // U2-b1: the plan-entered process values (Tube / Profile, Paint, Cold Rolling); the server always emits the member.
+    processSpec: null,
     ...overrides,
   }
 }
@@ -239,6 +241,8 @@ export function planRevision(overrides: Record<string, unknown> = {}) {
     cutToLengthSpec: null,
     // U2-a: the plan-entered line speed this revision set; the server always emits the member.
     lineSpeedMetresPerMinute: null,
+    // U2-b1: the plan-entered process spec this revision set; the server always emits the member.
+    processSpec: null,
     ...overrides,
   }
 }

@@ -22,7 +22,10 @@ import { CAPABILITY } from '../shell/capabilities'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
-import { StatusIndicator } from '../ui/StatusIndicator'
+import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
+import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
+import { ORDER_CANCELLATION_TEXT } from './purchasingText'
+import type { PurchaseOrderStatus } from './contract'
 
 const HEADING_ID = 'purchase-order-detail-heading'
 
@@ -72,11 +75,14 @@ function newId(): string {
 }
 
 const LINE_NO = T.lineNoColumn
+/** A1-3 (No.161 §2): the cancelled remainder sits between the accepted share and the remaining future supply (INV-006). */
 const LINE_COLUMNS = [
   { name: LINE_NO }, { name: T.productId }, { name: T.unitId },
   { name: T.ordered, numeric: true }, { name: T.technical, numeric: true }, { name: T.committed, numeric: true },
-  { name: T.accepted, numeric: true }, { name: T.remaining, numeric: true },
+  { name: T.accepted, numeric: true }, { name: T.cancelledShare, numeric: true }, { name: T.remaining, numeric: true },
 ] as const
+const STATUS_TONE: Record<PurchaseOrderStatus, StatusTone> = { Draft: 'warning', Approved: 'success', Cancelled: 'neutral' }
+const STATUS_TEXT: Record<PurchaseOrderStatus, string> = { Draft: T.draft, Approved: T.approved, Cancelled: T.cancelledStatus }
 const ACCEPTANCE_COLUMNS = [
   { name: T.acceptanceId }, { name: T.lineNo }, { name: T.quantity, numeric: true }, { name: T.recordedAtUtc },
 ] as const
@@ -96,6 +102,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove)
+  const canCancel = hasCapability(shell, PURCHASING_CAPABILITY.orderCancel)
   const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
@@ -172,6 +179,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />)
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />)
   const { order, lines, acceptances } = state.data
+  const cancellation = state.data.cancellation ?? null
   const isCurrentDetail = order.id === orderId && order.companyId === companyId
   const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
   const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
@@ -207,10 +215,19 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
           <Cell label={T.technical} numeric>{line.technical}</Cell>
           <Cell label={T.committed} numeric>{line.committed}</Cell>
           <Cell label={T.accepted} numeric>{line.accepted}</Cell>
+          <Cell label={T.cancelledShare} numeric>{line.cancelled ?? '0'}</Cell>
           <Cell label={T.remaining} numeric>{line.remaining}</Cell>
         </tr>)}
       </RecordTable>
     </section>
+    {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
+      <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
+      <dl className={styles.facts}>
+        <div><dt>{ORDER_CANCELLATION_TEXT.cancelledBy}</dt><dd className={styles.identifier}>{cancellation.cancelledBy}</dd></div>
+        <div><dt>{ORDER_CANCELLATION_TEXT.cancelledAt}</dt><dd><time dateTime={cancellation.cancelledAtUtc}>{cancellation.cancelledAtUtc}</time></dd></div>
+        <div><dt>{ORDER_CANCELLATION_TEXT.cancellationReason}</dt><dd>{cancellation.reason}</dd></div>
+      </dl>
+    </section> : null}
     {isCurrentDetail ? <section className={styles.section} aria-labelledby="purchase-order-acceptance-history-heading" data-testid="purchase-order-acceptance-history">
       <h2 id="purchase-order-acceptance-history-heading">{T.acceptanceHistoryHeading}</h2>
       {acceptances.length === 0
@@ -240,9 +257,14 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     /> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.approvalUnknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.approvalSending : attempt.phase === 'unknown' ? T.approvalRetry : T.approve}</Button></section> : null}
+    {canCancel && isCurrentDetail && namespace !== null && actorId !== null
+      ? <div className={styles.section}><PurchaseOrderCancellationPanel sessionEpoch={shell.sessionEpoch}
+          fenceKey={`${namespace}::${shell.routeEntryGeneration}`} actorId={actorId} companyId={companyId} order={order}
+          onSettled={() => query.refetch()} /></div>
+      : null}
     {namespace !== null && receiptAttempt !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY)
       ? <div className={styles.section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
           binding={namespace} attemptBinding={receiptAttempt} detail={state.data} onRecorded={() => void query.refetch()} /></div>
       : null}
-  </>, <StatusIndicator className={styles.status} tone={order.status === 'Approved' ? 'success' : 'warning'}>{order.status === 'Approved' ? T.approved : T.draft}</StatusIndicator>)
+  </>, <StatusIndicator className={styles.status} tone={STATUS_TONE[order.status]}>{STATUS_TEXT[order.status]}</StatusIndicator>)
 }
