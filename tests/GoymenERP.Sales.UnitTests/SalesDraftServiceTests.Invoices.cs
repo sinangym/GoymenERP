@@ -82,6 +82,22 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_shipped_uninvoiced_share_of_a_cancelled_order_is_invoiceable_EK43_pending()
+    {
+        // Sinan (relayed by the coordinator; EK43 pending): a cancelled order's shipped, uninvoiced dispatch note is invoiceable.
+        var invoicing = await InvoiceWorld.CreateAsync();
+        Owners(invoicing.World);
+        var token = (await invoicing.World.Service().GetCancellationImpactAsync(invoicing.Order.Draft.Id)).ImpactToken;
+        await invoicing.World.Service().CancelDraftAsync(invoicing.Order.Draft.Id,
+            new SalesDraftCancelRequest("6", "neden", token), Metadata("k-invoice-cancel"));
+
+        var created = await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-cancelled"));
+
+        Assert.Equal("18.76", created.Invoice.Totals.PayableAmount);
+        Assert.Single(invoicing.Invoices.Stored);
+    }
+
+    [Fact]
     public async Task A_withholding_line_waits_for_the_threshold_decision_and_its_code_never_a_guessed_rule()
     {
         var invoicing = await InvoiceWorld.CreateAsync(withholding: true);

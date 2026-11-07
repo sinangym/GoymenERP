@@ -80,7 +80,6 @@ public static class SalesInvoiceReasonCodesV1
     public const string ShareNotInvoiceable = "share_not_invoiceable";
     public const string ShareAlreadyInvoiced = "share_already_invoiced";
     public const string CustomerMismatch = "customer_mismatch";
-    public const string OrderCancelled = "order_cancelled";
     public const string OrderNotApproved = "order_not_approved";
     public const string OrderAwaitingReapproval = "order_awaiting_reapproval";
     public const string OrderAwaitingCustomerAcceptance = "order_awaiting_customer_acceptance";
