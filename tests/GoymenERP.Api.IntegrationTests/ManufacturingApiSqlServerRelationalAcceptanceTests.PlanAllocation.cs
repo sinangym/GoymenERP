@@ -130,7 +130,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             new ApprovePlanRequestV1(1), "approve-short");
         Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
         Assert.Equal(InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock, (await Problem(refused)).Code);
-        var stored = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{second.PlanId}"))!;
+        var stored = (await approver.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{second.PlanId}"))!;
         Assert.Equal(("Draft", 1L), (stored.Status, stored.Version));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Allocations WHERE DemandId = @plan", ("@plan", second.PlanId)));
