@@ -63,3 +63,39 @@ internal sealed class WorkOutboxRow : IWorkTenantRow
     public string CorrelationId { get; set; } = string.Empty;
     public string? CausationId { get; set; }
 }
+
+internal sealed class WorkExternalEventHighWaterRow : IWorkTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string ConsumerName { get; set; } = string.Empty;
+    public string EventType { get; set; } = string.Empty;
+    public string AggregateType { get; set; } = string.Empty;
+    public Guid AggregateId { get; set; }
+    public long InitialSequence { get; set; }
+    public long? HighestCompletedSequence { get; set; }
+    public long Version { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal sealed class WorkExternalEventInboxRow : IWorkTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string ConsumerName { get; set; } = string.Empty;
+    public Guid MessageId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public int SchemaVersion { get; set; }
+    public string SourceOperation { get; set; } = string.Empty;
+    public string AggregateType { get; set; } = string.Empty;
+    public Guid AggregateId { get; set; }
+    public long AggregateVersion { get; set; }
+    public long Sequence { get; set; }
+    public string PayloadJson { get; set; } = string.Empty;
+    public string PayloadSha256 { get; set; } = string.Empty;
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+    public DateTimeOffset ReceivedAtUtc { get; set; }
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}
