@@ -46,10 +46,14 @@ export const MAX_DEPTH = 64
 /** TR + 2 check digits + 22 digits, optionally grouped by single spaces. */
 const TR_IBAN = /TR\s?\d{2}(?:\s?\d){22}/gi
 const EMAIL = /[^\s@"'<>()[\],;:]+@[^\s@"'<>()[\],;:]+\.[^\s@"'<>()[\],;:]+/g
-/** A TR phone number with its leading 0 or +90: area/operator code 2xx–5xx, then 3+2+2 digits, optionally separated. */
-const TR_PHONE = /(?<![\w+])(?:\+90|0)[\s.-]?\(?[2-5]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?!\d)/g
-/** An 11-digit TCKN-shaped number standing alone. */
-const TCKN = /(?<!\d)[1-9]\d{10}(?!\d)/g
+/**
+ * A TR phone number with its leading 0 or +90: area/operator code 2xx–5xx, then 3+2+2 digits, optionally separated by
+ * spaces or hyphens. A dot is not a separator and a match may not touch a decimal point, so an exchange rate stored as
+ * text (`"0.3456789012"`) or an amount stays visible.
+ */
+const TR_PHONE = /(?<![\w+.,])(?:\+90|0)[\s-]?\(?[2-5]\d{2}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}(?!\d|[.,]\d)/g
+/** An 11-digit TCKN-shaped number standing alone: not part of a decimal, a longer word, or a hyphenated id/GUID. */
+const TCKN = /(?<![\w.,-])[1-9]\d{10}(?![\w-]|[.,]\d)/g
 
 type KeyRule = 'last-four' | 'full' | null
 

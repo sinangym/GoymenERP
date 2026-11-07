@@ -120,6 +120,14 @@ describe('audit payload masking (Decision No 135)', () => {
     expect(masked).toContain('qty')
   })
 
+  it('keeps exchange rates, decimal amounts and GUIDs visible (K3 review 2/2 re-review P2)', () => {
+    for (const text of ['0.3456789012', '0,3456789012', '12345678901.50', '1.2345678901', 'id 3f2a9c1e-0b7d-4e21-9a3c-512345678901']) {
+      expect(maskFreeText(text), text).toBe(text)
+    }
+    expect(maskAuditJson('{"sellingRate":"0.3456789012"}')).toBe('{\n  "sellingRate": "0.3456789012"\n}')
+    expect(maskFreeText('Tel 0532-111-22-33.')).toBe(`Tel ${MASK}.`)
+  })
+
   it('does not show a payload nested deeper than the limit instead of exhausting the stack', () => {
     expect(maskAuditJson('['.repeat(MAX_DEPTH) + ']'.repeat(MAX_DEPTH))).not.toBeNull()
     expect(maskAuditJson('['.repeat(MAX_DEPTH + 1) + ']'.repeat(MAX_DEPTH + 1))).toBeNull()
