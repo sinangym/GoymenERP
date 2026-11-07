@@ -55,6 +55,12 @@ export const SALES_CANCEL_CAPABILITY = 'sales.orders.cancel' as const
 export const SALES_FORCE_CLOSE_CAPABILITY = 'sales.orders.force-close' as const
 
 /**
+ * SAT-D32 / SAT-D168: the user-closure CONTROL on S-04 ("Siparişi kapat") for a "kapanmaya hazır" order. The shell publishes
+ * it only to an actor holding `sales.orders.close` beside the read; cancel and force-close never confer it.
+ */
+export const SALES_CLOSE_CAPABILITY = 'sales.orders.close' as const
+
+/**
  * DEC-SAL-002: the quantity-revision CONTROL on S-04 ("Revizyon oluştur"). The shell publishes it only to an actor holding
  * `sales.orders.quantity.write` beside the read; create, approve, price, schedule and cancel never confer it.
  */
@@ -81,6 +87,7 @@ export type SalesCapabilityId =
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
   | typeof SALES_FORCE_CLOSE_CAPABILITY
+  | typeof SALES_CLOSE_CAPABILITY
   | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY

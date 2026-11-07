@@ -79,6 +79,9 @@ public static class SalesDraftCommands
     /// <summary>No 30 / SAT-D12: POST /api/v1/sales/drafts/{id}/force-close — an approved order's lifecycle Draft → Closed after its impact preview.</summary>
     public const string ForceCloseV1 = "sales.order-draft.force-close.v1";
 
+    /// <summary>SAT-D32: POST /api/v1/sales/drafts/{id}/close — a "kapanmaya hazır" order's lifecycle Draft → Closed on the user's action (no reason).</summary>
+    public const string CloseV1 = "sales.order-draft.close.v1";
+
     /// <summary>SAT-D30 / SAT-D213: POST /api/v1/sales/drafts/{id}/over-delivery-approval — one line's approval-band over-delivery approved at its shipped total.</summary>
     public const string ApproveOverDeliveryV1 = "sales.order-draft.approve-over-delivery.v1";
 
@@ -294,6 +297,19 @@ public interface ISalesOrderDraftStore
         Func<SalesOrderDraft, CancellationToken, Task<SalesForceClosurePlan>> beforeWrite, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// SAT-D32: the user closure of a "kapanmaya hazır" order, one save — the force-closure's key rules and shape.
+    /// <paramref name="beforeWrite"/> receives the draft as read (tracked header) and is the caller's last word before the
+    /// mutation — its fences, the domain's own preconditions and the readiness recomputed from the owners; any refusal it throws
+    /// leaves nothing written. <paramref name="mutate"/> is the domain's <c>CloseByUser</c>. The store APPENDS the user-closure
+    /// row (who, when, the revision, the version produced) and moves the header's lifecycle state and version together with the
+    /// attempt record and the audit event — or nothing at all. No line, revision, schedule or approval column changes. The
+    /// command name must be <see cref="SalesDraftCommands.CloseV1"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> CloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, UserClosureFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// SAT-D30 / SAT-D213: one line's over-delivery approval, one save — the force-closure's key rules and shape (§3/§4/§7/§8).
     /// <paramref name="beforeWrite"/> receives the draft as read (tracked header) and is the caller's last word before the
     /// mutation — its fences, the domain's own preconditions, the shipped total and its shippers read afresh from the delivery
@@ -484,6 +500,14 @@ public static class SalesDraftRequestHash
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(
             new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.ImpactToken }, SalesDraftJson.Options));
+    }
+
+    /// <summary>SAT-D32: the canonical content of a user closure (command, draft, version).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftCloseRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion }, SalesDraftJson.Options));
     }
 
     /// <summary>No 30: the canonical content of a force-close (command, draft, version, reason as sent, the preview token).</summary>

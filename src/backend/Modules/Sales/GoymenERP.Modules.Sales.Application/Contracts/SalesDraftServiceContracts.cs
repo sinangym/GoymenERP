@@ -174,6 +174,14 @@ public static class SalesDraftProblemCodesV1
     public const string ForceCloseImpactChanged = "sales_force_close_impact_changed";
 
     /// <summary>
+    /// 409 (SAT-D32, contract delta): the order is not "kapanmaya hazır" — the status read's <c>readyToClose</c>, recomputed
+    /// inside the save from the same calculation, is false (an axis is incomplete, NoSource, Unreadable or PolicyUnavailable).
+    /// While the source, invoicing and financial-closure owners do not exist on main this is every user closure's answer.
+    /// Terminal for the key (recorded, replayed): once the order is ready the user closes with a new key.
+    /// </summary>
+    public const string OrderNotReadyToClose = "sales_order_not_ready_to_close";
+
+    /// <summary>
     /// 409 (SAT-D30): the line is not an over-delivery awaiting approval under the Settings tolerance (nothing shipped above the
     /// measured quantity, within or in the warn band, already covered by an approval, or a revision awaits re-approval). Terminal
     /// for the key (recorded, replayed).
@@ -312,5 +320,7 @@ public sealed record SalesDraftServiceBindings(
     string? SalesOwnerEligibilityPermission = SalesPermissionManifestV1.DraftsCreate,
     // API-41 / API-42: the Sales reports' own read name (a report's amount additionally needs the price read).
     string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead,
+    // SAT-D32 / SAT-D168: the user closure's own name (a grant, never implied here).
+    string? ClosePermission = SalesPermissionManifestV1.OrdersClose,
     // SAT-D30 / SAT-D168: the approval-band over-delivery approval name (a grant, never implied here).
     string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove);

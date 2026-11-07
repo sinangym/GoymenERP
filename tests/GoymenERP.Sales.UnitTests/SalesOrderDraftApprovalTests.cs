@@ -161,9 +161,10 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads); No 30: so is the force-close
         // (RequireForceClosable only reads).
         // SAT-D2 / API-12: so is the discount exception approval. API-04: so is the header revision (RequireHeaderRevisable only reads).
+        // SAT-D32: so is the user closure (RequireUserClosable only reads).
         // SAT-D30: so is the over-delivery approval (RequireOverDeliveryApprovable only reads); IsOverDeliveryApproved is a query.
         Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApproveOverDelivery", "ApprovePriceFloorExceptions", "ApproveRemainderChange",
-            "Cancel", "ForceClose",
+            "Cancel", "CloseByUser", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected is a read in the population (a query).
             "IsCustomerRejected", "IsOverDeliveryApproved", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader", "ReviseQuantities", "Submit", "Withdraw"], entries);

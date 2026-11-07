@@ -128,6 +128,14 @@ public interface ISalesDraftService
     Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // SAT-D32 / SAT-D168 / SAT-D215 — the user closure of a "kapanmaya hazır" order under `sales.orders.close` (no reason; the
+    // status read's readiness recomputed inside the save, 409 when not ready), and the read of the recorded user closure
+    // (`sales.drafts.read`).
+    Task<SalesOrderDraftResponse> CloseDraftAsync(Guid draftId, SalesDraftCloseRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// SAT-D30 / SAT-D213 / SAT-D216: POST …/{id}/over-delivery-approval — one line's approval-band over-delivery approved at the
     /// shipped total the user saw, under <c>sales.orders.over-delivery.approve</c>; the shipper never approves (fail-closed when

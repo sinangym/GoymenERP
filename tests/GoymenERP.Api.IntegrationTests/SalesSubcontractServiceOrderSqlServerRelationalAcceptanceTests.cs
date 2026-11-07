@@ -237,7 +237,8 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
             Assert.True(index > 0);
-            // SAT-D30: later migrations (AddDraftOverDeliveryApprovals) roll back first over their empty tables.
+            // SAT-D32 / SAT-D30: the later migrations (AddDraftUserClosures, AddDraftOverDeliveryApprovals) roll back freely here (no user
+            // closure and no over-delivery approval exists), down to this migration.
             var migrator = context.GetService<IMigrator>();
             await migrator.MigrateAsync(applied[index]);
             Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());

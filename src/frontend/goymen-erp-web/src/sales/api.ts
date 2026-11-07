@@ -52,6 +52,7 @@ import {
   decodeCancellationImpact,
   decodeForceCloseImpact,
   decodeForceClosure,
+  decodeUserClosure,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftPriceFloorExceptionApprovalPath,
@@ -64,6 +65,7 @@ import {
   salesDraftCancellationPath,
   salesDraftForceCloseImpactPath,
   salesDraftForceClosePath,
+  salesDraftUserClosePath,
   salesDraftOverDeliveryApprovalPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
@@ -87,9 +89,11 @@ import {
   type CancellationRead,
   type DraftCancelRequest,
   type DraftForceCloseRequest,
+  type DraftCloseRequest,
   type DraftOverDeliveryApprovalRequest,
   type ForceCloseImpact,
   type ForceClosureRead,
+  type UserClosureRead,
   type DraftDetail,
   type DraftDetailWithParty,
   type DraftMutation,
@@ -474,6 +478,19 @@ export async function fetchDraftForceClosure(
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const read = decodeForceClosure(raw.body)
+  return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
+}
+
+/** SAT-D32: the recorded user closure of `draftId` (or null), under the draft read. */
+export async function fetchDraftUserClosure(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<UserClosureRead>> {
+  const raw = await request(salesDraftUserClosePath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const read = decodeUserClosure(raw.body)
   return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
 }
 
@@ -1116,6 +1133,50 @@ export async function sendDraftForceClose(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftForceClosePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D32 / SAT-D215: the user closure of a "kapanmaya hazır" order — the force-close's keyed-attempt and strict response
+ * rules, without a reason or a token. Success is the draft after the change, of this draft and this company, with the replay
+ * header and `isReplay` agreeing. The server recomputes the readiness; a not-ready order is its 409.
+ */
+export async function sendDraftClose(
+  payload: DraftCloseRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftUserClosePath(context.draftId),
     {
       method: 'POST',
       headers: {

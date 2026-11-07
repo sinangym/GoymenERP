@@ -14,6 +14,7 @@
     "migrations",
     "documents",
     "durableStores",
+    "sourceSurface",
     "assertions"
   ],
   "properties": {
@@ -40,7 +41,7 @@
           "const": 18
         },
         "migrations": {
-          "const": 130
+          "const": 131
         },
         "durableStores": {
           "const": 24
@@ -78,8 +79,8 @@
     },
     "migrations": {
       "type": "array",
-      "minItems": 130,
-      "maxItems": 130,
+      "minItems": 131,
+      "maxItems": 131,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -313,6 +314,39 @@
               }
             }
           }
+        }
+      }
+    },
+    "sourceSurface": {
+      "description": "Non-blocking post-hoc evidence (recovery pin Faz 1): the full src/backend and build-control byte digest and the narrow risky-surface digest at the exact commit. Only the narrow risky-surface digest is pinned by the generator; fileCount/sha256 are never compared with a pinned constant and are not a merge block.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileCount",
+        "sha256",
+        "riskyFileCount",
+        "riskySha256",
+        "blocking"
+      ],
+      "properties": {
+        "fileCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "riskyFileCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "riskySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "blocking": {
+          "const": false
         }
       }
     },

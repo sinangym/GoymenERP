@@ -436,6 +436,7 @@ public static partial class SalesEndpoints
         MapForceCloseCommand(drafts);
         MapOverDeliveryApproval(drafts);
         MapForceClosure(drafts);
+        MapUserClosureEndpoints(drafts);
         MapRemainderChanges(drafts);
         MapRemainderChangeCommand(drafts);
         MapRemainderDecisionCommand(drafts, "approval", "ApproveSalesOrderDraftRemainderChangeV1", allowReason: false,

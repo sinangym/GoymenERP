@@ -1702,6 +1702,7 @@ public sealed partial class SalesStore(
         var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
         var cancellations = await dbContext.DraftCancellations.AsNoTracking().Where(cancellation => ids.Contains(cancellation.DraftId)).ToListAsync(cancellationToken);
         var forceClosures = await dbContext.DraftForceClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
+        var userClosures = await dbContext.DraftUserClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         var remainderChanges = await dbContext.DraftRemainderChanges.AsNoTracking().Where(change => ids.Contains(change.DraftId)).ToListAsync(cancellationToken);
         var remainderDecisions = await dbContext.DraftRemainderDecisions.AsNoTracking().Where(decision => ids.Contains(decision.DraftId)).ToListAsync(cancellationToken);
         var customerRejections = await dbContext.DraftCustomerRejections.AsNoTracking().Where(rejection => ids.Contains(rejection.DraftId)).ToListAsync(cancellationToken);
@@ -1819,11 +1820,15 @@ public sealed partial class SalesStore(
             // No 30 / SAT-D12: the same for the recorded force-closure — a closed header without its row, or a row beside any
             // other lifecycle state, is refused, not repaired.
             var forceClosure = forceClosures.SingleOrDefault(candidate => candidate.DraftId == row.Id);
+            // SAT-D32: a closed header carries EXACTLY ONE closure record — the force-closure's or the user closure's — never
+            // none and never both; a closure row beside any other lifecycle state is refused, not repaired.
+            var userClosure = userClosures.SingleOrDefault(candidate => candidate.DraftId == row.Id);
             if ((row.State == (int)SalesDraftState.Cancelled) != (cancellation is not null)
-                || (row.State == (int)SalesDraftState.Closed) != (forceClosure is not null)
+                || (row.State == (int)SalesDraftState.Closed) != (forceClosure is not null || userClosure is not null)
+                || (forceClosure is not null && userClosure is not null)
                 || row.State is not ((int)SalesDraftState.Draft or (int)SalesDraftState.Cancelled or (int)SalesDraftState.Closed))
             {
-                throw new InvalidOperationException("Kayıtlı yaşam döngüsü durumu ile iptal ya da zorla kapatma kaydı uyuşmuyor.");
+                throw new InvalidOperationException("Kayıtlı yaşam döngüsü durumu ile iptal, zorla kapatma ya da kullanıcı kapatması kaydı uyuşmuyor.");
             }
 
             if (cancellation is not null)
@@ -1836,6 +1841,12 @@ public sealed partial class SalesStore(
             {
                 draft.RestoreForceClosure(new ForceClosureFacts(forceClosure.Revision, forceClosure.ClosedBy, forceClosure.ClosedAtUtc,
                     forceClosure.Reason, ForceClosureImpact(forceClosure), ForceClosureLines(forceClosure)));
+            }
+
+            if (userClosure is not null)
+            {
+                // SAT-D32: the recorded user closure, BEFORE the approval axis (its version floor counts the closed lifecycle once).
+                draft.RestoreUserClosure(new UserClosureFacts(userClosure.Revision, userClosure.ClosedBy, userClosure.ClosedAtUtc));
             }
 
             draft.RestoreCustomerAcceptance(row.CustomerAcceptedRevision is null
@@ -2042,6 +2053,7 @@ public sealed partial class SalesStore(
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
+            or SalesDraftCommands.CloseV1
             or SalesDraftCommands.ApproveOverDeliveryV1
             or SalesDraftCommands.ReviseQuantityV1 or SalesDraftCommands.ReviseHeaderV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1

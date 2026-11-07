@@ -213,6 +213,8 @@ public sealed class SalesPersistenceModelTests
     [InlineData("draft-to-unknown-state")]
     [InlineData("edit-force-closure")]
     [InlineData("delete-force-closure")]
+    [InlineData("edit-user-closure")]
+    [InlineData("delete-user-closure")]
     [InlineData("edit-over-delivery-approval")]
     [InlineData("delete-over-delivery-approval")]
     [InlineData("unclose-draft")]
@@ -311,6 +313,13 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "delete-force-closure":
                 context.DraftForceClosures.Remove(Attach(context, ForceClosure()));
+                break;
+            // SAT-D32: a recorded user closure is append-only too (no column may change, no row may go).
+            case "edit-user-closure":
+                Attach(context, UserClosure()).ClosedBy = "another-closer";
+                break;
+            case "delete-user-closure":
+                context.DraftUserClosures.Remove(Attach(context, UserClosure()));
                 break;
             // SAT-D30 / SAT-D213: a recorded over-delivery approval is append-only.
             case "edit-over-delivery-approval":
@@ -659,6 +668,54 @@ public sealed class SalesPersistenceModelTests
         var restored = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(down[3]);
         Assert.Equal("[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)", restored.Sql);
     }
+
+    /// <summary>
+    /// SAT-D32: the user-closure table — keyed by (company, draft), bound to the draft, no reason and no remainder column; the
+    /// header's state reuses Closed (3), so CK_Drafts_State does not change.
+    /// </summary>
+    [Fact]
+    public void The_user_closure_table_is_keyed_by_the_draft_bound_to_it_and_carries_no_reason_or_remainder()
+    {
+        using var context = Context();
+        var closures = context.Model.FindEntityType(typeof(DraftUserClosureRow))!;
+        Assert.Equal(["CompanyId", "DraftId"], closures.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(("DraftUserClosures", "sales"), (closures.GetTableName(), closures.GetSchema()));
+        var foreignKey = Assert.Single(closures.GetForeignKeys());
+        Assert.Equal(typeof(DraftRow), foreignKey.PrincipalEntityType.ClrType);
+        Assert.Equal(["CompanyId", "Id"], foreignKey.PrincipalKey.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
+        Assert.Equal(["ClosedAtUtc", "ClosedBy", "CompanyId", "CorrelationId", "DraftId", "DraftVersion", "Revision"],
+            closures.GetProperties().Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal((128, 128), (closures.FindProperty(nameof(DraftUserClosureRow.ClosedBy))!.GetMaxLength(),
+            closures.FindProperty(nameof(DraftUserClosureRow.CorrelationId))!.GetMaxLength()));
+        Assert.NotEmpty(closures.GetDeclaredQueryFilters());
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var constraint = Assert.Single(design.FindEntityType(typeof(DraftUserClosureRow))!.GetCheckConstraints());
+        Assert.Equal(("CK_DraftUserClosures_Identity", SalesDbContext.UserClosureIdentityConstraint), (constraint.Name, constraint.Sql));
+        Assert.Contains("[DraftVersion] >= 5", constraint.Sql, StringComparison.Ordinal);
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
+            design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(item => item.Name == "CK_Drafts_State").Sql);
+    }
+
+    /// <summary>SAT-D32: the user-closure rollback refuses with Sales' own 51212 BEFORE the table is dropped (forward fix).</summary>
+    [Fact]
+    public void The_user_closure_migration_down_refuses_with_51212_before_it_drops_anything()
+    {
+        var down = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftUserClosures().DownOperations;
+        Assert.Equal(2, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftUserClosures])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[CommandName] = N'sales.order-draft.close.v1' AND [Outcome] = 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51212,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[1]);
+        Assert.Equal(("sales", "DraftUserClosures"), (drop.Schema, drop.Name));
+    }
+
+    private static DraftUserClosureRow UserClosure() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, ClosedBy = "synthetic-closer", ClosedAtUtc = At,
+        DraftVersion = 5, CorrelationId = "synthetic-correlation",
+    };
 
     /// <summary>
     /// SAT-D30 / SAT-D213: the over-delivery approval table — numbered per line under (company, draft, line, number), one row per

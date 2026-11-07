@@ -437,3 +437,19 @@ internal sealed class DraftForceClosureRow : ISalesTenantRow
     public string LinesJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// SAT-D32: the recorded USER closure of a "kapanmaya hazır" order (append-only, at most one per draft): the revision closed,
+/// who, when and the draft version it produced. No reason (SAT-D215) and no remainder. Never modified, never deleted; the
+/// draft's other rows stay as they were. A draft carries this row OR a force-closure row, never both (the store's restore).
+/// </summary>
+internal sealed class DraftUserClosureRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string ClosedBy { get; set; } = string.Empty;
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
