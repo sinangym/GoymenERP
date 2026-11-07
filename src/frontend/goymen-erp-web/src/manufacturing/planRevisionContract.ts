@@ -14,9 +14,11 @@
 
 import {
   decodeCutToLengthSpec,
+  decodePlanProcessSpec,
   decodeTechnicalSnapshot,
   type CapturedPlanTechnicalSnapshot,
   type CutToLengthSpecView,
+  type PlanProcessSpecView,
 } from './contract'
 
 export interface PlanRevisionInput {
@@ -50,6 +52,8 @@ export interface PlanRevision {
   readonly cutToLengthSpec: CutToLengthSpecView | null
   /** Üretim U2-a: the plan-entered line speed this revision set (server decimal text); null when none or legacy JSON. */
   readonly lineSpeedMetresPerMinute: string | null
+  /** Üretim U2-b1: the plan-entered process spec this revision set; null when none or older JSON. */
+  readonly processSpec: PlanProcessSpecView | null
 }
 
 export interface PlanRevisionList {
@@ -70,7 +74,8 @@ const LEGACY_REVISION_KEYS = [
 ] as const
 /** The current wire always emits the additive cut spec member, explicit null included; old stored JSON omits it. */
 /** Üretim U2-a: the current wire also emits the plan-entered line speed, explicit null included. */
-const REVISION_KEYS = [...LEGACY_REVISION_KEYS, 'cutToLengthSpec', 'lineSpeedMetresPerMinute'] as const
+/** Üretim U2-b1: and the plan-entered process spec, explicit null included. */
+const REVISION_KEYS = [...LEGACY_REVISION_KEYS, 'cutToLengthSpec', 'lineSpeedMetresPerMinute', 'processSpec'] as const
 const LINE_SPEED = /^(0|[1-9]\d*)(\.\d*[1-9])?$/
 const LEGACY_INPUT_KEYS = ['parentRollId', 'plannedKg', 'expectedLabelVersion'] as const
 const COMMERCIAL_INPUT_KEYS = [...LEGACY_INPUT_KEYS, 'commercialContext'] as const
@@ -169,6 +174,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
       && value.lineSpeedMetresPerMinute !== '0'
       ? value.lineSpeedMetresPerMinute
       : undefined
+  const processSpec = decodePlanProcessSpec(value.processSpec)
   const revision = wholeNumber(value.revision, 0)
   const planVersion = wholeNumber(value.planVersion, 1)
   const workCenterId = nonNilGuid(value.workCenterId)
@@ -184,6 +190,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
     target === undefined ||
     cutToLengthSpec === undefined ||
     lineSpeedMetresPerMinute === undefined ||
+    processSpec === undefined ||
     recordedAtUtc === null ||
     !Array.isArray(value.inputs) ||
     value.inputs.length === 0
@@ -220,6 +227,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
     recordedAtUtc,
     cutToLengthSpec,
     lineSpeedMetresPerMinute,
+    processSpec,
   }
 }
 

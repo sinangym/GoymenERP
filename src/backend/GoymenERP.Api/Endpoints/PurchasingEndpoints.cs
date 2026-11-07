@@ -18,7 +18,8 @@ namespace GoymenERP.Api.Endpoints;
 /// (POST create → 201 + Location, GET list, GET detail, POST submission → 200, A1-1's POST approval / rejection
 /// → 200 under <c>purchasing.requests.approve</c>, and A1-1b's POST withdrawal → 200 under
 /// <c>purchasing.requests.withdraw</c>) and purchase orders (POST
-/// create → 201 + Location, GET list, GET detail, POST approval → 200). The route reads nothing but the
+/// create → 201 + Location, GET list, GET detail, POST approval → 200, and A1-3's GET cancel-impact / POST cancellation → 200
+/// under <c>purchasing.orders.cancel</c>). The route reads nothing but the
 /// server context and the wire body; <see cref="IPurchasingService"/> decides, with a fresh central
 /// measurement of the Purchasing permission at every fence (#276). The same attempt again answers the same
 /// status with the replay headers (ADR-011 §4); a recorded terminal refusal (409) replays with the same
@@ -281,6 +282,53 @@ public static class PurchasingEndpoints
                 PurchasingProblemCodesV1.RequestState, PurchasingProblemCodesV1.RequestLineOverSourced,
                 PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // A1-3 (plan API-10; No.161 §2): the cancellation's impact preview and the cancellation of the whole unaccepted remainder,
+        // both under purchasing.orders.cancel. The preview changes nothing; the command is one save with its audit.
+        group.MapGet("/{id:guid}/cancel-impact", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetOrderCancelImpactAsync(id, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetPurchaseOrderCancelImpactV1")
+            .Produces<PurchaseOrderCancelImpactView>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/cancellation", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadCancelOrder,
+                (body, metadata) => service.CancelOrderAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("CancelPurchaseOrderV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<CancelPurchaseOrderRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
+                PurchasingProblemCodesV1.OrderNothingToCancel, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
+                PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.OrderCancellationReasonRequired,
+                PurchasingProblemCodesV1.OrderCancellationReasonTooLong)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

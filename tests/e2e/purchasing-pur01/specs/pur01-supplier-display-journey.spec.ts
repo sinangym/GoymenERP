@@ -37,7 +37,8 @@ const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const LIST_HEADING = 'Satın alma siparişleri'
 const DETAIL_HEADING = 'Satın alma siparişi'
 const DETAIL_LINES_TABLE = 'Sipariş kalem miktarları'
-const DETAIL_LINE_LABELS = ['No', 'Ürün ID', 'Sipariş birimi ID', 'Sipariş', 'Teknik', 'Taahhüt', 'Kabul', 'Kalan']
+// A1-3 (No.161 §2): the cancelled share ('İptal') sits between the accepted share and the remaining future supply.
+const DETAIL_LINE_LABELS = ['No', 'Ürün ID', 'Sipariş birimi ID', 'Sipariş', 'Teknik', 'Taahhüt', 'Kabul', 'İptal', 'Kalan']
 
 /**
  * The legal name the gated fixture gives its Supplier: the suite's synthetic label followed by

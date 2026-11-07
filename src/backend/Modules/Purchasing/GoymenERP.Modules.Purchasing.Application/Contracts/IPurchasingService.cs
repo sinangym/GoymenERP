@@ -39,6 +39,16 @@ public interface IPurchasingService
     Task<PurchaseOrderResponse> ApproveOrderAsync(Guid orderId, ApprovePurchaseOrderRequest request, PurchasingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// A1-3 (plan API-10; No.161 §2): Approved → Cancelled under <c>purchasing.orders.cancel</c> — the whole unaccepted remainder of
+    /// every line, with a reason; accepted shares, lines and the request binding stay; nothing physical or financial is recorded.
+    /// </summary>
+    Task<PurchaseOrderResponse> CancelOrderAsync(Guid orderId, CancelPurchaseOrderRequest request, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>A1-3 (plan API-10): the cancellation's impact preview under <c>purchasing.orders.cancel</c>; reads only.</summary>
+    Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default);
+
     Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default);
 
     Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default);

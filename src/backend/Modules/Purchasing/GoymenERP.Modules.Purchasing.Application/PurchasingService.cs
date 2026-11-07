@@ -932,9 +932,15 @@ public sealed partial class PurchasingService(
         new(OrderSummary(stored),
             [.. stored.Order.Lines.Select((line, index) => new PurchaseOrderLineView(line.Id, index + 1, line.Kind.ToString(), line.ParentLineId,
                 line.SourceRequestLineId, line.ProductId, VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity),
-                Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity)))])
+                Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity))
+            {
+                Cancelled = Text(line.CancelledQuantity),
+            })])
         {
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
+            Cancellation = stored.Order.Cancellation is { } cancellation
+                ? new PurchaseOrderCancellationView(cancellation.CancelledBy, cancellation.CancelledAtUtc, cancellation.Reason)
+                : null,
         };
 }

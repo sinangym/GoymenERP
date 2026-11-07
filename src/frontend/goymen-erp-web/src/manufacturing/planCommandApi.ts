@@ -6,7 +6,14 @@
  * same frozen attempt may be sent again and the server decides whether it is a replay.
  */
 
-import { decodeOrder, decodePlan, type ProductionOrderView, type ProductionPlanView } from './contract'
+import {
+  decodeOrder,
+  decodePlan,
+  decodePlanProcessSpec,
+  type PlanProcessSpecView,
+  type ProductionOrderView,
+  type ProductionPlanView,
+} from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
@@ -161,6 +168,28 @@ function sameCutToLengthSpec(
   })
 }
 
+const PROCESS_SPEC_MEASURES = ['pieceLengthMm', 'unitKg', 'perimeterMm', 'targetThicknessMm'] as const
+const PROCESS_SPEC_EXACT = ['packageCount', 'piecesPerPackage', 'paintDescription', 'paintColorCode'] as const
+
+/** U2-b1: the stored process spec equals the one sent (measures compared canonically); absent on both sides is equal. */
+export function sameProcessSpec(stored: PlanProcessSpecView | null, sent: PlanProcessSpecView | undefined): boolean {
+  if (sent === undefined || stored === null) return sent === undefined && stored === null
+  return (
+    PROCESS_SPEC_EXACT.every((key) => stored[key] === sent[key]) &&
+    PROCESS_SPEC_MEASURES.every((key) => {
+      const left = stored[key]
+      const right = sent[key]
+      return left === null || right === null ? left === right : left === canonicalKilograms(right)
+    })
+  )
+}
+
+/** U2-a: the stored line speed equals the one sent (canonically); absent on both sides is equal. */
+export function sameLineSpeed(stored: string | null, sent: string | undefined): boolean {
+  if (sent === undefined || stored === null) return sent === undefined && stored === null
+  return stored === canonicalKilograms(sent)
+}
+
 function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, companyId: string): boolean {
   return (
     plan.planId === request.planId &&
@@ -272,6 +301,16 @@ export interface RevisePlanRequest {
    * has them always sends them.
    */
   readonly cutToLengthSpec?: CutToLengthSpecRequest
+  /**
+   * U2-a: the plan's stored line speed, carried unchanged by an edit of other fields. Omitted when the plan has none;
+   * the server reads an omitted member as null and would clear it.
+   */
+  readonly lineSpeedMetresPerMinute?: string
+  /**
+   * U2-b1: the plan's stored process spec (all eight members, absent values null), carried unchanged by an edit of other
+   * fields. Omitted when the plan has none; the server reads an omitted member as null and would clear it.
+   */
+  readonly processSpec?: PlanProcessSpecView
 }
 
 export type PlanLifecycleSnapshot =
@@ -409,7 +448,8 @@ function validCutLines(value: unknown): boolean {
 /** Exactly a `RevisePlanRequest` the edit form sends; a cut definition, when present, is never null or empty. */
 function validReviseRequest(value: unknown): boolean {
   if (!isRecord(value)
-    || !hasKeys(value, ['expectedVersion', 'workCenterId', 'inputs', 'target', 'reason'], ['cutToLengthSpec'])) return false
+    || !hasKeys(value, ['expectedVersion', 'workCenterId', 'inputs', 'target', 'reason'],
+      ['cutToLengthSpec', 'lineSpeedMetresPerMinute', 'processSpec'])) return false
   const { expectedVersion, workCenterId, inputs, target, reason } = value
   if (typeof expectedVersion !== 'number' || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return false
   if (!guid(workCenterId) || !Array.isArray(inputs) || inputs.length === 0) return false
@@ -428,6 +468,11 @@ function validReviseRequest(value: unknown): boolean {
   if (target !== null && (!isRecord(target) || !hasKeys(target, ['basis', 'kg'])
     || (target.basis !== 'InputMass' && target.basis !== 'GoodOutputMass') || !positiveKg(target.kg))) return false
   if (typeof reason !== 'string' || reason.length === 0 || reason.length > 256 || reason.trim() !== reason) return false
+  if (Object.hasOwn(value, 'lineSpeedMetresPerMinute') && !positiveKg(value.lineSpeedMetresPerMinute)) return false
+  if (Object.hasOwn(value, 'processSpec')) {
+    const spec = decodePlanProcessSpec(value.processSpec)
+    if (spec === null || spec === undefined) return false
+  }
   return !Object.hasOwn(value, 'cutToLengthSpec') || validCutLines(value.cutToLengthSpec)
 }
 
@@ -809,7 +854,9 @@ export async function revisePlan(
     plan.workCenterId !== request.workCenterId ||
     !sameInputs(plan, request) ||
     !sameTarget(plan, request) ||
-    !sameCutToLengthSpec(plan, request)
+    !sameCutToLengthSpec(plan, request) ||
+    !sameLineSpeed(plan.lineSpeedMetresPerMinute, request.lineSpeedMetresPerMinute) ||
+    !sameProcessSpec(plan.processSpec, request.processSpec)
   ) {
     return { type: 'unknown', reason: 'undecodable' }
   }

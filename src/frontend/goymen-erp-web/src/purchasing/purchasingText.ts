@@ -6,7 +6,8 @@
 
 import type { PurchaseOrderStatus, PurchaseRequestStatus, PurchaseRequestSummarySourceKind } from './contract'
 
-export const PURCHASE_ORDER_STATUS_LABEL: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı' }
+/** A1-3 (No.161 §2): Cancelled is an approved order whose unaccepted remainder was cancelled. */
+export const PURCHASE_ORDER_STATUS_LABEL: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı', Cancelled: 'Kalanı iptal edildi' }
 
 /** A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1); A1-1b: Withdrawn (ALS-D46). */
 export const PURCHASE_REQUEST_STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
@@ -220,6 +221,52 @@ export const REQUEST_WITHDRAWAL_TEXT = {
   withdrawalFacts: 'Geri çekme',
   reasonFacts: 'Geri çekme gerekçesi',
 } as const
+
+/** A1-3 (plan API-10/UI-05; No.161 §2): the order remainder cancellation control's user texts. */
+export const ORDER_CANCELLATION_TEXT = {
+  heading: 'Kabul edilmemiş kalanı iptal et',
+  note: 'Onaylı siparişin henüz kabul edilmemiş kalanının tamamı iptal edilir; kısmi kabul yapılmışsa kabul edilen miktar olduğu gibi kalır. Satır ya da miktar seçilmez. İptal yalnız beklenen arzı ve sipariş kalanını düşürür; stok, mal kabul veya para hareketi üretmez. Sipariş kaynağı olan talep bağı korunur.',
+  impactHeading: 'İptal etkisi',
+  impactCaption: 'İptal edilecek kalan, satır bazında',
+  impactLoading: 'İptal etkisi okunuyor…',
+  impactUnavailable: 'İptal etkisi okunamadı. Yeniden deneyin.',
+  impactRetry: 'Etkiyi yeniden oku',
+  impactStale: 'Sipariş, iptal etkisi okunduktan sonra değişti. Kaydı ve etkiyi yeniden okuyun.',
+  partialAcceptance: 'Bu siparişte kısmi kabul var; kabul edilen miktar iptal edilmez.',
+  lineNo: 'Satır',
+  committed: 'Taahhüt',
+  accepted: 'Kabul',
+  toCancel: 'İptal edilecek',
+  blocked: 'Bu sipariş iptal edilemez',
+  reasonLabel: 'İptal gerekçesi',
+  reasonHint: 'İptal için gerekçe zorunludur (en fazla 4000 karakter).',
+  reasonRequired: 'İptal gerekçesi boş olamaz.',
+  reasonTooLong: 'İptal gerekçesi 4000 karakteri aşamaz; kısaltın.',
+  cancel: 'Kalanı iptal et',
+  cancelling: 'İptal ediliyor…',
+  unknown: 'Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar, sürüm ve gerekçeyle yeniden gönderin.',
+  retry: 'Aynı iptali yeniden gönder',
+  cancelled: 'Siparişin kabul edilmemiş kalanı iptal edildi ve kayıt yeniden okundu.',
+  replayed: 'Önceki iptal yanıtı yeniden gösterildi.',
+  failed: 'İptal kaydedilmedi',
+  reread: 'Kayıt yeniden okundu.',
+  cancellationHeading: 'Kalan iptali',
+  cancelledBy: 'İptal eden',
+  cancelledAt: 'İptal zamanı (UTC)',
+  cancellationReason: 'İptal gerekçesi',
+} as const
+
+/** A1-3: known cancellation refusal and impact blocker codes in user words; an unknown code is shown as-is beside the generic text. */
+export const ORDER_CANCELLATION_PROBLEM_TEXT: Readonly<Record<string, string>> = {
+  version_conflict: 'Sipariş bu sırada değişti; güncel sürüm yeniden okundu.',
+  purchasing_order_state: 'Yalnız onaylı siparişin kalanı iptal edilir.',
+  purchasing_order_not_cancellable: 'Yalnız onaylı siparişin kalanı iptal edilir.',
+  purchasing_order_nothing_to_cancel: 'Siparişin tamamı kabul edilmiş; iptal edilecek kalan yok.',
+  purchasing_order_cancellation_reason_required: 'İptal gerekçesi zorunludur.',
+  purchasing_order_cancellation_reason_too_long: 'İptal gerekçesi 4000 karakteri aşamaz.',
+  concurrent_change: 'Sipariş aynı anda başka bir işlemle değişti; kayıt yeniden okundu.',
+  same_key_payload_mismatch: 'Aynı işlem anahtarı başka bir içerikle kullanıldı.',
+}
 
 /** Known withdrawal refusal codes in user words; an unknown code is shown as-is beside the generic text. */
 export const REQUEST_WITHDRAWAL_PROBLEM_TEXT: Readonly<Record<string, string>> = {

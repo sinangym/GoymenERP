@@ -67,6 +67,21 @@ public static class PurchasingRuleCodes
     public const string OrderNotDraft = "purchasing_order_not_draft";
     public const string OrderNotApproved = "purchasing_order_not_approved";
     public const string OrderWithoutLines = "purchasing_order_without_lines";
+
+    /// <summary>A1-3 (No.161 §2): only an APPROVED order's unaccepted remainder is cancelled (a Draft or an already cancelled order is not).</summary>
+    public const string OrderNotCancellable = "purchasing_order_not_cancellable";
+
+    /// <summary>A1-3 (fail-closed): every line is fully accepted; a cancellation that would cancel nothing is not recorded.</summary>
+    public const string OrderNothingToCancel = "purchasing_order_nothing_to_cancel";
+
+    /// <summary>A1-3 (No.161 §2): a cancellation needs a reason.</summary>
+    public const string OrderCancellationReasonRequired = "purchasing_order_cancellation_reason_required";
+
+    /// <summary>A1-3: a cancellation reason longer than the stored bound is refused, never cut.</summary>
+    public const string OrderCancellationReasonTooLong = "purchasing_order_cancellation_reason_too_long";
+
+    /// <summary>A1-3: the order's remainder was cancelled; no acceptance share or breakdown is added to it.</summary>
+    public const string OrderCancelled = "purchasing_order_cancelled";
     public const string DuplicateLineId = "purchasing_duplicate_line_id";
     public const string LineNotFound = "purchasing_line_not_found";
     public const string TechnicalLineNotBreakable = "purchasing_technical_line_not_breakable";
