@@ -14,6 +14,7 @@ import {
   buildLineRevisionRequest,
   emptyNewLine,
   lineRevisionFromDetail,
+  reinstatementWaits,
   rowOfServerField,
   type LineAction,
   type LineRevisionValues,
@@ -131,7 +132,7 @@ export function SalesDraftLineRevisionForm({
 
   function start() {
     setLocalError(null)
-    const built = buildLineRevisionRequest(detail.draft.version, values, products ?? [], priceWrite)
+    const built = buildLineRevisionRequest(detail.draft.version, values, products ?? [], priceWrite, reinstatementWaits(detail))
     if (!built.ok) {
       setLocalError(text.localError(built.row, built.problem))
       return
@@ -196,6 +197,7 @@ export function SalesDraftLineRevisionForm({
       <p className={styles.muted}>{text.description}</p>
       {detail.draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{text.approvedWarning}</p> : null}
       <p className={styles.muted}>{text.linkedWarning}</p>
+      {reinstatementWaits(detail) ? <p className={styles.notice} role="note" data-testid="sales-line-revision-reinstatement">{text.reinstatementNote}</p> : null}
       {subcontract ? <p className={styles.muted} data-testid="sales-line-revision-subcontract">{text.subcontractNote}</p> : null}
       <p className={styles.muted} data-testid="sales-line-revision-day">{text.revisionDay(revisionDay)}</p>
       {!stateAllowsRevision ? <p className={styles.muted}>{text.stateUnavailable}</p> : null}

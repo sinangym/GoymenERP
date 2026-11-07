@@ -13,6 +13,7 @@ using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -53,6 +54,7 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Rejected = new("sales.order-draft.rejected.v1", "Reject", "SENTETIK reddedildi");
     private static readonly SalesDraftStateAudit Accepted = new("sales.order-draft.customer-accepted.v1", "RecordCustomerAcceptance", "SENTETIK musteri kabul");
     private static readonly SalesDraftStateAudit CustomerRejected = new("sales.order-draft.customer-rejected.v1", "RecordCustomerRejection", "SENTETIK musteri ret");
+    private static readonly SalesDraftStateAudit QuantityRevised = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK miktar");
     private static readonly SalesDraftStateAudit Rescheduled = new("sales.order-draft.delivery-rescheduled.v1", "RescheduleDelivery", "SENTETIK termin");
 
     [SqlServerFact]
@@ -132,6 +134,16 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         {
             var row = await context.DraftLines.SingleAsync(line => line.DraftId == draft.Id && line.LineNo == 1);
             row.RemovedInRevision = null;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        }
+
+        // K3 review B P3-2: the way back needs ReinstatedInRevision == the revision the line was removed in (1); another value is refused.
+        foreach (var other in new[] { 0, 2, 5 })
+        {
+            await using var context = run.SalesContext(CompanyA);
+            var row = await context.DraftLines.SingleAsync(line => line.DraftId == draft.Id && line.LineNo == 1);
+            row.RemovedInRevision = null;
+            row.ReinstatedInRevision = other;
             await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         }
 
@@ -328,6 +340,51 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         Assert.Equal(1, stored.Lines.Single(line => line.Id == first.Id).ReinstatedInRevision);
         Assert.DoesNotContain(stored.ArchivedRevisions.Single(revision => revision.Revision == 1).Lines, line => line.LineId == first.Id);
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] IS NOT NULL", ("@id", draft.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_D211_a_quantity_revision_waits_for_the_reinstatement_after_a_customer_rejection_and_an_empty_line_revision_reinstates_on_real_sql()
+    {
+        // K3 review A P1-1 / P2-1: after a customer rejection of a removal, a quantity revision would write a quantity on a line the
+        // revert then drops and bring the removed line back unnamed; it is refused (nothing stored) until an empty line revision
+        // opens the next revision and reinstates.
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "x", customerAcceptance: true);
+        var first = draft.Lines[0];
+        await using var scope = run.SalesStore(CompanyA);
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("x-accept", "SENTETIK-sales"), Hash("x-accept"), SalesDraftCommands.RecordCustomerAcceptanceV1,
+            draft.Id, (d, now) => d.RecordCustomerAcceptance(d.Version, "SENTETIK-sales", now), Accepted);
+        await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope("x-remove"), Hash("x-remove"), SalesDraftCommands.ReviseLinesV1, draft.Id,
+            (d, now) => d.ReviseLines(d.Version, [], [new LineRemovalInput(first.Id)], "SENTETIK-reviser", "SENTETIK", now, Day), LinesRevised,
+            (_, _) => Task.CompletedTask);
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("x-submit-r1"), Hash("x-submit-r1"), SalesDraftCommands.SubmitV1, draft.Id,
+            (d, now) => d.Submit(d.Version, run.Actor, now), Submitted);
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("x-approve-r1", "SENTETIK-approver"), Hash("x-approve-r1"), SalesDraftCommands.ApproveV1, draft.Id,
+            (d, now) => d.Approve(d.Version, "SENTETIK-approver", now), Approved);
+        await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("x-customer-reject", "SENTETIK-sales"), Hash("x-customer-reject"),
+            SalesDraftCommands.RecordCustomerRejectionV1, draft.Id,
+            (d, now) => d.RecordCustomerRejection(d.Version, "SENTETIK-sales", "SENTETIK musteri istemedi", now), CustomerRejected);
+
+        var refused = await Assert.ThrowsAsync<SalesRuleException>(() => scope.Store.ReviseDraftQuantityAsync(run.SalesEnvelope("x-quantity-1"), Hash("x-quantity-1"),
+            SalesDraftCommands.ReviseQuantityV1, draft.Id, (d, now) => d.ReviseQuantities(d.Version,
+                [.. d.Lines.Select(line => new LineQuantityInput(line.Id, "9", 9m))], "SENTETIK-reviser", "SENTETIK", now), QuantityRevised,
+            (_, _) => Task.CompletedTask));
+        Assert.Equal(SalesRuleCodes.RevisionReinstatementPending, refused.Code);
+        Assert.Equal((1, 1, 0), (
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] = 1", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-quantity.v1'")));
+
+        // The empty line revision opens Rev.2 (Rev.1 archived as approved, without the line) and reinstates; the quantity revision follows.
+        await scope.Store.ReviseDraftLinesAsync(run.SalesEnvelope("x-reopen"), Hash("x-reopen"), SalesDraftCommands.ReviseLinesV1, draft.Id,
+            (d, now) => d.ReviseLines(d.Version, [], [], "SENTETIK-reviser", "SENTETIK yeniden ac", now, Day), LinesRevised, (_, _) => Task.CompletedTask);
+        var reopened = (await scope.Store.FindDraftAsync(draft.Id))!;
+        Assert.Equal((2, 2, 1), (reopened.Revision, reopened.Lines.Count, reopened.Lines.Single(line => line.Id == first.Id).ReinstatedInRevision!.Value));
+        Assert.DoesNotContain(reopened.ArchivedRevisions.Single(revision => revision.Revision == 1).Lines, line => line.LineId == first.Id);
+        await scope.Store.ReviseDraftQuantityAsync(run.SalesEnvelope("x-quantity-2"), Hash("x-quantity-2"), SalesDraftCommands.ReviseQuantityV1, draft.Id,
+            (d, now) => d.ReviseQuantities(d.Version, [.. d.Lines.Select(line => new LineQuantityInput(line.Id, "9", 9m))], "SENTETIK-reviser", "SENTETIK", now),
+            QuantityRevised, (_, _) => Task.CompletedTask);
+        Assert.All((await scope.Store.FindDraftAsync(draft.Id))!.Lines, line => Assert.Equal("9", line.QuantityText));
     }
 
     [SqlServerFact]

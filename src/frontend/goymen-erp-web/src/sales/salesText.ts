@@ -277,6 +277,16 @@ const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
   sales_discount_without_price: 'İskonto için birim fiyat gerekir.',
 }
 
+/**
+ * SAT-D211 (EK36): a quantity, price or header revision refused because the customer-rejected revision's removed lines wait to be
+ * reinstated (422 `sales_revision_reinstatement_pending`); the way forward is the line revision's empty request.
+ */
+export const REINSTATEMENT_PENDING_CODE = 'sales_revision_reinstatement_pending'
+export const REINSTATEMENT_PENDING_TEXT =
+  'Müşterinin reddettiği revizyonda çıkarılan satır geri gelmeden miktar, fiyat ya da başlık revizyonu yapılamaz. Önce "Satır revizyonu" ile (satır değiştirmeden) yeni revizyonu açın; satır geri gelir.'
+export const reinstatementPendingText = (errors: readonly { readonly code: string }[]): string =>
+  errors.some((error) => error.code === REINSTATEMENT_PENDING_CODE) ? REINSTATEMENT_PENDING_TEXT : ''
+
 /** A server field error's text on the create form: the stable problem codes first, then the line-price rule codes. */
 export function createFieldErrorText(code: string | null): string | null {
   const known = problemCodeText(code)
@@ -556,6 +566,8 @@ export const ORDER_DETAIL_TEXT = {
       'Onaylı siparişte satır değişikliği mevcut revizyonu gerekçesiyle arşivler; sipariş yeni revizyonla iç onaya, gerekiyorsa yeniden müşteri kabulüne girer.',
     linkedWarning:
       'Stok tahsisi ya da yükleme talimatı olan (sevki başlamış) ya da açık satın alma siparişi / üretim emri bağlı satır çıkarılamaz ve ürünü değiştirilemez.',
+    reinstatementNote:
+      'Müşteri, çıkarılan satır(lar) içeren revizyonu reddetti. Satır değiştirmeden gönderirseniz yeni revizyon açılır ve çıkarılan satır(lar) geri gelir; miktar, fiyat ve başlık revizyonu bundan sonra yapılır.',
     subcontractNote: 'Fason hizmet siparişinde yalnız "Hizmet" kalemli ürün eklenir; birim ve fiyat birimi kg, fiyat kg başına elle yazılır.',
     stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapanmış siparişte satır revizyonu yapılamaz.',
     revisionDay: (day: string) => `Yeni satırın ürünü, birimi ve vergisi revizyon gününün (${day}) değerleriyle okunur; mevcut satırlar değişmez.`,

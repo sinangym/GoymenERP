@@ -55,6 +55,18 @@ export type LineRevisionBuild =
   | { readonly ok: true; readonly payload: DraftLineRevisionRequest }
   | { readonly ok: false; readonly problem: LineRevisionProblem; readonly row: string | null }
 
+/**
+ * SAT-D211 (EK36): whether the customer rejected the internally approved current revision AND that revision removed lines — the
+ * lines the next revision reinstates. Then a line revision with no line change is meaningful: it opens that revision and brings the
+ * removed lines back, and a quantity, price or header revision waits for it. The server decides (an empty revision with nothing to
+ * reinstate is its "no change" refusal).
+ */
+export function reinstatementWaits(detail: DraftDetail): boolean {
+  return detail.draft.approvalState === 'Approved'
+    && (detail.customerAcceptance.rejections ?? []).some((rejection) => rejection.revision === detail.draft.revision)
+    && (detail.removedLines ?? []).some((line) => line.removedInRevision === detail.draft.revision)
+}
+
 export const emptyNewLine = (lineId: string): NewLineValues => ({
   lineId, productId: '', orderUnitId: '', quantityText: '', unitPriceText: '', priceUnitId: '',
 })
@@ -128,6 +140,8 @@ export function buildLineRevisionRequest(
   values: LineRevisionValues,
   products: OrderDraftOptions['products'],
   priceWrite: boolean,
+  /** A reinstatement waits (see {@link reinstatementWaits}): a request with no line change is allowed. */
+  allowEmpty = false,
 ): LineRevisionBuild {
   const added: DraftLineRequest[] = []
   const removed: DraftLineRemovalRequest[] = []
@@ -149,7 +163,7 @@ export function buildLineRevisionRequest(
     if (!built.ok) return { ok: false, problem: built.problem, row: `+${index + 1}` }
     added.push(built.line)
   }
-  if (added.length === 0 && removed.length === 0) return { ok: false, problem: 'no-change', row: null }
+  if (added.length === 0 && removed.length === 0 && !allowEmpty) return { ok: false, problem: 'no-change', row: null }
   if (values.existing.length - removed.length + added.length < 1) return { ok: false, problem: 'no-lines-left', row: null }
   if (values.reason.trim() === '') return { ok: false, problem: 'reason-required', row: null }
   return { ok: true, payload: { expectedVersion, reason: values.reason, added, removed } }

@@ -358,7 +358,6 @@ public sealed partial class SalesDraftServiceTests
 
         foreach (var invalid in new[]
                  {
-                     Body("\"added\":[],\"removed\":[]"),
                      Body($"\"added\":[{line},{line}],\"removed\":[]"),
                      Body($"\"added\":[],\"removed\":[{{\"lineId\":\"{removed}\",\"replacedByLineId\":\"{Guid.NewGuid()}\"}}]"),
                      Body($"\"added\":[{line}],\"removed\":[{{\"lineId\":\"{added}\"}}]"),

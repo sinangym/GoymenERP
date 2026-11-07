@@ -12,10 +12,10 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_PRICE_WRITE_CAPABILITY, SALES_QUANTITY_WRITE_CAPABILITY } from './capabilities'
 import { decodeDraftDetail, type DraftDetail } from './contract'
-import { buildLineRevisionRequest, lineRevisionFromDetail, rowOfServerField } from './lineRevision'
+import { buildLineRevisionRequest, lineRevisionFromDetail, reinstatementWaits, rowOfServerField } from './lineRevision'
 import { resetPendingLineRevisions } from './pendingLineRevisions'
 import type { UseReferenceOptions } from './referenceSource'
-import { ORDER_DETAIL_TEXT } from './salesText'
+import { ORDER_DETAIL_TEXT, REINSTATEMENT_PENDING_TEXT, reinstatementPendingText } from './salesText'
 import { todayText } from '../product/priceLists/contract'
 import { ALL_SALES, COMPANY_A, KG, OPTIONS_A, PRODUCT, installFetch, json, renderSalesApp } from './testHarness'
 
@@ -77,6 +77,21 @@ function revised(replacement: string, added: string): Body {
   body.removedLines = [{
     lineId: LINE, lineNo: 1, productId: PRODUCT, productCode: line.productCode, productName: line.productName, quantity: '1000',
     orderUnitCode: 'kg', removedInRevision: 'Rev.1', replacedByLineId: replacement,
+  }]
+  return body
+}
+
+/** Approved Rev.1 that removed a line, rejected by the customer (SAT-D115): the removed line waits to be reinstated (SAT-D211). */
+function customerRejected(): Body {
+  const body = detail('Approved', '9')
+  body.draft.revision = 'Rev.1'
+  body.customerAcceptance = {
+    required: true, acceptedRevision: 'Rev.0', acceptedBy: 'satis-1', acceptedAtUtc: '2026-09-19T10:00:00Z', isCurrentRevisionAccepted: false,
+    rejections: [{ revision: 'Rev.1', rejectedBy: 'satis-1', rejectedAtUtc: '2026-09-20T10:00:00Z', reason: 'SENTETIK müşteri istemedi' }],
+  }
+  body.removedLines = [{
+    lineId: '77777777-7777-7777-7777-777777777770', lineNo: 2, productId: PRODUCT, productCode: 'PRF-40X40', productName: '40x40 profil', quantity: '5',
+    orderUnitCode: 'kg', removedInRevision: 'Rev.1', replacedByLineId: null,
   }]
   return body
 }
@@ -318,6 +333,38 @@ describe('S-04 line revision (SAT-D167, EK24)', () => {
     expect(asked).not.toContain('all')
     fireEvent.click(within(form).getByRole('button', { name: T.addLine }))
     expect(within(within(form).getByTestId('sales-line-revision-added-1')).getByLabelText(T.unitPrice)).toBeTruthy()
+  })
+})
+
+describe('SAT-D211: the customer-rejected removal waits to be reinstated', () => {
+  it('lets an empty line revision through only while a reinstatement waits, and says so', async () => {
+    const decoded = decodeDraftDetail(customerRejected(), null) as DraftDetail
+    expect(reinstatementWaits(decoded)).toBe(true)
+    expect(reinstatementWaits(decodeDraftDetail(detail(), null) as DraftDetail)).toBe(false)
+    const values = { ...lineRevisionFromDetail(decoded, () => '00000000-0000-4000-8000-000000000001'), reason: 'neden' }
+    expect(buildLineRevisionRequest('9', values, OPTIONS.products, true)).toEqual({ ok: false, problem: 'no-change', row: null })
+    expect(buildLineRevisionRequest('9', values, OPTIONS.products, true, true)).toEqual({
+      ok: true, payload: { expectedVersion: '9', reason: 'neden', added: [], removed: [] },
+    })
+
+    const harness = installFetch({
+      capabilities: WITH_LINES,
+      onDetail: () => json(customerRejected()),
+      onLineRevision: () => json({ detail: { ...detail('Preparing', '10'), draft: { ...detail('Preparing', '10').draft, revision: 'Rev.2' } }, isReplay: false, originalCorrelationId: 'c-reinstate' }),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`, sourceRecording([]))
+    const form = await openForm()
+    expect(within(form).getByTestId('sales-line-revision-reinstatement').textContent).toBe(T.reinstatementNote)
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'SENTETIK yeniden aç' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+    await waitFor(() => expect(linePosts(harness.calls)).toHaveLength(1))
+    expect(JSON.parse(linePosts(harness.calls)[0].body as string)).toEqual({ expectedVersion: '9', reason: 'SENTETIK yeniden aç', added: [], removed: [] })
+  })
+
+  it('says why a quantity, price or header revision was refused while the reinstatement waits', () => {
+    expect(reinstatementPendingText([{ code: 'sales_revision_reinstatement_pending' }])).toBe(REINSTATEMENT_PENDING_TEXT)
+    expect(reinstatementPendingText([{ code: 'sales_revision_no_change' }])).toBe('')
+    expect(REINSTATEMENT_PENDING_TEXT).toContain('Satır revizyonu')
   })
 })
 

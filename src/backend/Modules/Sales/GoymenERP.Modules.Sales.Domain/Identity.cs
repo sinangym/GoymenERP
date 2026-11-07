@@ -341,6 +341,9 @@ public static class SalesRuleCodes
     /// <summary>SAT-D219 (EK38): a line with an open linked purchase order or production order is neither removed nor given another product.</summary>
     public const string LineRevisionLineLinked = "sales_line_revision_line_linked";
 
+    /// <summary>SAT-D211: a quantity, price or header revision waits while the customer-rejected revision's removed lines are to be reinstated.</summary>
+    public const string RevisionReinstatementPending = "sales_revision_reinstatement_pending";
+
     /// <summary>SAT-D167: a product change must name another product (the same product's quantity or price has its own revision).</summary>
     public const string LineReplacementSameProduct = "sales_line_replacement_same_product";
 

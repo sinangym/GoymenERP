@@ -220,7 +220,8 @@ public sealed record SalesDraftLineRemovalV1(
 /// SAT-D167 (EK24): POST …/{id}/line-revision — the expected version, the reason (required) and the line changes: <c>added</c>
 /// lines in the create's line shape (product, version, order unit, quantity, optional price / discount / dates / slices / note /
 /// tax change), <c>removed</c> unshipped lines (passive), and a product change as a removal whose <c>replacedByLineId</c> names
-/// an added line. At least one change. An approved order goes to the next revision for re-approval and customer acceptance.
+/// an added line. At least one change, unless a customer-rejected revision's removed lines wait to be reinstated (SAT-D211: then
+/// an empty request opens the next revision). An approved order goes to the next revision for re-approval and customer acceptance.
 /// </summary>
 public sealed record SalesDraftLineRevisionRequest(string ExpectedVersion, string Reason,
     IReadOnlyList<SalesOrderDraftLineRequest> Added, IReadOnlyList<SalesDraftLineRemovalV1> Removed);
@@ -570,7 +571,7 @@ public static class SalesDraftJson
     /// <summary>
     /// SAT-D167 (EK24): the strict body of a line revision — the expected version, the reason present (at most 4000), up to 500
     /// added lines in the create's line shape (each id once) and up to 500 removals (each line once; a replacement names an added
-    /// line, once). At least one change. The domain and the owners decide the rest.
+    /// line, once). No change at all is the domain's refusal unless a reinstatement waits (SAT-D211). The domain and the owners decide the rest.
     /// </summary>
     public static SalesDraftLineRevisionRequest ReadLineRevision(string json)
     {
@@ -581,8 +582,9 @@ public static class SalesDraftJson
             throw new JsonException("Invalid expected version.");
         if (request.Reason is null || request.Reason.Length > 4000)
             throw new JsonException("Invalid reason.");
-        if (request.Added is null || request.Removed is null || request.Added.Count > 500 || request.Removed.Count > 500
-            || request.Added.Count + request.Removed.Count == 0)
+        // Both lists may be empty: that is the revision that opens the next one of a customer-rejected revision and reinstates its
+        // removed lines (SAT-D211); the domain refuses an empty revision when nothing waits to be reinstated (no change).
+        if (request.Added is null || request.Removed is null || request.Added.Count > 500 || request.Removed.Count > 500)
             throw new JsonException("Invalid line changes.");
         var ids = new HashSet<Guid>();
         foreach (var line in request.Added)

@@ -1082,6 +1082,9 @@ public sealed partial class SalesOrderDraft
                 "Fiyat revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
         }
 
+        // SAT-D211 (K3 review A P2-1): the lines this command named were validated against the lines held NOW; the revert would
+        // change that set after the archive — refused until the reinstatement is made by a line revision.
+        RequirePendingReinstatementDone();
         ApprovedRevisionSnapshot? archived = null;
         if (ApprovalState == InternalApprovalState.Approved)
         {
@@ -1312,6 +1315,8 @@ public sealed partial class SalesOrderDraft
                 "Miktar revizyonu hiçbir satırın miktarını değiştirmiyor; onay boşuna düşürülmez.");
         }
 
+        // SAT-D211 (K3 review A P2-1): see ReviseCommercial.
+        RequirePendingReinstatementDone();
         ApprovedRevisionSnapshot? archived = null;
         if (ApprovalState == InternalApprovalState.Approved)
         {

@@ -449,7 +449,10 @@ public static partial class SalesEndpoints
         // covers is no longer approved (409 sales_quote_request_not_approved, not recorded).
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: ["validation_failed"], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
+            // SAT-D167 / SAT-D219: the lines a revision removed are read again for a shipment link or an open linked supply (409
+            // sales_revision_blocked, not recorded); the same read runs at the approval.
+            unprocessableCodes: ["validation_failed"],
+            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [],
@@ -844,9 +847,10 @@ public static partial class SalesEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
+            // The line revision's own refusals are 422 (a shipped or linked line) and 503 (an unreadable owner); 409 revision_blocked is
+            // the submission's and the approval's, not this command's.
             .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
-                SalesDraftProblemCodesV1.RevisionBlocked, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
-                SalesDraftProblemCodesV1.ConcurrentChange)
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

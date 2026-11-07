@@ -515,7 +515,7 @@ public sealed partial class SalesStore(
                         && (!string.Equals(was.QuantityText, line.QuantityText, StringComparison.Ordinal) || was.Commercial != line.Commercial
                             || !Equals(was.Tax, line.Tax)))
                     || added.Any(line => line.IsRemoved || line.AddedInRevision != draft.Revision)
-                    || added.Length + changed.Count(entry => entry.RemovedInRevision == draft.Revision) == 0
+                    || added.Length + changed.Count == 0
                 : quantityCommand ? draft.AllLines.Any(line => commercialById.TryGetValue(line.Id, out var was) && was != line.Commercial) || added.Length > 0
                 : draft.AllLines.Any(line => quantityById.TryGetValue(line.Id, out var was) && !string.Equals(was, line.QuantityText, StringComparison.Ordinal))
                     || added.Length > 0)

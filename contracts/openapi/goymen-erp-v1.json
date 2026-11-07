@@ -42605,7 +42605,6 @@
             },
             "x-erp-problem-codes": [
               "concurrent_change",
-              "sales_revision_blocked",
               "sales_state_conflict",
               "same_key_payload_mismatch",
               "version_conflict"
@@ -47744,6 +47743,7 @@
             "x-erp-problem-codes": [
               "concurrent_change",
               "sales_quote_request_not_approved",
+              "sales_revision_blocked",
               "sales_state_conflict",
               "same_key_payload_mismatch",
               "version_conflict"

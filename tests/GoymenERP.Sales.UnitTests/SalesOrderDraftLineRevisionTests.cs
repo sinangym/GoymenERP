@@ -174,6 +174,74 @@ public sealed class SalesOrderDraftLineRevisionTests
         Assert.Equal((1, 1), (rebuilt.Lines[0].ReinstatedInRevision!.Value, rebuilt.RemovedLines.Single(line => line.Id == second.Id).ReinstatedInRevision!.Value));
     }
 
+    /// <summary>Rev.1 removed <paramref name="removedId"/> (a product change to <paramref name="replacement"/> when given); the order was
+    /// approved internally and the customer rejected it: Approved, customer-rejected, the revert still pending.</summary>
+    private static (SalesOrderDraft Draft, SalesOrderDraftLine First, SalesOrderDraftLine Second) CustomerRejectedRemoval(SalesDraftLineInput? replacement = null)
+    {
+        var (draft, first, second) = Approved(acceptance: true);
+        draft.RecordCustomerAcceptance(draft.Version, "SENTETIK-sales", T0);
+        draft.ReviseLines(draft.Version, replacement is null ? [] : [replacement], [new LineRemovalInput(first.Id, replacement?.LineId)], "SENTETIK-writer", "r", T0, Day);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+        draft.RecordCustomerRejection(draft.Version, "SENTETIK-sales", "SENTETIK musteri istemedi", T0);
+        return (draft, first, second);
+    }
+
+    [Fact]
+    public void A_quantity_price_or_header_revision_waits_while_a_customer_rejected_removal_waits_to_be_reinstated()
+    {
+        // K3 review A P1-1 / P2-1: their inputs were validated for the lines held NOW; the revert after the archive changes that set
+        // (a reinstated line unnamed — the header tax lookup threw KeyNotFound —, a replacement written and then dropped).
+        var replacement = Line(ProductB, "10");
+        var (draft, first, second) = CustomerRejectedRemoval(replacement);
+        Assert.True(draft.HasPendingReinstatement);
+        var version = draft.Version;
+        var archived = draft.ArchivedRevisions.Count;
+
+        Assert.Equal(SalesRuleCodes.RevisionReinstatementPending, CodeOf(() => draft.ReviseQuantities(version,
+            draft.Lines.Select(line => new LineQuantityInput(line.Id, "99", 99m)).ToArray(), "SENTETIK", "r", T0)));
+        Assert.Equal(SalesRuleCodes.RevisionReinstatementPending, CodeOf(() => draft.ReviseCommercial(version,
+            draft.Lines.Select(line => new LineCommercialInput(line.Id, new CommercialDraftFields("12.5", KgUnit, null))).ToArray(), "SENTETIK", T0)));
+        var dueTerms = SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, 45, "100")]);
+        Assert.Equal(SalesRuleCodes.RevisionReinstatementPending, CodeOf(() => draft.ReviseHeader(version, new SalesHeaderRevisionInput(draft.Header.PartyId,
+            draft.Header.CompanyAccountId, draft.Header.CurrencyId, null, draft.Header.DeliveryAddress, draft.Header.Contact, draft.Header.SalesOwnerUserId,
+            dueTerms), "SENTETIK", "r", T0)));
+        // Nothing moved: the passive replacement kept its quantity, the removed line stays passive, no archive, no version step.
+        Assert.Equal((version, archived, 1), (draft.Version, draft.ArchivedRevisions.Count, draft.Revision));
+        Assert.Equal("10", draft.Lines.Single(line => line.Id == replacement.LineId).QuantityText);
+        Assert.Contains(draft.RemovedLines, line => line.Id == first.Id);
+
+        // An empty line revision opens the next revision and reinstates; the three then go through on the new lines.
+        var opened = draft.ReviseLines(version, [], [], "SENTETIK", "SENTETIK yeniden ac", T0, Day);
+        Assert.NotNull(opened);
+        Assert.False(draft.HasPendingReinstatement);
+        Assert.Equal((2, InternalApprovalState.Preparing), (draft.Revision, draft.ApprovalState));
+        Assert.Equal([first.Id, second.Id], draft.Lines.Select(line => line.Id));
+        Assert.Equal(replacement.LineId, Assert.Single(draft.RemovedLines).Id);
+        draft.ReviseQuantities(draft.Version, draft.Lines.Select(line => new LineQuantityInput(line.Id, "7", 7m)).ToArray(), "SENTETIK", "r", T0);
+        Assert.All(draft.Lines, line => Assert.Equal("7", line.QuantityText));
+    }
+
+    [Fact]
+    public void An_empty_line_revision_is_a_no_change_unless_a_reinstatement_waits_and_a_plain_customer_rejection_waits_for_nothing()
+    {
+        var (plain, _, _) = Approved(acceptance: true);
+        plain.RecordCustomerAcceptance(plain.Version, "SENTETIK-sales", T0);
+        Assert.False(plain.HasPendingReinstatement);
+        Assert.Equal(SalesRuleCodes.RevisionNoChange, CodeOf(() => plain.ReviseLines(plain.Version, [], [], "SENTETIK", "r", T0, Day)));
+
+        // A customer-rejected revision that removed nothing has nothing to reinstate: the quantity revision is free.
+        var (draft, _, _) = Approved(acceptance: true);
+        draft.RecordCustomerAcceptance(draft.Version, "SENTETIK-sales", T0);
+        draft.ReviseQuantities(draft.Version, draft.Lines.Select(line => new LineQuantityInput(line.Id, "11", 11m)).ToArray(), "SENTETIK", "r", T0);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+        draft.RecordCustomerRejection(draft.Version, "SENTETIK-sales", "SENTETIK", T0);
+        Assert.False(draft.HasPendingReinstatement);
+        draft.ReviseQuantities(draft.Version, draft.Lines.Select(line => new LineQuantityInput(line.Id, "12", 12m)).ToArray(), "SENTETIK", "r", T0);
+        Assert.Equal(2, draft.Revision);
+    }
+
     [Fact]
     public void A_never_approved_order_and_a_line_added_and_removed_in_the_rejected_revision_are_not_reverted()
     {

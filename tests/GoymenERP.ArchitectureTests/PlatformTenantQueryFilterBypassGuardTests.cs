@@ -441,8 +441,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // K3 review A/B P1-1 + B P2-2 (SAT-D211 / SAT-D219): +3 SalesOrderLineRevision facts (the second rejection of one revision, a
             // customer rejection after a second removal, the submission and approval re-read of the linked supply on the real routes),
             // kept ordinal-sorted (a2ac1f92… -> a58234a1…).
+            // K3 review A P1-1 / P2-1 (SAT-D211): +1 SalesOrderLineRevision fact (a quantity revision waits for the reinstatement after a
+            // customer rejection; an empty line revision reinstates), kept ordinal-sorted (a58234a1… -> 96505e5c…).
             ["tools/relational_inventory/sales.txt"] =
-                "a58234a137998102195eac1636c953da7ab7a5e56692231f5ec2d0925ae5eb2a",
+                "96505e5c60e13fbaa7aff7609e5bc5d3608ffda7e3009538e2871d5a68780cd7",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1616,8 +1618,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // reverted lines' revision columns (ReinstatedInRevision) through the same filtered context, checked move by move;
                     // the restore rebuilds reinstatements; SqlClient count unchanged.
                     // Re-fingerprinted for K3 review A/B P1-1: the line revision's audit picture also carries ReinstatedInRevision.
+                    // Re-fingerprinted for K3 review A P1-1 / P2-1: an empty line revision that only reinstates is a valid line command.
                     new(
-                        "f06a8d6e682c9fb694066735f3509f2d50310a2e4d225ac50caf2f736d137d22",
+                        "69189e4b175e2b841e55956e5c7c38e3fe9f4e626f43b1b4b3fd12af84577fa3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

@@ -38,7 +38,8 @@ public sealed partial class SalesOrderDraft
         var trimmedReason = RequireQuantityRevisable(expectedVersion, reason);
         ArgumentNullException.ThrowIfNull(added);
         ArgumentNullException.ThrowIfNull(removed);
-        if (added.Count == 0 && removed.Count == 0)
+        // An empty line revision is the way to open the next revision of a customer-rejected one and reinstate its removed lines.
+        if (added.Count == 0 && removed.Count == 0 && !HasPendingReinstatement)
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange, "Satır revizyonu hiçbir satırı eklemiyor ya da çıkarmıyor.");
         }
@@ -176,6 +177,30 @@ public sealed partial class SalesOrderDraft
         if (customerRejected)
         {
             RevertRemovalsOf(Revision - 1);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D211 (EK36): whether the customer rejected the internally approved current revision and that revision removed lines the
+    /// next revision will reinstate (<see cref="AdvanceRevision"/>). Until a line revision opens that next revision, the lines to
+    /// come back and the replacement lines to go are not the lines a quantity, price or header revision was validated against.
+    /// </summary>
+    public bool HasPendingReinstatement => ApprovalState == InternalApprovalState.Approved && archivedRevisions.Count > 0
+        && IsCustomerRejected(Revision)
+        && removedLines.Any(line => line.RemovedInRevision == Revision && line.AddedInRevision != Revision);
+
+    /// <summary>
+    /// A quantity, price or header revision that opens the next revision is refused while the customer-rejected revision's
+    /// removals wait to be reinstated (<see cref="HasPendingReinstatement"/>): its inputs name the lines held now, the revert would
+    /// change them after the archive (a reinstated line unnamed, a replacement line written then dropped). A line revision opens
+    /// that revision (with or without a line change) and reinstates; the others follow.
+    /// </summary>
+    private void RequirePendingReinstatementDone()
+    {
+        if (HasPendingReinstatement)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReinstatementPending,
+                "Müşterinin reddettiği revizyonda çıkarılan satırlar geri gelmeden miktar, fiyat ya da başlık revizyonu yapılamaz; önce Satır revizyonuyla yeni revizyon açılır.");
         }
     }
 
