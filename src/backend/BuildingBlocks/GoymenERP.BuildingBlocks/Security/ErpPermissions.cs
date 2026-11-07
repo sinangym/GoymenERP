@@ -530,6 +530,16 @@ public static class ErpPermissions
     public const string SalesInvoicesRead = "sales.invoices.read";
 
     /// <summary>
+    /// S5 API-32 (Fatura çekirdeği 1; SAT-D7, SAT-D202): prepare a sales invoice draft from approved shipment shares (Sales owner
+    /// name SalesPermissionManifestV1.InvoicesWrite, same string). SAT-D202 names who prepares (Muhasebe, Muhasebe Müdürü, Genel
+    /// Müdür, Admin; Satış sees but does not prepare); the mapping to real users is a grant and a human gate. Its own name: no
+    /// order, price or invoice-read name confers it and it confers none of them (the draft's amounts additionally need
+    /// sales.orders.price.read). Registered, not granted: no seeded role and no real user receives it. Company-wide only, like
+    /// the other Sales names. Not Critical: a draft moves no money; approval (API-33) and finalisation (API-36) are their own names.
+    /// </summary>
+    public const string SalesInvoicesWrite = "sales.invoices.write";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80; KPI No 124, No 25, SAT-D25): read the Sales reports — open order quantities, lost
     /// quotes and the invoice-to-order price variance (Sales owner name SalesPermissionManifestV1.ReportsRead, same string). Its
     /// own name: no order, quote, invoice or price name confers it and it confers none of them (an amount in a report still needs
@@ -898,6 +908,7 @@ public static class ErpPermissions
             SalesQuotesRead,
             SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
+            SalesInvoicesWrite,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -1053,6 +1064,7 @@ public static class ErpPermissions
             SalesQuotesRead,
             SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
+            SalesInvoicesWrite,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,

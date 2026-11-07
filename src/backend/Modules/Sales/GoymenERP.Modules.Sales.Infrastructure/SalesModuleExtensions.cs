@@ -86,8 +86,24 @@ public static class SalesModuleExtensions
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
+        // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
+        services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    private static SalesInvoiceService CreateInvoiceService(IServiceProvider serviceProvider) => new SalesInvoiceService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ICorrelationContext>(),
+        serviceProvider.GetRequiredService<ISalesInvoiceStore>(),
+        serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
+        serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.

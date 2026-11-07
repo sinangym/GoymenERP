@@ -344,6 +344,24 @@ public static class SalesRuleCodes
     /// <summary>A line's tax snapshot names another product than the line (a stale or crossed resolution; internal).</summary>
     public const string TaxSnapshotMismatch = "sales_tax_snapshot_mismatch";
 
+    /// <summary>API-32: an invoice draft needs at least one shipment share.</summary>
+    public const string InvoiceWithoutLines = "sales_invoice_without_lines";
+
+    /// <summary>API-32 (AT-055, SAT-D94): one shipment share is on an invoice at most once.</summary>
+    public const string InvoiceShareDuplicated = "sales_invoice_share_duplicated";
+
+    /// <summary>API-32 (SAT-D101, SAT-D129): every instalment of the invoice needs its due date ("vade eksik" waits).</summary>
+    public const string InvoiceDueDateMissing = "sales_invoice_due_date_missing";
+
+    /// <summary>API-32 (SAT-D135/D147/D148): a line's tax has no usable source — the invoice waits, nothing is 0.</summary>
+    public const string InvoiceTaxUnavailable = "sales_invoice_tax_unavailable";
+
+    /// <summary>API-32 (SAT-D11): a line has no price or is priced in another unit than its order unit.</summary>
+    public const string InvoiceLineUnpriced = "sales_invoice_line_unpriced";
+
+    /// <summary>API-32: an exact invoice amount cannot be held (never a rounded amount).</summary>
+    public const string InvoiceAmountOutOfRange = "sales_invoice_amount_out_of_range";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

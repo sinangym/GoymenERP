@@ -12,8 +12,9 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write.
-    public const int Version = 18;
+    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write;
+    // v19 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write.
+    public const int Version = 19;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -160,6 +161,14 @@ public static class SalesPermissionManifestV1
     public const string InvoicesRead = "sales.invoices.read";
 
     /// <summary>
+    /// S5 API-32 (Fatura çekirdeği 1; SAT-D7, SAT-D202): POST /api/v1/sales/invoices — prepare an invoice draft from approved
+    /// shipment shares. Its own name: the invoice read, the order and price names do NOT confer it, and it confers none of them
+    /// (the draft's amounts additionally need <see cref="OrdersPriceRead"/>). SAT-D202 names Muhasebe, Muhasebe Müdürü, Genel
+    /// Müdür and Admin; company-wide; not Critical; registered, granted to no role (the grant is a human gate).
+    /// </summary>
+    public const string InvoicesWrite = "sales.invoices.write";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80): GET /api/v1/sales/reports/open-orders (KPI No 124, the open order quantity), …/lost-
     /// opportunities (SAT-D25 lost quotes) and …/price-variance (No 25). Its own name: the order, quote, invoice and price names do
     /// NOT confer it, and it confers none of them — a report's amount additionally needs <see cref="OrdersPriceRead"/> (withheld
@@ -172,6 +181,6 @@ public static class SalesPermissionManifestV1
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
             OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
-            QuotesExpiredConversionApprove, InvoicesRead, ReportsRead }
+            QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

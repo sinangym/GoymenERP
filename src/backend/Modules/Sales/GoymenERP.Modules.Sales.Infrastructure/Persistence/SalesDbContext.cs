@@ -3,6 +3,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using Microsoft.EntityFrameworkCore;
@@ -251,6 +252,40 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-20 / API-21 (ADR-SAL-001 §2): the request commands' own attempt records (append-only).</summary>
     internal DbSet<RequestAttemptRow> RequestAttempts => Set<RequestAttemptRow>();
 
+    /// <summary>S5 API-32 (Fatura çekirdeği 1): the invoice drafts, their share lines and the invoice commands' attempts.</summary>
+    internal DbSet<InvoiceRow> Invoices => Set<InvoiceRow>();
+
+    internal DbSet<InvoiceLineRow> InvoiceLines => Set<InvoiceLineRow>();
+
+    internal DbSet<InvoiceAttemptRow> InvoiceAttempts => Set<InvoiceAttemptRow>();
+
+    /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
+    internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
+
+    /// <summary>CK_Invoices_Rate (SAT-D172): a TL invoice carries no rate; a foreign-currency invoice all five rate facts.</summary>
+    internal const string InvoiceRateConstraint =
+        "([ExchangeRate] IS NULL AND [RateDay] IS NULL AND [RateBulletinDate] IS NULL AND [FunctionalCurrencyId] IS NULL "
+        + "AND [FunctionalScale] IS NULL) OR ([ExchangeRate] > 0 AND [RateDay] IS NOT NULL AND [RateBulletinDate] IS NOT NULL "
+        + "AND [FunctionalCurrencyId] IS NOT NULL AND [FunctionalCurrencyId] <> [CurrencyId] AND [FunctionalScale] >= 0 "
+        + "AND [FunctionalScale] <= 8)";
+
+    /// <summary>CK_InvoiceLines_Functional (EK42): the three TL amounts are present together or not at all.</summary>
+    internal const string InvoiceLineFunctionalConstraint =
+        "([FunctionalNetAmount] IS NULL AND [FunctionalVatAmount] IS NULL AND [FunctionalWithholdingAmount] IS NULL "
+        + "AND [FunctionalAdjusted] IS NULL AND [FunctionalNeedsReview] = 0) OR ([FunctionalNetAmount] IS NOT NULL "
+        + "AND [FunctionalVatAmount] IS NOT NULL AND [FunctionalWithholdingAmount] IS NOT NULL)";
+
+    /// <summary>CK_InvoiceAttempts_Outcome: the request attempt's outcome rule for invoices.</summary>
+    internal const string InvoiceAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [InvoiceId] IS NOT NULL AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    /// <summary>CK_InvoiceAttempts_Command: only the invoice's own versioned commands record here.</summary>
+    internal const string InvoiceAttemptCommandConstraint = "[CommandName] IN (N'" + SalesInvoiceCommands.CreateV1 + "')";
+
+    /// <summary>UX_InvoiceAttempts_InvoiceId: a stored invoice is born from exactly one create attempt.</summary>
+    internal const string InvoiceCreateAttemptFilter = "[InvoiceId] IS NOT NULL AND [CommandName] = N'" + SalesInvoiceCommands.CreateV1 + "'";
+
     /// <summary>CK_DraftRemainderChanges_Kind: a cancel carries no quantity; a revise carries a positive quantity and its text.</summary>
     internal const string RemainderKindConstraint =
         "([Kind] = 1 AND [RequestedQuantity] IS NULL AND [RequestedQuantityText] IS NULL) "
@@ -311,6 +346,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
+        ConfigureInvoices(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -823,6 +859,118 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // S5 API-32 (Fatura çekirdeği 1): invoice drafts, their whole-share lines and attempts — append-only in this slice.
+    private void ConfigureInvoices(ModelBuilder modelBuilder)
+    {
+        var invoice = modelBuilder.Entity<InvoiceRow>();
+        invoice.ToTable("Invoices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Invoices_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Invoices_State", "[State] IN (1)");
+            table.HasCheckConstraint("CK_Invoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_Invoices_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
+            table.HasCheckConstraint("CK_Invoices_Rate", InvoiceRateConstraint);
+            table.HasCheckConstraint("CK_Invoices_Instalments", "ISJSON([InstalmentsJson]) = 1");
+            table.HasCheckConstraint("CK_Invoices_Text",
+                "LEN([DocumentNo]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        invoice.HasKey(x => x.Id);
+        invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.DocumentNo).HasMaxLength(SalesInvoice.MaximumDocumentNoLength).IsRequired();
+        invoice.Property(x => x.Version).IsConcurrencyToken();
+        invoice.Property(x => x.RowVersion).IsRowVersion();
+        invoice.Property(x => x.BusinessDate).HasColumnType("date");
+        invoice.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        invoice.Property(x => x.ExchangeRate).HasPrecision(28, 10);
+        invoice.Property(x => x.RateDay).HasColumnType("date");
+        invoice.Property(x => x.RateBulletinDate).HasColumnType("date");
+        invoice.Property(x => x.InstalmentsJson).HasColumnType("nvarchar(max)").IsRequired();
+        invoice.Property(x => x.CreatedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
+        invoice.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        invoice.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Invoices_DocumentNo");
+        invoice.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Invoices_CompanyId_CreatedAtUtc_Id");
+        invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<InvoiceLineRow>();
+        line.ToTable("InvoiceLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceLines_LineNo", "[LineNo] >= 1 AND [NoteLineNo] >= 1 AND [PriceBasisRevision] >= 0");
+            table.HasCheckConstraint("CK_InvoiceLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DispatchNoteId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_InvoiceLines_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0 AND LEN([DispatchNoteNumber]) > 0");
+            table.HasCheckConstraint("CK_InvoiceLines_Amounts",
+                "LEN([NetUnitPrice]) > 0 AND [VatPercent] >= 0 AND [VatPercent] <= 100 AND ([WithholdingShare] IS NULL OR "
+                + "([WithholdingShare] > 0 AND [WithholdingShare] <= 1)) AND [NetAmount] >= 0 AND [VatAmount] >= 0 AND [WithholdingAmount] >= 0");
+            table.HasCheckConstraint("CK_InvoiceLines_Functional", InvoiceLineFunctionalConstraint);
+            table.HasCheckConstraint("CK_InvoiceLines_Json",
+                "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
+        });
+        line.HasKey(x => new { x.CompanyId, x.InvoiceId, x.LineNo });
+        line.HasIndex(x => new { x.CompanyId, x.LineId }).IsUnique().HasDatabaseName("UX_InvoiceLines_LineId");
+        line.HasIndex(x => new { x.CompanyId, x.ShipmentId }).IsUnique().HasDatabaseName("UX_InvoiceLines_ActiveShipment")
+            .HasFilter(ActiveInvoiceShipmentFilter);
+        line.Property(x => x.DispatchNoteNumber).HasMaxLength(SalesInvoice.MaximumDispatchNumberLength).IsRequired();
+        line.Property(x => x.ShipmentDate).HasColumnType("date");
+        line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
+        line.Property(x => x.UnitPrice).HasMaxLength(64);
+        line.Property(x => x.DiscountPercent).HasMaxLength(64);
+        line.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
+        line.Property(x => x.TaxJson).HasColumnType("nvarchar(max)").IsRequired();
+        line.Property(x => x.NetUnitPrice).HasMaxLength(64).IsUnicode(false).IsRequired();
+        line.Property(x => x.VatPercent).HasPrecision(9, 4);
+        line.Property(x => x.WithholdingShare).HasPrecision(18, 10);
+        line.Property(x => x.NetAmount).HasPrecision(28, 8);
+        line.Property(x => x.VatAmount).HasPrecision(28, 8);
+        line.Property(x => x.WithholdingAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalNetAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalVatAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalWithholdingAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalAdjusted).HasMaxLength(64).IsUnicode(false);
+        line.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<InvoiceAttemptRow>();
+        attempt.ToTable("InvoiceAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_InvoiceAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_InvoiceAttempts_Command", InvoiceAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_InvoiceAttempts_Outcome", InvoiceAttemptOutcomeConstraint);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasIndex(x => new { x.CompanyId, x.InvoiceId }).IsUnique().HasDatabaseName("UX_InvoiceAttempts_InvoiceId")
+            .HasFilter(InvoiceCreateAttemptFilter);
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
     private void ConfigureDraftDeliverySchedules(ModelBuilder modelBuilder)
     {
@@ -1194,6 +1342,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     QuoteAttemptRow => [],
                     // ADR-SAL-001 §2: a request attempt is APPEND-ONLY (the SQL trigger refuses the same).
                     RequestAttemptRow => [],
+                    // S5 API-32: an invoice draft, its lines and its attempts are APPEND-ONLY in Fatura çekirdeği 1.
+                    InvoiceRow => [],
+                    InvoiceLineRow => [],
+                    InvoiceAttemptRow => [],
                     _ => [],
                 };
                 if (entry.Entity is RequestRow)

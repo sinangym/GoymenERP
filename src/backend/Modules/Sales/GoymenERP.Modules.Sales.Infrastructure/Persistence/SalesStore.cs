@@ -1969,6 +1969,9 @@ public sealed partial class SalesStore(
         /// <summary>API-22: the sales quote list's ordering label (a draft or request cursor never pages the quotes).</summary>
         public const string QuoteOrdering = "quotes: createdAtUtc desc, id desc";
 
+        /// <summary>API-32: the sales invoice list's ordering label (no other list's cursor pages the invoices).</summary>
+        public const string InvoiceOrdering = "invoices: createdAtUtc desc, id desc";
+
         public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id, string ordering = Ordering) =>
             Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
                 new Payload(companyId, ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
