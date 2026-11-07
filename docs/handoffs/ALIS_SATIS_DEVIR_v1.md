@@ -27,6 +27,10 @@ iş tanımıdır; Satış'ın kendi karar, review ve merge kapıları geçerlidi
   kaldırılması onay bekleyen satıra yeni bağ kurulmaz, SAT-D220); (2) `ISalesOrderLinkedSupplyReadPortV1` adaptörünü
   Api kompozisyonunda kaydeder — adaptörsüz bağ kaydı Satış'ta tür `Unreadable` sayılır ve iptal/kaldırmayı bloklar.
   Biri olmadan diğeri açılmaz.
+  - **A1-2b öncesi satırlar:** #928 ile A1-2b arasında kaydedilmiş `Sales` kaynaklı satırlar silinmez ve dönüştürülmez;
+    okunur kalırlar (detay, liste, `sourceKinds`). Ret yalnız **yeni** satırı vurur. Bu satırlar Satış portundan
+    geçmemiştir (doğrulanmamış opak kimlik). MOD-03 adaptörü onları da okur ve raporlar; doğrulanmış bağ gibi
+    sunmaz, ayrı bir işaretle ya da `Unreadable` olarak gösterir. Bugün main'de bu satırlar yalnız test verisidir.
 - **Alış tarafı:** sözleşme merge edilince Alış, bu sözleşmeye bir **adaptör** yazar ve `purchasing.linked-orders`
   kategorisini gerçek cevaba çevirir (plan A4). Sözleşme dosyasına Alış dokunmaz; adaptör kaydı Api kompozisyonunda.
   Alış'ta satış siparişi bağı (talep kaynağı, API-02) bu adaptörün veri kaynağıdır.

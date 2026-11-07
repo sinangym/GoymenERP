@@ -97,6 +97,55 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task A_sales_sourced_attempt_recorded_before_A1_2b_still_replays_under_its_key()
+    {
+        // A1-2b refuses new Sales lines only: the same key and content of an attempt stored before A1-2b replays the stored
+        // request (ADR-011) with its Sales source, and nothing new is written.
+        var world = new World();
+        var lineId = Guid.NewGuid();
+        var request = new CreatePurchaseRequestRequest(Day,
+            [new PurchaseRequestLineRequest(lineId, Product, "7", KgUnit, "5",
+                new PurchaseRequestLineSourceRequest(PurchaseRequestSourceKindsV1.Sales, SalesOrder, SalesOrderLine))]);
+        var built = GoymenERP.Modules.Purchasing.Domain.Requests.PurchaseRequest.Create(Guid.NewGuid(), Company, Actor, DateTimeOffset.UtcNow);
+        built.AddLine(built.Version, lineId, Product, KgUnit,
+            Quantity.Of(5m, QuantityUnit.Kilogram),
+            DateTimeOffset.UtcNow,
+            GoymenERP.Modules.Purchasing.Domain.Requests.PurchaseRequestLineSource.Of(
+                GoymenERP.Modules.Purchasing.Domain.Requests.PurchaseRequestSourceKind.Sales, SalesOrder, SalesOrderLine));
+        world.Store.PlantRequestAttempt("k-pre-a12b", Actor, PurchasingRequestHash.Compute(PurchasingCommands.RequestCreateV1, request), built, Day,
+            new Dictionary<Guid, string> { [lineId] = "7" }, "SENTETIK-original");
+
+        var replay = await world.Service().CreateRequestAsync(request, Metadata("k-pre-a12b", correlation: "retry"));
+
+        Assert.True(replay.IsReplay);
+        Assert.Equal(new PurchaseRequestLineSourceView("Sales", SalesOrder, SalesOrderLine), Assert.Single(replay.Detail.Lines).Source);
+        Assert.Equal(["Sales"], replay.Detail.Request.SourceKinds);
+        Assert.Empty(world.Store.Envelopes);
+
+        // The stored request stays readable on the detail too.
+        var detail = await world.Service().GetRequestDetailAsync(built.Id);
+        Assert.Equal("Sales", Assert.Single(detail.Lines).Source!.Kind);
+    }
+
+    [Fact]
+    public async Task A_caller_without_the_creation_permission_gets_403_before_the_sales_source_422()
+    {
+        var world = new World();
+        world.Authority.Granted = false;
+        var request = new CreatePurchaseRequestRequest(Day,
+            [new PurchaseRequestLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "5",
+                new PurchaseRequestLineSourceRequest(PurchaseRequestSourceKindsV1.Sales, SalesOrder, SalesOrderLine))]);
+        world.ResetOwnerCalls();
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateRequestAsync(request, Metadata("k-sales-denied")));
+
+        Assert.Equal(403, refusal.Status);
+        Assert.Empty(refusal.Errors);
+        Assert.Equal((0, 0), (world.Products.Calls, world.Settings.Calls));
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Fact]
     public async Task A_request_whose_lines_are_all_manual_names_only_Manual()
     {
         var world = new World();

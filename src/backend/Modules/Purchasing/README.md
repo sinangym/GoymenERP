@@ -86,8 +86,10 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   **A1-2b — `Sales` closed for new lines until MOD-03 (Sales SAT-D219, SAT-D220; fail-closed):** a new line with
   `source.kind` `Sales` is refused before any owner read with 422 `validation_failed`, field `lines[i].source` =
   `purchasing_request_source_sales_unavailable` (no attempt recorded, so the same key may be retried with a corrected
-  body); the domain carries the same rule (`PurchaseRequestLineSource.ForNewLine` / `IsOpenForNewLines`), while stored
-  lines are rebuilt through `Of`, so a `Sales` line recorded before A1-2b stays readable. `Sales` is still a well-formed
+  body). In the domain the rule lives only in the new-line factory (`PurchaseRequestLineSource.ForNewLine` /
+  `IsOpenForNewLines`), which the service uses for the lines it creates; `PurchaseRequest.AddLine` itself accepts any
+  defined source, because the store rebuilds stored lines through it with `Of`, so a `Sales` line recorded before
+  A1-2b stays readable. `Sales` is still a well-formed
   kind on the wire (strict JSON unchanged); `Stock`, `Production` and manual lines, their content hashes and the OpenAPI
   contract are unchanged; no migration. MOD-03 reopens it only together with reading `ISalesOrderLineReferencePortV1`
   (refusing every sales order line that is not `Approved`) and wiring the `ISalesOrderLinkedSupplyReadPortV1` adaptor in

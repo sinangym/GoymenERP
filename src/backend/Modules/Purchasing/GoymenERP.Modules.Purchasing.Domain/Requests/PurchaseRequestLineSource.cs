@@ -63,6 +63,8 @@ public sealed record PurchaseRequestLineSource
     /// <summary>
     /// A1-2b: the source of a line being created now — <see cref="Of"/> plus <see cref="IsOpenForNewLines"/>; a defined kind
     /// that is closed is a <see cref="PurchasingRuleException"/> (<see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>).
+    /// The rule lives only in this factory (used by the create path); <see cref="PurchaseRequest.AddLine"/> accepts any defined
+    /// source, because stored lines are rebuilt through it with <see cref="Of"/>.
     /// </summary>
     public static PurchaseRequestLineSource ForNewLine(PurchaseRequestSourceKind kind, Guid documentId, Guid documentLineId) =>
         Enum.IsDefined(kind) && !IsOpenForNewLines(kind)
