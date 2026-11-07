@@ -236,9 +236,13 @@ public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTes
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
-            Assert.Equal(applied.Length - 1, index);
+            Assert.True(index > 0);
+            // SAT-D32: the later AddDraftUserClosures rolls back freely here (no user closure exists), down to this migration.
+            await context.GetService<IMigrator>().MigrateAsync(applied[index]);
             var refused = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
             Assert.Equal(51141, refused.Number);
+            Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
     }
