@@ -2,7 +2,7 @@
  * FI04 — Finans → Açık kalemler: the company's admitted open items, read-only (#700).
  *
  * The list is `GET /api/v1/finance/open-items?cursor` and the detail `GET /api/v1/finance/open-items/{id}`; both
- * need only the open-item read authority. Money and the Open/Closed status belong to a separate amount authority:
+ * need only the open-item read authority. Money and the Open/Closed/Cancelled status belong to a separate amount authority:
  * without it the server sends neither, and this screen then shows neither — no zero, no "Kapalı", no total and no
  * overdue mark is ever worked out here.
  *
@@ -44,9 +44,13 @@ import styles from './openItemRead.module.css'
 const LIST_HEADING_ID = 'finance-open-item-list-heading'
 const DETAIL_HEADING_ID = 'finance-open-item-detail-heading'
 
-const STATUS_TEXT: Record<OpenItemStatus, string> = { Open: T.statusOpen, Closed: T.statusClosed }
+const STATUS_TEXT: Record<OpenItemStatus, string> = {
+  Open: T.statusOpen,
+  Closed: T.statusClosed,
+  Cancelled: T.statusCancelled,
+}
 /** The dot's colour only — the status text carries the meaning. */
-const STATUS_TONE: Record<OpenItemStatus, StatusTone> = { Open: 'info', Closed: 'neutral' }
+const STATUS_TONE: Record<OpenItemStatus, StatusTone> = { Open: 'info', Closed: 'neutral', Cancelled: 'warning' }
 
 /**
  * Below a desktop width the rows are cards: with the sidebar open the seven-column table would only fit by

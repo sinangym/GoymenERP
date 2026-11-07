@@ -49,18 +49,18 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 129
+EXPECTED_MIGRATION_COUNT = 130
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "d88f0887ac65cfacc9c4bd718fff2ccaa9d9dc88882105aa64a1f3cec1418e59"
+    "c78904d44490540dba3b0bfd3245e1267b64b7ccb171897b2a5fc560b95f6dbe"
 )
-EXPECTED_DURABLE_STORE_COUNT = 24
+EXPECTED_DURABLE_STORE_COUNT = 25
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1329
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1334
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "bf93e2e2cc8ce6bd488b538088a4d852ffcb4b9474c9d510d0643a1f0b3bc1d9"
+    "a1b8f323194249fc2fc7888e1e4cbcbc319a8b39bfcffbb9f03eb123f1aaa0a5"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -136,6 +136,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("audit", "AuditEvents"),
     ("documents", "DocumentAttempts"),
     ("finance", "Commands"),
+    ("finance", "InvoiceCancellations"),
     ("finance", "OfficialInvoiceImportCommands"),
     ("finance", "OpenItemSourceBatches"),
     ("idempotency", "CommandExecutions"),
@@ -349,6 +350,13 @@ DURABLE_STORE_SPECS = (
         ("dbContext.Commands.Add(new FinanceCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "finance.invoice-cancellations", "Finance", "idempotency", "FinanceDbContext",
+        "FinanceInvoiceCancellationRow", "finance", "InvoiceCancellations", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107131505_AddInvoiceCancellations.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
+        ("dbContext.InvoiceCancellations.Add(new FinanceInvoiceCancellationRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "finance.official-invoice-import-commands", "Finance", "idempotency", "FinanceDbContext",
         "FinanceOfficialInvoiceImportCommandRow", "finance", "OfficialInvoiceImportCommands", FINANCE_CONTEXT,
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260930185113_AddOfficialInvoiceImportApprovalV1.cs",
@@ -548,6 +556,10 @@ WRITER_METHOD_SCOPES = {
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
     ): "DraftSaveAsync",
     (
+        "finance.invoice-cancellations",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
+    ): "CancelAsync",
+    (
         "finance.official-invoice-import-commands",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs",
     ): "AddCommand",
@@ -689,6 +701,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "UploadAsync",
     ): "f401c2b93e88f45b8146402ac33cf7b96ca81790e01db1c635320fc2f02a5fa1",
     (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
+        "CancelAsync",
+    ): "ebb69e0f4ef41c6db9f0e088c0035e1803355dd8cd743e4d117319be79131664",
+    (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
         "AdmitAsync",
     ): "3913c811a437b8d92737ae22e227303110b77c210b18f46709e83f6526c7a42e",
@@ -777,6 +793,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs": "8c7a2eed1888d36d0b61c60b1296d904adaf0338c34f361236befc8e1c1d6274",
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs": "0f79216993cdbbc20d7c92d830ad1c08f3ff2ab5b0ab9084aaae03f765784c1a",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs": "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "1d354b40066633c53f53eca05c28698bf46aeb701bbc0c7dc712b49a7d1f720a",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs": "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs": "589f03fddc02ed44c23149eac8358f69805e00a7a28cd867c98eecc9e469c88e",
     "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",

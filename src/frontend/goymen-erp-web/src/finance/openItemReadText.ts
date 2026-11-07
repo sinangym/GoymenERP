@@ -35,6 +35,7 @@ export const OPEN_ITEM_TEXT = {
   status: 'Durum',
   statusOpen: 'Açık',
   statusClosed: 'Kapalı',
+  statusCancelled: 'İptal edildi',
   initialAmount: 'İlk tutar',
   outstandingAmount: 'Kalan tutar',
   currency: 'Para birimi',
