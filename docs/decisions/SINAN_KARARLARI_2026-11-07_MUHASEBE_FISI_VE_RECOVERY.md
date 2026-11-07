@@ -1,7 +1,8 @@
-# Sinan Kararları — 2026-11-07 (B-04 faturadan muhasebe fişi; recovery pin önerisi)
+# Sinan Kararları — 2026-11-07 (B-04 faturadan muhasebe fişi ve ek sorular; recovery pin önerisi)
 
-Bu belge önceki karar dosyalarını silmez; KLN-D6…KLN-D10 (B-04 muhasebe fişi) ve GOV-D2…GOV-D4 (recovery pin önerisi,
-#962) ekler. DEC-FIN-001, DEC-FIN-004, FNS-D7, FNS-D14, SAT-D208, ALS-D59/D62, KLN-D1…D5 ve GOV-D1 geçerlidir.
+Bu belge önceki karar dosyalarını silmez; KLN-D6…KLN-D10 (B-04 muhasebe fişi), KLN-D11…KLN-D19 (B-04 ek soruları) ve
+GOV-D2…GOV-D4 (recovery pin önerisi, #962) ekler. DEC-FIN-001, DEC-FIN-004, FNS-D7, FNS-D14, SAT-D208, ALS-D41,
+ALS-D59/D62, KLN-D1…D5 ve GOV-D1 geçerlidir.
 Güvenlik değişmezleri (AGENTS.md "Mimari değişmezler", "Yasaklar", K3 kapsamı, insan kapıları) değişmez.
 
 **Kaynak:** Issue #66 yorumu
@@ -11,6 +12,12 @@ cevabı, aynen: *"Önerildiği gibi"*. Recovery sorularında seçilen seçenekle
 açılmasın"**, **"Hayır"** (üçü de önerilen seçenek). Aynı yorumdaki not, aynen: *"Sinan "mali müşavirle birlikte"
 karar verilmesi gerektiğini biliyor; teyidi bu cevapla verdi. Mali müşavir farklı bir madde isterse Sinan buraya
 yazar."*
+
+**Kaynak (ek sorular, KLN-D11…D19):** Issue #66 yorumu
+https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6707864938 — Sinan'ın 7 Kasım 2026'da koordinatör oturumu
+sohbetinde dokuz `NEEDS-SINAN` sorusuna verdiği cevap, aynen: *"Önerildiği gibi"* (iki grubun ikisine de); koordinatör
+oturumu aracılığıyla aktarıldı. Aynı yorumdaki not, aynen: *"Mali müşavir farklı bir madde isterse Sinan buraya
+yazar."* Sorular: https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6707675903 (Kalan Modüller şeridi).
 
 Soruların kaynakları:
 - B-04: `NEEDS-SINAN` https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6705676636 (Kalan Modüller
@@ -31,6 +38,22 @@ Soruların kaynakları:
 | 4 | Dövizli faturada fiş | **Fatura tarihindeki kurla TL karşılığı yazılır; döviz tutarı bilgi olarak saklanır** (Önerilen) | Fiş tutarları TL'dir; döviz cinsi tutar ve kullanılan kur fiş satırında bilgi alanı olarak kalır. |
 | 5 | Taslak fişi kim oluşturur | **Sistem oluşturur (faturayı kesinleştiren kullanıcı izlenir); muhasebe kullanıcısı onaylar** (Önerilen) | Taslak, fatura kesinleşme olayından sistem adına üretilir; kaynak kullanıcı olarak faturayı kesinleştiren kişi kaydedilir. Fiş, muhasebe kullanıcısının onayıyla kesinleşir (DEC-FIN-004). |
 
+### B-04 ek soruları (#66 yorum 6707675903)
+
+Dokuz sorunun her birinde tek öneri vardı ve Sinan öneriyi seçti; seçilmeyen seçenek "öneri dışında başka bir kural"dır.
+
+| # | Soru | Cevap | Seçilen seçeneğin açıklaması |
+|---|---|---|---|
+| 1 | 150 / 153 ayrımı (ürün türü bugün yalnız Çelik, Hurda, Hizmet; hammadde/ticari mal ayrımı yok) | **Alış satırının amacına göre: üretim girdisi 150, alıp satma 153; hizmet alışı 770 genel gider; hurda satışı 600. Hepsi Ayarlar'daki eşlemeden değiştirilebilir.** (Önerilen) | Hesap ürün türünden değil satırın amacından seçilir; eşleme Ayarlar'da değiştirilebilir. |
+| 2 | Tevkifatlı satışta 391 | **391'e KDV − tevkifat yazılır** (Önerilen) | 120 = matrah + KDV − tevkifat olduğundan fiş bu şekilde dengelenir. |
+| 3 | Birden çok KDV oranı | **391 ve 191 tek hesapta toplanır; oran başına alt hesap istenirse eşlemeden açılır** (Önerilen) | Varsayılan tek hesap; alt hesap Ayarlar eşlemesiyle. |
+| 4 | Kuruş farkı | **TL karşılığı satır başına yuvarlanır; toplam farkı faturanın kendi toplamına göre son satırda kapatılır, ayrı hesaba gitmez** (Önerilen) | Fiş toplamı faturanın toplamına eşittir; yuvarlama farkı hesabı açılmaz. |
+| 5 | Fatura tarihinin dönemi kapalı veya açılmamışsa | **Fiş reddedilmez, "dönem bekliyor" kuyruğuna düşer; dönem açılınca muhasebe kullanıcısı işler** (Önerilen) | Fatura kesinleşmesi engellenmez; fiş bekler. |
+| 6 | Fatura iptali veya iadesi | **Onaylanmamış taslak iptal edilir; onaylı fiş için ters taslak açılır, o da onaya gider** (Önerilen) | Onaylı fiş silinmez/değiştirilmez; ters kayıtla düzeltilir (AGENTS.md "silme yerine ters kayıt"). |
+| 7 | Faturayı kesinleştiren kişide muhasebe onay yetkisi de varsa kendi fişini onaylayabilir mi? | **Hayır** (Önerilen) | Kesinleştiren kullanıcı, yetkisi olsa bile kendi fişini onaylayamaz. |
+| 8 | İhracat (601) neye göre belirlenir? | **Faturanın ihracat/e-fatura senaryo bilgisine göre** (Önerilen) | 600/601 seçimi fatura senaryosundan gelir. |
+| 9 | Kur: "fatura tarihindeki kur" ile ALS-D41 "tedarikçi faturasındaki kur" farklıysa | **Alışta tedarikçi faturasındaki kur (ALS-D41), satışta fatura tarihindeki TCMB kuru** (Önerilen) | KLN-D9'u taraf başına netleştirir. |
+
 ### Recovery pin önerisi (#962 §5)
 
 | # | Soru | Cevap | Seçilen seçeneğin açıklaması |
@@ -44,18 +67,44 @@ Soruların kaynakları:
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | KLN-D6 | B-04 — 120/320 cari satırı | Faturadan üretilen taslak fişte cari satırı (satışta 120, alışta 320) **ödenecek toplamı** taşır: matrah + KDV − tevkifat. Ayrı brüt cari satırı ve ayrı cari tevkifat satırı yoktur. | Plan §3 B-04, §6.1; Accounting fiş kaynak sağlayıcısı; `sales.invoice.finalized.v1` (SAT-D208), `purchasing.invoice.finalized.v1` (ALS-D59/D62) tüketicisi |
-| KLN-D7 | B-04 — karşı hesaplar | Başlangıç eşlemesi: **satış** gelir 600 (yurt dışı satış 601), hesaplanan KDV 391; **alış** hammadde 150, ticari mal 153, indirilecek KDV 191, karşılığı 320, alış tevkifatı 360. Hesap numaraları kodda **sabit yazılmaz**; Ayarlar'da **ürün türüne göre** eşlenir (AGENTS.md "magic number" yasağı). Eşlemesi bulunmayan satır için fiş fail-closed kalır — uygulama ayrıntısı (geri alınabilir). | Ayarlar (Ana Veriler › parametre, KLN-D2); Accounting; Ürün türü ana verisi |
-| KLN-D8 | B-04 — fiş dönemi | Fiş, **fatura tarihinin** düştüğü muhasebe dönemine yazılır. Kapalı döneme düşen fatura için davranış (DEC-FIN-004: kapalı dönem kaydı değiştirilmez) bu kararla seçilmez. | Accounting dönem kontrolü |
-| KLN-D9 | B-04 — dövizli fatura | Fiş tutarları **fatura tarihindeki kurla TL** karşılığıdır; döviz cinsi tutar (ve kullanılan kur) bilgi olarak saklanır. Kur kaynağı ve kur türü bu kararla seçilmez; mevcut kur ana verisi (Ayarlar › kur) kullanılır. | Accounting fiş satırı; ExchangeRate value object |
-| KLN-D10 | B-04 — taslak ve onay | Taslak fişi **sistem** oluşturur; faturayı kesinleştiren kullanıcı kaynak kullanıcı olarak izlenir. Fiş **muhasebe kullanıcısının onayıyla** kesinleşir; elle ikinci kayıt yapılmaz (DEC-FIN-004, SAT-D208, FNS-D14). Onay yetkisinin hangi role verileceği bu kararla seçilmez (grant/rol insan kapısı). | Accounting onay komutu; permission kaydı (grant yok) |
+| KLN-D7 | B-04 — karşı hesaplar | Başlangıç eşlemesi: **satış** gelir 600 (yurt dışı satış 601), hesaplanan KDV 391; **alış** hammadde 150, ticari mal 153, indirilecek KDV 191, karşılığı 320, alış tevkifatı 360. Hesap numaraları kodda **sabit yazılmaz**; Ayarlar'da **ürün türüne göre** eşlenir (AGENTS.md "magic number" yasağı). Eşlemesi bulunmayan satırda hesap tahmin edilmez; fiş kuyruğa düşer (aşağıdaki sözleşme notları). Ayrıntılar KLN-D11…D13, D18. | Ayarlar (Ana Veriler › parametre, KLN-D2); Accounting; Ürün türü ana verisi |
+| KLN-D8 | B-04 — fiş dönemi | Fiş, **fatura tarihinin** düştüğü muhasebe dönemine yazılır. Kapalı/açılmamış döneme düşen fatura için KLN-D15 geçerlidir. | Accounting dönem kontrolü |
+| KLN-D9 | B-04 — dövizli fatura | Fiş tutarları **fatura tarihindeki kurla TL** karşılığıdır; döviz cinsi tutar (ve kullanılan kur) bilgi olarak saklanır. Kurun hangisi olduğu taraf başına KLN-D19 ile netleşir. | Accounting fiş satırı; ExchangeRate value object |
+| KLN-D10 | B-04 — taslak ve onay | Taslak fişi **sistem** oluşturur; faturayı kesinleştiren kullanıcı kaynak kullanıcı olarak izlenir. Fiş **muhasebe kullanıcısının onayıyla** kesinleşir; elle ikinci kayıt yapılmaz (DEC-FIN-004, SAT-D208, FNS-D14). Onay yetkisinin hangi role verileceği bu kararla seçilmez (grant/rol insan kapısı). Kendi fişini onaylama yasağı KLN-D17'dedir. | Accounting onay komutu; permission kaydı (grant yok) |
+| KLN-D11 | B-04 — alış/satış hesap seçimi satır amacına göre | Alışta hesap satırın **amacından** seçilir: üretim girdisi → 150, alıp satma → 153; hizmet alışı → 770 genel gider; hurda satışı → 600. Hepsi Ayarlar'daki eşlemeden değiştirilebilir (KLN-D7). | Accounting eşleme; Alış/Satış fatura satırı (LinePurpose) |
+| KLN-D12 | B-04 — tevkifatlı satışta 391 | Tevkifatlı satış faturasında 391'e **KDV − tevkifat** yazılır (KLN-D6 ile denge: 120 = matrah + KDV − tevkifat, 600/601 = matrah). Alıcının kestiği tevkifatın ayrıca hangi hesapta izleneceği açıktır (Sınırlar). | Accounting fiş satırı |
+| KLN-D13 | B-04 — birden çok KDV oranı | 391 ve 191 **tek hesapta** toplanır; oran başına alt hesap istenirse Ayarlar eşlemesinden açılır. | Accounting eşleme |
+| KLN-D14 | B-04 — kuruş farkı | TL karşılığı **satır başına** yuvarlanır; toplam farkı faturanın kendi toplamına göre **son satırda** kapatılır; ayrı (yuvarlama farkı) hesaba gitmez. | Accounting fiş üretimi |
+| KLN-D15 | B-04 — kapalı veya açılmamış dönem | Fatura tarihinin dönemi kapalı veya açılmamışsa fiş **reddedilmez**, "dönem bekliyor" kuyruğuna düşer; dönem açılınca muhasebe kullanıcısı işler. Kapalı dönem kaydı değiştirilmez (DEC-FIN-004). | Accounting dönem kontrolü, kuyruk ekranı |
+| KLN-D16 | B-04 — fatura iptali/iadesi | Onaylanmamış taslak fiş **iptal edilir**; onaylı fiş için **ters taslak** açılır ve o da onaya gider. | Accounting; `sales-invoice-cancel:…` / `purchasing-invoice-cancel:…` kabulü |
+| KLN-D17 | B-04 — kendi fişini onaylama | Faturayı kesinleştiren kullanıcı, muhasebe onay yetkisi olsa bile **kendi fişini onaylayamaz**. | Accounting onay komutu (görev ayrılığı kontrolü); yetki testi |
+| KLN-D18 | B-04 — ihracat (601) | 600/601 seçimi faturanın **ihracat/e-fatura senaryo** bilgisine göre yapılır. | Satış fatura olayı; Accounting eşleme |
+| KLN-D19 | B-04 — kur, taraf başına | **Alışta** tedarikçi faturasındaki kur (ALS-D41), **satışta** fatura tarihindeki TCMB kuru geçerlidir. KLN-D9'u taraf başına netleştirir. | Accounting fiş satırı; ALS-D41; Satış fatura kuru |
 | GOV-D2 | Recovery — global bayt pin'i | `EXPECTED_SOURCE_SURFACE_FILE_COUNT` / `_FINGERPRINT` global bayt pin'i, #962 §4 Faz 1'deki **dar riskli-yüzey pin'iyle** değiştirilir; tam bayt özeti engelleyici olmadan envanter/manifest çıktısına (`sourceSurface`) yazılır; (b) türü incelenmiş pin'ler ve pin'den bağımsız kontroller aynen kalır. **Ön koşul:** GOV-D3'teki Faz 0 merge kuralı AGENTS.md'ye girmiş (bu PR merge edilmiş) olmalıdır. Faz 1 kod PR'ı K3'tür, iki bağımsız exact-head review ister. Kapsanmayan girdilerin (`appsettings*.json`, `.resx`, `.cs` dışı metin) dar kümeye alınması Faz 1 PR'ında karara bağlanır — uygulama ayrıntısı (geri alınabilir). | `tools/generate_recovery_surface_inventory.py`, `contracts/recovery/*.schema.json`, `tests/recovery_surface_inventory`, `tests/release_manifest` |
 | GOV-D3 | Recovery — "up to date" ayarı ve Faz 0 kuralı | GitHub Settings'te "Require branches to be up to date before merging" **şimdilik kapalı kalır**. Aynı güvence yazılı merge kuralıyla sağlanır (Faz 0): `src/backend/`, migration veya recovery envanterine dokunan PR'ı merge eden **herkes** (`CODEX-ORCHESTRATOR` ve Claude şeridi) expected-head squash'tan hemen önce `git fetch origin main && git merge-base --is-ancestor origin/main <expected-head>` çalıştırır, main SHA'sını ve exit code'u merge makbuzuna yazar; fresh zorunlu CI aynı head'de yeşil olmalıdır; exit ≠ 0 ise main merge edilir, pin'ler yeniden üretilir, CI yeniden koşar. Kuralın metni AGENTS.md ve `.claude/skills/review-signatures/SKILL.md` §4'tedir. Sinan'ın metni "koordinatörün" der; kuralın Claude şeridini de kapsaması #962 §4 Faz 0'dan gelir — uygulama ayrıntısı (geri alınabilir). Settings değişikliği insan kapısıdır. | AGENTS.md merge kuralları; `review-signatures` §4 |
 | GOV-D4 | Recovery — yazma yetkili bot | Main'e otomatik commit atan, yazma yetkili token'lı bot **kurulmaz** (#962 Seçenek C reddedildi). | `.github/**`; secret yüzeyi açılmaz |
+
+## Sözleşme notları (şeritlerle uzlaşılan; Sinan kararı değil — uygulama ayrıntısı, geri alınabilir)
+
+Koordinatörün aktardığı ve Satış/Alış/Finans şeritleriyle uzlaşılan teknik notlar:
+
+- Kabul anahtarları: alış `purchasing-invoice:{id}:{version}` / `purchasing-invoice-cancel:…`; satış
+  `sales-invoice:{invoiceId}:{invoiceVersion}` / `sales-invoice-cancel:…` (plan §12a).
+- Finans kabulü ve Muhasebe kabulü **iki bağımsız bekleyen eksendir**; biri diğerini beklemez veya bloke etmez.
+- Fatura satırı isteğe bağlı `ItemType?` / `LinePurpose?` taşır. Eşleme bulunamazsa satır **PostingException**
+  kuyruğuna düşer; hesap asla tahmin edilmez; fatura kesinleşmesi engellenmez (Alış tarafı fail-closed yaklaşımını
+  bıraktı).
+- Satış tutarları satır başına yuvarlar; Muhasebe tutarları yeniden hesaplamaz, gelen satır tutarlarını kullanır
+  (KLN-D14 TL karşılığı yuvarlaması ve son satır farkı bunun üzerine uygulanır). Koordinatör bu nota SAT-D206/D207'yi
+  kaynak olarak verdi; ancak bu iki karar risk hesabındaki döviz çevrimi yuvarlamasıdır ve kendi metinlerinde
+  "faturayı etkilemez" der. Fatura satırı yuvarlamasının karar kaynağı (SAT-D11/SAT-D172) Satış şeridiyle teyit
+  edilmelidir.
 
 ## Cevaplanan sorular
 
 - B-04 `NEEDS-SINAN` (#66 yorum 6705676636): beş madde KLN-D6…KLN-D10 ile cevaplandı. B-04'ün kodlanması bu kararla
   açılır (K3).
+- B-04 ek `NEEDS-SINAN` (#66 yorum 6707675903): dokuz madde KLN-D11…KLN-D19 ile cevaplandı.
 - FNS-D7'deki "120/320 eşlemesi mali müşavir teyidine kadar yalnız anlam eşlemesidir" şartı: Sinan teyidi bu cevapla
   verdi. Mali müşavir farklı bir madde isterse Sinan #66'ya yazar; o durumda yeni bir karar dosyası bu kararların
   yerine geçer.
@@ -70,11 +119,12 @@ Soruların kaynakları:
 ## Sınırlar
 
 - **Satış tarafı tevkifat karşı hesabı** (satış faturasında alıcının kestiği KDV tevkifatı 120'den düşülünce hangi
-  hesapta izlenir) Sinan'ın cevabında açıkça yazmaz; KLN-D7 eşleme altyapısı bunu yapılandırılabilir tutar. Bu soru
-  #66'ya `NEEDS-SINAN` olarak yazıldı (koordinatör, 2026-11-07); cevap gelene kadar etkinleştirilmez, tahminle
-  seçilmez.
-- İade/iptal ters fişinin dönemi (orijinal fatura dönemi mi, iptal tarihi dönemi mi), kapalı döneme düşen fatura,
-  kur türü/kaynağı ve kur farkı bu kararla seçilmez.
+  hesapta izlenir) karara bağlı değildir; KLN-D7 eşleme altyapısı bunu yapılandırılabilir tutar. Açık
+  `NEEDS-SINAN`: https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6707860683 (öneri: 136 Diğer Çeşitli
+  Alacaklar altında "tevkif edilen KDV" alt hesabı, Ayarlar'dan eşlenir). Cevap gelene kadar eşleme yoksa fiş kuyruğa
+  düşer; tahminle seçilmez.
+- Ters fişin dönemi (orijinal fatura dönemi mi, iptal/iade tarihinin dönemi mi) ve kur farkı muhasebeleştirmesi bu
+  kararla seçilmez.
 - Hesap planının kendisi, ürün türü listesi ve fişin resmî sisteme (Mikro) aktarımı bu kararın dışındadır
   (DEC-FIN-001, DEC-INT-001).
 - GOV-D2 Faz 1 kod değişikliği bu belgeyle yapılmaz; ayrı K3 PR'ıdır. Faz 2–3 (#962 §4) seçilmemiştir.
