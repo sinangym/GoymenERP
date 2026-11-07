@@ -766,6 +766,20 @@ public static class ErpPermissions
     public const string AccountingApprovedSourceCatalogActivate = "accounting.approved-source-catalog.activate";
 
     /// <summary>
+    /// B-04a (Sinan, #66 6707619685): the Accounting owner's posting account mapping catalog names (read, prepare,
+    /// activate). Registered, not granted: which persona reads, prepares or activates the mapping is a human grant
+    /// decision. Company-wide only; not Critical. Maker-checker (the activator is not the preparer) is enforced by
+    /// the Accounting lifecycle and a database check, not by this catalogue.
+    /// </summary>
+    public const string AccountingPostingMappingsRead = "accounting.posting-mappings.read";
+
+    /// <inheritdoc cref="AccountingPostingMappingsRead"/>
+    public const string AccountingPostingMappingsPrepare = "accounting.posting-mappings.prepare";
+
+    /// <inheritdoc cref="AccountingPostingMappingsRead"/>
+    public const string AccountingPostingMappingsActivate = "accounting.posting-mappings.activate";
+
+    /// <summary>
     /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
     /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
     /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
@@ -962,6 +976,9 @@ public static class ErpPermissions
             AccountingJournalReverseApprove,
             AccountingApprovedSourceCatalogPrepare,
             AccountingApprovedSourceCatalogActivate,
+            AccountingPostingMappingsRead,
+            AccountingPostingMappingsPrepare,
+            AccountingPostingMappingsActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -1118,6 +1135,9 @@ public static class ErpPermissions
             AccountingJournalReverseApprove,
             AccountingApprovedSourceCatalogPrepare,
             AccountingApprovedSourceCatalogActivate,
+            AccountingPostingMappingsRead,
+            AccountingPostingMappingsPrepare,
+            AccountingPostingMappingsActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

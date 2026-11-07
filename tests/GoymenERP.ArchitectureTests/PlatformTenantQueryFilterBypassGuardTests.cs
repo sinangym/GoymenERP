@@ -219,8 +219,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             // Fresh authority: +1 real-SQL post-read refusal acceptance fact.
+            // Re-fingerprinted for B-04a: +3 posting account mapping SQL facts (one save, race, Down guard)
+            // (2865c0fb… -> 327c5913…).
+            // Re-fingerprinted for B-04a review P2-1: +1 cross-company mapping SQL fact (327c5913… -> 077b19a0…).
             ["tools/relational_inventory/accounting.txt"] =
-                "2865c0fb0c76cee1d71e1460e2785e5a8e9cc4f03d5603bd41afdaf218429484",
+                "077b19a098d5d83abaf55829844622ee183ca899067aab2d75ba9879896a8197",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
@@ -638,7 +641,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-scoped normal journal draft headers/lines and immutable lifecycle evidence.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
              + "Persistence/AccountingDbContext.cs"] =
-                "87c5304e7de42d9c02b8fc74b75743ec8251d2625aab3760f37c5d14a4a0e8d8",
+                // Re-measured for B-04a: the posting account mapping versions and rows, both company-scoped with
+                // the CompanyId filter and company-leading keys; the write guard admits only activation facts.
+                "e44e2ab006cc5cedb66a76856cf0290757494928d7ba1b21e422a477a5945462",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for AT-037: StockCounts and StockCountDecisions, each with the CompanyId query filter and a
@@ -1084,11 +1089,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // BLG-05b: re-fingerprinted for two read-only registrations (IAccountPlanMirrorReaderV1 ->
                 // ApprovedAccountPlanMirrorReaderV1, NormalJournalDraftAccountReadServiceV1); no bypass,
                 // Ensure/Migrate or initialization change (a09a1e08… -> 3783d2ed…).
+                // B-04a: re-fingerprinted for the posting account mapping store, service and resolver port
+                // registrations; no bypass, Ensure/Migrate or initialization change (3783d2ed… -> c97d6217…).
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "3783d2ed9dcc22d182072dcb4e9b809b4dc5e5774f947075a77aab9a863febe5",
+                        "c97d6217767e0e3a50da82a0de3862eceb991c3c739bf61a8b8c95bb6d3169e7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2078,6 +2085,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261002063616_AddApprovedAccountingSourceCatalog.cs"] =
                     new(
                         "89ee19354a152fb3da1ebe91a852a7ada8a34acae181ff15b547d8f66a042ba0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // B-04a: posting account mapping history is durable; Down refuses (51212, used by no other
+                // migration) while any mapping version exists; the single Sql call precedes both drops.
+                ["src/backend/Modules/Accounting/"
+                 + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/"
+                 + "20261107140038_AddPostingAccountMappings.cs"] =
+                    new(
+                        "4c59513ac11ad0e19502fc1ba4944faafa6fd5b74606f83de34180ae13d9d215",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
