@@ -180,6 +180,52 @@ public sealed class ProductionPlan
     /// </summary>
     public Guid? OrderId { get; private set; }
 
+    /// <summary>The longest preparer identity the store keeps (the actor id column's length).</summary>
+    public const int PreparedByMaximumLength = 128;
+
+    /// <summary>
+    /// Üretim U2-d (URT-D2): who prepared the plan's CURRENT version — the actor who recorded its last Draft revision, else
+    /// the actor who saved it — or null for a plan stored before U2-d (no preparer was kept) and for a plan built in memory
+    /// only. The approval and the rejection refuse this user (<see cref="ManufacturingRuleCodes.PlanSelfApproval"/>).
+    /// Not part of the plan's content and not a change of the plan: its version does not move.
+    /// </summary>
+    public string? PreparedBy { get; private set; }
+
+    /// <summary>
+    /// Üretim U2-d: records who prepared the current version (the store calls it on save and after a revision, and when the
+    /// plan is rebuilt). The identity is the server actor id, trimmed, at most <see cref="PreparedByMaximumLength"/>.
+    /// </summary>
+    public void RecordPreparer(string preparedBy)
+    {
+        var text = preparedBy?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length > PreparedByMaximumLength || text.Any(char.IsControl))
+        {
+            throw new ArgumentException("Planı hazırlayan kullanıcı kimliği geçersiz.", nameof(preparedBy));
+        }
+
+        PreparedBy = text;
+    }
+
+    /// <summary>
+    /// Üretim U2-d (URT-D2 "hazırlayan ≠ onaylayan"): refuses the decision of the user who prepared the current version.
+    /// A plan without a recorded preparer (stored before U2-d) is not refused.
+    /// </summary>
+    /// <summary>
+    /// Üretim U2-d: true when <paramref name="userId"/> prepared the current version (a plan without a recorded preparer
+    /// answers false).
+    /// </summary>
+    public bool IsPreparedBy(Guid userId) =>
+        PreparedBy is { } preparedBy && Guid.TryParse(preparedBy, out var preparer) && preparer == userId;
+
+    private void RequireDeciderIsNotPreparer(Guid deciderUserId)
+    {
+        if (IsPreparedBy(deciderUserId))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSelfApproval,
+                "Planı hazırlayan kullanıcı aynı planı onaylayamaz veya reddedemez; başka bir kullanıcı karar vermelidir.");
+        }
+    }
+
     /// <summary>
     /// Rebuilds a stored plan (MFG-5). Every rule of a new plan holds again, and the approval is
     /// replayed (version fence and draft rule), so a stored plan that breaks a rule is refused, not
@@ -206,7 +252,8 @@ public sealed class ProductionPlan
         IEnumerable<PlanRejection>? rejections = null,
         PlanCancellation? cancellation = null,
         Guid? orderId = null,
-        PlanProcessSpec? processSpec = null)
+        PlanProcessSpec? processSpec = null,
+        string? preparedBy = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -351,6 +398,20 @@ public sealed class ProductionPlan
                 ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı plan sürümü planın kendi değişiklikleriyle uyuşmuyor.");
         }
 
+        // U2-d: the preparer is set after the replay, so a stored step recorded before U2-d is never refused on rebuild.
+        if (preparedBy is not null)
+        {
+            try
+            {
+                plan.RecordPreparer(preparedBy);
+            }
+            catch (ArgumentException)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı plan hazırlayanı geçersiz.");
+            }
+        }
+
         return plan;
     }
 
@@ -375,6 +436,7 @@ public sealed class ProductionPlan
         SlittingPlanParameters? parameters, PlanParameterSnapshotV1? parameterSnapshot)
     {
         RequireApprovable(expectedVersion);
+        RequireDeciderIsNotPreparer(approvedByUserId);
         if (parameterSnapshot is not null && parameterSnapshot.Process != Process)
         {
             throw new ArgumentException("Parametre profili planın sürecine ait olmalıdır.", nameof(parameterSnapshot));
@@ -412,6 +474,7 @@ public sealed class ProductionPlan
         }
 
         var rejectedBy = RequireId(rejectedByUserId, nameof(rejectedByUserId));
+        RequireDeciderIsNotPreparer(rejectedBy);
         var text = RequireReason(reason, nameof(reason));
         Version++;
         _rejections.Add(new PlanRejection(_rejections.Count + 1, text, rejectedBy, rejectedAtUtc.ToUniversalTime(),
