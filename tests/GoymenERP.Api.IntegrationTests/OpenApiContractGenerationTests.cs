@@ -584,6 +584,10 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid",
                 "query:from:true:type:string;format:date", "query:to:true:type:string;format:date"]),
+        // F1b / API-04: the party account's all-time balance summary per currency (FNS-D6, MOD-15).
+        new("get", "/api/v1/finance/party-balance", "GetFinancePartyBalanceV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/open-items", "ListFinanceOpenItemsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:cursor:false:type:string"]),
@@ -1363,6 +1367,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetFinanceCustomerInstrumentV1"] = "ref:CustomerInstrumentDetail",
             ["GetFinanceCustomerInstrumentRiskV1"] = "ref:CustomerInstrumentRiskView",
             ["GetFinancePartyLedgerV1"] = "ref:PartyLedgerView",
+            ["GetFinancePartyBalanceV1"] = "ref:PartyBalanceView",
             ["ListFinanceOpenItemsV1"] = "ref:FinanceOpenItemPageV1",
             ["GetFinanceOpenItemV1"] = "ref:FinanceOpenItemViewV1",
             ["SaveFinanceManualBankPaymentDraftV1"] = "ref:ManualBankPaymentCommandResult",
@@ -1689,6 +1694,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentV1",
         "GetFinanceCustomerInstrumentRiskV1",
         "GetFinancePartyLedgerV1",
+        "GetFinancePartyBalanceV1",
         "ListFinanceOpenItemsV1",
         "GetFinanceOpenItemV1",
         "GetFinanceBankAccountsV1",
@@ -2417,6 +2423,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentV1",
         "GetFinanceCustomerInstrumentRiskV1",
         "GetFinancePartyLedgerV1",
+        "GetFinancePartyBalanceV1",
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
@@ -2772,6 +2779,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentV1:400",
         "GetFinanceCustomerInstrumentRiskV1:400",
         "GetFinancePartyLedgerV1:400",
+        "GetFinancePartyBalanceV1:400",
         "GetFinanceBankAccountsV1:400",
         "SaveFinanceManualBankPaymentDraftV1:400",
         "GetFinanceManualBankPaymentsV1:400",
@@ -2907,6 +2915,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             // Party ledger: the owner's response-size refusal, read here, never retyped.
             ["GetFinancePartyLedgerV1:422"] = [GoymenERP.Modules.Finance.Contracts.PartyLedgerRules.TooManyEntriesCode],
+            ["GetFinancePartyBalanceV1:422"] = [GoymenERP.Modules.Finance.Contracts.PartyBalanceRules.TooManyFactsCode],
             ["UpdateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             // R19: the owner's closed sets (InventoryLabelTransformationHttpCodesV1), read here, never retyped.
             ["RecordInventoryLabelTransformationV1:400"] = [.. InventoryLabelTransformationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
@@ -5987,6 +5996,20 @@ public sealed partial class OpenApiContractGenerationTests
                     ("totals", "type:array;items:ref:CustomerInstrumentRiskTotal")),
                 ["CustomerInstrumentStatus"] = ScalarSchema("enum:InPortfolio|AtBankForCollection|Collected|Bounced|Protested|ReturnedToCustomer"),
                 // Party ledger: facts per currency from zero; no carry-forward (OPEN-018); every amount a disclosure view.
+                ["PartyBalanceView"] = ObjectSchema(
+                    ["companyId", "partyId", "companyAccountId", "currencies"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("currencies", "type:array;items:ref:PartyBalanceCurrency")),
+                ["PartyBalanceCurrency"] = ObjectSchema(
+                    ["currencyId", "debitTotal", "creditTotal", "balance", "openReceivable", "openPayable"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("debitTotal", "ref:AmountView"),
+                    ("creditTotal", "ref:AmountView"),
+                    ("balance", "ref:PartyLedgerBalanceView"),
+                    ("openReceivable", "ref:AmountView"),
+                    ("openPayable", "ref:AmountView")),
                 ["PartyLedgerView"] = ObjectSchema(
                     ["companyId", "partyId", "companyAccountId", "from", "to", "carryForward", "currencies"],
                     ("companyId", "type:string;format:uuid"),

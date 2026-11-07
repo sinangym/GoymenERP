@@ -147,4 +147,8 @@ public interface IPartyLedgerService
 {
     Task<PartyLedgerResult> ReadAuthorizedAsync(FinanceContext context, PartyLedgerRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>F1b / API-04: the account's all-time balance summary per currency (<see cref="PartyBalanceView"/>).</summary>
+    Task<PartyBalanceResult> SummarizeAuthorizedAsync(FinanceContext context, PartyBalanceRequest request,
+        CancellationToken cancellationToken);
 }

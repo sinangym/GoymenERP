@@ -243,3 +243,24 @@ describe('bank-account master (FIN-UI-1a)', () => {
     expect(init?.body).toBe(JSON.stringify({ expectedVersion: '1' }))
   })
 })
+
+describe('party balance read (F1b / API-04)', () => {
+  const REQUEST = { partyId: '22222222-2222-4222-8222-222222222222', companyAccountId: '33333333-3333-4333-8333-333333333333' }
+
+  it('passes the 422 too-many-facts refusal on as its marker, and any other 422 as undecodable', async () => {
+    stubFetch(new Response(JSON.stringify({ code: 'finance_party_balance_too_many_facts' }), { status: 422 }))
+    expect(await createHttpFinancePort().partyBalance(SCOPE, REQUEST, new AbortController().signal))
+      .toEqual({ kind: 'body', body: { outcome: 'Found', resource: { partyBalanceRefusal: 'TooManyFacts' } } })
+    stubFetch(new Response(JSON.stringify({ code: 'something_else' }), { status: 422 }))
+    expect(await createHttpFinancePort().partyBalance(SCOPE, REQUEST, new AbortController().signal))
+      .toEqual({ kind: 'body', body: undefined })
+  })
+
+  it.each([[403, 'Denied'], [503, 'Unavailable']])('restates %i as %s', async (status, outcome) => {
+    const fetchMock = stubFetch(new Response(null, { status }))
+    expect(await createHttpFinancePort().partyBalance(SCOPE, REQUEST, new AbortController().signal))
+      .toEqual({ kind: 'body', body: { outcome, resource: null } })
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${API_BASE}/finance/party-balance?partyId=${REQUEST.partyId}&companyAccountId=${REQUEST.companyAccountId}`)
+  })
+})

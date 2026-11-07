@@ -73,3 +73,20 @@ export function reference(id: string): string {
 export function accountReference(partyId: string, companyAccountId: string): string {
   return `Cari ref. …${partyId.slice(-8)} · hesap ref. …${companyAccountId.slice(-8)}`
 }
+
+/** F1b / API-04: the account's all-time balance summary (hubvogal's Toplam Borç / Toplam Alacak / Bakiye). */
+export const BALANCE_TITLE = 'Cari bakiye özeti'
+export const BALANCE_NOTICE =
+  'Bu cari hesabın bütün kesinleşmiş kayıtlarından, tarih aralığından bağımsız; her para birimi ayrı. Açık alacak ve '
+  + 'açık borç, kapanmamış satış ve alış faturası taksitlerinin kalanıdır.'
+export const BALANCE_COLUMN_CURRENCY = 'Para birimi'
+export const BALANCE_COLUMN_DEBIT = 'Toplam borç'
+export const BALANCE_COLUMN_CREDIT = 'Toplam alacak'
+export const BALANCE_COLUMN_BALANCE = 'Bakiye'
+export const BALANCE_COLUMN_OPEN_RECEIVABLE = 'Açık alacak (satış)'
+export const BALANCE_COLUMN_OPEN_PAYABLE = 'Açık borç (alış)'
+export const BALANCE_EMPTY = 'Bu cari hesap için kesinleşmiş kayıt yok.'
+export const BALANCE_FORBIDDEN = 'Bu cari hesabın bakiyesini görme yetkiniz yok.'
+export const BALANCE_UNAVAILABLE = 'Cari bakiye özeti şu anda alınamadı.'
+export const BALANCE_TOO_MANY =
+  'Bu cari hesapta tek bir özetin okuyabileceğinden fazla kayıt var; bakiye eksik kayıtla hesaplanmaz. Ekstreyi tarih aralığıyla açın.'
