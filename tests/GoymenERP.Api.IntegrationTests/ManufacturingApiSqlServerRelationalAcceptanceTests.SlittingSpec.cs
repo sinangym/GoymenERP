@@ -136,7 +136,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.Plans WHERE Id = @p", ("@p", foreignPlanId)));
 
-        using var approvalResponse = await client.PostWithKeyAsync(
+        using var approvalResponse = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync(
             $"{Base}/plans/{planId:D}/approval", new ApprovePlanRequestV1(created.Version), "slitting-approve");
         Assert.Equal(HttpStatusCode.UnprocessableEntity, approvalResponse.StatusCode);
         using var problem = JsonDocument.Parse(await approvalResponse.Content.ReadAsStringAsync());

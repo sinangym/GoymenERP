@@ -26,7 +26,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await migrator.MigrateAsync(BeforePlanProcessSpecs);
             Assert.Equal(BeforePlanProcessSpecs, (await context.Database.GetAppliedMigrationsAsync()).Last());
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingPlanProcessSpecs", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+            Assert.EndsWith("_AddManufacturingPlanPreparer", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
         }
 

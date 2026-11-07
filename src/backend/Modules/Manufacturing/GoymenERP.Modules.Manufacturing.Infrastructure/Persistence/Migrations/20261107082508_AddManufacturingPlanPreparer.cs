@@ -28,12 +28,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // Üretim U2-d (URT-D2): a recorded preparer is content the previous schema cannot hold.
-            migrationBuilder.Sql("""
-                IF EXISTS (SELECT 1 FROM [manufacturing].[Plans] WHERE [CreatedBy] IS NOT NULL)
-                    THROW 51190, 'Manufacturing plan preparers exist; forward-fix before downgrade.', 1;
-                """);
-
+            // Üretim U2-d (URT-D2): the preparer is a control datum, not plan content: the creating actor is also on the
+            // plan's audit event (manufacturing.plan.created.v1) and each reviser on its revision row. Down drops it so a
+            // rollback stays possible while plans exist. After a later Up, a plan never revised has no preparer and is
+            // decided by anyone holding the approval (the pre-U2-d behaviour); a revised plan keeps its last reviser.
             migrationBuilder.DropCheckConstraint(
                 name: "CK_Plans_CreatedBy",
                 schema: "manufacturing",

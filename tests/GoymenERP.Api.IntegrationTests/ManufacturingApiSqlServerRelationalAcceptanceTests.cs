@@ -153,7 +153,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal((created.PlanId, workCenter, kind),
                 (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
 
-            var approval = await client.PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
+            var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
                 new ApprovePlanRequestV1(created.Version));
             Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
             var orderId = Guid.NewGuid();
@@ -200,7 +200,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
         Assert.Equal(correlation, replay.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
 
-        var approved = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1));
+        // U2-d (URT-D2): another user than the preparer approves, under its own correlation.
+        var approver = await run.ApproverAsync(CompanyA);
+        var approverCorrelation = approver.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+        var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1));
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
         var approvedPlan = (await approved.Content.ReadFromJsonAsync<PlanViewV1>())!;
         Assert.Equal(("Approved", 2L), (approvedPlan.Status, approvedPlan.Version));
@@ -231,12 +234,16 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(("GoodOutputMass", "900", "900", "0"), (detail.RemainingTarget.Basis, detail.RemainingTarget.TargetKg,
             detail.RemainingTarget.AchievedKg, detail.RemainingTarget.RemainingKg));
 
-        // One plan, one order, three facts; six audit events under the caller's correlation (no replay event).
+        // One plan, one order, three facts; five audit events under the caller's correlation (no replay event) and the
+        // approval under the approver's.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"));
-        Assert.Equal(6, await run.ScalarAsync<int>(
+        Assert.Equal(5, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType LIKE N'Manufacturing.%' AND CorrelationId = @c",
             ("@c", correlation)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' AND CorrelationId = @c",
+            ("@c", approverCorrelation)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType LIKE N'Manufacturing.%' AND PermissionCode NOT LIKE N'manufacturing.%'"));
     }
@@ -385,7 +392,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
             // The read answers from STORAGE: approving through another command changes what it returns.
             Assert.Equal(HttpStatusCode.OK,
-                (await client.PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(1)))
+                (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(1)))
                     .StatusCode);
             var afterApproval = (await (await client.GetAsync($"{Base}/plans/{created.PlanId}")).Content
                 .ReadFromJsonAsync<PlanViewV1>())!;
@@ -677,25 +684,28 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 (otherActor.StatusCode, (await Problem(otherActor)).Code));
         }
 
-        // The approval replays from the log: a lost answer retried is 200, not a version conflict.
-        var approved = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
+        // The approval replays from the log: a lost answer retried is 200, not a version conflict. U2-d: another user
+        // than the preparer approves.
+        var approver = await run.ApproverAsync(CompanyA);
+        var approverCorrelation = approver.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+        var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
-        var retried = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
+        var retried = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
         Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
-        Assert.Equal(("true", correlation), (retried.Headers.GetValues("Idempotency-Replayed").Single(),
+        Assert.Equal(("true", approverCorrelation), (retried.Headers.GetValues("Idempotency-Replayed").Single(),
             retried.Headers.GetValues("Idempotency-Original-Correlation-Id").Single()));
         Assert.Equal(("Approved", 2L), ((await retried.Content.ReadFromJsonAsync<PlanViewV1>())!.Status,
             (await approved.Content.ReadFromJsonAsync<PlanViewV1>())!.Version));
 
         // A terminal version conflict (§7) is its key's answer too, and a terminal not-found.
-        var stale = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-2");
-        var staleAgain = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-2");
+        var stale = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-2");
+        var staleAgain = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-2");
         Assert.Equal((HttpStatusCode.Conflict, HttpStatusCode.Conflict), (stale.StatusCode, staleAgain.StatusCode));
         Assert.Equal((ManufacturingRuleCodes.VersionConflict, "1", "2"), await Problem(staleAgain));
         Assert.Equal("true", staleAgain.Headers.GetValues("Idempotency-Replayed").Single());
         var unknown = Guid.NewGuid();
-        var missing = await client.PostWithKeyAsync($"{Base}/plans/{unknown}/approval", new ApprovePlanRequestV1(1), "approve-3");
-        var missingAgain = await client.PostWithKeyAsync($"{Base}/plans/{unknown}/approval", new ApprovePlanRequestV1(1), "approve-3");
+        var missing = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{unknown}/approval", new ApprovePlanRequestV1(1), "approve-3");
+        var missingAgain = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{unknown}/approval", new ApprovePlanRequestV1(1), "approve-3");
         Assert.Equal((HttpStatusCode.NotFound, HttpStatusCode.NotFound), (missing.StatusCode, missingAgain.StatusCode));
         Assert.Equal("true", missingAgain.Headers.GetValues("Idempotency-Replayed").Single());
 
@@ -1118,7 +1128,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(commandsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands"));
 
             // The status filter follows the stored status: the approved plan leaves the draft list.
-            Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
+            Assert.Equal(HttpStatusCode.OK, (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var drafts = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?status=Draft"))!;
             Assert.Equal(second.PlanId, Assert.Single(drafts.Plans).PlanId);
@@ -1378,6 +1388,24 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             }
         }
 
+        private readonly Dictionary<Guid, HttpClient> approvers = [];
+
+        /// <summary>
+        /// Üretim U2-d (URT-D2): a client of ANOTHER configured user than the plan's preparer, with the plan writes,
+        /// the approval and the reads the approval needs, company-wide. The preparer may not approve or reject.
+        /// </summary>
+        public async Task<HttpClient> ApproverAsync(Guid company)
+        {
+            if (!approvers.TryGetValue(company, out var approver))
+            {
+                await GrantAsync(TestUsers.SiteAuditReader, company, [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+                approver = ClientFor(TestUsers.SiteAuditReader, company);
+                approvers[company] = approver;
+            }
+
+            return approver;
+        }
+
         /// <summary>A client of the configured development user; every write names its own Idempotency-Key.</summary>
         public HttpClient ClientFor(string user, Guid company)
         {
@@ -1474,7 +1502,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfKindAsync(CompanyA, process.ToString()),
                 [new PlannedInputRequestV1(roll.Id, "1000", roll.Version)], null);
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
+            Assert.Equal(HttpStatusCode.OK, (await (await ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var orderId = Guid.NewGuid();
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/orders",
@@ -1693,6 +1721,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         public async ValueTask DisposeAsync()
         {
+            foreach (var approver in approvers.Values)
+            {
+                approver.Dispose();
+            }
+
             await Factory.DisposeAsync();
             SqlConnection.ClearAllPools();
             await using var connection = new SqlConnection(baseConnectionString);

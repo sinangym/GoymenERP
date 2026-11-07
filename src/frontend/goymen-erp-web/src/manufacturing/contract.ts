@@ -244,6 +244,11 @@ export interface ProductionPlanView {
   readonly cancellation: PlanCancellationView | null
   /** U2-b1: the plan-entered process values; null when none or legacy JSON. */
   readonly processSpec: PlanProcessSpecView | null
+  /**
+   * U2-d (URT-D2): the actor id of who prepared the current version (its last reviser, else who saved it); that user
+   * cannot approve or reject it. Null for a plan stored before U2-d and for legacy JSON. An id only, never a name.
+   */
+  readonly preparedBy: string | null
 }
 
 export interface ProductionOrderView {
@@ -738,6 +743,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   const rejections = decodeRejections(body.rejections)
   const cancellation = decodeCancellation(body.cancellation)
   const processSpec = decodePlanProcessSpec(body.processSpec)
+  const preparedBy = decodePreparedBy(body.preparedBy)
   if (
     planId === null ||
     companyId === null ||
@@ -754,6 +760,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     rejections === undefined ||
     cancellation === undefined ||
     processSpec === undefined ||
+    preparedBy === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved' && body.status !== 'Cancelled') ||
@@ -810,7 +817,22 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     rejections,
     cancellation,
     processSpec,
+    preparedBy,
   }
+}
+
+/** The server actor column's length (`ProductionPlan.PreparedByMaximumLength`). */
+const PREPARED_BY_MAXIMUM_LENGTH = 128
+
+/**
+ * U2-d: an omitted or null preparer is none (a plan stored before U2-d, legacy JSON); otherwise a trimmed, non-empty actor
+ * id without control characters, at most 128 characters. Anything else is `undefined` and refuses the plan.
+ */
+function decodePreparedBy(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string' || value.length === 0 || value.length > PREPARED_BY_MAXIMUM_LENGTH
+    || value.trim() !== value || /\p{Cc}/u.test(value)) return undefined
+  return value
 }
 
 const PROCESS_SPEC_KEYS = [
