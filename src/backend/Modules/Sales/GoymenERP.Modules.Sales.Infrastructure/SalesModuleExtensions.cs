@@ -190,7 +190,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<IProductItemTypeReaderV1>(),
         // SAT-D175 (EK25): the Production / customer-goods binding of a subcontract service order (host adapter, the Production
         // lane's); until it is composed, the customer of such an order does not change (503, fail-closed).
-        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>());
+        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>(),
+        // S-1 / MOD-03 (DEC-SAL-005, No 30 / SAT-D12): the supply owners' linked-supply adapters (Production U5-a, Purchasing
+        // MOD-03), one per supply kind; none is registered yet, so "bağlı üretim / satın alma" stays "no source" as before.
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
