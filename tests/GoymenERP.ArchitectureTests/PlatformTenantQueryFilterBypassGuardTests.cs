@@ -319,7 +319,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…). U2-d review: the migration fact
                 // renamed (Down refusal 51190) and +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the
                 // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
-                "0df4c0f37a425273955ed12bab380ff896ae0c0a6b0dba076abdf5b64404814b",
+                "b30fa7d7fcd05703bfd6f2a0634f6fb095494eb71d81ecc72d6f89ea175dcb5d",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -603,7 +603,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // table, filter, key or bypass).
                 // Üretim U2-d: the plan row gains the nullable preparer column (CreatedBy) and its check (no new table,
                 // filter, key or bypass).
-                "d2b57cd8ea08cf15f8bdb681981fa1b52dd1c05f6100deb24c4a37e0c14ed818",
+                "aa5ad9b2b3965da0abd0148155d176032f264f8e768397a734704a865649d210",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1930,6 +1930,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261107082508_AddManufacturingPlanPreparer.cs"] =
                     new(
                         "4f89517e3f10cf2736d650fd3c91b93445f4625a9201554ad77a73f14b8fbb37",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Üretim U3-a (URT-D21, B-01): Down's only raw SQL refuses (51191) while any plan input allocation row
+                // exists (Inventory still holds the allocation it names), before the table is dropped (forward fix).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261107145415_AddManufacturingPlanInputAllocations.cs"] =
+                    new(
+                        "5c407961e8bc61ce4a00098cad0963f479e0c15e4cbbf86aeac087c773bfa1ac",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
