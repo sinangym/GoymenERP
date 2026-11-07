@@ -209,6 +209,28 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task SAT_D220_a_line_pending_removal_is_offered_to_no_supply_link_and_comes_back_after_a_rejection()
+    {
+        // SAT-D220 (EK39): while the removal waits, no new purchase / production link may be made to the line — the Sales line
+        // port, through which a linking owner reads a sales order line, offers it on no read (direct, loading, list).
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        var port = LinePort(world);
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [AddedLine()], [new SalesDraftLineRemovalV1(line)]), Metadata("k-d220"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-d220-submit"));
+
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineForLoadingAsync(approved.Id, line, Day)).Outcome);
+        Assert.DoesNotContain((await port.ListApprovedLinesAsync(10, null)).Items, item => item.LineId == line);
+
+        // Rejected: the line comes back and is offered again.
+        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-d220-reject"));
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+        Assert.Contains((await port.ListApprovedLinesAsync(10, null)).Items, item => item.LineId == line);
+    }
+
+    [Fact]
     public async Task A_removed_line_comes_back_under_the_last_accepted_revision_when_the_customer_rejects_the_removal()
     {
         // SAT-D211 (EK36) with SAT-D115: the customer rejects the internally approved Rev.1 that removed the line.
