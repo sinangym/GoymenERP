@@ -226,9 +226,15 @@ leaves the Accounting (`accounting.journal-amount.v1`) and Finance
 separate decision, so those keys answer `settings_provider_unavailable` there: the operation
 check is per company. GIN stays invoice-closed (DEC-ORG-005).
 
+**Purchasing on GSP and GIN (ALS-D69).** ALS-D69 approves the purchasing order key "GDC: TRY; GSP/GIN
+ayrı, Satış'taki gibi". It is read through SAT-D18's approved per-company GSP/GIN TRY profiles: those
+profiles (same ids, versions, scale and windows) also answer `purchasing.order.v1`, with the unit-price
+scale 4 of ALS-D72. No new profile or company-wide default is created, and the Accounting/Finance keys
+stay unavailable for GSP/GIN.
+
 | Company | Profile | Operations | Effective from |
 |---|---|---|---|
-| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft | 2026-09-18 |
+| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft, `purchasing.order.v1` (A2a-1b) | 2026-09-18 |
 | GSP | `5b863ed2-e21a-5c43-b219-fa113dcc50b3` | `sales.order-draft.v1`, `purchasing.order.v1` (A2a-1b) | 2026-10-26 |
 | GIN | `d78eee0d-4940-52e3-bd80-3b5ebdb6d760` | `sales.order-draft.v1`, `purchasing.order.v1` (A2a-1b) | 2026-10-26 |
 
