@@ -333,11 +333,8 @@ public sealed class SalesInvoiceService(
         else
         {
             reasons.AddRange(tax.InvoiceBlockers(basis.BuyerTax).Select(blocker => new SalesDraftFieldError(field, blocker)));
-            if (tax.Rate is { WithholdingShare: not null })
-            {
-                reasons.Add(new(field, SalesInvoiceReasonCodesV1.WithholdingThresholdUndecided));
-            }
-
+            // A withholding line is NOT held back here: the calculator computes it (SAT-D75/D224). The VUK 232 threshold (a
+            // configurable value marked "mali musavir teyidi bekliyor") is evaluated at finalisation (PR4), never hard-coded here.
             if (tax.BuyerDocumentRequired && basis.BuyerTax?.DocumentDate is { } documentDate && documentDate > shipmentDate)
             {
                 reasons.Add(new(field, SalesInvoiceReasonCodesV1.ExemptionDocumentAfterShipment));
@@ -417,6 +414,13 @@ public sealed class SalesInvoiceService(
             }
 
             await RequireStillAsync(scope, WritePermission, cancellationToken);
+            // A resolved answer for another target than the functional currency breaks the owner's contract: fail-closed provider
+            // error (503), never a rate quietly taken for TL.
+            if (answer is { State: ExchangeRateResolutionStatesV1.Resolved } && answer.TargetCurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira)
+            {
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+            }
+
             if (answer is { State: ExchangeRateResolutionStatesV1.Resolved, BulletinDate: { } bulletin, SellingRate: { } text }
                 && answer.SourceCurrencyId == currencyId && answer.RateDay == group.Key
                 && SalesLinePriceCalculator.TryParseExact(text, out var value) && value > 0m)

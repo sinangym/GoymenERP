@@ -112,6 +112,40 @@ public sealed class SalesInvoiceCalculatorTests
     }
 
     [Fact]
+    public void A_discounted_line_uses_the_unrounded_net_unit_price_and_rounds_only_the_line_amount()
+    {
+        // SAT-D76: 33.33 less 10 % = 29.997 (not rounded) x 3 kg = 89.991 -> 89.99; VAT 20 % = 17.998 -> 18.00 (SAT-D11).
+        var discounted = new SalesInvoiceLineInput(Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-000000000001"), 1, Kg, 3m,
+            new CommercialDraftFields("33.33", Kg, "10"), Tax(vat: 20m));
+
+        var result = SalesInvoiceCalculator.Calculate([discounted], Try, 2, null);
+
+        Assert.Equal(["89.99", "18.00", "0.00", "107.99", "107.99"], Set(result.Totals!));
+        Assert.Equal(29.997m, result.Lines[0].NetUnitPrice);
+    }
+
+    [Fact]
+    public void A_zero_amount_line_stays_zero_and_never_takes_the_group_difference_in_a_foreign_currency_invoice()
+    {
+        // The EK42 golden group (99.99 + 10.01 at 20 %, rate 34.5678) plus a trailing zero-priced line of the same group: the
+        // difference stays on the last line that CARRIES an amount (line 2), never on the zero line (EK42 "o tutar turunu tasiyan son satir").
+        var result = SalesInvoiceCalculator.Calculate(
+        [
+            Line(1, "3", "33.33", Tax(vat: 20m)),
+            Line(2, "1", "10.01", Tax(vat: 20m)),
+            Line(3, "5", "0", Tax(vat: 20m)),
+        ], Usd, 2, Rate(34.5678m));
+
+        Assert.Equal(SalesInvoiceAmountsState.Computed, result.State);
+        Assert.Equal(["0.00", "0.00", "0.00", "0.00", "0.00"], Set(result.Lines[2].Amounts));
+        Assert.Equal(["0.00", "0.00", "0.00", "0.00", "0.00"], Set(result.Lines[2].Functional!.Amounts));
+        Assert.Empty(result.Lines[2].Functional!.Adjusted);
+        Assert.False(result.Lines[2].Functional!.NeedsReview);
+        Assert.Equal([SalesInvoiceAmountType.Net, SalesInvoiceAmountType.Vat], result.Lines[1].Functional!.Adjusted);
+        Assert.Equal(["3802.46", "760.49", "0.00", "4562.95", "4562.95"], Set(result.Groups[0].Functional!));
+    }
+
+    [Fact]
     public void An_unpriced_line_or_a_line_without_a_tax_source_gives_no_amount_at_all()
     {
         var unpriced = SalesInvoiceCalculator.Calculate([Line(1, "1", "10", Tax()), Line(2, "1", null, Tax())], Usd, 2, Rate(30m));

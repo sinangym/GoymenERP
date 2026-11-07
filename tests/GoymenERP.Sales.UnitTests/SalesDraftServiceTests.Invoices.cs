@@ -98,7 +98,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task A_withholding_line_waits_for_the_threshold_decision_and_its_code_never_a_guessed_rule()
+    public async Task A_withholding_line_without_its_code_waits_only_on_the_code_and_no_threshold_is_guessed()
     {
         var invoicing = await InvoiceWorld.CreateAsync(withholding: true);
 
@@ -106,9 +106,25 @@ public sealed partial class SalesDraftServiceTests
             invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-withholding")));
 
         Assert.Equal(409, refused.Status);
-        Assert.Contains(new SalesDraftFieldError("shares[0]", SalesInvoiceReasonCodesV1.WithholdingThresholdUndecided), refused.Errors);
-        Assert.Contains(new SalesDraftFieldError("shares[0]", TaxResolutionReasonsV1.WithholdingCodeMissing), refused.Errors);
+        Assert.Equal([new SalesDraftFieldError("shares[0]", TaxResolutionReasonsV1.WithholdingCodeMissing)], refused.Errors);
         Assert.Empty(invoicing.Invoices.Stored);
+    }
+
+    [Fact]
+    public async Task A_coded_withholding_line_is_invoiced_and_its_tl_withholding_is_reachable_end_to_end()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync(withholding: true, withholdingCode: "625");
+
+        var created = await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-withholding-coded"));
+
+        var invoice = created.Invoice;
+        // 1.25 kg x 12.50 = 15.63; VAT 20 % = 3.13; withheld 5/10 of the rounded VAT = 1.565 -> 1.57 (SAT-D75); payable 17.19.
+        Assert.Equal(new SalesInvoiceAmountsView("15.63", "3.13", "1.57", "18.76", "17.19"), invoice.Totals);
+        Assert.Equal("0.5", Assert.Single(invoice.Lines).WithholdingShare);
+        // SAT-D224: the withholding TL is the invoice-currency withholding x the rate (1.57 x 34.5678 = 54.27); SAT-D225: payable TL =
+        // net TL + VAT TL - withholding TL = 540.29 + 108.20 - 54.27 = 594.22.
+        Assert.Equal(new SalesInvoiceAmountsView("540.29", "108.20", "54.27", "648.49", "594.22"), invoice.FunctionalTotals);
+        Assert.Equal("17.19", Assert.Single(invoice.Instalments).Amount);
     }
 
     [Fact]
@@ -192,7 +208,10 @@ public sealed partial class SalesDraftServiceTests
         public FakeExchangeRates Rates { get; } = new(ExchangeRateResolutionStatesV1.Resolved, "34.5678");
         public bool NoShipments { get; set; }
 
-        public static async Task<InvoiceWorld> CreateAsync(bool withholding = false)
+        /// <summary>An invoice world around an order the caller has put in the state under test.</summary>
+        public static InvoiceWorld Around(World world, SalesOrderDraftDetailView order) => new(world, order);
+
+        public static async Task<InvoiceWorld> CreateAsync(bool withholding = false, string? withholdingCode = null)
         {
             var world = new World
             {
@@ -201,8 +220,9 @@ public sealed partial class SalesDraftServiceTests
                     Defaults =
                     [
                         new TaxItemTypeDefaultDataV1(Guid.NewGuid(), Company, TaxItemTypesV1.Steel, TaxDefaultSourcesV1.Record, 1, Day, true,
-                            20m, null, withholding, withholding ? 50m : null, null),
+                            20m, null, withholding, withholding ? 50m : null, withholdingCode),
                     ],
+                    WithholdingCodes = withholdingCode is null ? [] : [withholdingCode],
                 },
             };
             var approved = await PricedApprovedAsync(world, "k-invoice-order");

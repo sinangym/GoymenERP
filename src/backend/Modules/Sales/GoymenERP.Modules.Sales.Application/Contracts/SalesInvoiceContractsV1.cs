@@ -94,12 +94,6 @@ public static class SalesInvoiceReasonCodesV1
     public const string LineUnpriced = "line_unpriced";
     public const string TaxUnavailable = "tax_unavailable";
 
-    /// <summary>
-    /// A line carries VAT withholding: the VUK 232 threshold comparison (exceeding vs reaching, below-threshold effect, the rate of a
-    /// foreign-currency order) is not decided (NEEDS-SINAN), so the invoice waits — never a guessed threshold rule.
-    /// </summary>
-    public const string WithholdingThresholdUndecided = "withholding_threshold_undecided";
-
     /// <summary>SAT-D186: the buyer's exemption document is dated after the shipment — the Muhasebe Müdürü approval has no source yet.</summary>
     public const string ExemptionDocumentAfterShipment = "exemption_document_after_shipment";
 
@@ -128,7 +122,7 @@ public sealed record SalesInvoiceRateView(string Rate, DateOnly RateDay, DateOnl
 public sealed record SalesInvoiceVatGroupView(string VatPercent, int LineCount, SalesInvoiceAmountsView Amounts,
     SalesInvoiceAmountsView? Functional);
 
-/// <summary>One instalment (SAT-D124/D129). Its TL equivalent is not decided (EK42 "kapsam dışı"), so none is given.</summary>
+/// <summary>One instalment (SAT-D124/D129). Its TL equivalent (SAT-D227, EK43) is computed at finalisation (API-36, PR4), not in the draft; the draft stores the instalments, the invoice TL totals and the rate frozen.</summary>
 public sealed record SalesInvoiceInstalmentView(int SequenceNo, DateOnly DueDate, string SharePercent, string Amount);
 
 /// <summary>A line's TL amounts, the amount types that took the group difference and the Kontrol Merkezi flag (EK42).</summary>
