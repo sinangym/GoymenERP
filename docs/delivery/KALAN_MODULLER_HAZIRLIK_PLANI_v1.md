@@ -393,11 +393,12 @@ kayıt · stok raporları · R-05 kuyrukta dışa aktarım.
 **Dalga OK — Ortak koda taşıma (C1–C12, `docs/governance/ORTAK_DESENLER_v1.md`)**
 Koordinatör aktarımıyla (2026-11-07) bu şeride verildi. Kural: yalnız teknik kod ortaklaşır, iş kuralı modülde kalır;
 her aday ayrı PR. Sıra rehberdeki gibi düşük riskten yükseğe: C11 → C12 → C9 → C2 → C1(A) → C6 → C7 → C10 → C4 → C3 →
-C8 → C5. K dalgalarıyla şöyle örülür:
+C8 → C5. K dalgalarıyla şöyle örülür (gruplar zamanlamayı belirler; aynı grup içinde rehberdeki sıra geçerlidir,
+yani C1(A) rehberdeki yerinden K1 sonrasına kayar ve K3 grubunda sıra C1(A) → C4 → C3 → C8'dir):
 - K1 adaylar (C11 test harness'ları, C12 istek çiti) K0 dilimlerinin arasında, frontend boşluklarında.
-- C9, C2, C6, C10 (K2) K1 dalgası (Ayarlar) ile birlikte.
-- C1(A), C3, C4, C8 (K3) K1 dalgası sonrasında, iki tam review ile.
-- C5 (yetki çiti, K3 yüksek risk) en sonda, modül modül; her modül ayrı PR.
+- C9, C2, C6, C7, C10 (K2) K1 dalgası (Ayarlar) ile birlikte.
+- C1(A), C4, C3, C8 (K3) K1 dalgası sonrasında, iki tam review ile.
+- C5 (yetki çiti, K3 yüksek risk) en sonda, modül modül; her modül ayrı PR ve her biri iki tam review ile.
 Değişmezler: C1'de davranışı ya da hata kodu farklı gruplar birleştirilmez (bu bir Sinan kararıdır, taşıma PR'ı
 seçmez); C7'de request-hash girdisi değişmez (eski idempotency anahtarları replay olmalı); C5'te yetki adı/kapsamı
 değişmez.
