@@ -104700,6 +104700,16 @@
               "null",
               "string"
             ]
+          },
+          "processSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanProcessSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -104769,6 +104779,134 @@
           },
           "hasRefusal": {
             "type": "boolean"
+          }
+        }
+      },
+      "PlanProcessSpecRequestV1": {
+        "type": "object",
+        "properties": {
+          "packageCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "piecesPerPackage": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pieceLengthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unitKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "perimeterMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "targetThicknessMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "paintDescription": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "paintColorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PlanProcessSpecViewV1": {
+        "required": [
+          "packageCount",
+          "piecesPerPackage",
+          "pieceLengthMm",
+          "unitKg",
+          "perimeterMm",
+          "targetThicknessMm",
+          "paintDescription",
+          "paintColorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "packageCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "piecesPerPackage": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pieceLengthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unitKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "perimeterMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "targetThicknessMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "paintDescription": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "paintColorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -104952,6 +105090,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "processSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanProcessSpecViewV1"
+              }
             ]
           }
         }
@@ -105230,6 +105378,16 @@
               },
               {
                 "$ref": "#/components/schemas/PlanCancellationViewV1"
+              }
+            ]
+          },
+          "processSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanProcessSpecViewV1"
               }
             ]
           }
@@ -110240,6 +110398,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "processSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanProcessSpecRequestV1"
+              }
             ]
           }
         }
@@ -117656,6 +117824,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "processSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanProcessSpecRequestV1"
+              }
             ]
           }
         }

@@ -92,6 +92,13 @@ public sealed record PlanCalculationParameters(
         return this with { Plan = plan };
     }
 
+    /// <summary>Üretim U2-b1: every plan-entered value at once (see <see cref="WithPlanValue"/>).</summary>
+    public PlanCalculationParameters WithPlanValues(IEnumerable<PlanEnteredValue> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        return values.Aggregate(this, (parameters, value) => parameters.WithPlanValue(value.Key, value.Number));
+    }
+
     internal decimal? Value(Guid? roll, string name)
     {
         if (roll is { } id && Rolls is { } rolls && rolls.TryGetValue(id, out var own) && own.TryGetValue(name, out var value))
@@ -191,10 +198,9 @@ public static class ProductionPlanCalculatorV1
     public static PlanCalculation Calculate(ProductionPlan plan, PlanCalculationParameters? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        // U2-a: the plan-entered line speed (Slitting, Tube / Profile) wins over the profile for this plan.
+        // U2-a / U2-b1: the plan-entered values (line speed, process spec) win over the profile for this plan.
         return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, plan.CutToLengthSpec,
-            (parameters ?? PlanCalculationParameters.Unknown).WithPlanValue(ProductionPlan.LineSpeedParameter,
-                plan.LineSpeedMetresPerMinute));
+            (parameters ?? PlanCalculationParameters.Unknown).WithPlanValues(plan.PlanEnteredValues()));
     }
 
     public static PlanCalculation Calculate(ManufacturingProcess process, IReadOnlyList<PlannedInput> inputs,
