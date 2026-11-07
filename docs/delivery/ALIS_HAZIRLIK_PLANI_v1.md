@@ -395,7 +395,7 @@ Persona önerileri (grant değildir; karta giriş yalnız Sinan'ın cümlesiyle)
 Satın alma müdürü onaylar; Depo kabul kaydeder; Muhasebe gelen faturayı eşleştirir. **ALS-D53** (EK8) iki personayı
 tanımladı: Satın Alma Uzmanı hazırlar ve kendi talebini geri çeker, onaylamaz; Satın Alma Müdürü, Genel Müdür ve Admin
 onaylar/reddeder. **ALS-D54**: talebi Satın Alma Uzmanı, Satın Alma Müdürü, Satış Destek ve Satış Uzmanı açar. Kart
-eşlemesi EK8 §3 "Kart için not"tadır; `purchasing.orders.cancel` için girdi EK10 §2 (ALS-D66: Satın Alma Müdürü, Genel Müdür, Admin; Satın Alma Uzmanı değil); `purchasing.orders.price.read` için girdi EK11 ALS-D70 (Satın Alma Uzmanı, Satın Alma Müdürü, Genel Müdür, Admin, Muhasebe, Muhasebe Müdürü, Satış Destek, Satış Uzmanı; Sevkiyatçı değil); kartın "Satın alma personaları" tablosu EK11 PR'ında eklendi (öneri, grant değildir). **PRS-01** persona kartı satırları
+eşlemesi EK8 §3 "Kart için not"tadır; `purchasing.orders.cancel` için girdi EK10 §2 (ALS-D66: Satın Alma Müdürü, Genel Müdür, Admin; Satın Alma Uzmanı değil); `purchasing.orders.price.read` için girdi EK11 ALS-D70 (Satın Alma Uzmanı, Satın Alma Müdürü, Genel Müdür, Admin, Muhasebe, Muhasebe Müdürü, Satış Destek, Satış Uzmanı; Sevkiyatçı değil); kartın "Satın alma personaları" tablosu EK11 PR'ında (#957) eklendi (öneri, grant değildir). **PRS-01'de kalan:** SENTETIK browser-suite personalarına bu tablonun grant'ları, kartın ana tablosuna `purchasing.*` satırlarının (cancel, price.read, talep adları) işlenmesi ve Muhasebe `orders.read`/`price.read` NEEDS-SINAN'ı; gerçek grant insan kapısıdır. **PRS-01** persona kartı satırları
 (GP, K3), **PRS-02** depocunun fiyatsız sipariş görünümü (K3).
 
 ---

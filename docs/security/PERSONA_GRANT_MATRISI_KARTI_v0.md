@@ -74,7 +74,7 @@ yalnız `purchasing.*` adlarında anlam taşıdığı için ana tabloya sütun o
 bir ek tabloyla eklendi (aşağıda "Satın alma personaları"). `purchasing.*` satırlarında bu ek tablo ana tabloya
 üstündür; Satın Alma Müdürü tanımlandığı için o satırlardaki "SAT-D187 ara dönem: Satın Alma Müdürü" hücreleri artık
 Satın Alma Müdürü + Genel Müdür + Admin'dir (SAT-D188: Genel Müdür her müdür hücresinde yetkilidir). Öneridir; grant
-değildir.
+değildir. Kart değişikliği insan kapısı: Sinan "Onaylıyorum, aynı PR", PR #957 yorumu 6706749065.
 
 **Tabloda satırı olmayan ÜÇ ad vardı (1 Kasım 2026'dan beri İKİ: `sales.orders.price.write` SAT-D151 ile kapandı ve tabloya girdi), ve üçü de burada adıyla yazılıdır** — çünkü bir sayı, sonraki
 okuyucuya tablonun tam olduğunu söyler. Eksikliği görünür kılmadan sayıyı güncellemek, karta hiç
@@ -145,7 +145,7 @@ bağlıdır.
 | **Finans Müdürü** (SAT-D196) | Finans işlemini **onaylar**: onay ve onayın gerektirdiği okumalar. **Oluşturmaz**; hazırlayan ≠ onaylayan. Müdür personası olarak yedi temel izni alır (SAT-D191 temel); öteki finans dışı her hücrede `—`, **tek istisna** kur okuması `settings.exchange-rates.read` (SAT-D199). Fatura kesmez (SAT-D202). Bugün kartta Critical olmayan bir finans onay adı olmadığı için finans satırlarında henüz `+` hücresi yoktur. Critical finans adları insan kapısındadır. |
 | **Satın Alma Uzmanı** (ALS-D53) | Satın alma talebini ve siparişini **hazırlar**, kendi talebini geri çeker; talebi ve siparişi **onaylamaz**, kalanı iptal etmez (ALS-D66). Talep açar (ALS-D54). Alış fiyatını görür (ALS-D70). Alış dışında yalnız SAT-D191 temel okumaları (EK8 §3, yorum). |
 | **Satın Alma Müdürü** (ALS-D53) | Alış modülünün müdürüdür: talebi ve siparişi **onaylar/reddeder** (ALS-D2, ALS-D3), onaylı siparişin kalanını iptal eder (ALS-D66), talep açar (ALS-D54), alış fiyatını görür (ALS-D70). Hazırlayan kendi kaydını onaylayamaz (kayıt kuralı). Alış faturası kurunu **düzeltmez** (ALS-D56). Kendi modülü dışındaki okumayı almaz (SAT-D191). |
-| *Üretim, Stok, Lojistik Müdürü … (yer tutucu)* (SAT-D187, SAT-D191) | Her modülün kendi müdürü, yetkisi kendi modülünde kalır. Bu personalar **o modüllerin karar dosyalarında** tanımlanır (Alış ve Üretim şeritleri; ALS-D3 alış siparişi onayı ve ALS-D6 kur düzeltmesinin güncellenmesi Alış şeridinin işidir; URT-D2 plan onayı Üretim müdüründedir). Karta girene kadar sütunları yoktur. O modüllerde **eski Müdür'ün `+` hücreleri** ile SAT-D191'in o modülün müdürüne verdiği hücreler — tabloda "SAT-D187 ara dönem: … Müdürü" diye işaretli olanlar — **Genel Müdür + Admin**'dedir. Müdürü olmayan modülün (ör. Organizasyon) hücreleri de Genel Müdür + Admin'de kalır (SAT-D191). Kendi modülü dışındaki okumayı almaz (SAT-D191). |
+| *Üretim, Stok, Lojistik Müdürü … (yer tutucu)* (SAT-D187, SAT-D191) | Her modülün kendi müdürü, yetkisi kendi modülünde kalır. Bu personalar **o modüllerin karar dosyalarında** tanımlanır (Üretim şeridi; URT-D2 plan onayı Üretim müdüründedir). Satın Alma Müdürü artık tanımlıdır: yukarıdaki Satın Alma satırları ve "Satın alma personaları" ek tablosu. Karta girene kadar sütunları yoktur. O modüllerde **eski Müdür'ün `+` hücreleri** ile SAT-D191'in o modülün müdürüne verdiği hücreler — tabloda "SAT-D187 ara dönem: … Müdürü" diye işaretli olanlar — **Genel Müdür + Admin**'dedir. Müdürü olmayan modülün (ör. Organizasyon) hücreleri de Genel Müdür + Admin'de kalır (SAT-D191). Kendi modülü dışındaki okumayı almaz (SAT-D191). |
 
 ## Önerilen eşleme
 
@@ -313,9 +313,9 @@ sonrası kararlarda `yok` yazar. Değişen ya da eklenen satırlar:
 | *fatura kesme = ERP fatura taslağı hazırlama ve onaylanmış taslağı kesme* (SAT-D142, SAT-D202, API-32; **fatura dalgası, ad bekliyor** — planlı ad `sales.invoices.write`) | + *(SAT-D202)* | — *(SAT-D202)* | — *(SAT-D202)* | **—** *(SAT-D202 "görür ama kesemez")* | ? | + *(SAT-D142, SAT-D202)* | **—** *(SAT-D202 "görür ama kesemez")* | + *(SAT-D202)* | + *(SAT-D202)* |
 | *fatura taslağı onayı ve tolerans farkı onayı* (SAT-D88, SAT-D106, SAT-D204, API-33/API-35; **fatura dalgası, ad bekliyor** — API-33 planlı adı `sales.invoices.approve`) | + *(SAT-D204)* | — *(SAT-D88, SAT-D204)* | — *(SAT-D88, SAT-D204)* | — *(SAT-D88, SAT-D204)* | — *(SAT-D88)* | + *(SAT-D88, SAT-D204; hazırlayan onaylayamaz)* | **—** *(SAT-D204)* | + *(SAT-D204)* | + *(SAT-D204)* |
 | *fatura okuma* (SAT-D202 "Satış görür"; **ad bekliyor** — API-32 planında GET yazma adına bağlı) | + *(SAT-D202)* | ? | ? | + *(SAT-D202)* | yok *(EK28 öncesi)* | + *(SAT-D202)* | + *(SAT-D202)* | + *(SAT-D202)* | + *(SAT-D202)* |
-| `purchasing.orders.read` | + | + | + | + | + | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
-| `purchasing.orders.create` | + | — | + | + | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
-| `purchasing.orders.approve` | + | — | **—** | **—** | + | ? | — *(SAT-D187/D188 alış)* | — *(SAT-D187/D188 alış)* | + *(SAT-D187 ara dönem, SAT-D188; ALS-D3)* |
+| `purchasing.orders.read` (Satın alma personaları ek tablosuna bakınız) | + | + | + | + | + | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
+| `purchasing.orders.create` (Satın alma personaları ek tablosuna bakınız) | + | — | + | + | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
+| `purchasing.orders.approve` (Satın alma personaları ek tablosuna bakınız) | + | — | **—** | **—** | + | ? | — *(SAT-D187/D188 alış)* | — *(SAT-D187/D188 alış)* | + *(SAT-D187 ara dönem, SAT-D188; ALS-D3)* |
 | `inventory.labels.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Stok Müdürü)* |
 | `inventory.balances.read` | + | + | ? | ? | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Stok Müdürü)* |
 | `inventory.opening-stock.record` | + | — | — | — | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Stok Müdürü)* |
@@ -410,7 +410,7 @@ de yalnız SAT-D191 temel okumalarını alır, öteki her hücre **`—`** (deny
 | `purchasing.requests.withdraw` | + | + *(ALS-D54, ALS-D47)* | + *(ALS-D54, ALS-D47)* | + *(ALS-D54, ALS-D47)* | + *(ALS-D54, ALS-D47)* | ? *(talep açarsa; yukarıdaki satıra bağlı)* | — *(ALS-D54)* | — *(ALS-D54)* | — *(EK8 §3)* | — *(EK8 §3)* |
 | `purchasing.requests.approve` | + | — *(ALS-D53)* | + *(ALS-D2, ALS-D53)* | — | — | + *(ALS-D53, SAT-D188)* | — *(ALS-D53)* | — *(ALS-D53)* | — | — *(EK8 §3)* |
 | `purchasing.orders.create` | + | + *(ALS-D53)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi; SAT-D194 benzetmesi)* | + *(kart §4)* | + *(kart, SAT-D141)* | + *(SAT-D188 soru 9)* | ? *(ana tabloda olduğu gibi)* | — *(SAT-D191)* | — | — *(SAT-D191)* |
-| `purchasing.orders.read` | + | + *(yorum: hazırlamanın gerektirdiği okuma)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi)* | + *(kart)* | + *(kart)* | + | ? *(ana tabloda olduğu gibi)* | — *(SAT-D191)* | + *(kart §4; fiyatlar `Withheld`, PRS-02 — aşağıda "engeller" 2. madde)* | — *(SAT-D191)* |
+| `purchasing.orders.read` | + | + *(yorum: hazırlamanın gerektirdiği okuma)* | + *(yorum: SAT-D191 ara dönem hücresinin geçişi)* | + *(kart)* | + *(kart)* | + | ? *(ana tabloda olduğu gibi; price.read ile çift NEEDS-SINAN, aşağıda)* | — *(SAT-D191)* | + *(kart §4; fiyatlar `Withheld`, PRS-02 — aşağıda "engeller" 2. madde)* | — *(SAT-D191)* |
 | `purchasing.orders.approve` | + | — *(ALS-D53)* | + *(ALS-D3, ALS-D53)* | **—** | **—** | + *(ALS-D53, SAT-D188)* | — *(ALS-D53)* | — *(ALS-D53)* | — | — *(SAT-D187/D188 alış)* |
 | `purchasing.orders.cancel` (A1-3, PR #932) | + *(ALS-D66)* | — *(ALS-D66)* | + *(ALS-D66)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* | + *(ALS-D66)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* | — *(yorum, EK10 §2)* |
 | `purchasing.orders.price.read` (A2a-1, PR #944) | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | + *(ALS-D70)* | **—** *(ALS-D70, PRS-02; kart §4 "fiyatları göremez")* | — *(yorum, EK11 §2: seçenek saymaz)* |
@@ -420,8 +420,13 @@ de yalnız SAT-D191 temel okumalarını alır, öteki her hücre **`—`** (deny
   "Satış Destek de görsün" seçeneğini seçti; seçenek açıklaması "alış siparişi girebilen Satış Destek ve Satış Uzmanı"
   der. Satış Müdürü sayılmadığı için `—` (yorum; geri alınabilir). Finans Uzmanı / Finans Müdürü bu satırda da `—`
   (kartın finans dışı satır kuralı).
-- `purchasing.goods-receipts.record` (depo kabul, PRS-02) bu turlarda sorulmadı; satırı yoktur ve deny-first altında
-  kimseye önerilmemiş sayılır (EK8 §3).
+- **Muhasebe: `price.read` `+`, `orders.read` `?` — NEEDS-SINAN.** ALS-D70 Muhasebe'ye fiyat okumasını verir, ama
+  fiyat yalnız sipariş detayında açılır ve detaya `purchasing.orders.read` ile ulaşılır (PRS-02 açıklama izni, erişim
+  izni değil). `orders.read` olmadan `price.read` işe yaramaz. Muhasebe'nin `purchasing.orders.read` hücresi hiçbir
+  kararda bağlanmadı (ana tabloda `?`); bu çift tahminle doldurulmaz, **NEEDS-SINAN** olarak açık kalır ve o zamana
+  kadar fiilen hiçbir şey açmaz.
+- `purchasing.goods-receipts.record` (depo kabul, PRS-02): EK8 §3'te `?` / sorulmadı; bu tabloya satır eklenmedi ve
+  deny-first altında kimseye önerilmemiş sayılır.
 - **Gerçek grant insan kapısıdır.** Bu tablodaki adlar manifestte yalnız **kayıtlıdır**; SENTETIK browser-suite
   personaları dışında kimse taşımaz. Bir kişiye hem Satın Alma Müdürü hem başka bir persona verilmesi (SAT-D187) de
   gerçek atamadır ve aynı kapıdadır.
