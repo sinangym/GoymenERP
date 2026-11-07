@@ -18,7 +18,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// unaccepted remainder is stored in ONE save (header facts, line shares, attempt, audit) and the same key replays; the remainder
 /// leaves the future supply on both Purchasing read ports (INV-006) while the accepted share, the stock receipt and the request
 /// binding stay; no further receipt is staged on a cancelled order; the checks hold the facts and the shares on a direct write; a
-/// cancelled order keeps counting in its request line's Σ-shares (fail-closed, NEEDS-SINAN) and no longer blocks the request's
+/// cancelled order keeps counting in its request line's Σ-shares (ALS-D68: a new request is needed) and no longer blocks the request's
 /// rejection (No.161 §1); company B neither sees nor cancels company A's order; the migration's Down refuses while a cancelled order
 /// exists. SENTETIK owners.
 /// </summary>
@@ -203,7 +203,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 
         await using (StoreScope a = run.Store(CompanyA))
         {
-            // Fail-closed (NEEDS-SINAN): the cancelled order still holds its 60 of the request line's 100; 60 + 50 is over-sourced.
+            // ALS-D68 (EK10): the cancelled order still holds its 60 of the request line's 100; 60 + 50 is over-sourced.
             var over = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(run.Envelope("k-second-approve", actor: Manager),
                 Hash("second-approve"), PurchasingCommands.OrderApproveV1, second, (order, now) => order.Approve(2, now), Approved));
             Assert.Equal(PurchasingStoreCodes.RequestLineOverSourced, over.Code);

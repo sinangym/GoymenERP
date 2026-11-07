@@ -39,13 +39,13 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
 import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { Field } from '../ui/Field'
-import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
+import { StatusIndicator } from '../ui/StatusIndicator'
 import { createRequestFence } from './requestFence'
 import { ORDER_LIST_TEXT as LIST_TEXT, PURCHASE_ORDER_STATUS_LABEL as STATUS } from './purchasingText'
+import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import styles from './PurchaseOrderListPage.module.css'
 
 /** The dot's colour only — the status text carries the meaning. */
-const STATUS_TONE: Record<PurchaseOrderStatus, StatusTone> = { Draft: 'neutral', Approved: 'success', Cancelled: 'warning' }
 
 const HEADING_ID = 'purchase-order-list-heading'
 const SUPPLIER_FILTER_VALUE_ID = 'purchase-order-supplier-filter-value'
@@ -358,7 +358,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   const orderCell = (row: PurchaseOrderSummary) => canOpen
     ? <Link className={styles.orderLink} to={purchaseOrderDetailPath(row.id)}>…{row.id.slice(-8)}</Link>
     : <span className={styles.orderId}>…{row.id.slice(-8)}</span>
-  const statusCell = (row: PurchaseOrderSummary) => <StatusIndicator tone={STATUS_TONE[row.status]}>{STATUS[row.status]}</StatusIndicator>
+  const statusCell = (row: PurchaseOrderSummary) => <StatusIndicator tone={PURCHASE_ORDER_STATUS_TONE[row.status]}>{STATUS[row.status]}</StatusIndicator>
   // The filter action sits beside the identity, outside it: the identity element holds the supplier and nothing else.
   // While a supplier filter is active every row is that supplier's, so the action is not repeated on each of them.
   const supplierCell = (row: PurchaseOrderSummary) => {
