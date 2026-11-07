@@ -7,7 +7,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // Müdürü, GM, Admin per SAT-D168/D188/D190 — is a human gate, no role receives it here). SAT-D215 (EK37): no reason is required.
 // The precondition is the status read's own `readyToClose`, recomputed inside the save from the same calculation; a closure is
 // never decided on a stale flag. While the source (MOD-05/API-11), invoicing (S5) and financial-closure (MOD-04) owners do not
-// exist those axes are NoSource, so the flag — and the command — are refused (409 sales_order_not_ready_to_close).
+// exist those axes are NoSource, so the flag — and the command — are refused (409 sales_order_not_ready_to_close). SAT-D221
+// (EK40) confirms it: every axis is required, no interim narrowing to the existing axes; a force-close (SAT-D12) is the way out.
 
 /// <summary>SAT-D32: POST …/{id}/close — the expected version (text) only; no reason (SAT-D215), no other member.</summary>
 public sealed record SalesDraftCloseRequest(string ExpectedVersion);

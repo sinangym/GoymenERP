@@ -688,16 +688,16 @@ public sealed class SalesPersistenceModelTests
             design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(item => item.Name == "CK_Drafts_State").Sql);
     }
 
-    /// <summary>SAT-D32: the user-closure rollback refuses with Sales' own 51211 BEFORE the table is dropped (forward fix).</summary>
+    /// <summary>SAT-D32: the user-closure rollback refuses with Sales' own 51212 BEFORE the table is dropped (forward fix).</summary>
     [Fact]
-    public void The_user_closure_migration_down_refuses_with_51211_before_it_drops_anything()
+    public void The_user_closure_migration_down_refuses_with_51212_before_it_drops_anything()
     {
         var down = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftUserClosures().DownOperations;
         Assert.Equal(2, down.Count);
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
         Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftUserClosures])", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[CommandName] = N'sales.order-draft.close.v1' AND [Outcome] = 1", guard.Sql, StringComparison.Ordinal);
-        Assert.Contains("THROW 51211,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51212,", guard.Sql, StringComparison.Ordinal);
         var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[1]);
         Assert.Equal(("sales", "DraftUserClosures"), (drop.Schema, drop.Name));
     }

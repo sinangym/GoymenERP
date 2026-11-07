@@ -426,7 +426,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
             // SAT-D32: +5 SalesOrderUserClose facts (the ready route's one save and replay, main's not-ready 409 / 403 / 404, the
-            // store with the write guard and constraints, the 51211 rollback refusal and the free rollback), kept ordinal-sorted
+            // store with the write guard and constraints, the 51212 rollback refusal and the free rollback), kept ordinal-sorted
             // (1f679068… -> 95e16c66…).
             ["tools/relational_inventory/sales.txt"] =
                 "95e16c66ee11c21a1f7283559dcde636c77bf6320469be3a6040193420f44f67",
@@ -2252,7 +2252,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
-                // SAT-D32: the Down's only raw SQL is Sales' refusal (51211, used by no other migration) while any user closure row or
+                // SAT-D32: the Down's only raw SQL is Sales' refusal (51212, used by no other migration) while any user closure row or
                 // recorded close attempt exists; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261103073447_AddDraftUserClosures.cs"] =
                     new("8203f52c0b1b2adba346bfa94fae865f3e3afe10f90f03c2253ae7f01ea6e550",

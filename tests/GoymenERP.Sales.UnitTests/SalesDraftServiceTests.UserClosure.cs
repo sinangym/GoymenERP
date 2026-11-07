@@ -115,6 +115,7 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("owner-says-incomplete")]
     [InlineData("no-source-flagged-complete")]
     [InlineData("unreadable-flagged-complete")]
+    [InlineData("policy-unavailable-flagged-complete")]
     [InlineData("another-company")]
     [InlineData("another-order")]
     [InlineData("blank-state")]
@@ -129,6 +130,7 @@ public sealed partial class SalesDraftServiceTests
             "owner-says-incomplete" => Complete(order) with { Invoicing = new("Partial", false) },
             "no-source-flagged-complete" => Complete(order) with { Source = new(SalesDraftStatusAxisStatesV1.NoSource, true) },
             "unreadable-flagged-complete" => Complete(order) with { FinancialClosure = new(SalesDraftStatusAxisStatesV1.Unreadable, true) },
+            "policy-unavailable-flagged-complete" => Complete(order) with { Invoicing = new(SalesDraftStatusAxisStatesV1.PolicyUnavailable, true) },
             "another-company" => Complete(order) with { CompanyId = Guid.NewGuid() },
             "another-order" => Complete(order) with { OrderId = Guid.NewGuid() },
             "blank-state" => Complete(order) with { Source = new(" ", true) },

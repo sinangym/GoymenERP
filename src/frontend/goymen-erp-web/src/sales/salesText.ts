@@ -994,6 +994,8 @@ export const USER_CLOSE_TEXT = {
   unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
   statusSubject: 'kapanmaya hazır bilgisi',
   recordHeading: 'Kapatma kaydı (kullanıcı kapattı)',
+  /** While the record is loading or could not be read: which closure it was is not known yet. */
+  recordPendingHeading: 'Kapatma kaydı',
   recordSubject: 'kapatma kaydı',
   recordNote:
     'Sipariş kapanmaya hazırken kullanıcı tarafından kapatıldı (zorla kapatma değil). Onay bilgileri, satırlar ve geçmiş ' +

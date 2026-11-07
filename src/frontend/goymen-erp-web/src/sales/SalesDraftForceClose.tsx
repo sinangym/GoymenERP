@@ -1,5 +1,5 @@
 /**
- * Delegation No 30 / SAT-D12 — "Siparişi kapat" (force-close) on S-04 of an APPROVED order, behind the
+ * Delegation No 30 / SAT-D12 — "Siparişi zorla kapat" (force-close) on S-04 of an APPROVED order, behind the
  * `sales.orders.force-close` control the shell publishes only to an actor holding that name beside the read.
  *
  *  - "Kapatma etkisini göster" reads the preview afresh from the server, which reads every category from its OWNER. Each

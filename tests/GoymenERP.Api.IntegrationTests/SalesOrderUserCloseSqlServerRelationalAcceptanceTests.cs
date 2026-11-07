@@ -37,7 +37,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// really shipping the line in full, the status read says ready and the route closes the order in ONE save (header state 3 +
 /// version, the appended user-closure row, the attempt, the audit event with SourceChannel Web); the same key replays; the line
 /// port answers the lines as not approved ("Closed"). The store, the EF write guard and the database constraints keep the row
-/// append-only and never beside a force-closure; the migration refuses to roll back over a closure (51211). Orders are stored
+/// append-only and never beside a force-closure; the migration refuses to roll back over a closure (51212). Orders are stored
 /// through the real Sales store from ISOLATED SYNTHETIC owner snapshots; every grant is a fresh synthetic role. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
@@ -271,7 +271,7 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
         await migrator.MigrateAsync(applied[closure]);
         Assert.Equal(applied[..(closure + 1)], await context.Database.GetAppliedMigrationsAsync());
         var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[closure - 1]));
-        Assert.Equal(51211, error.Number);
+        Assert.Equal(51212, error.Number);
         Assert.Equal(applied[..(closure + 1)], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftUserClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
         await context.Database.MigrateAsync();

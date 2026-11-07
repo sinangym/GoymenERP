@@ -236,7 +236,8 @@ export function ClosedOrderRecord({
   const record = outcome?.type === 'ok-single' ? outcome.data.userClosure : null
   return (
     <section className={styles.section} aria-labelledby={headingId} data-testid="sales-user-close-record">
-      <h2 id={headingId}>{T.recordHeading}</h2>
+      {/* The "kullanıcı kapattı" label only once the record says so; while it loads or fails the heading stays neutral. */}
+      <h2 id={headingId}>{record !== null ? T.recordHeading : T.recordPendingHeading}</h2>
       {record !== null ? (
         <>
           <p className={styles.muted}>{T.recordNote}</p>

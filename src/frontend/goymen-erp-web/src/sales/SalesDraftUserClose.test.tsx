@@ -166,6 +166,20 @@ describe('S-04 user closure of a "kapanmaya hazır" order (SAT-D32)', () => {
     expect(screen.queryByTestId('sales-user-close-submit')).toBeNull()
   })
 
+  it('does not label the record "kullanıcı kapattı" while it cannot be read', async () => {
+    installFetch({
+      capabilities: WITH_CLOSE,
+      onDetail: () => json(detail('Closed', '5')),
+      onUserClosure: () => json({ status: 503, code: 'service_unavailable' }, 503),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const section = await screen.findByTestId('sales-user-close-record')
+    await waitFor(() => expect(within(section).getByRole('button', { name: 'Tekrar dene' })).toBeTruthy())
+    expect(within(section).getByRole('heading', { level: 2 }).textContent).toBe(T.recordPendingHeading)
+    expect(section.textContent).not.toContain(T.recordHeading)
+    expect(screen.queryByTestId('sales-user-close-by')).toBeNull()
+  })
+
   it('keeps a force-closed order\'s own record when the user closure is empty', async () => {
     installFetch({
       capabilities: WITH_CLOSE,
