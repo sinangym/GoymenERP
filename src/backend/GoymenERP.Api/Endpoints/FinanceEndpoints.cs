@@ -23,6 +23,7 @@ public static class FinanceEndpoints
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
     public const string PartyLedgerPath = "/api/v1/finance/party-ledger";
+    public const string PartyBalancePath = "/api/v1/finance/party-balance";
     public const string OfficialInvoiceImportsPath = "/api/v1/finance/official-invoice-imports";
     public const string OfficialInvoiceImportBatchesPath = "/api/v1/finance/official-invoice-import-batches";
     private const string IdempotencyHeaderName = "Idempotency-Key";
@@ -626,6 +627,45 @@ public static class FinanceEndpoints
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnprocessableEntity(PartyLedgerRules.TooManyEntriesCode)
+            .ProducesErpServiceUnavailable();
+
+        // F1b / API-04 (FNS-D6, MOD-15): one party account's all-time balance summary per currency — debit / credit totals,
+        // the balance, and the still-open receivable and payable. The ledger's two authorities; nothing is written.
+        endpoints.MapGet(PartyBalancePath, async (
+                [FromQuery] Guid partyId,
+                [FromQuery] Guid companyAccountId,
+                HttpContext httpContext,
+                IPartyLedgerService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var result = await service.SummarizeAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    new PartyBalanceRequest(partyId, companyAccountId), cancellationToken);
+                return result.Outcome switch
+                {
+                    PartyBalanceOutcome.Found when result.Balance is not null => Results.Json(result.Balance, ContractJson),
+                    PartyBalanceOutcome.Invalid => Results.Problem(statusCode: StatusCodes.Status400BadRequest),
+                    PartyBalanceOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                    PartyBalanceOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                    PartyBalanceOutcome.TooManyFacts => Results.Problem(
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        extensions: new Dictionary<string, object?> { ["code"] = PartyBalanceRules.TooManyFactsCode }),
+                    _ => throw new InvalidOperationException("Party balance read returned an invalid outcome/resource combination."),
+                };
+            })
+            .WithName("GetFinancePartyBalanceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyBalanceView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnprocessableEntity(PartyBalanceRules.TooManyFactsCode)
             .ProducesErpServiceUnavailable();
 
         endpoints.MapGet(CustomerInstrumentsPath + "/{instrumentId:guid}", async (
