@@ -52,8 +52,10 @@ verdiği 4. madde cevabıyla da tutarlıdır). Kaynaklar:
   Bu, TL tevkifatın tabanı için önceki taslakta açık bırakılan `NEEDS-SINAN` sorusunu kapatır.
 - **Ödenecek TL** türetilmiş bir tutardır: NetTL + KdvTL − TevkifatTL (satırda ve belgede). Ayrı yuvarlanmaz; böylece fiş
   dengesi korunur.
-- **"Son satır"** faturadaki satır sırasına göre son satırdır. Uygulama, son satırın farkı taşıyacak tutarı olmayan nadir durumu (ör. o satırda KDV/tevkifat yok) testle
-  gösterir; seçim gerekirse `NEEDS-SINAN`.
+- **"Son satır" (geri alınabilir):** fark, o tutar türünü taşıyan (o türde tutarı sıfırdan farklı olan) satırlardan
+  faturadaki sıraya göre **son satıra** eklenir; ör. KDV farkı KDV'si olan son satıra, tevkifat farkı tevkifatlı son
+  satıra eklenir. O tür hiçbir satırda yoksa belge toplamı da sıfırdır ve eklenecek fark oluşmaz. Bu, kuralın
+  kendisinden çıkan uygulama ayrıntısıdır.
 - ERP'nin TL toplamı ile resmî e-faturadaki TL toplam arasında yine fark çıkarsa ERP tutarı **düzeltilmez**; SAT-D90/SAT-D172'deki
   kur farkı gibi fatura eşleştirmesinde (Kontrol Merkezi) **gösterilir**.
 - TL fatura (fatura para birimi TL) için çevrim yoktur; tutarlar SAT-D11 ile zaten kuruştadır.
