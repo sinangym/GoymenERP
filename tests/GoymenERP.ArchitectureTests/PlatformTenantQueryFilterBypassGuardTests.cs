@@ -443,8 +443,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // kept ordinal-sorted (a2ac1f92… -> a58234a1…).
             // K3 review A P1-1 / P2-1 (SAT-D211): +1 SalesOrderLineRevision fact (a quantity revision waits for the reinstatement after a
             // customer rejection; an empty line revision reinstates), kept ordinal-sorted (a58234a1… -> 96505e5c…).
+            // Merged with main's #952 (SAT-D32) Sales facts: recomputed over the union, ordinal-sorted (-> 78be7220…).
             ["tools/relational_inventory/sales.txt"] =
-                "95e16c66ee11c21a1f7283559dcde636c77bf6320469be3a6040193420f44f67",
+                "78be72202d8965d0cda28a417369729b4db620676f3583d25002e5df4ce7b665",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -564,7 +565,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // reports it modified (a line removed again in the same revision and reverted again writes R -> R).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "53aee4a44027be009b198d83f7cefa598fb6e1fea6892815673f9531d76ac86d",
+                "f3ffa82434420d91dd8588df02229202e15f269e19fbb2948e527e459d92120a",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1564,7 +1565,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D219 (EK38): the draft service also receives the supply owners' optional recorder
                     // declarations (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     new(
-                        "c01d0163e9c05a86fb941da1e34e9f9b359a6b6e676925306c7c46a238cb2371",
+                        "e11ab96216ef6349805ee837cb2287768806dcdb847e1f382c8dfcfb58e35338",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1620,7 +1621,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for K3 review A/B P1-1: the line revision's audit picture also carries ReinstatedInRevision.
                     // Re-fingerprinted for K3 review A P1-1 / P2-1: an empty line revision that only reinstates is a valid line command.
                     new(
-                        "33c17b1071c8d8643445685f1887162613d6c93c7788a0fd41d4234408d4bda3",
+                        "db51da41be246d1110daa34cfeff59d6a2f7a85dc136a3c4d7f7c8f7fe011efb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
