@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Manufacturing.Application;
@@ -90,6 +91,7 @@ public sealed class ManufacturingStore(
         }
 
         RequireLineSpeedFits(plan.LineSpeedMetresPerMinute);
+        RequireProcessSpecFits(plan.ProcessSpec);
         var payloadHash = PlanHash(plan);
         var existing = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == plan.Id, cancellationToken);
         if (existing is not null)
@@ -100,7 +102,7 @@ public sealed class ManufacturingStore(
         }
 
         var now = timeProvider.GetUtcNow();
-        dbContext.Plans.Add(new PlanRow
+        dbContext.Plans.Add(WithProcessSpec(new PlanRow
         {
             Id = plan.Id,
             CompanyId = plan.CompanyId,
@@ -116,7 +118,7 @@ public sealed class ManufacturingStore(
             PayloadHash = payloadHash,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
-        });
+        }, plan.ProcessSpec));
         var sequence = 0;
         foreach (var input in plan.Inputs)
         {
@@ -202,12 +204,7 @@ public sealed class ManufacturingStore(
         var plan = await RestorePlanAsync(row, cancellationToken);
         var before = PlanAudit(plan);
         var versionBefore = plan.Version;
-        if (parameterSnapshot is not null && parameterSnapshot.Values.Any(value =>
-                value.Number is { } number && (number >= Decimal18Scale6Limit || number <= -Decimal18Scale6Limit
-                    || decimal.Round(number, 6) != number)))
-        {
-            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Parametre değeri kayıt sütununa sığmıyor.");
-        }
+        RequireSnapshotFits(parameterSnapshot);
 
         // The domain decides: the version fence first, then "only a draft is approved", then the slitting gate.
         plan.Approve(expectedVersion, approvedByUserId, approvedAt,
@@ -220,6 +217,8 @@ public sealed class ManufacturingStore(
         row.UpdatedAtUtc = timeProvider.GetUtcNow();
         // U2-a: the plan's own capture (with a plan-entered value replacing the profile's) is what is stored.
         parameterSnapshot = plan.ParameterSnapshot;
+        // U2-b1: the plan's own values join the capture after the domain's approval; they must fit decimal(18,6) too.
+        RequireSnapshotFits(parameterSnapshot);
         if (parameterSnapshot is not null)
         {
             dbContext.PlanParameterSnapshots.Add(new PlanParameterSnapshotRow
@@ -412,11 +411,15 @@ public sealed class ManufacturingStore(
         RevisePlanContentAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec,
             lineSpeedMetresPerMinute: null, reason, metadata, cancellationToken);
 
-    /// <summary>Üretim U2-a: the revision with the plan-entered line speed (URT-D9), stored on the revision row.</summary>
+    /// <summary>
+    /// Üretim U2-a: the revision with the plan-entered line speed (URT-D9), stored on the revision row. U2-b1: the same
+    /// for the plan-entered process spec.
+    /// </summary>
     public async Task<ProductionPlan> RevisePlanContentAsync(Guid planId, long expectedVersion, Guid workCenterId,
         ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
         CutToLengthSpec? cutToLengthSpec, decimal? lineSpeedMetresPerMinute, string reason,
-        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default,
+        PlanProcessSpec? processSpec = null)
     {
         RequireMetadata(metadata);
         ArgumentNullException.ThrowIfNull(inputs);
@@ -445,6 +448,7 @@ public sealed class ManufacturingStore(
         }
 
         RequireLineSpeedFits(lineSpeedMetresPerMinute);
+        RequireProcessSpecFits(processSpec);
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var plan = await RestorePlanAsync(row, cancellationToken);
@@ -453,7 +457,7 @@ public sealed class ManufacturingStore(
 
         // The domain decides: the version fence first, then "only a draft", the spec, the process, the inputs.
         plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec,
-            lineSpeedMetresPerMinute);
+            lineSpeedMetresPerMinute, processSpec);
 
         if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
         {
@@ -463,7 +467,7 @@ public sealed class ManufacturingStore(
 
         var now = timeProvider.GetUtcNow();
         var revisionNo = plan.RevisionCount;
-        dbContext.PlanRevisions.Add(new PlanRevisionRow
+        dbContext.PlanRevisions.Add(WithProcessSpec(new PlanRevisionRow
         {
             CompanyId = companyId,
             PlanId = plan.Id,
@@ -477,7 +481,7 @@ public sealed class ManufacturingStore(
             RevisedBy = metadata.ActorId.Trim(),
             RevisedAtUtc = now,
             CorrelationId = metadata.CorrelationId.Trim(),
-        });
+        }, plan.ProcessSpec));
         var sequence = 0;
         foreach (var input in plan.Inputs)
         {
@@ -626,7 +630,7 @@ public sealed class ManufacturingStore(
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                     input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc,
-                CutSpec(createdCutLines), row.LineSpeedMetresPerMinute),
+                CutSpec(createdCutLines), row.LineSpeedMetresPerMinute, RestoreProcessSpec(row)),
         };
         history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
             header.WorkCenterId,
@@ -635,7 +639,7 @@ public sealed class ManufacturingStore(
                     input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
             Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc,
             CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)),
-            header.LineSpeedMetresPerMinute)));
+            header.LineSpeedMetresPerMinute, RestoreProcessSpec(header))));
         return history;
     }
 
@@ -1173,14 +1177,15 @@ public sealed class ManufacturingStore(
                         input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(header.TargetBasis, header.TargetKg),
                 CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)),
-                header.LineSpeedMetresPerMinute, header.PlanVersion)),
+                header.LineSpeedMetresPerMinute, header.PlanVersion, RestoreProcessSpec(header))),
             CutSpec(cutLines),
             parameterSnapshot,
             row.LineSpeedMetresPerMinute,
             rejections.Select(rejection => new PlanRejection(rejection.RejectionNo, rejection.Reason,
                 rejection.RejectedByUserId, rejection.RejectedAtUtc, rejection.PlanVersion)),
             cancellation,
-            orderIds.Count == 1 ? orderIds[0] : null);
+            orderIds.Count == 1 ? orderIds[0] : null,
+            RestoreProcessSpec(row));
         if ((PlanStatus)row.Status != plan.Status)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
@@ -1512,6 +1517,21 @@ public sealed class ManufacturingStore(
             builder.Append("|line-speed.v1|").Append(Canonical(lineSpeed));
         }
 
+        // U2-b1: only a plan WITH a process spec extends the historical hash bytes.
+        if (plan.ProcessSpec is { } processSpec)
+        {
+            builder.Append("|process-spec.v1|")
+                .Append(processSpec.PackageCount?.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(processSpec.PiecesPerPackage?.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(processSpec.PieceLengthMm is { } pieceLength ? Canonical(pieceLength) : null).Append(';')
+                .Append(processSpec.UnitKg is { } unitKg ? Canonical(unitKg) : null).Append(';')
+                .Append(processSpec.PerimeterMm is { } perimeter ? Canonical(perimeter) : null).Append(';')
+                .Append(processSpec.TargetThicknessMm is { } thickness ? Canonical(thickness) : null).Append(';')
+                .Append(processSpec.PaintDescription is { } paint ? Convert.ToBase64String(Encoding.UTF8.GetBytes(paint)) : null)
+                .Append(';')
+                .Append(processSpec.PaintColorCode is { } color ? Convert.ToBase64String(Encoding.UTF8.GetBytes(color)) : null);
+        }
+
         return Hash(builder.ToString());
     }
 
@@ -1697,12 +1717,12 @@ public sealed class ManufacturingStore(
     {
         var core = PlanAuditCore(plan);
         if (plan.Spec?.NetUsableWidthMm is null && plan.LineSpeedMetresPerMinute is null && plan.Rejections.Count == 0
-            && plan.Cancellation is null && plan.Status != PlanStatus.Cancelled)
+            && plan.Cancellation is null && plan.Status != PlanStatus.Cancelled && plan.ProcessSpec is null)
         {
             return core;
         }
 
-        return JsonSerializer.Serialize(new
+        var extended = JsonSerializer.Serialize(new
         {
             plan = JsonSerializer.Deserialize<JsonElement>(core),
             status = plan.Status.ToString(),
@@ -1718,6 +1738,15 @@ public sealed class ManufacturingStore(
             }),
             cancellation = plan.Cancellation,
         }, Json);
+        if (plan.ProcessSpec is not { } processSpec)
+        {
+            return extended;
+        }
+
+        // U2-b1: a plan with a process spec adds it beside the U2-a shape.
+        var node = JsonNode.Parse(extended)!.AsObject();
+        node["processSpec"] = JsonSerializer.SerializeToNode(processSpec, Json);
+        return node.ToJsonString();
     }
 
     private static string PlanAuditCore(ProductionPlan plan) => plan.Spec is { } spec
@@ -1905,12 +1934,79 @@ public sealed class ManufacturingStore(
         }
     }
 
+    /// <summary>A captured parameter value is stored as decimal(18,6); beyond the column it is refused, never cut.</summary>
+    private static void RequireSnapshotFits(PlanParameterSnapshotV1? snapshot)
+    {
+        if (snapshot is not null && snapshot.Values.Any(value =>
+                value.Number is { } number && (number >= Decimal18Scale6Limit || number <= -Decimal18Scale6Limit
+                    || decimal.Round(number, 6) != number)))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Parametre değeri kayıt sütununa sığmıyor.");
+        }
+    }
+
     /// <summary>U2-a: the plan-entered line speed is a decimal(18,6) value; beyond the column it is refused, never cut.</summary>
     private static void RequireLineSpeedFits(decimal? lineSpeed)
     {
         if (lineSpeed >= Decimal18Scale6Limit)
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Hat hızı kayıt sütununa sığmıyor.");
+        }
+    }
+
+    /// <summary>
+    /// U2-b1: the process spec's measures are decimal(18,3) millimetres and a decimal(18,4) unit kg, its texts within their
+    /// columns; beyond them it is refused, never cut. Each value is also captured at approval into a decimal(18,6)
+    /// snapshot column, so the smaller of the two limits applies.
+    /// </summary>
+    private static void RequireProcessSpecFits(PlanProcessSpec? spec)
+    {
+        if (spec is null)
+        {
+            return;
+        }
+
+        // Decimal18Scale6Limit (10^12) is below both column limits.
+        if (spec.PieceLengthMm >= Decimal18Scale6Limit || spec.PerimeterMm >= Decimal18Scale6Limit
+            || spec.TargetThicknessMm >= Decimal18Scale6Limit || spec.UnitKg >= Decimal18Scale6Limit)
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Süreç ayrıntısı değeri kayıt sütununa sığmıyor.");
+        }
+    }
+
+    private static TRow WithProcessSpec<TRow>(TRow row, PlanProcessSpec? spec)
+        where TRow : IPlanProcessSpecColumns
+    {
+        row.PackageCount = spec?.PackageCount;
+        row.PiecesPerPackage = spec?.PiecesPerPackage;
+        row.PieceLengthMm = spec?.PieceLengthMm;
+        row.UnitKg = spec?.UnitKg;
+        row.PerimeterMm = spec?.PerimeterMm;
+        row.TargetThicknessMm = spec?.TargetThicknessMm;
+        row.PaintDescription = spec?.PaintDescription;
+        row.PaintColorCode = spec?.PaintColorCode;
+        return row;
+    }
+
+    /// <summary>U2-b1: the stored process spec, or null when no column is set; a stored value the rules refuse is invalid.</summary>
+    private static PlanProcessSpec? RestoreProcessSpec(IPlanProcessSpecColumns row)
+    {
+        if (row.PackageCount is null && row.PiecesPerPackage is null && row.PieceLengthMm is null && row.UnitKg is null
+            && row.PerimeterMm is null && row.TargetThicknessMm is null && row.PaintDescription is null
+            && row.PaintColorCode is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new PlanProcessSpec(row.PackageCount, row.PiecesPerPackage, row.PieceLengthMm, row.UnitKg,
+                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode);
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı süreç ayrıntısı planın kurallarını karşılamıyor.");
         }
     }
 

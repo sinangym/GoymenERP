@@ -82,8 +82,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await context.Database.ExecuteSqlInterpolatedAsync(
                 $"DELETE FROM [manufacturing].[Orders] WHERE [PlanId] = {plan.Id} AND [Id] <> {orderId}");
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingPlanLifecycle", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.Contains(await context.Database.GetAppliedMigrationsAsync(),
+                migration => migration.EndsWith("_AddManufacturingPlanLifecycle", StringComparison.Ordinal));
         }
 
         // A cancelled plan is content the previous schema cannot hold: Down refuses and keeps everything.
@@ -99,8 +99,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(BeforePlanLifecycle));
             Assert.Equal(51187, error.Number);
-            Assert.EndsWith("_AddManufacturingPlanLifecycle", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.Contains(await context.Database.GetAppliedMigrationsAsync(),
+                migration => migration.EndsWith("_AddManufacturingPlanLifecycle", StringComparison.Ordinal));
         }
 
         Assert.Equal(3, await run.ScalarAsync<int>(

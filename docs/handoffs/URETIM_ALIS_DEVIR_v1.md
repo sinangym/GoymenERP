@@ -27,6 +27,12 @@ geçerlidir. Arayüz adları öneridir.
 - **İstenen (Alış):** talep satırında isteğe bağlı kaynak (stok / satış / üretim / manuel) ve kaynak kimliği.
 - **Üretim tarafı:** onaylı planda hammaddesi eksik kalan girdi için "satın alma talebi oluştur" eylemi, Alış'ın
   mevcut talep oluşturma ucunu bu kaynakla çağırır. Alış alanı gelene kadar eylem gösterilmez.
+- **Alış tarafı durumu (#928, 2026-11-03):** `POST /api/v1/purchasing/requests` talep satırında isteğe bağlı
+  `source: {kind: "Production", documentId: <plan id>, documentLineId: <plan girdisi>}`. Diğer türler "Stock" ve
+  "Sales"; kaynak yoksa null, yani Manuel; açıkça "Manual" yazmak 400. Kaynak oluşturmada yazılır, sonradan değişmez;
+  onay akışı aynı (müdür onayı gerekir); ayrı izin yok. Kimlikler **opak**, Alış doğrulamaz (ALS-D58). Üretim eylemi
+  (U5-c) plan ve girdinin geçerliliğini kendi tarafında doğrular. Plan girdisinin tekil kimliği etiket kimliğidir
+  (`ParentRollId`).
 
 ## A-3 · Satış iptalinde "bağlı satın alma"
 

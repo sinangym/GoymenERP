@@ -65,10 +65,13 @@ public sealed class PurchasingPersistenceModelTests
         var orderLines = designModel.FindEntityType(typeof(PurchaseOrderLineRow))!;
         Assert.True(orderLines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseOrderLines_LineId").IsUnique);
         Assert.Contains(orderLines.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseOrderLines_SourceRequestLine");
+        // A1-3 (master INV-006): the cancelled remainder is inside the shares bound.
         Assert.Contains(orderLines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares"
-            && check.Sql.Contains("[Technical] + [Accepted] <= [Ordered]", StringComparison.Ordinal));
-        Assert.Equal((3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
-            orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale()));
+            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] <= [Ordered]", StringComparison.Ordinal)
+            && check.Sql.Contains("[Cancelled] >= 0", StringComparison.Ordinal));
+        Assert.Equal((3, 3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
+            orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale(),
+            orderLines.FindProperty(nameof(PurchaseOrderLineRow.Cancelled))!.GetScale()));
         Assert.Equal(64, orderLines.FindProperty(nameof(PurchaseOrderLineRow.ProductVersion))!.GetMaxLength());
         var requestLines = designModel.FindEntityType(typeof(PurchaseRequestLineRow))!;
         Assert.True(requestLines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseRequestLines_LineId").IsUnique);
@@ -141,8 +144,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.6", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(11, declarations.Count);
+        Assert.Equal("1.7", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(12, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -199,9 +202,18 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(6, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(7, PurchasingPermissionManifestV1.Names.Count);
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
+        Assert.Contains("purchasing.orders.cancel", PurchasingPermissionManifestV1.Names);
+        // A1-3 (plan API-10/UI-05): the remainder cancellation control is a child of the order detail, measured with its own name.
+        var cancel = byId[PurchasingShellCapabilityProvider.CancelCapabilityId];
+        Assert.Equal("purchasing.orders.cancel", cancel.CapabilityId);
+        Assert.Equal(
+            (PurchasingShellCapabilityProvider.DetailRoutePath, PurchasingShellCapabilityProvider.DetailScreenId,
+                PurchasingShellCapabilityProvider.DetailCapabilityId),
+            (cancel.RoutePath, cancel.ScreenId, cancel.ParentCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCancel], cancel.RequiredPermissions);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
         Assert.Equal(PurchasingShellCapabilityProvider.ListScreenId, byId[PurchasingShellCapabilityProvider.ListCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);
@@ -218,12 +230,12 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_and_A1_2_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_and_A1_3_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
         Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
-                "20261103012142_AddPurchaseRequestLineSource"],
-            context.Database.GetMigrations().TakeLast(3));
+                "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation"],
+            context.Database.GetMigrations().TakeLast(4));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -265,6 +277,89 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("[Status] IN (3, 4)", guard.Sql, StringComparison.Ordinal);
         var backfill = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Contains("purchasing.purchase-request.submit.v1", backfill.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_A1_3_cancellation_is_a_third_status_with_its_facts_a_cancelled_share_and_a_Down_that_refuses_while_one_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var orders = model.FindEntityType(typeof(PurchaseOrderRow))!;
+        Assert.Contains(orders.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrders_Status" && check.Sql == "[Status] IN (1, 2, 3)");
+        var cancellation = Assert.Single(orders.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrders_Cancellation");
+        Assert.Equal(PurchasingDbContext.OrderCancellationCheck, cancellation.Sql);
+        Assert.Contains("[Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0", cancellation.Sql, StringComparison.Ordinal);
+        Assert.Contains("[CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0", cancellation.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL", cancellation.Sql,
+            StringComparison.Ordinal);
+        Assert.Equal((128, 4000), (orders.FindProperty(nameof(PurchaseOrderRow.CancelledBy))!.GetMaxLength(),
+            orders.FindProperty(nameof(PurchaseOrderRow.CancellationReason))!.GetMaxLength()));
+        var lines = model.FindEntityType(typeof(PurchaseOrderLineRow))!;
+        Assert.False(lines.FindProperty(nameof(PurchaseOrderLineRow.Cancelled))!.IsNullable);
+        Assert.Equal(PurchasingDbContext.OrderLineSharesCheck,
+            Assert.Single(lines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares").Sql);
+
+        // Up adds the columns (the line share NOT NULL with 0 for every existing line) and the checks, no SQL; Down refuses (51168)
+        // before any drop while a cancelled order or a cancelled share exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderCancellation();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var share = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(),
+            column => column.Name == "Cancelled");
+        Assert.Equal((false, 0m), (share.IsNullable, (decimal)share.DefaultValue!));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51168", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] = 3", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Cancelled] <> 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        // The restored checks are InitialPurchasing's exactly.
+        Assert.Contains(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(),
+            check => check.Name == "CK_PurchaseOrders_Status" && check.Sql == "[Status] IN (1, 2)");
+        Assert.Contains(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(),
+            check => check.Name == "CK_PurchaseOrderLines_Shares"
+                && check.Sql == "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Technical] + [Accepted] <= [Ordered]");
+    }
+
+    [Fact]
+    public async Task The_write_guard_lets_the_cancellation_facts_and_the_cancelled_share_move_but_not_another_field()
+    {
+        await using (PurchasingDbContext context = Context())
+        {
+            var order = new PurchaseOrderRow
+            {
+                Id = Guid.NewGuid(), CompanyId = CompanyA, SupplierPartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), Status = 2, Version = 3,
+                EffectiveOn = new DateOnly(2026, 11, 3), CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow,
+                CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
+            };
+            context.Orders.Attach(order);
+            order.Status = 3;
+            order.CancelledBy = "SENTETIK-manager";
+            order.CancelledAtUtc = DateTimeOffset.UtcNow;
+            order.CancellationReason = "SENTETIK";
+            // The cancellation facts alone are on the allow-list: the guard passes them (only the database is unreachable here).
+            var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+            Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
+            Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
+            order.SupplierPartyId = Guid.NewGuid(); // not allowed: the supplier never moves
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (PurchasingDbContext context = Context())
+        {
+            var line = new PurchaseOrderLineRow
+            {
+                CompanyId = CompanyA, OrderId = Guid.NewGuid(), LineNo = 1, LineId = Guid.NewGuid(), Kind = 1, ProductId = Guid.NewGuid(),
+                ProductVersion = "7", UnitId = Guid.NewGuid(), UnitIsKilogram = true, Ordered = 6m,
+            };
+            context.OrderLines.Attach(line);
+            line.Cancelled = 6m;
+            var onlyShare = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+            Assert.DoesNotContain("izinli alan", onlyShare.Message, StringComparison.Ordinal);
+            Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyShare.InnerException);
+            line.Ordered = 7m; // not allowed: the first commitment never moves
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
