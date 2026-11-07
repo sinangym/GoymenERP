@@ -65,13 +65,14 @@ Soruların kaynakları:
 - **`OPEN-*`:** Bu belge hiçbir `OPEN-*` kimliğini kapatmaz. En yakın kayıt `OPEN-016` (dış muhasebe/e-belge/banka
   entegrasyonu, Mikro'ya kullanıcı onaylı fiş taslağı) dış entegrasyonla ilgilidir; KLN-D6…D10 ERP içi taslak fişi
   düzenler ve `OPEN-016`'nın açık kısmını (sağlayıcı, credential, erişim yöntemi) cevaplamaz. `ACIK_KARARLAR.md`
-  değişmez.
+  ve `KARAR_SICILI.md` bu PR'da değişmez (EK39/GOV-D1 dosyalarındaki uygulama).
 
 ## Sınırlar
 
 - **Satış tarafı tevkifat karşı hesabı** (satış faturasında alıcının kestiği KDV tevkifatı 120'den düşülünce hangi
-  hesapta izlenir) Sinan'ın cevabında açıkça yazmaz; KLN-D7 eşleme altyapısı bunu yapılandırılabilir tutar. Etkin
-  hale getirilmesi `NEEDS-SINAN` gerektirir; tahminle seçilmez.
+  hesapta izlenir) Sinan'ın cevabında açıkça yazmaz; KLN-D7 eşleme altyapısı bunu yapılandırılabilir tutar. Bu soru
+  #66'ya `NEEDS-SINAN` olarak yazıldı (koordinatör, 2026-11-07); cevap gelene kadar etkinleştirilmez, tahminle
+  seçilmez.
 - İade/iptal ters fişinin dönemi (orijinal fatura dönemi mi, iptal tarihi dönemi mi), kapalı döneme düşen fatura,
   kur türü/kaynağı ve kur farkı bu kararla seçilmez.
 - Hesap planının kendisi, ürün türü listesi ve fişin resmî sisteme (Mikro) aktarımı bu kararın dışındadır
