@@ -31,11 +31,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// metadata read adds its own list and detail routes under <c>finance.open-items.read</c>. Amount disclosure
 /// stays an endpoint/DTO decision under <c>finance.open-items.amount.read</c>; it is not a shell route gate.
 /// </para>
+/// <para>
+/// <b>1.7 (B-05, KLN-D3, FNS-D14):</b> the party ledger (cari ekstresi + bakiye özeti) opens from two places, both
+/// Finance's read of the one open-item sub-ledger under <c>finance.party-ledger.read</c> (no new name): Muhasebe &gt;
+/// Cari Hesaplar (catalog M-03, <c>/muhasebe/cari-hesaplar</c>) and Cari &gt; Cari Hesap Takibi (catalog C-04,
+/// <c>/cari/hesap-takibi</c>). Neither is a new master; amounts stay the endpoint's separate
+/// <c>finance.party-ledger.amount.read</c> decision, not a route gate.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -106,6 +113,15 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string OpenItemDetailCapabilityId = "finance.open-items.detail";
     public const string OpenItemDetailRouteId = "finance.open-items.detail";
     public const string OpenItemDetailRoutePath = "/finans/acik-kalemler/:openItemId";
+
+    public const string PartyLedgerAccountingScreenId = "M-03";
+    public const string PartyLedgerAccountingCapabilityId = "finance.party-ledger.accounting";
+    public const string PartyLedgerAccountingRouteId = "finance.party-ledger.accounting";
+    public const string PartyLedgerAccountingRoutePath = "/muhasebe/cari-hesaplar";
+    public const string PartyLedgerCariScreenId = "C-04";
+    public const string PartyLedgerCariCapabilityId = "finance.party-ledger.cari";
+    public const string PartyLedgerCariRouteId = "finance.party-ledger.cari";
+    public const string PartyLedgerCariRoutePath = "/cari/hesap-takibi";
 
     public string Owner => OwnerId;
 
@@ -210,6 +226,13 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(OpenItemDetailCapabilityId, OpenItemDetailRouteId, OpenItemDetailRoutePath,
                 OpenItemDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [FinancePermissionNames.OpenItemRead]),
+            // B-05 (KLN-D3): the same party-ledger read from Muhasebe and from Cari; amounts are the endpoint's call.
+            Declaration(PartyLedgerAccountingCapabilityId, PartyLedgerAccountingRouteId, PartyLedgerAccountingRoutePath,
+                PartyLedgerAccountingScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.PartyLedgerRead]),
+            Declaration(PartyLedgerCariCapabilityId, PartyLedgerCariRouteId, PartyLedgerCariRoutePath,
+                PartyLedgerCariScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.PartyLedgerRead]),
         ];
     }
 
