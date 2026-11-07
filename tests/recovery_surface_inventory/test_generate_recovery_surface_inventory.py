@@ -41,6 +41,9 @@ EXPECTED_STORES = {
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "InvoiceCancellations"): (
+        "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
+    ),
     ("finance", "OfficialInvoiceImportCommands"): (
         "FinanceOfficialInvoiceImportCommandRow", "idempotency", "FinanceDbContext"
     ),
@@ -435,7 +438,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 130, "durableStores": 24},
+            {"dbContexts": 18, "migrations": 130, "durableStores": 25},
             self.inventory["counts"],
         )
         actual = {
@@ -445,13 +448,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(24, len(actual))
+        self.assertEqual(25, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(24, len(specs_by_id))
+        self.assertEqual(25, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]

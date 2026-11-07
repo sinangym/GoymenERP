@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 130
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "c78904d44490540dba3b0bfd3245e1267b64b7ccb171897b2a5fc560b95f6dbe"
 )
-EXPECTED_DURABLE_STORE_COUNT = 24
+EXPECTED_DURABLE_STORE_COUNT = 25
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
@@ -136,6 +136,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("audit", "AuditEvents"),
     ("documents", "DocumentAttempts"),
     ("finance", "Commands"),
+    ("finance", "InvoiceCancellations"),
     ("finance", "OfficialInvoiceImportCommands"),
     ("finance", "OpenItemSourceBatches"),
     ("idempotency", "CommandExecutions"),
@@ -349,6 +350,13 @@ DURABLE_STORE_SPECS = (
         ("dbContext.Commands.Add(new FinanceCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "finance.invoice-cancellations", "Finance", "idempotency", "FinanceDbContext",
+        "FinanceInvoiceCancellationRow", "finance", "InvoiceCancellations", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107131505_AddInvoiceCancellations.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
+        ("dbContext.InvoiceCancellations.Add(new FinanceInvoiceCancellationRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "finance.official-invoice-import-commands", "Finance", "idempotency", "FinanceDbContext",
         "FinanceOfficialInvoiceImportCommandRow", "finance", "OfficialInvoiceImportCommands", FINANCE_CONTEXT,
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260930185113_AddOfficialInvoiceImportApprovalV1.cs",
@@ -547,6 +555,10 @@ WRITER_METHOD_SCOPES = {
         "finance.command-replay",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
     ): "DraftSaveAsync",
+    (
+        "finance.invoice-cancellations",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
+    ): "CancelAsync",
     (
         "finance.official-invoice-import-commands",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs",
