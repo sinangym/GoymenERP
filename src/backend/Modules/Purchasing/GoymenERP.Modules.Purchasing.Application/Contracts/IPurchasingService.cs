@@ -52,4 +52,7 @@ public interface IPurchasingService
     Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default);
 
     Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>A2a-1 (TEK-01): the currencies the purchasing order operation's Settings money profile answers, under the create name.</summary>
+    Task<PurchasingCurrencyCandidatesResponseV1> GetCurrencyCandidatesAsync(CancellationToken cancellationToken = default);
 }

@@ -9,6 +9,7 @@ import {
   decodePurchaseRequestCommandResponse,
   decodePurchaseRequestDetail,
   decodePurchaseRequestList,
+  decodePurchasingCurrencyCandidates,
   type CreatePurchaseRequestRequest,
   type CreatePurchaseOrderRequest,
   type ProductPurchaseCandidates,
@@ -21,6 +22,7 @@ import {
   type PurchaseRequestDetail,
   type PurchaseRequestList,
   type PurchaseRequestStatus,
+  type PurchasingCurrencyCandidates,
 } from './contract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -37,11 +39,16 @@ export function purchasingHeaders(companyId: string): Record<string, string> {
 export const PURCHASING_ORDERS_BASE = `${API_BASE}/purchasing/orders`
 export const PURCHASING_REQUESTS_BASE = `${API_BASE}/purchasing/requests`
 export const PURCHASING_PRODUCT_CANDIDATES_PATH = `${API_BASE}/purchasing/references/products`
+export const PURCHASING_CURRENCY_CANDIDATES_PATH = `${API_BASE}/purchasing/references/currencies`
 const PRODUCT_CANDIDATE_LIMIT = 25
 
 export type CreatePurchaseOrderOutcome =
   | { readonly type: 'applied'; readonly response: PurchaseOrderCommandResponse; readonly replayed: boolean }
-  | { readonly type: 'failed'; readonly status: number; readonly code: string | null; readonly replayed: boolean }
+  | {
+    readonly type: 'failed'; readonly status: number; readonly code: string | null; readonly replayed: boolean
+    /** A2a-1: the first refusal on a line's price or on the currency (`lines[i].price` / `currencyId`), when the server named one. */
+    readonly priceCode?: string
+  }
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'undecodable' | 'unexpected-status' }
 
 export type CreatePurchaseRequestOutcome =
@@ -137,6 +144,26 @@ export async function fetchPurchasingProductCandidates(
 }
 
 /**
+ * A2a-1 (TEK-01): the currencies the purchasing order operation's Settings money profile answers. A 503 means the owner has no
+ * approved purchasing money profile yet (fail-closed); the order is then opened without prices ("fiyat bekliyor").
+ */
+export async function fetchPurchasingCurrencyCandidates(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<PurchasingCurrencyCandidates>> {
+  try {
+    const response = await fetch(PURCHASING_CURRENCY_CANDIDATES_PATH, { headers: purchasingHeaders(companyId), cache: 'no-store', signal })
+    const body = await bodyOf(response)
+    if (response.status !== 200) return { type: 'http', status: response.status, body }
+    const candidates = decodePurchasingCurrencyCandidates(body)
+    return candidates === null ? { type: 'malformed' } : { type: 'ok-single', data: candidates }
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+}
+
+/**
  * Reads the existing Cari owner list with the exact Purchasing selector filters. The list's numeric
  * versions are intentionally not projected: create revalidates current party/account state and does
  * not accept a new party-version concurrency policy.
@@ -186,9 +213,26 @@ function problemCode(body: unknown): string | null {
   return typeof code === 'string' && code.length > 0 ? code : null
 }
 
+/** A2a-1: the code of the first problem error on a line's price or on the currency; undefined when there is none. */
+function priceProblemCode(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return undefined
+  const errors = (body as Record<string, unknown>).errors
+  if (!Array.isArray(errors)) return undefined
+  for (const error of errors) {
+    if (typeof error !== 'object' || error === null) continue
+    const { field, code } = error as Record<string, unknown>
+    if (typeof field === 'string' && typeof code === 'string' && code.length > 0 && (/^lines\[\d+\]\.price$/.test(field) || field === 'currencyId')) return code
+  }
+  return undefined
+}
+
 function describesCreate(response: PurchaseOrderCommandResponse, request: CreatePurchaseOrderRequest, companyId: string): boolean {
   const { order, lines } = response.detail
-  return order.companyId === companyId && order.status === 'Draft' && order.supplierPartyId === request.supplierPartyId &&
+  // A2a-1: the answered order is in the currency asked for (or in none when none was asked for).
+  const currencyMatches = request.currencyId === undefined
+    ? (response.detail.currency ?? null) === null
+    : response.detail.currency?.currencyId === request.currencyId
+  return currencyMatches && order.companyId === companyId && order.status === 'Draft' && order.supplierPartyId === request.supplierPartyId &&
     order.companyAccountId === request.companyAccountId && order.sourceRequestId === request.sourceRequestId &&
     order.effectiveOn === request.effectiveOn && lines.length === request.lines.length &&
     request.lines.every((line) => {
@@ -236,9 +280,11 @@ export async function createPurchaseOrder(
       : { type: 'applied', response: decoded, replayed: decoded.isReplay }
   }
   if ([400, 401, 403, 409, 415, 422].includes(response.status)) {
+    const priceCode = response.status === 422 ? priceProblemCode(body) : undefined
     return {
       type: 'failed', status: response.status, code: problemCode(body),
       replayed: response.headers.get('Idempotency-Replayed')?.trim().toLowerCase() === 'true',
+      ...(priceCode === undefined ? {} : { priceCode }),
     }
   }
   return response.status >= 500

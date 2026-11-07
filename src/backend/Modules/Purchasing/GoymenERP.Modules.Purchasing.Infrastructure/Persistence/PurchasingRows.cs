@@ -67,6 +67,8 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
 /// <summary>
 /// The order header (the commitment towards one supplier); only Status, Version and UpdatedAtUtc move after the first commit,
 /// and A1-3's cancellation facts (CancelledBy, CancelledAtUtc, CancellationReason) with the Approved → Cancelled move (No.161 §2).
+/// A2a-1 (TEK-01): the order's currency as the Settings money profile snapshot (CurrencyId, CurrencyCode, MoneyProfileId,
+/// MoneyProfileVersion, MoneyScale) — all five or none, written once with the order.
 /// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
@@ -86,6 +88,11 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
     public string? CancelledBy { get; set; }
     public DateTimeOffset? CancelledAtUtc { get; set; }
     public string? CancellationReason { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public string? CurrencyCode { get; set; }
+    public Guid? MoneyProfileId { get; set; }
+    public long? MoneyProfileVersion { get; set; }
+    public int? MoneyScale { get; set; }
 }
 
 /// <summary>
@@ -93,6 +100,8 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 /// part moved into technical lines, Accepted the accepted share, Cancelled (A1-3, No.161 §2) the unaccepted remainder
 /// cancelled with the order; committed = Ordered − Technical and remaining = committed − Accepted − Cancelled are derived
 /// (master INV-006). The request binding (SourceRequestLineId) is the share this supplier takes.
+/// A2a-1 (ALS-D5): the general line's manual price (UnitPrice, PriceUnitId, DiscountPercent or DiscountAmount), all null for a line
+/// without a price ("fiyat bekliyor", ALS-D18) and always null on a technical line; written once with the line.
 /// </summary>
 internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
 {
@@ -111,6 +120,10 @@ internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
     public decimal Technical { get; set; }
     public decimal Accepted { get; set; }
     public decimal Cancelled { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public Guid? PriceUnitId { get; set; }
+    public decimal? DiscountPercent { get; set; }
+    public decimal? DiscountAmount { get; set; }
 }
 
 /// <summary>ADR-011 attempt record (the Sales shape): the key hash, the content hash, the actor, the outcome and the result (a request, an order or a refusal).</summary>

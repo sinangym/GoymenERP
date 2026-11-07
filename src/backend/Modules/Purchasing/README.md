@@ -103,14 +103,46 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   or breakdown (`purchasing_order_cancelled`; the receipt participant answers `purchasing_acceptance_order_state_conflict`);
   `IPurchaseSupplyReferencePortV1` answers it `NotApproved` with status `Cancelled` and `IPurchaseOpenLineReadPortV1`
   lists none of its lines. It no longer blocks the source request's rejection or withdrawal (No.161 §1 counts only
-  APPROVED bound orders). **Fail-closed (NEEDS-SINAN):** a cancelled order keeps counting with its full ordered share in
-  its request line's Σ-shares, so cancelling does not re-open the need for another supplier; there is no second approval
-  and no maker ≠ checker rule on the cancellation, and the name is registered only (its holders are not decided; the PUR01
-  browser suite grants it to the SENTETIK approver). Migration `20261103053923_AddPurchaseOrderCancellation` adds
+  APPROVED bound orders). **ALS-D66…D68 (EK10, Sinan 2026-11-03):** a cancelled order keeps counting with its full ordered
+  share in its request line's Σ-shares, so cancelling does not re-open the need for another supplier — a new request is
+  opened instead (ALS-D68); the cancellation is one step with a reason and an audit record, with no second approval and no
+  maker ≠ checker rule (ALS-D67); the name is proposed to the ALS-D53 approvers (Satın Alma Müdürü, Genel Müdür, Admin;
+  ALS-D66) and stays registered only — the grant is a human gate (the PUR01 browser suite grants it to the SENTETIK
+  approver). Migration `20261103053923_AddPurchaseOrderCancellation` adds
   `CancelledBy` / `CancelledAtUtc` / `CancellationReason`, `CK_PurchaseOrders_Cancellation`, `Status` 3 and the line's
   `Cancelled` (decimal(18,3), default 0) inside `CK_PurchaseOrderLines_Shares`; its Down refuses (`THROW 51168`) while any
   order is Cancelled or any line carries a cancelled share. The P-03-DETAIL screen shows the "İptal" column, the recorded
   cancellation and the "Kalanı iptal et" panel (impact preview, reason, unknown-result resend of the same key).
+- **Order line price (A2a-1, plan TEK-01/API-20; ALS-D5, ALS-D18, ALS-D51/D58/D60, PRS-02):** `POST orders` takes an
+  optional `currencyId` (the order's one currency) and, per line, an optional `price` (`unitPrice`, optional `priceUnitId`
+  defaulting to the line's unit, and at most one of `discountPercent` / `discountAmount`), all exact decimal text. The
+  currency is verified through the existing `ISettingsPrerequisiteProvider.GetMoneyProfileAsync` for the operation key
+  `purchasing.order.v1` (`PurchasingMoneyOperationsV1`) on the order's business date and recorded as a snapshot
+  (`CurrencyId`, `CurrencyCode`, `MoneyProfileId`, `MoneyProfileVersion`, `MoneyScale`). **Fail-closed today:** the approved
+  Settings money catalog has no profile for `purchasing.order.v1` (Sinan #66 6704170096 approved it as a narrow ALS-D58 exception; it lands in A2a-1b), so the
+  owner answers `settings_provider_unavailable` and a priced order is a 503 while an unpriced one is unaffected;
+  `GET references/currencies` (under `purchasing.orders.create`) lists the operation's currencies and is a 503 until then.
+  Rules (domain, 422 on `lines[i].price`): a currency is required (`purchasing_price_currency_required`); the price is never negative
+  (`purchasing_price_negative`; an explicit 0 is a price with a 0 line amount, apart from no price = "fiyat bekliyor", ALS-D18 —
+  Sinan #66 6704170096; on a 0 price a discount amount above 0 is refused as exceeding the price); the price unit is the line's entry
+  unit, because the Product conversion port is deferred (`purchasing_price_unit_conversion_unavailable`); the unit price and a
+  discount amount carry at most min(profile scale, 6) decimals, never rounded (`purchasing_price_scale_exceeded`); a discount is a
+  percent 0..100 (≤ 6 decimals) or an amount 0..unit price, never both. No minimum price, margin or discount ceiling is decided for
+  purchasing and none is invented. The net unit price (exact, SAT-D76) and the line amount (ordered quantity × net, rounded once
+  half away from zero to the profile's scale, SAT-D11) come from the shared `BuildingBlocks/Monetary/CommercialLinePriceCalculator`
+  (the Sales rules, written once for the new consumer; the Sales move is a TEK-03 hand-off). A technical slice carries no price
+  (its quantity is priced on its general line). Prices are written once with the line (a later price is a revision, A2b) and
+  are audited with the order. An unpriced order is approved and received as usual (ALS-D18) and reads `pricePending: true`.
+  **PRS-02:** every order detail (read and command answer) carries `priceDisclosure`; prices are `Visible` only for a caller with
+  the new, registered-only name `purchasing.orders.price.read` (company-wide, not critical, granted to nobody; Sinan #66 6704170096
+  names its holders for the persona card: Satın Alma Uzmanı/Müdürü, Genel Müdür, Admin, Muhasebe, Muhasebe Müdürü, Satış Destek,
+  Satış Uzmanı — not the Sevkiyatçı), otherwise every
+  price field is null beside `Withheld` (the persona card's Sevkiyatçı holds `purchasing.orders.read` and "fiyatları göremez").
+  The goods-receipt reads and both supply ports carry no price. Migration `20261107063820_AddPurchaseOrderLinePrice` adds the
+  nullable columns, `CK_PurchaseOrders_Money` (all five money facts or none) and `CK_PurchaseOrderLines_Price` (unpriced, or a
+  general line with a price ≥ 0 and at most one bounded discount); its Down refuses (`THROW 51169`) while any order has a
+  currency or any line a price. P-04 gains the optional price fieldset (currency, unit price, discount; the net and the amount
+  are shown only after the save), P-03-DETAIL the price columns, "fiyat bekliyor" and the withheld notice.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
@@ -133,12 +165,13 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 - **Receipt reads:** options (locations), list, detail and the read-only accepted-vs-measured kg comparison
   (`PurchaseGoodsReceiptComparisonContractsV1.cs`: `SameKilogramUnit` / `Unavailable` are emitted; `ApprovedConversion`
   is declared but intentionally not emitted; no tolerance, approval or stock effect).
-- **HTTP (19 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`,
-  `cancel-impact`, `cancellation` (A1-3);
+- **HTTP (20 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`,
+  `cancel-impact`, `cancellation` (A1-3); `references/currencies` (A2a-1);
   goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
-- **Permissions (7):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
-  `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b), `purchasing.orders.cancel` (A1-3) (`PurchasingPermissionManifestV1`,
+- **Permissions (8):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
+  `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b), `purchasing.orders.cancel` (A1-3),
+  `purchasing.orders.price.read` (A2a-1, disclosure only) (`PurchasingPermissionManifestV1`,
   `ErpPermissions`; company-wide, not critical, registered only).
 - **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.7`) declares P-01 request
   list/new/detail (+ submit, since A1-1 the `purchasing.requests.approve` decision child and since A1-1b the
@@ -152,7 +185,8 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 - **Ports out:** `IPurchaseSupplyReferencePortV1` (expected supply, never stock), `IPurchaseOpenLineReadPortV1`
   (AT-025, below), `IPurchaseAcceptanceSourceV1`; the Document Vault reads purchase-order ownership through the host
   adapter `GoymenERP.Api/DocumentsRuntime/PurchasingDocumentOwnerLinkPort.cs`.
-- **Still absent:** price/tax/currency (T28; ALS-D5/D6), order approval policy and the order's preparer ≠ approver rule (ALS-D3),
+- **Still absent:** tax/withholding, the informational exchange rate (A2a-KUR), payment plan, totals, expense lines and the
+  Settings lists (later A2a slices), order approval policy and the order's preparer ≠ approver rule (ALS-D3),
   revision, line closure after a short delivery (API-11, ALS-D10/D12; A3), delivery schedule and "in transit", service lines and service acceptance, outgoing
   subcontracting (A-1), incoming invoice and three-way match, supplier return, outbox events, breakdown over the API
   (domain only), count/metre units (Settings approves kilograms only).
@@ -193,7 +227,7 @@ Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-
 
 ## What this module is not
 - No physical effect: no lot, label, location or stock movement; not a second allocation engine (Inventory T09). **Superseded in part (2026-11-02):** Purchasing itself still writes no lot, label, location or stock movement; a goods receipt now stages Inventory's lot/label/movement in the same host transaction, through Inventory's own participant (`PurchaseGoodsReceiptHost`); those rows remain Inventory's.
-- No price, tax or currency (T28); no approval policy (`Approve` is a transition; §8). *(Still true 2026-11-02; decided as ALS-D3/D5/D6, not implemented.)*
+- No tax or exchange rate (later A2a slices); no approval policy (`Approve` is a transition; §8). *(A2a-1 added the manual line price, the discount and the order's currency; see "Current state".)*
 - No offers, delivery schedules, invoice matching, HTTP, DI, persistence or permissions. **Superseded (2026-11-02):** HTTP, DI, persistence and permissions exist since PUR-4a (see below and "Current state"); offers, delivery schedules and invoice matching are still absent.
 
 
