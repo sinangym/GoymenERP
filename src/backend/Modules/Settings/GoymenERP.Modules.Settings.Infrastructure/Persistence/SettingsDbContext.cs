@@ -535,9 +535,11 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
             table.HasCheckConstraint("CK_SettingsExchangeRateRecords_Version", "[RecordVersion] > 0");
             table.HasCheckConstraint("CK_SettingsExchangeRateRecords_Source", "[Source] = 'Tcmb'");
             table.HasCheckConstraint("CK_SettingsExchangeRateRecords_State",
-                "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified'))"
+                "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified', 'NotFound'))"
                 + " OR ([Kind] = 'Bulletin' AND [Provenance] = 'Manual' AND [State] = 'Published')"
-                + " OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined'))");
+                + " OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined'))"
+                // SAT-D198: a reasoned manual half-day mark is definite (full or half day), never "undetermined".
+                + " OR ([Kind] = 'HalfDay' AND [Provenance] = 'Manual' AND [State] IN ('FullDay', 'HalfDay'))");
             // DEC-FIN-010: a manual change always carries its reason.
             table.HasCheckConstraint("CK_SettingsExchangeRateRecords_ManualReason",
                 "[Provenance] <> 'Manual' OR LEN(LTRIM(RTRIM(ISNULL([Reason], N'')))) > 0");

@@ -160,6 +160,9 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             list,
             planCreate,
             planDetail,
+            // Üretim U2-a/U2-b1: approving a Slitting plan also reads each parent roll's current label through Inventory,
+            // which asks for inventory.labels.read and inventory.balances.read (company-wide). They are not required here,
+            // since every other process approves without them; an approver without them gets 403 on a Slitting plan only.
             planDetail with
             {
                 CapabilityId = PlanApproveCapabilityId,

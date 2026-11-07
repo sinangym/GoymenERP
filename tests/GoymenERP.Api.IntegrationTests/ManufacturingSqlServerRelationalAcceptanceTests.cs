@@ -649,18 +649,19 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
             await context.Database.MigrateAsync();
-            // U2-a plan lifecycle is newest, then U1-b plan parameter snapshots; technical length snapshots, cut lines and the prior
+            // U2-b1 plan process specs are newest, then U2-a plan lifecycle and U1-b plan parameter snapshots; technical length snapshots, cut lines and the prior
             // technical/plan-revision chain remain ordered.
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddManufacturingPlanLifecycle", reapplied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanParameterSnapshots", reapplied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", reapplied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanCutLines", reapplied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingCommercialContexts", reapplied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots", reapplied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingOrderClosureDecision", reapplied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanProcessSpecs", reapplied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanLifecycle", reapplied[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanParameterSnapshots", reapplied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", reapplied[^4], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanCutLines", reapplied[^5], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingCommercialContexts", reapplied[^6], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots", reapplied[^7], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingOrderClosureDecision", reapplied[^8], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^10], StringComparison.Ordinal);
             Assert.Equal(expandedPlanConstraint, await run.ScalarAsync<string>(
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
@@ -681,15 +682,16 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                     await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddManufacturingPlanLifecycle", reapplied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanParameterSnapshots", reapplied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", reapplied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanCutLines", reapplied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingCommercialContexts", reapplied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots", reapplied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingOrderClosureDecision", reapplied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanProcessSpecs", reapplied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanLifecycle", reapplied[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanParameterSnapshots", reapplied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", reapplied[^4], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanCutLines", reapplied[^5], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingCommercialContexts", reapplied[^6], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots", reapplied[^7], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingOrderClosureDecision", reapplied[^8], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^10], StringComparison.Ordinal);
         }
 
         Assert.Equal((1, 1),

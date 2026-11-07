@@ -182,9 +182,10 @@ public static class SalesCustomerRiskCalculator
     /// The credit limit's currency and its scale; null when there is no single limit amount or its currency's scale is unknown.
     /// </param>
     /// <param name="exchangeRates">
-    /// SAT-D47: the DEC-FIN-010 rates the caller resolved for the check day, keyed (source currency, target currency); an amount
-    /// in another currency than a total's is converted only by the rate of exactly that pair (one rounding to the total's scale,
-    /// SAT-D11), otherwise it is <see cref="SalesRiskReasonCodes.ExchangeRateUnavailable"/>. No inverse or cross rate is derived.
+    /// SAT-D47 / SAT-D200 / SAT-D203: the check day's DEC-FIN-010 rates of each foreign currency into the local currency (TL), as
+    /// the caller resolved them. An amount in another currency than a total's is converted by
+    /// <see cref="SalesRiskCurrencyConversion"/> (foreign → TL multiplies; TL → foreign divides; foreign → other foreign goes
+    /// through TL); a rate it needs and does not have is <see cref="SalesRiskReasonCodes.ExchangeRateUnavailable"/>.
     /// </param>
     public static SalesRiskEvaluation Evaluate(
         SalesRiskCurrency? local,
@@ -194,9 +195,9 @@ public static class SalesCustomerRiskCalculator
         SalesRiskInput approvedUnshippedRemainder,
         SalesRiskInput thisOrder,
         SalesRiskInput creditLimit,
-        IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate>? exchangeRates = null)
+        SalesRiskExchangeRates? exchangeRates = null)
     {
-        var rates = exchangeRates ?? new Dictionary<(Guid Source, Guid Target), ExchangeRate>();
+        var rates = exchangeRates ?? SalesRiskExchangeRates.None;
         ArgumentNullException.ThrowIfNull(openReceivables);
         ArgumentNullException.ThrowIfNull(shippedNotInvoiced);
         ArgumentNullException.ThrowIfNull(approvedUnshippedRemainder);
@@ -331,7 +332,7 @@ public static class SalesCustomerRiskCalculator
 
     /// <summary>The input's amounts as one <see cref="Money"/> in the check currency, or null with its reasons.</summary>
     private static Money? Sum(string component, SalesRiskInput input, Guid currencyId, int scale, List<SalesRiskReason> reasons,
-        IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate> rates)
+        SalesRiskExchangeRates rates)
     {
         var amounts = new List<Money>(input.Amounts.Count);
         foreach (var amount in input.Amounts)
@@ -364,8 +365,13 @@ public static class SalesCustomerRiskCalculator
         }
     }
 
+    /// <summary>
+    /// One amount as money in the total's currency. Another currency is converted here, per amount (SAT-D207: each converted
+    /// amount is rounded on its own by <see cref="SalesRiskCurrencyConversion"/> under SAT-D206, and the caller sums the rounded
+    /// amounts without rounding the sum again).
+    /// </summary>
     private static Money? ToMoney(string component, SalesRiskAmount? amount, Guid currencyId, int scale, List<SalesRiskReason> reasons,
-        IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate> rates)
+        SalesRiskExchangeRates rates)
     {
         if (amount is null || amount.Amount < 0m)
         {
@@ -375,18 +381,16 @@ public static class SalesCustomerRiskCalculator
 
         if (amount.CurrencyId != currencyId)
         {
-            if (amount.CurrencyId == Guid.Empty || !rates.TryGetValue((amount.CurrencyId, currencyId), out var rate)
-                || rate.SourceCurrencyId != amount.CurrencyId || rate.TargetCurrencyId != currencyId)
-            {
-                reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.ExchangeRateUnavailable));
-                return null;
-            }
-
             try
             {
-                // SAT-D47 / SAT-D11: the exact amount times the check day's rate, rounded once to the total's scale.
-                var source = Money.Of(amount.Amount, amount.CurrencyId, Math.Min(Money.SignificantDecimals(amount.Amount), Money.MaximumScale));
-                return rate.Convert(source, scale);
+                if (amount.CurrencyId == Guid.Empty
+                    || SalesRiskCurrencyConversion.Convert(amount.Amount, amount.CurrencyId, currencyId, scale, rates) is not { } converted)
+                {
+                    reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.ExchangeRateUnavailable));
+                    return null;
+                }
+
+                return converted;
             }
             catch (OverflowException)
             {
@@ -417,4 +421,76 @@ public static class SalesCustomerRiskCalculator
             return null;
         }
     }
+}
+
+/// <summary>
+/// SAT-D47 / SAT-D200 / SAT-D203: the check day's TCMB rates the risk check may use — each foreign currency's rate into the
+/// local currency (TL). Only "foreign → TL" rates exist (TCMB publishes no other pair); every other direction is derived from
+/// them by <see cref="SalesRiskCurrencyConversion"/>.
+/// </summary>
+public sealed record SalesRiskExchangeRates(Guid LocalCurrencyId, IReadOnlyDictionary<Guid, ExchangeRate> ToLocal)
+{
+    public static SalesRiskExchangeRates None { get; } = new(Guid.Empty, new Dictionary<Guid, ExchangeRate>());
+
+    /// <summary>The rate of <paramref name="currencyId"/> into the local currency, only when it is exactly that pair.</summary>
+    public bool TryGetToLocal(Guid currencyId, out ExchangeRate rate) =>
+        ToLocal.TryGetValue(currencyId, out rate) && LocalCurrencyId != Guid.Empty
+        && rate.SourceCurrencyId == currencyId && rate.TargetCurrencyId == LocalCurrencyId;
+}
+
+/// <summary>
+/// The one place the risk check converts an amount between currencies (SAT-D47, SAT-D200, SAT-D203):
+/// <list type="bullet">
+/// <item>foreign → TL: amount × the check day's TCMB selling rate of the foreign currency;</item>
+/// <item>TL → foreign (a foreign-currency limit, SAT-D200): TL ÷ that currency's check-day rate (e.g. 43.000 TL ÷ 43 = 1.000 EUR);</item>
+/// <item>foreign → another foreign (SAT-D203): first into TL, then ÷ the limit currency's rate — both check-day rates.</item>
+/// </list>
+/// A missing rate is null (the caller reports <c>exchange_rate_unavailable</c>; SAT-D80 "hesaplanamadı"), never a guess.
+/// </summary>
+public static class SalesRiskCurrencyConversion
+{
+    public static Money? Convert(decimal amount, Guid sourceCurrencyId, Guid targetCurrencyId, int targetScale,
+        SalesRiskExchangeRates rates)
+    {
+        ArgumentNullException.ThrowIfNull(rates);
+        decimal inLocal;
+        if (sourceCurrencyId == rates.LocalCurrencyId)
+        {
+            inLocal = amount;
+        }
+        else if (rates.TryGetToLocal(sourceCurrencyId, out var sourceRate))
+        {
+            var source = Money.Of(amount, sourceCurrencyId, Math.Min(Money.SignificantDecimals(amount), Money.MaximumScale));
+            inLocal = sourceRate.ConvertExact(source);
+        }
+        else
+        {
+            return null;
+        }
+
+        decimal inTarget;
+        if (targetCurrencyId == rates.LocalCurrencyId)
+        {
+            inTarget = inLocal;
+        }
+        else if (rates.TryGetToLocal(targetCurrencyId, out var targetRate))
+        {
+            inTarget = inLocal / targetRate.Rate;
+        }
+        else
+        {
+            return null;
+        }
+
+        return RoundForRisk(inTarget, targetCurrencyId, targetScale);
+    }
+
+    /// <summary>
+    /// SAT-D206/D207 (EK34; the rounding EK31 SAT-D200 / EK32 SAT-D203 left open): the intermediate TL value is NOT rounded; only
+    /// the final limit-currency amount is rounded, half-up (<see cref="Money.Round"/>, away from zero), to the target scale — the
+    /// currency's approved Settings money-profile scale (kuruş, 2 decimals, for TL/USD/EUR), never a literal here (SAT-D206).
+    /// Each converted amount is rounded on its own and the rounded amounts are then summed; the sum is not rounded again
+    /// (SAT-D207). Multiplication is exact; the division is System.Decimal's (28-29 significant digits). The one place to change.
+    /// </summary>
+    internal static Money RoundForRisk(decimal exact, Guid currencyId, int scale) => Money.Round(exact, currencyId, scale);
 }

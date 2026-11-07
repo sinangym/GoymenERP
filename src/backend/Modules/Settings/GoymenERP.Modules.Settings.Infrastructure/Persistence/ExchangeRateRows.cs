@@ -115,9 +115,26 @@ internal sealed record ExchangeRateRows(
         Current(date, ExchangeRateRecordKindsV1.Bulletin, ExchangeRateProvenancesV1.Official)?.State
         ?? ExchangeRateBulletinStatesV1.NotRecorded;
 
-    public string HalfDayState(DateOnly date) =>
-        Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official)?.State
-        ?? ExchangeRateHalfDayStatesV1.Undetermined;
+    /// <summary>
+    /// SAT-D171/D198: the day's half-day answer — the official answer when it is definite (a manual mark never overrides it),
+    /// otherwise the latest manual mark, otherwise undetermined.
+    /// </summary>
+    public string HalfDayState(DateOnly date) => HalfDayAnswer(date).State;
+
+    /// <summary><see cref="ExchangeRateProvenancesV1.Official"/>, <see cref="ExchangeRateProvenancesV1.Manual"/> or null (no record).</summary>
+    public string? HalfDayProvenance(DateOnly date) => HalfDayAnswer(date).Record?.Provenance;
+
+    public (string State, ExchangeRateRecordRow? Record) HalfDayAnswer(DateOnly date)
+    {
+        var official = Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official);
+        if (ExchangeRateHalfDayStatesV1.IsDefinite(official?.State))
+        {
+            return (official!.State, official);
+        }
+
+        var manual = Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Manual);
+        return manual is not null ? (manual.State, manual) : (ExchangeRateHalfDayStatesV1.Undetermined, official);
+    }
 
     /// <summary>The calculator's day records: the official answer of every recorded day and, next to it, the manual rates.</summary>
     public IReadOnlyList<ExchangeRateBulletinDay> BulletinDays()
@@ -136,6 +153,8 @@ internal sealed record ExchangeRateRows(
                     result.Add(ExchangeRateBulletinDay.ConfirmedNoBulletin(date, ExchangeRateBulletinSource.Tcmb));
                     break;
                 case ExchangeRateBulletinStatesV1.Unverified:
+                case ExchangeRateBulletinStatesV1.NotFound:
+                    // A single 404 is not a definite "no bulletin": the walk stops exactly as on an unverified day.
                     result.Add(ExchangeRateBulletinDay.Unconfirmed(date, ExchangeRateBulletinSource.Tcmb));
                     break;
             }

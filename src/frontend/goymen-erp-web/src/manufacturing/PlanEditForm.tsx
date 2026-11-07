@@ -14,6 +14,9 @@
  * M01.3: the cut lines are edited here with the shared editor: the stored rows open with their ids, list order and
  * values; a row's value, its place in the list, an added row (explicit `Sıra no`, new id minted once) or a removed row
  * is a real change. A stored definition keeps at least one row — r1 has no clear — and an invalid row sends nothing.
+ *
+ * Üretim U2-a / U2-b1: the stored line speed and process spec are not edited here yet (U2-c); like the cut lines they
+ * travel unchanged in every revision, since the server reads an omitted member as "none" and would clear them.
  */
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -25,7 +28,7 @@ import { CUT_LINE_TEXT, PLAN_EDIT_TEXT } from './planEditText'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
 import { PLAN_FORM_TEXT, readFailureText } from './planText'
 import type { CapturedPlanCommercialContext, PlanRevision } from './planRevisionContract'
-import type { PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
+import { sameLineSpeed, sameProcessSpec, type PlanTargetBasis, type RevisePlanRequest } from './planCommandApi'
 import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
 import { fetchParentRollCandidates, type ParentRollCandidate, type ParentRollCandidates } from './planReferences'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
@@ -114,6 +117,8 @@ function sameContent(current: PlanRevision, request: RevisePlanRequest): boolean
     current.workCenterId === request.workCenterId &&
     sameTarget &&
     sameCutLines(current, request) &&
+    sameLineSpeed(current.lineSpeedMetresPerMinute, request.lineSpeedMetresPerMinute) &&
+    sameProcessSpec(current.processSpec, request.processSpec) &&
     current.inputs.length === request.inputs.length &&
     current.inputs.every((input, index) => {
       const sent = request.inputs[index]
@@ -280,6 +285,9 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       reason: trimmed,
       ...(cutToLengthSpec === null ? {} : { cutToLengthSpec }),
+      // U2-a / U2-b1: values this form does not edit travel unchanged; an omitted member would clear them on the server.
+      ...(current.lineSpeedMetresPerMinute === null ? {} : { lineSpeedMetresPerMinute: current.lineSpeedMetresPerMinute }),
+      ...(current.processSpec === null ? {} : { processSpec: current.processSpec }),
     }
     if (sameContent(current, request)) {
       setFormError(PLAN_EDIT_TEXT.noChange)

@@ -79,7 +79,7 @@ public sealed partial class SalesDraftService
         var limitCurrency = party.CreditLimit is { State: SalesRiskInputState.Available, Amounts: [{ } limitAmount] }
             ? await RiskCurrencyAsync(scope, draft, limitAmount.CurrencyId, cancellationToken)
             : null;
-        var rates = await RiskExchangeRatesAsync(scope, [local, limitCurrency],
+        var rates = await RiskExchangeRatesAsync(scope, limitCurrency,
             [party.OpenReceivables, shippedNotInvoiced, remainder, thisOrder], cancellationToken);
         var evaluation = SalesCustomerRiskCalculator.Evaluate(local, limitCurrency, party.OpenReceivables, shippedNotInvoiced,
             remainder, thisOrder, party.CreditLimit, rates);
@@ -168,43 +168,45 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
-    /// SAT-D47 (DEC-FIN-010; SAT-D54/D55/D170): the rates that convert a foreign-currency risk amount into a TRY total, from the
-    /// Settings rate-day port for the CHECK day (the server's Europe/Istanbul business day) — computed on every check, never
-    /// frozen (SAT-D172). Only foreign → TRY pairs exist (TCMB selling rates); a TL amount against a foreign limit has no rate
-    /// here (its formula is not decided) and stays <c>exchange_rate_unavailable</c>. A rate the port cannot resolve ("kur
-    /// bulunamadı/belirlenemedi"), an absent port or a failing one leaves the pair out, so that amount stays unavailable; a lost
-    /// authority stays a 403.
+    /// SAT-D47 / SAT-D200 / SAT-D203 (DEC-FIN-010; SAT-D54/D55/D170): the check day's TCMB rate into TL of every foreign currency
+    /// the totals need — each foreign amount's currency and a foreign credit limit's currency — from the Settings rate-day port
+    /// for the CHECK day (the server's Europe/Istanbul business day), computed on every check and never frozen (SAT-D172).
+    /// The calculator derives TL → foreign (÷) and foreign → foreign (via TL) from them. A rate the port cannot resolve ("kur
+    /// bulunamadı/belirlenemedi"), an absent port or a failing one leaves it out, so the amounts needing it stay
+    /// <c>exchange_rate_unavailable</c> (SAT-D80 "hesaplanamadı"); a lost authority stays a 403.
     /// </summary>
-    private async Task<IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate>> RiskExchangeRatesAsync(Scope scope,
-        IEnumerable<SalesRiskCurrency?> targets, IEnumerable<SalesRiskInput> inputs, CancellationToken cancellationToken)
+    private async Task<SalesRiskExchangeRates> RiskExchangeRatesAsync(Scope scope, SalesRiskCurrency? limitCurrency,
+        IEnumerable<SalesRiskInput> inputs, CancellationToken cancellationToken)
     {
-        var rates = new Dictionary<(Guid Source, Guid Target), ExchangeRate>();
-        var tryTarget = SettingsCurrencyIdentitiesV1.TurkishLira;
-        if (exchangeRates is null || !targets.Any(target => target?.CurrencyId == tryTarget))
+        var local = SettingsCurrencyIdentitiesV1.TurkishLira;
+        var rates = new Dictionary<Guid, ExchangeRate>();
+        if (exchangeRates is null)
         {
-            return rates;
+            return new SalesRiskExchangeRates(local, rates);
         }
 
-        var sources = inputs
+        var currencies = inputs
             .Where(input => input.State == SalesRiskInputState.Available)
             .SelectMany(input => input.Amounts)
-            .Where(amount => amount is not null && amount.CurrencyId != tryTarget && amount.CurrencyId != Guid.Empty)
+            .Where(amount => amount is not null)
             .Select(amount => amount!.CurrencyId)
+            .Append(limitCurrency?.CurrencyId ?? Guid.Empty)
+            .Where(currency => currency != local && currency != Guid.Empty)
             .Distinct()
             .ToArray();
-        if (sources.Length == 0)
+        if (currencies.Length == 0)
         {
-            return rates;
+            return new SalesRiskExchangeRates(local, rates);
         }
 
         var checkDay = ServerBusinessDay();
-        foreach (var source in sources)
+        foreach (var currency in currencies)
         {
             ExchangeRateResolutionV1 resolution;
             try
             {
                 resolution = await GuardedAsync(scope, bindings.ReadPermission,
-                    () => exchangeRates.ResolveAsync(checkDay, source, tryTarget, cancellationToken), cancellationToken);
+                    () => exchangeRates.ResolveAsync(checkDay, currency, local, cancellationToken), cancellationToken);
             }
             catch (SettingsPrerequisiteException exception) when (exception.Code == ExchangeRateProblemCodesV1.AccessDenied)
             {
@@ -215,16 +217,16 @@ public sealed partial class SalesDraftService
                 continue;
             }
 
-            if (resolution.State == ExchangeRateResolutionStatesV1.Resolved && resolution.SourceCurrencyId == source
-                && resolution.TargetCurrencyId == tryTarget && resolution.RateDay == checkDay
+            if (resolution.State == ExchangeRateResolutionStatesV1.Resolved && resolution.SourceCurrencyId == currency
+                && resolution.TargetCurrencyId == local && resolution.RateDay == checkDay
                 && decimal.TryParse(resolution.SellingRate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
                 && value > 0m)
             {
-                rates[(source, tryTarget)] = ExchangeRate.Of(source, tryTarget, value);
+                rates[currency] = ExchangeRate.Of(currency, local, value);
             }
         }
 
-        return rates;
+        return new SalesRiskExchangeRates(local, rates);
     }
 
     // ---- the customer-finance owner ---------------------------------------------------------------------------------------
