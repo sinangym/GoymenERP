@@ -3266,7 +3266,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReviseSalesOrderDraftQuantityV1:409"] = ["concurrent_change", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftLinesV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftQuantityV1:422"] = ["validation_failed"],
-            ["ReviseSalesOrderDraftLinesV1:422"] = ["validation_failed"],
+            ["ReviseSalesOrderDraftLinesV1:422"] = ["unsupported_product", "unsupported_unit", "validation_failed"],
             ["ReviseSalesOrderDraftHeaderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ReviseSalesOrderDraftHeaderV1:409"] = ["account_state", "concurrent_change", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftHeaderV1:422"] = ["owner_reference_invalid", "unsupported_currency", "validation_failed"],

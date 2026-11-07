@@ -372,4 +372,38 @@ public sealed partial class SalesDraftServiceTests
         Assert.NotEqual(SalesDraftRequestHash.Compute(SalesDraftCommands.ReviseLinesV1, Guid.Empty, request),
             SalesDraftRequestHash.Compute(SalesDraftCommands.ReviseLinesV1, Guid.Empty, request with { Reason = "başka" }));
     }
+    [Fact]
+    public async Task A_quantity_header_or_commercial_revision_is_a_422_validation_failure_while_a_customer_rejected_removal_waits()
+    {
+        // K3 review B P3-1: the domain's fail-closed refusal reaches the caller as 422 validation_failed on every command.
+        var world = new World();
+        Owners(world);
+        var approved = await ApprovedAsync(world);
+        var removedId = approved.Lines[0].LineId;
+        var accepted = await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command(approved.Draft.Version), Metadata("k-pend-accept"));
+        var revised = await world.Service().ReviseLinesAsync(approved.Draft.Id,
+            LineRevision(accepted.Detail.Draft.Version, [AddedLine()], [new SalesDraftLineRemovalV1(removedId)]), Metadata("k-pend-lines"));
+        var submitted = await world.Service().SubmitDraftAsync(approved.Draft.Id, Command(revised.Detail.Draft.Version), Metadata("k-pend-submit"));
+        var approvedAgain = await world.Service().ApproveDraftAsync(approved.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("k-pend-approve"));
+        var rejected = await world.Service().RecordCustomerRejectionAsync(approved.Draft.Id,
+            Command(approvedAgain.Detail.Draft.Version, "SENTETIK musteri istemedi"), Metadata("k-pend-reject"));
+        var version = rejected.Detail.Draft.Version;
+        var lineId = rejected.Detail.Lines[0].LineId;
+        var transitions = world.Store.Transitions.Count;
+
+        var quantity = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuantityAsync(approved.Draft.Id,
+            new SalesDraftQuantityRevisionRequest(version, "SENTETIK", [new SalesDraftLineQuantityV1(lineId, "2")]), Metadata("k-pend-quantity")));
+        var header = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Draft.Id,
+            HeaderRevision(version, account: NewAccount, currency: NewCurrency, reason: "SENTETIK"), Metadata("k-pend-header")));
+        var commercial = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(approved.Draft.Id,
+            Revision(version, new SalesDraftLineCommercialV1(lineId, "10", KgUnit)), Metadata("k-pend-commercial")));
+
+        foreach (var refused in new[] { quantity, header, commercial })
+        {
+            Assert.Equal((422, "validation_failed", SalesRuleCodes.RevisionReinstatementPending),
+                (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+        }
+
+        Assert.Equal(transitions, world.Store.Transitions.Count);
+    }
 }

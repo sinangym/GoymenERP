@@ -852,7 +852,7 @@ public static partial class SalesEndpoints
             // the submission's and the approval's, not this command's.
             .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                 SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
-            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpUnprocessableEntity("validation_failed", "unsupported_product", "unsupported_unit")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
