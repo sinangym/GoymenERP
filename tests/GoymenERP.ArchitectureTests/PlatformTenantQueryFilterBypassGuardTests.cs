@@ -623,7 +623,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Version/UpdatedAtUtc fields; no query filter, company-leading key or table boundary changes.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "87d1403fdacdb821f93b7a470921264467afb667066e1cdff7963e08f6121835",
+                // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
+                "b4ba4c31c800ecd28a59cb3a68eacd58dbcf6ccbb7cfe949b0bffe4886effa70",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -935,7 +936,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // port. Re-fingerprinted for ST-04: one scoped movement-timeline reader registration; the
                     // provider branch and its token counts are unchanged.
                     new(
-                        "3764bba70411637eda17af34ee42d090426d855e04e03a0c7a109ecce6793154",
+                        // Re-fingerprinted for B-01: one scoped registration of the plan-input allocation read port; provider tokens unchanged.
+                        "dc04c025d76387bd67bf92c07e65d48bd9d95f214a05ee307637a0c400c3b576",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1014,7 +1016,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                "b2cb0ed28a010e12ff1b46d38dbeede73f0b6ed39d9ebb9cf86120e477ef3589",
+                // Re-fingerprinted for B-01: one internal audit helper for plan-input allocations; provider tokens unchanged.
+                "6c2c4bf3f1109451b8805d13488673f97612ecd782efbfb15f129c1dd161fdad",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1410,7 +1413,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
-                        "cc4dd486312f168917484c0e36379dc754a915516ac4acd611eb12fbda6165d2",
+                        // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its allocation, legacy-stable issue hash; provider tokens unchanged.
+                        "9f6bf356b5a43458c505938335c642a7494808e976dfb5b8bc9b28652bf6015b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
