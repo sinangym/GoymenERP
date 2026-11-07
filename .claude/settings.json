@@ -6,6 +6,7 @@
       "Bash(git branch:*)", "Bash(git fetch:*)", "Bash(git rev-parse:*)", "Bash(git ls-files:*)",
       "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git checkout -b:*)", "Bash(git switch -c:*)",
+      "Bash(git merge:*)", "Bash(git worktree add:*)", "Bash(git worktree list:*)",
       "Bash(dotnet restore:*)", "Bash(dotnet build:*)", "Bash(dotnet test:*)",
       "Bash(dotnet format:*)", "Bash(dotnet ef migrations:*)",
       "Bash(npm ci:*)", "Bash(npm install:*)", "Bash(npm run:*)", "Bash(npm test:*)",

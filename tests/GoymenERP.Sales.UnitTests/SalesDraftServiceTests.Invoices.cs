@@ -82,9 +82,9 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task A_shipped_uninvoiced_share_of_a_cancelled_order_is_invoiceable_EK43_pending()
+    public async Task A_shipped_uninvoiced_share_of_a_cancelled_order_is_invoiceable_SAT_D228()
     {
-        // Sinan (relayed by the coordinator; EK43 pending): a cancelled order's shipped, uninvoiced dispatch note is invoiceable.
+        // SAT-D228 (EK43): a cancelled order's shipped, uninvoiced dispatch note is invoiceable.
         var invoicing = await InvoiceWorld.CreateAsync();
         Owners(invoicing.World);
         var token = (await invoicing.World.Service().GetCancellationImpactAsync(invoicing.Order.Draft.Id)).ImpactToken;

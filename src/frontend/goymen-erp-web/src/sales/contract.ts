@@ -46,6 +46,8 @@ export const salesDraftCancellationPath = (id: string) => `${salesDraftDetailPat
 export const salesDraftForceCloseImpactPath = (id: string) => `${salesDraftDetailPath(id)}/force-close-impact`
 /** No 30: the force-close command (POST) and the recorded closure (GET, the draft read). */
 export const salesDraftForceClosePath = (id: string) => `${salesDraftDetailPath(id)}/force-close`
+/** SAT-D32: the user closure of a "kapanmaya hazır" order (POST, the close control's name) and its record (GET, the draft read). */
+export const salesDraftUserClosePath = (id: string) => `${salesDraftDetailPath(id)}/close`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -589,6 +591,8 @@ export const SALES_PROBLEM_CODE = {
   // longer is the preview the command named.
   forceCloseBlocked: 'sales_force_close_blocked',
   forceCloseImpactChanged: 'sales_force_close_impact_changed',
+  // SAT-D32: the order is not "kapanmaya hazır" — the server recomputed the status axes inside the save (not closed).
+  orderNotReadyToClose: 'sales_order_not_ready_to_close',
   // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
   // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
   businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
@@ -1735,6 +1739,35 @@ export function decodeForceCloseImpact(value: unknown, detail: DraftDetail): For
     })
   }
   return { draftVersion: o.draftVersion, revision: o.revision, closable: o.closable, impactToken: o.impactToken, sources, lines }
+}
+
+/** SAT-D32 / SAT-D215: `SalesDraftCloseRequest` — the expected version only; no reason. */
+export interface DraftCloseRequest {
+  readonly expectedVersion: string
+}
+
+/** SAT-D32: the recorded user closure — the revision closed, who closed it and when (no reason, no remainder). */
+export interface UserClosureRecord {
+  readonly revision: string
+  readonly closedBy: string
+  readonly closedAtUtc: string
+}
+
+export interface UserClosureRead {
+  readonly userClosure: UserClosureRecord | null
+}
+
+/** SAT-D32: `SalesOrderDraftUserClosureResponse`, read exactly: null, or the recorded facts. */
+export function decodeUserClosure(value: unknown): UserClosureRead | null {
+  const o = exact(value, ['userClosure'])
+  if (o === null) return null
+  if (o.userClosure === null) return { userClosure: null }
+  const c = exact(o.userClosure, ['revision', 'closedBy', 'closedAtUtc'])
+  if (
+    c === null || typeof c.revision !== 'string' || !REVISION_RE.test(c.revision) || !isRevisionActor(c.closedBy) ||
+    !isRevisionInstant(c.closedAtUtc)
+  ) return null
+  return { userClosure: { revision: c.revision, closedBy: c.closedBy, closedAtUtc: c.closedAtUtc } }
 }
 
 /** No 30: `SalesOrderDraftForceClosureResponse`, read exactly: null, or the recorded facts. */

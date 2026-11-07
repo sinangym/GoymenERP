@@ -287,8 +287,8 @@ public sealed class SalesInvoiceService(
     private static PreparedShare? Prepare(string field, SalesInvoiceableShipmentV1 share, SalesOrderDraft order,
         List<SalesDraftFieldError> reasons)
     {
-        // Sinan (coordinator relay, EK43 pending): a shipped but uninvoiced dispatch note of a CANCELLED order is invoiceable —
-        // the lifecycle is not a gate here; only the invoicing gate below decides.
+        // SAT-D228 (EK43): a shipped but uninvoiced dispatch note of a CANCELLED order is invoiceable — the lifecycle is not a
+        // gate here; only the invoicing gate below decides. The order itself stays cancelled.
         var (gate, _) = SalesDraftService.InvoicingGate(order);
         if (gate != SalesDraftInvoicingGatesV1.Open)
         {

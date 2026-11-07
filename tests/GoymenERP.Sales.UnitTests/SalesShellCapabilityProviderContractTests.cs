@@ -30,8 +30,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // SAT-D24 / SAT-D44 merged over 1.9 (1.10): the expired-quote conversion approval control of the quote detail.
         // UI-80 (1.11): the Sales reports screen.
         // API-04 (1.12, merged after 1.11): the header-revision control of the detail.
-        Assert.Equal(("SALES", "1.12"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(25, declarations.Count);
+        // SAT-D32 (1.13): the user-closure control of the detail.
+        Assert.Equal(("SALES", "1.13"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(26, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -126,6 +127,14 @@ public sealed class SalesShellCapabilityProviderContractTests
             (forceClose.RouteId, forceClose.RoutePath, forceClose.ScreenId, forceClose.RoutePrecedence, forceClose.ContextRequirement, forceClose.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, forceClose.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose], forceClose.RequiredPermissions);
+
+        // SAT-D32: the user closure is a control of the detail — the read plus its own name, never the force-close or cancel name.
+        var close = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.CloseCapabilityId);
+        Assert.Equal("sales.orders.close", close.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (close.RouteId, close.RoutePath, close.ScreenId, close.RoutePrecedence, close.ContextRequirement, close.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, close.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersClose], close.RequiredPermissions);
 
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
@@ -297,6 +306,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // No 30: the SEPARATE force-close name, the decision's own literal, distinct from the cancel name.
         Assert.Equal("sales.orders.force-close", SalesPermissionManifestV1.OrdersForceClose);
         Assert.NotEqual(SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersForceClose);
+        // SAT-D32 / SAT-D168: the SEPARATE user-closure name; neither the force-close nor the cancel name confers it.
+        Assert.Equal("sales.orders.close", SalesPermissionManifestV1.OrdersClose);
+        Assert.NotEqual(SalesPermissionManifestV1.OrdersForceClose, SalesPermissionManifestV1.OrdersClose);
         // API-20 / API-21 (plan §3.2, S-01): the sales request's own three names; no draft or order name confers them.
         Assert.Equal("sales.requests.write", SalesPermissionManifestV1.RequestsWrite);
         Assert.Equal("sales.requests.read", SalesPermissionManifestV1.RequestsRead);
@@ -314,7 +326,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.invoices.write", SalesPermissionManifestV1.InvoicesWrite);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
-        Assert.Equal((19, 22), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((20, 23), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -328,6 +340,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,
+                SalesPermissionManifestV1.OrdersClose,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersHeaderWrite,
                 SalesPermissionManifestV1.RequestsWrite,

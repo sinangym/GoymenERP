@@ -430,9 +430,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
             // S5 API-32 (Fatura cekirdegi 1): +2 SalesInvoice facts (the invoice draft's one save, replay, active-share index and
-            // company isolation; the 51221 rollback refusal), kept ordinal-sorted (1f679068... -> 89028698...).
+            // company isolation; the 51221 rollback refusal), kept ordinal-sorted (95e16c66... -> 25ed266d...).
             ["tools/relational_inventory/sales.txt"] =
-                "89028698f9b1adcd15adef92e44a7399b903f74a655ecf021af8a03049087adc",
+                "25ed266d72871cc0061dc47339a8da18d1cf287d3da1738cf802cb84d1b104b9",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -548,7 +548,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): Invoices / InvoiceLines / InvoiceAttempts tenant rows under the
                 // same company filter, the filtered unique UX_InvoiceLines_ActiveShipment and their check constraints; the write guard
                 // admits no modification of them (append-only); no query-filter bypass or direct database surface.
-                "c9e42e47b526c695cd5993ace1af8d4a7915caaa11e444e87d4feff870395a0f",
+                "364d7ad5f85e3147db0c43e59ea794d5dca62faf448dc531a456ae81730aa636",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1548,7 +1548,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): the invoice store over the same SalesStore and the invoice
                     // service factory (company context resolved, never registered); provider branch and token counts unchanged.
                     new(
-                        "9f3f83d82aa44a9bf090ab8f8c69b2f335fa45b581a69fb519e30816aeb709b3",
+                        "1304d380073d60dcb6f92d160de4ec175e07d8cb385e2f9f3e1336779e17d98a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1598,7 +1598,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): the list cursor gains the invoice ordering label (the invoice
                     // store itself is the partial SalesStore.Invoices.cs over the same filtered context); SqlClient count unchanged.
                     new(
-                        "a0cfaa75166195ad6fcb99716a76263b928809dc6133bf543764a9d73acacd03",
+                        "f5c0a0941bcfa247f878395b303d468624a99e0931063d78efa501c6ab1b6346",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2294,6 +2294,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
                     new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D32: the Down's only raw SQL is Sales' refusal (51212, used by no other migration) while any user closure row or
+                // recorded close attempt exists; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261103073447_AddDraftUserClosures.cs"] =
+                    new("586dd38857e8a9c76bb654243710782e28d627ce64abc58ea7783f6c8b5c0d97",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // S5 API-32 (Fatura cekirdegi 1): the Down's only raw SQL is Sales' refusal (51221, used by no other migration) while
