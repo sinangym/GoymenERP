@@ -2558,7 +2558,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
                 self.snapshot,
                 f"{foreign}HiddenContextProbe.cs",
                 "namespace Foreign.Zone;\ninternal static class HiddenContextProbe\n{\n"
-                "#if HIDDEN_DEFINE\n    internal static System.Type T() => "
+                "#if false\n    internal static System.Type T() => "
                 "typeof(GoymenERP.Modules.Sales.Infrastructure.Persistence.SalesDbContext);\n"
                 "#endif\n}\n",
             ),

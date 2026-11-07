@@ -982,8 +982,30 @@ def _csharp_string_end(content: str, quote_index: int) -> int:
     raise InventoryError("C# source contains an unterminated interpolated string.")
 
 
+_PURE_TEXT_CACHE_LIMIT = 16384
+_STRIPPED_CSHARP_CACHE: dict[str, str] = {}
+_LIVE_CSHARP_CACHE: dict[str, str] = {}
+
+
+def _cached_text_transform(cache: dict[str, str], content: str, transform: Any) -> str:
+    """Memoize a pure str -> str transform; failures raise and are never cached."""
+
+    cached = cache.get(content)
+    if cached is None:
+        cached = transform(content)
+        if len(cache) >= _PURE_TEXT_CACHE_LIMIT:
+            cache.clear()
+        cache[content] = cached
+    return cached
+
+
 def _strip_csharp_comments(content: str) -> str:
     """Remove C# comments while preserving strings and line structure."""
+
+    return _cached_text_transform(_STRIPPED_CSHARP_CACHE, content, _strip_csharp_comments_uncached)
+
+
+def _strip_csharp_comments_uncached(content: str) -> str:
 
     result: list[str] = []
     index = 0
@@ -1167,6 +1189,11 @@ def _mask_literal_false_if_blocks(content: str) -> str:
 
 def _live_csharp_code(content: str) -> str:
     """Mask literals and statically disabled regions before live-code anchor checks."""
+
+    return _cached_text_transform(_LIVE_CSHARP_CACHE, content, _live_csharp_code_uncached)
+
+
+def _live_csharp_code_uncached(content: str) -> str:
 
     without_literals = _mask_csharp_strings(content)
     if without_literals.startswith("\ufeff"):
@@ -3016,7 +3043,29 @@ def _namespace_and_ancestors(name: str) -> set[str]:
     return {".".join(parts[: index + 1]) for index in range(len(parts))}
 
 
+_RISKY_SURFACE_CACHE: dict[
+    tuple[tuple[str, bytes], ...],
+    tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]],
+] = {}
+_RISKY_SURFACE_CACHE_LIMIT = 8
+
+
 def _risky_source_surface(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    """Memoize the narrow risky surface by exact snapshot content (a pure function of it)."""
+
+    key = tuple(sorted(snapshot.files.items()))
+    cached = _RISKY_SURFACE_CACHE.get(key)
+    if cached is None:
+        cached = _compute_risky_source_surface(snapshot)
+        if len(_RISKY_SURFACE_CACHE) >= _RISKY_SURFACE_CACHE_LIMIT:
+            _RISKY_SURFACE_CACHE.clear()
+        _RISKY_SURFACE_CACHE[key] = cached
+    return cached
+
+
+def _compute_risky_source_surface(
     snapshot: SourceSnapshot,
 ) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
     """Return the narrow risky surface: byte-pinned paths and the shadow-declaration index.
