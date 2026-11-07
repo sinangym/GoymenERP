@@ -30,7 +30,8 @@ internal sealed record PartyLedgerFact(
 /// The side of a row follows its kind, from the company's view of the party's account: a receivable open item (the
 /// party's sales invoice installment) and a payment to the party are debit (borç); a receipt, a cheque / note collection
 /// and a payable open item (the party's purchase invoice installment, MOD-15) are credit (alacak); a reversal is the
-/// reverse side of the receipt it reverses (debit), as its own row — the original row stays as it was recorded.
+/// reverse side of the receipt it reverses (debit), as its own row — the original row stays as it was recorded. An
+/// invoice cancellation (F2b, SAT-D96) is likewise its own row on the reverse side of the open item it reverses.
 /// </para>
 /// </summary>
 internal static class PartyLedgerPolicy
@@ -43,6 +44,8 @@ internal static class PartyLedgerPolicy
         PartyLedgerEntryKind.CustomerInstrumentCollection => PartyLedgerSide.Credit,
         PartyLedgerEntryKind.ManualBankPayment => PartyLedgerSide.Debit,
         PartyLedgerEntryKind.PayableOpenItem => PartyLedgerSide.Credit,
+        PartyLedgerEntryKind.OpenItemCancellation => PartyLedgerSide.Credit,
+        PartyLedgerEntryKind.PayableOpenItemCancellation => PartyLedgerSide.Debit,
         _ => throw new InvalidOperationException("Cari ekstre satır türü tanınmadı; ekstre hesaplanmaz."),
     };
 

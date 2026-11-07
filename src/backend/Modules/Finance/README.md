@@ -449,4 +449,20 @@ finalisation) belongs to Sales and Purchasing (ALS-D44); Finance only admits the
 | Migration `20261102220923_AddOpenItemInvoiceExchange` | Adds the two nullable columns and the constraint. `Down` refuses with `THROW 51051` while any row carries exchange data (forward fix) |
 
 Not registered in the host yet: the producers' finalisation ports (Sales S5, Purchasing A5) wire it when they exist.
-Not in this slice: invoice cancellation / reversal (F2b), opening balances (API-14), currency revaluation (API-95).
+Not in this slice: opening balances (API-14), currency revaluation (API-95). Invoice cancellation is F2b (below).
+
+## API-11: invoice cancellation → open-item reversal (F2b) — SAT-D96, FNS-D14
+
+When the producer records that a finalised invoice was cancelled outside the ERP (e-Fatura RED / e-Arşiv iptal), Finance
+closes that invoice's open items with a reversal. Nothing is deleted.
+
+| Part | What |
+|---|---|
+| `IFinanceInvoiceOpenItemCancellationPortV1` | Synchronous, idempotent in-process port (no HTTP surface), like the admission port. `Producer` fixes the source kind; `InvoiceId` + `InvoiceVersion` name the admitted invoice; `Reason` is short canonical text (≤ 512) kept on the receipt and the audit |
+| Authority | Fenced twice (before any read and right before the save) by the host-owned `IFinanceInvoiceOpenItemCancellationAuthorityV1`; no grant named here; an unmapped composition is unavailable. The caller's company and actor must equal the server context |
+| Effect | Every open item of the invoice keeps its original amount and becomes `Status = 3` (Cancelled) with outstanding `0`, version +1. One `InvoiceCancellationItems` row per item holds the reversed amount; the party ledger shows it as its own row on the UTC day of the cancellation — `OpenItemCancellation` (credit, reverses a receivable) or `PayableOpenItemCancellation` (debit, reverses a payable) — so the account balances back. FI04 shows `Cancelled`; the risk port and allocation already count only `Open` items |
+| Refusals | An invoice Finance never admitted (`finance_invoice_not_admitted`), another version (`finance_invoice_version_mismatch`), an invoice already cancelled under another id (`finance_invoice_already_cancelled`), or any item with an active allocation or a changed outstanding amount (`finance_invoice_cancellation_has_allocations`). What happens to an allocated invoice is undecided (Issue #66 NEEDS-SINAN); until then the allocation is released first by its own operation |
+| Idempotency | One save writes the receipt (`InvoiceCancellations`: key hash, payload hash, actor, answer), the reversal rows, the item changes and the audit event `finance.invoice-open-items.cancelled.v1`. Same key + payload + actor replays; same key otherwise is `IdempotencyConflict`; the same `CancellationId` under a new key (SAT-D208) replays with the same payload and is refused `finance_invoice_cancellation_identity_conflict` otherwise. One cancellation per invoice and kind (unique index) |
+| Migration `20261107131505_AddInvoiceCancellations` | Adds the two tables and widens `CK_OpenItems_Status` to `(1, 2, 3)`. `Down` refuses with `THROW 51051` while any cancellation or cancelled item is stored (forward fix) |
+
+Not registered in the host yet: the producers' cancellation commands (Sales, Purchasing) wire it when they exist.
