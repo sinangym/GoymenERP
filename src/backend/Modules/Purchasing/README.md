@@ -118,15 +118,16 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   defaulting to the line's unit, and at most one of `discountPercent` / `discountAmount`), all exact decimal text. The
   currency is verified through the existing `ISettingsPrerequisiteProvider.GetMoneyProfileAsync` for the operation key
   `purchasing.order.v1` (`PurchasingMoneyOperationsV1`) on the order's business date and recorded as a snapshot
-  (`CurrencyId`, `CurrencyCode`, `MoneyProfileId`, `MoneyProfileVersion`, `MoneyScale`). **Fail-closed today:** the approved
-  Settings money catalog has no profile for `purchasing.order.v1` (Sinan #66 6704170096 approved it as a narrow ALS-D58 exception; it lands in A2a-1b), so the
-  owner answers `settings_provider_unavailable` and a priced order is a 503 while an unpriced one is unaffected;
-  `GET references/currencies` (under `purchasing.orders.create`) lists the operation's currencies and is a 503 until then.
+  (`CurrencyId`, `CurrencyCode`, `MoneyProfileId`, `MoneyProfileVersion`, `MoneyScale`, and since A2a-1c `UnitPriceScale`).
+  Since A2a-1b the approved Settings money catalog answers `purchasing.order.v1` (ALS-D69, within ALS-D63's narrow exception)
+  for GDC, GSP and GIN with TRY: amount scale 2 and unit-price scale 4 (ALS-D72), so a priced order opens in TRY;
+  `GET references/currencies` (under `purchasing.orders.create`) lists TRY. A currency without an approved profile is
+  `unsupported_currency` (422); an owner that answers unavailable is still a 503, and an unpriced order never asks.
   Rules (domain, 422 on `lines[i].price`): a currency is required (`purchasing_price_currency_required`); the price is never negative
   (`purchasing_price_negative`; an explicit 0 is a price with a 0 line amount, apart from no price = "fiyat bekliyor", ALS-D18 —
   Sinan #66 6704170096; on a 0 price a discount amount above 0 is refused as exceeding the price); the price unit is the line's entry
   unit, because the Product conversion port is deferred (`purchasing_price_unit_conversion_unavailable`); the unit price and a
-  discount amount carry at most min(profile scale, 6) decimals, never rounded (`purchasing_price_scale_exceeded`); a discount is a
+  discount amount carry at most min(unit-price scale — or, without one, the amount scale — and 6) decimals (4 for TRY, see below), never rounded (`purchasing_price_scale_exceeded`); a discount is a
   percent 0..100 (≤ 6 decimals) or an amount 0..unit price, never both. No minimum price, margin or discount ceiling is decided for
   purchasing and none is invented. The net unit price (exact, SAT-D76) and the line amount (ordered quantity × net, rounded once
   half away from zero to the profile's scale, SAT-D11) come from the shared `BuildingBlocks/Monetary/CommercialLinePriceCalculator`
@@ -143,6 +144,15 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   general line with a price ≥ 0 and at most one bounded discount); its Down refuses (`THROW 51169`) while any order has a
   currency or any line a price. P-04 gains the optional price fieldset (currency, unit price, discount; the net and the amount
   are shown only after the save), P-03-DETAIL the price columns, "fiyat bekliyor" and the withheld notice.
+- **Unit-price scale (A2a-1b, A2a-1c; ALS-D69, ALS-D72):** since A2a-1b the approved Settings money catalog answers
+  `purchasing.order.v1` (GDC, GSP, GIN; TRY, amount scale 2) with `MoneyProfileV1.UnitPriceScale` 4. A2a-1c snapshots that scale with the order (`UnitPriceScale`, nullable) and holds a unit price and a discount
+  amount to min(unit-price scale, 6) decimals — 4 for TRY (`41.2575`; `10.12345` is `purchasing_price_scale_exceeded`). Without a
+  unit-price scale (a profile that answers none, or an order recorded before A2a-1c) the A2a-1 rule stays: min(amount scale, 6).
+  The line amount is still rounded once to the amount scale (SAT-D11) and the net is exact (SAT-D76). An answered scale outside
+  0..28 is `reference_provider_invalid`. The wire is unchanged (`currency.scale` stays the amount scale). Migration
+  `20261107131321_AddPurchaseOrderUnitPriceScale` adds the column and `CK_PurchaseOrders_UnitPriceScale` (null, or beside a
+  currency within 0..28; `CK_PurchaseOrders_Money` unchanged, no backfill); its Down refuses (`THROW 51170`) while any order has a
+  unit-price scale.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay

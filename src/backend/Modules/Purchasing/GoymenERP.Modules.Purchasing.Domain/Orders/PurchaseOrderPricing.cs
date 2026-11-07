@@ -7,6 +7,11 @@ namespace GoymenERP.Modules.Purchasing.Domain.Orders;
 /// opened — the currency identity, the profile and its version, and the profile's scale. One currency per order (header); every
 /// priced line is in it. The scale is the owner's (Ö2: the final amount's decimals); it is never chosen here. A snapshot: a later
 /// profile version never changes a recorded order (the Sales draft's money snapshot, SAT-D18).
+/// <para>
+/// A2a-1c (ALS-D72): the profile's unit-price scale for <c>purchasing.order.v1</c> (Settings <c>MoneyProfileV1.UnitPriceScale</c>,
+/// 4 for TRY) is part of the snapshot. Null — a profile that publishes none, or an order recorded before A2a-1c — keeps the A2a-1
+/// rule: a unit price carries at most the amount scale. The line amount is always rounded once to <see cref="Scale"/>.
+/// </para>
 /// </summary>
 public sealed record PurchaseOrderMoney
 {
@@ -19,13 +24,14 @@ public sealed record PurchaseOrderMoney
     /// <summary>The stored currency code's bound (the Settings owner's code, e.g. "TRY"; a label, never an identity).</summary>
     public const int MaximumCurrencyCodeLength = 16;
 
-    private PurchaseOrderMoney(Guid currencyId, string currencyCode, Guid profileId, long profileVersion, int scale)
+    private PurchaseOrderMoney(Guid currencyId, string currencyCode, Guid profileId, long profileVersion, int scale, int? unitPriceScale)
     {
         CurrencyId = currencyId;
         CurrencyCode = currencyCode;
         ProfileId = profileId;
         ProfileVersion = profileVersion;
         Scale = scale;
+        UnitPriceScale = unitPriceScale;
     }
 
     public Guid CurrencyId { get; }
@@ -39,10 +45,17 @@ public sealed record PurchaseOrderMoney
     /// <summary>The money profile's own scale: the line amount is rounded to it (SAT-D11, half away from zero).</summary>
     public int Scale { get; }
 
-    /// <summary>The decimals a unit price or a discount amount may carry: min(profile scale, <see cref="MaximumPriceScale"/>).</summary>
-    public int PriceScale => Math.Min(Scale, MaximumPriceScale);
+    /// <summary>A2a-1c (ALS-D72): the owner's unit-price scale for the purchasing order operation, or null when none was answered.</summary>
+    public int? UnitPriceScale { get; }
 
-    public static PurchaseOrderMoney Of(Guid currencyId, string currencyCode, Guid profileId, long profileVersion, int scale)
+    /// <summary>
+    /// The decimals a unit price or a discount amount (a per-unit amount taken from the unit price) may carry: min(the profile's
+    /// unit-price scale — or, without one, its amount scale — and <see cref="MaximumPriceScale"/>).
+    /// </summary>
+    public int PriceScale => Math.Min(UnitPriceScale ?? Scale, MaximumPriceScale);
+
+    public static PurchaseOrderMoney Of(Guid currencyId, string currencyCode, Guid profileId, long profileVersion, int scale,
+        int? unitPriceScale = null)
     {
         Identity.Require(currencyId, nameof(currencyId));
         if (string.IsNullOrWhiteSpace(currencyCode) || currencyCode.Length > MaximumCurrencyCodeLength
@@ -62,7 +75,12 @@ public sealed record PurchaseOrderMoney
             throw new ArgumentOutOfRangeException(nameof(scale), $"Para ölçeği 0 ile {Money.MaximumScale} arasında olmalıdır.");
         }
 
-        return new PurchaseOrderMoney(currencyId, currencyCode, profileId, profileVersion, scale);
+        if (unitPriceScale is < 0 or > Money.MaximumScale)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unitPriceScale), $"Birim fiyat ölçeği 0 ile {Money.MaximumScale} arasında olmalıdır.");
+        }
+
+        return new PurchaseOrderMoney(currencyId, currencyCode, profileId, profileVersion, scale, unitPriceScale);
     }
 }
 

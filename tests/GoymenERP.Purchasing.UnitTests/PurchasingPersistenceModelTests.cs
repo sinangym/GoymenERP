@@ -233,13 +233,13 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_A1_2_A1_3_and_A2a_1_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_and_A2a_1c_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
         Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
                 "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
-                "20261107063820_AddPurchaseOrderLinePrice"],
-            context.Database.GetMigrations().TakeLast(5));
+                "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale"],
+            context.Database.GetMigrations().TakeLast(6));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -328,6 +328,29 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("THROW 51169", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[CurrencyId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[UnitPrice] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_A2a_1c_unit_price_scale_is_a_nullable_column_beside_the_money_snapshot_with_a_Down_that_refuses_while_one_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var orders = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseOrderRow))!;
+        Assert.True(orders.FindProperty(nameof(PurchaseOrderRow.UnitPriceScale))!.IsNullable);
+        var check = Assert.Single(orders.GetCheckConstraints(), candidate => candidate.Name == "CK_PurchaseOrders_UnitPriceScale");
+        Assert.Equal(PurchasingDbContext.OrderUnitPriceScaleCheck, check.Sql);
+        Assert.Equal("[UnitPriceScale] IS NULL OR ([CurrencyId] IS NOT NULL AND [UnitPriceScale] >= 0 AND [UnitPriceScale] <= 28)", check.Sql);
+        // The A2a-1 money check is unchanged: a legacy priced order has no unit-price scale.
+        Assert.DoesNotContain("UnitPriceScale", PurchasingDbContext.OrderMoneyCheck, StringComparison.Ordinal);
+
+        // Up adds one nullable column and its check (no SQL, no backfill); Down refuses (51170) before any drop while a scale exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderUnitPriceScale();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var column = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>());
+        Assert.Equal((nameof(PurchaseOrderRow.UnitPriceScale), true), (column.Name, column.IsNullable));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51170", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[UnitPriceScale] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
