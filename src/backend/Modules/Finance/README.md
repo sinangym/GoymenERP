@@ -418,9 +418,10 @@ Finance conversation's work; Purchasing's incoming-invoice finalisation, Purchas
 | Sales risk (MOD-01) | Reads only receivables; a payable of the same party is neither added nor makes the figure unavailable |
 | Allocation (F-03) | A receipt closes only a receivable: `finance_allocation_direction_mismatch` otherwise. Closing a payable with a receipt is an offset (plan API-07), its own approved operation |
 
-Not in this slice (plan F1b/F2/F3): the balance summary read (API-04), the direction quarantine for direction-less
-imports (No 22, with a CSV v2), payable allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the
-risk read still nets every recorded outgoing payment to the account as a refund), and the MOD-04 admission port.
+Not in this slice (plan F2/F3): the direction quarantine for direction-less imports (No 22, with a CSV v2), payable
+allocation of outgoing payments and the outgoing-payment purpose (TEK-02: the risk read still nets every recorded
+outgoing payment to the account as a refund). The balance summary (API-04) and the MOD-04 admission port are the next
+sections.
 
 ## F1b / API-04: party balance summary (cari bakiye özeti) — FNS-D6, FNS-D10
 
@@ -432,7 +433,6 @@ is refused 422 `finance_party_balance_too_many_facts`, never summed from a cut s
 amount and the balance side are withheld. Currencies are never converted or added; nothing is netted for risk
 (ALS-D42); nothing is written. A money-event kind the ledger does not know, a reversal whose original is missing, an unknown
 direction or an unreadable amount makes the summary — and the ledger itself — 503 rather than a wrong figure. Screen: the card above the party ledger (`PartyLedger.tsx`).
-risk read still nets every recorded outgoing payment to the account as a refund). The MOD-04 admission port is the next section.
 
 ## MOD-04: finalised invoice → open items (F2a) — FNS-D2, FNS-D7, DEC-FIN-005
 
