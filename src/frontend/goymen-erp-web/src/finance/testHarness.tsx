@@ -98,6 +98,7 @@ type ReadName =
   | 'customerInstrumentDetail'
   | 'customerInstrumentRisk'
   | 'partyLedger'
+  | 'partyBalance'
 
 export interface CommandCall {
   readonly method: CommandName
@@ -190,6 +191,7 @@ export function recordingPort(respond: ReadResponder) {
     customerInstrumentDetail: read('customerInstrumentDetail') as FinanceReceiptPort['customerInstrumentDetail'],
     customerInstrumentRisk: read('customerInstrumentRisk') as FinanceReceiptPort['customerInstrumentRisk'],
     partyLedger: read('partyLedger') as FinanceReceiptPort['partyLedger'],
+    partyBalance: read('partyBalance') as FinanceReceiptPort['partyBalance'],
     receiveCustomerInstrument: command('receiveCustomerInstrument'),
     changeCustomerInstrumentStatus: command('changeCustomerInstrumentStatus'),
     collectCustomerInstrument: command('collectCustomerInstrument'),
