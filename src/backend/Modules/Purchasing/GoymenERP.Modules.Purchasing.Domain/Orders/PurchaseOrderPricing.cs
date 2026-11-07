@@ -90,7 +90,14 @@ public sealed record PurchaseOrderMoney
 /// it is approved and received as usual and has no amount. The price unit defaults to the line's entry unit; it may only be that
 /// unit until a published conversion exists (ALS-D58), so the line amount is always quantity × net in one unit.
 /// </summary>
-public sealed record PurchaseOrderLinePrice(decimal UnitPrice, Guid PriceUnitId, decimal? DiscountPercent = null, decimal? DiscountAmount = null)
+/// <para>
+/// A2a-2 (ALS-D38, ALS-D75 "Satış'la aynı", ALS-D76): a price is either a cash price with a maturity surcharge (vade farkı) — a
+/// percent of the DISCOUNTED unit price or an amount per unit, never both, never on a 0 price — or a single deferred price typed as
+/// the unit price (a plain price, no flag, ALS-D76). Only the first form carries <see cref="DeferralPercent"/> /
+/// <see cref="DeferralAmount"/>.
+/// </para>
+public sealed record PurchaseOrderLinePrice(decimal UnitPrice, Guid PriceUnitId, decimal? DiscountPercent = null, decimal? DiscountAmount = null,
+    decimal? DeferralPercent = null, decimal? DeferralAmount = null)
 {
     /// <summary>The decimals of a discount percent (the column's, decimal(9,6)); a percent is a ratio, not money.</summary>
     public const int PercentScale = 6;
@@ -98,13 +105,20 @@ public sealed record PurchaseOrderLinePrice(decimal UnitPrice, Guid PriceUnitId,
     /// <summary>The integer digits of the price columns (decimal(24,6)); a wider value is refused, never a provider error at the save.</summary>
     public const int MaximumIntegerDigits = 18;
 
-    /// <summary>The exact net unit price (unit price − discount), never rounded (SAT-D76); the shared calculator's.</summary>
-    public decimal NetUnitPrice => CommercialLinePriceCalculator.NetUnitPrice(UnitPrice, DiscountPercent, DiscountAmount);
+    /// <summary>A2a-2 (ALS-D38): whether the line is a cash price with a maturity surcharge (vade farkı).</summary>
+    public bool HasDeferral => DeferralPercent is not null || DeferralAmount is not null;
+
+    /// <summary>
+    /// The exact net unit price ((unit price − discount) + maturity surcharge), never rounded (SAT-D76); the shared calculator's.
+    /// </summary>
+    public decimal NetUnitPrice =>
+        CommercialLinePriceCalculator.NetUnitPrice(UnitPrice, DiscountPercent, DiscountAmount, DeferralPercent, DeferralAmount);
 
     /// <summary>The line amount for <paramref name="quantity"/> in the price unit, rounded once to the order's money scale (SAT-D11).</summary>
     public decimal LineAmount(decimal quantity, PurchaseOrderMoney money)
     {
         ArgumentNullException.ThrowIfNull(money);
-        return CommercialLinePriceCalculator.LineAmount(quantity, UnitPrice, DiscountPercent, DiscountAmount, money.Scale);
+        return CommercialLinePriceCalculator.LineAmount(quantity, UnitPrice, DiscountPercent, DiscountAmount, DeferralPercent, DeferralAmount,
+            money.Scale);
     }
 }

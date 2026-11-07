@@ -124,6 +124,7 @@ export const ORDER_LIST_TEXT = {
   status: 'Durum',
   businessDate: 'İş tarihi',
   lineCount: 'Satır',
+  pricePending: 'Fiyat bekliyor',
   updatedAt: 'Güncellendi',
   loadMore: 'Daha fazla göster',
   loadingMore: 'Sonraki sayfa yükleniyor…',

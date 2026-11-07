@@ -304,6 +304,67 @@ public sealed class PurchaseOrderPricingTests
         Assert.Equal(PurchasingRuleCodes.PriceScaleExceeded, refused.Code);
     }
 
+    // ---- A2a-2 (ALS-D38, ALS-D75, ALS-D76): the maturity surcharge -------------------------------------------------------------------
+
+    [Fact]
+    public void A_surcharge_is_added_to_the_discounted_price_as_a_percent_of_it_or_an_amount_per_unit_like_Sales()
+    {
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+
+        // (100 − 10 %) = 90; + 5 % of 90 = 94.5 (the Sales order: discount first, then the surcharge on the discounted price).
+        var percent = order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(2m), null, new PurchaseOrderLinePrice(100m, Kg, 10m, null, 5m), At);
+        Assert.Equal((94.5m, 189m, true), (percent.Price!.NetUnitPrice, percent.Price.LineAmount(2m, Lira), percent.Price.HasDeferral));
+        var amount = order.AddLine(2, Guid.NewGuid(), Product, Kg, Kilos(3m), null, new PurchaseOrderLinePrice(100m, Kg, null, 4m, null, 1.25m), At);
+        Assert.Equal((97.25m, 291.75m), (amount.Price!.NetUnitPrice, amount.Price.LineAmount(3m, Lira)));
+        Assert.Equal(CommercialLinePriceCalculator.LineAmount(3m, 100m, null, 4m, null, 1.25m, 2), amount.Price.LineAmount(3m, Lira));
+
+        // ALS-D76: a deferred price typed directly is a plain price — no surcharge, no flag.
+        var plain = order.AddLine(3, Guid.NewGuid(), Product, Kg, Kilos(1m), null, new PurchaseOrderLinePrice(103.5m, Kg), At);
+        Assert.False(plain.Price!.HasDeferral);
+    }
+
+    [Theory]
+    [InlineData("0", "1", null, PurchasingRuleCodes.DeferralOnZeroPrice)]
+    [InlineData("10", "1", "1", PurchasingRuleCodes.DeferralKindConflict)]
+    [InlineData("10", "-1", null, PurchasingRuleCodes.DeferralPercentOutOfRange)]
+    [InlineData("10", "100.000001", null, PurchasingRuleCodes.DeferralPercentOutOfRange)]
+    [InlineData("10", null, "-0.01", PurchasingRuleCodes.DeferralAmountNegative)]
+    [InlineData("10", null, "0.001", PurchasingRuleCodes.PriceScaleExceeded)]
+    public void Every_surcharge_rule_is_refused_and_nothing_is_added(string unitPrice, string? percent, string? amount, string expected)
+    {
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+
+        var refused = Assert.Throws<PurchasingRuleException>(() => order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1m), null,
+            new PurchaseOrderLinePrice(Parse(unitPrice)!.Value, Kg, null, null, Parse(percent), Parse(amount)), At));
+
+        Assert.Equal(expected, refused.Code);
+        Assert.Empty(order.Lines);
+    }
+
+    [Fact]
+    public void A_stored_surcharge_is_rebuilt_through_the_domain()
+    {
+        var orderId = Guid.NewGuid();
+        var header = new PurchaseOrderRow
+        {
+            Id = orderId, CompanyId = Company, SupplierPartyId = Supplier, CompanyAccountId = Guid.NewGuid(), Status = 1, Version = 2,
+            EffectiveOn = new DateOnly(2026, 11, 7), CreatedAtUtc = At, UpdatedAtUtc = At, CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
+            CurrencyId = Currency, CurrencyCode = "TRY", MoneyProfileId = Profile, MoneyProfileVersion = 1, MoneyScale = 2,
+        };
+        var line = new PurchaseOrderLineRow
+        {
+            CompanyId = Company, OrderId = orderId, LineNo = 1, LineId = Guid.NewGuid(), Kind = 1, ProductId = Product, ProductVersion = "7", UnitId = Kg,
+            UnitIsKilogram = true, Ordered = 10m, UnitPrice = 100m, PriceUnitId = Kg, DiscountPercent = 10m, DeferralPercent = 5m,
+        };
+
+        var restored = PurchasingStore.RestoreOrder(header, [line]);
+
+        Assert.Equal(new PurchaseOrderLinePrice(100m, Kg, 10m, null, 5m), restored.Lines[0].Price);
+        line.UnitPrice = 0m;
+        var refused = Assert.Throws<PurchasingRuleException>(() => PurchasingStore.RestoreOrder(header, [line]));
+        Assert.Equal(PurchasingRuleCodes.DeferralOnZeroPrice, refused.Code);
+    }
+
     private static Quantity Kilos(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
 
     private static decimal? Parse(string? text) =>

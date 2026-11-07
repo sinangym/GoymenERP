@@ -335,6 +335,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 PriceUnitId = line.Price?.PriceUnitId,
                 DiscountPercent = line.Price?.DiscountPercent,
                 DiscountAmount = line.Price?.DiscountAmount,
+                // A2a-2 (ALS-D38): the maturity surcharge, written once with the price.
+                DeferralPercent = line.Price?.DeferralPercent,
+                DeferralAmount = line.Price?.DeferralAmount,
             });
         }
 
@@ -831,7 +834,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         line.UnitPrice is { } unitPrice
             ? new PurchaseOrderLinePrice(unitPrice,
                 line.PriceUnitId ?? throw new InvalidOperationException("Kayıtlı fiyatın fiyat birimi yok."),
-                line.DiscountPercent, line.DiscountAmount)
+                line.DiscountPercent, line.DiscountAmount, line.DeferralPercent, line.DeferralAmount)
             : null;
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -911,7 +914,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             lineId = line.Id, ordered = line.Quantity.Value, technical = line.TechnicalQuantity.Value, accepted = line.AcceptedQuantity.Value,
             cancelled = line.CancelledQuantity.Value, sourceRequestLineId = line.SourceRequestLineId,
             price = line.Price is { } price
-                ? new { unitPrice = price.UnitPrice, priceUnitId = price.PriceUnitId, discountPercent = price.DiscountPercent, discountAmount = price.DiscountAmount }
+                ? new
+                {
+                    unitPrice = price.UnitPrice, priceUnitId = price.PriceUnitId, discountPercent = price.DiscountPercent, discountAmount = price.DiscountAmount,
+                    deferralPercent = price.DeferralPercent, deferralAmount = price.DeferralAmount,
+                }
                 : null,
         }),
     }, Json);
