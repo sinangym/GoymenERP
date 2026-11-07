@@ -13,11 +13,16 @@ const PRODUCT_B = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UNIT = '77777777-7777-4777-8777-777777777777'
 const ORDER = '88888888-8888-4888-8888-888888888888'
 
-const api = vi.hoisted(() => ({ create: vi.fn(), suppliers: vi.fn(), products: vi.fn() }))
+const CURRENCY = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+
+const api = vi.hoisted(() => ({ create: vi.fn(), suppliers: vi.fn(), products: vi.fn(), currencies: vi.fn() }))
 
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
-  return { ...actual, createPurchaseOrder: api.create, fetchPurchasingSupplierOptions: api.suppliers, fetchPurchasingProductCandidates: api.products }
+  return {
+    ...actual, createPurchaseOrder: api.create, fetchPurchasingSupplierOptions: api.suppliers, fetchPurchasingProductCandidates: api.products,
+    fetchPurchasingCurrencyCandidates: api.currencies,
+  }
 })
 vi.mock('../shell/shellContext', () => ({
   useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: 1, activeContext: { userId: ACTOR, companyId: COMPANY, scopeMode: 'single', capabilities: [] } }),
@@ -45,6 +50,7 @@ beforeEach(() => {
   api.create.mockReset()
   api.suppliers.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [{ supplierPartyId: PARTY, companyAccountId: ACCOUNT, label: 'CAR-42 — Tedarikçi AŞ' }], nextCursor: null } })
   api.products.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [{ productId: PRODUCT, productVersion: '7', code: 'PRD-7', name: 'Bant', unitId: UNIT, unitCode: 'kg', profileId: '99999999-9999-4999-8999-999999999999', profileVersion: '3' }], searchWindowFull: false } })
+  api.currencies.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [{ currencyId: CURRENCY, code: 'TRY', displayLabel: 'TRY' }] } })
 })
 
 describe('P-04 purchase order create form', () => {
@@ -83,6 +89,125 @@ describe('P-04 purchase order create form', () => {
     const [payload] = api.create.mock.calls[0]
     expect(payload).toMatchObject({ supplierPartyId: PARTY, companyAccountId: ACCOUNT, effectiveOn: '2026-09-23' })
     expect(payload.lines[0]).toMatchObject({ productId: PRODUCT, expectedProductVersion: '7', unitId: UNIT, quantity: '12.5' })
+  })
+
+  it('A2a-1: an unpriced order sends neither a currency nor a price ("fiyat bekliyor", ALS-D18)', async () => {
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await fillAndSubmit(user)
+    await screen.findByRole('heading', { name: 'Satın alma siparişi kaydedildi' })
+    const [payload] = api.create.mock.calls[0]
+    expect('currencyId' in payload).toBe(false)
+    expect('price' in payload.lines[0]).toBe(false)
+  })
+
+  it('A2a-1: sends the manual price, the discount and the currency as exact text; the price unit is the line unit', async () => {
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'TRY' })
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '41,25')
+    await user.selectOptions(screen.getByLabelText('İskonto'), 'percent')
+    await user.type(screen.getByLabelText('İskonto değeri'), '2,5')
+    await fillAndSubmit(user)
+    await screen.findByRole('heading', { name: 'Satın alma siparişi kaydedildi' })
+    const [payload] = api.create.mock.calls[0]
+    expect(payload.currencyId).toBe(CURRENCY)
+    expect(payload.lines[0].price).toEqual({ unitPrice: '41.25', discountPercent: '2.5' })
+    expect(screen.queryByText(/Net birim fiyat|Satır tutarı/)).toBeNull()
+  })
+
+  it('A2a-1: shows the price unit as the selected line unit and refuses a price without a currency before sending', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    expect(await screen.findByText('Fiyat birimi: ürün seçilince satırın giriş birimi')).toBeTruthy()
+    await user.type(screen.getByLabelText('Birim fiyat'), '10')
+    await fillAndSubmit(user)
+    expect(screen.getByText('Fiyat birimi: kg (satırın giriş birimi; birim çevrimi henüz yok)')).toBeTruthy()
+    expect((await screen.findByRole('alert')).textContent).toBe('Birim fiyat girildiyse para birimi seçilmelidir.')
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('A2a-1: an explicit 0 price is sent as a price (Sinan #66 6704170096), apart from an empty price', async () => {
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'TRY' })
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '0')
+    await fillAndSubmit(user)
+    await screen.findByRole('heading', { name: 'Satın alma siparişi kaydedildi' })
+    expect(api.create.mock.calls[0][0].lines[0].price).toEqual({ unitPrice: '0' })
+  })
+
+  it('A2a-1: an ambiguous separator, a percent over 100 (compared as text) and a discount without a price are refused on the form', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'TRY' })
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '1.250')
+    await fillAndSubmit(user)
+    expect(screen.getByText(/bin ayırıcısı mı ondalık mı belirsiz/)).toBeTruthy()
+    await user.clear(screen.getByLabelText('Birim fiyat'))
+    await user.type(screen.getByLabelText('Birim fiyat'), '5')
+    await user.selectOptions(screen.getByLabelText('İskonto'), 'percent')
+    await user.type(screen.getByLabelText('İskonto değeri'), '100,0000001')
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    expect(screen.getByText('İskonto değeri geçerli bir sayı olmalıdır; yüzde 0 ile 100 arasındadır.')).toBeTruthy()
+    await user.clear(screen.getByLabelText('İskonto değeri'))
+    await user.type(screen.getByLabelText('İskonto değeri'), '101')
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    expect(screen.getByText('İskonto değeri geçerli bir sayı olmalıdır; yüzde 0 ile 100 arasındadır.')).toBeTruthy()
+    await user.clear(screen.getByLabelText('Birim fiyat'))
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    expect(screen.getByText('İskonto yalnız birim fiyatla birlikte verilebilir.')).toBeTruthy()
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('A2a-1: without purchasing currencies (Settings has no profile) the form still opens an unpriced order', async () => {
+    api.currencies.mockReset().mockResolvedValue({ type: 'http', status: 503, body: null })
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    expect(await screen.findByText('Para birimi seçenekleri şu an alınamıyor (hizmet kullanılamıyor). Fiyat girilemez; sipariş fiyatsız açılabilir.')).toBeTruthy()
+    expect(screen.queryByLabelText('Para birimi')).toBeNull()
+    // #944 review P3: no currency to choose → the price and discount inputs are off.
+    expect((screen.getByLabelText('Birim fiyat') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText('İskonto') as HTMLSelectElement).disabled).toBe(true)
+    await fillAndSubmit(user)
+    await screen.findByRole('heading', { name: 'Satın alma siparişi kaydedildi' })
+    expect('currencyId' in api.create.mock.calls[0][0]).toBe(false)
+  })
+
+  it('A2a-1: a price typed before the currency list turns unavailable is cleared and said so, never silently dropped', async () => {
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'TRY' })
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '41,25')
+    api.currencies.mockResolvedValueOnce({ type: 'http', status: 503, body: null })
+    await user.click(screen.getByRole('button', { name: 'Para birimlerini yenile' }))
+    expect((await screen.findByTestId('purchase-order-price-cleared')).textContent)
+      .toBe('Para birimi artık seçilemediği için girilen fiyat ve iskonto temizlendi; sipariş fiyatsız kaydedilir.')
+    expect((screen.getByLabelText('Birim fiyat') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Birim fiyat') as HTMLInputElement).disabled).toBe(true)
+    await fillAndSubmit(user)
+    await screen.findByRole('heading', { name: 'Satın alma siparişi kaydedildi' })
+    expect('price' in api.create.mock.calls[0][0].lines[0]).toBe(false)
+  })
+
+  it('A2a-1: a refused price names the server rule in Turkish', async () => {
+    api.create.mockResolvedValue({ type: 'failed', status: 422, code: 'validation_failed', replayed: false, priceCode: 'purchasing_price_scale_exceeded' })
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'TRY' })
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '10,123')
+    await fillAndSubmit(user)
+    expect(await screen.findByText('Fiyat kabul edilmedi (para profilinin izin verdiğinden fazla ondalık; yuvarlanmaz).')).toBeTruthy()
   })
 
   it('retries an unknown result with the same key and payload', async () => {

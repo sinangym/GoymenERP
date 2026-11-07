@@ -479,12 +479,13 @@ public sealed partial class PurchasingServiceTests
         public bool ProductsPublished { get; init; } = true;
         public FakeSettings Settings { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        public FakeMoney Money { get; init; } = new();
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
-                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads);
+                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, Money, Money);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
@@ -544,11 +545,14 @@ public sealed partial class PurchasingServiceTests
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
+        /// <summary>A2a-1: names refused even while <see cref="Granted"/> (e.g. the price read, to see the Withheld answer).</summary>
+        public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
+
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         {
             Calls++;
             LastPermission = permission;
-            return Task.FromResult(new PermissionScope(Granted, true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
+            return Task.FromResult(new PermissionScope(Granted && !Denied.Contains(permission), true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
