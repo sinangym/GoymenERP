@@ -139,8 +139,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.True(response.Headers.CacheControl?.NoStore);
         string payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
-        Assert.Equal(["order", "lines", "acceptances"],
+        // A1-3 (API-10) adds "cancellation" to every detail; it is null while the remainder is not cancelled.
+        Assert.Equal(["order", "lines", "acceptances", "cancellation"],
             document.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("cancellation").ValueKind);
         return JsonSerializer.Deserialize<PurchaseOrderDetailView>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidOperationException("Native purchase order detail payload could not be decoded.");
     }

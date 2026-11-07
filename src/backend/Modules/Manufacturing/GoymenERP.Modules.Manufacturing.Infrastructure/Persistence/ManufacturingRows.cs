@@ -45,7 +45,7 @@ internal interface IPlanCommercialContextRow
 /// inputs stay the plan AS CREATED (revision 0); a Draft revision is appended in <see cref="PlanRevisionRow"/> and
 /// moves only the version and the update time here.
 /// </summary>
-internal sealed class PlanRow : IManufacturingTenantRow
+internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
 {
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
@@ -63,6 +63,16 @@ internal sealed class PlanRow : IManufacturingTenantRow
 
     /// <summary>Üretim U2-a (URT-D9): the plan-entered line speed as created (revision 0), or null.</summary>
     public decimal? LineSpeedMetresPerMinute { get; set; }
+
+    /// <summary>Üretim U2-b1 (API-12): the plan-entered process spec values (all null = no spec).</summary>
+    public int? PackageCount { get; set; }
+    public int? PiecesPerPackage { get; set; }
+    public decimal? PieceLengthMm { get; set; }
+    public decimal? UnitKg { get; set; }
+    public decimal? PerimeterMm { get; set; }
+    public decimal? TargetThicknessMm { get; set; }
+    public string? PaintDescription { get; set; }
+    public string? PaintColorCode { get; set; }
 
     public Guid? ApprovedByUserId { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
@@ -174,7 +184,7 @@ internal sealed class PlanCutLineRow : IManufacturingTenantRow
 /// and is never written here; a revision is the next number, with the complete work center and target it set, the
 /// user's reason, who recorded it, when, and the plan version it produced. Never modified, never deleted.
 /// </summary>
-internal sealed class PlanRevisionRow : IManufacturingTenantRow
+internal sealed class PlanRevisionRow : IManufacturingTenantRow, IPlanProcessSpecColumns
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -185,6 +195,16 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow
 
     /// <summary>Üretim U2-a (URT-D9): the plan-entered line speed this revision set, or null.</summary>
     public decimal? LineSpeedMetresPerMinute { get; set; }
+
+    /// <summary>Üretim U2-b1 (API-12): the plan-entered process spec values (all null = no spec).</summary>
+    public int? PackageCount { get; set; }
+    public int? PiecesPerPackage { get; set; }
+    public decimal? PieceLengthMm { get; set; }
+    public decimal? UnitKg { get; set; }
+    public decimal? PerimeterMm { get; set; }
+    public decimal? TargetThicknessMm { get; set; }
+    public string? PaintDescription { get; set; }
+    public string? PaintColorCode { get; set; }
 
     public string Reason { get; set; } = string.Empty;
     public long PlanVersion { get; set; }
@@ -395,4 +415,17 @@ internal sealed class OrganizationWorkCenterReference
 {
     public Guid CompanyId { get; set; }
     public Guid Id { get; set; }
+}
+
+/// <summary>Üretim U2-b1: the process spec columns the plan row (as created) and each revision row carry alike.</summary>
+internal interface IPlanProcessSpecColumns
+{
+    int? PackageCount { get; set; }
+    int? PiecesPerPackage { get; set; }
+    decimal? PieceLengthMm { get; set; }
+    decimal? UnitKg { get; set; }
+    decimal? PerimeterMm { get; set; }
+    decimal? TargetThicknessMm { get; set; }
+    string? PaintDescription { get; set; }
+    string? PaintColorCode { get; set; }
 }

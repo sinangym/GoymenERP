@@ -99,7 +99,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ISalesOrderDispatchReferenceReader>(),
         serviceProvider.GetService<ISalesPartyDisplaySourceV1>(),
         serviceProvider.GetService<ISalesDispatchNoteReadPortV1>(),
-        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>());
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
+        // SAT-D90 / SAT-D101: the Settings rate-day port for the invoice-group rate (absent: unresolved, never a guess).
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
 
     // Built in a named factory so that no registration statement of this module names the company
     // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).

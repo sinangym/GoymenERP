@@ -89,6 +89,28 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   order opened for a request is approved only while that request is still Approved (store code
   `purchasing_source_request_not_approved`, answered as a terminal 409 `purchasing_request_state`), so a rejected
   request's draft order never becomes a commitment.
+- **Order remainder cancellation (A1-3, plan API-10/UI-05; No.161 §2, Sinan 2026-10-27):** `POST orders/{id}/cancellation`
+  (Approved → **Cancelled**, a terminal state) cancels the **whole** not-yet-accepted remainder of every line — even after a
+  partial acceptance; there is no line- or quantity-level partial cancel — with `expectedVersion` and a required `reason`
+  (≤ 4000 characters, never cut; 422 `purchasing_order_cancellation_reason_required` / `_too_long`) under its own name
+  `purchasing.orders.cancel`. Each line's remaining becomes its cancelled share (`Cancelled`), so remaining =
+  committed − accepted − cancelled (master INV-006); the accepted shares, the lines and the source request binding stay;
+  nothing physical or financial is recorded (no stock, receipt or money event). Terminal refusals (§7): stale version,
+  `purchasing_order_state` (field `status` = `purchasing_order_not_cancellable`: a Draft or an already Cancelled order)
+  and `purchasing_order_nothing_to_cancel` (every line fully accepted; a cancellation that cancels nothing is not
+  recorded). `GET orders/{id}/cancel-impact` (same name, reads only) previews the remainder to cancel per line, whether a
+  partial acceptance exists and the blocker the command would answer. A cancelled order takes no further acceptance share
+  or breakdown (`purchasing_order_cancelled`; the receipt participant answers `purchasing_acceptance_order_state_conflict`);
+  `IPurchaseSupplyReferencePortV1` answers it `NotApproved` with status `Cancelled` and `IPurchaseOpenLineReadPortV1`
+  lists none of its lines. It no longer blocks the source request's rejection or withdrawal (No.161 §1 counts only
+  APPROVED bound orders). **Fail-closed (NEEDS-SINAN):** a cancelled order keeps counting with its full ordered share in
+  its request line's Σ-shares, so cancelling does not re-open the need for another supplier; there is no second approval
+  and no maker ≠ checker rule on the cancellation, and the name is registered only (its holders are not decided; the PUR01
+  browser suite grants it to the SENTETIK approver). Migration `20261103053923_AddPurchaseOrderCancellation` adds
+  `CancelledBy` / `CancelledAtUtc` / `CancellationReason`, `CK_PurchaseOrders_Cancellation`, `Status` 3 and the line's
+  `Cancelled` (decimal(18,3), default 0) inside `CK_PurchaseOrderLines_Shares`; its Down refuses (`THROW 51168`) while any
+  order is Cancelled or any line carries a cancelled share. The P-03-DETAIL screen shows the "İptal" column, the recorded
+  cancellation and the "Kalanı iptal et" panel (impact preview, reason, unknown-result resend of the same key).
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
@@ -111,16 +133,17 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 - **Receipt reads:** options (locations), list, detail and the read-only accepted-vs-measured kg comparison
   (`PurchaseGoodsReceiptComparisonContractsV1.cs`: `SameKilogramUnit` / `Unavailable` are emitted; `ApprovedConversion`
   is declared but intentionally not emitted; no tolerance, approval or stock effect).
-- **HTTP (17 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`;
+- **HTTP (19 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`,
+  `cancel-impact`, `cancellation` (A1-3);
   goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
-- **Permissions (6):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
-  `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b) (`PurchasingPermissionManifestV1`,
+- **Permissions (7):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
+  `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b), `purchasing.orders.cancel` (A1-3) (`PurchasingPermissionManifestV1`,
   `ErpPermissions`; company-wide, not critical, registered only).
-- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.6`) declares P-01 request
+- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.7`) declares P-01 request
   list/new/detail (+ submit, since A1-1 the `purchasing.requests.approve` decision child and since A1-1b the
-  `purchasing.requests.withdraw` withdrawal child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve and goods-receipt
-  children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
+  `purchasing.requests.withdraw` withdrawal child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve, goods-receipt
+  and, since A1-3, the `purchasing.orders.cancel` remainder cancellation children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
   `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage` (+ `PurchaseRequestDecisionPanel`:
   approve / reject with reason, unknown-result resend of the same key; `PurchaseRequestWithdrawalPanel`: "Geri çek"
   with reason, shown only to the recorded preparer or submitter), `PurchaseOrderListPage`,
@@ -130,7 +153,7 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   (AT-025, below), `IPurchaseAcceptanceSourceV1`; the Document Vault reads purchase-order ownership through the host
   adapter `GoymenERP.Api/DocumentsRuntime/PurchasingDocumentOwnerLinkPort.cs`.
 - **Still absent:** price/tax/currency (T28; ALS-D5/D6), order approval policy and the order's preparer ≠ approver rule (ALS-D3),
-  revision, cancellation/closure, delivery schedule and "in transit", service lines and service acceptance, outgoing
+  revision, line closure after a short delivery (API-11, ALS-D10/D12; A3), delivery schedule and "in transit", service lines and service acceptance, outgoing
   subcontracting (A-1), incoming invoice and three-way match, supplier return, outbox events, breakdown over the API
   (domain only), count/metre units (Settings approves kilograms only).
 - **Known stale comments outside this README:** in `GoymenERP.Api/Program.cs` the PUR-4a comment above the
