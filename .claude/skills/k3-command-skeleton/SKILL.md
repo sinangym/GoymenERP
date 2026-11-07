@@ -56,8 +56,8 @@ token; a lost race surfaces as `ConcurrentChange`.
 - Idempotency header: follow the **module's existing reader and problem code**; they differ today. By behaviour:
   (A) reject surrounding whitespace — Purchasing, Logistics, Sales, Inventory, Finance, ProductPriceList, Documents;
   (B) trim and accept — Accounting, Manufacturing, Organization, Settings, ProductItemType, Counterparty;
-  (C) Product — printable ASCII 33–126 only. Problem codes also differ (`command_metadata_invalid`; Inventory and
-  ProductPriceList `validation_failed`; Finance 400 without a code). For a new module, copy the (A) reader of the
+  (C) Product — printable ASCII 33–126 only. Problem codes also differ by module (module-prefixed codes,
+  `validation_failed`, or a 400 without a code); read the module's endpoint file. For a new module, copy the (A) reader of the
   module you model and keep its code. Never change an existing module's behaviour or code in passing: it changes the
   HTTP contract and stored keys. Strict JSON body (unknown fields → 400).
 - `Metadata(idempotencyKey, correlation)` → `<M>CommandMetadata(key, correlationId, causationId, UtcNow)`.
