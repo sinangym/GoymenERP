@@ -21,7 +21,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryOpeningStockRecord]).toBe('Açılış stokları')
     expect(NAV_GROUPS.filter((group) => group.entries.includes(INVENTORY_OPENING_CAPABILITY)).map((group) => group.id))
       .toEqual(['settings'])
-    expect(NAV_GROUPS.find((group) => group.id === 'product-stock')?.entries).not.toContain(INVENTORY_OPENING_CAPABILITY)
+    expect(NAV_GROUPS.find((group) => group.id === 'stock-logistics')?.entries).not.toContain(INVENTORY_OPENING_CAPABILITY)
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_OPENING_CAPABILITY)).toHaveLength(1)
     expect(CAPABILITY.inventoryStockPositionsList).toBe(INVENTORY_STOCK_POSITIONS_CAPABILITY)
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
