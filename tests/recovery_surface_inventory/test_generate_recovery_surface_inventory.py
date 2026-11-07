@@ -2581,6 +2581,12 @@ internal {{declaration}} : IDocumentObjectStoreV1
                 "global using Ctx = Foreign.Zone.Thing;\nnamespace Foreign.Zone;\n"
                 "internal static class GlobalAliasProbe { }\n",
             ),
+            "global-alias-to-db-context": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}GlobalContextAliasProbe.cs",
+                "global using Ctx = Microsoft.EntityFrameworkCore.DbContext;\n"
+                "namespace Foreign.Zone;\ninternal static class GlobalContextAliasProbe { }\n",
+            ),
             "symbol-shadow": snapshot_with_file(
                 self.snapshot,
                 "src/backend/Modules/Documents/"
@@ -2619,9 +2625,9 @@ internal {{declaration}} : IDocumentObjectStoreV1
                 with self.assertRaisesRegex(generator.InventoryError, drift):
                     generator._require_reviewed_source_surface(changed)
 
-        # A global alias name becomes a risky token for every file that uses it.
+        # A global alias to a risky target becomes a risky token for every file that uses it.
         aliased = mutate_snapshot(
-            mutations["global-alias"],
+            mutations["global-alias-to-db-context"],
             ordinary,
             lambda text: text + "\ninternal static class AuditAliasUse { static Ctx? Value; }\n",
         )

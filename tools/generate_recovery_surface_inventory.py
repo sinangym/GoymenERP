@@ -60,20 +60,24 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # that can make a lexical inventory miss a linked file, generator, global alias, symbol-shadow
 # file, hidden SqlClient/DbContext use or a partial of a reviewed DbContext/store type:
 #   * every REPOSITORY_BUILD_CONTROL_PATHS file,
-#   * every non-.cs file under src/backend (*.csproj, *.props, *.targets, *.rsp, *.csproj.user,
-#     appsettings*.json, *.resx, README...: MSBuild auto-imports and embedded inputs),
-#   * every src/backend .cs whose raw text (comments, strings and disabled regions included, so
-#     strictly wider than live code) contains a RISKY_SOURCE_TOKENS token or a global alias name,
+#   * every non-Markdown, non-.cs file under src/backend (*.csproj, *.props, *.targets, *.rsp,
+#     *.csproj.user, appsettings*.json, *.resx...: MSBuild auto-imports and embedded inputs),
+#   * every src/backend .cs whose comment-free text (literals and every preprocessor region kept,
+#     so wider than live code) contains a RISKY_SOURCE_TOKENS token, a DbContext/object-store
+#     adapter name or the name of a global alias whose target is risky,
 #   * every `using X =` alias file (global and file-local) and every `global using` file,
 #   * every reviewed path (REVIEWED_LIVE_SOURCE_SHA256, reviewed methods, durable-store and
 #     Documents evidence) and every discovered DbContext/Migration/object-store declaration file,
-#   * every file declaring a type named like a reviewed DbContext/store/adapter type (partials and
-#     same-name shadows),
-#   * every file whose namespace equals or encloses a namespace of a file above, or that has no or
-#     several namespace declarations (type-name shadowing resolves through enclosing namespaces).
-# Measured on the last 21 origin/main commits touching src/backend/ (since 2026-10-20, through
-# 1e694aa3e): 10 of 21 would still have moved this narrow pin (each of those touched a
-# DbContext, migration or reviewed store); the other 11 would not have needed a re-pin.
+#   * every file declaring a type named like a reviewed partial DbContext/store/adapter type,
+#   * every file declaring a class/record used as the first base of a risky declaration, and every
+#     file with several namespace declarations,
+#   * a shadow-declaration index (path, namespace, name) of every type declared in a namespace that
+#     equals or encloses a risky file's namespace (the global namespace encloses all) whose simple
+#     name occurs in such a risky file.
+# Measured over the last 21 origin/main commits touching src/backend/ up to 1e694aa3e (8310d5cba
+# .. 1e694aa3e, 2026-11-02..07): 18 of 21 would still have moved this narrow pin (16 add a
+# migration or edit a DbContext, the others edit Program.cs or an EF-using service); 3 (one K2
+# Manufacturing internal-method change and two README-only K1 commits) would not.
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
@@ -2962,9 +2966,14 @@ _RISKY_ALIAS_PATTERN = re.compile(
 _RISKY_GLOBAL_USING_PATTERN = re.compile(r"\bglobal\s+using\b")
 _RISKY_GLOBAL_ALIAS_NAME_PATTERN = re.compile(
     r"\bglobal\s+using\s+(?:static\s+)?(?:unsafe\s+)?@?(?P<alias>[^\W\d]\w*)\s*="
+    r"\s*(?P<target>[^;]*);"
 )
 _RISKY_TYPE_DECLARATION_PATTERN = re.compile(
     r"\b(?P<kind>class|struct|interface|record|enum)\s+(?:(?:class|struct)\s+)?"
+    r"@?(?P<name>[^\W\d]\w*)"
+)
+_RISKY_PARTIAL_DECLARATION_PATTERN = re.compile(
+    r"\bpartial\s+(?:class|struct|interface|record(?:\s+(?:class|struct))?)\s+"
     r"@?(?P<name>[^\W\d]\w*)"
 )
 _RISKY_NAMESPACE_PATTERN = re.compile(r"\bnamespace\s+(?P<name>@?[^\W\d][\w.@]*)")
@@ -3022,6 +3031,7 @@ def _risky_source_surface(
     build_controls = {path.casefold() for path in REPOSITORY_BUILD_CONTROL_PATHS}
     selected: set[str] = set()
     csharp: dict[str, str] = {}
+    reviewed_documents = _reviewed_source_paths()
     for path in snapshot.files:
         folded = path.casefold()
         if folded in build_controls:
@@ -3029,7 +3039,10 @@ def _risky_source_surface(
         elif folded.startswith(backend_prefix):
             if folded.endswith(".cs"):
                 csharp[path] = _strip_csharp_comments(_risky_text(snapshot, path))
-            else:
+            elif not folded.endswith(".md") or path in reviewed_documents:
+                # Markdown is documentation (it can only compile through a pinned project file);
+                # every other backend input (*.csproj, *.props, *.targets, *.rsp, *.csproj.user,
+                # appsettings*.json, *.resx, fonts...) is byte-pinned.
                 selected.add(path)
     structural = {path: _mask_csharp_strings(text) for path, text in csharp.items()}
     declarations = {
@@ -3041,11 +3054,12 @@ def _risky_source_surface(
         for path, text in structural.items()
     }
 
+    global_aliases = {
+        (match.group("alias"), match.group("target"))
+        for text in csharp.values()
+        for match in _RISKY_GLOBAL_ALIAS_NAME_PATTERN.finditer(text)
+    }
     word_tokens: set[str] = set()
-    for text in csharp.values():
-        word_tokens.update(
-            match.group("alias") for match in _RISKY_GLOBAL_ALIAS_NAME_PATTERN.finditer(text)
-        )
     reviewed_paths = {path for path in _reviewed_source_paths() if path in csharp}
     discovered = (
         *_discover_csharp_subclasses(snapshot, "DbContext"),
@@ -3060,8 +3074,31 @@ def _risky_source_surface(
         declaration.name for declaration in discovered if "Migration" not in declaration.name
     )
     word_tokens.update(name for _, name, _ in adapters)
+    # A partial needs the reviewed declaration to be partial too; non-partial same-name types in
+    # other namespaces are covered by the shadow index below.
     for path in reviewed_paths:
-        reviewed_types.update(name for _, name in declarations[path])
+        reviewed_types.update(
+            match.group("name")
+            for match in _RISKY_PARTIAL_DECLARATION_PATTERN.finditer(structural[path])
+        )
+    # A global alias whose target is risky (a token, a reviewed type or another risky alias)
+    # makes its alias name a risky token in every file; other global aliases only pin their
+    # own declaring file.
+    while True:
+        risky_aliases = {
+            alias
+            for alias, target in global_aliases
+            if alias not in word_tokens
+            and (
+                any(token in target for token in RISKY_SOURCE_TOKENS)
+                or not set(_RISKY_IDENTIFIER_PATTERN.findall(target)).isdisjoint(
+                    reviewed_types | word_tokens
+                )
+            )
+        }
+        if not risky_aliases:
+            break
+        word_tokens.update(risky_aliases)
     word_pattern = (
         re.compile(
             r"(?<![A-Za-z0-9_])(?:"
@@ -3076,7 +3113,7 @@ def _risky_source_surface(
     for path, text in csharp.items():
         namespace_count = len(_RISKY_NAMESPACE_PATTERN.findall(structural[path]))
         if (
-            namespace_count != 1
+            namespace_count > 1
             or any(token in text for token in RISKY_SOURCE_TOKENS)
             or (word_pattern is not None and word_pattern.search(text) is not None)
             or _RISKY_ALIAS_PATTERN.search(text) is not None
@@ -3108,6 +3145,7 @@ def _risky_source_surface(
     risky_identifiers: dict[str, set[str]] = {}
     for path in risky:
         identifiers = set(_RISKY_IDENTIFIER_PATTERN.findall(csharp[path]))
+        risky_identifiers.setdefault("", set()).update(identifiers)
         for match in _RISKY_NAMESPACE_PATTERN.finditer(structural[path]):
             for namespace in _namespace_and_ancestors(match.group("name")):
                 risky_identifiers.setdefault(namespace, set()).update(identifiers)
@@ -3115,9 +3153,14 @@ def _risky_source_surface(
     for path, text in structural.items():
         if path in risky:
             continue
-        namespace = ".".join(
-            part.removeprefix("@")
-            for part in _RISKY_NAMESPACE_PATTERN.search(text).group("name").split(".")
+        # A file without a namespace declares into the global namespace, which encloses all.
+        declared_namespace = _RISKY_NAMESPACE_PATTERN.search(text)
+        namespace = (
+            ""
+            if declared_namespace is None
+            else ".".join(
+                part.removeprefix("@") for part in declared_namespace.group("name").split(".")
+            )
         )
         used = risky_identifiers.get(namespace, set())
         shadow_index.update(
