@@ -135,6 +135,14 @@ public interface ISalesDraftService
     Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // SAT-D32 / SAT-D168 / SAT-D215 — the user closure of a "kapanmaya hazır" order under `sales.orders.close` (no reason; the
+    // status read's readiness recomputed inside the save, 409 when not ready), and the read of the recorded user closure
+    // (`sales.drafts.read`).
+    Task<SalesOrderDraftResponse> CloseDraftAsync(Guid draftId, SalesDraftCloseRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
     // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the

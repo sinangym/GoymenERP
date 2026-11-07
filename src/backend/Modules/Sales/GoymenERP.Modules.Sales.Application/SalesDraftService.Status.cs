@@ -20,8 +20,11 @@ namespace GoymenERP.Modules.Sales.Application;
 /// refused, inactive, out-of-window, other-company or malformed policy is <c>PolicyUnavailable</c> — never a default; an
 /// owner that is not composed, fails or answers a malformed value is <c>Unreadable</c> — never zero.</item>
 /// <item><b>No source yet</b>: source/allocation strategy (MOD-05, API-11), invoicing (S5) and financial closure (MOD-04)
-/// have no owner module on main: <c>NoSource</c>, never complete or zero. The invoicing axis carries the Sales-owned SAT-D103
-/// gate (<see cref="InvoicingGate"/>) for the S5 invoicing owner to obey.</item>
+/// have no owner module on main: <c>NoSource</c>, never complete or zero (SAT-D32: they are read through the
+/// <see cref="ISalesOrderOwnerAxesSourceV1"/> seam, which nothing composes on main). The invoicing axis carries the Sales-owned
+/// SAT-D103 gate (<see cref="InvoicingGate"/>) for the S5 invoicing owner to obey.</item>
+/// <item><b>Kapanmaya hazır</b> (SAT-D32): computed by <see cref="OrderStatusAsync"/>, the same calculation the user closure
+/// recomputes inside its save.</item>
 /// <item><b>Fences</b> (the draft read's): before anything is read, after the draft read, after the delivery owner and after the
 /// Settings answer. Another company's draft is 404 (tenant filter) and no owner is asked for it.</item>
 /// </list>
@@ -54,33 +57,87 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        var realization = await RealizationAsync(scope, draft, cancellationToken);
-        var noSource = new SalesDraftStatusAxisV1(SalesDraftStatusAxisStatesV1.NoSource);
-        var lifecycle = Lifecycle(draft);
-        var acceptance = CustomerAcceptanceAxis(draft);
-        var (source, financialClosure) = (noSource, noSource);
-        var (gate, priceBasis) = InvoicingGate(draft);
-        var invoicing = new SalesDraftInvoicingAxisV1(SalesDraftStatusAxisStatesV1.NoSource, gate, priceBasis);
-        // SAT-D32 "kapanmaya hazır": ALL seven axes complete ("tüm eksenler tamamlansa"). An axis that is NoSource, Unreadable or
-        // PolicyUnavailable is never complete, so while source (MOD-05), invoicing (S5) and financial closure (MOD-04) have no
-        // owner the flag is always false. A flag only — closing stays the user's action and nothing is closed here.
-        var readyToClose = lifecycle == SalesDraftStatusAxisStatesV1.Active
-            && draft.ApprovalState == InternalApprovalState.Approved
-            && acceptance.State is SalesDraftStatusAxisStatesV1.Accepted or SalesDraftStatusAxisStatesV1.NotRequired
-            && realization.State == SalesDraftStatusAxisStatesV1.Completed
-            && IsComplete(source) && IsComplete(new SalesDraftStatusAxisV1(invoicing.State)) && IsComplete(financialClosure);
+        var status = await OrderStatusAsync(scope, bindings.ReadPermission, draft, withReturns: true, cancellationToken);
         return new SalesOrderDraftStatusResponse(
             draft.Version.ToString(CultureInfo.InvariantCulture),
             SalesDraftApiV1.RevisionText(draft.Revision),
-            new SalesDraftStatusAxisV1(lifecycle),
+            status.Lifecycle,
             new SalesDraftStatusAxisV1(draft.ApprovalState.ToString()),
-            acceptance,
-            source,
-            realization,
-            invoicing,
-            financialClosure,
-            readyToClose);
+            status.Acceptance,
+            status.Source,
+            status.Realization,
+            status.Invoicing,
+            status.FinancialClosure,
+            status.ReadyToClose);
     }
+
+    /// <summary>The seven axes of one order and its SAT-D32 "kapanmaya hazır" flag, as the status read and the user closure see them.</summary>
+    private sealed record OrderStatus(SalesDraftStatusAxisV1 Lifecycle, SalesDraftCustomerAcceptanceAxisV1 Acceptance,
+        SalesDraftStatusAxisV1 Source, SalesDraftRealizationAxisV1 Realization, SalesDraftInvoicingAxisV1 Invoicing,
+        SalesDraftStatusAxisV1 FinancialClosure, bool ReadyToClose);
+
+    /// <summary>
+    /// The ONE calculation of the order's axes and of SAT-D32 "kapanmaya hazır", shared by the status read (API-08) and the user
+    /// closure command (which recomputes it inside the save). Every owner read is fenced on <paramref name="permission"/>, the
+    /// caller's own name (the draft read, or the close name). <paramref name="withReturns"/> adds the SAT-D33 approved-returns
+    /// figures shown beside the shipped totals — display only, never part of the readiness.
+    /// </summary>
+    private async Task<OrderStatus> OrderStatusAsync(Scope scope, string? permission, SalesOrderDraft draft, bool withReturns,
+        CancellationToken cancellationToken)
+    {
+        var realization = await RealizationAsync(scope, permission, draft, withReturns, cancellationToken);
+        var lifecycle = Lifecycle(draft);
+        var acceptance = CustomerAcceptanceAxis(draft);
+        var owners = await OwnerAxesAsync(scope, permission, draft, cancellationToken);
+        var (gate, priceBasis) = InvoicingGate(draft);
+        var invoicing = new SalesDraftInvoicingAxisV1(owners.Invoicing.State, gate, priceBasis);
+        // SAT-D32 "kapanmaya hazır": ALL seven axes complete ("tüm eksenler tamamlansa"). An axis that is NoSource, Unreadable or
+        // PolicyUnavailable is never complete, so while source (MOD-05), invoicing (S5) and financial closure (MOD-04) have no
+        // owner the flag is always false. A flag only — closing stays the user's action (SAT-D32 close command).
+        var readyToClose = lifecycle == SalesDraftStatusAxisStatesV1.Active
+            && draft.ApprovalState == InternalApprovalState.Approved
+            && draft.PendingRemainderChange is null
+            && acceptance.State is SalesDraftStatusAxisStatesV1.Accepted or SalesDraftStatusAxisStatesV1.NotRequired
+            && realization.State == SalesDraftStatusAxisStatesV1.Completed
+            && IsComplete(owners.Source) && IsComplete(owners.Invoicing) && IsComplete(owners.FinancialClosure);
+        return new OrderStatus(new SalesDraftStatusAxisV1(lifecycle), acceptance, new SalesDraftStatusAxisV1(owners.Source.State),
+            realization, invoicing, new SalesDraftStatusAxisV1(owners.FinancialClosure.State), readyToClose);
+    }
+
+    private static readonly SalesOrderOwnerAxisV1 NoSourceAxis = new(SalesDraftStatusAxisStatesV1.NoSource, false);
+    private static readonly SalesOrderOwnerAxisV1 UnreadableAxis = new(SalesDraftStatusAxisStatesV1.Unreadable, false);
+
+    private sealed record OwnerAxes(SalesOrderOwnerAxisV1 Source, SalesOrderOwnerAxisV1 Invoicing, SalesOrderOwnerAxisV1 FinancialClosure);
+
+    /// <summary>
+    /// The source, invoicing and financial-closure axes from <see cref="ISalesOrderOwnerAxesSourceV1"/>: NoSource when nothing is
+    /// composed (main today); Unreadable when it throws or answers another company's or another order's axes or a blank state.
+    /// A fence loss is 403.
+    /// </summary>
+    private async Task<OwnerAxes> OwnerAxesAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    {
+        if (ownerAxes is not { } owner)
+        {
+            return new OwnerAxes(NoSourceAxis, NoSourceAxis, NoSourceAxis);
+        }
+
+        SalesOrderOwnerAxesV1? answer;
+        try
+        {
+            answer = await GuardedAsync(scope, permission, () => owner.ReadOrderOwnerAxesAsync(draft.Id, cancellationToken), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            answer = null;
+        }
+
+        return answer is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id
+            || !IsAxis(answer.Source) || !IsAxis(answer.Invoicing) || !IsAxis(answer.FinancialClosure)
+            ? new OwnerAxes(UnreadableAxis, UnreadableAxis, UnreadableAxis)
+            : new OwnerAxes(answer.Source, answer.Invoicing, answer.FinancialClosure);
+    }
+
+    private static bool IsAxis(SalesOrderOwnerAxisV1? axis) => axis is not null && !string.IsNullOrWhiteSpace(axis.State);
 
     /// <summary>
     /// SAT-D103 (EK13): the order's invoicing gate. The current revision approved → <c>Open</c> at that revision. A newer
@@ -119,17 +176,14 @@ public sealed partial class SalesDraftService
         !draft.CustomerAcceptanceRequired || draft.CustomerAcceptance?.Revision == draft.ArchivedRevisions[^1].Revision;
 
     /// <summary>
-    /// Whether an owner-less axis (source, invoicing, financial closure) is complete. None of their owners exists, so no complete
-    /// state exists: "NoSource" (like "Unreadable" or "PolicyUnavailable") is never complete. When an owner arrives, its
-    /// complete state (DURUM_MAKINELERI "Tam kaynaklı" / "Tam" / "Kapalı") is named here explicitly.
+    /// Whether an owner-less axis (source, invoicing, financial closure) is complete: only when its owner calls its own state
+    /// complete (DURUM_MAKINELERI "Tam kaynaklı" / "Tam" / "Kapalı" are the owners' words, not a Sales default). "NoSource"
+    /// (like "Unreadable" or "PolicyUnavailable") is never complete, whatever the flag says (fail-closed).
     /// </summary>
-    private static bool IsComplete(SalesDraftStatusAxisV1 axis) =>
-        axis.State is not (SalesDraftStatusAxisStatesV1.NoSource or SalesDraftStatusAxisStatesV1.Unreadable
-            or SalesDraftStatusAxisStatesV1.PolicyUnavailable)
-        && OwnerAxisCompleteStates.Contains(axis.State);
-
-    /// <summary>The complete states of the owner-less axes: none until an owner exists (fail-closed).</summary>
-    private static readonly IReadOnlySet<string> OwnerAxisCompleteStates = new HashSet<string>(StringComparer.Ordinal);
+    private static bool IsComplete(SalesOrderOwnerAxisV1 axis) =>
+        axis.Complete
+        && axis.State is not (SalesDraftStatusAxisStatesV1.NoSource or SalesDraftStatusAxisStatesV1.Unreadable
+            or SalesDraftStatusAxisStatesV1.PolicyUnavailable);
 
     /// <summary>
     /// SAT-D32: the stored terminal states (<c>Cancelled</c>, <c>Closed</c>) as they are; otherwise <c>Active</c> once the order
@@ -202,8 +256,8 @@ public sealed partial class SalesDraftService
         return new MeasurementBasis(SalesDraftApiV1.RevisionText(approved.Revision), lines);
     }
 
-    private async Task<SalesDraftRealizationAxisV1> RealizationAsync(Scope scope, SalesOrderDraft draft,
-        CancellationToken cancellationToken)
+    private async Task<SalesDraftRealizationAxisV1> RealizationAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        bool withReturns, CancellationToken cancellationToken)
     {
         var ordered = draft.Lines.OrderBy(line => line.LineNo).ToArray();
         if (Basis(draft) is not { } basis)
@@ -215,7 +269,7 @@ public sealed partial class SalesDraftService
                     null, null, SalesDraftStatusAxisStatesV1.PendingReapproval, null, null, null, false, false, null, null))]);
         }
 
-        var recorded = await RecordedShipmentsAsync(scope, bindings.ReadPermission, draft, cancellationToken);
+        var recorded = await RecordedShipmentsAsync(scope, permission, draft, cancellationToken);
         if (recorded is null)
         {
             return Unreadable(ordered, basis);
@@ -223,10 +277,10 @@ public sealed partial class SalesDraftService
 
         // SAT-D33: approved customer returns are shown per line beside the shipped total, never netted against it; an
         // unreadable return owner shows no number there and does not take the realization down.
-        var returned = await ApprovedReturnsAsync(scope, draft, cancellationToken);
+        var returned = withReturns ? await ApprovedReturnsAsync(scope, permission, draft, cancellationToken) : null;
         var closed = draft.State == SalesDraftState.Closed;
         var needsTolerance = ordered.Any(line => SalesRealizationCalculator.NeedsTolerance(recorded[line.Id].Shipped, closed));
-        var policy = needsTolerance ? await ToleranceAsync(scope, bindings.ReadPermission, draft, cancellationToken) : null;
+        var policy = needsTolerance ? await ToleranceAsync(scope, permission, draft, cancellationToken) : null;
         var policyUnavailable = needsTolerance && policy is null;
 
         var lines = new List<(SalesDraftLineRealizationV1 Wire, LineRealizationState State, bool Warning)>(ordered.Length);
@@ -329,7 +383,7 @@ public sealed partial class SalesDraftService
     /// SAT-D33: the API-10 Logistics port's approved returned total per line (the customer-returns read's own validation), or
     /// null when that owner is not composed, fails or answers a malformed value. A fence loss is 403.
     /// </summary>
-    private async Task<Dictionary<Guid, string>?> ApprovedReturnsAsync(Scope scope, SalesOrderDraft draft,
+    private async Task<Dictionary<Guid, string>?> ApprovedReturnsAsync(Scope scope, string? permission, SalesOrderDraft draft,
         CancellationToken cancellationToken)
     {
         if (customerReturns is not { } owner)
@@ -340,7 +394,7 @@ public sealed partial class SalesDraftService
         SalesOrderCustomerReturnReadAnswerV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, bindings.ReadPermission,
+            answer = await GuardedAsync(scope, permission,
                 () => owner.ReadApprovedReturnsAsync(draft.Id, cancellationToken), cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))

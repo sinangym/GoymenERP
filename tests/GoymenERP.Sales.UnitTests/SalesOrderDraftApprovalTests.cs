@@ -161,7 +161,9 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads); No 30: so is the force-close
         // (RequireForceClosable only reads).
         // SAT-D2 / API-12: so is the discount exception approval. API-04: so is the header revision (RequireHeaderRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose",
+        // SAT-D32: so is the user closure (RequireUserClosable only reads).
+        Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel",
+            "CloseByUser", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected is the only read in the population (a query).
             "IsCustomerRejected", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader",

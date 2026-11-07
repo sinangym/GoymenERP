@@ -444,7 +444,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // K3 review A P1-1 / P2-1 (SAT-D211): +1 SalesOrderLineRevision fact (a quantity revision waits for the reinstatement after a
             // customer rejection; an empty line revision reinstates), kept ordinal-sorted (a58234a1… -> 96505e5c…).
             ["tools/relational_inventory/sales.txt"] =
-                "96505e5c60e13fbaa7aff7609e5bc5d3608ffda7e3009538e2871d5a68780cd7",
+                "95e16c66ee11c21a1f7283559dcde636c77bf6320469be3a6040193420f44f67",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -564,7 +564,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // reports it modified (a line removed again in the same revision and reverted again writes R -> R).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "eda9a888251bda233662d3294443f2ab6ed6520edf353c5bae21cc1ad2692ea9",
+                "53aee4a44027be009b198d83f7cefa598fb6e1fea6892815673f9531d76ac86d",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1564,7 +1564,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D219 (EK38): the draft service also receives the supply owners' optional recorder
                     // declarations (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     new(
-                        "bf8235d251ff3a4f6f6e43ce5511faf0b6baa2355cd8d7ff287915fb75ee5cc4",
+                        "c01d0163e9c05a86fb941da1e34e9f9b359a6b6e676925306c7c46a238cb2371",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1620,7 +1620,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for K3 review A/B P1-1: the line revision's audit picture also carries ReinstatedInRevision.
                     // Re-fingerprinted for K3 review A P1-1 / P2-1: an empty line revision that only reinstates is a valid line command.
                     new(
-                        "69189e4b175e2b841e55956e5c7c38e3fe9f4e626f43b1b4b3fd12af84577fa3",
+                        "33c17b1071c8d8643445685f1887162613d6c93c7788a0fd41d4234408d4bda3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2322,6 +2322,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // added, removed or (SAT-D211) reinstated by a line revision; the THROW precedes every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102212525_AddDraftLineRevisions.cs"] =
                     new("32e82f8eec6987b42b9a4b1ae631cb6256d0798705bd6f9e29728c748c37766d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D32: the Down's only raw SQL is Sales' refusal (51212, used by no other migration) while any user closure row or
+                // recorded close attempt exists; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261103073447_AddDraftUserClosures.cs"] =
+                    new("586dd38857e8a9c76bb654243710782e28d627ce64abc58ea7783f6c8b5c0d97",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

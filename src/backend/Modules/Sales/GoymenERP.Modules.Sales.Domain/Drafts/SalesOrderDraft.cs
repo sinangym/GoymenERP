@@ -13,7 +13,7 @@ public enum SalesDraftKind
 /// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the states this code can reach exist: <see cref="Draft"/> (every
 /// order, approved or not — "Aktif" is not derived here), <see cref="Cancelled"/> (DEC-SAL-005: an approved order cancelled
 /// after its impact preview; terminal, nothing deleted) and <see cref="Closed"/> (No 30 / SAT-D12: an approved order
-/// force-closed after its impact preview; terminal, nothing deleted).
+/// force-closed after its impact preview; SAT-D32: a "kapanmaya hazır" order closed by the user; terminal, nothing deleted).
 /// </summary>
 public enum SalesDraftState
 {
@@ -30,7 +30,10 @@ public enum SalesDraftState
     /// force-closed with a reason after its impact preview; the not-shipped remainder of every line is recorded as the
     /// closed ("iptal edilen") remainder — a separate axis from the line quantities, which do not move (DEC-SAL-001).
     /// Terminal like <see cref="Cancelled"/>: every mutation entry refuses it; the approval facts, lines, revisions and
-    /// schedules stay. No stock or money event exists.
+    /// schedules stay. No stock or money event exists. SAT-D32 (EK3) / SAT-D215 (EK37): a "kapanmaya hazır" order closed by the
+    /// user (no reason, no remainder) reaches the SAME state with its own record (<see cref="UserClosureFacts"/>) — a
+    /// reversible implementation detail (EK37 "Sınırlar"): the lines and the owners' ports treat both as closed, the screens
+    /// label them differently.
     /// </summary>
     Closed = 3,
 }
@@ -946,8 +949,8 @@ public sealed partial class SalesOrderDraft
     {
         ArgumentNullException.ThrowIfNull(facts);
         RequireApprovalNotRestored();
-        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || facts.Revision != Revision
-            || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
+        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || UserClosure is not null
+            || facts.Revision != Revision || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
             || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumCancellationReasonLength
             || !IsImpact(facts.Impact))
         {
@@ -974,8 +977,8 @@ public sealed partial class SalesOrderDraft
         && impact.Sources.Select(entry => entry.Source).Distinct(StringComparer.Ordinal).Count() == impact.Sources.Count;
 
     /// <summary>
-    /// The terminal lifecycle guard of every mutation entry: a cancelled (DEC-SAL-005) or force-closed (No 30 / SAT-D12)
-    /// order is a <see cref="SalesRuleCodes.StateConflict"/>. <paramref name="message"/> names the cancelled case; the
+    /// The terminal lifecycle guard of every mutation entry: a cancelled (DEC-SAL-005), force-closed (No 30 / SAT-D12) or
+    /// user-closed (SAT-D32) order is a <see cref="SalesRuleCodes.StateConflict"/>. <paramref name="message"/> names the cancelled case; the
     /// closed case has its own text.
     /// </summary>
     private void RequireNotCancelled(string message)
@@ -987,8 +990,10 @@ public sealed partial class SalesOrderDraft
 
         if (State == SalesDraftState.Closed)
         {
-            throw new SalesRuleException(SalesRuleCodes.StateConflict,
-                $"Zorla kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State}).");
+            // SAT-D32: a user-closed order is as terminal as a force-closed one; only the text names which closure it was.
+            throw new SalesRuleException(SalesRuleCodes.StateConflict, UserClosure is not null
+                ? $"Kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State})."
+                : $"Zorla kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State}).");
         }
     }
 
@@ -1733,7 +1738,9 @@ public sealed partial class SalesOrderDraft
 
         var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
         // No 30 / SAT-D12: a recorded force-closure was one step of its own, and only an APPROVED order without a pending
-        // remainder change is ever force-closed - a stored closure beside anything else is refused, not repaired.
+        // remainder change is ever force-closed - a stored closure beside anything else is refused, not repaired. SAT-D32: a
+        // recorded USER closure is the same one lifecycle step under the same preconditions (the Closed state counts once,
+        // whichever record closed it; the store and RestoreUserClosure/RestoreForceClosure refuse both records at once).
         if (State == SalesDraftState.Closed && (state != InternalApprovalState.Approved || PendingRemainderChange is not null))
         {
             throw new InvalidOperationException("Kayıtlı zorla kapatma yalnız karar bekleyen kalan değişikliği olmayan onaylı bir siparişin yanında durur.");
