@@ -50,6 +50,8 @@ public sealed class SettingsHostWiringTests
         using var scope = factory.Services.CreateScope();
 
         Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
+        // SAT-D219: no module declares that it records links to Sales order lines yet, so "no source" blocks nothing.
+        Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesDraftService>());
     }
 

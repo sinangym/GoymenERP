@@ -331,4 +331,26 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("6", retried.Detail.Draft.Version);
         Assert.Single(world.Store.OverDeliveryApprovals);
     }
+
+    [Fact]
+    public async Task A_user_closed_order_refuses_an_over_delivery_approval_as_the_recorded_state_conflict_asking_no_owner()
+    {
+        var world = new World();
+        var accepted = await CompletedAcceptedAsync(world);
+        world.OwnerAxes = new FakeOwnerAxes(order => Complete(order));
+        // SAT-D32: the user closes the ready order (Closed, a user closure record — not a force-closure).
+        await world.Service().CloseDraftAsync(accepted.Draft.Id, new SalesDraftCloseRequest("5"), Metadata("k-close"));
+        var line = accepted.Lines[0].LineId;
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, 1.5m, 0m, [Shipper])]));
+        world.Deliveries = deliveries;
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveOverDeliveryAsync(accepted.Draft.Id,
+            new SalesDraftOverDeliveryApprovalRequest("6", line, "1.5"), Metadata("k-over-closed")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(refused));
+        Assert.Equal("Closed", (await world.Service().GetDraftDetailAsync(accepted.Draft.Id)).Draft.State);
+        Assert.Empty(deliveries.Asked);
+        Assert.Empty(world.Store.OverDeliveryApprovals);
+    }
 }

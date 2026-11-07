@@ -199,11 +199,14 @@ public sealed partial class SalesDraftServiceTests
 
         public string SupplyKind { get; } = kind;
 
+        /// <summary>The case's answer; a test may change it between two reads.</summary>
+        public Func<SalesOrderLinkedSupplyQueryV1, string, SalesOrderLinkedSupplyAnswerV1> Answer { get; set; } = answer;
+
         public Task<SalesOrderLinkedSupplyAnswerV1> ReadOrderLinkedSupplyAsync(SalesOrderLinkedSupplyQueryV1 query,
             CancellationToken cancellationToken = default)
         {
             Asked.Add(query);
-            return Task.FromResult(answer(query, SupplyKind));
+            return Task.FromResult(Answer(query, SupplyKind));
         }
     }
 }

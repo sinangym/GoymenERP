@@ -51,7 +51,7 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
 )
 EXPECTED_MIGRATION_COUNT = 132
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "ee27611e8940dad325c44da94769177bd09e6b9c1151437e6491f362b8e5d8d9"
+    "1dd1e3b69d17977777ff6fe5484bb5cc963c211303004635a5b96c794481ba89"
 )
 EXPECTED_DURABLE_STORE_COUNT = 24
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
@@ -90,7 +90,7 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 580
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "5afc5a2f1bf977b16d6c540a3292f20bcf221f8f0e439ec70eb1019123e8f390"
+    "d03e120817fad8896bef4b1a8abf2f4d18d66c4a50762bdb97aafe8999f40919"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -845,7 +845,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "387b63d14466a19e18460ac8000afbfafd36db9b0a4d93d1b1522e1e3986102d",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "db51da41be246d1110daa34cfeff59d6a2f7a85dc136a3c4d7f7c8f7fe011efb",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",

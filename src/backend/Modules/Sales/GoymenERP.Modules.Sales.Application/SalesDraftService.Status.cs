@@ -230,7 +230,12 @@ public sealed partial class SalesDraftService
 
         var approved = acceptedFallback ?? draft.ArchivedRevisions[^1];
         var lines = new Dictionary<Guid, (Quantity Quantity, string Text)>();
-        foreach (var line in draft.Lines)
+        // SAT-D211 (EK36; K3 review A P1-2): while the customer has rejected the current revision, the lines it removed ship under
+        // the accepted revision until the next revision reinstates them — they are measured with it.
+        var measured = acceptedFallback is not null && draft.ApprovalState == InternalApprovalState.Approved
+            ? draft.AllLines.Where(line => !line.IsRemoved || (line.RemovedInRevision == draft.Revision && line.AddedInRevision != draft.Revision))
+            : draft.Lines;
+        foreach (var line in measured)
         {
             var archived = approved.Lines.FirstOrDefault(candidate => candidate.LineId == line.Id);
             if (archived is null || archived.OrderUnitId != line.OrderUnit.UnitId

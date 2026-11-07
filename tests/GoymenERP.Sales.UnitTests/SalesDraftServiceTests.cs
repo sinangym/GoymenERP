@@ -1692,7 +1692,7 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies);
+                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders);
         }
 
         /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
@@ -1706,6 +1706,9 @@ public sealed partial class SalesDraftServiceTests
 
         /// <summary>S-1 / MOD-03: the supply owners' linked-supply adapters (none by default, as on the host).</summary>
         public List<ISalesOrderLinkedSupplyReadPortV1> LinkedSupplies { get; } = [];
+
+        /// <summary>SAT-D219: the supply owners' declarations that they record links to Sales order lines (none by default).</summary>
+        public List<ISalesOrderLinkedSupplyRecorderV1> LinkedSupplyRecorders { get; } = [];
 
         public SalesDraftReadServiceV1 ReadService()
         {
@@ -1981,10 +1984,13 @@ public sealed partial class SalesDraftServiceTests
         public bool VersionConflict { get; set; }
         public int Calls { get; set; }
         public Action? BeforeErrorsEnumerated { get; set; }
+        /// <summary>The day each selection was evaluated for (SAT-D212: an added line's revision day).</summary>
+        public List<DateOnly> AskedOn { get; } = [];
 
         public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
         {
             Calls++;
+            AskedOn.Add(selection.EffectiveOn);
             if (Fault == "unavailable") throw new ProductOperationException("product_family_policy_unavailable", 503);
             if (Fault == "conflict-exception") throw new ProductOperationException("product_selection_changed", 409);
             if (Fault == "not-found") throw new ProductOperationException("product_not_found", 404);
@@ -2099,6 +2105,20 @@ public sealed partial class SalesDraftServiceTests
             Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
         {
             if (commandName != SalesDraftCommands.ReviseQuantityV1) throw new ArgumentException("wrong command", nameof(commandName));
+            ApprovedRevisionSnapshot? archived = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => archived = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (archived is not null) Archived.Add(archived);
+            return result;
+        }
+
+        public async Task<SalesDraftStateResult?> ReviseDraftLinesAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ReviseLinesV1) throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
