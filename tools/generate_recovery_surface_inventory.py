@@ -51,7 +51,7 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
 )
 EXPECTED_MIGRATION_COUNT = 130
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "d3186bb4666e4eee9b52683ae6f29f39a37277a24a1fb34c06af91a7e445dbd0"
+    "caab1c82e31eff70f2c25a9583fdbd174bb44502e34786d05b589f1cd3094a7b"
 )
 EXPECTED_DURABLE_STORE_COUNT = 24
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
@@ -60,7 +60,7 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # lexical inventory while leaving its visible declaration counts unchanged.
 EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1337
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "0d5e1f2e932439b4b87d68e81732ea5ee24fd140e47799020650e5cc55b32963"
+    "a0f156c90b1e8ba6841af0f3eb60d765b01a285329c2d0e8ddde6075718af6ac"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
