@@ -54,13 +54,51 @@ EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "d88f0887ac65cfacc9c4bd718fff2ccaa9d9dc88882105aa64a1f3cec1418e59"
 )
 EXPECTED_DURABLE_STORE_COUNT = 24
-# The source-only inventory is reviewed for one frozen backend compilation surface.  A
-# project/build edit or any compiled source byte change must be deliberately re-inventoried;
-# otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
-# lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1329
-EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "bf93e2e2cc8ce6bd488b538088a4d852ffcb4b9474c9d510d0643a1f0b3bc1d9"
+# Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
+# the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
+# pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
+# that can make a lexical inventory miss a linked file, generator, global alias, symbol-shadow
+# file, hidden SqlClient/DbContext use or a partial of a reviewed DbContext/store type:
+#   * every REPOSITORY_BUILD_CONTROL_PATHS file,
+#   * every non-.cs file under src/backend (*.csproj, *.props, *.targets, *.rsp, *.csproj.user,
+#     appsettings*.json, *.resx, README...: MSBuild auto-imports and embedded inputs),
+#   * every src/backend .cs whose raw text (comments, strings and disabled regions included, so
+#     strictly wider than live code) contains a RISKY_SOURCE_TOKENS token or a global alias name,
+#   * every `using X =` alias file (global and file-local) and every `global using` file,
+#   * every reviewed path (REVIEWED_LIVE_SOURCE_SHA256, reviewed methods, durable-store and
+#     Documents evidence) and every discovered DbContext/Migration/object-store declaration file,
+#   * every file declaring a type named like a reviewed DbContext/store/adapter type (partials and
+#     same-name shadows),
+#   * every file whose namespace equals or encloses a namespace of a file above, or that has no or
+#     several namespace declarations (type-name shadowing resolves through enclosing namespaces).
+# Measured on the last 21 origin/main commits touching src/backend/ (since 2026-10-20, through
+# 1e694aa3e): 10 of 21 would still have moved this narrow pin (each of those touched a
+# DbContext, migration or reviewed store); the other 11 would not have needed a re-pin.
+# The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
+# inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
+# evidence, not a merge block: it is never compared with a pinned constant.
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 0
+EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
+    "0000000000000000000000000000000000000000000000000000000000000000"
+)
+RISKY_SOURCE_TOKENS = (
+    "DbContext",
+    "ModelBuilder",
+    "MigrationBuilder",
+    "Migration",
+    "IDocumentObjectStoreV1",
+    "SqlConnection",
+    "SqlCommand",
+    "SqlClient",
+    "Microsoft.Data.SqlClient",
+    "Microsoft.EntityFrameworkCore",
+    "ToTable",
+    "ExecuteSql",
+    "FromSql",
+    "SqlQuery",
+    "DbConnection",
+    "DbCommand",
+    "System.Data",
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -2880,6 +2918,10 @@ def _validate_inventory_semantics(snapshot: SourceSnapshot, inventory: dict[str,
     }
     if inventory["counts"] != expected_counts:
         raise InventoryError("Inventory counts do not match the exact source surface.")
+    # Evidence only: recomputed from the exact commit so the record cannot be forged, but the
+    # full-tree digest is never compared with a pinned constant (post-hoc evidence, not a merge block).
+    if inventory["sourceSurface"] != _source_surface_record(snapshot):
+        raise InventoryError("Inventory sourceSurface evidence does not match the exact commit.")
 
 
 def _source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
@@ -2896,8 +2938,7 @@ def _source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
     )
 
 
-def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
-    paths = _source_surface_paths(snapshot)
+def _surface_fingerprint(snapshot: SourceSnapshot, paths: Sequence[str]) -> tuple[int, str]:
     digest = hashlib.sha256()
     for path in paths:
         encoded_path = path.encode("utf-8")
@@ -2909,18 +2950,222 @@ def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
     return len(paths), digest.hexdigest()
 
 
+def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
+    """Full src/backend + build-control byte digest: post-hoc evidence, never pinned."""
+
+    return _surface_fingerprint(snapshot, _source_surface_paths(snapshot))
+
+
+_RISKY_ALIAS_PATTERN = re.compile(
+    r"\busing\s+(?:static\s+)?(?:unsafe\s+)?@?[^\W\d]\w*\s*(?:<[^;=]*>)?\s*="
+)
+_RISKY_GLOBAL_USING_PATTERN = re.compile(r"\bglobal\s+using\b")
+_RISKY_GLOBAL_ALIAS_NAME_PATTERN = re.compile(
+    r"\bglobal\s+using\s+(?:static\s+)?(?:unsafe\s+)?@?(?P<alias>[^\W\d]\w*)\s*="
+)
+_RISKY_TYPE_DECLARATION_PATTERN = re.compile(
+    r"\b(?P<kind>class|struct|interface|record|enum)\s+(?:(?:class|struct)\s+)?"
+    r"@?(?P<name>[^\W\d]\w*)"
+)
+_RISKY_NAMESPACE_PATTERN = re.compile(r"\bnamespace\s+(?P<name>@?[^\W\d][\w.@]*)")
+_CSHARP_KEYWORDS = frozenset(
+    "abstract as base bool break byte case catch char checked class const continue decimal "
+    "default delegate do double else enum event explicit extern false finally fixed float for "
+    "foreach goto if implicit in int interface internal is lock long namespace new null object "
+    "operator out override params private protected public readonly ref return sbyte sealed "
+    "short sizeof stackalloc static string struct switch this throw true try typeof uint ulong "
+    "unchecked unsafe ushort using virtual void volatile while".split()
+)
+_RISKY_IDENTIFIER_PATTERN = re.compile(r"[^\W\d]\w*")
+_RISKY_CLASS_BASE_PATTERN = re.compile(
+    r"\b(?:class|record)\s+@?[^\W\d]\w*[^{;:]*:\s*(?P<base>[\w.@:]+)"
+)
+
+
+def _reviewed_source_paths() -> set[str]:
+    paths = set(REVIEWED_LIVE_SOURCE_SHA256)
+    paths.update(path for path, _ in REVIEWED_OPERATIVE_METHOD_FINGERPRINTS)
+    paths.update(path for _, path in WRITER_METHOD_SCOPES)
+    paths.update(DOCUMENT_SOURCE_PATHS)
+    paths.add(DOCUMENT_OBJECT_STORE_INTERFACE_PATH)
+    paths.update(EXPECTED_OUTBOX_CONTRACT_PATHS)
+    for spec in DURABLE_STORE_SPECS:
+        paths.update(evidence.path for evidence in spec.evidence)
+    return paths
+
+
+def _risky_text(snapshot: SourceSnapshot, relative_path: str) -> str:
+    try:
+        text = snapshot.files[relative_path].decode("utf-8")
+    except UnicodeError as exc:
+        raise InventoryError(f"Backend source blob is not readable UTF-8: {relative_path}.") from exc
+    return text[1:] if text.startswith("\ufeff") else text
+
+
+def _namespace_and_ancestors(name: str) -> set[str]:
+    parts = [part.removeprefix("@") for part in name.split(".")]
+    return {".".join(parts[: index + 1]) for index in range(len(parts))}
+
+
+def _risky_source_surface(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    """Return the narrow risky surface: byte-pinned paths and the shadow-declaration index.
+
+    The byte-pinned paths are a token/file-class superset (see the Faz 1 note).  Tokens and
+    aliases match comment-free text with literals and every preprocessor region kept (wider than
+    live code; comments never compile).  Declarations, namespaces and base lists use comment-free,
+    literal-masked text so prose and strings cannot invent type names.
+    """
+
+    backend_prefix = f"{BACKEND_ROOT.as_posix()}/".casefold()
+    build_controls = {path.casefold() for path in REPOSITORY_BUILD_CONTROL_PATHS}
+    selected: set[str] = set()
+    csharp: dict[str, str] = {}
+    for path in snapshot.files:
+        folded = path.casefold()
+        if folded in build_controls:
+            selected.add(path)
+        elif folded.startswith(backend_prefix):
+            if folded.endswith(".cs"):
+                csharp[path] = _strip_csharp_comments(_risky_text(snapshot, path))
+            else:
+                selected.add(path)
+    structural = {path: _mask_csharp_strings(text) for path, text in csharp.items()}
+    declarations = {
+        path: tuple(
+            (match.group("kind"), match.group("name"))
+            for match in _RISKY_TYPE_DECLARATION_PATTERN.finditer(text)
+            if match.group("name") not in _CSHARP_KEYWORDS
+        )
+        for path, text in structural.items()
+    }
+
+    word_tokens: set[str] = set()
+    for text in csharp.values():
+        word_tokens.update(
+            match.group("alias") for match in _RISKY_GLOBAL_ALIAS_NAME_PATTERN.finditer(text)
+        )
+    reviewed_paths = {path for path in _reviewed_source_paths() if path in csharp}
+    discovered = (
+        *_discover_csharp_subclasses(snapshot, "DbContext"),
+        *_discover_csharp_subclasses(snapshot, "Migration"),
+    )
+    adapters = _discover_document_object_store_adapters(snapshot)
+    reviewed_paths.update(declaration.path for declaration in discovered)
+    reviewed_paths.update(path for _, _, path in adapters)
+    reviewed_types = {declaration.name for declaration in discovered}
+    reviewed_types.update(name for _, name, _ in adapters)
+    word_tokens.update(
+        declaration.name for declaration in discovered if "Migration" not in declaration.name
+    )
+    word_tokens.update(name for _, name, _ in adapters)
+    for path in reviewed_paths:
+        reviewed_types.update(name for _, name in declarations[path])
+    word_pattern = (
+        re.compile(
+            r"(?<![A-Za-z0-9_])(?:"
+            + "|".join(re.escape(token) for token in sorted(word_tokens))
+            + r")(?![A-Za-z0-9_])"
+        )
+        if word_tokens
+        else None
+    )
+
+    risky: set[str] = set(reviewed_paths)
+    for path, text in csharp.items():
+        namespace_count = len(_RISKY_NAMESPACE_PATTERN.findall(structural[path]))
+        if (
+            namespace_count != 1
+            or any(token in text for token in RISKY_SOURCE_TOKENS)
+            or (word_pattern is not None and word_pattern.search(text) is not None)
+            or _RISKY_ALIAS_PATTERN.search(text) is not None
+            or _RISKY_GLOBAL_USING_PATTERN.search(text) is not None
+            or any(name in reviewed_types for _, name in declarations[path])
+        ):
+            risky.add(path)
+
+    # Class base types of risky declarations are byte-pinned when declared here as a class or
+    # record: a partial of a base class can inject a nested type into the derived scope.
+    base_types: set[str] = set()
+    for path in risky:
+        for match in _RISKY_CLASS_BASE_PATTERN.finditer(structural[path]):
+            first_base = _RISKY_IDENTIFIER_PATTERN.findall(match.group("base"))
+            if first_base:
+                base_types.add(first_base[-1])
+    for path, declared in declarations.items():
+        if path not in risky and any(
+            kind.startswith(("class", "record")) and name in base_types
+            for kind, name in declared
+        ):
+            risky.add(path)
+
+    # Symbol shadowing: a type declared in a namespace that equals or encloses a risky file's
+    # namespace wins over that file's using-imports.  Every such declaration whose simple name
+    # occurs in an enclosed risky file is pinned by (path, namespace, name): introducing,
+    # moving or renaming a shadowing type moves the pin, while the declaring file's body stays
+    # outside the byte pin (a new name used by a risky file changes that risky file anyway).
+    risky_identifiers: dict[str, set[str]] = {}
+    for path in risky:
+        identifiers = set(_RISKY_IDENTIFIER_PATTERN.findall(csharp[path]))
+        for match in _RISKY_NAMESPACE_PATTERN.finditer(structural[path]):
+            for namespace in _namespace_and_ancestors(match.group("name")):
+                risky_identifiers.setdefault(namespace, set()).update(identifiers)
+    shadow_index: set[tuple[str, str, str]] = set()
+    for path, text in structural.items():
+        if path in risky:
+            continue
+        namespace = ".".join(
+            part.removeprefix("@")
+            for part in _RISKY_NAMESPACE_PATTERN.search(text).group("name").split(".")
+        )
+        used = risky_identifiers.get(namespace, set())
+        shadow_index.update(
+            (path, namespace, name) for _, name in declarations[path] if name in used
+        )
+    selected.update(risky)
+    return tuple(sorted(selected)), tuple(sorted(shadow_index))
+
+
+def _risky_source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
+    return _risky_source_surface(snapshot)[0]
+
+
+def _risky_source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
+    paths, shadow_index = _risky_source_surface(snapshot)
+    count, digest = _surface_fingerprint(snapshot, paths)
+    combined = hashlib.sha256(digest.encode("ascii"))
+    for path, namespace, name in shadow_index:
+        combined.update(f"\n{path}\t{namespace}\t{name}".encode("utf-8"))
+    return count, combined.hexdigest()
+
+
 def _require_reviewed_source_surface(snapshot: SourceSnapshot) -> None:
-    actual_count, actual_fingerprint = _source_surface_fingerprint(snapshot)
+    actual_count, actual_fingerprint = _risky_source_surface_fingerprint(snapshot)
     if (
-        actual_count != EXPECTED_SOURCE_SURFACE_FILE_COUNT
-        or actual_fingerprint != EXPECTED_SOURCE_SURFACE_FINGERPRINT
+        actual_count != EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT
+        or actual_fingerprint != EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT
     ):
         raise InventoryError(
-            "Reviewed C# compilation source surface drifted: "
-            f"expected count={EXPECTED_SOURCE_SURFACE_FILE_COUNT} "
-            f"fingerprint={EXPECTED_SOURCE_SURFACE_FINGERPRINT}; "
+            "Reviewed risky C# compilation source surface drifted: "
+            f"expected count={EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT} "
+            f"fingerprint={EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT}; "
             f"actual count={actual_count} fingerprint={actual_fingerprint}."
         )
+
+
+def _source_surface_record(snapshot: SourceSnapshot) -> dict[str, Any]:
+    """Non-blocking evidence: the manifest sourceSurface is post-hoc evidence, not a merge block."""
+
+    file_count, sha256 = _source_surface_fingerprint(snapshot)
+    risky_count, risky_sha256 = _risky_source_surface_fingerprint(snapshot)
+    return {
+        "fileCount": file_count,
+        "sha256": sha256,
+        "riskyFileCount": risky_count,
+        "riskySha256": risky_sha256,
+        "blocking": False,
+    }
 
 
 def _validate_inventory_for_snapshot(snapshot: SourceSnapshot, inventory: dict[str, Any]) -> None:
@@ -2958,6 +3203,7 @@ def _build_inventory_from_snapshot(snapshot: SourceSnapshot) -> dict[str, Any]:
         "migrations": migrations,
         "documents": documents,
         "durableStores": durable_stores,
+        "sourceSurface": _source_surface_record(snapshot),
         "assertions": {
             "sourceOnly": True,
             "containsSecrets": False,
