@@ -1254,7 +1254,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SqlClient only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "2ca8394c014c443ed51f83f11d1938199764cdf7a6c0047cf73b93202c533ba1",
+                        "8b02512a01241b015ea34574296825356228cef44dc923a73b2c50861ca96926",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
