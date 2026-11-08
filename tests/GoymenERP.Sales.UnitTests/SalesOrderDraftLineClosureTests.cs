@@ -130,16 +130,138 @@ public sealed class SalesOrderDraftLineClosureTests
     }
 
     [Fact]
-    public void A_force_closure_keeps_the_remainder_a_line_closure_already_cancelled()
+    public void A_force_closure_records_a_closed_line_with_its_own_closure_triple_and_round_trips()
     {
         var draft = ApprovedDraft(out var line);
-        draft.CloseLine(4, Closer, Input(line, "90"), T0);
-        var impact = new ForceClosureImpactSnapshot(new string('f', 64), [new("inventory.active-allocations", "None", false)]);
+        var closure = draft.CloseLine(4, Closer, Input(line, "90"), T0);
 
-        var facts = draft.ForceClose(5, "synthetic-force-closer", "SENTETIK", impact, [new ForceClosureLineInput(line.Id, 95m)], T0);
+        // The owner's current total (95) is validated, but a closed line is recorded as its closure measured it (100 / 90 / 10):
+        // the remainder it cancelled is not counted a second time and the snapshot stays internally consistent.
+        var facts = draft.ForceClose(5, "synthetic-force-closer", "SENTETIK", NoBlockImpact(), [new ForceClosureLineInput(line.Id, 95m)], T0);
+        var snapshot = Assert.Single(facts.Lines);
+        Assert.Equal(("100", "90", "10"), (snapshot.Ordered, snapshot.Shipped, snapshot.ClosedRemainder));
+        Assert.Throws<ArgumentException>(() => ApprovedClosedDraft(out var other, out var otherLine, out _)
+            .ForceClose(other.Version, "synthetic-force-closer", "SENTETIK", NoBlockImpact(), [new ForceClosureLineInput(otherLine.Id, 101m)], T0));
 
-        // 100 - 95 would be 5; the 10 the closure cancelled stays, and is never recorded a second time.
-        Assert.Equal("10", Assert.Single(facts.Lines).ClosedRemainder);
+        // Save -> restore: closures first, then the force-closure, then the approval axis.
+        var rebuilt = Draft(out _, line.Id);
+        rebuilt.RestoreLineClosure(closure);
+        rebuilt.RestoreForceClosure(facts);
+        rebuilt.RestoreApproval(InternalApprovalState.Approved, draft.Approval, draft.Version, T0);
+        Assert.Equal((draft.Version, SalesDraftState.Closed, facts), (rebuilt.Version, rebuilt.State, rebuilt.ForceClosure));
+        Assert.Equal(closure, Assert.Single(rebuilt.LineClosures));
+
+        // The old inconsistent shape (the current shipped beside the closure's remainder) is refused on load.
+        var inconsistent = facts with { Lines = [snapshot with { Shipped = "95" }] };
+        var refused = Draft(out _, line.Id);
+        refused.RestoreLineClosure(closure);
+        Assert.Throws<InvalidOperationException>(() => refused.RestoreForceClosure(inconsistent));
+        var otherRemainder = Draft(out _, line.Id);
+        otherRemainder.RestoreLineClosure(closure);
+        Assert.Throws<InvalidOperationException>(() => otherRemainder.RestoreForceClosure(facts with { Lines = [snapshot with { ClosedRemainder = "5" }] }));
+    }
+
+    [Fact]
+    public void A_force_closure_of_an_order_with_a_closed_and_an_open_line_keeps_each_lines_own_rule()
+    {
+        var draft = ApprovedClosedDraft(out var source, out var closedLine, out var closure);
+        Assert.Same(draft, source);
+        var open = draft.Lines.Single(candidate => candidate.Id != closedLine.Id);
+        var facts = draft.ForceClose(draft.Version, "synthetic-force-closer", "SENTETIK", NoBlockImpact(),
+            [new ForceClosureLineInput(closedLine.Id, 100m), new ForceClosureLineInput(open.Id, 60m)], T0);
+
+        // The closed line keeps 100/90/10 even though the owner now names 100 (shipped moved after the closure); the open line is 100-60.
+        Assert.Equal([("100", "90", "10"), ("100", "60", "40")],
+            facts.Lines.OrderBy(entry => entry.LineNo).Select(entry => (entry.Ordered, entry.Shipped, entry.ClosedRemainder)).ToArray());
+
+        var rebuilt = Draft(out _, closedLine.Id);
+        rebuilt.AddLine(rebuilt.Version, Line(open.Id, "100"), T0);
+        rebuilt.RestoreLineClosure(closure);
+        rebuilt.RestoreForceClosure(facts);
+        rebuilt.RestoreApproval(InternalApprovalState.Approved, draft.Approval, draft.Version, T0);
+        Assert.Equal(SalesDraftState.Closed, rebuilt.State);
+    }
+
+    [Fact]
+    public void A_line_closes_only_while_the_order_is_approved_with_no_pending_revision_or_fallback()
+    {
+        // A quantity revision (100 -> 120) leaves the order in re-approval: the closure is refused, then also while it is pending.
+        var draft = ApprovedDraft(out var line);
+        draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "120", 120m)], "synthetic-reviser", "SENTETIK", T0);
+        Assert.NotEqual(InternalApprovalState.Approved, draft.ApprovalState);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.CloseLine(draft.Version, Closer, Input(line, "90") with { Ordered = "120" }, T0)));
+        draft.Submit(draft.Version, "synthetic-preparer", T0);
+        Assert.Equal(InternalApprovalState.PendingApproval, draft.ApprovalState);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequireLineClosable(draft.Version, line.Id)));
+        Assert.Empty(draft.LineClosures);
+        // Once approved again, the line closes over the current approved quantity.
+        draft.Approve(draft.Version, "synthetic-approver", T0);
+        Assert.Equal("120", draft.CloseLine(draft.Version, Closer, Input(line, "90") with { Ordered = "120" }, T0).Ordered);
+
+        // A customer-rejection fallback (the order continues on an older accepted revision) is refused too.
+        var fallback = ApprovedDraft(out var fallbackLine, acceptance: true);
+        fallback.RecordCustomerAcceptance(fallback.Version, "synthetic-approver", T0);
+        fallback.ReviseQuantities(fallback.Version, [new LineQuantityInput(fallbackLine.Id, "120", 120m)], "synthetic-reviser", "SENTETIK", T0);
+        fallback.Submit(fallback.Version, "synthetic-preparer", T0);
+        fallback.Approve(fallback.Version, "synthetic-approver", T0);
+        fallback.RecordCustomerRejection(fallback.Version, "synthetic-approver", "SENTETIK", T0);
+        Assert.NotNull(fallback.CustomerAcceptedFallback);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => fallback.RequireLineClosable(fallback.Version, fallbackLine.Id)));
+    }
+
+    [Fact]
+    public void A_customer_rejection_is_refused_once_a_line_is_closed_and_an_approval_never_changes_a_closed_line()
+    {
+        var draft = ApprovedDraft(out var line, acceptance: true);
+        draft.RecordCustomerAcceptance(draft.Version, "synthetic-approver", T0);
+        draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "120", 120m)], "synthetic-reviser", "SENTETIK", T0);
+        draft.Submit(draft.Version, "synthetic-preparer", T0);
+        draft.Approve(draft.Version, "synthetic-approver", T0);
+        draft.CloseLine(draft.Version, Closer, Input(line, "90") with { Ordered = "120", BasisRevision = draft.Revision }, T0);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerRejection(draft.Version, "synthetic-approver", "SENTETIK", T0)));
+
+        // Defence in depth: a stored state in which the closed line's quantity differs from the closure's is refused at submit and at approve.
+        var source = ApprovedDraft(out var sourceLine);
+        var closure = source.CloseLine(4, Closer, Input(sourceLine, "90"), T0);
+        var pending = Draft(out var pendingLine, sourceLine.Id);
+        pending.RestoreLineClosure(closure);
+        pending.RestoreApproval(InternalApprovalState.PendingApproval, new ApprovalFacts("synthetic-preparer", T0.ToUniversalTime(), null, null, null), 10, T0);
+        ReplaceQuantity(pendingLine, 95m);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => pending.Approve(10, "synthetic-approver", T0)));
+
+        var preparing = Draft(out var preparingLine, sourceLine.Id);
+        preparing.RestoreLineClosure(closure);
+        preparing.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 10, T0);
+        ReplaceQuantity(preparingLine, 95m);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => preparing.Submit(10, "synthetic-preparer", T0)));
+    }
+
+    [Fact]
+    public void A_stored_closure_whose_ordered_text_is_not_the_lines_quantity_is_refused_on_restore()
+    {
+        var source = ApprovedDraft(out var line);
+        var facts = source.CloseLine(4, Closer, Input(line, "90"), T0);
+        Assert.Throws<InvalidOperationException>(() => Draft(out _, line.Id).RestoreLineClosure(
+            facts with { Ordered = "120", CancelledRemainder = "30" }));
+    }
+
+    private static void ReplaceQuantity(SalesOrderDraftLine line, decimal value) =>
+        typeof(SalesOrderDraftLine).GetMethod("ReplaceQuantity", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(line, [Kg(value), value.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+
+    private static ForceClosureImpactSnapshot NoBlockImpact() =>
+        new(new string('f', 64), [new("inventory.active-allocations", "None", false)]);
+
+    /// <summary>A two-line approved order whose first line (100 kg) was closed at 90.</summary>
+    private static SalesOrderDraft ApprovedClosedDraft(out SalesOrderDraft self, out SalesOrderDraftLine closedLine, out LineClosureFacts closure)
+    {
+        var draft = Draft(out closedLine);
+        draft.AddLine(draft.Version, Line(Guid.NewGuid(), "100"), T0);
+        draft.Submit(draft.Version, "synthetic-preparer", T0);
+        draft.Approve(draft.Version, "synthetic-approver", T0);
+        closure = draft.CloseLine(draft.Version, Closer, Input(closedLine, "90"), T0);
+        self = draft;
+        return draft;
     }
 
     private static LineClosureInput Input(SalesOrderDraftLine line, string shipped, params string[] shippedBy) =>
@@ -165,17 +287,17 @@ public sealed class SalesOrderDraftLineClosureTests
     }
 
     /// <summary>A one-line draft (100 kg) at version 2.</summary>
-    private static SalesOrderDraft Draft(out SalesOrderDraftLine line, Guid? lineId = null)
+    private static SalesOrderDraft Draft(out SalesOrderDraftLine line, Guid? lineId = null, bool acceptance = false)
     {
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0, acceptance);
         line = draft.AddLine(draft.Version, Line(lineId ?? Guid.NewGuid(), "100"), T0);
         return draft;
     }
 
     /// <summary>The one-line draft submitted and approved: version 4.</summary>
-    private static SalesOrderDraft ApprovedDraft(out SalesOrderDraftLine line)
+    private static SalesOrderDraft ApprovedDraft(out SalesOrderDraftLine line, bool acceptance = false)
     {
-        var draft = Draft(out line);
+        var draft = Draft(out line, acceptance: acceptance);
         draft.Submit(draft.Version, "synthetic-preparer", T0);
         draft.Approve(draft.Version, "synthetic-approver", T0);
         return draft;

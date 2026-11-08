@@ -386,6 +386,47 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_line_is_not_closed_while_a_revision_awaits_re_approval_and_asks_no_owner()
+    {
+        var world = new World();
+        Owners(world);
+        var approved = await ApprovedTwoLineAsync(world);
+        var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
+        world.Deliveries = deliveries;
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+        // A quantity revision of the OTHER line puts the whole order back into re-approval (the closed quantity must stay settled).
+        var revised = await world.Service().ReviseQuantityAsync(approved.Draft.Id,
+            new SalesDraftQuantityRevisionRequest("5", "Test", [new(first, "1.5"), new(second, "2.25")]), Metadata("k-revise-open"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
+            new SalesDraftLineClosureRequest(revised.Detail.Draft.Version, second, "2.225"), Metadata("k-close-line-revising")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(refused));
+        Assert.Empty(deliveries.Asked);
+        Assert.Empty(world.Store.LineClosureRecords);
+    }
+
+    [Fact]
+    public async Task The_open_order_report_leaves_a_line_closed_with_a_shortfall_out_of_the_open_remainder()
+    {
+        var world = new World();
+        var accepted = await AcceptedTwoLineAsync(world);
+        var (first, second) = (accepted.Lines[0].LineId, accepted.Lines[1].LineId);
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+        Owners(world);
+        await world.Service().CloseLineAsync(accepted.Draft.Id, new SalesDraftLineClosureRequest(accepted.Draft.Version, second, "2.225"),
+            Metadata("k-close-line-report"));
+        world.Reports!.Orders.Add((await world.Store.FindDraftAsync(accepted.Draft.Id))!);
+
+        var group = Assert.Single((await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null))).Groups);
+
+        // The closed line's 0.025 is counted as cancelled, so only the untouched first line is open.
+        Assert.Equal([first], group.Lines.Select(line => line.LineId));
+    }
+
+    [Fact]
     public async Task A_lost_race_at_the_store_with_no_winner_under_the_key_is_409_concurrent_change_and_nothing_is_closed()
     {
         var world = new World();

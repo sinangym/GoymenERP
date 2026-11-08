@@ -2119,6 +2119,21 @@ public sealed partial class SalesStore(
                 throw new InvalidOperationException("Kayıtlı kalan kararı isteği olmadan duruyor.");
             }
 
+            // SAT-D17: every recorded line closure in recorded order (its draft version), BEFORE the approval axis (its version floor
+            // counts them) and BEFORE the force-closure (whose snapshot of a closed line is its closure's own triple); the stored line
+            // position must be the line's.
+            foreach (var closure in lineClosures.Where(candidate => candidate.DraftId == row.Id).OrderBy(candidate => candidate.DraftVersion))
+            {
+                if (draft.Lines.SingleOrDefault(line => line.Id == closure.LineId)?.LineNo != closure.LineNo)
+                {
+                    throw new InvalidOperationException("Kayıtlı satır kapatmasının satır sırası siparişin satırıyla uyuşmuyor.");
+                }
+
+                draft.RestoreLineClosure(new LineClosureFacts(closure.LineId, closure.BasisRevision, closure.Ordered,
+                    closure.ShippedAtClosure, closure.CancelledRemainder, (DeliveryToleranceBand)closure.Band, closure.ClosedBy,
+                    closure.ClosedAtUtc));
+            }
+
             // DEC-SAL-005: the recorded cancellation, BEFORE the approval axis (its version floor counts it as one step). The
             // header's lifecycle state and the appended row must agree: a cancelled header without its row, or a row beside a
             // Draft header, is refused, not repaired.
@@ -2179,20 +2194,6 @@ public sealed partial class SalesStore(
 
                 draft.RestoreOverDeliveryApproval(new OverDeliveryApprovalFacts(approval.LineId, approval.ApprovalNo, approval.BasisRevision,
                     approval.Ordered, approval.ApprovedShipped, approval.ApprovedBy, approval.ApprovedAtUtc));
-            }
-
-            // SAT-D17: every recorded line closure in recorded order (its draft version), BEFORE the approval axis (its version floor
-            // counts them); the stored line position must be the line's.
-            foreach (var closure in lineClosures.Where(candidate => candidate.DraftId == row.Id).OrderBy(candidate => candidate.DraftVersion))
-            {
-                if (draft.Lines.SingleOrDefault(line => line.Id == closure.LineId)?.LineNo != closure.LineNo)
-                {
-                    throw new InvalidOperationException("Kayıtlı satır kapatmasının satır sırası siparişin satırıyla uyuşmuyor.");
-                }
-
-                draft.RestoreLineClosure(new LineClosureFacts(closure.LineId, closure.BasisRevision, closure.Ordered,
-                    closure.ShippedAtClosure, closure.CancelledRemainder, (DeliveryToleranceBand)closure.Band, closure.ClosedBy,
-                    closure.ClosedAtUtc));
             }
 
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.

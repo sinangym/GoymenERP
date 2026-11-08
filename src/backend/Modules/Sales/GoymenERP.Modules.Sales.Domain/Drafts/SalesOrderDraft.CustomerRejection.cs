@@ -86,6 +86,13 @@ public sealed partial class SalesOrderDraft
             throw StateConflict("Bu geçiş öncesi sipariş için müşteri kabulü ya da reddi aranmaz.");
         }
 
+        if (lineClosures.Count > 0)
+        {
+            // SAT-D17 / SAT-D217 (fail closed): a rejection would send the order back to an older revision, whose quantity a closed
+            // line no longer matches; a line closes only over a settled revision, so nothing is rejected after one is closed.
+            throw StateConflict("Eksikle kapatılan satırı olan siparişte müşteri reddi kaydedilmez.");
+        }
+
         if (IsCustomerAccepted)
         {
             throw StateConflict("Siparişin güncel revizyonu müşteri tarafından kabul edilmiş; reddedilemez.");

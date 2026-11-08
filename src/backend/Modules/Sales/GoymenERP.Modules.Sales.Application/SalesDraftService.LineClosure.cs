@@ -20,6 +20,14 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <see cref="SalesDraftProblemCodesV1.LineClosureNotApplicable"/>): the remainder is counted as cancelled, never moved.</item>
 /// <item><b>SAT-D213-like identity:</b> the command names the shipped total the user saw; when the owner's total differs, nothing
 /// is closed (recorded 409).</item>
+/// <item><b>Only a settled order:</b> a line closes only while the order is Approved with no revision awaiting a decision and
+/// no customer-rejection fallback (the recorded 409 <see cref="SalesDraftProblemCodesV1.StateConflict"/>); the measured quantity is
+/// then the current approved one, which an approval can no longer change afterwards (submit and approve also refuse a changed
+/// closed line, SAT-D217).</item>
+/// <item><b>Cross-module race (documented, as the force-closure's):</b> the delivery owner's shipped total, the loading read and the
+/// allocations are read before the single save and are not locked across modules (SAT-D209: no new port). A shipment the owner
+/// records between that read and the save is not seen; the owner's own closed-line refusal (SAT-D215) is the other half, and the
+/// remainder is only counted as cancelled, never a movement, so the race creates no stock or money event.</item>
 /// <item><b>SAT-D216 (fail-closed):</b> the closer must be none of the actors the delivery owner names for the line's shipments.
 /// An owner that does not name them (the Logistics owner on main does not — SAT-D209) is the recorded 409
 /// <see cref="SalesDraftProblemCodesV1.LineClosureShipperUnverified"/>.</item>
@@ -151,8 +159,9 @@ public sealed partial class SalesDraftService
     {
         if (Basis(draft) is not { } basis)
         {
-            // A revision awaits re-approval and the last approved quantity cannot be taken exactly: nothing is judged. A transient
-            // condition: NOT recorded, so the key is not burned.
+            // Defensive only: the domain's RequireLineClosable (run just before) already refuses an order that is not Approved with
+            // no pending revision and no customer-rejection fallback, so on this path the basis is the current approved lines. Were
+            // it ever absent, nothing is judged (fail closed); a transient condition, NOT recorded, so the key is not burned.
             throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureNotApplicable,
                 [new("lineId", SalesDraftProblemCodesV1.LineClosureNotApplicable)]);
         }

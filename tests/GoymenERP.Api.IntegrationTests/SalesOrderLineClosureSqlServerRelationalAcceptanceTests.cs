@@ -229,6 +229,35 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "Closed"), (answer.Outcome, answer.ApprovalState));
     }
 
+    [SqlServerFact]
+    public async Task A_force_closure_after_a_line_closure_is_stored_with_the_closure_triple_and_the_order_loads_again_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var line = Assert.Single(draft.Lines);
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.CloseLineAsync(run.SalesEnvelope("k-close", "SENTETIK-closer"), Hash("k-close"), SalesDraftCommands.CloseLineV1,
+                draft.Id, (d, input, now) => d.CloseLine(4, "SENTETIK-closer", input, now), LineClosed,
+                (_, _) => Task.FromResult(new LineClosureInput(line.Id, 0, "100", 90m, DeliveryToleranceBand.Approval, [Shipper])));
+            // The owner now names 95 (shipped moved after the closure): the closed line is still recorded as 100 / 90 / 10.
+            await scope.Store.ForceCloseDraftAsync(run.SalesEnvelope("k-force", "SENTETIK-force-closer"), Hash("k-force"), SalesDraftCommands.ForceCloseV1,
+                draft.Id, (d, plan, now) => d.ForceClose(5, "SENTETIK-force-closer", "SENTETIK neden", plan.Impact, plan.Lines, now),
+                new SalesDraftStateAudit("sales.order-draft.force-closed.v1", "ForceClose", "SENTETIK zorla kapatıldı"),
+                (_, _) => Task.FromResult(new SalesForceClosurePlan(new ForceClosureImpactSnapshot(new string('e', 64),
+                    [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None, false)]),
+                    [new ForceClosureLineInput(line.Id, 95m)])));
+        }
+
+        // The save-load round trip: the store rebuilds the closure first, then the force-closure, and the order loads.
+        await using var reader = run.SalesStore(CompanyA);
+        var reloaded = (await reader.Store.FindDraftAsync(draft.Id))!;
+        var snapshot = Assert.Single(reloaded.ForceClosure!.Lines);
+        Assert.Equal((SalesDraftState.Closed, 6L, "100", "90", "10"),
+            (reloaded.State, reloaded.Version, snapshot.Ordered, snapshot.Shipped, snapshot.ClosedRemainder));
+        Assert.Single(reloaded.LineClosures);
+    }
+
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
     /// <summary>A one-line draft (the given kg quantity) from SYNTHETIC owner snapshots in the approved kg unit: version 2.</summary>

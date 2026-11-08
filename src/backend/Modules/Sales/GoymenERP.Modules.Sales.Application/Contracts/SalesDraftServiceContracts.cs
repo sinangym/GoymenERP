@@ -217,8 +217,10 @@ public static class SalesDraftProblemCodesV1
     public const string OverDeliveryPolicyUnavailable = "over_delivery_policy_unavailable";
 
     /// <summary>
-    /// 409 (SAT-D17 / SAT-D16): the line is not closable with a shortfall now — nothing shipped, no shortfall, a revision awaits
-    /// re-approval (no measured quantity), or the order's lifecycle forbids it. Terminal for the key (recorded, replayed).
+    /// 409 (SAT-D17 / SAT-D16): the line is not closable with a shortfall now. Recorded (terminal for the key, replayed) only when
+    /// the owner's shipped total is at or above the measured quantity (no shortfall); nothing shipped yet is a transient condition and
+    /// is NOT recorded. An order that is not Approved, awaits a revision decision or fell back to an older accepted revision is the
+    /// recorded <c>state_conflict</c>, not this code.
     /// </summary>
     public const string LineClosureNotApplicable = "sales_line_closure_not_applicable";
 
@@ -230,7 +232,8 @@ public static class SalesDraftProblemCodesV1
 
     /// <summary>
     /// 409 (SAT-D17): the delivery owner's shipped total of the line now differs from the total the command names — nothing is
-    /// closed over a total the user did not see. Terminal for the key.
+    /// closed over a total the user did not see. NOT recorded: the total moved, the user reads the status again and closes with the
+    /// new total under the same or a new key.
     /// </summary>
     public const string LineClosureShippedChanged = "sales_line_closure_shipped_changed";
 

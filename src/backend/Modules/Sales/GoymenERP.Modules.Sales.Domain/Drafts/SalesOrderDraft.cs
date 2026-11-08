@@ -736,6 +736,7 @@ public sealed partial class SalesOrderDraft
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
         RequireSubcontractPricesEntered();
+        RequireClosedLinesIntact();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
@@ -761,6 +762,7 @@ public sealed partial class SalesOrderDraft
         var actor = RequireActor(actorId);
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
+        RequireClosedLinesIntact();
         if (ApprovalState != InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
@@ -1356,6 +1358,23 @@ public sealed partial class SalesOrderDraft
         {
             if (input is not null && lineClosures.Any(closure => closure.LineId == input.LineId)
                 && lines.SingleOrDefault(candidate => candidate.Id == input.LineId) is { } line && line.Quantity.Value != input.Quantity)
+            {
+                throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+            }
+        }
+    }
+
+    /// <summary>
+    /// SAT-D167 / SAT-D215 defence in depth: a line closed with a shortfall keeps the quantity its closure measured. A submit or an
+    /// approval that would stand over a different quantity of a closed line (a state the closure entry itself refuses) is a state
+    /// conflict, so an approval never changes a closed line.
+    /// </summary>
+    private void RequireClosedLinesIntact()
+    {
+        foreach (var closure in lineClosures)
+        {
+            if (lines.SingleOrDefault(candidate => candidate.Id == closure.LineId) is { } line
+                && !string.Equals(line.QuantityText, closure.Ordered, StringComparison.Ordinal))
             {
                 throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
             }

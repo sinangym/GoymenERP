@@ -27,7 +27,7 @@ public sealed partial class SalesOrderDraft
 
     /// <summary>
     /// The closure's own preconditions WITHOUT the fact — the expected version, the lifecycle (neither cancelled nor closed), an
-    /// order approved at least once (nothing ships on a never-approved one), the line and its not being closed yet — so the caller
+    /// order that is Approved now (no pending revision, no customer-rejection fallback), the line and its not being closed yet — so the caller
     /// refuses a stale, terminal, never-approved, unknown-line or already closed command before it asks any owner.
     /// </summary>
     public SalesOrderDraftLine RequireLineClosable(long expectedVersion, Guid lineId)
@@ -39,9 +39,12 @@ public sealed partial class SalesOrderDraft
             throw StateConflict("Kapalı siparişin satırı ayrıca kapatılmaz.");
         }
 
-        if (ApprovalState != InternalApprovalState.Approved && archivedRevisions.Count == 0)
+        if (ApprovalState != InternalApprovalState.Approved || CustomerAcceptedFallback is not null)
         {
-            throw StateConflict("Hiç onaylanmamış siparişin satırı kapatılmaz.");
+            // Fail closed: the line's measured quantity is the CURRENT approved one only while the order is Approved with no pending
+            // revision and no customer-rejection fallback; a closure over a revision still to be decided (or over the older accepted
+            // one) could be changed by the approval afterwards, so it is refused until the order is settled.
+            throw StateConflict("Satır yalnız onaylı ve karar bekleyen revizyonu olmayan siparişte kapatılır.");
         }
 
         var line = lines.SingleOrDefault(candidate => candidate.Id == lineId)
@@ -83,6 +86,12 @@ public sealed partial class SalesOrderDraft
             throw new ArgumentException("Ölçülen miktar ya da sevk toplamı satırın biriminde geçerli değil.", nameof(input));
         }
 
+        if (!string.Equals(Text(ordered), line.QuantityText, StringComparison.Ordinal))
+        {
+            // The measured quantity is the line's current approved one (the closure entry accepts only a settled order).
+            throw new ArgumentException("Ölçülen miktar satırın onaylı miktarıyla aynı olmalıdır.", nameof(input));
+        }
+
         if (shipped.IsZero || !ordered.IsGreaterThan(shipped))
         {
             throw new SalesRuleException(SalesRuleCodes.StateConflict, "Satırda kapatılacak bir eksik teslim yok.");
@@ -113,6 +122,7 @@ public sealed partial class SalesOrderDraft
             || !TryExact(facts.ShippedAtClosure, out var shippedValue) || !TryLineQuantity(line, shippedValue, out var shipped)
             || !TryExact(facts.CancelledRemainder, out var remainderValue) || !TryLineQuantity(line, remainderValue, out var remainder)
             || !string.Equals(facts.Ordered, Text(ordered), StringComparison.Ordinal)
+            || !string.Equals(facts.Ordered, line.QuantityText, StringComparison.Ordinal)
             || !string.Equals(facts.ShippedAtClosure, Text(shipped), StringComparison.Ordinal)
             || !string.Equals(facts.CancelledRemainder, Text(remainder), StringComparison.Ordinal)
             || shipped.IsZero || !ordered.IsGreaterThan(shipped) || ordered.Subtract(shipped) != remainder
