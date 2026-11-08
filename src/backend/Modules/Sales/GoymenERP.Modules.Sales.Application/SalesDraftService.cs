@@ -1522,6 +1522,17 @@ public sealed partial class SalesDraftService(
                 _ => new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable),
             };
         }
+        catch (SettingsPrerequisiteException exception)
+        {
+            // B-31: the eligibility reads the line's unit profiles from the Settings owner and lets its refusal through;
+            // the same answers the order unit's own profile read below gives, never an unmapped 500.
+            throw Settings(exception, unitField, SettingsPrerequisiteCodesV1.UnitProfileNotFound, "unsupported_unit");
+        }
+        catch (InvalidOperationException)
+        {
+            // B-31: a product record the owner cannot restore is the owner being unavailable, not a server fault of Sales.
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable);
+        }
 
         if (eligibility.Snapshot is not { } snapshot)
         {
