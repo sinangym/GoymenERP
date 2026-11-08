@@ -59,7 +59,7 @@ public sealed partial class SalesInvoice
     public void RestoreMatch(SalesInvoiceMatchFacts facts)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        if (State != SalesInvoiceState.Approved || Match is not null || !MatchIsConsistent(facts))
+        if (State is not (SalesInvoiceState.Approved or SalesInvoiceState.Finalized) || Match is not null || !MatchIsConsistent(facts))
         {
             throw new InvalidOperationException("Kayıtlı resmî fatura eşleşmesi okunamadı.");
         }

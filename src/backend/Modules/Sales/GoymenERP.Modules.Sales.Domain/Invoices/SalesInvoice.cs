@@ -6,7 +6,8 @@ namespace GoymenERP.Modules.Sales.Domain.Invoices;
 /// <summary>
 /// The lifecycle of a sales invoice. API-32 records <see cref="Draft"/>; API-33 adds the internal approval
 /// (<see cref="PendingApproval"/>, <see cref="Approved"/>, <see cref="Rejected"/>) and the pre-approval <see cref="Cancelled"/>;
-/// the official-document match (API-35) and the finalisation (API-36) add their states in their own slices — never a silent jump.
+/// the official-document match (API-35) records no state; the finalisation (API-36) adds <see cref="Finalized"/> — never a silent jump.
+/// <c>Approved → Finalized</c> needs the recorded match.
 /// <c>Draft → PendingApproval → Approved | Rejected</c>; <c>Draft | PendingApproval → Cancelled</c>. Rejected and Cancelled are
 /// terminal and release the shipment shares (SAT-D94); a rejected draft is corrected as a new draft.
 /// </summary>
@@ -17,6 +18,9 @@ public enum SalesInvoiceState
     Approved = 3,
     Rejected = 4,
     Cancelled = 5,
+
+    /// <summary>API-36 (SAT-D208): the matched invoice is final; its open items are offered to Finance. Terminal and immutable.</summary>
+    Finalized = 6,
 }
 
 /// <summary>
@@ -165,7 +169,8 @@ public sealed partial class SalesInvoice
     /// True when the shares are held by this invoice (AT-055, SAT-D94): a draft, a pending or an approved invoice. A rejected or
     /// cancelled invoice has released them (the store stamps the line's <c>ReleasedAtUtc</c> in the same save).
     /// </summary>
-    public bool HoldsShares => State is SalesInvoiceState.Draft or SalesInvoiceState.PendingApproval or SalesInvoiceState.Approved;
+    public bool HoldsShares => State is SalesInvoiceState.Draft or SalesInvoiceState.PendingApproval or SalesInvoiceState.Approved
+        or SalesInvoiceState.Finalized;
 
     public string CreatedBy { get; }
 
@@ -398,7 +403,8 @@ public sealed partial class SalesInvoice
         {
             SalesInvoiceState.Draft => submittedNone && decidedNone && cancelledNone,
             SalesInvoiceState.PendingApproval => submitted && decidedNone && cancelledNone,
-            SalesInvoiceState.Approved => submitted && decided && facts.DecisionReason is null && cancelledNone && decidedByOther,
+            SalesInvoiceState.Approved or SalesInvoiceState.Finalized => submitted && decided && facts.DecisionReason is null && cancelledNone
+                && decidedByOther,
             SalesInvoiceState.Rejected => submitted && decided && cancelledNone && decidedByOther,
             SalesInvoiceState.Cancelled => cancelled && decidedNone,
             _ => false,

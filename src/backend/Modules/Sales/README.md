@@ -640,6 +640,21 @@ SAT-D208) and the Accounting seam are the next slices; this one moves no money a
 | Evidence | Unit: `SalesDraftServiceTests.Invoices` (tolerance edges, difference approval, self-approval, mismatch, unknown / already matched / 503, replay), `SalesPersistenceModelTests`. HTTP: `SalesInvoiceHttpAcceptanceTests`. Real SQL (`SalesInvoiceSqlServerRelationalAcceptanceTests`, two facts; CI only): one save with attempt and audit, append-only table, checks and the 51225 Down refusal. OpenAPI: `OpenApiContractGenerationTests`. |
 | Open points | NEEDS-SINAN: which invoice amount is compared (payable here); whether the excess approval needs its own permission; the Finance-side owner adapter for the read port (the route is 503 until it exists); the Ayarlar link for the tolerance (SAT-D209). |
 
+## Finalisation and the Finance hand-off (S5 API-36 — Fatura çekirdeği 4; SAT-D208, SAT-D227, Sinan S6)
+
+| Concern | Rule |
+|---|---|
+| Routes | `POST /api/v1/sales/invoices/{id}/finalization` (`FinalizeSalesInvoiceV1`, K3) and `/finance-admission` (`ResendSalesInvoiceFinanceAdmissionV1`, the re-drive). Strict body `{expectedVersion}`; 200 + the invoice with its `finalization` ledger; the same key again is 200 + replay headers. |
+| Authority | The NEW `sales.invoices.finalize` (manifest v24, shell 1.17) — registered, company-wide, not Critical, granted to NO role (a human gate). Fences before the reads, after them and right before the single save. |
+| States | Approved (with its official match) → Finalized (version + 1). Without a match: 409 `sales_invoice_match_required` (data, NOT recorded; the same key asks again once the match exists). A foreign-currency instalment plan whose TL split cannot be formed: 422 `sales_invoice_instalment_functional_invalid`. |
+| SAT-D227 | Each instalment's TL value is its invoice-currency amount at the invoice's own rate, rounded half away from zero at the TL scale; the last instalment takes the remainder so the instalments add up to the frozen TL payable (golden: 100.01 USD, 33.33 / 33.33 / 33.35 USD at 34.5678 → 1152.14 / 1152.14 / 1152.85 = 3457.13 TL). |
+| One save | The invoice (state, version), its `sales.InvoiceFinalizations` ledger row (Waiting, plan with generated open-item and instalment ids), the `sales.OutboxMessages` event `sales.invoice.finalized.v1`, the attempt and the audit event. |
+| Finance hand-off | Sales declares `ISalesFinanceAdmissionPortV1`; the host adapts it to Finance's `IFinanceInvoiceOpenItemAdmissionPortV1` with a fresh company-wide `sales.invoices.finalize` measurement. The hand-off is a SECOND, separate ledger save (no version step); a missing, throwing or unavailable owner leaves the invoice "Finans kabulü bekliyor" and never admits (SAT-D208). Key `sales-invoice:{invoiceId}:{version}`, a re-drive appends `:{attempt}`; an admitted invoice is never offered again. |
+| DB immutability | `TR_Invoices_Guard` (altered): Approved → Finalized only with one version step, the decision columns untouched and a match row present; a Finalized header is immutable (**51223**). `TR_InvoiceFinalizations_Guard` (**51228**): no delete, immutable facts and plan, forward-only ledger. `TR_OutboxMessages_Guard` (**51229**): append-only. |
+| Migration | `AddSalesInvoiceFinalization` (dotnet ef + hand-written triggers). Down refuses with **51227** while a finalized invoice, ledger row, outbox message or their attempts exist (forward fix). 51227–51229 were searched repo-wide; no other lane's open PR was checked. |
+| Evidence | Unit: `SalesDraftServiceTests.InvoiceFinalization`, `SalesInvoiceInstalmentCalculatorTests`, `SalesPersistenceModelTests`, `SalesShellCapabilityProviderContractTests`. HTTP: `SalesInvoiceHttpAcceptanceTests`. Real SQL (CI only): `SalesInvoiceSqlServerRelationalAcceptanceTests`. OpenAPI: `OpenApiContractGenerationTests`. |
+| Open points | NEEDS-SINAN: the background re-drive scan of waiting invoices (no system actor / hosted-service infrastructure yet; the explicit re-drive route exists); the Accounting B-04b axis is the fixed constant `no_source`. |
+
 ## Sales reports (API-41 / API-42, UI-80; KPI No 124, No 25, SAT-D25)
 
 Read-only, in every module: no attempt, audit event, version or cache effect (measured by the real-SQL facts). Wave S6 of the plan

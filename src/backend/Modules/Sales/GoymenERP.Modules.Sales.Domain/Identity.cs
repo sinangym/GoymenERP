@@ -407,6 +407,12 @@ public static class SalesRuleCodes
     /// <summary>API-35: an approval was asked although the difference is within the tolerance.</summary>
     public const string InvoiceMatchDifferenceNotApplicable = "sales_invoice_match_difference_not_applicable";
 
+    /// <summary>API-36: an invoice is finalised only after its official document match is recorded (SAT-D89/D229).</summary>
+    public const string InvoiceMatchRequired = "sales_invoice_match_required";
+
+    /// <summary>API-36 (SAT-D227): the TL split of the instalments does not add up to the TL payable total.</summary>
+    public const string InvoiceInstalmentFunctionalInvalid = "sales_invoice_instalment_functional_invalid";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

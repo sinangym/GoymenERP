@@ -180,6 +180,8 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
     [InlineData("approval", "approve")]
     [InlineData("rejection", "reject")]
     [InlineData("cancellation", "cancel")]
+    [InlineData("finalization", "finalize")]
+    [InlineData("finance-admission", "finance-resend")]
     public async Task Each_invoice_command_route_answers_200_and_a_replay_carries_the_replay_headers(string route, string command)
     {
         var invoiceId = Guid.NewGuid();
@@ -217,6 +219,10 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
     [InlineData("cancellation", "{\"expectedVersion\":\"1\",\"extra\":true}")]
     [InlineData("cancellation", "{\"expectedVersion\":\"01\"}")]
     [InlineData("approval", "{}")]
+    [InlineData("finalization", "{\"expectedVersion\":\"4\",\"reason\":\"x\"}")]
+    [InlineData("finalization", "{}")]
+    [InlineData("finance-admission", "{\"expectedVersion\":\"04\"}")]
+    [InlineData("finance-admission", "{\"expectedVersion\":\"4\",\"extra\":true}")]
     public async Task An_invoice_command_body_that_is_not_strict_answers_400_before_the_service(string route, string json)
     {
         var service = new StubInvoiceService();
@@ -319,6 +325,24 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
     }
 
+    [Theory]
+    [InlineData("finalization", 409, "sales_invoice_match_required")]
+    [InlineData("finalization", 409, "version_conflict")]
+    [InlineData("finalization", 422, "sales_invoice_instalment_functional_invalid")]
+    [InlineData("finance-admission", 409, "state_conflict")]
+    public async Task A_finalization_refusal_carries_its_stable_code(string route, int status, string code)
+    {
+        var service = new StubInvoiceService { State = (_, _) => throw new SalesDraftServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(StatePost(Guid.NewGuid(), route, "{\"expectedVersion\":\"4\"}", "SENTETIK-refused-final"));
+
+        Assert.Equal(status, (int)response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
+    }
+
     [Fact]
     public async Task An_unavailable_official_invoice_provider_answers_the_platform_503_without_the_provider_code()
     {
@@ -413,6 +437,14 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             Record("match", invoiceId, request.ExpectedVersion,
                 $"{request.OfficialInvoiceNo}|{request.Ettn}|{request.ApproveDifference}|{request.DifferenceReason}", metadata);
+
+        public Task<SalesInvoiceCommandResult> FinalizeInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            Record("finalize", invoiceId, request.ExpectedVersion, request.Reason, metadata);
+
+        public Task<SalesInvoiceCommandResult> ResendFinanceAdmissionAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            Record("finance-resend", invoiceId, request.ExpectedVersion, request.Reason, metadata);
 
         private Task<SalesInvoiceCommandResult> Record(string command, Guid invoiceId, string version, string? reason, SalesCommandMetadata metadata)
         {

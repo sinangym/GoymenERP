@@ -136,7 +136,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // hosted-service change.
         // DEC-FIN-010 / SAT-D169 maps the Settings exchange-rate routes; no registration, generation, network or hosted-service
         // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
-        "d219b1f55a22def9d2be84284f8879dbedfca95e9404fbe19086ef430c619e77";
+        // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
+        // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
+        "f4d42b16f2f1b9facc14f4c3994516ed3252e6b69a2ca45d5afb5c49a322afa3";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -457,7 +459,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // share release in the same save, the recorded and replayed terminal refusal), kept ordinal-sorted (d9564cc8... -> 0030e572...).
                 // S5 API-35 (Fatura cekirdegi 3): +2 SalesInvoice facts (the official match's one save with attempt and audit, the untouched Approved
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
-                "be1b2f40b8dd91881b27eea85f999b707a9e417afc04daa4e661ab75c9cd60ee",
+                // S5 API-36 (Fatura kesinlestirme): +1 SalesInvoice fact (the finalization ledger and outbox freeze triggers, the one-save finalize, the 51227
+                // rollback refusal), kept ordinal-sorted (be1b2f40... -> e7773f28...).
+                "e7773f28ba8476290f30edc7ad080e8eec8a11b5277b6942b1147ef9dc8b1ea4",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -586,7 +590,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // attempts stay append-only; TR_Invoices_Guard / TR_InvoiceLines_Guard enforce the same in SQL (1a8c08ee... -> ab9a9588...).
                 // API-35: the append-only InvoiceMatches tenant rows (one per invoice, unique official number and ETTN per company) under the same
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
-                "5d465acfb9fc8465d793fb5ee83d692f7f2e582ae893915b8d0fc2400d738c26",
+                // API-36: the append-only InvoiceFinalizations ledger and final instalment rows under the same company filter; no bypass (5d465acf... -> 64d66c31...).
+                "64d66c3106983a02616c0af2eeaef771f0db5997866490b6863143851b9781c9",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1593,8 +1598,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // service factory (company context resolved, never registered); provider branch and token counts unchanged.
                     // API-35 (Fatura cekirdegi 3): the invoice service factory also receives the optional official-invoice read port and the
                     // tolerance policy (DI-only, none registered yet; the match is 503 fail-closed); provider branch and token counts unchanged.
+                    // API-36 (Fatura kesinlestirme): the invoice store also feeds the finalize path and the optional finance admission port (DI-only,
+                    // fail-closed 503 when unregistered); provider branch and token counts unchanged (e6274962... -> a3fdee0a...).
                     new(
-                        "e62749629334b13196d3553097ae3f8913744cec34df5b1354da289d4a27b591",
+                        "a3fdee0a2540fddab767825c85c1bbcecee58cb67177699c5cdbf34f896b4f6a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2399,6 +2406,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("78f3bf9588b31a0a04908076237bfd611ce8937b59fc9ba6c0179998b44a1574",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // S5 API-36 (Fatura kesinlestirme): Up alters TR_Invoices_Guard (header may also gain the Finalized state) and creates the append-only
+                // finalization ledger guard (51228) and the outbox freeze guard (51229); the Down's raw SQL is the forward-fix refusal (51227) while any
+                // finalization exists, the DROP of both triggers, and the restore of the previous header guard.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108132917_AddSalesInvoiceFinalization.cs"] =
+                    new("0b22b334e24cbd141edbe48f15f25786fdf213401f1ac540dcf42715ac76f9fe",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 6 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

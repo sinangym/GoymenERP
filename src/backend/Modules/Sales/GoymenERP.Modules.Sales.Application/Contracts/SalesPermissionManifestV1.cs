@@ -13,8 +13,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 public static class SalesPermissionManifestV1
 {
     // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write; v19 (SAT-D32 /
-    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match.
-    public const int Version = 23;
+    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match; v24 (S5 API-36, Fatura çekirdeği 4): sales.invoices.finalize.
+    public const int Version = 24;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -204,6 +204,14 @@ public static class SalesPermissionManifestV1
     public const string InvoicesMatch = "sales.invoices.match";
 
     /// <summary>
+    /// S5 API-36 (Fatura çekirdeği 4; SAT-D208, Sinan S6): POST /api/v1/sales/invoices/{id}/finalization and …/finance-admission (the
+    /// re-drive of the Finance hand-off). Its own SEPARATE name: the invoice write, read, approve and match names and the order names do
+    /// NOT confer it, and it confers none of them. Company-wide; registered, granted to no role (the grant is a human gate). It is also
+    /// the authority the host measures when Finance admits the open items on Sales' behalf.
+    /// </summary>
+    public const string InvoicesFinalize = "sales.invoices.finalize";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80): GET /api/v1/sales/reports/open-orders (KPI No 124, the open order quantity), …/lost-
     /// opportunities (SAT-D25 lost quotes) and …/price-variance (No 25). Its own name: the order, quote, invoice and price names do
     /// NOT confer it, and it confers none of them — a report's amount additionally needs <see cref="OrdersPriceRead"/> (withheld
@@ -216,6 +224,6 @@ public static class SalesPermissionManifestV1
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
             OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
-            QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, InvoicesApprove, InvoicesMatch, ReportsRead }
+            QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, InvoicesApprove, InvoicesMatch, InvoicesFinalize, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

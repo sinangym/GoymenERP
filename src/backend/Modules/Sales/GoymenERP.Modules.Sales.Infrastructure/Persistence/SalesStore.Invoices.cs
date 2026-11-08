@@ -117,6 +117,13 @@ public sealed partial class SalesStore : ISalesInvoiceStore
             invoice.RestoreMatch(SalesInvoiceRows.ToMatchFacts(match));
         }
 
+        var finalization = await dbContext.InvoiceFinalizations.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.InvoiceId == invoiceId, cancellationToken);
+        if (finalization is not null)
+        {
+            invoice.RestoreFinalization(SalesInvoiceRows.ToFinalizationFacts(finalization));
+        }
+
         return invoice;
     }
 
@@ -143,12 +150,19 @@ public sealed partial class SalesStore : ISalesInvoiceStore
             .ToLookup(line => line.InvoiceId);
         var matches = (await dbContext.InvoiceMatches.AsNoTracking().Where(match => ids.Contains(match.InvoiceId)).ToListAsync(cancellationToken))
             .ToDictionary(match => match.InvoiceId);
+        var finalizations = (await dbContext.InvoiceFinalizations.AsNoTracking().Where(item => ids.Contains(item.InvoiceId)).ToListAsync(cancellationToken))
+            .ToDictionary(item => item.InvoiceId);
         var items = page.Select(row =>
         {
             var restored = SalesInvoiceRows.Restore(row, [.. lines[row.Id]]);
             if (matches.TryGetValue(row.Id, out var matchRow))
             {
                 restored.RestoreMatch(SalesInvoiceRows.ToMatchFacts(matchRow));
+            }
+
+            if (finalizations.TryGetValue(row.Id, out var finalizationRow))
+            {
+                restored.RestoreFinalization(SalesInvoiceRows.ToFinalizationFacts(finalizationRow));
             }
 
             return restored;
@@ -247,9 +261,9 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireInvoiceStateCommand(commandName);
-        if (commandName == SalesInvoiceCommands.MatchV1)
+        if (commandName is SalesInvoiceCommands.MatchV1 or SalesInvoiceCommands.FinalizeV1 or SalesInvoiceCommands.ResendFinanceV1)
         {
-            throw new ArgumentException("Resmî eşleştirme faturanın durumunu değiştirmez; MatchInvoiceAsync kullanılır.", nameof(commandName));
+            throw new ArgumentException("Resmî eşleştirme, kesinleştirme ve Finans yeniden gönderimi kendi mağaza yöntemini kullanır.", nameof(commandName));
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -452,9 +466,10 @@ public sealed partial class SalesStore : ISalesInvoiceStore
     private static void RequireInvoiceStateCommand(string commandName)
     {
         if (commandName is not (SalesInvoiceCommands.SubmitV1 or SalesInvoiceCommands.ApproveV1 or SalesInvoiceCommands.RejectV1
-            or SalesInvoiceCommands.CancelV1 or SalesInvoiceCommands.MatchV1))
+            or SalesInvoiceCommands.CancelV1 or SalesInvoiceCommands.MatchV1 or SalesInvoiceCommands.FinalizeV1
+            or SalesInvoiceCommands.ResendFinanceV1))
         {
-            throw new ArgumentException("Yalnız onaya gönderme, onay, ret, iptal ve resmî eşleştirme faturanın deneme kaydını taşır.", nameof(commandName));
+            throw new ArgumentException("Yalnız onaya gönderme, onay, ret, iptal, resmî eşleştirme, kesinleştirme ve Finans yeniden gönderimi faturanın deneme kaydını taşır.", nameof(commandName));
         }
     }
 
@@ -528,5 +543,17 @@ public sealed partial class SalesStore : ISalesInvoiceStore
             needsReview = line.Functional?.NeedsReview,
         }).ToArray(),
         instalments = invoice.Instalments.Select(item => new { item.SequenceNo, item.DueDate, amount = item.Amount.Amount }).ToArray(),
+        finalization = invoice.Finalization is { } finalization
+            ? new
+            {
+                finalization.AdmissionId,
+                finalization.FinalizedVersion,
+                finalization.FinalizedBy,
+                financeStatus = finalization.FinanceStatus.ToString(),
+                finalization.AttemptCount,
+                finalization.LastOutcome,
+                plan = finalization.Plan.Select(item => new { item.SequenceNo, item.DueDate, item.Amount, item.FunctionalAmount }).ToArray(),
+            }
+            : null,
     }, Json);
 }

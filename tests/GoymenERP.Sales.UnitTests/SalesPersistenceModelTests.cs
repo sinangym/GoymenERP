@@ -127,7 +127,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoices", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceApproval", StringComparison.Ordinal));
-        Assert.Equal("20261108091314_AddSalesInvoiceOfficialMatch", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceOfficialMatch", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceFinalization", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -172,6 +173,37 @@ public sealed class SalesPersistenceModelTests
         var design = context.GetService<IDesignTimeModel>().Model;
         Assert.Contains(design.FindEntityType(typeof(InvoiceMatchRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceMatches_Amounts" && check.Sql == SalesDbContext.InvoiceMatchAmountsConstraint);
         Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command" && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.MatchV1, StringComparison.Ordinal));
+    }
+
+    /// <summary>API-36 PR4: the invoice guard is altered, two triggers are added (51228, 51229); Down is a forward fix (51227) first.</summary>
+    [Fact]
+    public void The_invoice_finalization_migration_alters_one_trigger_adds_two_and_its_down_refuses_with_51227_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceFinalization();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(3, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("ALTER TRIGGER [sales].[TR_Invoices_Guard]", StringComparison.Ordinal) && op.Sql.Contains("51223", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_InvoiceFinalizations_Guard", StringComparison.Ordinal) && op.Sql.Contains("51228", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_OutboxMessages_Guard", StringComparison.Ordinal) && op.Sql.Contains("51229", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51227,", guard.Sql, StringComparison.Ordinal);
+        Assert.Equal(3, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().Count());
+        Assert.DoesNotContain("DROP TRIGGER", guard.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_invoice_finalization_model_keeps_one_ledger_per_invoice_and_widens_the_state_and_command_checks()
+    {
+        using var context = Context();
+        var ledger = context.Model.FindEntityType(typeof(InvoiceFinalizationRow))!;
+        Assert.Equal(["CompanyId", "InvoiceId"], ledger.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(ledger, "UX_InvoiceFinalizations_AdmissionId"));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command"
+            && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.FinalizeV1, StringComparison.Ordinal)
+            && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.ResendFinanceV1, StringComparison.Ordinal));
+        Assert.Contains(design.FindEntityType(typeof(InvoiceRow))!.GetCheckConstraints(), check => check.Name == "CK_Invoices_State" && check.Sql.Contains('6'));
     }
 
     /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>

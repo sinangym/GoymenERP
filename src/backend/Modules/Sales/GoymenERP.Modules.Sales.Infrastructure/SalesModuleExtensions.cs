@@ -108,7 +108,8 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
         serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
         serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
-        serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>());
+        serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>(),
+        serviceProvider.GetService<ISalesFinanceAdmissionPortV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.

@@ -32,7 +32,14 @@ public static class SalesInvoiceCommands
     /// <summary>API-35: POST /api/v1/sales/invoices/{id}/external-match (the approved invoice against the official document, SAT-D89).</summary>
     public const string MatchV1 = "sales.invoice.match.v1";
 
-    public static bool IsInvoiceCommand(string? name) => name is CreateV1 or SubmitV1 or ApproveV1 or RejectV1 or CancelV1 or MatchV1;
+    /// <summary>API-36: POST /api/v1/sales/invoices/{id}/finalization (the matched invoice is finalised; Finance is then offered the open items, SAT-D208).</summary>
+    public const string FinalizeV1 = "sales.invoice.finalize.v1";
+
+    /// <summary>API-36: POST /api/v1/sales/invoices/{id}/finance-admission (re-drives the Finance hand-off of a finalised invoice that still waits, SAT-D208).</summary>
+    public const string ResendFinanceV1 = "sales.invoice.finance-resend.v1";
+
+    public static bool IsInvoiceCommand(string? name) =>
+        name is CreateV1 or SubmitV1 or ApproveV1 or RejectV1 or CancelV1 or MatchV1 or FinalizeV1 or ResendFinanceV1;
 }
 
 /// <summary>Technical bounds of the invoice routes (not policies).</summary>
@@ -54,6 +61,8 @@ public static class SalesInvoiceApiV1
     public const string RejectionPath = "/api/v1/sales/invoices/{id}/rejection";
     public const string CancellationPath = "/api/v1/sales/invoices/{id}/cancellation";
     public const string ExternalMatchPath = "/api/v1/sales/invoices/{id}/external-match";
+    public const string FinalizationPath = "/api/v1/sales/invoices/{id}/finalization";
+    public const string FinanceAdmissionPath = "/api/v1/sales/invoices/{id}/finance-admission";
 
     /// <summary>The four state commands answer the invoice after the command with 200 (the same key again too, with the replay headers).</summary>
     public const int CommandStatus = 200;
@@ -265,6 +274,12 @@ public static class SalesInvoiceProblemCodesV1
     /// <summary>503: the official-invoice provider cannot answer; nothing is matched (fail-closed).</summary>
     public const string OfficialInvoiceProviderUnavailable = "official_invoice_provider_unavailable";
 
+    /// <summary>409 (not recorded; the match can still be made): the invoice is not matched with the official document yet (SAT-D89).</summary>
+    public const string MatchRequired = SalesRuleCodes.InvoiceMatchRequired;
+
+    /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative remainder (SAT-D227).</summary>
+    public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
+
     public const string DifferenceReasonRequired = SalesRuleCodes.InvoiceMatchDifferenceReasonRequired;
     public const string DifferenceNotApplicable = SalesRuleCodes.InvoiceMatchDifferenceNotApplicable;
 }
@@ -329,7 +344,30 @@ public sealed record SalesInvoiceDetailView(
     SalesInvoiceDecisionView? Decision = null,
     string? PaymentAllocationWarning = null,
     bool IsReplay = false,
-    SalesInvoiceMatchView? Match = null);
+    SalesInvoiceMatchView? Match = null,
+    SalesInvoiceFinalizationView? Finalization = null);
+
+/// <summary>The Finance axis of a finalised invoice (SAT-D208): Sales commits first and never calls a waiting invoice admitted.</summary>
+public static class SalesInvoiceFinanceStatusesV1
+{
+    public const string Waiting = "waiting";
+    public const string Admitted = "admitted";
+}
+
+/// <summary>The Accounting axis (B-04b) has no source yet: Sales shows the fixed "no source" value, never an invented status.</summary>
+public static class SalesInvoiceAccountingStatusesV1
+{
+    public const string NoSource = "no_source";
+}
+
+/// <summary>One finalised instalment as offered to Finance: its ids are fixed at finalisation; the TL amount exists for a foreign-currency invoice only (SAT-D227).</summary>
+public sealed record SalesInvoiceFinalInstalmentView(int SequenceNo, DateOnly DueDate, string Amount, string? FunctionalAmount,
+    Guid OpenItemId, Guid InstallmentId);
+
+/// <summary>API-36 facts: who finalised, the Finance hand-off ledger and the plan offered. <see cref="AccountingStatus"/> is the B-04b axis (no source yet).</summary>
+public sealed record SalesInvoiceFinalizationView(Guid AdmissionId, string FinalizedVersion, string FinalizedBy, DateTimeOffset FinalizedAtUtc,
+    string FinanceStatus, DateTimeOffset? AdmittedAtUtc, int AttemptCount, DateTimeOffset? LastAttemptAtUtc, string? LastOutcome,
+    string AccountingStatus, IReadOnlyList<SalesInvoiceFinalInstalmentView> Instalments);
 
 /// <summary>API-33 facts: who sent it to approval, who decided (and why), who cancelled (and why). Absent members are null.</summary>
 public sealed record SalesInvoiceDecisionView(string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? DecidedBy,
@@ -396,6 +434,21 @@ public interface ISalesInvoiceStore
         Func<SalesInvoice, DateTimeOffset, SalesInvoiceMatchFacts> record, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// API-36: finalises the company's matched invoice in one save (state and version, the finalisation row with its Waiting ledger, the
+    /// outbox event, the attempt, the audit). <paramref name="finalize"/> is the domain's decision; a refusal writes nothing.
+    /// </summary>
+    Task<SalesInvoiceStoreResult?> FinalizeInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid invoiceId,
+        Action<SalesInvoice, DateTimeOffset> finalize, SalesDraftStateAudit audit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-36: records one Finance hand-off attempt of a finalised invoice in the ledger (no version step) in one save with its audit.
+    /// With a <paramref name="commandName"/> (<see cref="SalesInvoiceCommands.ResendFinanceV1"/>) the key's attempt row is written too and an
+    /// existing one replays; without it (the hand-off right after finalisation) the save has no attempt row.
+    /// </summary>
+    Task<SalesInvoiceStoreResult?> RecordFinanceAttemptAsync(SalesDraftWriteEnvelope envelope, string? requestHash, string? commandName,
+        Guid invoiceId, Action<SalesInvoice, DateTimeOffset> record, SalesDraftStateAudit audit, CancellationToken cancellationToken = default);
+
     /// <summary>The invoice of this company already matched to the official number or the ETTN, null when neither is used (SAT-D89).</summary>
     Task<Guid?> FindMatchedInvoiceIdAsync(string officialNo, string ettn, CancellationToken cancellationToken = default);
 
@@ -443,7 +496,65 @@ public interface ISalesInvoiceService
     Task<SalesInvoiceCommandResult> MatchInvoiceAsync(Guid invoiceId, MatchSalesInvoiceRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// API-36 (SAT-D227, SAT-D208): finalises the matched invoice (needs <c>sales.invoices.finalize</c> and price read), computes the TL
+    /// instalment split, commits "Finans kabulü bekliyor" and offers the open items to Finance under the key
+    /// <c>sales-invoice:{id}:{version}</c>. A Finance answer other than success leaves the invoice finalised and waiting.
+    /// </summary>
+    Task<SalesInvoiceCommandResult> FinalizeInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-36 (SAT-D208): re-drives the Finance hand-off of a finalised invoice that still waits (the same admission id, a key per attempt).</summary>
+    Task<SalesInvoiceCommandResult> ResendFinanceAdmissionAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     Task<SalesInvoiceListResponse> GetInvoicesAsync(SalesInvoiceListQuery query, CancellationToken cancellationToken = default);
 
     Task<SalesInvoiceDetailView> GetInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>One instalment as Sales offers it to the Finance owner (ids fixed at finalisation; TL amount only for a foreign-currency invoice).</summary>
+public sealed record SalesFinanceInstalmentV1(Guid OpenItemId, Guid InstallmentId, int SequenceNo, DateOnly DueDate, string Amount,
+    string? FunctionalAmount);
+
+/// <summary>
+/// One admission offer. Company and actor are the server's (the owner fences them against its own context); the key is
+/// <c>sales-invoice:{invoiceId}:{invoiceVersion}</c> for the finaliser's first offer and carries the attempt number for a re-drive by another actor.
+/// </summary>
+public sealed record SalesFinanceAdmissionRequestV1(Guid CompanyId, string ActorId, string CorrelationId, string? CausationId,
+    string IdempotencyKey, Guid AdmissionId, Guid InvoiceId, string InvoiceVersion, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId,
+    string? ExchangeRate, IReadOnlyList<SalesFinanceInstalmentV1> Instalments);
+
+/// <summary>What Finance answered. Only <see cref="Admitted"/> moves Sales' ledger to admitted; every other answer leaves it waiting.</summary>
+public enum SalesFinanceAdmissionOutcomeV1
+{
+    /// <summary>The port or the owner could not answer (fail-closed): nothing is known.</summary>
+    Unavailable = 0,
+
+    /// <summary>The open items exist in Finance (first admission, replay or reuse).</summary>
+    Admitted = 1,
+
+    /// <summary>Finance refused the content (validation, party, or an invoice admitted with other rows).</summary>
+    Refused = 2,
+
+    /// <summary>The key was used by another actor or payload; a re-drive uses a new key.</summary>
+    KeyConflict = 3,
+
+    /// <summary>The owner is not authorised now or lost a race; try again.</summary>
+    Retry = 4,
+}
+
+public sealed record SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1 Outcome, string Reason)
+{
+    public static SalesFinanceAdmissionAnswerV1 Unavailable { get; } = new(SalesFinanceAdmissionOutcomeV1.Unavailable, "unavailable");
+}
+
+/// <summary>
+/// The Sales-declared port to the Finance open-item admission (MOD-04, F2a). Declared here by the consumer, implemented and registered
+/// by Finance's host. It carries no authority of Sales (the finalisation permission is measured before and after by the service) and
+/// is synchronous and idempotent: the same key and content replays. An unregistered port answers nothing (the invoice stays waiting).
+/// </summary>
+public interface ISalesFinanceAdmissionPortV1
+{
+    Task<SalesFinanceAdmissionAnswerV1> AdmitAsync(SalesFinanceAdmissionRequestV1 request, CancellationToken cancellationToken);
 }
