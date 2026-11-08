@@ -142,7 +142,7 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
         Assert.Equal(CommandOutcome.ValidationFailed,
             (await run.CancelAsync("refuse-reason", cancellation with { Reason = " " })).Outcome);
 
-        // An active allocation on one installment refuses the whole invoice (Issue #66 NEEDS-SINAN), nothing changes.
+        // An active allocation on one installment is only warned about without the confirmation (SAT-D96), nothing changes.
         await run.AllocateAsync(invoice.Installments[1].OpenItemId);
         var allocated = await run.CancelAsync("refuse-allocated", cancellation);
         Assert.Contains(allocated.Issues,
@@ -153,6 +153,40 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 1 AND Version = 1",
             ("@id", invoice.InvoiceId)));
+    }
+
+    [SqlServerFact]
+    public async Task A_confirmed_cancellation_releases_the_allocation_and_the_advance_stays_without_a_cash_movement()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "300.00"), Installment(2, "200.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("confirm-1", invoice)).Outcome);
+        var allocationId = await run.AllocateAsync(invoice.Installments[1].OpenItemId);
+
+        var confirmation = Cancellation(invoice) with { ReleaseActiveAllocations = true };
+        var confirmed = await run.CancelAsync("confirm-cancel", confirmation);
+        Assert.Equal(CommandOutcome.Succeeded, confirmed.Outcome);
+        Assert.Equal(2, confirmed.OpenItemIds.Count);
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3 AND OutstandingAmountText = N'0'",
+            ("@id", invoice.InvoiceId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id AND Status = 2 AND Version = 2 AND ReleaseReason IS NOT NULL",
+            ("@id", allocationId)));
+        // The 50.00 returns to the receipt's unallocated remainder: the customer advance stays.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.SourceAllocationStates WHERE UnallocatedAmountText = N'50.00' AND Version = 3"));
+        // An allocation is not a ledger movement: the recorded receipt itself is untouched (same version, still recorded).
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Version = 2 AND AmountText = N'50.00'"));
+
+        // The same confirmed cancellation replays; the unconfirmed payload under the same id is an identity conflict.
+        var replay = await run.CancelAsync("confirm-cancel", confirmation);
+        Assert.True(replay.IsReplay);
+        var conflict = await run.CancelAsync("confirm-other-key", confirmation with { ReleaseActiveAllocations = false });
+        Assert.Contains(conflict.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemCancellationService.CancellationIdentityConflictCode);
     }
 
     [SqlServerFact]
@@ -264,7 +298,7 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
         }
 
         /// <summary>SENTETIK: a recorded receipt with an ACTIVE allocation to the open item (outstanding unchanged).</summary>
-        public async Task AllocateAsync(Guid openItemId)
+        public async Task<Guid> AllocateAsync(Guid openItemId)
         {
             await using var db = Context(CompanyA, null);
             var now = DateTimeOffset.UtcNow;
@@ -291,9 +325,25 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
                 RecordedAtUtc = now,
                 RecordedBy = "synthetic-f2b-fixture",
             });
+            db.SourceAllocationStates.Add(new FinanceSourceAllocationStateRow
+            {
+                CompanyId = CompanyA,
+                SourceId = sourceId,
+                CurrencyId = Lira,
+                OriginalAmountText = "50.00",
+                UnallocatedAmountText = "0.00",
+                Version = 2,
+                UpdatedBy = "synthetic-f2b-fixture",
+                UpdatedAtUtc = now,
+            });
+            var item = await db.OpenItems.SingleAsync(row => row.Id == openItemId);
+            item.OutstandingAmountText = FinanceExactDecimalText.TryParseNonNegative(item.OriginalAmountText, out var original)
+                && FinanceExactDecimalText.TryParseNonNegative("50.00", out var fifty)
+                ? original.Subtract(fifty).Text : throw new InvalidOperationException("Fixture amount.");
+            var allocationId = Guid.NewGuid();
             db.Allocations.Add(new FinanceAllocationRow
             {
-                Id = Guid.NewGuid(),
+                Id = allocationId,
                 CompanyId = CompanyA,
                 SourceId = sourceId,
                 OpenItemId = openItemId,
@@ -306,6 +356,7 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
                 CreatedAtUtc = now,
             });
             await db.SaveChangesAsync();
+            return allocationId;
         }
 
         /// <summary>Moves Finance's schema to <paramref name="target"/> (null: the latest migration).</summary>

@@ -99,17 +99,52 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
         }
 
         var itemIds = items.Select(row => row.Id).ToArray();
-        var allocated = await dbContext.Allocations.AsNoTracking()
-            .AnyAsync(row => itemIds.Contains(row.OpenItemId) && row.Status == FinanceAllocationStatuses.Active,
-                cancellationToken);
-        if (allocated || items.Any(row => row.Status != FinanceOpenItemStatuses.Open
-            || !FinanceExactDecimalText.Equal(row.OutstandingAmountText, row.OriginalAmountText)))
+        var allocations = await dbContext.Allocations
+            .Where(row => itemIds.Contains(row.OpenItemId) && row.Status == FinanceAllocationStatuses.Active)
+            .OrderBy(row => row.Id)
+            .ToListAsync(cancellationToken);
+        if (allocations.Count > 0 && !cancellation.ReleaseActiveAllocations)
         {
+            // The warning: the producer shows it and asks again with the confirmation (SAT-D96).
             return Refused(context, CommandOutcome.ValidationFailed,
                 new ValidationIssue("invoiceId", HasAllocationsCode));
         }
 
         var now = timeProvider.GetUtcNow();
+        foreach (var allocation in allocations)
+        {
+            var item = items.Single(row => row.Id == allocation.OpenItemId);
+            var sourceState = await dbContext.SourceAllocationStates
+                .SingleOrDefaultAsync(row => row.SourceId == allocation.SourceId, cancellationToken)
+                ?? throw new InvalidOperationException("Stored allocation source state is missing.");
+            if (!FinanceExactDecimalText.TryParsePositive(allocation.AmountText, out var amount)
+                || !FinanceExactDecimalText.TryParseNonNegative(sourceState.UnallocatedAmountText, out var available)
+                || !FinanceExactDecimalText.TryParseNonNegative(item.OutstandingAmountText, out var outstanding))
+            {
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    new ValidationIssue("invoiceId", HasAllocationsCode));
+            }
+            allocation.Status = FinanceAllocationStatuses.Released;
+            allocation.Version = checked(allocation.Version + 1);
+            allocation.ReleasedBy = context.ActorId;
+            allocation.ReleasedAtUtc = now;
+            allocation.ReleaseReason = cancellation.Reason;
+            sourceState.UnallocatedAmountText = available.Add(amount).Text;
+            sourceState.Version = checked(sourceState.Version + 1);
+            sourceState.UpdatedBy = context.ActorId;
+            sourceState.UpdatedAtUtc = now;
+            item.OutstandingAmountText = outstanding.Add(amount).Text;
+            item.Status = FinanceOpenItemStatuses.Open;
+        }
+        if (items.Any(row => row.Status != FinanceOpenItemStatuses.Open
+            || !FinanceExactDecimalText.Equal(row.OutstandingAmountText, row.OriginalAmountText)))
+        {
+            // Something other than an active allocation reduced the item: not understood, nothing is written.
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.ValidationFailed,
+                new ValidationIssue("invoiceId", HasAllocationsCode));
+        }
+
         foreach (var item in items)
         {
             dbContext.InvoiceCancellationItems.Add(new FinanceInvoiceCancellationItemRow
@@ -144,7 +179,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             CausationId = context.CausationId,
             CancelledAtUtc = now,
         });
-        Audit(context, metadata, cancellation, kind, items.Count);
+        Audit(context, metadata, cancellation, kind, items.Count, allocations.Select(row => row.Id).ToArray());
         // The authority is measured again right before the save: a grant withdrawn meanwhile writes nothing.
         if (await FenceAsync(context, cancellation, cancellationToken) is { } late)
         {
@@ -257,7 +292,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
         with { IsReplay = true };
 
     private void Audit(FinanceContext context, CommandMetadata metadata, FinanceInvoiceOpenItemCancellationV1 cancellation,
-        string kind, int itemCount) =>
+        string kind, int itemCount, Guid[] releasedAllocationIds) =>
         auditEvents.Enqueue(new AuditEventDraft(
             context.CompanyId, "finance.invoice-open-items.cancelled.v1", EntityType,
             cancellation.CancellationId.ToString("D"), "Cancel", null, 1, AuditActorTypes.User, context.ActorId,
@@ -269,6 +304,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
                 cancellation.InvoiceId,
                 cancellation.InvoiceVersion,
                 OpenItemCount = itemCount,
+                ReleasedAllocationIds = releasedAllocationIds,
             }, Json),
             cancellation.Reason,
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,

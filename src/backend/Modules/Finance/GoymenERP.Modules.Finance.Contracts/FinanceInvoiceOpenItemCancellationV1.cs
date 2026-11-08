@@ -8,14 +8,17 @@ namespace GoymenERP.Modules.Finance.Contracts;
 /// <summary>
 /// The cancellation of one admitted invoice. <paramref name="CancellationId"/> is the producer's id for this cancellation
 /// (the receipt's id); <paramref name="InvoiceVersion"/> is the admitted version being cancelled; <paramref name="Reason"/>
-/// is the producer's short reason text, kept on the receipt and the audit.
+/// is the producer's short reason text, kept on the receipt and the audit. <paramref name="ReleaseActiveAllocations"/> is
+/// the producer's confirmation (SAT-D96, 8 Kasım kararı) that active receipt/payment allocations on the invoice's open
+/// items may be released together with the cancellation; without it an allocated invoice is only warned about (refused).
 /// </summary>
 public sealed record FinanceInvoiceOpenItemCancellationV1(
     Guid CancellationId,
     FinanceInvoiceProducerV1 Producer,
     Guid InvoiceId,
     string InvoiceVersion,
-    string Reason);
+    string Reason,
+    bool ReleaseActiveAllocations = false);
 
 /// <summary>
 /// The Finance side of the invoice cancellation (API-11). Synchronous, idempotent and in-process (no HTTP surface), like
@@ -26,9 +29,12 @@ public sealed record FinanceInvoiceOpenItemCancellationV1(
 /// when the payload is the same and is refused otherwise.</item>
 /// <item>An invoice Finance never admitted, or another version of it, is refused; an invoice already cancelled under
 /// another <c>CancellationId</c> is refused with <c>finance_invoice_already_cancelled</c>.</item>
-/// <item>If any of the invoice's open items has an active allocation (a receipt or payment is distributed to it), the
-/// cancellation is refused with <c>finance_invoice_cancellation_has_allocations</c>. What should happen to an allocated
-/// invoice is not decided (Issue #66 NEEDS-SINAN); until it is, the allocation is released first by its own operation.</item>
+/// <item>If any of the invoice's open items has an active allocation (a receipt or payment is distributed to it) and
+/// <c>ReleaseActiveAllocations</c> is false, the cancellation is refused with
+/// <c>finance_invoice_cancellation_has_allocations</c> — the warning the producer shows before asking the user. With the
+/// confirmation (<c>ReleaseActiveAllocations</c> true) every active allocation is released in the same save, the amount
+/// returns to its source's unallocated remainder (the customer advance stays), and no cash or bank movement is created or
+/// changed (DEC-FIN-006: an allocation is not a ledger movement).</item>
 /// </list>
 /// Fenced by the host-owned <see cref="IFinanceInvoiceOpenItemCancellationAuthorityV1"/> before any read and right before
 /// the save; the caller's company and actor must equal the server context.

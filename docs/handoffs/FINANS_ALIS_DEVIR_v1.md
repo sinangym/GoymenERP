@@ -32,7 +32,8 @@ Satış ile aynı port: `IFinanceInvoiceOpenItemAdmissionPortV1`, `Producer = Pu
 Satış ile aynı port: `IFinanceInvoiceOpenItemCancellationPortV1`, `Producer = Purchasing`
 (`docs/handoffs/FINANS_SATIS_DEVIR_v1.md` FS-1b). Ters satır cari ekstrede borç sütununda "Alış faturası iptali (ters
 kayıt)" olarak görünür. Öneri anahtar `purchasing-invoice-cancel:{invoiceId}:{invoiceVersion}`. Aktif ödeme dağıtımı olan
-fatura reddedilir (Issue #66 NEEDS-SINAN). Bağlantı Alış'ın iptal komutunda.
+fatura önce uyarı olarak reddedilir; onayla (`ReleaseActiveAllocations = true`) dağıtımlar kaldırılır, ödeme banka/kasa
+hareketini değiştirmez (SAT-D96, 8 Kasım). Bağlantı Alış'ın iptal komutunda.
 
 ## FA-3 · Sipariş başlığında bakiye (MOD-02)
 

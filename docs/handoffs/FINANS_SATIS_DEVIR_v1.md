@@ -43,8 +43,12 @@ kendi karar, review ve merge kapıları geçerlidir.
 - **Sonuç:** faturanın bütün açık kalemleri silinmez; ilk tutarları kalır, durumları `Cancelled`, kalanları `0` olur ve
   cari ekstrede iptal gününde ayrı bir ters satır ("Satış faturası iptali (ters kayıt)", alacak sütunu) görünür.
 - **Ret:** kabul edilmemiş fatura, başka sürüm, başka bir iptal id'siyle zaten iptal edilmiş fatura, ya da kalemlerinden
-  birinde aktif dağıtım (tahsilat bağlanmış) varsa `finance_invoice_cancellation_has_allocations`. Dağıtımlı faturanın ne
-  olacağı karara bağlı değil (Issue #66 NEEDS-SINAN); o zamana kadar dağıtım önce kendi işlemiyle serbest bırakılır.
+  birinde aktif dağıtım (tahsilat bağlanmış) varsa ve `ReleaseActiveAllocations` false ise
+  `finance_invoice_cancellation_has_allocations` (SAT-D96 8 Kasım yönü: bu ret **uyarıdır**). Satış ekranı uyarıyı
+  gösterir, kullanıcı onaylarsa aynı iptali `ReleaseActiveAllocations = true` ile **aynı CancellationId, yeni anahtarla**
+  çağırır; uyarı ret'i hiçbir şey yazmadığından aynı id kullanılabilir. Finans tüm aktif dağıtımları aynı kayıtta
+  kaldırır, tutar tahsilatın dağıtılmamış kalanına döner (müşteri avansı kalır) ve kasa/banka hareketi yazılmaz veya
+  değişmez. Kayıtlı bir iptalin aynı id altında farklı onay bayrağıyla tekrarı `identity_conflict` verir.
 - **Idempotency ve işlem sınırı:** FS-1 ile aynı. Öneri anahtar `sales-invoice-cancel:{invoiceId}:{invoiceVersion}`;
   Satış iptalini "Finans iptali bekliyor" durumuyla commit eder, sonra portu aynı anahtarla çağırır (ALS-D64 "ayrı adım");
   başka yetkili kullanıcı yeni anahtar + aynı `CancellationId` ile tekrar gönderir (SAT-D208).
