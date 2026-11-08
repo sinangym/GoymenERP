@@ -611,7 +611,7 @@ Durum: ✅ main'de implementasyon + DI + gerçek-SQL/contract testi · 🟡 kıs
 | Gelen fatura → borç kalemi | Alış → Finans | aynı port (Producer=Purchasing); sonra `purchasing.invoice.finalized.v1` | ❌ — F1 (#902) yönü, F2a portu; Alış A5 | F2a + Alış A5 |
 | Fatura iptali/iadesi → ters kalem | Satış/Alış → Finans | iptal portu / olayı (SAT-D96) | 🟡 port hazır (F2b), üretici bağlantısı bekliyor; iade (kısmi) ayrı | F2b |
 | Satış risk okuması | Finans → Satış | `ISalesPartyRiskReadPortV1` (`FinanceSalesPartyRiskReadPortV1`) | 🟡 port main'de (DI + SQL testli); yalnız-alacak filtresi #902'de (taslak); limit/teminat NoSource (OPEN-010) | API-06, API-85 (F6) |
-| Tedarikçi ödemesi → borç kalemi | Finans içi; Alış okur | elle banka ödemesi + dağıtım | 🟡 ödeme var, borç kalemine dağıtım yok; TEK-02 | F3 (API-20) |
+| Tedarikçi ödemesi → borç kalemi | Finans içi; Alış okur | elle banka ödemesi + dağıtım (`/api/v1/finance/payment-allocations`) | 🟡 F3a: kesin ödeme → açık borç kalemi dağıtımı ve serbest bırakma backend + gerçek-SQL testli (PR bekliyor); ekran yok; TEK-02 | F3 (API-20) |
 | Ödendi/kısmi ödendi, avans | Finans → Satış/Alış | `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | ❌ — Finans'ta outbox yok | F2-OB (ERP-000F sonrası) |
 | Muhasebe fişi (120/320) | Finans → Accounting | aynı kaynak olay (FNS-D14); taşıma seçilmedi (outbox/inbox ya da kaynak sağlayıcı) | 🟡 elle tahsilat için salt-okuma `FinanceManualReceiptNormalJournalSourceProviderV1` (Accounting DI'da); satış/alış faturası (120/320) için ❌. Fiş taslaktır, onayla kesinleşir (SAT-D208) | Outbox dilimi + MOD-07 |
 | Kur → döviz değerleme | Ayarlar → Finans | `ISettingsExchangeRateResolverV1` (#906, main'de) | ❌ — Finans okumuyor | F7 (API-95) |

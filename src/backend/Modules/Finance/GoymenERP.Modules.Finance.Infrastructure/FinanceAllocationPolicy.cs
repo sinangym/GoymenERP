@@ -154,6 +154,132 @@ internal static class FinanceAllocationPolicy
             FinanceOpenItemStatuses.Open);
     }
 
+    /// <summary>
+    /// F3a / API-20 (DEC-FIN-006): a RECORDED manual bank payment (money out) applied to an open PAYABLE item of the
+    /// same company, account and currency. A receivable with a payment would be an offset — its own approved Finance
+    /// operation — so it is refused like a receipt on a payable. The arithmetic is the receipt allocation's.
+    /// </summary>
+    public static FinanceAllocationMutation CreatePayment(
+        ManualBankPaymentRow payment,
+        FinanceOpenItemRow openItem,
+        FinancePaymentAllocationStateRow? paymentState,
+        CreateFinancePaymentAllocationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(payment);
+        ArgumentNullException.ThrowIfNull(openItem);
+        ArgumentNullException.ThrowIfNull(request);
+        RequireIdentity(request.AllocationId, request.PaymentId, request.OpenItemId);
+        RequireVersion(request.ExpectedPaymentVersion, payment.Version);
+        RequireVersion(request.ExpectedOpenItemVersion, openItem.Version);
+        RequireReason(request.Reason);
+
+        if (payment.Id != request.PaymentId || openItem.Id != request.OpenItemId
+            || payment.CompanyId != openItem.CompanyId
+            || payment.CompanyAccountId != openItem.CompanyAccountId
+            || payment.CurrencyId != openItem.CurrencyId
+            || payment.Status != ManualBankPaymentStatuses.Recorded
+            || openItem.Status != FinanceOpenItemStatuses.Open)
+        {
+            throw Failure("request", "finance_allocation_reference_invalid");
+        }
+        if (openItem.Direction != FinanceOpenItemDirectionCodes.Payable)
+        {
+            throw Failure("openItemId", "finance_allocation_direction_mismatch");
+        }
+
+        if (paymentState is not null
+            && (paymentState.CompanyId != payment.CompanyId || paymentState.PaymentId != payment.Id
+                || paymentState.CurrencyId != payment.CurrencyId
+                || !FinanceExactDecimalText.Equal(paymentState.OriginalAmountText, payment.AmountText)))
+        {
+            throw Failure("paymentId", "finance_allocation_state_invalid");
+        }
+
+        return Apply(paymentState?.UnallocatedAmountText ?? payment.AmountText, openItem.OutstandingAmountText,
+            request.Amount);
+    }
+
+    public static FinanceAllocationMutation ReleasePayment(
+        FinancePaymentAllocationRow allocation,
+        FinanceOpenItemRow openItem,
+        FinancePaymentAllocationStateRow paymentState,
+        ReleaseFinanceAllocationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(allocation);
+        ArgumentNullException.ThrowIfNull(openItem);
+        ArgumentNullException.ThrowIfNull(paymentState);
+        ArgumentNullException.ThrowIfNull(request);
+        RequireIdentity(request.AllocationId);
+        RequireVersion(request.ExpectedAllocationVersion, allocation.Version);
+        RequireVersion(request.ExpectedOpenItemVersion, openItem.Version);
+        RequireReason(request.Reason);
+
+        if (allocation.Id != request.AllocationId
+            || allocation.Status != FinanceAllocationStatuses.Active
+            || allocation.CompanyId != openItem.CompanyId || allocation.CompanyId != paymentState.CompanyId
+            || allocation.OpenItemId != openItem.Id || allocation.PaymentId != paymentState.PaymentId
+            || allocation.CurrencyId != openItem.CurrencyId || allocation.CurrencyId != paymentState.CurrencyId
+            || openItem.Direction != FinanceOpenItemDirectionCodes.Payable
+            || openItem.Status == FinanceOpenItemStatuses.Cancelled)
+        {
+            throw Failure("allocationId", "finance_allocation_state_invalid");
+        }
+
+        return Restore(allocation.AmountText, paymentState.UnallocatedAmountText, paymentState.OriginalAmountText,
+            openItem.OutstandingAmountText, openItem.OriginalAmountText);
+    }
+
+    private static FinanceAllocationMutation Apply(string available, string outstanding, string requested)
+    {
+        if (!FinanceExactDecimalText.TryParsePositive(requested, out var amount)
+            || !FinanceExactDecimalText.TryParseNonNegative(available, out var sourceAvailable)
+            || !FinanceExactDecimalText.TryParseNonNegative(outstanding, out var itemOutstanding))
+        {
+            throw Failure("amount", "finance_allocation_amount_invalid");
+        }
+        if (amount.CompareTo(sourceAvailable) > 0)
+        {
+            throw Failure("amount", "finance_allocation_exceeds_source");
+        }
+        if (amount.CompareTo(itemOutstanding) > 0)
+        {
+            throw Failure("amount", "finance_allocation_exceeds_open_item");
+        }
+
+        var sourceAfter = sourceAvailable.Subtract(amount);
+        var itemAfter = itemOutstanding.Subtract(amount);
+        return new FinanceAllocationMutation(
+            sourceAfter.Text,
+            itemAfter.Text,
+            itemAfter.IsZero ? FinanceOpenItemStatuses.Closed : FinanceOpenItemStatuses.Open);
+    }
+
+    private static FinanceAllocationMutation Restore(
+        string allocated, string sourceUnallocated, string sourceOriginal, string itemOutstanding, string itemOriginal)
+    {
+        if (!FinanceExactDecimalText.TryParsePositive(allocated, out var amount)
+            || !FinanceExactDecimalText.TryParseNonNegative(sourceUnallocated, out var sourceAvailable)
+            || !FinanceExactDecimalText.TryParsePositive(sourceOriginal, out var sourceTotal)
+            || !FinanceExactDecimalText.TryParseNonNegative(itemOutstanding, out var outstanding)
+            || !FinanceExactDecimalText.TryParsePositive(itemOriginal, out var original))
+        {
+            throw Failure("amount", "finance_allocation_amount_invalid");
+        }
+
+        var sourceAfter = sourceAvailable.Add(amount);
+        var itemAfter = outstanding.Add(amount);
+        if (sourceAfter.CompareTo(sourceTotal) > 0)
+        {
+            throw Failure("paymentId", "finance_allocation_state_invalid");
+        }
+        if (itemAfter.CompareTo(original) > 0)
+        {
+            throw Failure("openItemId", "finance_open_item_balance_invalid");
+        }
+
+        return new FinanceAllocationMutation(sourceAfter.Text, itemAfter.Text, FinanceOpenItemStatuses.Open);
+    }
+
     private static void RequireIdentity(params Guid[] ids)
     {
         if (ids.Any(id => id == Guid.Empty))
