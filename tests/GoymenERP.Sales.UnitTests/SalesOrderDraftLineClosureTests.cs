@@ -268,6 +268,21 @@ public sealed class SalesOrderDraftLineClosureTests
             facts with { Ordered = "120", CancelledRemainder = "30" }));
     }
 
+    [Fact]
+    public void A_block_band_input_is_refused_by_the_domain_and_nothing_is_recorded_or_versioned()
+    {
+        // SAT-D17 (defence in depth): even with every other fact valid, a block-band judgement never closes the line in the domain.
+        var draft = ApprovedDraft(out var line);
+        var block = Input(line, "90") with { Band = DeliveryToleranceBand.Block };
+
+        Assert.Throws<ArgumentException>(() => draft.CloseLine(4, Closer, block, T0));
+
+        Assert.Equal((4L, 0, false), (draft.Version, draft.LineClosures.Count, draft.IsLineClosed(line.Id)));
+        // The same order and line then close in the approval band: the refusal was the band alone and left no trace.
+        var facts = draft.CloseLine(4, Closer, block with { Band = DeliveryToleranceBand.Approval }, T0);
+        Assert.Equal((DeliveryToleranceBand.Approval, 5L), (facts.Band, draft.Version));
+    }
+
     private static void ReplaceQuantity(SalesOrderDraftLine line, decimal value) =>
         typeof(SalesOrderDraftLine).GetMethod("ReplaceQuantity", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .Invoke(line, [Kg(value), value.ToString(System.Globalization.CultureInfo.InvariantCulture)]);

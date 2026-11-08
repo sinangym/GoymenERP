@@ -197,6 +197,78 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task The_block_band_edge_is_an_unrecorded_422_judged_before_the_shippers_and_the_key_stays_reusable()
+    {
+        var world = new World();
+        Owners(world);
+        var approved = await AcceptedTwoLineAsync(world);
+        var second = approved.Lines[1].LineId;
+        // 2.182 of 2.25 is a 3.02 % shortfall: the block band (SAT-D5 ladder 1 / 2 / 3 %). The owner names the closer himself as
+        // the shipper: the block band is still the answer, because the band is judged before SAT-D216 and the domain never runs.
+        var shipped = 2.182m;
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, shipped, 0m, [Actor])]));
+        world.Deliveries = deliveries;
+        var policies = new FakeSalesPolicies(Ladder123());
+        world.SalesPolicies = policies;
+
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
+            new SalesDraftLineClosureRequest("6", second, "2.182"), Metadata("k-close-line-edge")));
+
+        Assert.Equal((422, SalesDraftProblemCodesV1.LineClosureBlocked), Status(blocked));
+        Assert.Equal([approved.Draft.Id], deliveries.Asked);
+        Assert.Equal([Day], policies.Asked);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.LineClosureRecords);
+        Assert.Equal((6L, 0), ((await world.Store.FindDraftAsync(approved.Draft.Id))!.Version, (await world.Store.FindDraftAsync(approved.Draft.Id))!.LineClosures.Count));
+
+        // 2.183 is a 2.98 % shortfall (approval band, one step under the block edge): the same, unburned key now closes the line
+        // once the owner names another shipper.
+        shipped = 2.183m;
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, shipped, 0m, [Shipper])]));
+        var closed = await world.Service().CloseLineAsync(approved.Draft.Id,
+            new SalesDraftLineClosureRequest("6", second, "2.183"), Metadata("k-close-line-edge"));
+
+        Assert.Equal(("7", false), (closed.Detail.Draft.Version, closed.IsReplay));
+        var facts = Assert.Single(world.Store.LineClosureRecords);
+        Assert.Equal((DeliveryToleranceBand.Approval, "2.183", "0.067"), (facts.Band, facts.ShippedAtClosure, facts.CancelledRemainder));
+    }
+
+    [Fact]
+    public async Task A_line_is_not_closed_while_a_revision_awaits_the_customers_acceptance_and_the_state_conflict_is_recorded()
+    {
+        var world = new World();
+        Owners(world);
+        // ASSUMPTION-LC-3: internally approved (version 5) but the customer has not accepted Rev.0 yet.
+        var approved = await ApprovedTwoLineAsync(world);
+        var second = approved.Lines[1].LineId;
+        var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
+        world.Deliveries = deliveries;
+        var policies = new FakeSalesPolicies(Ladder123());
+        world.SalesPolicies = policies;
+
+        var waiting = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
+            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line-awaiting")));
+
+        // The domain's precondition refuses before any owner is asked; the refusal is the key's recorded answer.
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(waiting));
+        Assert.Empty(deliveries.Asked);
+        Assert.Empty(policies.Asked);
+        var refusal = Assert.Single(world.Store.Refusals);
+        Assert.Equal((LineClosePermission, (Guid?)approved.Draft.Id), (refusal.Envelope.PermissionCode, refusal.DraftId));
+        var replayed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
+            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line-awaiting", correlation: "retry")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, true), (replayed.Status, replayed.Code, replayed.IsReplay));
+        Assert.Empty(world.Store.LineClosureRecords);
+
+        // Once the customer accepted the revision, the same line closes under a new key.
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("5"), Metadata("k-accept"));
+        var closed = await world.Service().CloseLineAsync(approved.Draft.Id,
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line-accepted"));
+        Assert.Equal("7", closed.Detail.Draft.Version);
+        Assert.Single(world.Store.LineClosureRecords);
+    }
+
+    [Fact]
     public async Task A_shipped_total_that_changed_since_the_user_saw_it_is_an_unrecorded_409_and_the_key_stays_reusable()
     {
         var world = new World();
