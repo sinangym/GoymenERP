@@ -14,7 +14,7 @@ import { useId, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftStatus } from './api'
 import { SALES_CAPABILITY } from './capabilities'
-import { APPROVAL_STATE, decodeProblem, type ApprovalState, type DraftDetail } from './contract'
+import { APPROVAL_STATE, CLOSED_STATE, decodeProblem, type ApprovalState, type DraftDetail } from './contract'
 import { formatBusinessDate } from './format'
 import {
   INVOICING_GATE,
@@ -31,6 +31,8 @@ import { APPROVAL_STATE_TEXT, ORDER_STATUS_TEXT as T } from './salesText'
 import { orderUnitCodes } from './unitNames'
 import { UnitName } from './UnitName'
 import { SalesOverDeliveryApproval } from './SalesOverDeliveryApproval'
+import { SalesLineClosure } from './SalesLineClosure'
+import { useLineClosure } from './lineClosure'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
@@ -70,6 +72,14 @@ export function SalesOrderStatusAxes({ detail, onRecorded }: { readonly detail: 
       return signal.aborted ? { type: 'fence-stale' as const } : outcome
     },
   })
+  const reread = () => {
+    // The detail is read again (a recorded command moves its version); the status is read again even when the version did not
+    // move (a refused command: the shipped total, the shipper or the commitments may have changed in Logistics).
+    onRecorded?.()
+    void query.refetch()
+  }
+  // SAT-D17: the line-closure attempt lives here, not in the card — a recorded closure moves the version and remounts the card.
+  const closure = useLineClosure({ shell, detail, companyId, onRecorded: reread })
   if (!canRead) return null
   const overDelivery = onRecorded === undefined || companyId === null
     ? undefined
@@ -79,15 +89,23 @@ export function SalesOrderStatusAxes({ detail, onRecorded }: { readonly detail: 
         detail={detail}
         status={status}
         companyId={companyId}
-        onRecorded={() => {
-          // The detail is read again (a recorded approval moves its version); the status is read again even when the version
-          // did not move (a refused approval: the shipped total or the shipper may have changed in Logistics).
-          onRecorded()
-          void query.refetch()
-        }}
+        onRecorded={reread}
       />
     )
-  return <OrderStatusCard detail={detail} outcome={query.data} onRetry={() => void query.refetch()} overDelivery={overDelivery} />
+  const lineClosure = onRecorded === undefined || companyId === null
+    ? undefined
+    : (status: OrderStatus) => (
+      <SalesLineClosure shell={shell} detail={detail} status={status} companyId={companyId} controller={closure} />
+    )
+  return (
+    <OrderStatusCard
+      detail={detail}
+      outcome={query.data}
+      onRetry={() => void query.refetch()}
+      overDelivery={overDelivery}
+      lineClosure={lineClosure}
+    />
+  )
 }
 
 /**
@@ -99,12 +117,15 @@ export function OrderStatusCard({
   outcome,
   onRetry,
   overDelivery,
+  lineClosure,
 }: {
   readonly detail: DraftDetail
   readonly outcome: ViewOutcome<OrderStatus> | undefined
   readonly onRetry: () => void
   /** SAT-D30: the over-delivery approval control for a decoded status (absent: none is offered). */
   readonly overDelivery?: (status: OrderStatus) => React.ReactNode
+  /** SAT-D17: the line-closure control for a decoded status (absent: none is offered). */
+  readonly lineClosure?: (status: OrderStatus) => React.ReactNode
 }) {
   const headingId = useId()
   let body
@@ -113,6 +134,7 @@ export function OrderStatusCard({
       <>
         <StatusBody detail={detail} status={outcome.data} />
         {overDelivery === undefined ? null : overDelivery(outcome.data)}
+        {lineClosure === undefined ? null : lineClosure(outcome.data)}
       </>
     )
   } else {
@@ -173,10 +195,10 @@ function approvalTone(state: ApprovalState): StatusTone {
 }
 
 /** A mark beside "Tamamlandı": a glyph for the eye and a word for everyone (the glyph is hidden from assistive tech). */
-function Mark({ text, testId }: { readonly text: string; readonly testId: string }) {
+function Mark({ text, testId, glyph = '⚠' }: { readonly text: string; readonly testId: string; readonly glyph?: string }) {
   return (
     <span className={styles.mark} data-testid={testId}>
-      <span aria-hidden="true">⚠</span>
+      <span aria-hidden="true">{glyph}</span>
       {text}
     </span>
   )
@@ -187,11 +209,14 @@ function RealizationStateText({
   state,
   warning,
   approvedOverDelivery,
+  closedShort = false,
   testId,
 }: {
   readonly state: RealizationState
   readonly warning: boolean
   readonly approvedOverDelivery: boolean
+  /** SAT-D17: the line was closed short by a user (its remainder cancelled). */
+  readonly closedShort?: boolean
   readonly testId: string
 }) {
   return (
@@ -202,6 +227,7 @@ function RealizationStateText({
       {/* The spaces keep the words apart in the accessible name ("Tamamlandı Tolerans uyarısı"), not only on screen. */}
       {warning ? <>{' '}<Mark text={T.warningMark} testId={`${testId}-warning`} /></> : null}
       {approvedOverDelivery ? <>{' '}<Mark text={T.approvedOverDeliveryMark} testId={`${testId}-approved-over`} /></> : null}
+      {closedShort ? <>{' '}<Mark text={T.lineClosedMark} testId={`${testId}-closed-short`} glyph="⊘" /></> : null}
     </>
   )
 }
@@ -279,7 +305,7 @@ function StatusBody({ detail, status }: { readonly detail: DraftDetail; readonly
         </dd>
       </dl>
 
-      <RealizationDetail detail={detail} realization={status.realization} revision={status.revision} />
+      <RealizationDetail detail={detail} realization={status.realization} revision={status.revision} lifecycle={status.lifecycle} />
     </>
   )
 }
@@ -331,10 +357,12 @@ function RealizationDetail({
   detail,
   realization,
   revision,
+  lifecycle,
 }: {
   readonly detail: DraftDetail
   readonly realization: RealizationAxis
   readonly revision: string
+  readonly lifecycle: LifecycleAxisState
 }) {
   const headingId = useId()
   const unitCodes = useMemo(() => orderUnitCodes(detail), [detail])
@@ -353,6 +381,9 @@ function RealizationDetail({
   if (lines.some((line) => line.warning)) notes.push({ key: 'warning', text: T.warningNote })
   if (lines.some((line) => line.state === STATUS_AXIS_STATE.awaitingApproval)) notes.push({ key: 'awaiting-approval', text: T.awaitingApprovalNote })
   if (lines.some((line) => line.state === STATUS_AXIS_STATE.outsideTolerance)) notes.push({ key: 'outside-tolerance', text: T.outsideToleranceNote })
+  // SAT-D17: a closed remainder on an order that is not closed as a whole is a user's line closure (a force-closure closes it).
+  const closedShort = (line: LineRealization) => line.closedRemainder !== null && lifecycle !== CLOSED_STATE
+  if (lines.some(closedShort)) notes.push({ key: 'line-closed', text: T.lineClosedNote })
   const measured = state !== STATUS_AXIS_STATE.unreadable && state !== STATUS_AXIS_STATE.pendingReapproval
   return (
     <section className={styles.realization} aria-labelledby={headingId} data-testid="sales-status-realization-detail">
@@ -417,7 +448,13 @@ function RealizationDetail({
                 <th scope="col">{T.column.unit}</th>
               </tr></thead>
               <tbody>{lines.map((line) => (
-                <LineRow key={line.lineId} line={line} product={products.get(line.lineId.toLowerCase())} unitCodes={unitCodes} />
+                <LineRow
+                  key={line.lineId}
+                  line={line}
+                  product={products.get(line.lineId.toLowerCase())}
+                  unitCodes={unitCodes}
+                  closedShort={closedShort(line)}
+                />
               ))}</tbody>
             </table>
           </div>
@@ -438,16 +475,18 @@ function LineRow({
   line,
   product,
   unitCodes,
+  closedShort,
 }: {
   readonly line: LineRealization
   readonly product: string | undefined
   readonly unitCodes: ReadonlyMap<string, string>
+  readonly closedShort: boolean
 }) {
   const id = `sales-status-line-${line.lineNo}`
   // A line with no approved basis was not measured and no owner was asked; an unread owner is "not read" — never zero.
   const missing = line.state === STATUS_AXIS_STATE.pendingReapproval ? T.notMeasured : T.notRead
   return (
-    <tr data-testid={id} data-state={line.state}>
+    <tr data-testid={id} data-state={line.state} data-closed-short={closedShort ? 'true' : undefined}>
       <th scope="row">{line.lineNo}</th>
       <td>{product}</td>
       <td className={pages.numericValue} data-testid={`${id}-ordered`}>{line.ordered}</td>
@@ -457,7 +496,13 @@ function LineRow({
       <td data-testid={`${id}-band`}>{line.band === null ? T.notMeasured : T.band[line.band]}</td>
       <td>
         <span className={styles.stateCell}>
-          <RealizationStateText state={line.state} warning={line.warning} approvedOverDelivery={line.approvedOverDelivery} testId={`${id}-state`} />
+          <RealizationStateText
+            state={line.state}
+            warning={line.warning}
+            approvedOverDelivery={line.approvedOverDelivery}
+            closedShort={closedShort}
+            testId={`${id}-state`}
+          />
         </span>
       </td>
       <td className={pages.numericValue} data-testid={`${id}-closed-remainder`}>{line.closedRemainder ?? T.notApplicable}</td>

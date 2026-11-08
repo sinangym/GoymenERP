@@ -249,6 +249,8 @@ export interface HarnessConfig {
   readonly onForceClose?: (call: RecordedCall) => Response | Promise<Response>
   /** SAT-D30: a POST on `/sales/drafts/{id}/over-delivery-approval`. */
   readonly onOverDeliveryApproval?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D17: a POST on `/sales/drafts/{id}/line-closure`. */
+  readonly onLineClosure?: (call: RecordedCall) => Response | Promise<Response>
   /** No 30: GET `/sales/drafts/{id}/force-close`; default: no recorded closure. */
   readonly onForceClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** SAT-D32: a POST on `/sales/drafts/{id}/close`. */
@@ -357,6 +359,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/over-delivery-approval$/.test(url)) {
           if (config.onOverDeliveryApproval === undefined) throw new Error('unexpected over-delivery approval')
           return config.onOverDeliveryApproval(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/line-closure$/.test(url)) {
+          if (config.onLineClosure === undefined) throw new Error('unexpected line closure')
+          return config.onLineClosure(call)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/force-close-impact$/.test(url)) {
           if (config.onForceCloseImpact === undefined) throw new Error('unexpected force-close-impact read')
