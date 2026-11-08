@@ -752,8 +752,8 @@ WRITER_METHOD_SCOPES = {
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
-    ("src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs", "DeliverAsync"): "435ccb0ecc56c93b1d92f802e14227cc8a6394485e543ccd770e544cc69b8b1b",
-    ("src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs", "DispatchSourceAsync"): "7ecee707a6d715740358ecead20ad1a8761c66d4fe2544b0ff0dc45b76369d1e",
+    ("src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs", "DeliverAsync"): "7c65493812d044fcaa417c763ee889d4347170530235b24fb954e17d339c42a5",
+    ("src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs", "DispatchSourceAsync"): "5b93bdfc12986a5831e035efbfbfac1dd3025d38904d6bb58256f6108d19a86d",
     (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
         "FinalizeInvoiceAsync",
@@ -899,7 +899,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 # The full blobs retain reachability evidence around the pinned methods (for example,
 # private writer call sites) and bind every emitted source record to reviewed bytes.
 REVIEWED_LIVE_SOURCE_SHA256 = {
-    "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "f217122ccdfe86023eaddc5e0e5b6f590bbd962c743543b826860ce3defa5d12",
+    "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "c6d5396b8a36720c0a1fb003e415b1744f2da9aa1af850b34c4f1a2b2154c069",
     ACCOUNTING_STORE: "9b6e088b496de1fc3c9e912e2d83397ef341e9eed6f54b79dfa1eb1c6deb8041",
     DOCUMENT_MODULE_PATH: "8e6108de29ca7aae5133131abf8deb981d097bc33ea7964403652f04f0ebc610",
     DOCUMENTS_STORE: "076a0c5b55a961716d99f2d407bf0ae7f1d48c835de7b82b9cf64ce3a3c822ea",
