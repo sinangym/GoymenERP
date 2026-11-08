@@ -122,8 +122,8 @@ public sealed partial class SalesOrderDraft
     /// The store's rebuild of one recorded line closure, in recorded order, after the lines and archived revisions and BEFORE the
     /// approval axis (its version floor counts one step per closure). A stored closure that does not fit (an unknown or twice
     /// closed line, a basis revision above the current one, quantities not of the line's unit, a shipped total that is zero or not
-    /// below the measured quantity, a remainder that is not their difference, an undefined band, blank facts) is refused, not
-    /// repaired.
+    /// below the measured quantity, a remainder that is not their difference, an undefined band or the block band that never
+    /// closes (SAT-D17, as <see cref="CloseLine"/>), blank facts) is refused, not repaired.
     /// </summary>
     public void RestoreLineClosure(LineClosureFacts facts)
     {
@@ -132,6 +132,7 @@ public sealed partial class SalesOrderDraft
         var line = lines.SingleOrDefault(candidate => candidate.Id == facts.LineId);
         if (line is null || IsLineClosed(facts.LineId)
             || facts.BasisRevision < 0 || facts.BasisRevision > Revision || !Enum.IsDefined(facts.Band)
+            || facts.Band == DeliveryToleranceBand.Block
             || !TryExact(facts.Ordered, out var orderedValue) || !TryLineQuantity(line, orderedValue, out var ordered)
             || !TryExact(facts.ShippedAtClosure, out var shippedValue) || !TryLineQuantity(line, shippedValue, out var shipped)
             || !TryExact(facts.CancelledRemainder, out var remainderValue) || !TryLineQuantity(line, remainderValue, out var remainder)
