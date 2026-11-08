@@ -110,6 +110,24 @@ internal sealed class InvoiceAttemptRow : ISalesTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
+/// <summary>API-35: the append-only official match of an approved invoice (SAT-D89); one row per invoice, never updated or deleted.</summary>
+internal sealed class InvoiceMatchRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InvoiceId { get; set; }
+    public string OfficialInvoiceNo { get; set; } = string.Empty;
+    public string Ettn { get; set; } = string.Empty;
+    public decimal InvoiceAmount { get; set; }
+    public decimal OfficialAmount { get; set; }
+    public decimal Difference { get; set; }
+    public decimal Tolerance { get; set; }
+    public string MatchedBy { get; set; } = string.Empty;
+    public DateTimeOffset MatchedAtUtc { get; set; }
+    public string? DifferenceApprovedBy { get; set; }
+    public string? DifferenceReason { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
 /// <summary>The one mapping between a domain invoice and its rows (write) and back (read; the domain checks consistency).</summary>
 internal static class SalesInvoiceRows
 {
@@ -225,6 +243,37 @@ internal static class SalesInvoiceRows
         // The shares of a rejected or cancelled invoice are released by TR_Invoices_Guard in the same UPDATE statement (EF would write
         // the lines before the header, and the line trigger reads the header's new state), so the lines are not written here.
     }
+
+    public static InvoiceMatchRow ToMatchRow(Guid companyId, Guid invoiceId, SalesInvoiceMatchFacts facts, string correlationId)
+    {
+        if (Money.SignificantDecimals(facts.InvoiceFunctionalAmount) > MaximumStoredScale
+            || Money.SignificantDecimals(facts.OfficialFunctionalAmount) > MaximumStoredScale
+            || Money.SignificantDecimals(facts.Difference) > MaximumStoredScale
+            || Money.SignificantDecimals(facts.Tolerance) > MaximumStoredScale)
+        {
+            throw new SalesDraftStoreException(SalesDraftStoreCodes.ValueDoesNotFit, "Eşleşme tutar ölçeği saklanan sütuna sığmıyor.");
+        }
+
+        return new InvoiceMatchRow
+        {
+            CompanyId = companyId,
+            InvoiceId = invoiceId,
+            OfficialInvoiceNo = facts.OfficialNo,
+            Ettn = facts.Ettn,
+            InvoiceAmount = facts.InvoiceFunctionalAmount,
+            OfficialAmount = facts.OfficialFunctionalAmount,
+            Difference = facts.Difference,
+            Tolerance = facts.Tolerance,
+            MatchedBy = facts.MatchedBy,
+            MatchedAtUtc = facts.MatchedAtUtc,
+            DifferenceApprovedBy = facts.DifferenceApprovedBy,
+            DifferenceReason = facts.DifferenceReason,
+            CorrelationId = correlationId.Trim(),
+        };
+    }
+
+    public static SalesInvoiceMatchFacts ToMatchFacts(InvoiceMatchRow row) => new SalesInvoiceMatchFacts(row.OfficialInvoiceNo, row.Ettn, row.InvoiceAmount,
+        row.OfficialAmount, row.Difference, row.Tolerance, row.MatchedBy, row.MatchedAtUtc, row.DifferenceApprovedBy, row.DifferenceReason);
 
     public static SalesInvoice Restore(InvoiceRow row, IReadOnlyList<InvoiceLineRow> lineRows)
     {

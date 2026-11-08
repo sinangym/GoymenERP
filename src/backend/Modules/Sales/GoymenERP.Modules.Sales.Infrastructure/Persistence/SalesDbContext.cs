@@ -264,6 +264,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     internal DbSet<InvoiceAttemptRow> InvoiceAttempts => Set<InvoiceAttemptRow>();
 
+    /// <summary>API-35: the append-only official match of an approved invoice.</summary>
+    internal DbSet<InvoiceMatchRow> InvoiceMatches => Set<InvoiceMatchRow>();
+
     /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
     internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
 
@@ -288,7 +291,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>CK_InvoiceAttempts_Command: only the invoice's own versioned commands record here.</summary>
     internal const string InvoiceAttemptCommandConstraint = "[CommandName] IN (N'" + SalesInvoiceCommands.CreateV1 + "', N'"
         + SalesInvoiceCommands.SubmitV1 + "', N'" + SalesInvoiceCommands.ApproveV1 + "', N'" + SalesInvoiceCommands.RejectV1 + "', N'"
-        + SalesInvoiceCommands.CancelV1 + "')";
+        + SalesInvoiceCommands.CancelV1 + "', N'" + SalesInvoiceCommands.MatchV1 + "')";
 
     /// <summary>CK_Invoices_State (API-33): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5.</summary>
     internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5)";
@@ -330,6 +333,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>TR_InvoiceLines_Guard: the lines of a non-draft invoice are immutable but for their release stamp (THROW 51224).</summary>
     internal const string InvoiceLineGuardTrigger = "TR_InvoiceLines_Guard";
+
+    /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
+    internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
+
+    /// <summary>CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106): within the tolerance no approver; beyond it an approver and a reason.</summary>
+    internal const string InvoiceMatchAmountsConstraint =
+        "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) "
+        + "AND (([Difference] <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) "
+        + "OR ([Difference] > [Tolerance] AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))";
 
     /// <summary>UX_InvoiceAttempts_InvoiceId: a stored invoice is born from exactly one create attempt.</summary>
     internal const string InvoiceCreateAttemptFilter = "[InvoiceId] IS NOT NULL AND [CommandName] = N'" + SalesInvoiceCommands.CreateV1 + "'";
@@ -1053,6 +1065,36 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var match = modelBuilder.Entity<InvoiceMatchRow>();
+        match.ToTable("InvoiceMatches", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceMatches_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_InvoiceMatches_Amounts", InvoiceMatchAmountsConstraint);
+            table.HasTrigger(InvoiceMatchGuardTrigger);
+        });
+        match.HasKey(x => new { x.CompanyId, x.InvoiceId });
+        match.Property(x => x.OfficialInvoiceNo).HasMaxLength(SalesInvoice.MaximumOfficialNoLength).UseCollation(IdentityCollation).IsRequired();
+        match.Property(x => x.Ettn).HasMaxLength(SalesInvoice.EttnLength).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        match.Property(x => x.InvoiceAmount).HasPrecision(28, 8);
+        match.Property(x => x.OfficialAmount).HasPrecision(28, 8);
+        match.Property(x => x.Difference).HasPrecision(28, 8);
+        match.Property(x => x.Tolerance).HasPrecision(28, 8);
+        match.Property(x => x.MatchedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
+        match.Property(x => x.DifferenceApprovedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        match.Property(x => x.DifferenceReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
+        match.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        match.HasIndex(x => new { x.CompanyId, x.OfficialInvoiceNo }).IsUnique().HasDatabaseName("UX_InvoiceMatches_OfficialNo");
+        match.HasIndex(x => new { x.CompanyId, x.Ettn }).IsUnique().HasDatabaseName("UX_InvoiceMatches_Ettn");
+        match.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        match.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        match.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
@@ -1487,6 +1529,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     ],
                     InvoiceLineRow => [],
                     InvoiceAttemptRow => [],
+                    // API-35: the official match is APPEND-ONLY (TR_InvoiceMatches_Guard refuses the same).
+                    InvoiceMatchRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftLineRow)

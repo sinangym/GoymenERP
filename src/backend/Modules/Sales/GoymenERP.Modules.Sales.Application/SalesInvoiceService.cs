@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// </list>
 /// Amounts are <see cref="SalesInvoiceCalculator"/>'s only (SAT-D11/D75/D76, EK42 SAT-D223…D226).
 /// </summary>
-public sealed class SalesInvoiceService(
+public sealed partial class SalesInvoiceService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -40,7 +40,9 @@ public sealed class SalesInvoiceService(
     ISettingsPrerequisiteProvider settings,
     TimeProvider timeProvider,
     ISalesInvoiceableShipmentReadPortV1? shipments = null,
-    ISettingsExchangeRateResolverV1? exchangeRates = null) : ISalesInvoiceService
+    ISettingsExchangeRateResolverV1? exchangeRates = null,
+    ISalesOfficialInvoiceReadPortV1? officialInvoices = null,
+    SalesInvoiceMatchTolerancePolicy? matchTolerance = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
@@ -728,7 +730,8 @@ public sealed class SalesInvoiceService(
                     ? new SalesInvoiceLineFunctionalView(Amounts(f.Amounts, functionalScale), [.. f.Adjusted.Select(type => type.ToString())],
                         f.NeedsReview)
                     : null))],
-            invoice.CreatedBy, invoice.CreatedAtUtc, DecisionView(invoice.Decision), PaymentAllocationWarning: null, IsReplay: isReplay);
+            invoice.CreatedBy, invoice.CreatedAtUtc, DecisionView(invoice.Decision), PaymentAllocationWarning: null, IsReplay: isReplay,
+            Match: MatchView(invoice.Match));
     }
 
     private static SalesInvoiceDecisionView? DecisionView(SalesInvoiceDecisionFacts facts) => facts == SalesInvoiceDecisionFacts.None

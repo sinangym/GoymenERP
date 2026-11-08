@@ -110,7 +110,14 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         }
 
         var lines = await dbContext.InvoiceLines.AsNoTracking().Where(line => line.InvoiceId == invoiceId).ToListAsync(cancellationToken);
-        return SalesInvoiceRows.Restore(row, lines);
+        var invoice = SalesInvoiceRows.Restore(row, lines);
+        var match = await dbContext.InvoiceMatches.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.InvoiceId == invoiceId, cancellationToken);
+        if (match is not null)
+        {
+            invoice.RestoreMatch(SalesInvoiceRows.ToMatchFacts(match));
+        }
+
+        return invoice;
     }
 
     public async Task<SalesInvoicePage> ListInvoicesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
@@ -134,7 +141,18 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         var ids = page.Select(row => row.Id).ToArray();
         var lines = (await dbContext.InvoiceLines.AsNoTracking().Where(line => ids.Contains(line.InvoiceId)).ToListAsync(cancellationToken))
             .ToLookup(line => line.InvoiceId);
-        var items = page.Select(row => SalesInvoiceRows.Restore(row, [.. lines[row.Id]])).ToList();
+        var matches = (await dbContext.InvoiceMatches.AsNoTracking().Where(match => ids.Contains(match.InvoiceId)).ToListAsync(cancellationToken))
+            .ToDictionary(match => match.InvoiceId);
+        var items = page.Select(row =>
+        {
+            var restored = SalesInvoiceRows.Restore(row, [.. lines[row.Id]]);
+            if (matches.TryGetValue(row.Id, out var matchRow))
+            {
+                restored.RestoreMatch(SalesInvoiceRows.ToMatchFacts(matchRow));
+            }
+
+            return restored;
+        }).ToList();
         var next = rows.Count > pageSize
             ? ListCursor.Encode(companyId, page[^1].CreatedAtUtc, page[^1].Id, ListCursor.InvoiceOrdering)
             : null;
@@ -248,6 +266,11 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireInvoiceStateCommand(commandName);
+        if (commandName == SalesInvoiceCommands.MatchV1)
+        {
+            throw new ArgumentException("Resmî eşleştirme faturanın durumunu değiştirmez; MatchInvoiceAsync kullanılır.", nameof(commandName));
+        }
+
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
         {
             throw new ArgumentException("Fatura kararının audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
@@ -327,12 +350,130 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         return new SalesInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
+    public async Task<Guid?> FindMatchedInvoiceIdAsync(string officialNo, string ettn, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(officialNo);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ettn);
+        RequireResolvedCompany();
+        var found = await dbContext.InvoiceMatches.AsNoTracking()
+            .Where(match => match.OfficialInvoiceNo == officialNo || match.Ettn == ettn)
+            .Select(match => (Guid?)match.InvoiceId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return found;
+    }
+
+    public async Task<SalesInvoiceStoreResult?> MatchInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid invoiceId,
+        Func<SalesInvoice, DateTimeOffset, SalesInvoiceMatchFacts> record, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(audit);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Resmî eşleştirmenin audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.InvoiceAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == SalesInvoiceCommands.MatchV1 && row.IdempotencyKeyHash == keyHash,
+                cancellationToken);
+        if (attempt is not null)
+        {
+            return await ReplayInvoiceAttemptAsync(attempt, actorId, requestHash, cancellationToken);
+        }
+
+        if (invoiceId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var invoice = await FindInvoiceAsync(invoiceId, cancellationToken);
+        if (invoice is null)
+        {
+            return null;
+        }
+
+        var before = InvoiceAuditState(invoice);
+        var version = invoice.Version;
+        var now = timeProvider.GetUtcNow();
+        var facts = record(invoice, now);
+        if (invoice.Version != version || invoice.Id != invoiceId || invoice.CompanyId != companyId
+            || !string.Equals(facts.MatchedBy, actorId, StringComparison.Ordinal) || facts.MatchedAtUtc != now)
+        {
+            throw new InvalidOperationException("Resmî eşleştirme faturayı değiştirmez ve aktörün adına tam bir kayıt üretir.");
+        }
+
+        dbContext.InvoiceMatches.Add(SalesInvoiceRows.ToMatchRow(companyId, invoiceId, facts, envelope.CorrelationId));
+        dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = SalesInvoiceCommands.MatchV1,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            InvoiceId = invoiceId,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            InvoiceEntityType,
+            invoiceId.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: version,
+            EntityVersionAfter: version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            before,
+            MatchAuditState(invoice, facts),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    private static string MatchAuditState(SalesInvoice invoice, SalesInvoiceMatchFacts facts) => JsonSerializer.Serialize(new
+    {
+        invoice.Id,
+        invoice.DocumentNo,
+        state = invoice.State.ToString(),
+        version = invoice.Version,
+        match = new
+        {
+            facts.OfficialNo,
+            facts.Ettn,
+            invoiceAmount = facts.InvoiceFunctionalAmount,
+            officialAmount = facts.OfficialFunctionalAmount,
+            facts.Difference,
+            facts.Tolerance,
+            facts.MatchedBy,
+            facts.DifferenceApprovedBy,
+            facts.DifferenceReason,
+        },
+    }, Json);
+
     private static void RequireInvoiceStateCommand(string commandName)
     {
         if (commandName is not (SalesInvoiceCommands.SubmitV1 or SalesInvoiceCommands.ApproveV1 or SalesInvoiceCommands.RejectV1
-            or SalesInvoiceCommands.CancelV1))
+            or SalesInvoiceCommands.CancelV1 or SalesInvoiceCommands.MatchV1))
         {
-            throw new ArgumentException("Yalnız onaya gönderme, onay, ret ve iptal bir faturanın durumunu değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız onaya gönderme, onay, ret, iptal ve resmî eşleştirme faturanın deneme kaydını taşır.", nameof(commandName));
         }
     }
 

@@ -455,7 +455,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company isolation; the 51221 rollback refusal), kept ordinal-sorted (95e16c66... -> 25ed266d...).
                 // S5 API-33 (Fatura cekirdegi 2): +3 SalesInvoice facts (submit/approve by another actor and the frozen rows, the cancelled invoice's
             // share release in the same save, the recorded and replayed terminal refusal), kept ordinal-sorted (d9564cc8... -> 0030e572...).
-                "0030e572eabcc265af69d1186ec9821c24d4bcda495fbe009213be8c7a26e47e",
+                // S5 API-35 (Fatura cekirdegi 3): +2 SalesInvoice facts (the official match's one save with attempt and audit, the untouched Approved
+                // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
+                "be1b2f40b8dd91881b27eea85f999b707a9e417afc04daa4e661ab75c9cd60ee",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -582,7 +584,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // admits no modification of them (append-only); no query-filter bypass or direct database surface.
                 // API-33: the header may change only its nine decision columns (state, version, submitted/decided/cancelled stamps and reasons); lines and
                 // attempts stay append-only; TR_Invoices_Guard / TR_InvoiceLines_Guard enforce the same in SQL (1a8c08ee... -> ab9a9588...).
-                "ab9a9588c067f7963809bb5e83cfc58044d4f1d84f4078d0941213a0aac6e52a",
+                // API-35: the append-only InvoiceMatches tenant rows (one per invoice, unique official number and ETTN per company) under the same
+                // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
+                "5d465acfb9fc8465d793fb5ee83d692f7f2e582ae893915b8d0fc2400d738c26",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1587,8 +1591,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // declarations (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): the invoice store over the same SalesStore and the invoice
                     // service factory (company context resolved, never registered); provider branch and token counts unchanged.
+                    // API-35 (Fatura cekirdegi 3): the invoice service factory also receives the optional official-invoice read port and the
+                    // tolerance policy (DI-only, none registered yet; the match is 503 fail-closed); provider branch and token counts unchanged.
                     new(
-                        "eb8a79e024193377ae7551c8f60e9a4df8582021e148a5fd23e2f5438e230aa2",
+                        "e62749629334b13196d3553097ae3f8913744cec34df5b1354da289d4a27b591",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2387,6 +2393,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("df8d28cfe00b6d587ad474aca1fea1e08bce98a6a3872f6f9279daf4b1197faf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 3 }),
+                // S5 API-35 (Fatura cekirdegi 3): Up adds the append-only TR_InvoiceMatches_Guard (51226); the Down's only other raw SQL is the
+                // forward-fix refusal (51225) while any match exists, before the DROP TRIGGER and DropTable.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108091314_AddSalesInvoiceOfficialMatch.cs"] =
+                    new("78f3bf9588b31a0a04908076237bfd611ce8937b59fc9ba6c0179998b44a1574",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

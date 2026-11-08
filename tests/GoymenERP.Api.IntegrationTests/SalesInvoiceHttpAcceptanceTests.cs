@@ -251,6 +251,93 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal("sales_invoice_self_approval", body.RootElement.GetProperty("code").GetString());
     }
 
+    private const string MatchBody =
+        "{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"GIB2026000000001\",\"ettn\":\"0f3b9a52-7c1e-4d8a-9b64-2a5c8e1d7f90\"}";
+
+    [Fact]
+    public async Task The_official_match_route_answers_200_passes_the_strict_body_and_a_replay_carries_the_replay_headers()
+    {
+        var replay = false;
+        var service = new StubInvoiceService
+        {
+            State = (_, id) => Task.FromResult(new SalesInvoiceCommandResult(Detail(id, replay), replay, "SENTETIK-corr-2")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var invoiceId = Guid.NewGuid();
+
+        using (var response = await client.SendAsync(StatePost(invoiceId, "external-match", MatchBody, "SENTETIK-match")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        replay = true;
+        using (var again = await client.SendAsync(StatePost(invoiceId, "external-match", MatchBody, "SENTETIK-match")))
+        {
+            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+            Assert.Equal("true", Assert.Single(again.Headers.GetValues("Idempotency-Replayed")));
+        }
+
+        Assert.All(service.StateBodies, b => Assert.StartsWith("match:3:GIB2026000000001|0f3b9a52-7c1e-4d8a-9b64-2a5c8e1d7f90|False|", b, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"A\"}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"A\",\"ettn\":\"not-a-guid\"}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\" \",\"ettn\":\"0f3b9a52-7c1e-4d8a-9b64-2a5c8e1d7f90\"}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"A\",\"ettn\":\"00000000-0000-0000-0000-000000000000\"}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"A\",\"ettn\":\"0f3b9a52-7c1e-4d8a-9b64-2a5c8e1d7f90\",\"extra\":1}")]
+    [InlineData("{\"expectedVersion\":\"03\",\"officialInvoiceNo\":\"A\",\"ettn\":\"0f3b9a52-7c1e-4d8a-9b64-2a5c8e1d7f90\"}")]
+    public async Task An_official_match_body_that_is_not_strict_answers_400_before_the_service(string json)
+    {
+        var service = new StubInvoiceService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(StatePost(Guid.NewGuid(), "external-match", json, "SENTETIK-bad-match"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(service.Keys);
+    }
+
+    [Theory]
+    [InlineData(409, "official_match_mismatch")]
+    [InlineData(409, "difference_approval_required")]
+    [InlineData(409, "official_document_already_matched")]
+    [InlineData(422, "sales_invoice_match_difference_reason_required")]
+    public async Task An_official_match_refusal_carries_its_stable_code(int status, string code)
+    {
+        var service = new StubInvoiceService { State = (_, _) => throw new SalesDraftServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(StatePost(Guid.NewGuid(), "external-match", MatchBody, "SENTETIK-refused-match"));
+
+        Assert.Equal(status, (int)response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task An_unavailable_official_invoice_provider_answers_the_platform_503_without_the_provider_code()
+    {
+        var service = new StubInvoiceService
+        {
+            State = (_, _) => throw new SalesDraftServiceException(503, SalesInvoiceProblemCodesV1.OfficialInvoiceProviderUnavailable),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(StatePost(Guid.NewGuid(), "external-match", MatchBody, "SENTETIK-503-match"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        // The service's own provider code never reaches the wire; the platform writer answers its generic code.
+        Assert.Equal("service_unavailable", body.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain("official_invoice_provider_unavailable", body.RootElement.GetRawText(), StringComparison.Ordinal);
+    }
+
     private static HttpRequestMessage StatePost(Guid invoiceId, string route, string json, string? key)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.InvoicesPath}/{invoiceId:D}/{route}")
@@ -321,6 +408,11 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesInvoiceCommandResult> CancelInvoiceAsync(Guid invoiceId, CancelSalesInvoiceRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             Record("cancel", invoiceId, request.ExpectedVersion, request.Reason + "|" + request.AcknowledgePaymentAllocationLift, metadata);
+
+        public Task<SalesInvoiceCommandResult> MatchInvoiceAsync(Guid invoiceId, MatchSalesInvoiceRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            Record("match", invoiceId, request.ExpectedVersion,
+                $"{request.OfficialInvoiceNo}|{request.Ettn}|{request.ApproveDifference}|{request.DifferenceReason}", metadata);
 
         private Task<SalesInvoiceCommandResult> Record(string command, Guid invoiceId, string version, string? reason, SalesCommandMetadata metadata)
         {

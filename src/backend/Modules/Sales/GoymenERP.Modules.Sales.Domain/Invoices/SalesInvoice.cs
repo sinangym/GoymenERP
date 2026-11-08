@@ -123,7 +123,7 @@ public sealed class SalesInvoiceLine
 /// come from <see cref="SalesInvoiceCalculator"/> once, at creation, and are frozen; the instalments split the payable amount
 /// (SAT-D124). The document number is a technical display identifier (Ö8), never the official invoice number.
 /// </summary>
-public sealed class SalesInvoice
+public sealed partial class SalesInvoice
 {
     public const int MaximumLines = SalesOrderDraft.MaximumLines;
     public const int MaximumDocumentNoLength = SalesOrderDraft.MaximumDocumentNoLength;

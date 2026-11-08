@@ -273,6 +273,117 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.approve.v1' AND Outcome = 2", ("@id", invoiceId)));
     }
 
+    private const string OfficialEttn = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+    /// <summary>Stores an invoice and takes it to Approved by another actor (version 3), through the real store.</summary>
+    private static async Task<SalesInvoice> ApprovedAsync(Run run, string prefix, string approver)
+    {
+        var invoiceId = Guid.NewGuid();
+        await using var scope = run.Store(CompanyA);
+        await scope.Invoices.StoreInvoiceAsync(run.Envelope(prefix + "-create"), Hash('a'),
+            number => Invoice(invoiceId, number, run.Actor, Guid.NewGuid(), Guid.NewGuid()));
+        await scope.Invoices.DecideInvoiceAsync(run.Envelope(prefix + "-submit"), Hash('b'), SalesInvoiceCommands.SubmitV1, invoiceId,
+            (invoice, now) => invoice.Submit(1, run.Actor, now), new SalesDraftStateAudit("sales.invoice.submitted.v1", "Submit", "SENTETIK"));
+        var approved = await scope.Invoices.DecideInvoiceAsync(run.Envelope(prefix + "-approve", actor: approver,
+            permission: SalesPermissionManifestV1.InvoicesApprove), Hash('c'), SalesInvoiceCommands.ApproveV1, invoiceId,
+            (invoice, now) => invoice.Approve(2, approver, now), new SalesDraftStateAudit("sales.invoice.approved.v1", "Approve", "SENTETIK"));
+        return approved!.Invoice;
+    }
+
+    [SqlServerFact]
+    public async Task An_official_match_is_one_save_with_attempt_and_audit_leaves_the_approved_invoice_untouched_and_replays_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var approved = await ApprovedAsync(run, "m1", approver);
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000001", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+            approved.PayableFunctionalAmount + 0.05m, approved.PayableFunctionalAmount + 0.05m);
+        var envelope = run.Envelope("m1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var matched = await scope.Invoices.MatchInvoiceAsync(envelope, Hash('e'), approved.Id,
+                (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+            Assert.Equal((SalesDraftWriteOutcome.Recorded, SalesInvoiceState.Approved, 3L), (matched!.Outcome, matched.Invoice.State, matched.Invoice.Version));
+            Assert.Equal(0.05m, matched.Invoice.Match!.Difference);
+            Assert.Equal(approved.Id, await scope.Invoices.FindMatchedInvoiceIdAsync("GIB2026000000001", OfficialEttn));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id AND State = 3 AND Version = 3", ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id AND Difference = 0.05 AND Tolerance = 0.05 AND DifferenceApprovedBy IS NULL AND MatchedBy = @m",
+            ("@id", approved.Id), ("@m", matcher)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.match.v1' AND Outcome = 1", ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.Invoice' AND EventType = N'sales.invoice.matched.v1' AND EntityId = @id "
+            + "AND EntityVersionBefore = 3 AND EntityVersionAfter = 3 AND PermissionCode = N'sales.invoices.match'", ("@id", approved.Id.ToString("D"))));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var replay = await scope.Invoices.MatchInvoiceAsync(envelope with { CorrelationId = "SENTETIK-again" }, Hash('e'), approved.Id,
+                (_, _) => throw new InvalidOperationException("A replay must not decide again."),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+            Assert.Equal(SalesDraftWriteOutcome.Replayed, replay!.Outcome);
+            var found = await scope.Invoices.FindInvoiceAsync(approved.Id);
+            Assert.Equal("GIB2026000000001", found!.Match!.OfficialNo);
+        }
+
+        // A second invoice cannot take the same official number or ETTN (SAT-D89): the database refuses a raw duplicate too.
+        var second = await ApprovedAsync(run, "m2", approver);
+        var duplicate = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "INSERT INTO sales.InvoiceMatches (CompanyId, InvoiceId, OfficialInvoiceNo, Ettn, InvoiceAmount, OfficialAmount, Difference, Tolerance, "
+            + "MatchedBy, MatchedAtUtc, CorrelationId) SELECT CompanyId, @second, OfficialInvoiceNo, Ettn, InvoiceAmount, OfficialAmount, Difference, "
+            + "Tolerance, MatchedBy, MatchedAtUtc, CorrelationId FROM sales.InvoiceMatches WHERE InvoiceId = @first",
+            ("@second", second.Id), ("@first", approved.Id)));
+        Assert.Contains(duplicate.Number, new[] { 2601, 2627 });
+    }
+
+    [SqlServerFact]
+    public async Task The_official_match_table_is_append_only_checks_its_amounts_and_its_Down_refuses_once_a_match_exists_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddSalesInvoiceOfficialMatch().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var approved = await ApprovedAsync(run, "m3", approver);
+        var other = await ApprovedAsync(run, "m4", approver);
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000003", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.MatchInvoiceAsync(run.Envelope("m3-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
+                Hash('f'), approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+        }
+
+        foreach (var sql in new[]
+        {
+            "UPDATE sales.InvoiceMatches SET MatchedBy = N'SENTETIK-hack' WHERE InvoiceId = @id",
+            "DELETE FROM sales.InvoiceMatches WHERE InvoiceId = @id",
+        })
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql, ("@id", approved.Id)));
+            Assert.Equal(51226, refused.Number);
+        }
+
+        // CK_InvoiceMatches_Amounts: a difference above the tolerance without an approver and a reason is not storable.
+        var unapproved = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "INSERT INTO sales.InvoiceMatches (CompanyId, InvoiceId, OfficialInvoiceNo, Ettn, InvoiceAmount, OfficialAmount, Difference, Tolerance, "
+            + "MatchedBy, MatchedAtUtc, CorrelationId) VALUES (@c, @id, N'GIB2026000000004', @ettn, 100, 101, 1, 0.05, N'SENTETIK-m', SYSUTCDATETIME(), N'SENTETIK-c')",
+            ("@c", CompanyA), ("@id", other.Id), ("@ettn", "1a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")));
+        Assert.Contains("CK_InvoiceMatches_Amounts", unapproved.Message, StringComparison.Ordinal);
+
+        var down = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51225, down.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
+    }
+
     private static string Hash(char fill) => new(fill, 64);
 
     /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>

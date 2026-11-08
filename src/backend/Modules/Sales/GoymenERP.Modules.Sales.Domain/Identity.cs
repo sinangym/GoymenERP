@@ -395,6 +395,18 @@ public static class SalesRuleCodes
     /// <summary>API-33 (SAT-D88/D204): the person who prepared or submitted an invoice does not approve or reject it.</summary>
     public const string InvoiceSelfApproval = "sales_invoice_self_approval";
 
+    /// <summary>API-35 (SAT-D89): the official document's customer or currency is not the approved invoice's.</summary>
+    public const string InvoiceMatchMismatch = "sales_invoice_match_mismatch";
+
+    /// <summary>API-35 (SAT-D106/D229): the TL difference exceeds the tolerance and no explicit approval was given.</summary>
+    public const string InvoiceMatchDifferenceNotApproved = "sales_invoice_match_difference_not_approved";
+
+    /// <summary>API-35 (SAT-D106): an approved difference carries a reason.</summary>
+    public const string InvoiceMatchDifferenceReasonRequired = "sales_invoice_match_difference_reason_required";
+
+    /// <summary>API-35: an approval was asked although the difference is within the tolerance.</summary>
+    public const string InvoiceMatchDifferenceNotApplicable = "sales_invoice_match_difference_not_applicable";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

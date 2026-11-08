@@ -568,6 +568,16 @@ public static class ErpPermissions
     public const string SalesInvoicesApprove = "sales.invoices.approve";
 
     /// <summary>
+    /// S5 API-35 (Fatura çekirdeği 3; SAT-D89, SAT-D106, SAT-D229): match an approved sales invoice with the official document
+    /// (Sales owner name SalesPermissionManifestV1.InvoicesMatch, same string). Its own name: the invoice write, read and approve
+    /// names and the order names do not confer it and it confers none of them. Registered, not granted: no seeded role and no
+    /// real user receives it (who matches is a grant and a human gate). Company-wide only. Not Critical: the match writes no
+    /// money, stock or Finance data (EK20); the finalisation (API-36) is its own name. Approving a difference above the tolerance
+    /// additionally needs sales.invoices.approve and is never the preparer's (a service/domain rule, not a property of this name).
+    /// </summary>
+    public const string SalesInvoicesMatch = "sales.invoices.match";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80; KPI No 124, No 25, SAT-D25): read the Sales reports — open order quantities, lost
     /// quotes and the invoice-to-order price variance (Sales owner name SalesPermissionManifestV1.ReportsRead, same string). Its
     /// own name: no order, quote, invoice or price name confers it and it confers none of them (an amount in a report still needs
@@ -954,6 +964,7 @@ public static class ErpPermissions
             SalesInvoicesRead,
             SalesInvoicesWrite,
             SalesInvoicesApprove,
+            SalesInvoicesMatch,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -1116,6 +1127,7 @@ public static class ErpPermissions
             SalesInvoicesRead,
             SalesInvoicesWrite,
             SalesInvoicesApprove,
+            SalesInvoicesMatch,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
