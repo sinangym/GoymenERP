@@ -147,7 +147,9 @@ public sealed class CustomerInstrumentServiceTests
             Assert.Equal(FinancePermissionNames.CustomerInstrumentCollect, collectedAudit.PermissionCode);
             var receiptAudit = Assert.Single(audits, audit => audit.EventType == "finance.manual-receipt.recorded.v1");
             Assert.Equal(sourceId.ToString("D"), receiptAudit.EntityId);
-            Assert.All(audits, audit => Assert.DoesNotContain("1000", audit.AfterJson + audit.BeforeJson, StringComparison.Ordinal));
+            // A bare "1000" can occur inside a random hex id, so it is matched as a whole token only.
+            Assert.All(audits, audit => Assert.DoesNotMatch(@"(?<![0-9A-Fa-f-])1000(\.\d+)?(?![0-9A-Fa-f-])",
+                audit.AfterJson + audit.BeforeJson));
         }
 
         // The collection is an ordinary recorded receipt to F-02 and F-03.
