@@ -174,6 +174,12 @@ public sealed class SalesReferenceReadHandler(
         {
             return Failure<SalesProductReferenceV1>(403);
         }
+        catch (InvalidOperationException)
+        {
+            // B-31: a product record the owner cannot restore is the owner being unavailable, never an unmapped 500.
+            return await ReleaseFailureAsync(scope, bindings.ProductPermission,
+                Failure<SalesProductReferenceV1>(503, "product_provider_unavailable"), cancellationToken);
+        }
     }
 
     /// <summary>
