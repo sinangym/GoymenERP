@@ -238,10 +238,12 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
         Assert.Equal(51213, error.Number);
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddDraftOverDeliveryApprovals", applied[^1], StringComparison.Ordinal);
-        var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        // Later Sales migrations (the invoices) roll back first and pass; the approvals guard then refuses at its own step.
+        var approvalsIndex = Array.FindIndex(applied, id => id.EndsWith("_AddDraftOverDeliveryApprovals", StringComparison.Ordinal));
+        Assert.True(approvalsIndex > 0);
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[approvalsIndex - 1]));
         Assert.Equal(51213, rollback.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied.Take(approvalsIndex + 1), (await context.Database.GetAppliedMigrationsAsync()).Take(approvalsIndex + 1));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftOverDeliveryApprovals] WHERE [DraftId] = @id", ("@id", draft.Id)));
 
         // The rebuilt order carries its approval (the store's restore through the domain, counted by the version floor).
