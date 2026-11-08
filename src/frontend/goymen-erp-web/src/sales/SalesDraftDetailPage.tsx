@@ -137,6 +137,7 @@ import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
 import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
+import { SalesOrderInvoices } from './SalesInvoiceFinalization'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
@@ -235,6 +236,17 @@ export function SalesDraftDetailPage() {
             draftId={outcome.data.draft.id}
             companyId={companyId}
             documentNo={outcome.data.draft.documentNo}
+          />
+        ) : null
+      }
+      invoices={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderInvoices
+            key={`invoices:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            draftId={outcome.data.draft.id}
+            companyId={companyId}
+            namespace={namespace}
+            entryGeneration={shell.routeEntryGeneration}
           />
         ) : null
       }
@@ -508,6 +520,7 @@ export function DraftView({
   forceClose = null,
   userClose = null,
   documents = null,
+  invoices = null,
   pdfAction = null,
   activeTab,
   onTabChange,
@@ -560,6 +573,8 @@ export function DraftView({
    * their timeline; null when no single company is bound.
    */
   readonly documents?: React.ReactNode
+  /** API-09 / API-36: the order's sales invoices and their finalization state; null when no single company is bound. */
+  readonly invoices?: React.ReactNode
   /** MOD-07: "PDF indir" — the server-rendered order PDF; null when no single company is bound. */
   readonly pdfAction?: React.ReactNode
   /** The open tab; when omitted the view keeps its own (an isolated render has no router). */
@@ -577,6 +592,8 @@ export function DraftView({
   // The vault is asked only once its tab has been opened; afterwards the panel stays mounted like the others.
   const [documentsOpened, setDocumentsOpened] = useState(tab === ORDER_TAB.documents)
   if (tab === ORDER_TAB.documents && !documentsOpened) setDocumentsOpened(true)
+  const [invoicesOpened, setInvoicesOpened] = useState(tab === ORDER_TAB.invoices)
+  if (tab === ORDER_TAB.invoices && !invoicesOpened) setInvoicesOpened(true)
   const everApproved = draft.approvalState === APPROVAL_STATE.approved || draft.revision !== REV_0
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
@@ -823,11 +840,13 @@ export function DraftView({
               {remainderChanges}
             </>
           ),
-          [ORDER_TAB.invoices]: (
-            <p className={styles.muted} data-testid="sales-invoices-empty">
-              {ORDER_TABS_TEXT.invoicesEmpty}
-            </p>
-          ),
+          [ORDER_TAB.invoices]: invoices === null
+            ? (
+              <p className={styles.muted} data-testid="sales-invoices-empty">
+                {ORDER_TABS_TEXT.invoicesEmpty}
+              </p>
+            )
+            : invoicesOpened ? invoices : null,
           [ORDER_TAB.documents]: documents === null
             ? <p className={styles.muted}>{ORDER_TABS_TEXT.documentsUnavailable}</p>
             : documentsOpened ? documents : null,
