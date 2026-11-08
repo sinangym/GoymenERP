@@ -505,7 +505,11 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     /// <summary>The real host composes the Purchasing adapter (A4 / MOD-03); one adapter per kind, so the synthetic owner REPLACES it.</summary>
     private static void SyntheticPurchasingOwner(IServiceCollection services, ISalesOrderLinkedSupplyReadPortV1 owner)
     {
-        services.RemoveAll<ISalesOrderLinkedSupplyReadPortV1>();
+        foreach (var descriptor in services
+                     .Where(d => d.ServiceType == typeof(ISalesOrderLinkedSupplyReadPortV1)
+                                 && d.ImplementationType == typeof(PurchasingSalesOrderLinkedSupplyReadPort))
+                     .ToList())
+            services.Remove(descriptor);
         services.AddSingleton(owner);
     }
 

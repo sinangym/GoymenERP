@@ -9,7 +9,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// A4 / MOD-03 (SAT-D219), the Purchasing side without a database: the composer's one rule of "open" over stored rows (a general
 /// line and its technical slices are never counted twice, a fully accepted or cancelled commitment is closed, a row that cannot be
 /// answered throws) and the port's refusals before any connection (no resolved company, another company, a bad query). The query on
-/// real rows (Approved orders only, the Sales source index, this company only) is proven on SQL Server in CI. SENTETIK / NOT_ENV.
+/// real rows (Approved orders only, the Sales source index, this company only) is NOT yet proven on SQL Server (only the empty path runs there; a real-SQL acceptance test is a later slice). SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class PurchaseSalesLinkedSupplyReadPortTests
 {

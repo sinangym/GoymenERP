@@ -31,7 +31,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// DEC-SAL-005 / AT-007 against a REAL SQL Server and the REAL host composition: the impact preview of an approved order is
 /// read through the real routes from the owners' real ports (Inventory's active allocations, Logistics's loading lines and
-/// active approved dispatch-note candidates — each registered by its own module; the remaining three categories have no owner
+/// active approved dispatch-note candidates — each registered by its own module; Purchasing's linked-supply adapter reads "None" (A4 / MOD-03); the remaining two categories have no owner
 /// on main and read "NoSource"); the cancellation is one
 /// save (header state + version, the appended cancellation row, the attempt, the audit event with SourceChannel Web); the
 /// reopened order reads Cancelled with its reason and unchanged approval facts; the same key replays with no second effect;
