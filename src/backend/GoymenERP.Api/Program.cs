@@ -354,6 +354,11 @@ builder.Services.AddLogisticsModule(
 // 503 product_eligibility_unavailable, fail-closed.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
 builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
+// A4 / MOD-03 (SAT-D219/D220): Purchasing's Sales-facing adapters live in the host (Purchasing does not reference Sales): the
+// linked-supply read (SupplyKind Purchasing) with its recorder declaration, and the Sales-sourced request line reader.
+builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, PurchasingSalesOrderLinkedSupplyReadPort>();
+builder.Services.AddSingleton<ISalesOrderLinkedSupplyRecorderV1, PurchasingSalesOrderLinkedSupplyRecorder>();
+builder.Services.AddScoped<IPurchaseRequestSalesSourcePortV1, PurchasingRequestSalesSourcePort>();
 builder.Services.AddSingleton(new PurchasingServiceBindings(
     GoodsReceiptPermission: ErpPermissions.PurchasingGoodsReceiptsRecord));
 builder.Services.AddScoped<PurchaseGoodsReceiptHost>();

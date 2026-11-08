@@ -58,6 +58,8 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
         services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
+        // A4 / MOD-03: the open purchase lines serving a Sales order (the host adapts it to Sales's linked-supply read contract).
+        services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
         return services;
     }
 
