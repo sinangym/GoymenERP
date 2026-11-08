@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 141
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "2becfbd1491aed9b177b56ae4f61d3031ab24e4edb5387928518cbd52c2eb399"
 )
-EXPECTED_DURABLE_STORE_COUNT = 27
+EXPECTED_DURABLE_STORE_COUNT = 28
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
