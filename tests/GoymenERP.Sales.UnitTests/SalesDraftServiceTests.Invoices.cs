@@ -242,12 +242,159 @@ public sealed partial class SalesDraftServiceTests
         }
     }
 
+    private const string InvoiceApprove = SalesPermissionManifestV1.InvoicesApprove;
+
+    [Fact]
+    public async Task An_invoice_is_submitted_then_approved_by_another_actor_and_each_step_replays_under_its_key()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
+
+        var submitted = await invoicing.Service().SubmitInvoiceAsync(created.Id, Command("1"), Metadata("k-inv-submit"));
+        Assert.Equal(("PendingApproval", "2", false), (submitted.Invoice.State, submitted.Invoice.Version, submitted.IsReplay));
+
+        invoicing.World.User.Id = "synthetic-invoice-approver";
+        invoicing.World.Authority.Measured.Clear();
+        var approved = await invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-approve"));
+        Assert.Equal(("Approved", "3", false), (approved.Invoice.State, approved.Invoice.Version, approved.IsReplay));
+        Assert.Equal(InvoiceApprove, invoicing.World.Authority.Measured[0]);
+        Assert.True(invoicing.World.Authority.Measured.Count(name => name == InvoiceApprove) >= 2);
+
+        var replay = await invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-approve", "another-correlation"));
+        Assert.True(replay.IsReplay);
+        Assert.Equal("Approved", replay.Invoice.State);
+        Assert.Equal(1, invoicing.Invoices.StateAttempts.Count(entry => entry.Key == "k-inv-approve"));
+
+        var sameKeyOtherContent = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().ApproveInvoiceAsync(created.Id, Command("9"), Metadata("k-inv-approve")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), Status(sameKeyOtherContent));
+    }
+
+    [Theory]
+    [InlineData("preparer")]
+    [InlineData("submitter")]
+    public async Task The_preparer_and_the_submitter_cannot_approve_and_the_refusal_is_recorded_and_replayed(string who)
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
+        if (who == "submitter")
+        {
+            invoicing.World.User.Id = "synthetic-invoice-submitter";
+        }
+
+        await invoicing.Service().SubmitInvoiceAsync(created.Id, Command("1"), Metadata("k-inv-submit"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-self")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.SelfApproval), Status(refused));
+        Assert.False(refused.IsReplay);
+
+        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-self", "another-correlation")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.SelfApproval), Status(again));
+        Assert.True(again.IsReplay);
+        Assert.Equal("PendingApproval", (await invoicing.Service().GetInvoiceAsync(created.Id)).State);
+    }
+
+    [Fact]
+    public async Task An_approver_without_the_approve_permission_or_who_loses_it_before_the_save_writes_nothing()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
+        await invoicing.Service().SubmitInvoiceAsync(created.Id, Command("1"), Metadata("k-inv-submit"));
+        invoicing.World.User.Id = "synthetic-invoice-approver";
+
+        invoicing.World.Authority.Denied.Add(InvoiceApprove);
+        var denied = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-denied")));
+        Assert.Equal(403, denied.Status);
+        Assert.Equal(0, invoicing.Invoices.DecideCalls - 1);
+
+        invoicing.World.Authority.Denied.Clear();
+        invoicing.World.Authority.LostLater = (InvoiceApprove, invoicing.World.Authority.Calls + 1);
+        var lost = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-lost")));
+        Assert.Equal(403, lost.Status);
+        Assert.Equal(1, invoicing.Invoices.DecideCalls);
+        Assert.Equal("PendingApproval", (await invoicing.Service().GetInvoiceAsync(created.Id)).State);
+    }
+
+    [Fact]
+    public async Task A_draft_or_pending_invoice_is_cancelled_with_a_reason_and_an_approved_one_is_a_recorded_state_conflict()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
+
+        var cancelled = await invoicing.Service().CancelInvoiceAsync(created.Id, new CancelSalesInvoiceRequest("1", "Musteri vazgecti"), Metadata("k-inv-cancel"));
+        Assert.Equal(("Cancelled", "2"), (cancelled.Invoice.State, cancelled.Invoice.Version));
+
+        var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().CancelInvoiceAsync(created.Id, new CancelSalesInvoiceRequest("1", "Musteri vazgecti"), Metadata("k-inv-stale")));
+        Assert.Equal(409, stale.Status);
+        var staleAgain = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().CancelInvoiceAsync(created.Id, new CancelSalesInvoiceRequest("1", "Musteri vazgecti"), Metadata("k-inv-stale", "another-correlation")));
+        Assert.True(staleAgain.IsReplay);
+        Assert.Equal((stale.Status, stale.Code), (staleAgain.Status, staleAgain.Code));
+    }
+
+    [Fact]
+    public async Task An_invoice_state_command_with_a_bad_expected_version_is_refused_before_any_read()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
+        foreach (var bad in new[] { "0", "01x", "-1", "" })
+        {
+            var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                invoicing.Service().SubmitInvoiceAsync(created.Id, Command(bad), Metadata("k-inv-bad")));
+            Assert.Equal((400, "validation_failed"), Status(refused));
+        }
+
+        Assert.Equal(0, invoicing.Invoices.DecideCalls);
+    }
+
     /// <summary>An in-memory invoice store with the attempt rules of the real one (same key + content + actor replays; else 409).</summary>
     private sealed class FakeInvoiceStore : ISalesInvoiceStore
     {
         public Dictionary<Guid, SalesInvoice> Stored { get; } = [];
         public Dictionary<string, (string Hash, string Actor, Guid Invoice, string Correlation)> Attempts { get; } = [];
         public HashSet<Guid> Invoiced { get; } = [];
+
+        public Dictionary<string, (string Hash, string Actor, Guid Invoice, string Correlation, SalesDraftTerminalRefusal? Refusal)> StateAttempts { get; } = [];
+        public int DecideCalls { get; private set; }
+
+        public Task<SalesInvoiceReplay?> FindInvoiceStateReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            CancellationToken cancellationToken = default)
+        {
+            if (!StateAttempts.TryGetValue(envelope.IdempotencyKey, out var attempt))
+            {
+                return Task.FromResult<SalesInvoiceReplay?>(null);
+            }
+
+            return attempt.Hash == requestHash && attempt.Actor == envelope.ActorId
+                ? Task.FromResult<SalesInvoiceReplay?>(new SalesInvoiceReplay(attempt.Refusal is null ? Stored[attempt.Invoice] : null, attempt.Refusal, attempt.Correlation))
+                : throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "same key, other content");
+        }
+
+        public Task RecordInvoiceRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid invoiceId,
+            SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
+        {
+            StateAttempts[envelope.IdempotencyKey] = (requestHash, envelope.ActorId, invoiceId, envelope.CorrelationId, refusal);
+            return Task.CompletedTask;
+        }
+
+        public Task<SalesInvoiceStoreResult?> DecideInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+        {
+            DecideCalls++;
+            if (!Stored.TryGetValue(invoiceId, out var invoice))
+            {
+                return Task.FromResult<SalesInvoiceStoreResult?>(null);
+            }
+
+            mutate(invoice, DateTimeOffset.UnixEpoch);
+            StateAttempts[envelope.IdempotencyKey] = (requestHash, envelope.ActorId, invoiceId, envelope.CorrelationId, null);
+            return Task.FromResult<SalesInvoiceStoreResult?>(new SalesInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
+        }
 
         public Task<SalesInvoiceStoreResult> StoreInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
             Func<string, SalesInvoice> build, CancellationToken cancellationToken = default)

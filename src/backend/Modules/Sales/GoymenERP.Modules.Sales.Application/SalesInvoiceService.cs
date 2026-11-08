@@ -44,6 +44,7 @@ public sealed class SalesInvoiceService(
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
+    private const string ApprovePermission = SalesPermissionManifestV1.InvoicesApprove;
     private const string PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead;
     private const int MaximumCursorLength = 8192;
 
@@ -189,6 +190,180 @@ public sealed class SalesInvoiceService(
             ReadPermission) ?? throw new SalesDraftServiceException(404, "not_found");
         await RequirePriceReadAsync(scope, cancellationToken);
         return View(invoice, isReplay: false);
+    }
+
+    // ---- API-33: submit, approve, reject, cancel -------------------------------------------------------------------------
+
+    public Task<SalesInvoiceCommandResult> SubmitInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(invoiceId, request, request?.ExpectedVersion, SalesInvoiceCommands.SubmitV1, WritePermission,
+            SalesInvoiceStateHash.Compute(SalesInvoiceCommands.SubmitV1, invoiceId, request!), metadata,
+            (target, actor, version, now) => target.Submit(version, actor, now),
+            new SalesDraftStateAudit("sales.invoice.submitted.v1", "Submit", "Satış faturası onaya gönderildi"), cancellationToken);
+
+    public Task<SalesInvoiceCommandResult> ApproveInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(invoiceId, request, request?.ExpectedVersion, SalesInvoiceCommands.ApproveV1, ApprovePermission,
+            SalesInvoiceStateHash.Compute(SalesInvoiceCommands.ApproveV1, invoiceId, request!), metadata,
+            (target, actor, version, now) => target.Approve(version, actor, now),
+            new SalesDraftStateAudit("sales.invoice.approved.v1", "Approve", "Satış faturası onaylandı"), cancellationToken);
+
+    public Task<SalesInvoiceCommandResult> RejectInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(invoiceId, request, request?.ExpectedVersion, SalesInvoiceCommands.RejectV1, ApprovePermission,
+            SalesInvoiceStateHash.Compute(SalesInvoiceCommands.RejectV1, invoiceId, request!), metadata,
+            (target, actor, version, now) => target.Reject(version, actor, request!.Reason, now),
+            new SalesDraftStateAudit("sales.invoice.rejected.v1", "Reject", "Satış faturası reddedildi"), cancellationToken);
+
+    /// <summary>
+    /// Sinan S2 (SAT-D96): the cancel never refuses because of payments. In this model only a draft or pending invoice cancels (no
+    /// payment can be allocated to it yet, and Sales never writes Finance's allocation); the approved invoice's reverse record
+    /// with the allocation-lift warning and its confirmation need Finance's port and are the next slice.
+    /// </summary>
+    public Task<SalesInvoiceCommandResult> CancelInvoiceAsync(Guid invoiceId, CancelSalesInvoiceRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(invoiceId, request is null ? null : new SalesDraftStateCommandRequest(request.ExpectedVersion, request.Reason),
+            request?.ExpectedVersion, SalesInvoiceCommands.CancelV1, WritePermission,
+            SalesInvoiceStateHash.Compute(invoiceId, request!), metadata,
+            (target, actor, version, now) => target.Cancel(version, actor, request!.Reason, now),
+            new SalesDraftStateAudit("sales.invoice.cancelled.v1", "Cancel", "Satış faturası iptal edildi"), cancellationToken);
+
+    private async Task<SalesInvoiceCommandResult> DecideAsync(Guid invoiceId, SalesDraftStateCommandRequest? request, string? expectedText,
+        string commandName, string permission, string requestHash, SalesCommandMetadata metadata,
+        Action<SalesInvoice, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        var scope = await RequireAsync(permission, cancellationToken);
+        await RequirePriceReadAsync(scope, cancellationToken);
+        if (!long.TryParse(expectedText, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion) || expectedVersion < 1)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
+        }
+
+        var envelope = new SalesDraftWriteEnvelope(scope.ActorId, permission, scope.RoleCodes, metadata.CorrelationId,
+            metadata.CausationId, metadata.IdempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent);
+        var replay = await FindStateReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+        if (replay is not null)
+        {
+            return Replayed(replay);
+        }
+
+        if (invoiceId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        // The last fences that can still prevent the write; none after the commit.
+        await RequireStillAsync(scope, permission, cancellationToken);
+        await RequirePriceReadAsync(scope, cancellationToken);
+        SalesInvoiceStoreResult? result;
+        try
+        {
+            result = await invoices.DecideInvoiceAsync(envelope, requestHash, commandName, invoiceId,
+                (target, now) => decide(target, scope.ActorId, expectedVersion, now), audit, cancellationToken);
+        }
+        catch (SalesVersionConflictException exception)
+        {
+            // ADR-011 §7: the caller's expected version is stale: recorded under the key, replayed on retry.
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName, invoiceId,
+                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", exception.Code)]),
+                cancellationToken);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
+        {
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName, invoiceId,
+                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict, [new("state", exception.Code)]),
+                cancellationToken);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceSelfApproval)
+        {
+            // SAT-D88/D204: the approver is the preparer or the submitter; the same actor under the same key stays refused.
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName, invoiceId,
+                new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.SelfApproval, [new("actor", exception.Code)]),
+                cancellationToken);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
+        {
+            throw new SalesDraftServiceException(422, exception.Code, [new("reason", exception.Code)]);
+        }
+        catch (SalesRuleException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("request", exception.Code)]);
+        }
+        catch (ArgumentException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            // ADR-011 §8: a lost same-key race answers the winner; a lost version race is the caller's concurrent_change.
+            var won = await FindStateReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            return won is null ? throw Store(exception) : Replayed(won);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        return result is null
+            ? throw new SalesDraftServiceException(404, "not_found")
+            : Result(result, result.Outcome == SalesDraftWriteOutcome.Replayed);
+    }
+
+    private async Task<SalesInvoiceReplay?> FindStateReplayAsync(Scope scope, string permission, SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, CancellationToken cancellationToken)
+    {
+        SalesInvoiceReplay? replay;
+        try
+        {
+            replay = await invoices.FindInvoiceStateReplayAsync(envelope, requestHash, commandName, cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw Store(exception);
+        }
+
+        await RequireStillAsync(scope, permission, cancellationToken);
+        return replay;
+    }
+
+    /// <summary>ADR-011 §4/§7: the stored invoice as the replay, or the recorded refusal as the same refusal.</summary>
+    private static SalesInvoiceCommandResult Replayed(SalesInvoiceReplay replay)
+    {
+        if (replay.Refusal is { } refusal)
+        {
+            throw new SalesDraftServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true,
+                originalCorrelationId: replay.OriginalCorrelationId);
+        }
+
+        return new SalesInvoiceCommandResult(View(replay.Invoice!, isReplay: true), true, replay.OriginalCorrelationId);
+    }
+
+    /// <summary>ADR-011 §7: the refusal is recorded under the key and then answered; a lost record race answers the winner.</summary>
+    private async Task<SalesInvoiceCommandResult> TerminalAsync(Scope scope, string permission, SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid invoiceId, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken)
+    {
+        await RequireStillAsync(scope, permission, cancellationToken);
+        try
+        {
+            await invoices.RecordInvoiceRefusalAsync(envelope, requestHash, commandName, invoiceId, refusal, cancellationToken);
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            var won = await FindStateReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            if (won is not null)
+            {
+                return Replayed(won);
+            }
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        throw new SalesDraftServiceException(refusal.Status, refusal.Code, refusal.Errors);
     }
 
     // ---- validation and owners ------------------------------------------------------------------------------------------
@@ -527,8 +702,13 @@ public sealed class SalesInvoiceService(
                     ? new SalesInvoiceLineFunctionalView(Amounts(f.Amounts, functionalScale), [.. f.Adjusted.Select(type => type.ToString())],
                         f.NeedsReview)
                     : null))],
-            invoice.CreatedBy, invoice.CreatedAtUtc, isReplay);
+            invoice.CreatedBy, invoice.CreatedAtUtc, DecisionView(invoice.Decision), PaymentAllocationWarning: null, IsReplay: isReplay);
     }
+
+    private static SalesInvoiceDecisionView? DecisionView(SalesInvoiceDecisionFacts facts) => facts == SalesInvoiceDecisionFacts.None
+        ? null
+        : new SalesInvoiceDecisionView(facts.SubmittedBy, facts.SubmittedAtUtc, facts.DecidedBy, facts.DecidedAtUtc, facts.DecisionReason,
+            facts.CancelledBy, facts.CancelledAtUtc, facts.CancellationReason);
 
     private static SalesInvoiceCommandResult Result(SalesInvoiceStoreResult stored, bool isReplay) =>
         new(View(stored.Invoice, isReplay), isReplay, stored.OriginalCorrelationId);

@@ -392,6 +392,9 @@ public static class SalesRuleCodes
     /// <summary>API-32: an exact invoice amount cannot be held (never a rounded amount).</summary>
     public const string InvoiceAmountOutOfRange = "sales_invoice_amount_out_of_range";
 
+    /// <summary>API-33 (SAT-D88/D204): the person who prepared or submitted an invoice does not approve or reject it.</summary>
+    public const string InvoiceSelfApproval = "sales_invoice_self_approval";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

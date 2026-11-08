@@ -154,6 +154,188 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         return found.ToHashSet();
     }
 
+    public async Task<SalesInvoiceReplay?> FindInvoiceStateReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        CancellationToken cancellationToken = default)
+    {
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireInvoiceStateCommand(commandName);
+        RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var attempt = await dbContext.InvoiceAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(attempt.ActorId, envelope.ActorId.Trim(), StringComparison.Ordinal)
+            || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+        }
+
+        return await ReadInvoiceReplayAsync(attempt, cancellationToken);
+    }
+
+    public async Task RecordInvoiceRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid invoiceId,
+        SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(refusal);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireInvoiceStateCommand(commandName);
+        var companyId = RequireResolvedCompany();
+        if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
+        {
+            throw new ArgumentException("Terminal ret bir durum, bir kod ve tam alan hataları taşır.", nameof(refusal));
+        }
+
+        if (invoiceId == Guid.Empty)
+        {
+            throw new ArgumentException("Fatura kimliği boş olamaz.", nameof(invoiceId));
+        }
+
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        if (await dbContext.InvoiceAttempts.AsNoTracking()
+                .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken))
+        {
+            throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
+        }
+
+        dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = envelope.ActorId.Trim(),
+            Outcome = AttemptOutcomeRefused,
+            InvoiceId = invoiceId,
+            RefusalJson = JsonSerializer.Serialize(refusal, Json),
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
+        await SaveAsync(cancellationToken);
+    }
+
+    public async Task<SalesInvoiceStoreResult?> DecideInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireInvoiceStateCommand(commandName);
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Fatura kararının audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.InvoiceAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            return await ReplayInvoiceAttemptAsync(attempt, actorId, requestHash, cancellationToken);
+        }
+
+        if (invoiceId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // The lines are read to rebuild the domain invoice only; a release of the shares is TR_Invoices_Guard's stamp in the header's UPDATE.
+        var row = await dbContext.Invoices.SingleOrDefaultAsync(candidate => candidate.Id == invoiceId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var lineRows = await dbContext.InvoiceLines.Where(line => line.InvoiceId == invoiceId).ToListAsync(cancellationToken);
+        var invoice = SalesInvoiceRows.Restore(row, lineRows);
+        var before = InvoiceAuditState(invoice);
+        var versionBefore = invoice.Version;
+        var now = timeProvider.GetUtcNow();
+        mutate(invoice, now);
+        if (invoice.Version != versionBefore + 1 || invoice.Id != row.Id || invoice.CompanyId != companyId)
+        {
+            throw new InvalidOperationException("Fatura kararı tam olarak bir sürüm ilerletir ve faturayı değiştirmez.");
+        }
+
+        SalesInvoiceRows.ApplyDecision(row, invoice);
+        dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            InvoiceId = invoice.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            InvoiceEntityType,
+            invoice.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: invoice.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            before,
+            InvoiceAuditState(invoice),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    private static void RequireInvoiceStateCommand(string commandName)
+    {
+        if (commandName is not (SalesInvoiceCommands.SubmitV1 or SalesInvoiceCommands.ApproveV1 or SalesInvoiceCommands.RejectV1
+            or SalesInvoiceCommands.CancelV1))
+        {
+            throw new ArgumentException("Yalnız onaya gönderme, onay, ret ve iptal bir faturanın durumunu değiştirir.", nameof(commandName));
+        }
+    }
+
+    private async Task<SalesInvoiceReplay> ReadInvoiceReplayAsync(InvoiceAttemptRow attempt, CancellationToken cancellationToken)
+    {
+        if (attempt.Outcome == AttemptOutcomeRecorded && attempt.InvoiceId is { } invoiceId)
+        {
+            var stored = await FindInvoiceAsync(invoiceId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının faturası bulunamadı.");
+            return new SalesInvoiceReplay(stored, null, attempt.CorrelationId);
+        }
+
+        var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<SalesDraftTerminalRefusal>(attempt.RefusalJson, Json);
+        if (attempt.Outcome != AttemptOutcomeRefused || refusal is null || refusal.Status is < 400 or > 599
+            || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
+        {
+            throw new InvalidOperationException("Fatura deneme kaydı okunamadı.");
+        }
+
+        return new SalesInvoiceReplay(null, refusal, attempt.CorrelationId);
+    }
+
     private async Task<SalesInvoiceStoreResult> ReplayInvoiceAttemptAsync(InvoiceAttemptRow attempt, string actorId, string requestHash,
         CancellationToken cancellationToken)
     {
@@ -164,15 +346,14 @@ public sealed partial class SalesStore : ISalesInvoiceStore
                 "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
         }
 
-        if (attempt.Outcome != AttemptOutcomeRecorded || attempt.InvoiceId is not { } invoiceId)
+        var replay = await ReadInvoiceReplayAsync(attempt, cancellationToken);
+        if (replay.Invoice is null)
         {
-            // No invoice command records a refusal in this slice; a refusal row would be a later slice's (never a guess here).
-            throw new InvalidOperationException("Fatura deneme kaydı okunamadı.");
+            // ADR-011 §7: the key holds a recorded terminal refusal; the caller replays it through FindInvoiceStateReplayAsync.
+            throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
         }
 
-        var stored = await FindInvoiceAsync(invoiceId, cancellationToken)
-            ?? throw new InvalidOperationException("Kayıtlı deneme kaydının faturası bulunamadı.");
-        return new SalesInvoiceStoreResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        return new SalesInvoiceStoreResult(replay.Invoice, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
     }
 
     private static string InvoiceAuditState(SalesInvoice invoice) => JsonSerializer.Serialize(new
@@ -181,6 +362,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         invoice.DocumentNo,
         state = invoice.State.ToString(),
         version = invoice.Version,
+        decision = invoice.Decision,
         invoice.Header.PartyId,
         invoice.Header.CompanyAccountId,
         invoice.Header.CurrencyId,

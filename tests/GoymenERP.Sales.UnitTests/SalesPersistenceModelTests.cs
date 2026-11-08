@@ -125,8 +125,24 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftOrderTax", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_BackfillDraftBuyerTax", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
-        Assert.Equal("20261107155919_AddSalesInvoices", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoices", StringComparison.Ordinal));
+        Assert.Equal("20261108025944_AddSalesInvoiceApproval", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    /// <summary>API-33 PR2: approval columns, widened state/command CKs and the two immutability triggers; Down is a forward fix (51222).</summary>
+    [Fact]
+    public void The_invoice_approval_migration_adds_two_triggers_and_its_down_refuses_with_51222_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceApproval();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(2, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("TR_Invoices_Guard", StringComparison.Ordinal) && op.Sql.Contains("51223", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_InvoiceLines_Guard", StringComparison.Ordinal) && op.Sql.Contains("51224", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51222,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>

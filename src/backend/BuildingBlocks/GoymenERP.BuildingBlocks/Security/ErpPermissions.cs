@@ -558,6 +558,16 @@ public static class ErpPermissions
     public const string SalesInvoicesWrite = "sales.invoices.write";
 
     /// <summary>
+    /// S5 API-33 (Fatura çekirdeği 2; SAT-D88, SAT-D204): approve or reject a submitted sales invoice (Sales owner name
+    /// SalesPermissionManifestV1.InvoicesApprove, same string). Its own name: the invoice write, read and order names do not
+    /// confer it and it confers none of them. Registered, not granted: no seeded role and no real user receives it (who approves
+    /// is a grant and a human gate). Company-wide only. Not Critical: the approval moves no money; the finalisation (API-36) is its
+    /// own name. "Hazırlayan onaylayan olamaz" is a service/domain rule (the preparer and the submitter never decide), not a
+    /// property of this name.
+    /// </summary>
+    public const string SalesInvoicesApprove = "sales.invoices.approve";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80; KPI No 124, No 25, SAT-D25): read the Sales reports — open order quantities, lost
     /// quotes and the invoice-to-order price variance (Sales owner name SalesPermissionManifestV1.ReportsRead, same string). Its
     /// own name: no order, quote, invoice or price name confers it and it confers none of them (an amount in a report still needs
@@ -943,6 +953,7 @@ public static class ErpPermissions
             SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
             SalesInvoicesWrite,
+            SalesInvoicesApprove,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -1104,6 +1115,7 @@ public static class ErpPermissions
             SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
             SalesInvoicesWrite,
+            SalesInvoicesApprove,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,

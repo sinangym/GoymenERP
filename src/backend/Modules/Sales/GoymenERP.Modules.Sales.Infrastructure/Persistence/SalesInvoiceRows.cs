@@ -33,6 +33,20 @@ internal sealed class InvoiceRow : ISalesTenantRow
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>API-33: who submitted the draft and when (null while a draft).</summary>
+    public string? SubmittedBy { get; set; }
+    public DateTimeOffset? SubmittedAtUtc { get; set; }
+
+    /// <summary>API-33 (SAT-D88/D204): the approver or rejecter — never the preparer or the submitter (CK_Invoices_MakerChecker).</summary>
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? DecisionReason { get; set; }
+
+    /// <summary>API-33: who cancelled the invoice before its approval, when and why.</summary>
+    public string? CancelledBy { get; set; }
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public string? CancellationReason { get; set; }
 }
 
 /// <summary>
@@ -139,6 +153,14 @@ internal static class SalesInvoiceRows
             CreatedBy = invoice.CreatedBy,
             CreatedAtUtc = invoice.CreatedAtUtc,
             CorrelationId = correlationId.Trim(),
+            SubmittedBy = invoice.Decision.SubmittedBy,
+            SubmittedAtUtc = invoice.Decision.SubmittedAtUtc,
+            DecidedBy = invoice.Decision.DecidedBy,
+            DecidedAtUtc = invoice.Decision.DecidedAtUtc,
+            DecisionReason = invoice.Decision.DecisionReason,
+            CancelledBy = invoice.Decision.CancelledBy,
+            CancelledAtUtc = invoice.Decision.CancelledAtUtc,
+            CancellationReason = invoice.Decision.CancellationReason,
         });
         foreach (var line in invoice.Lines)
         {
@@ -183,8 +205,36 @@ internal static class SalesInvoiceRows
         }
     }
 
+    /// <summary>
+    /// Writes a decision's facts onto the tracked header row (the version is the concurrency token of this write) and, when the
+    /// invoice no longer holds its shares (rejected or cancelled), stamps every tracked line's <c>ReleasedAtUtc</c> in the same
+    /// save (AT-055, SAT-D94; the lines are never deleted). The header is tracked first, so its state is written before the lines.
+    /// </summary>
+    public static void ApplyDecision(InvoiceRow row, SalesInvoice invoice)
+    {
+        row.State = (int)invoice.State;
+        row.Version = invoice.Version;
+        row.SubmittedBy = invoice.Decision.SubmittedBy;
+        row.SubmittedAtUtc = invoice.Decision.SubmittedAtUtc;
+        row.DecidedBy = invoice.Decision.DecidedBy;
+        row.DecidedAtUtc = invoice.Decision.DecidedAtUtc;
+        row.DecisionReason = invoice.Decision.DecisionReason;
+        row.CancelledBy = invoice.Decision.CancelledBy;
+        row.CancelledAtUtc = invoice.Decision.CancelledAtUtc;
+        row.CancellationReason = invoice.Decision.CancellationReason;
+        // The shares of a rejected or cancelled invoice are released by TR_Invoices_Guard in the same UPDATE statement (EF would write
+        // the lines before the header, and the line trigger reads the header's new state), so the lines are not written here.
+    }
+
     public static SalesInvoice Restore(InvoiceRow row, IReadOnlyList<InvoiceLineRow> lineRows)
     {
+        var state = (SalesInvoiceState)row.State;
+        if (Enum.IsDefined(state) && lineRows.Any(line => line.ReleasedAtUtc is null) != (state is SalesInvoiceState.Draft
+                or SalesInvoiceState.PendingApproval or SalesInvoiceState.Approved))
+        {
+            throw new InvalidOperationException("Kayıtlı fatura durumu ile sevk paylarının serbest bırakılması birbirini tutmuyor.");
+        }
+
         var rate = row.ExchangeRate is { } value
             ? new SalesInvoiceRateSnapshot(value, row.RateDay!.Value, row.RateBulletinDate!.Value, row.FunctionalCurrencyId!.Value,
                 row.FunctionalScale!.Value)
@@ -227,7 +277,9 @@ internal static class SalesInvoiceRows
                 Money.Of(item.Amount, row.CurrencyId, row.AmountScale)))
             .ToList();
         return SalesInvoice.Restore(row.Id, row.CompanyId, row.DocumentNo, header, (SalesInvoiceState)row.State, row.Version, row.CreatedBy,
-            row.CreatedAtUtc, lines, instalments);
+            row.CreatedAtUtc, lines, instalments,
+            new SalesInvoiceDecisionFacts(row.SubmittedBy, row.SubmittedAtUtc, row.DecidedBy, row.DecidedAtUtc, row.DecisionReason,
+                row.CancelledBy, row.CancelledAtUtc, row.CancellationReason));
     }
 
     private sealed record StoredInstalment(int SequenceNo, DateOnly DueDate, string SharePercent, decimal Amount);
