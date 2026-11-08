@@ -285,6 +285,14 @@ export interface HarnessConfig {
   readonly onPdf?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
   readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-09: GET `/sales/drafts/{id}/invoices` (read only once the "Faturalar" tab is opened); default: no invoices. */
+  readonly onDraftInvoices?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-36: GET `/sales/invoices/{id}` (read only when a row's finalization is opened). */
+  readonly onInvoice?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-36: a POST on `/sales/invoices/{id}/finalization`. */
+  readonly onInvoiceFinalization?: (call: RecordedCall) => Response | Promise<Response>
+  /** API-36: a POST on `/sales/invoices/{id}/finance-admission`. */
+  readonly onFinanceAdmission?: (call: RecordedCall) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -432,6 +440,9 @@ export function installFetch(config: HarnessConfig = {}) {
           if (config.onCreate === undefined) throw new Error('unexpected create')
           return config.onCreate(creates, call)
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/invoices$/.test(url)) {
+          return config.onDraftInvoices?.(url, call.companyId) ?? json({ items: [], hasMore: false })
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/revisions$/.test(url)) {
           return config.onRevisions?.(url, call.companyId) ?? json({ items: [] })
         }
@@ -454,6 +465,20 @@ export function installFetch(config: HarnessConfig = {}) {
       if (call.method === 'GET' && url.includes('/logistics/dispatch-notes?')) {
         if (config.onDispatchNotes === undefined) throw new Error('unexpected dispatch-notes read')
         return config.onDispatchNotes(url, call.companyId)
+      }
+      if (url.includes('/sales/invoices/')) {
+        if (call.method === 'POST' && /\/sales\/invoices\/[^/?]+\/finalization$/.test(url)) {
+          if (config.onInvoiceFinalization === undefined) throw new Error('unexpected invoice finalization')
+          return config.onInvoiceFinalization(call)
+        }
+        if (call.method === 'POST' && /\/sales\/invoices\/[^/?]+\/finance-admission$/.test(url)) {
+          if (config.onFinanceAdmission === undefined) throw new Error('unexpected finance admission')
+          return config.onFinanceAdmission(call)
+        }
+        if (call.method === 'GET' && /\/sales\/invoices\/[^/?]+$/.test(url)) {
+          if (config.onInvoice === undefined) throw new Error('unexpected invoice read')
+          return config.onInvoice(url, call.companyId)
+        }
       }
       throw new Error(`unexpected fetch: ${url}`)
     }),
