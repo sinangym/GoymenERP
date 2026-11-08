@@ -1949,6 +1949,9 @@ public sealed partial class SalesDraftServiceTests
         public int Calls { get; set; }
         public (string Operation, Guid Currency, DateOnly On)? MoneyAsked { get; private set; }
 
+        /// <summary>A test-chosen money profile id answered instead of the default (SAT-D101 profile mismatch).</summary>
+        public Guid? MoneyProfileOverride { get; set; }
+
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
             Calls++;
@@ -1959,7 +1962,7 @@ public sealed partial class SalesDraftServiceTests
                 "money-access-denied" => Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException("settings_access_denied")),
                 "money-unavailable" => Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
                 _ => Task.FromResult(new MoneyProfileV1(Fault == "money-other-company" ? Guid.NewGuid() : Company, currencyId, "TRY", operation,
-                    new ProfileVersionV1(MoneyProfile, 3), 2, true, Fault == "money-not-in-effect" ? Day.AddDays(1) : new DateOnly(2026, 9, 1), null)),
+                    new ProfileVersionV1(MoneyProfileOverride ?? MoneyProfile, 3), 2, true, Fault == "money-not-in-effect" ? Day.AddDays(1) : new DateOnly(2026, 9, 1), null)),
             };
         }
 

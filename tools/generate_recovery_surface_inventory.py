@@ -49,11 +49,11 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 133
+EXPECTED_MIGRATION_COUNT = 134
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "9bc0dadbe903c2a1a6fe9336f83d0d793d9e1cc6eb67cedd6b2d3851e8980409"
+    "076a4c798d131bcfbb915ab753c1e1a2ea2629e2336aaa6e5ac167ac11a3299a"
 )
-EXPECTED_DURABLE_STORE_COUNT = 24
+EXPECTED_DURABLE_STORE_COUNT = 25
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 582
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 586
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "ad54b7cdca19fad933a62365adbc6b6af47356baf57c8673a110c06e5bbc1db8"
+    "77c5c2e8c8b6b31379241bbcb7639c34295d6390517c5db9ddcaf73114452026"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -201,6 +201,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
     ("sales", "DraftAttempts"),
+    ("sales", "InvoiceAttempts"),
     ("sales", "QuoteAttempts"),
     ("sales", "RequestAttempts"),
 )
@@ -557,6 +558,14 @@ DURABLE_STORE_SPECS = (
         ("dbContext.DraftAttempts.Add(new DraftAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "sales.invoice-attempts", "Sales", "idempotency", "SalesDbContext", "InvoiceAttemptRow",
+        "sales", "InvoiceAttempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261107155919_AddSalesInvoices.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
+        ("dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "sales.quote-attempts", "Sales", "idempotency", "SalesDbContext", "QuoteAttemptRow",
         "sales", "QuoteAttempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
@@ -668,6 +677,10 @@ WRITER_METHOD_SCOPES = {
         "sales.draft-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
     ): "StoreDraftAsync",
+    (
+        "sales.invoice-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
+    ): "StoreInvoiceAsync",
     (
         "sales.quote-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs",
@@ -806,6 +819,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "StoreDraftAsync",
     ): "6706dc3ddcb2dd03fbfd7ac47fa64b3a8db2964451e7741bf8ef722a4c769a68",
     (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
+        "StoreInvoiceAsync",
+    ): "06d71d88e034eb14859e26587d15f6a2a0df4a207402ab4ab309208929899471",
+    (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs",
         "RecordQuoteRefusalAsync",
     ): "c2b6bef89eb2e4f24001ffdff375b3b67f1c292dc1252cf07edfda8e218a0e0a",
@@ -845,7 +862,8 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "996ddf2422f110ec7df98423792b8bbee3ccbcd0910fee90c768eb1ae6d224e6",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "1012e77656b6c2b4afc264f654d4ad4e92715b7d8e4c4eaec06c233731083587",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs": "74c89189373cc520a1875329237bbefd03a63069cfed10689fb9b7cad3630cb3",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",

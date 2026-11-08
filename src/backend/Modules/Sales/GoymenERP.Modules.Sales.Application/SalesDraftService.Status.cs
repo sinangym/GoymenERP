@@ -148,7 +148,7 @@ public sealed partial class SalesDraftService
     /// <c>AwaitingCustomerAcceptance</c>, no price basis (approved but not accepted; or rejected after an unaccepted one).
     /// The lifecycle, the customer acceptance and the shipments are the invoicing owner's own preconditions (S5 API-32).
     /// </summary>
-    private static (string Gate, string? PriceBasisRevision) InvoicingGate(SalesOrderDraft draft) => draft.ApprovalState switch
+    internal static (string Gate, string? PriceBasisRevision) InvoicingGate(SalesOrderDraft draft) => draft.ApprovalState switch
     {
         // SAT-D114 (EK14) / SAT-D121 (EK17, PR #862): an internally approved revision the customer has not accepted (acceptance
         // required) is no basis — for EVERY revision type (price, quantity-only SAT-D104/D111, VAT/withholding SAT-D105), since

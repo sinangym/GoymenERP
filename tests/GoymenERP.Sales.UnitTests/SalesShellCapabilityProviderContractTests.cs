@@ -331,11 +331,13 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.quotes.expired-conversion.approve", SalesPermissionManifestV1.QuotesExpiredConversionApprove);
         // API-31 (plan §3.3, S-08): the invoice candidates' own read name; no order name confers it.
         Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
+        // S5 API-32 (Fatura çekirdeği 1; SAT-D202): the invoice draft's own write name; the invoice read and order names do not confer it.
+        Assert.Equal("sales.invoices.write", SalesPermissionManifestV1.InvoicesWrite);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
         // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
         Assert.Equal("sales.orders.over-delivery.approve", SalesPermissionManifestV1.OrdersOverDeliveryApprove);
-        Assert.Equal((20, 23), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((21, 24), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -360,6 +362,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.QuotesRead,
                 SalesPermissionManifestV1.QuotesExpiredConversionApprove,
                 SalesPermissionManifestV1.InvoicesRead,
+                SalesPermissionManifestV1.InvoicesWrite,
                 SalesPermissionManifestV1.ReportsRead,
             ],
             StringComparer.Ordinal);
