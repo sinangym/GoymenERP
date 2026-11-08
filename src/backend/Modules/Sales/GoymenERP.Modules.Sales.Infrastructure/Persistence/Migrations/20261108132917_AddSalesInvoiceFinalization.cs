@@ -155,8 +155,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     -- facts untouched, and the official match recorded before the invoice is final (SAT-D101 / S7).
                     IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
                                WHERE d.[State] = 3 AND (i.[State] <> 6 OR i.[Version] <> d.[Version] + 1
-                                  OR ISNULL(i.[SubmittedBy], N'') <> ISNULL(d.[SubmittedBy], N'') OR i.[SubmittedAtUtc] IS NOT d.[SubmittedAtUtc]
-                                  OR ISNULL(i.[DecidedBy], N'') <> ISNULL(d.[DecidedBy], N'') OR i.[DecidedAtUtc] IS NOT d.[DecidedAtUtc]))
+                                  OR ISNULL(i.[SubmittedBy], N'') <> ISNULL(d.[SubmittedBy], N'') OR NOT (i.[SubmittedAtUtc] = d.[SubmittedAtUtc] OR (i.[SubmittedAtUtc] IS NULL AND d.[SubmittedAtUtc] IS NULL))
+                                  OR ISNULL(i.[DecidedBy], N'') <> ISNULL(d.[DecidedBy], N'') OR NOT (i.[DecidedAtUtc] = d.[DecidedAtUtc] OR (i.[DecidedAtUtc] IS NULL AND d.[DecidedAtUtc] IS NULL))))
                         THROW 51223, 'An approved sales invoice only moves to finalized, one version up, with its decision untouched.', 1;
                     IF EXISTS (SELECT 1 FROM inserted i WHERE i.[State] = 6
                                AND NOT EXISTS (SELECT 1 FROM [sales].[InvoiceMatches] m WHERE m.[CompanyId] = i.[CompanyId] AND m.[InvoiceId] = i.[Id]))
@@ -191,9 +191,14 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         THROW 51228, 'The finalisation facts and the instalment plan of a sales invoice are immutable.', 1;
                     IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[InvoiceId] = d.[InvoiceId]
                                WHERE i.[FinanceStatus] < d.[FinanceStatus]
-                                  OR (d.[FinanceStatus] = 2 AND (i.[AdmittedAtUtc] IS NOT d.[AdmittedAtUtc] OR i.[AttemptCount] <> d.[AttemptCount]))
                                   OR (d.[FinanceStatus] = 1 AND i.[AttemptCount] <> d.[AttemptCount] + 1))
                         THROW 51228, 'The Finance hand-off ledger only moves forward: one attempt at a time, and an admitted invoice stays admitted.', 1;
+                    -- An admitted ledger row is frozen whole: status, admission stamp, attempt count, last attempt and last outcome (EXCEPT is null-safe).
+                    IF EXISTS (SELECT 1 FROM deleted d WHERE d.[FinanceStatus] = 2 AND EXISTS (
+                                   SELECT d.[FinanceStatus], d.[AdmittedAtUtc], d.[AttemptCount], d.[LastAttemptAtUtc], d.[LastOutcome]
+                                   EXCEPT SELECT i.[FinanceStatus], i.[AdmittedAtUtc], i.[AttemptCount], i.[LastAttemptAtUtc], i.[LastOutcome]
+                                          FROM inserted i WHERE i.[CompanyId] = d.[CompanyId] AND i.[InvoiceId] = d.[InvoiceId]))
+                        THROW 51228, 'An admitted sales invoice finalisation ledger row is frozen.', 1;
                 END;
                 """);
 

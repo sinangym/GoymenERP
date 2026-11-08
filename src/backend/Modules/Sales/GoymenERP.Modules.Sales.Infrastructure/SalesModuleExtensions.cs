@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Sales.Infrastructure;
 
@@ -92,6 +93,10 @@ public static class SalesModuleExtensions
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
         // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
         services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
+        // API-36 (S5): the VUK 232 withholding threshold defaults to 12,000 TL, Satış's own option (SAT-D209: no Ayarlar table or port).
+        services.TryAddSingleton(new SalesInvoiceWithholdingThresholdPolicy());
+        services.TryAddSingleton<ISalesInvoiceDiagnosticsV1>(serviceProvider => new SalesInvoiceDiagnostics(
+            serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<SalesInvoiceDiagnostics>()));
         // API-37 (Kontrol Merkezi): the read-only follow-up list over the invoice store and the Logistics shares.
         services.TryAddSingleton(new SalesControlCenterPolicy());
         services.AddScoped<ISalesControlCenterService>(CreateControlCenterService);
@@ -123,7 +128,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
         serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
         serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>(),
-        serviceProvider.GetService<ISalesFinanceAdmissionPortV1>());
+        serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
+        serviceProvider.GetRequiredService<SalesInvoiceWithholdingThresholdPolicy>(),
+        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.

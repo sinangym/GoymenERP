@@ -67,3 +67,32 @@ public sealed class SalesInvoiceMatchTolerancePolicy
 
     public decimal ToleranceAmount { get; }
 }
+
+/// <summary>
+/// S5 (Sinan, Issue #66, 7 November: VUK 232, 12,000 TL): the withholding (tevkifat) threshold evaluated at finalisation, measured on
+/// the invoice's TL net amount, strictly below refuses. The value is a configured option of Satış's own surface (SAT-D209: no
+/// Ayarlar table or port), never a literal in the check; it is marked "mali musavir teyidi bekliyor" - the advisor's confirmation of
+/// the value and the basis is a human gate before go-live.
+/// </summary>
+public sealed class SalesInvoiceWithholdingThresholdPolicy
+{
+    public const decimal DefaultThresholdAmount = 12000.00m;
+
+    public SalesInvoiceWithholdingThresholdPolicy(decimal thresholdAmount = DefaultThresholdAmount)
+    {
+        ThresholdAmount = thresholdAmount >= 0m
+            ? thresholdAmount
+            : throw new ArgumentOutOfRangeException(nameof(thresholdAmount), "The threshold cannot be negative.");
+    }
+
+    public decimal ThresholdAmount { get; }
+}
+
+/// <summary>
+/// Diagnostics seam of the finalisation (host-implemented, logging only): a Finance hand-off failure after the commit is reported
+/// here and never changes the answer. Carries identifiers and the exception, no amounts and no secrets.
+/// </summary>
+public interface ISalesInvoiceDiagnosticsV1
+{
+    void FinanceHandOffFailed(Guid companyId, Guid invoiceId, string stage, Exception exception);
+}

@@ -45,7 +45,8 @@ public sealed partial class SalesInvoiceService
         try
         {
             committed = await invoices.FinalizeInvoiceAsync(envelope, requestHash, invoiceId,
-                (target, now) => target.Finalize(expectedVersion, scope.ActorId, Guid.NewGuid, now),
+                (target, now) => target.Finalize(expectedVersion, scope.ActorId, Guid.NewGuid, now,
+                    (withholdingThreshold ?? new SalesInvoiceWithholdingThresholdPolicy()).ThresholdAmount),
                 new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "Satış faturası kesinleştirildi"), cancellationToken);
         }
         catch (SalesVersionConflictException exception)
@@ -64,6 +65,19 @@ public sealed partial class SalesInvoiceService
         {
             // Data, not a permanent refusal: the match can be recorded and the same key asks again.
             throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.MatchRequired, [new("match", "required")]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceWithholdingBelowThreshold)
+        {
+            // A recorded refusal: the draft is corrected by cancelling it and preparing a new one (the same key replays this answer).
+            return await TerminalAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.FinalizeV1, invoiceId,
+                new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.WithholdingBelowThreshold, [new("withholding", "below_threshold")]),
+                cancellationToken);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceMatchDifferenceOpen)
+        {
+            return await TerminalAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.FinalizeV1, invoiceId,
+                new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen, [new("match", "difference_open")]),
+                cancellationToken);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceInstalmentFunctionalInvalid)
         {
@@ -167,7 +181,11 @@ public sealed partial class SalesInvoiceService
         {
             var won = await FindStateReplayAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.ResendFinanceV1,
                 cancellationToken);
-            return won is null ? throw Store(exception) : Replayed(won);
+            return won is not null
+                ? Replayed(won)
+                : await TerminalAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.ResendFinanceV1, invoiceId,
+                    new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict, [new("state", SalesRuleCodes.StateConflict)]),
+                    cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -206,6 +224,8 @@ public sealed partial class SalesInvoiceService
         }
         catch (Exception exception) when (!throwOnStoreFailure && exception is not OperationCanceledException)
         {
+            // The commit stands and the invoice waits; the failure is logged (never swallowed unseen) and the re-drive repairs it.
+            diagnostics?.FinanceHandOffFailed(scope.CompanyId, committed.Invoice.Id, "ledger_save", exception);
             return null;
         }
     }
@@ -229,9 +249,10 @@ public sealed partial class SalesInvoiceService
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // Fail closed: a throwing owner is "nothing is known", never an admission.
+            // Fail closed: a throwing owner is "nothing is known", never an admission. The failure is logged.
+            diagnostics?.FinanceHandOffFailed(scope.CompanyId, invoice.Id, "finance_offer", exception);
             return SalesFinanceAdmissionAnswerV1.Unavailable;
         }
     }
@@ -239,6 +260,8 @@ public sealed partial class SalesInvoiceService
     private static string FirstAdmissionKey(Guid invoiceId, SalesInvoiceFinalization finalization) => string.Create(CultureInfo.InvariantCulture,
         $"{AdmissionKeyPrefix}:{invoiceId:D}:{finalization.FinalizedVersion}");
 
+    // The re-drive key carries the attempt number (`:{n}`), so each re-drive is its own idempotent Sales command; the ledger's
+    // AdmissionId stays the same, and Finance de-duplicates by AdmissionId (a changed payload under it is refused, never doubled).
     private static string RedriveKey(Guid invoiceId, SalesInvoiceFinalization finalization) => string.Create(CultureInfo.InvariantCulture,
         $"{AdmissionKeyPrefix}:{invoiceId:D}:{finalization.FinalizedVersion}:{finalization.AttemptCount + 1}");
 

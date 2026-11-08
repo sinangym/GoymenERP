@@ -57304,7 +57304,9 @@
             },
             "x-erp-problem-codes": [
               "concurrent_change",
+              "sales_invoice_match_difference_open",
               "sales_invoice_match_required",
+              "sales_invoice_withholding_below_threshold",
               "sales_state_conflict",
               "same_key_payload_mismatch",
               "version_conflict"

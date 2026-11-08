@@ -180,7 +180,8 @@ public static partial class SalesEndpoints
         MapInvoiceCommand<SalesDraftStateCommandRequest>(invoices, "finalization", "FinalizeSalesInvoiceV1", SalesInvoiceStateJson.ReadVersionOnly,
             (service, id, body, metadata, cancellationToken) => service.FinalizeInvoiceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [SalesInvoiceProblemCodesV1.InstalmentFunctionalInvalid],
-            extraConflictCodes: [SalesInvoiceProblemCodesV1.MatchRequired]);
+            extraConflictCodes: [SalesInvoiceProblemCodesV1.MatchRequired, SalesInvoiceProblemCodesV1.MatchDifferenceOpen,
+                SalesInvoiceProblemCodesV1.WithholdingBelowThreshold]);
         MapInvoiceCommand<SalesDraftStateCommandRequest>(invoices, "finance-admission", "ResendSalesInvoiceFinanceAdmissionV1",
             SalesInvoiceStateJson.ReadVersionOnly,
             (service, id, body, metadata, cancellationToken) => service.ResendFinanceAdmissionAsync(id, body, metadata, cancellationToken),

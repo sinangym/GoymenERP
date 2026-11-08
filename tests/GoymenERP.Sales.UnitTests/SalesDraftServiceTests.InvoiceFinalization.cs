@@ -127,4 +127,101 @@ public sealed partial class SalesDraftServiceTests
             invoicing.Service().ResendFinanceAdmissionAsync(id, Command("4"), Metadata("k-inv-resend-2")));
         Assert.Equal(409, again.Status);
     }
+
+    private sealed class RecordingDiagnostics : ISalesInvoiceDiagnosticsV1
+    {
+        public List<(Guid InvoiceId, string Stage)> Failures { get; } = [];
+
+        public void FinanceHandOffFailed(Guid companyId, Guid invoiceId, string stage, Exception exception) => Failures.Add((invoiceId, stage));
+    }
+
+    [Fact]
+    public async Task A_throwing_finance_port_is_reported_to_diagnostics_and_the_commit_still_stands()
+    {
+        var (invoicing, id) = await MatchedInvoiceAsync(new ThrowingFinanceAdmission());
+        var diagnostics = new RecordingDiagnostics();
+        invoicing.Diagnostics = diagnostics;
+
+        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+
+        Assert.Equal("Finalized", done.Invoice.State);
+        Assert.Equal([(id, "finance_offer")], diagnostics.Failures);
+    }
+
+    private static async Task<(InvoiceWorld Invoicing, Guid Id)> MatchedWithholdingInvoiceAsync()
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync(withholding: true, withholdingCode: "625");
+        invoicing.Official.Has(594.22m);
+        await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-match"));
+        invoicing.World.User.Id = "synthetic-invoice-finalizer";
+        invoicing.World.Authority.Measured.Clear();
+        return (invoicing, id);
+    }
+
+    [Fact]
+    public async Task A_withholding_invoice_below_the_threshold_is_a_recorded_409_and_the_same_key_replays_it()
+    {
+        var (invoicing, id) = await MatchedWithholdingInvoiceAsync();
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final")));
+
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.WithholdingBelowThreshold), Status(refused));
+        Assert.Contains("k-inv-final", invoicing.Invoices.StateAttempts.Keys);
+        Assert.Equal("Approved", (await invoicing.Service().GetInvoiceAsync(id)).State);
+        var replay = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final", "another-correlation")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.WithholdingBelowThreshold), Status(replay));
+        Assert.Equal(1, invoicing.Invoices.FinalizeCalls);
+    }
+
+    [Fact]
+    public async Task A_withholding_invoice_exactly_at_the_configured_threshold_is_finalized_and_the_threshold_is_configurable()
+    {
+        var (invoicing, id) = await MatchedWithholdingInvoiceAsync();
+        // The TL net amount of this invoice is 540.29 (see the withholding golden above); equal passes, strictly below refuses.
+        invoicing.Threshold = new SalesInvoiceWithholdingThresholdPolicy(540.29m);
+
+        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+
+        Assert.Equal("Finalized", done.Invoice.State);
+    }
+
+    [Fact]
+    public void The_default_withholding_threshold_is_the_decided_12000_and_never_negative()
+    {
+        Assert.Equal(12000.00m, new SalesInvoiceWithholdingThresholdPolicy().ThresholdAmount);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SalesInvoiceWithholdingThresholdPolicy(-0.01m));
+    }
+
+    [Fact]
+    public async Task A_withholding_free_invoice_below_the_threshold_is_finalized()
+    {
+        var (invoicing, id) = await MatchedInvoiceAsync(finance: null);
+        invoicing.Threshold = new SalesInvoiceWithholdingThresholdPolicy(1000000m);
+
+        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+
+        Assert.Equal("Finalized", done.Invoice.State);
+    }
+
+    [Fact]
+    public async Task A_match_with_a_difference_is_a_recorded_409_and_nothing_goes_to_finance()
+    {
+        var finance = new FakeFinanceAdmission();
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Finance = finance;
+        invoicing.Official.Has(648.54m);
+        await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-match"));
+        invoicing.World.User.Id = "synthetic-invoice-finalizer";
+        invoicing.World.Authority.Measured.Clear();
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final")));
+
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen), Status(refused));
+        Assert.Contains("k-inv-final", invoicing.Invoices.StateAttempts.Keys);
+        Assert.Empty(finance.Requests);
+        Assert.Equal("Approved", (await invoicing.Service().GetInvoiceAsync(id)).State);
+    }
 }

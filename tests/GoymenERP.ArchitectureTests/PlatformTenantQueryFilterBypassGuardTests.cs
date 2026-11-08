@@ -1602,7 +1602,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // fail-closed 503 when unregistered); provider branch and token counts unchanged (e6274962... -> a3fdee0a...).
                     // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 846faead...; with API-36 also feeding the finalize path).
                     new(
-                        "846faead3bef5bb6618949897140e34e7aef21cf728bc81e4ae99fdb3196d9f9",
+                        "78cb3e1ea925a976365477d8ac1d86a4cf35b07554a28e8487bc07ecac5ce65d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2411,7 +2411,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // finalization ledger guard (51228) and the outbox freeze guard (51229); the Down's raw SQL is the forward-fix refusal (51227) while any
                 // finalization exists, the DROP of both triggers, and the restore of the previous header guard.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108132917_AddSalesInvoiceFinalization.cs"] =
-                    new("0b22b334e24cbd141edbe48f15f25786fdf213401f1ac540dcf42715ac76f9fe",
+                    new("2c5456b9599dc76b14a0993d628f49615b66b7d670d1225913780cb63bb2e515",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 6 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

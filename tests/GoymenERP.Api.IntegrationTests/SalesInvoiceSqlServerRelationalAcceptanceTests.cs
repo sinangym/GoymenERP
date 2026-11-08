@@ -415,7 +415,7 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         {
             finalized = await scope.Invoices.FinalizeInvoiceAsync(
                 run.Envelope("f1-final", actor: finalizer, permission: SalesPermissionManifestV1.InvoicesFinalize), Hash('2'), approved.Id,
-                (invoice, now) => invoice.Finalize(3, finalizer, Guid.NewGuid, now),
+                (invoice, now) => invoice.Finalize(3, finalizer, Guid.NewGuid, now, new SalesInvoiceWithholdingThresholdPolicy().ThresholdAmount),
                 new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "SENTETIK"));
         }
 

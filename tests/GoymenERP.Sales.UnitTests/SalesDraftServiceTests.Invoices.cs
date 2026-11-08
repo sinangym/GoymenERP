@@ -271,6 +271,8 @@ public sealed partial class SalesDraftServiceTests
         public FakeOfficialInvoices Official { get; } = new();
         public SalesInvoiceMatchTolerancePolicy? Tolerance { get; set; }
         public ISalesFinanceAdmissionPortV1? Finance { get; set; }
+        public SalesInvoiceWithholdingThresholdPolicy? Threshold { get; set; }
+        public ISalesInvoiceDiagnosticsV1? Diagnostics { get; set; }
 
         /// <summary>An invoice world around an order the caller has put in the state under test.</summary>
         public static InvoiceWorld Around(World world, SalesOrderDraftDetailView order) => new(world, order);
@@ -302,7 +304,7 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesInvoiceService(company, World.User, World.Authority, new FixedCorrelation(), Invoices, World.Store, World.Settings,
-                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance);
+                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Threshold, Diagnostics);
         }
     }
 
@@ -439,9 +441,10 @@ public sealed partial class SalesDraftServiceTests
         string no = "GIB2026000000001") => new(version, no, OfficialEttn, approve, reason);
 
     /// <summary>An approved invoice (prepared and submitted by the world's user, approved by another); the user left is the approver.</summary>
-    private static async Task<(InvoiceWorld Invoicing, Guid Id, string Preparer)> ApprovedInvoiceAsync()
+    private static async Task<(InvoiceWorld Invoicing, Guid Id, string Preparer)> ApprovedInvoiceAsync(bool withholding = false,
+        string? withholdingCode = null)
     {
-        var invoicing = await InvoiceWorld.CreateAsync();
+        var invoicing = await InvoiceWorld.CreateAsync(withholding, withholdingCode);
         var preparer = invoicing.World.User.Id;
         var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
         await invoicing.Service().SubmitInvoiceAsync(created.Id, Command("1"), Metadata("k-inv-submit"));
