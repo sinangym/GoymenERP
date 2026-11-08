@@ -96,6 +96,24 @@ public sealed class SalesOrderDraftLineClosureTests
     }
 
     [Fact]
+    public void A_stored_closure_in_the_block_band_is_refused_on_restore_and_the_approval_band_restores()
+    {
+        var source = ApprovedDraft(out var line);
+        var facts = source.CloseLine(4, Closer, Input(line, "90"), T0);
+
+        // SAT-D17: the block band never closes, so a stored closure carrying it is refused, not repaired (as CloseLine refuses it).
+        var blocked = Draft(out _, line.Id);
+        Assert.Throws<InvalidOperationException>(() => blocked.RestoreLineClosure(facts with { Band = DeliveryToleranceBand.Block }));
+        Assert.Empty(blocked.LineClosures);
+        Assert.False(blocked.IsLineClosed(line.Id));
+
+        var approvalBand = Draft(out _, line.Id);
+        approvalBand.RestoreLineClosure(facts with { Band = DeliveryToleranceBand.Approval });
+        Assert.Equal(DeliveryToleranceBand.Approval, Assert.Single(approvalBand.LineClosures).Band);
+        Assert.True(approvalBand.IsLineClosed(line.Id));
+    }
+
+    [Fact]
     public void A_closed_line_is_not_revised_removed_or_changed_through_the_remainder_until_a_reopen_exists()
     {
         var draft = ApprovedDraft(out var line);
