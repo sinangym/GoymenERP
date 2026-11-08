@@ -41,6 +41,9 @@ EXPECTED_STORES = {
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "InvoiceCancellations"): (
+        "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
+    ),
     ("finance", "OfficialInvoiceImportCommands"): (
         "FinanceOfficialInvoiceImportCommandRow", "idempotency", "FinanceDbContext"
     ),
@@ -511,7 +514,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(20, len(replay_tables))
+        self.assertEqual(21, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
