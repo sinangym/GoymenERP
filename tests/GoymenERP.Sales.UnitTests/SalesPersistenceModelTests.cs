@@ -175,19 +175,19 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command" && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.MatchV1, StringComparison.Ordinal));
     }
 
-    /// <summary>API-36 PR4: the invoice guard is altered, two triggers are added (51228, 51229); Down is a forward fix (51227) first.</summary>
+    /// <summary>API-36 PR4: the invoice guard is altered, two triggers are added (51232, 51233); Down is a forward fix (51231) first.</summary>
     [Fact]
-    public void The_invoice_finalization_migration_alters_one_trigger_adds_two_and_its_down_refuses_with_51227_first()
+    public void The_invoice_finalization_migration_alters_one_trigger_adds_two_and_its_down_refuses_with_51231_first()
     {
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceFinalization();
         var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
         Assert.Equal(3, up.Length);
         Assert.Contains(up, op => op.Sql.Contains("ALTER TRIGGER [sales].[TR_Invoices_Guard]", StringComparison.Ordinal) && op.Sql.Contains("51223", StringComparison.Ordinal));
-        Assert.Contains(up, op => op.Sql.Contains("TR_InvoiceFinalizations_Guard", StringComparison.Ordinal) && op.Sql.Contains("51228", StringComparison.Ordinal));
-        Assert.Contains(up, op => op.Sql.Contains("TR_OutboxMessages_Guard", StringComparison.Ordinal) && op.Sql.Contains("51229", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_InvoiceFinalizations_Guard", StringComparison.Ordinal) && op.Sql.Contains("51232", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_OutboxMessages_Guard", StringComparison.Ordinal) && op.Sql.Contains("51233", StringComparison.Ordinal));
         var down = migration.DownOperations;
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
-        Assert.Contains("THROW 51227,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51231,", guard.Sql, StringComparison.Ordinal);
         Assert.Equal(3, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().Count());
         Assert.DoesNotContain("DROP TRIGGER", guard.Sql, StringComparison.Ordinal);
     }

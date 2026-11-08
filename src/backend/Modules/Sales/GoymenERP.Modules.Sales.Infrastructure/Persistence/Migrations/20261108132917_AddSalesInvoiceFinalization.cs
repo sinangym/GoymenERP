@@ -7,8 +7,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 {
     /// <summary>
     /// API-36 PR4: invoice finalisation (approved -> finalized), the Finance hand-off ledger and the Sales outbox. Hand-edited SQL:
-    /// TR_Invoices_Guard (3 -> 6 only with a match), TR_InvoiceFinalizations_Guard (51228), TR_OutboxMessages_Guard (51229).
-    /// Down is a forward fix guarded by 51227.
+    /// TR_Invoices_Guard (3 -> 6 only with a match), TR_InvoiceFinalizations_Guard (51232), TR_OutboxMessages_Guard (51233).
+    /// Down is a forward fix guarded by 51231.
     /// </summary>
     public partial class AddSalesInvoiceFinalization : Migration
     {
@@ -183,22 +183,22 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     IF NOT EXISTS (SELECT 1 FROM inserted)
                     BEGIN
                         IF EXISTS (SELECT 1 FROM deleted)
-                            THROW 51228, 'A sales invoice finalisation is never deleted.', 1;
+                            THROW 51232, 'A sales invoice finalisation is never deleted.', 1;
                         RETURN;
                     END;
                     IF EXISTS (SELECT [CompanyId], [InvoiceId], [AdmissionId], [FinalizedVersion], [FinalizedBy], [FinalizedAtUtc], [PlanJson], [CorrelationId] FROM deleted
                                EXCEPT SELECT [CompanyId], [InvoiceId], [AdmissionId], [FinalizedVersion], [FinalizedBy], [FinalizedAtUtc], [PlanJson], [CorrelationId] FROM inserted)
-                        THROW 51228, 'The finalisation facts and the instalment plan of a sales invoice are immutable.', 1;
+                        THROW 51232, 'The finalisation facts and the instalment plan of a sales invoice are immutable.', 1;
                     IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[InvoiceId] = d.[InvoiceId]
                                WHERE i.[FinanceStatus] < d.[FinanceStatus]
                                   OR (d.[FinanceStatus] = 1 AND i.[AttemptCount] <> d.[AttemptCount] + 1))
-                        THROW 51228, 'The Finance hand-off ledger only moves forward: one attempt at a time, and an admitted invoice stays admitted.', 1;
+                        THROW 51232, 'The Finance hand-off ledger only moves forward: one attempt at a time, and an admitted invoice stays admitted.', 1;
                     -- An admitted ledger row is frozen whole: status, admission stamp, attempt count, last attempt and last outcome (EXCEPT is null-safe).
                     IF EXISTS (SELECT 1 FROM deleted d WHERE d.[FinanceStatus] = 2 AND EXISTS (
                                    SELECT d.[FinanceStatus], d.[AdmittedAtUtc], d.[AttemptCount], d.[LastAttemptAtUtc], d.[LastOutcome]
                                    EXCEPT SELECT i.[FinanceStatus], i.[AdmittedAtUtc], i.[AttemptCount], i.[LastAttemptAtUtc], i.[LastOutcome]
                                           FROM inserted i WHERE i.[CompanyId] = d.[CompanyId] AND i.[InvoiceId] = d.[InvoiceId]))
-                        THROW 51228, 'An admitted sales invoice finalisation ledger row is frozen.', 1;
+                        THROW 51232, 'An admitted sales invoice finalisation ledger row is frozen.', 1;
                 END;
                 """);
 
@@ -209,7 +209,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 AS
                 BEGIN
                     SET NOCOUNT ON;
-                    THROW 51229, 'Sales outbox messages are append-only.', 1;
+                    THROW 51233, 'Sales outbox messages are append-only.', 1;
                 END;
                 """);
         }
@@ -218,14 +218,14 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // Forward fix: a finalized invoice, a ledger row or an outbox message cannot be held by the previous model. The guard
-            // refuses (51227) before anything is changed; then the new triggers go and the previous invoice guard is restored.
+            // refuses (51231) before anything is changed; then the new triggers go and the previous invoice guard is restored.
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [sales].[Invoices] WHERE [State] = 6)
                    OR EXISTS (SELECT 1 FROM [sales].[InvoiceFinalizations])
                    OR EXISTS (SELECT 1 FROM [sales].[OutboxMessages])
                    OR EXISTS (SELECT 1 FROM [sales].[InvoiceAttempts] WHERE [CommandName] IN (N'sales.invoice.finalize.v1', N'sales.invoice.finance-resend.v1'))
                 BEGIN
-                    THROW 51227, 'Finalized sales invoices, ledger rows, outbox messages or their attempts exist; forward-fix instead of rolling back.', 1;
+                    THROW 51231, 'Finalized sales invoices, ledger rows, outbox messages or their attempts exist; forward-fix instead of rolling back.', 1;
                 END;
                 """);
 

@@ -443,11 +443,11 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         foreach (var (sql, number) in new[]
         {
             ("UPDATE sales.Invoices SET Version = Version + 1 WHERE Id = @id", 51223),
-            ("UPDATE sales.InvoiceFinalizations SET FinanceStatus = 1, AdmittedAtUtc = NULL WHERE InvoiceId = @id", 51228),
-            ("UPDATE sales.InvoiceFinalizations SET AdmissionId = NEWID() WHERE InvoiceId = @id", 51228),
-            ("DELETE FROM sales.InvoiceFinalizations WHERE InvoiceId = @id", 51228),
-            ("UPDATE sales.OutboxMessages SET SourceOperation = N'hack' WHERE AggregateId = @id", 51229),
-            ("DELETE FROM sales.OutboxMessages WHERE AggregateId = @id", 51229),
+            ("UPDATE sales.InvoiceFinalizations SET FinanceStatus = 1, AdmittedAtUtc = NULL WHERE InvoiceId = @id", 51232),
+            ("UPDATE sales.InvoiceFinalizations SET AdmissionId = NEWID() WHERE InvoiceId = @id", 51232),
+            ("DELETE FROM sales.InvoiceFinalizations WHERE InvoiceId = @id", 51232),
+            ("UPDATE sales.OutboxMessages SET SourceOperation = N'hack' WHERE AggregateId = @id", 51233),
+            ("DELETE FROM sales.OutboxMessages WHERE AggregateId = @id", 51233),
         })
         {
             var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql, ("@id", approved.Id)));
@@ -455,7 +455,7 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         }
 
         var down = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
-        Assert.Equal(51227, down.Number);
+        Assert.Equal(51231, down.Number);
     }
 
     private static string Hash(char fill) => new(fill, 64);

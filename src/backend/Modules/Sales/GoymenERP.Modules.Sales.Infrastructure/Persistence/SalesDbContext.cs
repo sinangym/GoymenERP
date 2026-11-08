@@ -335,10 +335,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND ([DecidedBy] IS NULL OR LEN([DecidedBy]) > 0) "
         + "AND ([CancelledBy] IS NULL OR LEN([CancelledBy]) > 0)";
 
-    /// <summary>TR_InvoiceFinalizations_Guard (API-36): the finalisation facts are immutable; the ledger only moves forward (THROW 51228).</summary>
+    /// <summary>TR_InvoiceFinalizations_Guard (API-36): the finalisation facts are immutable; the ledger only moves forward (THROW 51232).</summary>
     internal const string InvoiceFinalizationGuardTrigger = "TR_InvoiceFinalizations_Guard";
 
-    /// <summary>TR_OutboxMessages_Guard (API-36): an outbox message is append-only (THROW 51229).</summary>
+    /// <summary>TR_OutboxMessages_Guard (API-36): an outbox message is append-only (THROW 51233).</summary>
     internal const string SalesOutboxGuardTrigger = "TR_OutboxMessages_Guard";
 
     /// <summary>CK_InvoiceFinalizations_Ledger (API-36): Waiting has no admission time; Admitted has one and at least one attempt.</summary>

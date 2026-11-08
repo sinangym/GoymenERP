@@ -590,7 +590,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-35: the append-only InvoiceMatches tenant rows (one per invoice, unique official number and ETTN per company) under the same
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // API-36: the append-only InvoiceFinalizations ledger and final instalment rows under the same company filter; no bypass (5d465acf... -> 64d66c31...).
-                "6f2e817acfa6bf1d3c097a8904812dabe1cf1507ad98b7c7bab6e207f715b2d5",
+                "c014ec633794dbd7b29572274be3ddcd36f9be08755addfe0cc099b82d895547",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -2407,10 +2407,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
                 // S5 API-36 (Fatura kesinlestirme): Up alters TR_Invoices_Guard (header may also gain the Finalized state) and creates the append-only
-                // finalization ledger guard (51228) and the outbox freeze guard (51229); the Down's raw SQL is the forward-fix refusal (51227) while any
+                // finalization ledger guard (51232) and the outbox freeze guard (51233); the Down's raw SQL is the forward-fix refusal (51231) while any
                 // finalization exists, the DROP of both triggers, and the restore of the previous header guard.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108132917_AddSalesInvoiceFinalization.cs"] =
-                    new("2c5456b9599dc76b14a0993d628f49615b66b7d670d1225913780cb63bb2e515",
+                    new("b7ff4815bed4c6ac8e624c951186f0e989e1a5bf0559ddea553ce67917bfc26e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 6 }),
                 // SAT-D132: Down's only raw SQL is the forward-fix refusal (51227, used by no other migration) while any quote revision carries due terms.
