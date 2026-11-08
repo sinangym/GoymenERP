@@ -279,6 +279,16 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
+  [SALES_PROBLEM_CODE.invoiceMatchRequired]:
+    'Resmî e-fatura eşleşmesi kaydedilmeden fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceMatchDifferenceOpen]:
+    'Resmî e-fatura ile ERP tutarı arasında fark açıkken fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceInstalmentFunctionalInvalid]:
+    'Sunucu vade taksitlerinin TL karşılığını doğrulayamadı; fatura kesinleştirilmedi.',
+  [SALES_PROBLEM_CODE.companyContextInvalid]:
+    'İstekteki şirket bağlamı geçerli değil; işlem yapılmadı. Şirket seçimini kontrol edip yeniden deneyin.',
+  [SALES_PROBLEM_CODE.correlationMetadataInvalid]:
+    'İstekteki izleme bilgisi geçerli değil; işlem yapılmadı.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -1284,7 +1294,7 @@ export const ORDER_TABS_TEXT = {
   },
   allocationNote: 'Kaynak stratejisi (stok, satın alma, üretim) henüz bu ekrandan seçilmiyor; tahsisler Stok sahibinden okunur.',
   realizationNotApproved: 'Teslimat ve irsaliye bilgisi sipariş onaylandıktan sonra gösterilir.',
-  invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
+  invoicesEmpty: 'Faturalar yalnız tek bir şirket seçiliyken gösterilir.',
   documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
 } as const
 
