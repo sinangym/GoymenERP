@@ -216,6 +216,7 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
     ("finance", "OfficialInvoiceImportWorkDeliveries"),
     ("inventory", "OutboxMessages"),
+    ("sales", "OutboxMessages"),
     ("work", "ObservationInbox"),
     ("work", "OutboxMessages"),
 )
@@ -582,6 +583,14 @@ DURABLE_STORE_SPECS = (
         ("dbContext.RequestAttempts.Add(new RequestAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "sales.outbox", "Sales", "outbox", "SalesDbContext", "SalesOutboxRow", "sales",
+        "OutboxMessages",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108132917_AddSalesInvoiceFinalization.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
+        ("dbContext.OutboxMessages.Add(new SalesOutboxRow",), mapping_tokens=("UX_OutboxMessages_AggregateSequence",),
+    ),
+    _store(
         "work.observation-inbox", "Work", "inbox", "WorkDbContext", "WorkObservationInboxRow",
         "work", "ObservationInbox", WORK_CONTEXT,
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261005190000_InitialWorkDesiredStateStorage.cs",
@@ -681,6 +690,10 @@ WRITER_METHOD_SCOPES = {
         "sales.invoice-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
     ): "StoreInvoiceAsync",
+    (
+        "sales.outbox",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
+    ): "FinalizeInvoiceAsync",
     (
         "sales.quote-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs",
