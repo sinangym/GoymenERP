@@ -1593,8 +1593,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // service factory (company context resolved, never registered); provider branch and token counts unchanged.
                     // API-35 (Fatura cekirdegi 3): the invoice service factory also receives the optional official-invoice read port and the
                     // tolerance policy (DI-only, none registered yet; the match is 503 fail-closed); provider branch and token counts unchanged.
+                    // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 16707a32...).
                     new(
-                        "e62749629334b13196d3553097ae3f8913744cec34df5b1354da289d4a27b591",
+                        "16707a323c888923a321f74cea787f187dbe71a860712ec4e6a7efeb195f7e4f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
