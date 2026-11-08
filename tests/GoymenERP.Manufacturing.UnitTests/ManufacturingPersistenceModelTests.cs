@@ -124,7 +124,33 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanPreparer", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanInputAllocations", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void The_plan_input_allocation_is_keyed_by_plan_and_roll_and_its_rollback_refuses_while_one_exists()
+    {
+        // Üretim U3-a (URT-D21, B-01): one append-only row per (company, plan, parent roll); the allocation identity is
+        // unique per company. Up is pure DDL; Down refuses (THROW 51191) while any row exists, because Inventory still
+        // holds the allocation the row names (forward fix).
+        using var context = Context();
+        var allocation = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PlanInputAllocationRow))!;
+        Assert.Equal(["CompanyId", "PlanId", "ParentRollId"],
+            allocation.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(allocation.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "AllocationId"]));
+        Assert.Equal(3, allocation.FindProperty(nameof(PlanInputAllocationRow.AllocatedKg))!.GetScale());
+
+        var migration = new AddManufacturingPlanInputAllocations();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51191", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[PlanInputAllocations]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
+            { Name: "PlanInputAllocations" });
     }
 
     [Fact]
