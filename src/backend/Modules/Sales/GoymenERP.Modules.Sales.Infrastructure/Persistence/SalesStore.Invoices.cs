@@ -159,6 +159,25 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         return new SalesInvoicePage(items, next);
     }
 
+    public async Task<SalesOrderInvoicePage> ListInvoicesOfOrderAsync(Guid salesOrderId, int limit, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        if (limit < 1 || limit > MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit));
+        }
+
+        // Both sets are tenant-filtered; a released line still ties its invoice to the order (history).
+        var invoiceIds = dbContext.InvoiceLines.AsNoTracking().Where(line => line.SalesOrderId == salesOrderId).Select(line => line.InvoiceId);
+        var rows = await dbContext.Invoices.AsNoTracking().Where(row => invoiceIds.Contains(row.Id))
+            .OrderByDescending(row => row.CreatedAtUtc).ThenByDescending(row => row.Id).Take(limit + 1).ToListAsync(cancellationToken);
+        var page = rows.Take(limit).ToList();
+        var ids = page.Select(row => row.Id).ToArray();
+        var lines = (await dbContext.InvoiceLines.AsNoTracking().Where(line => ids.Contains(line.InvoiceId)).ToListAsync(cancellationToken))
+            .ToLookup(line => line.InvoiceId);
+        return new SalesOrderInvoicePage([.. page.Select(row => SalesInvoiceRows.Restore(row, [.. lines[row.Id]]))], rows.Count > limit);
+    }
+
     public async Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
         CancellationToken cancellationToken = default)
     {

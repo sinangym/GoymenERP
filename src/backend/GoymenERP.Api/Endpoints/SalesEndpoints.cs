@@ -434,6 +434,7 @@ public static partial class SalesEndpoints
         MapLoadingProgress(drafts);
         MapCustomerReturns(drafts);
         MapStatus(drafts);
+        MapDraftInvoices(drafts);
         MapRiskCheck(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
