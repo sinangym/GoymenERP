@@ -464,7 +464,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
                 // SAT-D132 (quote vade): +1 Sales fact (quote due terms per revision, carry-over to the order, the 51227 rollback refusal), kept ordinal-sorted (be1b2f40... -> 525d38a4...).
                 // Merged with main's #984 (SAT-D132) fact: SAT-D17 line closure +5 facts recomputed over the union (525d38a4... -> 7c089718...).
-                "55ad9807e85049a23b00ff37b1fdd19c2b8edd5eac28d1302414e9e45b227906",
+                // Line identity FKs (review finding): +1 SalesOrderLineClosure fact (a LineId of another line is refused by the three
+                // 4-column FKs; the Up guard 51234 refuses a mismatch), kept ordinal-sorted (55ad9807... -> e2b0d6ba...).
+                "e2b0d6ba51c4aebf53be638f2d191ce652d8db12f7e5c712dc5f728cfcb89465",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -596,7 +598,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // SAT-D132: QuoteRevisions.DueTermsJson (nullable, CK_QuoteRevisions_DueTerms ISJSON) on the same company-filtered revision row; no query-filter bypass or direct database surface (5d465acf... -> da465c59...).
                 // SAT-D17: DraftLineClosures (keyed per line, FK to draft and line, CK) on the same company-filtered context; no query-filter bypass or direct database surface (da465c59... -> af489a5a...).
-                "17c1be196d720c8f01ebf012060b7c0e117e44b785c1560e96f76bb8979ef6fe",
+                // Line identity FKs (review finding): alternate key AK_DraftLines_LineIdentity (CompanyId, DraftId, LineNo, LineId) and a 4-column
+                // Restrict FK to it from DraftOverDeliveryApprovals, DraftLineClosures and DraftRemainderChanges; no query-filter bypass or direct database surface (17c1be19... -> 1d567f05...).
+                "1d567f05ec040972ea65978fac493551da5f03309e9094846c02595ff0b2bbc3",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -2429,6 +2433,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // other migration; 51227 is AddQuoteDueTerms') while any closure exists, before the DropTable (an empty table rolls back freely).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108135920_AddDraftLineClosures.cs"] =
                     new("f5a39316e3c68ce0f529184f152ab52d24629830151bf6b70375a54feb24ca51",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Line identity FKs (review finding): the Up's only raw SQL is a pre-check that refuses (51234, used by no other migration) while
+                // any approval, closure or remainder change names a LineId that is not the line at its LineNo, before any DDL (no data-fix policy);
+                // the Down is pure DDL (dropping the FKs, indexes and alternate key loses no data).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108194345_AddDraftLineIdentityForeignKeys.cs"] =
+                    new("35b2d66e710fe11d6710eabf69a0d56ab5a259c55986a1e75b523d9700c97989",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
