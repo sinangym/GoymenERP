@@ -261,8 +261,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // risk), ordinal-sorted (7dc420a3… -> cf9cecf6…).
             // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
             // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
+            // F2b: +4 invoice cancellation facts, ordinal-sorted (4575e229… -> c2205fa2…).
             ["tools/relational_inventory/finance.txt"] =
-                "4575e2292c5b12945010675b92bee90e55272d41a9f5de85e27aade82fc3814e",
+                "a73d968c479c4144f195ad65b29e2eb81652fc0612a31464ba42249136d993fb",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -662,7 +663,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // batch/receipt relationships and an immutable-write guard.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "973395d3a6ffdd30305ae3edd889f3149f826b585bacde1dfa8161587572cb86",
+            // F2b: InvoiceCancellations / InvoiceCancellationItems carry the CompanyId filter and company-leading keys;
+            // CK_OpenItems_Status admits 3 = Cancelled (973395d3… -> 578e4f20…).
+            "578e4f20fbf62e55557a56945ab2f6579f50d0a02ef1f05c43d6334e878fe697",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -758,6 +761,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceInvoiceOpenItemAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceInvoiceOpenItemAdmissionService.cs";
+    private const string ReviewedFinanceInvoiceOpenItemCancellationServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceInvoiceOpenItemCancellationService.cs";
     private const string ReviewedFinanceOpenItemReadServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemReadService.cs";
@@ -798,6 +804,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
                 // MOD-04 (F2a) invoice admission: the one counted site is a target-typed refusal result.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] = ("FinanceDbContext", 1),
+                // F2b invoice cancellation: likewise one target-typed refusal result.
+                [ReviewedFinanceInvoiceOpenItemCancellationServicePath] = ("FinanceDbContext", 1),
                 // Target-typed DTO/cursor/ReadResult return sites are conservatively counted as context
                 // constructions. FI04 has four exact sites; all database access is tenant-filtered EF/DI.
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
@@ -1246,10 +1254,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // F2b invoice cancellation: the same shape as the F2a admission — tenant-filtered FinanceDbContext,
+                // SqlClient only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
+                [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
+                    new(
+                        "8b02512a01241b015ea34574296825356228cef44dc923a73b2c50861ca96926",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // FI04 adds a separate read-only scoped service. No raw SQL, connection, save or filter bypass.
+                // F2b: maps the stored Cancelled status (2f7afd0e… -> 0fa87abe…).
                 [ReviewedFinanceOpenItemReadServicePath] =
                     new(
-                        "2f7afd0e30cb8cfdb5f919ff72bea2435a37c06ea90767ee8e97e85865ee9159",
+                        "0fa87abe22bfc10cf6b0b04f8f6f207a82ec3dc073608b54c8bb4c0227c16f8a",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
                 // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
@@ -2524,6 +2542,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // F2b: the Down's only raw SQL is Finance's module refusal (51051) while any invoice cancellation or cancelled
+                // open item is stored; the THROW precedes the table drops and the status constraint narrowing. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107131505_AddInvoiceCancellations.cs"] =
+                    new("7a1dd608847d3c5a069dc68c1fde39bd209dc01c7ca26493fd593bc1042f0e9c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // MOD-04 (F2a): the Down's only raw SQL is Finance's module refusal (51051) while any open item carries
                 // an exchange rate or functional amount; the THROW precedes the constraint and column drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261102220923_AddOpenItemInvoiceExchange.cs"] =

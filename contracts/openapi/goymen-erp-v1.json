@@ -105007,7 +105007,8 @@
       "FinanceOpenItemStatusV1": {
         "enum": [
           "Open",
-          "Closed"
+          "Closed",
+          "Cancelled"
         ]
       },
       "FinanceOpenItemViewV1": {
@@ -111051,7 +111052,9 @@
           "ManualReceiptReversal",
           "CustomerInstrumentCollection",
           "ManualBankPayment",
-          "PayableOpenItem"
+          "PayableOpenItem",
+          "OpenItemCancellation",
+          "PayableOpenItemCancellation"
         ]
       },
       "PartyLedgerSide": {

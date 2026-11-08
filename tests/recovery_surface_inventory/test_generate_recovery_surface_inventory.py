@@ -43,6 +43,9 @@ EXPECTED_STORES = {
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "InvoiceCancellations"): (
+        "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
+    ),
     ("finance", "OfficialInvoiceImportCommands"): (
         "FinanceOfficialInvoiceImportCommandRow", "idempotency", "FinanceDbContext"
     ),

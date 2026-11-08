@@ -18,7 +18,7 @@ kendi karar, review ve merge kapıları geçerlidir.
 - **Idempotency:** `CommandMetadata.IdempotencyKey`, öneri `sales-invoice:{invoiceId}:{invoiceVersion}`. Aynı anahtar ve
   payload aynı kullanıcıyla tekrar oynatılır (başka payload ya da kullanıcı → `IdempotencyConflict`); aynı fatura aynı
   sürüm ve aynı satırlarla yeni bir kabulle gelirse ikinci kalem açılmaz; farklı satır **veya farklı sürümle**
-  `finance_invoice_already_admitted` döner. Yorum: değişen fatura iptal (ters kayıt, SAT-D96) ve yeniden kesimle düzeltilir (Finans F2b).
+  `finance_invoice_already_admitted` döner. Yorum: değişen fatura iptal (ters kayıt, SAT-D96; FS-1b) ve yeniden kesimle düzeltilir.
 - **İşlem sınırı:** Finans kendi işleminde yazar (tek `SaveChanges`); Satış'ın veritabanı işlemine katılmaz. Satış
   kesinleşmeyi "Finans kabulü bekliyor" durumuyla commit eder, sonra portu aynı anahtarla çağırır; hata ya da zaman
   aşımında aynı anahtarla yeniden dener.
@@ -33,6 +33,27 @@ kendi karar, review ve merge kapıları geçerlidir.
 - **Taşıma:** ERP-000F dağıtıcısı gelene kadar senkron port (SINAN 10-21 No 55). Dağıtıcıdan sonra aynı payload
   `sales.invoice.finalized.v1` olur; Finans inbox/dedup ile aynı servisi çağırır. Matrah/KDV/tevkifat, belge no/tarih ve
   irsaliye bağları olay payload'unda Accounting için kalır; açık kalem için gerekmez.
+
+## FS-1b · Resmî belge iptali → açık kalemin ters kaydı (SAT-D96, API-11)
+
+- **Finans tarafı:** `IFinanceInvoiceOpenItemCancellationPortV1.CancelAsync(FinanceContext, CommandMetadata,
+  FinanceInvoiceOpenItemCancellationV1)` (F2b). Host kaydı, Satış'ın "resmî belge iptal" komutu geldiğinde yapılır.
+- **Alanlar:** `CancellationId` (Satış'ın bu iptal kaydı için ürettiği id), `Producer = Sales`, `InvoiceId`,
+  `InvoiceVersion` (kabul edilen sürüm), `Reason` (kısa metin, ≤ 512; RED / iptal gerekçesi).
+- **Sonuç:** faturanın bütün açık kalemleri silinmez; ilk tutarları kalır, durumları `Cancelled`, kalanları `0` olur ve
+  cari ekstrede iptal gününde ayrı bir ters satır ("Satış faturası iptali (ters kayıt)", alacak sütunu) görünür.
+- **Ret:** kabul edilmemiş fatura, başka sürüm, başka bir iptal id'siyle zaten iptal edilmiş fatura, ya da kalemlerinden
+  birinde aktif dağıtım (tahsilat bağlanmış) varsa ve `ReleaseActiveAllocations` false ise
+  `finance_invoice_cancellation_has_allocations` (SAT-D96 8 Kasım yönü: bu ret **uyarıdır**). Satış ekranı uyarıyı
+  gösterir, kullanıcı onaylarsa aynı iptali `ReleaseActiveAllocations = true` ile **aynı CancellationId, yeni anahtarla**
+  çağırır; uyarı ret'i hiçbir şey yazmadığından aynı id kullanılabilir. Finans tüm aktif dağıtımları aynı kayıtta
+  kaldırır, tutar tahsilatın dağıtılmamış kalanına döner (müşteri avansı kalır) ve kasa/banka hareketi yazılmaz veya
+  değişmez. Kayıtlı bir iptalin aynı id altında farklı onay bayrağıyla tekrarı `identity_conflict` verir.
+- **Idempotency ve işlem sınırı:** FS-1 ile aynı. Öneri anahtar `sales-invoice-cancel:{invoiceId}:{invoiceVersion}`;
+  Satış iptalini "Finans iptali bekliyor" durumuyla commit eder, sonra portu aynı anahtarla çağırır (ALS-D64 "ayrı adım");
+  başka yetkili kullanıcı yeni anahtar + aynı `CancellationId` ile tekrar gönderir (SAT-D208).
+- **Yetki:** host'un sağladığı `IFinanceInvoiceOpenItemCancellationAuthorityV1` ile iki kez çitlenir; hangi yetkinin
+  cevap vereceği Satış bağlantısında belirlenir.
 
 ## FS-2 · Risk portu (MOD-05)
 
