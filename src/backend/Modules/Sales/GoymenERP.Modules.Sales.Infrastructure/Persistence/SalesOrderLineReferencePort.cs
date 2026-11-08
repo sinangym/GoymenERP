@@ -89,6 +89,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             return LineStanding.Refused(draft.State.ToString());
         }
 
+        // SAT-D17 / SAT-D215: a line closed with a shortfall cannot ship again — refused as "Closed", like a closed order's line
+        // (its cancelled remainder is no demand; the delivered/shipped history stays the owners').
+        if (draft.IsLineClosed(line.Id))
+        {
+            return LineStanding.Refused(SalesDraftState.Closed.ToString());
+        }
+
         // SAT-D115 (EK14): the customer rejected the last approved revision — shipping continues on the revision the customer last
         // accepted (its number and quantity as the cap), never on the rejected one; a fallback under another header ships nothing.
         var acceptedFallback = draft.CustomerAcceptedFallback;

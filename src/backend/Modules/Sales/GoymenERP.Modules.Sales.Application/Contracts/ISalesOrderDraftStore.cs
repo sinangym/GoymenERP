@@ -91,6 +91,9 @@ public static class SalesDraftCommands
     /// <summary>SAT-D30 / SAT-D213: POST /api/v1/sales/drafts/{id}/over-delivery-approval — one line's approval-band over-delivery approved at its shipped total.</summary>
     public const string ApproveOverDeliveryV1 = "sales.order-draft.approve-over-delivery.v1";
 
+    /// <summary>SAT-D17 / SAT-D168: closing one order line with a shortfall (append-only, one version step).</summary>
+    public const string CloseLineV1 = "sales.order-draft.close-line.v1";
+
     /// <summary>Partial delivery: POST /api/v1/sales/drafts/{id}/remainder-changes — a remainder cancel/revise is requested (nothing on the line moves).</summary>
     public const string RequestRemainderChangeV1 = "sales.order-draft.request-remainder-change.v1";
 
@@ -331,6 +334,20 @@ public interface ISalesOrderDraftStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// SAT-D17: one line's closure with a shortfall, one save — the over-delivery approval's key rules and shape.
+    /// <paramref name="beforeWrite"/> receives the draft as read and is the caller's last word before the mutation (fences, the
+    /// domain's own preconditions, the shipped total and its shippers read afresh from the delivery owner, the line judged as a
+    /// closed line with the Settings tolerance), answered as the input to keep; any refusal it throws leaves nothing written.
+    /// <paramref name="mutate"/> is the domain's <c>CloseLine</c>. The store APPENDS the closure row and moves the header's version
+    /// together with the attempt record and the audit event — or nothing at all. No line, revision, schedule, lifecycle or approval
+    /// column changes. The command name must be <see cref="SalesDraftCommands.CloseLineV1"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> CloseLineAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, LineClosureInput, DateTimeOffset, LineClosureFacts> mutate,
+        SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<LineClosureInput>> beforeWrite,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// DEC-SAL-002: the quantity revision, one save — the commercial revision's key rules and shape (§3/§4/§7/§8).
     /// <paramref name="beforeWrite"/> receives the draft as read (tracked header and lines) and is the caller's last word before
     /// the mutation — its fences, the domain's own preconditions and the owners' links read afresh; any refusal it throws
@@ -548,6 +565,15 @@ public static class SalesDraftRequestHash
 
     /// <summary>SAT-D30: the canonical content of an over-delivery approval (command, draft, version, line, shipped total as sent).</summary>
     public static string Compute(string commandName, Guid draftId, SalesDraftOverDeliveryApprovalRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.LineId, request.Shipped }, SalesDraftJson.Options));
+    }
+
+    /// <summary>SAT-D17: the canonical content of a line closure (command, draft, version, line, shipped total as sent).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftLineClosureRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);

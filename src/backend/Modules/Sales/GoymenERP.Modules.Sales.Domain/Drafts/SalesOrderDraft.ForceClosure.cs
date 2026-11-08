@@ -105,7 +105,7 @@ public sealed partial class SalesOrderDraft
     /// The store's rebuild of the recorded force-closure, after the lines, revisions, schedules and remainder changes and BEFORE
     /// the approval axis (whose version floor counts it as one step). It must name the current revision, an actor, a time, a
     /// reason within the bound, a non-blocking impact and EVERY line exactly once with its current ordered text, a shipped total
-    /// within it and the remainder that is their difference; a stored closure that does not fit is refused, not repaired.
+    /// within it and the remainder that is their difference (a line closed earlier carries its closure's own triple); a stored closure that does not fit is refused, not repaired.
     /// </summary>
     public void RestoreForceClosure(ForceClosureFacts facts)
     {
@@ -144,7 +144,13 @@ public sealed partial class SalesOrderDraft
                 throw new ArgumentException("Sevk edilen toplam satırın biriminde geçerli değil ya da sipariş miktarını aşıyor.", nameof(inputs));
             }
 
-            result.Add(new ForceClosureLineSnapshot(line.Id, line.LineNo, line.QuantityText, Text(shipped), Text(remainder)));
+            // A line already closed with a shortfall (SAT-D17) is recorded with its closure's own triple (ordered, shipped at closure,
+            // cancelled remainder): the remainder it cancelled is never counted a second time and the snapshot stays internally
+            // consistent (ordered - shipped = remainder) and restorable; a closed line cannot ship afterwards (SAT-D215).
+            var closure = lineClosures.FirstOrDefault(candidate => candidate.LineId == line.Id);
+            result.Add(closure is null
+                ? new ForceClosureLineSnapshot(line.Id, line.LineNo, line.QuantityText, Text(shipped), Text(remainder))
+                : new ForceClosureLineSnapshot(line.Id, line.LineNo, closure.Ordered, closure.ShippedAtClosure, closure.CancelledRemainder));
         }
 
         return result.AsReadOnly();
@@ -183,6 +189,22 @@ public sealed partial class SalesOrderDraft
         foreach (var line in lines)
         {
             var entry = stored.SingleOrDefault(candidate => candidate?.LineId == line.Id);
+            var closure = lineClosures.FirstOrDefault(candidate => candidate.LineId == line.Id);
+            if (entry is not null && closure is not null)
+            {
+                // A closed line carries its closure's own triple (restored before this fact).
+                if (entry.LineNo != line.LineNo
+                    || !string.Equals(entry.Ordered, closure.Ordered, StringComparison.Ordinal)
+                    || !string.Equals(entry.Ordered, line.QuantityText, StringComparison.Ordinal)
+                    || !string.Equals(entry.Shipped, closure.ShippedAtClosure, StringComparison.Ordinal)
+                    || !string.Equals(entry.ClosedRemainder, closure.CancelledRemainder, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
             if (entry is null || entry.LineNo != line.LineNo
                 || !string.Equals(entry.Ordered, line.QuantityText, StringComparison.Ordinal)
                 || !decimal.TryParse(entry.Shipped, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var shippedValue)

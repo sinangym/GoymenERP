@@ -32,9 +32,10 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-04 (1.12, merged after 1.11): the header-revision control of the detail.
         // SAT-D32 (1.13): the user-closure control of the detail.
         // SAT-D30 / SAT-D168 (1.14): the over-delivery approval control of the detail.
+        // SAT-D17 (1.17): registers sales.orders.lines.close (manifest v24) and its detail control.
         // S5 API-35 (1.16): registers sales.invoices.match (manifest v23); API-33 (1.15) registered sales.invoices.approve (v22); no screen control is declared yet (frontend lane).
-        Assert.Equal(("SALES", "1.16"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(27, declarations.Count);
+        Assert.Equal(("SALES", "1.17"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(28, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -145,6 +146,12 @@ public sealed class SalesShellCapabilityProviderContractTests
                 overDelivery.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, overDelivery.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersOverDeliveryApprove], overDelivery.RequiredPermissions);
+
+        // SAT-D17 / SAT-D168: the line closure is a control of the detail - the read plus its own name only.
+        var lineClose = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.LineCloseCapabilityId);
+        Assert.Equal("sales.orders.lines.close", lineClose.CapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, lineClose.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersLineClose], lineClose.RequiredPermissions);
 
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
@@ -342,7 +349,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
         // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
         Assert.Equal("sales.orders.over-delivery.approve", SalesPermissionManifestV1.OrdersOverDeliveryApprove);
-        Assert.Equal((23, 26), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((24, 27), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -358,6 +365,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.OrdersClose,
                 SalesPermissionManifestV1.OrdersOverDeliveryApprove,
+                SalesPermissionManifestV1.OrdersLineClose,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersHeaderWrite,
                 SalesPermissionManifestV1.RequestsWrite,

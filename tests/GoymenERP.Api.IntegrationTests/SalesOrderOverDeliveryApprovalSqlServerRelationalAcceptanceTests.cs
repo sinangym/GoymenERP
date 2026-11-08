@@ -244,6 +244,8 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[approvalsIndex - 1]));
         Assert.Equal(51213, rollback.Number);
         Assert.Equal(applied.Take(approvalsIndex + 1), (await context.Database.GetAppliedMigrationsAsync()).Take(approvalsIndex + 1));
+        // The later migrations that rolled back (invoices, line closures) are applied again: the store below reads their tables.
+        await context.Database.MigrateAsync();
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftOverDeliveryApprovals] WHERE [DraftId] = @id", ("@id", draft.Id)));
 
         // The rebuilt order carries its approval (the store's restore through the domain, counted by the version floor).

@@ -736,6 +736,7 @@ public sealed partial class SalesOrderDraft
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
         RequireSubcontractPricesEntered();
+        RequireClosedLinesIntact();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
@@ -761,6 +762,7 @@ public sealed partial class SalesOrderDraft
         var actor = RequireActor(actorId);
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
+        RequireClosedLinesIntact();
         if (ApprovalState != InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
@@ -1284,6 +1286,7 @@ public sealed partial class SalesOrderDraft
                 "Miktar revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
         }
 
+        RequireClosedLinesUnchanged(inputs);
         var replacements = new List<(SalesOrderDraftLine Line, Quantity Quantity, string Text)>(inputs.Count);
         foreach (var input in inputs)
         {
@@ -1342,6 +1345,40 @@ public sealed partial class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    /// <summary>
+    /// SAT-D167 / SAT-D215 / SAT-D217: a line closed with a shortfall keeps its quantity until an approved reopen (none exists yet):
+    /// a quantity revision that changes it is the key's terminal 409. A value-equal quantity (the revision names every line) is no change.
+    /// </summary>
+    public void RequireClosedLinesUnchanged(IReadOnlyList<LineQuantityInput> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        foreach (var input in inputs)
+        {
+            if (input is not null && lineClosures.Any(closure => closure.LineId == input.LineId)
+                && lines.SingleOrDefault(candidate => candidate.Id == input.LineId) is { } line && line.Quantity.Value != input.Quantity)
+            {
+                throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+            }
+        }
+    }
+
+    /// <summary>
+    /// SAT-D167 / SAT-D215 defence in depth: a line closed with a shortfall keeps the quantity its closure measured. A submit or an
+    /// approval that would stand over a different quantity of a closed line (a state the closure entry itself refuses) is a state
+    /// conflict, so an approval never changes a closed line.
+    /// </summary>
+    private void RequireClosedLinesIntact()
+    {
+        foreach (var closure in lineClosures)
+        {
+            if (lines.SingleOrDefault(candidate => candidate.Id == closure.LineId) is { } line
+                && !string.Equals(line.QuantityText, closure.Ordered, StringComparison.Ordinal))
+            {
+                throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+            }
+        }
     }
 
     private static void RequirePriceReferenceQuantity(SalesOrderDraftLine line, decimal quantity)
@@ -1761,9 +1798,11 @@ public sealed partial class SalesOrderDraft
         var customerRejectionTransitions = (long)customerRejections.Count;
         // SAT-D30 / SAT-D213: every recorded over-delivery approval was one step of its own (restored just before this).
         var overDeliveryApprovalTransitions = (long)overDeliveryApprovals.Count;
+        // SAT-D17: every recorded line closure was one step of its own (restored just before this).
+        var lineClosureTransitions = (long)lineClosures.Count;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
             + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions
-            + customerRejectionTransitions + overDeliveryApprovalTransitions);
+            + customerRejectionTransitions + overDeliveryApprovalTransitions + lineClosureTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

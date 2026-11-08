@@ -220,6 +220,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal DbSet<DraftUserClosureRow> DraftUserClosures => Set<DraftUserClosureRow>();
     /// <summary>SAT-D30 / SAT-D213: the recorded over-delivery approvals (append-only, numbered per line).</summary>
     internal DbSet<DraftOverDeliveryApprovalRow> DraftOverDeliveryApprovals => Set<DraftOverDeliveryApprovalRow>();
+    internal DbSet<DraftLineClosureRow> DraftLineClosures => Set<DraftLineClosureRow>();
 
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
@@ -403,6 +404,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ApprovedShipped]) > 0 AND LEN([ApprovedBy]) > 0 "
         + "AND LEN([CorrelationId]) > 0";
 
+    /// <summary>
+    /// CK_DraftLineClosures_Identity: identities, the line position, the basis revision, the band (SAT-D15 numbers Within 1 ... Block 4;
+    /// a closure is never the block band), the smallest version a closure can produce (create 1, one line 2, submit 3, approve 4,
+    /// close the line 5) and non-blank texts.
+    /// </summary>
+    internal const string LineClosureIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [BasisRevision] >= 0 "
+        + "AND [Band] BETWEEN 1 AND 3 AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ShippedAtClosure]) > 0 "
+        + "AND LEN([CancelledRemainder]) > 0 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -423,6 +435,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftForceClosures(modelBuilder);
         ConfigureDraftUserClosures(modelBuilder);
         ConfigureDraftOverDeliveryApprovals(modelBuilder);
+        ConfigureDraftLineClosures(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
@@ -1254,6 +1267,31 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D17: the recorded line closures - append-only history beside the draft, at most one per line, one per version step. The
+    // line, its quantities and the approval axis stay as they are; the remainder is only counted as cancelled.
+    private void ConfigureDraftLineClosures(ModelBuilder modelBuilder)
+    {
+        var closure = modelBuilder.Entity<DraftLineClosureRow>();
+        closure.ToTable("DraftLineClosures", Schema, table =>
+            table.HasCheckConstraint("CK_DraftLineClosures_Identity", LineClosureIdentityConstraint));
+        closure.HasKey(x => new { x.CompanyId, x.DraftId, x.LineId });
+        closure.HasIndex(x => new { x.CompanyId, x.DraftId, x.DraftVersion }).IsUnique()
+            .HasDatabaseName("UX_DraftLineClosures_DraftVersion");
+        closure.Property(x => x.Ordered).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.ShippedAtClosure).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.CancelledRemainder).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.ClosedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        closure.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        closure.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -1492,6 +1530,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftUserClosureRow => [],
                     // SAT-D30 / SAT-D213: a recorded over-delivery approval is APPEND-ONLY — no column of it may change afterwards.
                     DraftOverDeliveryApprovalRow => [],
+                    // SAT-D17: a recorded line closure is APPEND-ONLY - no column of it may change afterwards.
+                    DraftLineClosureRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],
