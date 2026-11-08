@@ -28,6 +28,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -859,6 +860,57 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task The_quote_due_terms_persist_per_revision_carry_to_the_converted_order_and_the_Down_guard_refuses_on_real_sql()
+    {
+        // SAT-D132 (EK18): the quote's due terms are stored per revision, the CURRENT revision's carry to the order at the
+        // conversion, and the migration's Down refuses (51227) while any revision holds due terms.
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddQuoteDueTerms().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+
+        var party = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var request = await run.RequestAsync(party, account);
+        await run.ApproveRequestAsync(request, "due-approve");
+        var revisedTerms = new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 15, "40"),
+            new SalesDueInstalmentV1(2, SalesDueBasisNamesV1.OrderDate, 45, "60")]);
+        Guid quoteId;
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = run.Service(scope, run.Actor);
+            var created = await service.CreateQuoteAsync(CreateQuote(party, account, [request], "12.50") with { DueTerms = TestDueTerms.PointDue30Wire },
+                run.Metadata("due-quote"));
+            quoteId = created.Detail.Quote.Id;
+            Assert.Equal(("Visible", 1, 30, "100"), (created.Detail.DueTermsDisclosure, created.Detail.DueTerms!.Instalments.Count,
+                created.Detail.DueTerms.Instalments[0].DaysAfter, created.Detail.DueTerms.Instalments[0].SharePercent));
+            var revised = await service.ReviseQuoteAsync(quoteId, new SalesQuoteRevisionRequest("1", [Line("13.00")], Day.AddDays(20), DueTerms: revisedTerms),
+                run.Metadata("due-revise"));
+            Assert.Equal(2, Assert.IsType<SalesDueTermsV1>(revised.Detail.DueTerms).Instalments.Count);
+        }
+
+        Assert.Equal((2, 2), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteRevisions WHERE QuoteId = @q AND DueTermsJson IS NOT NULL", ("@q", quoteId)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteRevisions WHERE QuoteId = @q", ("@q", quoteId))));
+        var corrupt = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.QuoteRevisions SET DueTermsJson = N'not json' WHERE QuoteId = @q", ("@q", quoteId)));
+        Assert.Equal(547, corrupt.Number);
+
+        Guid orderId;
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = run.Service(scope, run.Actor);
+            orderId = (await service.ConvertQuoteAsync(quoteId, new SalesQuoteConversionRequest("2", Day), run.Metadata("due-convert"))).Detail.Draft.Id;
+            var header = await service.GetDraftHeaderAsync(orderId);
+            Assert.Equal(2, Assert.IsType<SalesDueTermsV1>(header.DueTerms).Instalments.Count);
+            Assert.Equal((15, "40"), (header.DueTerms!.Instalments[0].DaysAfter, header.DueTerms.Instalments[0].SharePercent));
+        }
+
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51227, refusal.Number);
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteRevisions WHERE QuoteId = @q AND DueTermsJson IS NOT NULL", ("@q", quoteId)));
+    }
+
+    [SqlServerFact]
     public async Task The_real_host_routes_measure_the_approval_name_the_quote_write_name_on_conversion_and_the_settings_list_on_the_loss()
     {
         // The real host with fresh synthetic grants. The quote is dated in the past so that it is expired on the HOST's own clock
@@ -1235,8 +1287,8 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>
-        /// SAT-D123 / SAT-D132: a converted order carries no due terms (a quote has none yet), so the seller enters them by the
-        /// header revision before the approval; everything else in the header stays as it is. Returns the new draft version.
+        /// SAT-D123 / SAT-D132: a converted order carries the due terms of its quote (none when the quote has none), so the seller enters them by the
+        /// header revision before the approval when absent; everything else in the header stays as it is. Returns the new draft version.
         /// </summary>
         public async Task<string> EnterDueTermsAsync(StoreScope scope, Guid draftId, string tag)
         {

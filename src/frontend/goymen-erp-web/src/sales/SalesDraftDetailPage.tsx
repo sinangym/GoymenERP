@@ -111,6 +111,7 @@ import { SalesDraftLinePricing } from './SalesDraftLinePricing'
 import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
+import { SalesDraftLineRevisionForm } from './SalesDraftLineRevisionForm'
 import { SalesDraftHeaderRevisionForm } from './SalesDraftHeaderRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
@@ -126,6 +127,7 @@ import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftForceClose } from './SalesDraftForceClose'
+import { SalesDraftUserClose } from './SalesDraftUserClose'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import { SalesPartyDisplay } from './SalesDraftListPage'
@@ -135,6 +137,7 @@ import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
 import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
+import { SalesOrderInvoices } from './SalesInvoiceFinalization'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
@@ -236,6 +239,17 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      invoices={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderInvoices
+            key={`invoices:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            draftId={outcome.data.draft.id}
+            companyId={companyId}
+            namespace={namespace}
+            entryGeneration={shell.routeEntryGeneration}
+          />
+        ) : null
+      }
       documents={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
           <SalesOrderDocumentsWorkspace
@@ -255,6 +269,7 @@ export function SalesDraftDetailPage() {
           <SalesOrderStatusAxes
             key={`status:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             detail={outcome.data}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
           />
         ) : null
       }
@@ -302,6 +317,14 @@ export function SalesDraftDetailPage() {
           <>
             <SalesDraftQuantityRevisionForm
               key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+            {/* SAT-D167 (EK24): the line revision (add / remove / product change) beside the quantity revision. */}
+            <SalesDraftLineRevisionForm
+              key={`lines:${namespace ?? ''}:${outcome.data.draft.id}`}
               shell={shell}
               detail={outcome.data}
               companyId={companyId}
@@ -425,6 +448,17 @@ export function SalesDraftDetailPage() {
           />
         )
       }
+      userClose={
+        companyId === null ? null : (
+          <SalesDraftUserClose
+            key={`user-close:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
       forceClose={
         companyId === null ? null : (
           <SalesDraftForceClose
@@ -484,7 +518,9 @@ export function DraftView({
   linkedEffects = null,
   cancellation = null,
   forceClose = null,
+  userClose = null,
   documents = null,
+  invoices = null,
   pdfAction = null,
   activeTab,
   onTabChange,
@@ -530,11 +566,15 @@ export function DraftView({
   readonly cancellation?: React.ReactNode
   /** No 30 / SAT-D12: the force-close preview and command, or the recorded closure of a closed order. */
   readonly forceClose?: React.ReactNode
+  /** SAT-D32: "Siparişi kapat" for a "kapanmaya hazır" order (shown only when the server says it is ready). */
+  readonly userClose?: React.ReactNode
   /**
    * UI-11 / UI-71 (S-11): the "Sözleşme / Belgeler" workspace — the order's and the customer's Document Vault panels and
    * their timeline; null when no single company is bound.
    */
   readonly documents?: React.ReactNode
+  /** API-09 / API-36: the order's sales invoices and their finalization state; null when no single company is bound. */
+  readonly invoices?: React.ReactNode
   /** MOD-07: "PDF indir" — the server-rendered order PDF; null when no single company is bound. */
   readonly pdfAction?: React.ReactNode
   /** The open tab; when omitted the view keeps its own (an isolated render has no router). */
@@ -552,6 +592,8 @@ export function DraftView({
   // The vault is asked only once its tab has been opened; afterwards the panel stays mounted like the others.
   const [documentsOpened, setDocumentsOpened] = useState(tab === ORDER_TAB.documents)
   if (tab === ORDER_TAB.documents && !documentsOpened) setDocumentsOpened(true)
+  const [invoicesOpened, setInvoicesOpened] = useState(tab === ORDER_TAB.invoices)
+  if (tab === ORDER_TAB.invoices && !invoicesOpened) setInvoicesOpened(true)
   const everApproved = draft.approvalState === APPROVAL_STATE.approved || draft.revision !== REV_0
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
@@ -757,6 +799,7 @@ export function DraftView({
       </section>
 
       {cancellation}
+      {userClose}
       {forceClose}
 
       <SalesOrderTabs
@@ -777,6 +820,7 @@ export function DraftView({
                 {detail.lines.map((line) => (
                   <LineView key={line.lineId} line={line} unitCodes={unitCodes} />
                 ))}
+                {detail.removedLines === undefined ? null : <RemovedLinesView detail={detail} />}
                 {quantityRevision}
                 {deliverySchedule}
               </section>
@@ -796,11 +840,13 @@ export function DraftView({
               {remainderChanges}
             </>
           ),
-          [ORDER_TAB.invoices]: (
-            <p className={styles.muted} data-testid="sales-invoices-empty">
-              {ORDER_TABS_TEXT.invoicesEmpty}
-            </p>
-          ),
+          [ORDER_TAB.invoices]: invoices === null
+            ? (
+              <p className={styles.muted} data-testid="sales-invoices-empty">
+                {ORDER_TABS_TEXT.invoicesEmpty}
+              </p>
+            )
+            : invoicesOpened ? invoices : null,
           [ORDER_TAB.documents]: documents === null
             ? <p className={styles.muted}>{ORDER_TABS_TEXT.documentsUnavailable}</p>
             : documentsOpened ? documents : null,
@@ -1190,7 +1236,9 @@ function commandNotice(attempt: CommandAttempt): string | null {
                   : T.approval.unexpected
       // SAT-D111 / SAT-D112: a submission or approval of a revised order refused below the shipped or loaded total.
       const floor = (attempt.problem?.errors ?? []).map((error) =>
-        error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
+        error.code === 'sales_line_revision_line_shipped' ? T.approval.lineShipped
+          : error.code === 'sales_line_revision_line_linked' ? T.approval.lineLinked
+          : error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
           : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded
             // SAT-D123 (EK18): no approval without due terms.
             : error.code === 'sales_due_terms_required' ? T.approval.dueTermsRequired
@@ -1208,6 +1256,27 @@ function commandNotice(attempt: CommandAttempt): string | null {
   }
 }
 
+/** SAT-D167 (EK24): the passive lines a line revision removed — history only, out of every order total. */
+function RemovedLinesView({ detail }: { readonly detail: DraftDetail }) {
+  const R = T.removedLines
+  const lineNoOf = (lineId: string | null) => (lineId === null ? null : detail.lines.find((line) => line.lineId === lineId)?.lineNo ?? null)
+  return (
+    <section className={styles.line} aria-labelledby="sales-removed-lines-heading" data-testid="sales-removed-lines">
+      <h3 id="sales-removed-lines-heading" className={styles.lineTitle}>{R.heading}</h3>
+      <p className={styles.muted}>{R.description}</p>
+      <ul>
+        {(detail.removedLines ?? []).map((line) => (
+          <li key={line.lineId} data-testid={`sales-removed-line-${line.lineNo}`}>
+            {line.lineNo}. {line.productCode} — {line.productName} · {line.quantity}{line.orderUnitCode === null ? '' : ` ${line.orderUnitCode}`}
+            {' · '}{R.removedIn(line.removedInRevision)}
+            {line.replacedByLineId === null ? null : <>{' · '}{R.replacedBy(lineNoOf(line.replacedByLineId))}</>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
   const plan = unplannedQuantity(line, line.requestedDeliverySlices)
   const headingId = `sales-line-${line.lineId}`
@@ -1216,6 +1285,9 @@ function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unit
       <h3 id={headingId} className={styles.lineTitle}>
         {line.lineNo}. {line.productCode} — {line.productName}
       </h3>
+      {line.addedInRevision === undefined ? null : (
+        <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-added-in`}>{T.addedInRevision(line.addedInRevision)}</p>
+      )}
       <dl className={`${styles.facts} ${styles.lineFacts}`} data-testid={`sales-line-${line.lineNo}-facts`}>
         <div>
           <dt>{T.productVersion}</dt>

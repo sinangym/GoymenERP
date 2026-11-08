@@ -1,5 +1,5 @@
 /**
- * Delegation No 30 / SAT-D12 on S-04: "Siparişi kapat" reads its preview only when asked, behind the
+ * Delegation No 30 / SAT-D12 on S-04: "Siparişi zorla kapat" reads its preview only when asked, behind the
  * `sales.orders.force-close` control; each category says whether it blocks (an uninvoiced dispatch note is a warning only);
  * per line the server's closed remainder is shown; only a closable preview offers the command, which needs a reason and
  * carries the preview's token; a recorded closure re-reads the order, which then reads "Kapalı" with its recorded closure and

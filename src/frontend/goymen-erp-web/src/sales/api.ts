@@ -32,6 +32,7 @@ import {
 import {
   CREATED_STATUS,
   REPLAY_HEADER,
+  ORIGINAL_CORRELATION_HEADER,
   OWNER_REFERENCE_FIELDS,
   REV_0,
   SALES_DRAFT_PATH,
@@ -52,6 +53,7 @@ import {
   decodeCancellationImpact,
   decodeForceCloseImpact,
   decodeForceClosure,
+  decodeUserClosure,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftPriceFloorExceptionApprovalPath,
@@ -64,10 +66,14 @@ import {
   salesDraftCancellationPath,
   salesDraftForceCloseImpactPath,
   salesDraftForceClosePath,
+  salesDraftUserClosePath,
+  salesDraftOverDeliveryApprovalPath,
+  salesDraftLineClosurePath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
   salesDraftQuantityRevisionPath,
+  salesDraftLineRevisionPath,
   type ApprovalState,
   type ContactInformationOptions,
   type CurrencyOption,
@@ -76,6 +82,7 @@ import {
   type DraftCommercialRevisionRequest,
   type DraftPriceFloorExceptionApprovalRequest,
   type DraftQuantityRevisionRequest,
+  type DraftLineRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
   type DeliveryProgress,
@@ -86,8 +93,12 @@ import {
   type CancellationRead,
   type DraftCancelRequest,
   type DraftForceCloseRequest,
+  type DraftCloseRequest,
+  type DraftOverDeliveryApprovalRequest,
+  type DraftLineClosureRequest,
   type ForceCloseImpact,
   type ForceClosureRead,
+  type UserClosureRead,
   type DraftDetail,
   type DraftDetailWithParty,
   type DraftMutation,
@@ -131,6 +142,8 @@ export type Raw =
       readonly body: unknown
       readonly location: string | null
       readonly replayed: boolean
+      /** `Idempotency-Original-Correlation-Id` (a replay names the attempt it repeats); null when absent. */
+      readonly replayCorrelationId: string | null
       /** The Sales read contract the server says it answered with (absent on a legacy answer). */
       readonly readContract: string | null
     }
@@ -157,6 +170,7 @@ export async function request(path: string, init: RequestInit, signal: AbortSign
     body,
     location: response.headers.get('Location'),
     replayed: response.headers.get(REPLAY_HEADER) === 'true',
+    replayCorrelationId: response.headers.get(ORIGINAL_CORRELATION_HEADER),
     readContract: response.headers.get(SALES_READ_CONTRACT_HEADER),
   }
 }
@@ -472,6 +486,19 @@ export async function fetchDraftForceClosure(
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const read = decodeForceClosure(raw.body)
+  return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
+}
+
+/** SAT-D32: the recorded user closure of `draftId` (or null), under the draft read. */
+export async function fetchDraftUserClosure(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<UserClosureRead>> {
+  const raw = await request(salesDraftUserClosePath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const read = decodeUserClosure(raw.body)
   return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
 }
 
@@ -1018,6 +1045,49 @@ export async function sendDraftQuantityRevision(
 }
 
 /**
+ * SAT-D167 (EK24): the line revision — the quantity revision's keyed-attempt and strict response rules. Success is the draft
+ * after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftLineRevision(
+  payload: DraftLineRevisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftLineRevisionPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
  * DEC-SAL-003: the delivery-schedule update — the commercial revision's keyed-attempt and strict response rules. Success is
  * the draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
  */
@@ -1138,6 +1208,144 @@ export async function sendDraftForceClose(
   if (
     mutation === null ||
     mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D32 / SAT-D215: the user closure of a "kapanmaya hazır" order — the force-close's keyed-attempt and strict response
+ * rules, without a reason or a token. Success is the draft after the change, of this draft and this company, with the replay
+ * header and `isReplay` agreeing. The server recomputes the readiness; a not-ready order is its 409.
+ */
+export async function sendDraftClose(
+  payload: DraftCloseRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftUserClosePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D30 / SAT-D213 / SAT-D216: approve one line's approval-band over-delivery at the shipped total the status read showed.
+ * The force-close's keyed-attempt rules: 200 with the detail whose replay flag agrees with the header and whose identity is the
+ * order's in the bound company, else malformed; the server judges the band, the total and the shipper ≠ approver rule.
+ */
+export async function sendDraftOverDeliveryApproval(
+  payload: DraftOverDeliveryApprovalRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftOverDeliveryApprovalPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D17 / SAT-D115 / SAT-D216: close one under-delivered line short at the shipped total the status read showed. The keyed-attempt
+ * rules of the over-delivery approval, plus the replay pair: a 200 is success only when the body's replay flag agrees with
+ * `Idempotency-Replayed`, a replay's `Idempotency-Original-Correlation-Id` equals the body's `originalCorrelationId` (a first
+ * answer carries no such header), and the detail is the order's in the bound company — else malformed (the closure may have
+ * been recorded, so the key is kept). The server judges the shortfall band, the shipped total, the shipper ≠ closer rule and
+ * the open commitments; the screen computes none of it.
+ */
+export async function sendDraftLineClosure(
+  payload: DraftLineClosureRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftLineClosurePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    (mutation.isReplay
+      ? raw.replayCorrelationId !== mutation.originalCorrelationId
+      : raw.replayCorrelationId !== null) ||
     mutation.detail.draft.id !== context.draftId ||
     mutation.detail.draft.companyId !== context.companyId
   ) {

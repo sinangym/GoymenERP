@@ -20,9 +20,11 @@ public sealed record SalesQuoteHeader(Guid PartyId, Guid CompanyAccountId, Guid 
 
 /// <summary>
 /// The revisable terms of a quote revision: an optional validity date (no default is chosen — none is decided), the requested
-/// delivery date and a note. Every revision records its own terms; earlier revisions stay as they were.
+/// delivery date, a note and the quote's due terms ("teklif vade", SAT-D132: the same <see cref="SalesDueTerms"/> value object as
+/// the order's, null = none, never a default — SAT-D127). Every revision records its own terms; earlier revisions stay as they were.
 /// </summary>
-public sealed record SalesQuoteTerms(DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null);
+public sealed record SalesQuoteTerms(DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null,
+    SalesDueTerms? DueTerms = null);
 
 /// <summary>
 /// One quoted line: the owners' snapshots, the exact quantity, and the quoted price as exact text (unit price + price unit,
