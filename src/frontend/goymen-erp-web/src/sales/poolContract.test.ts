@@ -160,6 +160,11 @@ describe('sales quote decoders', () => {
     }), QUOTE_ID)).toBeNull()
     // "Expired" is the server's word on its own day: a contradicting flag is not shown.
     expect(decodeQuoteDetail(quoteDetail({}, { expiry: { businessDay: '2026-10-23', isExpired: true, isApproved: false } }), QUOTE_ID)).toBeNull()
+    // SAT-D132: the due terms ride with the price read only; withheld means null, a missing key is malformed.
+    expect(decodeQuoteDetail(quoteDetail({}, { dueTermsDisclosure: 'Withheld', dueTerms: null }), QUOTE_ID)?.dueTerms).toBeNull()
+    expect(decodeQuoteDetail(quoteDetail({}, { dueTermsDisclosure: 'Visible', dueTerms: { instalments: [] } }), QUOTE_ID)?.dueTermsDisclosure).toBe('Visible')
+    expect(decodeQuoteDetail(quoteDetail({}, { dueTermsDisclosure: 'Withheld', dueTerms: { instalments: [] } }), QUOTE_ID)).toBeNull()
+    expect(decodeQuoteDetail(quoteDetail({}, { dueTermsDisclosure: 'Other', dueTerms: null }), QUOTE_ID)).toBeNull()
     expect(decodeQuoteDetail(quoteDetail({ validUntil: null }, { revisions: [{ revision: 'Rev.0', validUntil: null, revisedBy: 'satis', revisedAtUtc: '2026-10-22T08:00:00Z' }], expiry: { businessDay: '2099-01-01', isExpired: false, isApproved: false } }), QUOTE_ID)?.expiry.isExpired).toBe(false)
   })
 

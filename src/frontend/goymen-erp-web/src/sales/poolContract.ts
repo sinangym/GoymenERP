@@ -298,6 +298,9 @@ export interface SalesQuoteDetail {
   readonly revisions: readonly SalesQuoteRevisionRecord[]
   readonly expiryApprovals: readonly SalesQuoteExpiryApproval[]
   readonly expiry: SalesQuoteExpiry
+  /** SAT-D132: the due terms are disclosed only with the price read (`Withheld` + null otherwise); shown by a later slice. */
+  readonly dueTermsDisclosure: 'Visible' | 'Withheld'
+  readonly dueTerms: object | null
 }
 
 /** SAT-D25: one selectable loss reason (an active entry of the list in force). */
@@ -734,9 +737,14 @@ function decodeRequestIds(value: unknown): readonly string[] | null {
 export function decodeQuoteDetail(value: unknown, expectedId: string | null): SalesQuoteDetail | null {
   const o = exact(value, [
     'quote', 'requestIds', 'requestedDeliveryDate', 'note', 'lines', 'loss', 'conversion', 'createdBy', 'revisions', 'expiryApprovals',
-    'expiry',
+    'expiry', 'dueTermsDisclosure', 'dueTerms',
   ])
   if (o === null) return null
+  const disclosure = o.dueTermsDisclosure
+  if (disclosure !== 'Visible' && disclosure !== 'Withheld') return null
+  const dueTerms = o.dueTerms
+  const dueTermsShapeOk = dueTerms === null || (disclosure === 'Visible' && typeof dueTerms === 'object' && !Array.isArray(dueTerms))
+  if (!dueTermsShapeOk) return null
   const quote = decodeQuoteSummary(o.quote)
   if (quote === null || (expectedId !== null && quote.id !== expectedId)) return null
   const requestIds = decodeRequestIds(o.requestIds)
@@ -775,6 +783,8 @@ export function decodeQuoteDetail(value: unknown, expectedId: string | null): Sa
     revisions,
     expiryApprovals,
     expiry,
+    dueTermsDisclosure: disclosure,
+    dueTerms: dueTerms as object | null,
   }
 }
 

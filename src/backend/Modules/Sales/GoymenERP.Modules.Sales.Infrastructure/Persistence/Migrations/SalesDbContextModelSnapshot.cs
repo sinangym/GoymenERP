@@ -2242,6 +2242,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("DueTermsJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Note")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
@@ -2264,6 +2267,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                     b.ToTable("QuoteRevisions", "sales", t =>
                         {
+                            t.HasCheckConstraint("CK_QuoteRevisions_DueTerms", "[DueTermsJson] IS NULL OR ISJSON([DueTermsJson]) = 1");
+
                             t.HasCheckConstraint("CK_QuoteRevisions_Identity", "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
                 });
