@@ -340,5 +340,8 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
             List(query);
 
         public Task<SalesInvoiceDetailView> GetInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default) => Detail(invoiceId);
+
+        public Task<SalesDraftInvoicesResponse> GetDraftInvoicesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("not called");
     }
 }

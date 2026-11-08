@@ -42,6 +42,11 @@ public static class SalesInvoiceApiV1
 
     public const int DefaultPageSize = 50;
 
+    /// <summary>API-09: the most invoices the order's "Faturalar" tab answers in one read (newest first; <c>hasMore</c> says more exist).</summary>
+    public const int MaximumDraftInvoices = 100;
+
+    public const string DraftInvoicesPath = "/api/v1/sales/drafts/{id}/invoices";
+
     public const string InvoicesPath = "/api/v1/sales/invoices";
 
     public const int CreatedStatus = 201;
@@ -280,6 +285,19 @@ public sealed record SalesInvoiceSummaryView(
     int LineCount,
     DateTimeOffset CreatedAtUtc);
 
+/// <summary>
+/// API-09 (Sipariş 360 "Faturalar" sekmesi): one invoice that carries at least one line of the order. No amount is shown (the tab
+/// is under <c>sales.drafts.read</c> only; the invoice's prices stay behind <c>sales.invoices.read</c> and
+/// <c>sales.orders.price.read</c> on API-32). <c>OrderLineCount</c> counts this order's lines, <c>InvoiceLineCount</c> all of them.
+/// <c>HoldsShares</c> is false once a rejection or cancellation released the shares.
+/// </summary>
+public sealed record SalesDraftInvoiceItemView(Guid Id, string DocumentNo, string State, DateOnly BusinessDate, int OrderLineCount,
+    int InvoiceLineCount, bool HoldsShares, DateTimeOffset CreatedAtUtc);
+
+public sealed record SalesDraftInvoicesResponse(IReadOnlyList<SalesDraftInvoiceItemView> Items, bool HasMore);
+
+public sealed record SalesOrderInvoicePage(IReadOnlyList<SalesInvoice> Items, bool HasMore);
+
 public sealed record SalesInvoiceListResponse(IReadOnlyList<SalesInvoiceSummaryView> Items, string? NextCursor);
 
 public sealed record SalesInvoiceListQuery(int PageSize = SalesInvoiceApiV1.DefaultPageSize, string? Cursor = null);
@@ -323,6 +341,12 @@ public interface ISalesInvoiceStore
 
     Task<SalesInvoicePage> ListInvoicesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// API-09: the company's invoices with at least one line of <paramref name="salesOrderId"/> (released lines count: the invoice
+    /// stays in the history), newest first, at most <paramref name="limit"/> and whether more exist.
+    /// </summary>
+    Task<SalesOrderInvoicePage> ListInvoicesOfOrderAsync(Guid salesOrderId, int limit, CancellationToken cancellationToken = default);
+
     /// <summary>The shipments among <paramref name="shipmentIds"/> already on an active invoice line of this company.</summary>
     Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds, CancellationToken cancellationToken = default);
 }
@@ -357,4 +381,10 @@ public interface ISalesInvoiceService
     Task<SalesInvoiceListResponse> GetInvoicesAsync(SalesInvoiceListQuery query, CancellationToken cancellationToken = default);
 
     Task<SalesInvoiceDetailView> GetInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-09: the invoices of one order for its "Faturalar" tab. Needs <c>sales.drafts.read</c> only (no amounts are answered);
+    /// another company's order is 404 and its invoices are never read.
+    /// </summary>
+    Task<SalesDraftInvoicesResponse> GetDraftInvoicesAsync(Guid draftId, CancellationToken cancellationToken = default);
 }

@@ -162,6 +162,36 @@ public static partial class SalesEndpoints
             unprocessableCodes: [SalesRuleCodes.ApprovalReasonTooLong], extraConflictCodes: []);
     }
 
+    /// <summary>
+    /// API-09: <c>GET /api/v1/sales/drafts/{id}/invoices</c> — the order's "Faturalar" tab under <c>sales.drafts.read</c>; no amount
+    /// is answered. Another company's order is code-less 404.
+    /// </summary>
+    private static void MapDraftInvoices(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/invoices", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesInvoiceService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftInvoicesAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftInvoicesV1")
+            .Produces<SalesDraftInvoicesResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
     private static void MapInvoiceCommand<TBody>(RouteGroupBuilder invoices, string segment, string name, Func<string, TBody> read,
         Func<ISalesInvoiceService, Guid, TBody, SalesCommandMetadata, CancellationToken, Task<SalesInvoiceCommandResult>> command,
         string[] unprocessableCodes, string[] extraConflictCodes)

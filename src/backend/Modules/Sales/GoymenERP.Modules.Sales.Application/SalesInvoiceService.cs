@@ -44,6 +44,7 @@ public sealed class SalesInvoiceService(
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
+    private const string DraftReadPermission = SalesPermissionManifestV1.DraftsRead;
     private const string ApprovePermission = SalesPermissionManifestV1.InvoicesApprove;
     private const string PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead;
     private const int MaximumCursorLength = 8192;
@@ -190,6 +191,31 @@ public sealed class SalesInvoiceService(
             ReadPermission) ?? throw new SalesDraftServiceException(404, "not_found");
         await RequirePriceReadAsync(scope, cancellationToken);
         return View(invoice, isReplay: false);
+    }
+
+    public async Task<SalesDraftInvoicesResponse> GetDraftInvoicesAsync(Guid draftId, CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireAsync(DraftReadPermission, cancellationToken);
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        // Another company's draft is null under the tenant filter: 404, and no invoice is read for it.
+        var draft = await StoreAsync(scope, () => orders.FindDraftAsync(draftId, cancellationToken), cancellationToken, DraftReadPermission);
+        if (draft is null)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var page = await StoreAsync(scope,
+            () => invoices.ListInvoicesOfOrderAsync(draft.Id, SalesInvoiceApiV1.MaximumDraftInvoices, cancellationToken),
+            cancellationToken, DraftReadPermission);
+        return new SalesDraftInvoicesResponse(
+            [.. page.Items.Select(invoice => new SalesDraftInvoiceItemView(invoice.Id, invoice.DocumentNo, invoice.State.ToString(),
+                invoice.Header.BusinessDate, invoice.Lines.Count(line => line.Share.SalesOrderId == draft.Id), invoice.Lines.Count,
+                invoice.HoldsShares, invoice.CreatedAtUtc))],
+            page.HasMore);
     }
 
     // ---- API-33: submit, approve, reject, cancel -------------------------------------------------------------------------
