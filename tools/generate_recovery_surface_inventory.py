@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 140
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "bc6b3e9788f9af20a390fdf5f8043df27e721aa1749b8dfc6a3f60ca3fdd601b"
 )
-EXPECTED_DURABLE_STORE_COUNT = 27
+EXPECTED_DURABLE_STORE_COUNT = 28
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -220,6 +220,7 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("work", "ObservationInbox"),
     ("work", "OutboxDeliveries"),
     ("work", "OutboxMessages"),
+    ("work", "OutboxSourceCursors"),
 )
 NON_MESSAGE_DELIVERY_TABLES = (
     ("sales", "DraftDeliveryScheduleDates"),
@@ -599,6 +600,13 @@ DURABLE_STORE_SPECS = (
         ("dbContext.ObservationInbox.Add(inbox)",), mapping_tokens=("SourceKeyDigest", "ObservationOrdinal"),
     ),
     _store(
+        "work.outbox-cursor", "Work", "delivery", "WorkDbContext", "WorkOutboxSourceCursorRow",
+        "work", "OutboxSourceCursors", WORK_CONTEXT,
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261108221330_AddWorkOutboxDispatch.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+        ("db.OutboxSourceCursors.Add(new WorkOutboxSourceCursorRow",), mapping_tokens=("SourceName", "Position"),
+    ),
+    _store(
         "work.outbox-delivery", "Work", "inbox", "WorkDbContext", "WorkOutboxDeliveryRow",
         "work", "OutboxDeliveries", WORK_CONTEXT,
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261108221330_AddWorkOutboxDispatch.cs",
@@ -718,6 +726,10 @@ WRITER_METHOD_SCOPES = {
         "work.outbox",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
     ): "ReconcileAsync",
+    (
+        "work.outbox-cursor",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+    ): "DispatchSourceAsync",
     (
         "work.outbox-delivery",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",

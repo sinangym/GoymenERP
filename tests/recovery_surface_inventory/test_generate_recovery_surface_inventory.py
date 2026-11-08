@@ -88,6 +88,7 @@ EXPECTED_STORES = {
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
     ("work", "OutboxDeliveries"): ("WorkOutboxDeliveryRow", "inbox", "WorkDbContext"),
     ("work", "OutboxMessages"): ("WorkOutboxRow", "outbox", "WorkDbContext"),
+    ("work", "OutboxSourceCursors"): ("WorkOutboxSourceCursorRow", "delivery", "WorkDbContext"),
 }
 
 
@@ -438,7 +439,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 140, "durableStores": 27},
+            {"dbContexts": 18, "migrations": 140, "durableStores": 28},
             self.inventory["counts"],
         )
         actual = {
@@ -726,8 +727,9 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         self.assertTrue(expected_message.isdisjoint(expected_business))
         # SAT-D30: + sales.DraftOverDeliveryApprovals, a business table whose name matches "deliver".
         # S5 API-36: + sales.OutboxMessages (the Sales transactional outbox, a message-delivery table).
-        # B-24: + work.OutboxDeliveries (the Work dispatcher inbox/dedup delivery record).
-        self.assertEqual(11, len(discovered))
+        # B-24: + work.OutboxDeliveries (the Work dispatcher inbox/dedup delivery record)
+        # and work.OutboxSourceCursors (the dispatcher's per-source read position).
+        self.assertEqual(12, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
