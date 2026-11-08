@@ -227,6 +227,7 @@ public sealed class FinanceOpenItemReadService(
         {
             FinanceOpenItemStatuses.Open => FinanceOpenItemStatusV1.Open,
             FinanceOpenItemStatuses.Closed => FinanceOpenItemStatusV1.Closed,
+            FinanceOpenItemStatuses.Cancelled => FinanceOpenItemStatusV1.Cancelled,
             _ => default,
         };
         return status != default;

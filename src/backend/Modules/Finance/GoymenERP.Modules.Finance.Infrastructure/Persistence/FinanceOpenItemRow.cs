@@ -70,4 +70,13 @@ internal static class FinanceOpenItemStatuses
 {
     public const int Open = 1;
     public const int Closed = 2;
+
+    /// <summary>F2b (SAT-D96): closed by its invoice's cancellation; reversed by an <c>InvoiceCancellationItems</c> row.</summary>
+    public const int Cancelled = 3;
+}
+
+/// <summary>F2b: the stored length of a cancellation reason (<c>InvoiceCancellations.Reason</c>).</summary>
+internal static class FinanceInvoiceCancellationRules
+{
+    public const int ReasonMaximumLength = 512;
 }
