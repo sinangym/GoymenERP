@@ -5950,7 +5950,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("createdBy", "type:string"),
                     ("revisions", "type:array;items:ref:SalesQuoteRevisionRecordV1"),
                     ("expiryApprovals", "type:array;items:ref:SalesQuoteExpiryApprovalV1"),
-                    ("expiry", "ref:SalesQuoteExpiryV1")),
+                    ("expiry", "ref:SalesQuoteExpiryV1"),
+                    // SAT-D132: the current revision's due terms, disclosed only with the price read.
+                    ("dueTermsDisclosure", "type:string"),
+                    ("dueTerms", "oneOf:ref:SalesDueTermsV1|type:null")),
                 ["SalesQuoteRevisionRecordV1"] = ObjectSchema(
                     ["revision", "validUntil", "revisedBy", "revisedAtUtc"],
                     ("revision", "type:string"),
@@ -8482,7 +8485,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("requestIds", "type:array|null;items:type:string;format:uuid"),
                     ("validUntil", "type:null|string;format:date"),
                     ("requestedDeliveryDate", "type:null|string;format:date"),
-                    ("note", "type:null|string")),
+                    ("note", "type:null|string"),
+                    ("dueTerms", "oneOf:ref:SalesDueTermsV1|type:null")),
                 ["SalesQuoteLineRequest"] = ObjectSchema(
                     ["lineId", "productId", "expectedProductVersion", "orderUnitId", "quantity"],
                     ("lineId", "type:string;format:uuid"),
@@ -8501,7 +8505,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lines", "type:array;items:ref:SalesQuoteLineRequest"),
                     ("validUntil", "type:null|string;format:date"),
                     ("requestedDeliveryDate", "type:null|string;format:date"),
-                    ("note", "type:null|string")),
+                    ("note", "type:null|string"),
+                    ("dueTerms", "oneOf:ref:SalesDueTermsV1|type:null")),
                 ["SalesQuoteLossRequestV2"] = ObjectSchema(
                     ["expectedVersion", "reasonId"],
                     ("expectedVersion", "type:string"),

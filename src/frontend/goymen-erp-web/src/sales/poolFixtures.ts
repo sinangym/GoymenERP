@@ -190,6 +190,8 @@ export function quoteDetail(summary: Json = {}, overrides: Json = {}): Json {
     })),
     expiryApprovals: [],
     expiry: expiryOf(quote),
+    dueTermsDisclosure: 'Withheld',
+    dueTerms: null,
     ...overrides,
   }
 }

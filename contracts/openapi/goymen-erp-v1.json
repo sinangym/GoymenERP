@@ -101125,6 +101125,16 @@
               "null",
               "string"
             ]
+          },
+          "dueTerms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDueTermsV1"
+              }
+            ]
           }
         }
       },
@@ -123865,6 +123875,20 @@
           },
           "expiry": {
             "$ref": "#/components/schemas/SalesQuoteExpiryV1"
+          },
+          "dueTermsDisclosure": {
+            "type": "string",
+            "default": "Withheld"
+          },
+          "dueTerms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDueTermsV1"
+              }
+            ]
           }
         }
       },
@@ -124324,6 +124348,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "dueTerms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDueTermsV1"
+              }
             ]
           }
         }
