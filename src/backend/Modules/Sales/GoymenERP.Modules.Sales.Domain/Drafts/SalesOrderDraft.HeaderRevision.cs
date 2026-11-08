@@ -164,13 +164,13 @@ public sealed partial class SalesOrderDraft
         ApprovedRevisionSnapshot? archived = null;
         if (commercialChange && ApprovalState == InternalApprovalState.Approved)
         {
+            // SAT-D211 (K3 review A P1-1): the line taxes were resolved for the lines held NOW; the revert would change that set
+            // after the archive — refused until the reinstatement is made by a line revision (never a half-applied header).
+            RequirePendingReinstatementDone();
             // The approved revision as it stands — its header included — archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         // A value-equal due terms keeps the stored spelling (as a value-equal quantity text keeps its text).

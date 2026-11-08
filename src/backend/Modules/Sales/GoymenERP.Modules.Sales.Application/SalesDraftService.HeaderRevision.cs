@@ -150,7 +150,7 @@ public sealed partial class SalesDraftService
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("header", exception.Code)]);
         }
-        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.RevisionNoChange)
+        catch (SalesRuleException exception) when (exception.Code is SalesRuleCodes.RevisionNoChange or SalesRuleCodes.RevisionReinstatementPending)
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("header", exception.Code)]);
         }

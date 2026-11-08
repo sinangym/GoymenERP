@@ -63,6 +63,9 @@ internal sealed class QuoteRevisionRow : ISalesTenantRow
     public DateOnly? ValidUntil { get; set; }
     public DateOnly? RequestedDeliveryDate { get; set; }
     public string? Note { get; set; }
+
+    /// <summary>SAT-D132: the revision's due terms ("teklif vade") as JSON (<c>SalesDueTermsJson</c>); null = none, never a default.</summary>
+    public string? DueTermsJson { get; set; }
     public string RevisedBy { get; set; } = string.Empty;
     public DateTimeOffset RevisedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
@@ -256,6 +259,7 @@ internal static class SalesQuoteRows
             ValidUntil = quote.Terms.ValidUntil,
             RequestedDeliveryDate = quote.Terms.RequestedDeliveryDate,
             Note = quote.Terms.Note,
+            DueTermsJson = SalesDueTermsJson.Serialize(quote.Terms.DueTerms),
             RevisedBy = revisedBy.Trim(),
             RevisedAtUtc = quote.UpdatedAtUtc,
             CorrelationId = correlationId.Trim(),
@@ -339,7 +343,8 @@ internal static class SalesQuoteRows
         var quote = SalesQuote.Create(row.Id, row.CompanyId, row.DocumentNo,
             new SalesQuoteHeader(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.BusinessDate), money,
             [.. requests.Select(request => request.RequestId).Order()],
-            new SalesQuoteTerms(revision.ValidUntil, revision.RequestedDeliveryDate, revision.Note),
+            new SalesQuoteTerms(revision.ValidUntil, revision.RequestedDeliveryDate, revision.Note,
+                SalesDueTermsJson.Restore(revision.DueTermsJson)),
             [.. lines.Select(line => new SalesQuoteLineInput(line.LineId,
                 new ProductSnapshot(line.ProductId, line.ProductVersion, line.ProductCode, line.ProductName, line.ProductEffectiveOn,
                     new UnitBindingSnapshot(line.StockUnitCompanyId, line.StockUnitId, line.StockUnitProfileId, line.StockUnitProfileVersion),

@@ -39,7 +39,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         }
 
         var draft = await store.FindDraftAsync(orderId, cancellationToken);
-        var line = draft?.Lines.SingleOrDefault(candidate => candidate.Id == lineId);
+        var line = draft is null ? null : ShippableLines(draft).SingleOrDefault(candidate => candidate.Id == lineId);
         if (draft is null || line is null)
         {
             return NotFound;
@@ -87,6 +87,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         if (draft.State is SalesDraftState.Cancelled or SalesDraftState.Closed)
         {
             return LineStanding.Refused(draft.State.ToString());
+        }
+
+        // SAT-D17 / SAT-D215: a line closed with a shortfall cannot ship again — refused as "Closed", like a closed order's line
+        // (its cancelled remainder is no demand; the delivered/shipped history stays the owners').
+        if (draft.IsLineClosed(line.Id))
+        {
+            return LineStanding.Refused(SalesDraftState.Closed.ToString());
         }
 
         // SAT-D115 (EK14): the customer rejected the last approved revision — shipping continues on the revision the customer last
@@ -168,6 +175,25 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             : archived.QuantityText;
         return new LineStanding(null, lastApproved.Revision, archived.QuantityText, cap, SalesOrderLineRevisionBasisV1.LastApprovedRevision,
             pendingState);
+    }
+
+    /// <summary>
+    /// The lines a physical-shipping consumer may be offered, in line order: the active lines — SAT-D211 (EK36): an internal
+    /// rejection reverts the rejected revision's removals in the aggregate, so a reinstated line is active again — and, while the
+    /// CUSTOMER has rejected the internally approved current revision (SAT-D115; the order goes on under the last accepted
+    /// revision), the lines that revision removed: the aggregate reverts those removals only when the next revision opens (after
+    /// archiving the rejected one as it was approved), and until then they ship under the accepted revision when it holds them.
+    /// That state is stable — every change of an approved order opens the next revision. While a removal is being prepared or
+    /// waits for a decision the removed line is not offered (NotFound; fail-closed); an approved (and accepted) removal is final.
+    /// </summary>
+    internal static IEnumerable<SalesOrderDraftLine> ShippableLines(SalesOrderDraft draft)
+    {
+        var customerRejected = draft.ApprovalState == InternalApprovalState.Approved && !draft.IsCustomerAccepted
+            && draft.CustomerAcceptedFallback is not null && draft.IsCustomerRejected(draft.Revision);
+        return customerRejected
+            ? draft.AllLines.Where(line => !line.IsRemoved
+                || (line.RemovedInRevision == draft.Revision && line.AddedInRevision != draft.Revision && Stand(draft, line).RefusedState is null))
+            : draft.Lines.OrderBy(line => line.LineNo);
     }
 
     private const string CustomerAcceptancePending = "CustomerAcceptancePending";
@@ -253,7 +279,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                 // The store cursor that lists THIS draft first: the page's own cursor for its first draft, else "after the previous".
                 var listsThisFirst = previous is null ? previousDraftCursor : SalesStore.ListCursor.Encode(draft.CompanyId, previous.CreatedAtUtc, previous.Id);
                 var skipThrough = skipDraft == draft.Id ? skipThroughLineNo : 0;
-                foreach (var line in draft.Lines.OrderBy(candidate => candidate.LineNo))
+                foreach (var line in ShippableLines(draft))
                 {
                     if (line.LineNo <= skipThrough)
                     {

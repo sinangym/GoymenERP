@@ -76,72 +76,88 @@ internal static class SalesDraftRows
             CreatedBy = createdBy.Trim(),
             CorrelationId = correlationId.Trim(),
         });
-        foreach (var line in draft.Lines)
+        foreach (var line in draft.AllLines)
         {
-            var product = line.Product;
-            var unit = line.OrderUnit;
-            dbContext.DraftLines.Add(new DraftLineRow
+            AddLine(dbContext, draft, line);
+        }
+    }
+
+    /// <summary>
+    /// One line's row and its delivery-slice rows, as the create writes them — and (SAT-D167) as a line revision writes the line it
+    /// adds (its added revision; a removal is written by the revision that makes it). The caller saves.
+    /// </summary>
+    internal static void AddLine(SalesDbContext dbContext, SalesOrderDraft draft, SalesOrderDraftLine line)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(line);
+        var product = line.Product;
+        var unit = line.OrderUnit;
+        dbContext.DraftLines.Add(new DraftLineRow
+        {
+            CompanyId = draft.CompanyId,
+            DraftId = draft.Id,
+            LineNo = line.LineNo,
+            LineId = line.Id,
+            ProductId = product.ProductId,
+            ProductVersion = product.ProductVersion,
+            ProductCode = product.Code,
+            ProductName = product.Name,
+            ProductEffectiveOn = product.EffectiveOn,
+            StockUnitCompanyId = product.StockUnit.CompanyId,
+            StockUnitId = product.StockUnit.UnitId,
+            StockUnitProfileId = product.StockUnit.ProfileId,
+            StockUnitProfileVersion = product.StockUnit.ProfileVersion,
+            SalesUnitCompanyId = product.SalesUnit.CompanyId,
+            SalesUnitId = product.SalesUnit.UnitId,
+            SalesUnitProfileId = product.SalesUnit.ProfileId,
+            SalesUnitProfileVersion = product.SalesUnit.ProfileVersion,
+            OrderUnitBindingCompanyId = product.OrderUnit.CompanyId,
+            OrderUnitBindingUnitId = product.OrderUnit.UnitId,
+            OrderUnitBindingProfileId = product.OrderUnit.ProfileId,
+            OrderUnitBindingProfileVersion = product.OrderUnit.ProfileVersion,
+            OrderUnitCompanyId = unit.CompanyId,
+            OrderUnitId = unit.UnitId,
+            OrderUnitCode = unit.UnitCode,
+            OrderUnitDimensionCode = unit.DimensionCode,
+            OrderUnitProfileId = unit.ProfileId,
+            OrderUnitProfileVersion = unit.ProfileVersion,
+            OrderUnitIsKilogram = unit.IsKilogram,
+            OrderUnitProfileScale = unit.ProfileScale,
+            OrderUnitScale = unit.Scale,
+            OrderUnitIsActive = unit.IsActive,
+            OrderUnitEffectiveFrom = unit.EffectiveFrom,
+            OrderUnitEffectiveThrough = unit.EffectiveThrough,
+            Quantity = line.Quantity.Value,
+            QuantityText = line.QuantityText,
+            RequestedDeliveryDate = line.RequestedDeliveryDate,
+            Note = line.Note,
+            UnitPrice = line.Commercial.UnitPrice,
+            PriceUnitId = line.Commercial.PriceUnitId,
+            DiscountPercent = line.Commercial.DiscountPercent,
+            PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
+            TaxJson = SalesTaxJson.SerializeLine(line.Tax),
+            ItemType = line.ItemType,
+            AddedInRevision = line.AddedInRevision,
+            RemovedInRevision = line.RemovedInRevision,
+            ReplacedByLineId = line.ReplacedByLineId,
+            ReinstatedInRevision = line.ReinstatedInRevision,
+        });
+        var sliceNo = 0;
+        foreach (var slice in line.RequestedDeliverySlices)
+        {
+            dbContext.DraftDeliverySlices.Add(new DraftDeliverySliceRow
             {
                 CompanyId = draft.CompanyId,
                 DraftId = draft.Id,
                 LineNo = line.LineNo,
-                LineId = line.Id,
-                ProductId = product.ProductId,
-                ProductVersion = product.ProductVersion,
-                ProductCode = product.Code,
-                ProductName = product.Name,
-                ProductEffectiveOn = product.EffectiveOn,
-                StockUnitCompanyId = product.StockUnit.CompanyId,
-                StockUnitId = product.StockUnit.UnitId,
-                StockUnitProfileId = product.StockUnit.ProfileId,
-                StockUnitProfileVersion = product.StockUnit.ProfileVersion,
-                SalesUnitCompanyId = product.SalesUnit.CompanyId,
-                SalesUnitId = product.SalesUnit.UnitId,
-                SalesUnitProfileId = product.SalesUnit.ProfileId,
-                SalesUnitProfileVersion = product.SalesUnit.ProfileVersion,
-                OrderUnitBindingCompanyId = product.OrderUnit.CompanyId,
-                OrderUnitBindingUnitId = product.OrderUnit.UnitId,
-                OrderUnitBindingProfileId = product.OrderUnit.ProfileId,
-                OrderUnitBindingProfileVersion = product.OrderUnit.ProfileVersion,
-                OrderUnitCompanyId = unit.CompanyId,
+                SliceNo = ++sliceNo,
+                SliceId = slice.SliceId,
                 OrderUnitId = unit.UnitId,
-                OrderUnitCode = unit.UnitCode,
-                OrderUnitDimensionCode = unit.DimensionCode,
-                OrderUnitProfileId = unit.ProfileId,
-                OrderUnitProfileVersion = unit.ProfileVersion,
-                OrderUnitIsKilogram = unit.IsKilogram,
-                OrderUnitProfileScale = unit.ProfileScale,
-                OrderUnitScale = unit.Scale,
-                OrderUnitIsActive = unit.IsActive,
-                OrderUnitEffectiveFrom = unit.EffectiveFrom,
-                OrderUnitEffectiveThrough = unit.EffectiveThrough,
-                Quantity = line.Quantity.Value,
-                QuantityText = line.QuantityText,
-                RequestedDeliveryDate = line.RequestedDeliveryDate,
-                Note = line.Note,
-                UnitPrice = line.Commercial.UnitPrice,
-                PriceUnitId = line.Commercial.PriceUnitId,
-                DiscountPercent = line.Commercial.DiscountPercent,
-                PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
-                TaxJson = SalesTaxJson.SerializeLine(line.Tax),
-                ItemType = line.ItemType,
+                Quantity = slice.Quantity.Value,
+                QuantityText = slice.QuantityText,
+                RequestedDeliveryDate = slice.RequestedDeliveryDate,
             });
-            var sliceNo = 0;
-            foreach (var slice in line.RequestedDeliverySlices)
-            {
-                dbContext.DraftDeliverySlices.Add(new DraftDeliverySliceRow
-                {
-                    CompanyId = draft.CompanyId,
-                    DraftId = draft.Id,
-                    LineNo = line.LineNo,
-                    SliceNo = ++sliceNo,
-                    SliceId = slice.SliceId,
-                    OrderUnitId = unit.UnitId,
-                    Quantity = slice.Quantity.Value,
-                    QuantityText = slice.QuantityText,
-                    RequestedDeliveryDate = slice.RequestedDeliveryDate,
-                });
-            }
         }
     }
 }

@@ -49,18 +49,69 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 130
+EXPECTED_MIGRATION_COUNT = 139
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "6b13234389d3ce9c86e14cf5c394f7ac3dbb7800f1fd09c3970175bfbe7aa61e"
+    "db979e84dab0c96af66ca2b025b0cf7ba9dab86e6b15e492c85a2ea8b1cb27d5"
 )
-EXPECTED_DURABLE_STORE_COUNT = 24
-# The source-only inventory is reviewed for one frozen backend compilation surface.  A
-# project/build edit or any compiled source byte change must be deliberately re-inventoried;
-# otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
-# lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1331
-EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "b2f0be603d7ab15ad52ca8cdc9b8a7e293a8f2778fae71c27ac601c00d52169f"
+EXPECTED_DURABLE_STORE_COUNT = 26
+# Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
+# the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
+# pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
+# that can make a lexical inventory miss a linked file, generator, global alias, symbol-shadow
+# file, hidden SqlClient/DbContext use or a partial of a reviewed DbContext/store type:
+#   * every REPOSITORY_BUILD_CONTROL_PATHS file,
+#   * every non-Markdown, non-.cs file under src/backend (*.csproj, *.props, *.targets, *.rsp,
+#     *.csproj.user, appsettings*.json, *.resx...: MSBuild auto-imports and embedded inputs),
+#   * every src/backend .cs whose comment-free text (literals and every preprocessor region kept,
+#     so wider than live code) contains a RISKY_SOURCE_TOKENS token, a DbContext/object-store
+#     adapter name or the name of a global alias whose target is risky,
+#   * every `using X =` alias file (global and file-local) and every `global using` file,
+#   * every reviewed path (REVIEWED_LIVE_SOURCE_SHA256, reviewed methods, durable-store and
+#     Documents evidence) and every discovered DbContext/Migration/object-store declaration file,
+#   * every file declaring a type named like a reviewed partial DbContext/store/adapter type,
+#   * every file declaring a class/record used as the first base of a risky declaration, and every
+#     file with several namespace declarations,
+#   * a shadow-declaration index (path, namespace, name) of every type declared in a namespace that
+#     equals or encloses a risky file's namespace (the global namespace encloses all) whose simple
+#     name occurs in such a risky file.
+# Measurement note (one-time, NOT re-run by CI): over the last 21 origin/main commits touching
+# src/backend/ up to 1e694aa3e (8310d5cba .. 1e694aa3e, 2026-11-02..07), 18 of 21 would still have
+# moved this narrow pin (16 add a migration or edit a DbContext, the others edit Program.cs or an
+# EF-using service); 3 (one K2 Manufacturing internal-method change and two README-only K1
+# commits) would not.  Reproduce: `git log --format=%h 8310d5cba^..1e694aa3e -- src/backend`, then
+# for each commit and its parent run
+# `python3 -I .claude/skills/recovery-inventory-repin/scripts/print_recovery_actuals.py` in a
+# clean worktree and compare the risky-surface fingerprint.
+# Known limits (documented, not closed): a type name assembled by a full string split is
+# invisible to the lexical token scan (reflection by concatenated string); delegate types are in
+# the shadow index.
+# The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
+# inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
+# evidence, not a merge block: it is never compared with a pinned constant.
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 598
+EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
+    "504f2bcfdb87f1784a486f50c42e16824a6043530957b43157484283b5af3ab2"
+)
+RISKY_SOURCE_TOKENS = (
+    "DbContext",
+    "ModelBuilder",
+    "MigrationBuilder",
+    "Migration",
+    "IDocumentObjectStoreV1",
+    "SqlConnection",
+    "SqlCommand",
+    "SqlClient",
+    "Microsoft.Data.SqlClient",
+    "Microsoft.EntityFrameworkCore",
+    "ToTable",
+    "ExecuteSql",
+    "FromSql",
+    "SqlQuery",
+    "DbConnection",
+    "DbCommand",
+    "System.Data",
+    "InternalsVisibleTo",
+    "ModuleInitializer",
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -150,6 +201,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
     ("sales", "DraftAttempts"),
+    ("sales", "InvoiceAttempts"),
     ("sales", "QuoteAttempts"),
     ("sales", "RequestAttempts"),
 )
@@ -164,6 +216,7 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
     ("finance", "OfficialInvoiceImportWorkDeliveries"),
     ("inventory", "OutboxMessages"),
+    ("sales", "OutboxMessages"),
     ("work", "ObservationInbox"),
     ("work", "OutboxMessages"),
 )
@@ -171,6 +224,8 @@ NON_MESSAGE_DELIVERY_TABLES = (
     ("sales", "DraftDeliveryScheduleDates"),
     ("sales", "DraftDeliverySchedules"),
     ("sales", "DraftDeliverySlices"),
+    # SAT-D30 / SAT-D213: append-only over-delivery approvals (business records; "Delivery" is in the name only).
+    ("sales", "DraftOverDeliveryApprovals"),
 )
 DOCUMENT_PATH_CLASSIFICATIONS = (
     ("Documents:ObjectStore:RootPath", "RECOVERY_SET_CONTENT"),
@@ -504,6 +559,14 @@ DURABLE_STORE_SPECS = (
         ("dbContext.DraftAttempts.Add(new DraftAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "sales.invoice-attempts", "Sales", "idempotency", "SalesDbContext", "InvoiceAttemptRow",
+        "sales", "InvoiceAttempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261107155919_AddSalesInvoices.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
+        ("dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "sales.quote-attempts", "Sales", "idempotency", "SalesDbContext", "QuoteAttemptRow",
         "sales", "QuoteAttempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
@@ -518,6 +581,14 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027063346_AddSalesRequests.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
         ("dbContext.RequestAttempts.Add(new RequestAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "sales.outbox", "Sales", "outbox", "SalesDbContext", "SalesOutboxRow", "sales",
+        "OutboxMessages",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108143000_AddSalesInvoiceFinalization.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
+        ("dbContext.OutboxMessages.Add(new SalesOutboxRow",), mapping_tokens=("SourceOperation",),
     ),
     _store(
         "work.observation-inbox", "Work", "inbox", "WorkDbContext", "WorkObservationInboxRow",
@@ -616,6 +687,14 @@ WRITER_METHOD_SCOPES = {
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
     ): "StoreDraftAsync",
     (
+        "sales.invoice-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
+    ): "StoreInvoiceAsync",
+    (
+        "sales.outbox",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
+    ): "FinalizeInvoiceAsync",
+    (
         "sales.quote-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs",
     ): "RecordQuoteRefusalAsync",
@@ -637,6 +716,10 @@ WRITER_METHOD_SCOPES = {
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
+        "FinalizeInvoiceAsync",
+    ): "2eaf24a1922b322c203825a80973b4140f737c66cf9e7e41588537329ba0f522",
     (ACCOUNTING_STORE, "AddCommand"): "db718449f8e13e277eb0aa197b20d7210130ab1c0d2091dd6011e43e781e47a1",
     (ACCOUNTING_STORE, "AddDelivery"): "b24889ce6551605bb62723f3bce1a2baa59c3680894167c71b3fd51ce0be1cb0",
     (DOCUMENT_MODULE_PATH, "AddDocumentsModule"): "178f03a58d3a9ef775bb91f777db991fd935e3d776d7d91112cb5179e4f9f57e",
@@ -753,6 +836,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "StoreDraftAsync",
     ): "6706dc3ddcb2dd03fbfd7ac47fa64b3a8db2964451e7741bf8ef722a4c769a68",
     (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs",
+        "StoreInvoiceAsync",
+    ): "06d71d88e034eb14859e26587d15f6a2a0df4a207402ab4ab309208929899471",
+    (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs",
         "RecordQuoteRefusalAsync",
     ): "c2b6bef89eb2e4f24001ffdff375b3b67f1c292dc1252cf07edfda8e218a0e0a",
@@ -786,13 +873,15 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "43e2b056c56c0d24365561505109876a1591f2e7fb8070a59decbca812b82176",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
-    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "24e0a120a21a5172f8118682b1ca14e20c7679e9404de05b0119e6c5420a3763",
+    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "8701f6d5b933e1f3d1878a5f4e3516c8aaa31b2d8a0a75c3459bf79515d57183",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "819cb8e6bfa8364eb404dbbdcd35a32dd684e8a3b230d5386bb81c7b8a6ca8d1",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs": "ff85d839eb1b9c9030cba9295b2eb0db0e466526164da4fa51483e590d6ba2e2",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs": "754fde914ab573515fd34db5c2d0af03144f24bee9334568ceeae2eebd9f2f2e",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
@@ -940,9 +1029,30 @@ def _csharp_string_end(content: str, quote_index: int) -> int:
     raise InventoryError("C# source contains an unterminated interpolated string.")
 
 
+_PURE_TEXT_CACHE_LIMIT = 16384
+_STRIPPED_CSHARP_CACHE: dict[str, str] = {}
+_LIVE_CSHARP_CACHE: dict[str, str] = {}
+
+
+def _cached_text_transform(cache: dict[str, str], content: str, transform: Any) -> str:
+    """Memoize a pure str -> str transform; failures raise and are never cached."""
+
+    cached = cache.get(content)
+    if cached is None:
+        cached = transform(content)
+        if len(cache) >= _PURE_TEXT_CACHE_LIMIT:
+            cache.clear()
+        cache[content] = cached
+    return cached
+
+
 def _strip_csharp_comments(content: str) -> str:
     """Remove C# comments while preserving strings and line structure."""
 
+    return _cached_text_transform(_STRIPPED_CSHARP_CACHE, content, _strip_csharp_comments_uncached)
+
+
+def _strip_csharp_comments_uncached(content: str) -> str:
     result: list[str] = []
     index = 0
     length = len(content)
@@ -1126,6 +1236,10 @@ def _mask_literal_false_if_blocks(content: str) -> str:
 def _live_csharp_code(content: str) -> str:
     """Mask literals and statically disabled regions before live-code anchor checks."""
 
+    return _cached_text_transform(_LIVE_CSHARP_CACHE, content, _live_csharp_code_uncached)
+
+
+def _live_csharp_code_uncached(content: str) -> str:
     without_literals = _mask_csharp_strings(content)
     if without_literals.startswith("\ufeff"):
         without_literals = " " + without_literals[1:]
@@ -2880,6 +2994,10 @@ def _validate_inventory_semantics(snapshot: SourceSnapshot, inventory: dict[str,
     }
     if inventory["counts"] != expected_counts:
         raise InventoryError("Inventory counts do not match the exact source surface.")
+    # Evidence only: recomputed from the exact commit so the record cannot be forged, but the
+    # full-tree digest is never compared with a pinned constant (post-hoc evidence, not a merge block).
+    if inventory["sourceSurface"] != _source_surface_record(snapshot):
+        raise InventoryError("Inventory sourceSurface evidence does not match the exact commit.")
 
 
 def _source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
@@ -2896,8 +3014,7 @@ def _source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
     )
 
 
-def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
-    paths = _source_surface_paths(snapshot)
+def _surface_fingerprint(snapshot: SourceSnapshot, paths: Sequence[str]) -> tuple[int, str]:
     digest = hashlib.sha256()
     for path in paths:
         encoded_path = path.encode("utf-8")
@@ -2909,18 +3026,296 @@ def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
     return len(paths), digest.hexdigest()
 
 
+def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
+    """Full src/backend + build-control byte digest: post-hoc evidence, never pinned."""
+
+    return _surface_fingerprint(snapshot, _source_surface_paths(snapshot))
+
+
+_RISKY_ALIAS_PATTERN = re.compile(
+    r"\busing\s+(?:static\s+)?(?:unsafe\s+)?@?[^\W\d]\w*\s*(?:<[^;=]*>)?\s*="
+)
+_RISKY_GLOBAL_USING_PATTERN = re.compile(r"\bglobal\s+using\b")
+_RISKY_GLOBAL_ALIAS_NAME_PATTERN = re.compile(
+    r"\bglobal\s+using\s+(?:static\s+)?(?:unsafe\s+)?@?(?P<alias>[^\W\d]\w*)\s*="
+    r"\s*(?P<target>[^;]*);"
+)
+_RISKY_TYPE_DECLARATION_PATTERN = re.compile(
+    r"\b(?P<kind>class|struct|interface|record|enum)\s+(?:(?:class|struct)\s+)?"
+    r"@?(?P<name>[^\W\d]\w*)"
+)
+# Delegate types also declare a simple name (`public delegate void Task();`) that shadows an
+# imported type; the return type may be generic, qualified, an array, nullable or a tuple.
+_RISKY_DELEGATE_DECLARATION_PATTERN = re.compile(
+    r"\bdelegate\s+(?:ref\s+(?:readonly\s+)?)?(?:[^;(){}=]|\([^()]*\))*?"
+    r"(?<![\w@])@?(?P<name>[^\W\d]\w*)\s*(?:<(?:[^;(){}<>]|<(?:[^;(){}<>]|<[^;(){}<>]*>)*>)*>)?\s*\("
+)
+_RISKY_PARTIAL_DECLARATION_PATTERN = re.compile(
+    r"\bpartial\s+(?:class|struct|interface|record(?:\s+(?:class|struct))?)\s+"
+    r"@?(?P<name>[^\W\d]\w*)"
+)
+_RISKY_NAMESPACE_PATTERN = re.compile(r"\bnamespace\s+(?P<name>@?[^\W\d][\w.@]*)")
+_CSHARP_KEYWORDS = frozenset(
+    "abstract as base bool break byte case catch char checked class const continue decimal "
+    "default delegate do double else enum event explicit extern false finally fixed float for "
+    "foreach goto if implicit in int interface internal is lock long namespace new null object "
+    "operator out override params private protected public readonly ref return sbyte sealed "
+    "short sizeof stackalloc static string struct switch this throw true try typeof uint ulong "
+    "unchecked unsafe ushort using virtual void volatile while".split()
+)
+_RISKY_IDENTIFIER_PATTERN = re.compile(r"[^\W\d]\w*")
+_RISKY_CLASS_BASE_PATTERN = re.compile(
+    r"\b(?:class|record)\s+@?[^\W\d]\w*[^{;:]*:\s*(?P<base>[\w.@:]+)"
+)
+
+
+def _reviewed_source_paths() -> set[str]:
+    paths = set(REVIEWED_LIVE_SOURCE_SHA256)
+    paths.update(path for path, _ in REVIEWED_OPERATIVE_METHOD_FINGERPRINTS)
+    paths.update(path for _, path in WRITER_METHOD_SCOPES)
+    paths.update(DOCUMENT_SOURCE_PATHS)
+    paths.add(DOCUMENT_OBJECT_STORE_INTERFACE_PATH)
+    paths.update(EXPECTED_OUTBOX_CONTRACT_PATHS)
+    for spec in DURABLE_STORE_SPECS:
+        paths.update(evidence.path for evidence in spec.evidence)
+    return paths
+
+
+def _risky_text(snapshot: SourceSnapshot, relative_path: str) -> str:
+    try:
+        text = snapshot.files[relative_path].decode("utf-8")
+    except UnicodeError as exc:
+        raise InventoryError(f"Backend source blob is not readable UTF-8: {relative_path}.") from exc
+    return text[1:] if text.startswith("\ufeff") else text
+
+
+def _namespace_and_ancestors(name: str) -> set[str]:
+    parts = [part.removeprefix("@") for part in name.split(".")]
+    return {".".join(parts[: index + 1]) for index in range(len(parts))}
+
+
+_RISKY_SURFACE_CACHE: dict[
+    tuple[tuple[str, bytes], ...],
+    tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]],
+] = {}
+_RISKY_SURFACE_CACHE_LIMIT = 8
+
+
+def _risky_source_surface(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    """Memoize the narrow risky surface by exact snapshot content (a pure function of it)."""
+
+    key = tuple(sorted(snapshot.files.items()))
+    cached = _RISKY_SURFACE_CACHE.get(key)
+    if cached is None:
+        cached = _compute_risky_source_surface(snapshot)
+        if len(_RISKY_SURFACE_CACHE) >= _RISKY_SURFACE_CACHE_LIMIT:
+            _RISKY_SURFACE_CACHE.clear()
+        _RISKY_SURFACE_CACHE[key] = cached
+    return cached
+
+
+def _compute_risky_source_surface(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    """Return the narrow risky surface: byte-pinned paths and the shadow-declaration index.
+
+    The byte-pinned paths are a token/file-class superset (see the Faz 1 note).  Tokens and
+    aliases match comment-free text with literals and every preprocessor region kept (wider than
+    live code; comments never compile).  Declarations, namespaces and base lists use comment-free,
+    literal-masked text so prose and strings cannot invent type names.
+    """
+
+    backend_prefix = f"{BACKEND_ROOT.as_posix()}/".casefold()
+    build_controls = {path.casefold() for path in REPOSITORY_BUILD_CONTROL_PATHS}
+    selected: set[str] = set()
+    csharp: dict[str, str] = {}
+    reviewed_documents = _reviewed_source_paths()
+    for path in snapshot.files:
+        folded = path.casefold()
+        if folded in build_controls:
+            selected.add(path)
+        elif folded.startswith(backend_prefix):
+            if folded.endswith(".cs"):
+                csharp[path] = _strip_csharp_comments(_risky_text(snapshot, path))
+            elif not folded.endswith(".md") or path in reviewed_documents:
+                # Markdown is documentation (it can only compile through a pinned project file);
+                # every other backend input (*.csproj, *.props, *.targets, *.rsp, *.csproj.user,
+                # appsettings*.json, *.resx, fonts...) is byte-pinned.
+                selected.add(path)
+    structural = {path: _mask_csharp_strings(text) for path, text in csharp.items()}
+    declarations = {
+        path: (
+            *(
+                (match.group("kind"), match.group("name"))
+                for match in _RISKY_TYPE_DECLARATION_PATTERN.finditer(text)
+                if match.group("name") not in _CSHARP_KEYWORDS
+            ),
+            *(
+                ("delegate", match.group("name"))
+                for match in _RISKY_DELEGATE_DECLARATION_PATTERN.finditer(text)
+                if match.group("name") not in _CSHARP_KEYWORDS
+            ),
+        )
+        for path, text in structural.items()
+    }
+
+    global_aliases = {
+        (match.group("alias"), match.group("target"))
+        for text in csharp.values()
+        for match in _RISKY_GLOBAL_ALIAS_NAME_PATTERN.finditer(text)
+    }
+    word_tokens: set[str] = set()
+    reviewed_paths = {path for path in _reviewed_source_paths() if path in csharp}
+    discovered = (
+        *_discover_csharp_subclasses(snapshot, "DbContext"),
+        *_discover_csharp_subclasses(snapshot, "Migration"),
+    )
+    adapters = _discover_document_object_store_adapters(snapshot)
+    reviewed_paths.update(declaration.path for declaration in discovered)
+    reviewed_paths.update(path for _, _, path in adapters)
+    reviewed_types = {declaration.name for declaration in discovered}
+    reviewed_types.update(name for _, name, _ in adapters)
+    word_tokens.update(
+        declaration.name for declaration in discovered if "Migration" not in declaration.name
+    )
+    word_tokens.update(name for _, name, _ in adapters)
+    # A partial needs the reviewed declaration to be partial too; non-partial same-name types in
+    # other namespaces are covered by the shadow index below.
+    for path in reviewed_paths:
+        reviewed_types.update(
+            match.group("name")
+            for match in _RISKY_PARTIAL_DECLARATION_PATTERN.finditer(structural[path])
+        )
+    # A global alias whose target is risky (a token, a reviewed type or another risky alias)
+    # makes its alias name a risky token in every file; other global aliases only pin their
+    # own declaring file.
+    while True:
+        risky_aliases = {
+            alias
+            for alias, target in global_aliases
+            if alias not in word_tokens
+            and (
+                any(token in target for token in RISKY_SOURCE_TOKENS)
+                or not set(_RISKY_IDENTIFIER_PATTERN.findall(target)).isdisjoint(
+                    reviewed_types | word_tokens
+                )
+            )
+        }
+        if not risky_aliases:
+            break
+        word_tokens.update(risky_aliases)
+    word_pattern = (
+        re.compile(
+            r"(?<![A-Za-z0-9_])(?:"
+            + "|".join(re.escape(token) for token in sorted(word_tokens))
+            + r")(?![A-Za-z0-9_])"
+        )
+        if word_tokens
+        else None
+    )
+
+    risky: set[str] = set(reviewed_paths)
+    for path, text in csharp.items():
+        namespace_count = len(_RISKY_NAMESPACE_PATTERN.findall(structural[path]))
+        if (
+            namespace_count > 1
+            or any(token in text for token in RISKY_SOURCE_TOKENS)
+            or (word_pattern is not None and word_pattern.search(text) is not None)
+            or _RISKY_ALIAS_PATTERN.search(text) is not None
+            or _RISKY_GLOBAL_USING_PATTERN.search(text) is not None
+            or any(name in reviewed_types for _, name in declarations[path])
+        ):
+            risky.add(path)
+
+    # Class base types of risky declarations are byte-pinned when declared here as a class or
+    # record: a partial of a base class can inject a nested type into the derived scope.
+    base_types: set[str] = set()
+    for path in risky:
+        for match in _RISKY_CLASS_BASE_PATTERN.finditer(structural[path]):
+            first_base = _RISKY_IDENTIFIER_PATTERN.findall(match.group("base"))
+            if first_base:
+                base_types.add(first_base[-1])
+    for path, declared in declarations.items():
+        if path not in risky and any(
+            kind.startswith(("class", "record")) and name in base_types
+            for kind, name in declared
+        ):
+            risky.add(path)
+
+    # Symbol shadowing: a type declared in a namespace that equals or encloses a risky file's
+    # namespace wins over that file's using-imports.  Every such declaration whose simple name
+    # occurs in an enclosed risky file is pinned by (path, namespace, name): introducing,
+    # moving or renaming a shadowing type moves the pin, while the declaring file's body stays
+    # outside the byte pin (a new name used by a risky file changes that risky file anyway).
+    risky_identifiers: dict[str, set[str]] = {}
+    for path in risky:
+        identifiers = set(_RISKY_IDENTIFIER_PATTERN.findall(csharp[path]))
+        risky_identifiers.setdefault("", set()).update(identifiers)
+        for match in _RISKY_NAMESPACE_PATTERN.finditer(structural[path]):
+            for namespace in _namespace_and_ancestors(match.group("name")):
+                risky_identifiers.setdefault(namespace, set()).update(identifiers)
+    shadow_index: set[tuple[str, str, str]] = set()
+    for path, text in structural.items():
+        if path in risky:
+            continue
+        # A file without a namespace declares into the global namespace, which encloses all.
+        declared_namespace = _RISKY_NAMESPACE_PATTERN.search(text)
+        namespace = (
+            ""
+            if declared_namespace is None
+            else ".".join(
+                part.removeprefix("@") for part in declared_namespace.group("name").split(".")
+            )
+        )
+        used = risky_identifiers.get(namespace, set())
+        shadow_index.update(
+            (path, namespace, name) for _, name in declarations[path] if name in used
+        )
+    selected.update(risky)
+    return tuple(sorted(selected)), tuple(sorted(shadow_index))
+
+
+def _risky_source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
+    return _risky_source_surface(snapshot)[0]
+
+
+def _risky_source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
+    paths, shadow_index = _risky_source_surface(snapshot)
+    count, digest = _surface_fingerprint(snapshot, paths)
+    combined = hashlib.sha256(digest.encode("ascii"))
+    for path, namespace, name in shadow_index:
+        combined.update(f"\n{path}\t{namespace}\t{name}".encode("utf-8"))
+    return count, combined.hexdigest()
+
+
 def _require_reviewed_source_surface(snapshot: SourceSnapshot) -> None:
-    actual_count, actual_fingerprint = _source_surface_fingerprint(snapshot)
+    actual_count, actual_fingerprint = _risky_source_surface_fingerprint(snapshot)
     if (
-        actual_count != EXPECTED_SOURCE_SURFACE_FILE_COUNT
-        or actual_fingerprint != EXPECTED_SOURCE_SURFACE_FINGERPRINT
+        actual_count != EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT
+        or actual_fingerprint != EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT
     ):
         raise InventoryError(
-            "Reviewed C# compilation source surface drifted: "
-            f"expected count={EXPECTED_SOURCE_SURFACE_FILE_COUNT} "
-            f"fingerprint={EXPECTED_SOURCE_SURFACE_FINGERPRINT}; "
+            "Reviewed risky C# compilation source surface drifted: "
+            f"expected count={EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT} "
+            f"fingerprint={EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT}; "
             f"actual count={actual_count} fingerprint={actual_fingerprint}."
         )
+
+
+def _source_surface_record(snapshot: SourceSnapshot) -> dict[str, Any]:
+    """Non-blocking evidence: the manifest sourceSurface is post-hoc evidence, not a merge block."""
+
+    file_count, sha256 = _source_surface_fingerprint(snapshot)
+    risky_count, risky_sha256 = _risky_source_surface_fingerprint(snapshot)
+    return {
+        "fileCount": file_count,
+        "sha256": sha256,
+        "riskyFileCount": risky_count,
+        "riskySha256": risky_sha256,
+        "blocking": False,
+    }
 
 
 def _validate_inventory_for_snapshot(snapshot: SourceSnapshot, inventory: dict[str, Any]) -> None:
@@ -2958,6 +3353,7 @@ def _build_inventory_from_snapshot(snapshot: SourceSnapshot) -> dict[str, Any]:
         "migrations": migrations,
         "documents": documents,
         "durableStores": durable_stores,
+        "sourceSurface": _source_surface_record(snapshot),
         "assertions": {
             "sourceOnly": True,
             "containsSecrets": False,

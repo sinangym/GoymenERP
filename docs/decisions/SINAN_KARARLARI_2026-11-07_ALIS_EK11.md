@@ -18,6 +18,7 @@ Numaralama: ALS-D66…D68 EK10'dadır. Bu dosya ALS-D69…D72'yi içerir.
   personalarına verilebilir; gerçek grant insan kapısındadır.
 - Bu dosya hiçbir `OPEN-*` kimliğini kapatmaz, grant/rol vermez. Persona kartındaki Alış eşlemesi (§2) bir **öneridir**
   (kartın kendi kuralı: "Bu kart merge edilse bile çalışan sistemde tek bir yetki değişmez").
+- Kart değişikliği insan kapısı: Sinan "Onaylıyorum, aynı PR", PR #957 yorumu 6706749065.
 
 ## 1. Kararlar
 
@@ -58,9 +59,11 @@ Bu bölümdeki **yorum** etiketli maddeler geri alınabilir; karar değildir.
   - *Yorum (uygulama ayrıntısı, PR #944):* 0 fiyatlı satırda iskonto yalnız yüzde ya da 0 tutar olabilir
     (tutar iskontosu birim fiyatı aşamaz; fail-closed). Ayrı bir "bedelsiz" işareti yoktur. Geri alınabilir.
 - **ALS-D72 (4 ondalık):** Alış birim fiyatı en fazla **4 ondalık** girilebilir; satır tutarı (sipariş miktarı × net
-  birim fiyat) **bir kez** para profilinin tutar ölçeğine (TRY'de kuruş, 2 ondalık) yarım yukarı yuvarlanır (SAT-D11);
-  net birim fiyat yuvarlanmaz (SAT-D76). Birim fiyat ölçeği Ayarlar para profili tanımına alan olarak eklenir (ALS-D69
-  dar istisnası kapsamında, A2a-1b); 4 kodda sabit yazılmaz.
+  birim fiyat) **bir kez** para profilinin tutar ölçeğine (TRY'de kuruş, 2 ondalık) yuvarlanır. Birim fiyat ölçeği
+  Ayarlar para profili tanımına alan olarak eklenir (ALS-D69 dar istisnası kapsamında, A2a-1b); 4 kodda sabit yazılmaz.
+  - *Yorum (SAT-D11/D76 benzetmesi, EK8 §0):* tek yuvarlama **yarım yukarı** yapılır (SAT-D11) ve **net birim fiyat
+    yuvarlanmaz** (SAT-D76). Bunlar Satış kurallarının Alış'a benzetmesidir; seçenek metni yalnız "bir kez kuruşa"
+    der. Geri alınabilir uygulama yorumudur, karar değildir.
   - *Yorum:* Satış'ın birim fiyat ondalığı bu kararla değişmez ("Satış ne ise o" seçilmedi); iki modül ayrı ölçek
     taşıyabilir. Ortak `CommercialLinePriceCalculator` ölçeği parametre olarak alır. Geri alınabilir.
 - **Kodun bugünkü durumu (bu dosyanın parçası değil):**
@@ -77,7 +80,7 @@ Bu bölümdeki **yorum** etiketli maddeler geri alınabilir; karar değildir.
 
 - ALS-D5 (elle, iskontolu fiyat), ALS-D18 (fiyatsız sipariş onaylanır, "fiyat bekliyor"), ALS-D51/D58/D60 (fiyat birimi;
   çevrim portu ertelendi), ALS-D53/D54 (personalar, talep açanlar), ALS-D63 (tolerans/eşik istisnası; yalnız ALS-D69
-  ile para kataloğu satırı eklenir), ALS-D66…D68 aynen. SAT-D11/SAT-D76 yuvarlama kuralları aynen.
+  ile para kataloğu satırı eklenir), ALS-D66…D68 aynen. SAT-D11/SAT-D76 (Satış yuvarlama kuralları) aynen; Alış'a uygulanmaları §2'deki geri alınabilir yorumdur.
 - API-98 Ayarlar listelerinin ALS-D63 istisnasına girip girmediği hâlâ **NEEDS-SINAN**'dır; ALS-D69 yalnız para
   kataloğundaki `purchasing.order.v1` satırını kapsar.
 - Grant/rol ataması, Ayarlar'da gerçek profil aktivasyonu, production aktivasyonu, secret/deployment ve `OPEN-*`

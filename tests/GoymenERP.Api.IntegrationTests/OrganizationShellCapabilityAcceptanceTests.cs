@@ -16,8 +16,12 @@ using Microsoft.Extensions.Hosting;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFactory factory)
-    : IClassFixture<GoymenErpApiFactory>
+public sealed class OrganizationShellCapabilityAcceptanceTests(
+    GoymenErpApiFactory factory,
+    OrganizationShellCapabilityAcceptanceTests.SharedControlledHost shared)
+    : IClassFixture<GoymenErpApiFactory>,
+        IClassFixture<OrganizationShellCapabilityAcceptanceTests.SharedControlledHost>,
+        IDisposable
 {
     [Fact]
     public void NormalProviderPair_RequiresTheExactAcceptedAuthority()
@@ -161,10 +165,40 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
     [MemberData(nameof(PermissionCases))]
     public async Task ExistingPermissionAndNarrowScope_CombinationsRemainIndependent(int permissions, int scope)
     {
-        var authority = new ControlledAuthority(permissions, scope);
-        await using var host = ControlledHost(authority);
-        using var client = Client(host);
+        // ONE host for all 2^n x 4 cases (it used to be one WithWebHostBuilder host per case, ~4 s each,
+        // ~34 min in CI). The only thing a case varies is the authority's answer, so the host registers a
+        // single ControlledAuthority and each case re-arms it. The shell snapshot is computed per request
+        // from IErpAuthorizationService (ShellCapabilityService keeps no cache), so a re-armed authority is
+        // evaluated afresh exactly as a new host's would be.
+        shared.Authority.Reset();
+        using var client = Client(shared.Host);
+        // Guard 1: the shared host really is shared — built once for the whole fixture, never per case.
+        Assert.Equal(1, shared.HostBuilds);
+        // Guard 2, the negative control: with the authority reset, the host denies everything, whatever
+        // the PREVIOUS case granted. A case that leaked its grants into the next would publish
+        // capabilities here. `PreviousPermissions` names what the case before granted, so a red line
+        // here says which grant survived.
+        var reset = await Snapshot(client);
+        Assert.True(reset.Capabilities.Count == 0,
+            $"Reset authority still published [{string.Join(", ", reset.Capabilities)}] after a case that "
+            + $"granted mask {shared.PreviousPermissions}; the shared host leaked state between cases.");
+        // The reset state is one fixed authority revision on one host key, so its generation is the same
+        // in every case: a different value would mean a different host or a different deny-all answer.
+        shared.ResetGeneration ??= reset.Generation;
+        Assert.Equal(shared.ResetGeneration, reset.Generation);
+        shared.Authority.Arm(permissions, scope);
+        shared.PreviousPermissions = permissions;
         var snapshot = await Snapshot(client);
+        // Guard 3: every case is evaluated afresh. The authorization revision carries both the mask and
+        // the scope kind, so each of the 2^n x 4 cases must yield a generation no earlier case produced;
+        // a memoised or stale answer would repeat one. Only the all-denied, company-wide case equals the
+        // reset state, and it must.
+        Assert.True(shared.ArmedGenerations.Add(snapshot.Generation),
+            $"Case ({permissions}, {scope}) repeated an earlier case's generation; the snapshot was not re-evaluated.");
+        if (permissions == 0 && scope == 0)
+            Assert.Equal(reset.Generation, snapshot.Generation);
+        else
+            Assert.NotEqual(reset.Generation, snapshot.Generation);
         // Each branch names the PERMISSION it turns on rather than a numeric mask, so the expectation
         // cannot drift from the bit list when its order changes.
         var expected = new List<string>();
@@ -259,6 +293,50 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         Assert.Empty((await Snapshot(client)).Capabilities);
     }
 
+    // Each case leaves the shared authority denying everything, so nothing a case armed survives it even
+    // before the next case's own Reset.
+    public void Dispose() => shared.Authority.Reset();
+
+    /// <summary>
+    /// The single host the combination theory runs against: built once per fixture (counted by
+    /// <see cref="HostBuilds"/>) over its own root factory, with one mutable
+    /// <see cref="ControlledAuthority"/> as the only per-case seam. xUnit runs a class's cases serially,
+    /// so one case at a time owns the authority.
+    /// </summary>
+    public sealed class SharedControlledHost : IDisposable
+    {
+        private readonly GoymenErpApiFactory _root = new();
+        private int _hostBuilds;
+
+        public SharedControlledHost()
+        {
+            Host = _root.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            {
+                Interlocked.Increment(ref _hostBuilds);
+                services.RemoveAll<IErpAuthorizationService>();
+                services.AddSingleton<IErpAuthorizationService>(Authority);
+            }));
+        }
+
+        internal ControlledAuthority Authority { get; } = new(0, 0);
+
+        internal WebApplicationFactory<Program> Host { get; }
+
+        internal int HostBuilds => Volatile.Read(ref _hostBuilds);
+
+        internal int PreviousPermissions { get; set; }
+
+        internal string? ResetGeneration { get; set; }
+
+        internal HashSet<string> ArmedGenerations { get; } = new(StringComparer.Ordinal);
+
+        public void Dispose()
+        {
+            Host.Dispose();
+            _root.Dispose();
+        }
+    }
+
     private WebApplicationFactory<Program> ControlledHost(ControlledAuthority authority) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -295,9 +373,19 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
     }
 
     // Controlled authorization and EF InMemory HTTP tests, not real SQL or IdP revocation evidence.
-    private sealed class ControlledAuthority(int permissions, int scopeKind) : IErpAuthorizationService
+    internal sealed class ControlledAuthority(int permissions, int scopeKind) : IErpAuthorizationService
     {
         public int Permissions { get; set; } = permissions;
+        private int ScopeKind { get; set; } = scopeKind;
+
+        /// <summary>Deny everything: no permission bit, company-wide scope kind.</summary>
+        public void Reset() => Arm(0, 0);
+
+        public void Arm(int permissions, int scopeKind)
+        {
+            Permissions = permissions;
+            ScopeKind = scopeKind;
+        }
         private static readonly Guid ScopeId = Guid.Parse("76000000-0000-0000-0000-000000000001");
 
         private PermissionScope Scope(string permission, Guid companyId)
@@ -311,15 +399,15 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             var bit = AuthorityBit(permission);
             if (companyId != TestCompanyIds.CompanyA || bit == 0 || (Permissions & bit) == 0)
                 return PermissionScope.Denied;
-            return new PermissionScope(true, scopeKind == 0, new HashSet<string>(),
-                scopeKind == 1 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>(),
-                scopeKind == 2 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>(),
-                scopeKind == 3 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>());
+            return new PermissionScope(true, ScopeKind == 0, new HashSet<string>(),
+                ScopeKind == 1 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>(),
+                ScopeKind == 2 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>(),
+                ScopeKind == 3 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>());
         }
 
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId,
             IReadOnlyCollection<string> requested, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AuthorizationSnapshot($"controlled-org-{Permissions}-{scopeKind}",
+            Task.FromResult(new AuthorizationSnapshot($"controlled-org-{Permissions}-{ScopeKind}",
                 companyId == TestCompanyIds.CompanyA ? new HashSet<Guid> { companyId } : new HashSet<Guid>(),
                 requested.ToDictionary(permission => permission, permission => Scope(permission, companyId))));
 
