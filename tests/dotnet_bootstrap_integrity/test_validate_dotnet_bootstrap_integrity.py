@@ -1058,7 +1058,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
             "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
-            "backend-test-group": "4138b2c1aa82cb51ccbaf6cbe3a42a54416a93b61b598ca776a0a9207272be58",
+            "backend-test-group": "a8ed7bcd80535e04609a8f14f443b6ccb2005f0973a2b882079bce2deb310c16",
             "backend": (
                 "e2e37178376493f6a14224f36a3682680223ee9ce509742a7ef287e80bda78d3"
             ),
@@ -1152,6 +1152,7 @@ class WorkflowOrderingTests(unittest.TestCase):
     def assert_backend_execution_and_aggregate_boundaries(self) -> None:
         head_ref = "${{ github.event.pull_request.head.sha || github.sha }}"
         group_ref = "${{ matrix.group }}"
+        unit_ref = "${{ matrix.unit }}"
         build = self.job_body("backend-build")
         worker = self.job_body("backend-test-group")
         aggregate = self.job_body("backend")
@@ -1177,12 +1178,17 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertNotIn("dotnet test GoymenERP.slnx", build)
         self.assertEqual(
             re.findall(r"^    \S.*$", worker, re.M),
-            ["    name: Backend test group (${{ matrix.group }})",
+            ["    name: Backend test group (${{ matrix.unit }})",
              "    runs-on: ubuntu-latest", "    strategy:", "    steps:"],
         )
         self.assertIn(
             "    strategy:\n      fail-fast: false\n      matrix:\n"
-            "        group: [architecture, api, modules]\n",
+            "        include:\n"
+            '          - { group: architecture, unit: architecture, shard_args: "" }\n'
+            '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n'
+            '          - { group: api, unit: api-2, shard_args: "--shard 2" }\n'
+            '          - { group: api, unit: api-3, shard_args: "--shard 3" }\n'
+            '          - { group: modules, unit: modules, shard_args: "" }\n',
             worker,
         )
         self.assertNotIn("continue-on-error:", worker)
@@ -1205,9 +1211,9 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "run: |",
                 "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
                 "python3 -I -S -B tools/verify_backend_test_groups.py \\",
-                f'--group "{group_ref}" \\',
-                f'--results-directory "artifacts/ci-test-results/backend-groups/{group_ref}" \\',
-                f'--proof-output "artifacts/ci-backend-group-proofs/proof-{group_ref}.json" \\',
+                f'--group "{group_ref}" ${{{{ matrix.shard_args }}}} \\',
+                f'--results-directory "artifacts/ci-test-results/backend-groups/{unit_ref}" \\',
+                f'--proof-output "artifacts/ci-backend-group-proofs/proof-{unit_ref}.json" \\',
                 f'--source-head "{head_ref}" \\',
                 '--tested-commit "$(git rev-parse HEAD)"',
             ],
@@ -1217,8 +1223,8 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "uses: actions/upload-artifact@v7",
                 "with:",
-                f"name: ci-backend-test-group-proof-{group_ref}",
-                f"path: artifacts/ci-backend-group-proofs/proof-{group_ref}.json",
+                f"name: ci-backend-test-group-proof-{unit_ref}",
+                f"path: artifacts/ci-backend-group-proofs/proof-{unit_ref}.json",
                 "if-no-files-found: error",
                 "retention-days: 7",
             ],
@@ -1295,10 +1301,11 @@ class WorkflowOrderingTests(unittest.TestCase):
     def test_backend_execution_and_aggregate_boundaries_reject_mutants(self) -> None:
         self.assert_backend_execution_and_aggregate_boundaries()
         mutations = (
-            ("missing group", "group: [architecture, api, modules]",
-             "group: [architecture, api]"),
-            ("duplicate group", "group: [architecture, api, modules]",
-             "group: [architecture, api, modules, modules]"),
+            ("missing group", '          - { group: modules, unit: modules, shard_args: "" }\n', ""),
+            ("duplicate group", '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n',
+             '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n'
+             '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n'),
+            ("missing api shard", '          - { group: api, unit: api-3, shard_args: "--shard 3" }\n', ""),
             ("conditional worker", "  backend-test-group:\n    name:",
              "  backend-test-group:\n    if: ${{ false }}\n    name:"),
             ("soft worker", "  backend-test-group:\n    name:",
