@@ -7465,9 +7465,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
             "python3 -I -S -B tools/verify_backend_test_groups.py \\",
-            "--group \"${{ matrix.group }}\" \\",
-            "--results-directory \"artifacts/ci-test-results/backend-groups/${{ matrix.group }}\" \\",
-            "--proof-output \"artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json\" \\",
+            "--group \"${{ matrix.group }}\" ${{ matrix.shard_args }} \\",
+            "--results-directory \"artifacts/ci-test-results/backend-groups/${{ matrix.unit }}\" \\",
+            "--proof-output \"artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json\" \\",
             "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
             "--tested-commit \"$(git rev-parse HEAD)\"",
         };
