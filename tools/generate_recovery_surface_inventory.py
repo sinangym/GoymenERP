@@ -49,9 +49,9 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 137
+EXPECTED_MIGRATION_COUNT = 138
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "ff9ad4e04b416aef7e8e407aae05181dfca33f1157fc2be14c7214446be302a9"
+    "a87c449c978c2500a4ee75b908e599b1e5d57bcb80fc90d7789fce30541dc06e"
 )
 EXPECTED_DURABLE_STORE_COUNT = 25
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 25
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 592
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 594
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "b365d1f6a1460734cb9418e34521239964c56ae7fff827b21852a1e49ad723f7"
+    "614dadbbc2a2de2400c0aa08071813b2e2c3c6ee4b6d59af9379537e9c6a1c23"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -862,7 +862,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "1012e77656b6c2b4afc264f654d4ad4e92715b7d8e4c4eaec06c233731083587",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "50eadedc28ed206005630a28641aac0820a105b3cfdc1b9ed577323dee5787be",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs": "2377c371a76397aa287d1514d5f8b85db7e00f394734e424621e2e8dba09e030",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
