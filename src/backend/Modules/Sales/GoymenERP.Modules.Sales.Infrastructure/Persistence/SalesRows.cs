@@ -433,6 +433,30 @@ internal sealed class DraftOverDeliveryApprovalRow : ISalesTenantRow
 }
 
 /// <summary>
+/// SAT-D17 / SAT-D168 (EK24, EK37): one recorded closure of one order line with a shortfall (append-only; at most one per line):
+/// the line (identity and position), the realization basis revision and its measured quantity text, the shipped total at the
+/// closure and the remainder counted as cancelled (exact text of the line's order unit), the SAT-D15 band of the shortfall
+/// (<see cref="GoymenERP.Modules.Sales.Domain.Drafts.DeliveryToleranceBand"/> as its number), who closed it, when, the draft
+/// version it produced and the correlation. Never modified, never deleted; a closed line cannot ship again (SAT-D215).
+/// </summary>
+internal sealed class DraftLineClosureRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public Guid LineId { get; set; }
+    public int LineNo { get; set; }
+    public int BasisRevision { get; set; }
+    public string Ordered { get; set; } = string.Empty;
+    public string ShippedAtClosure { get; set; } = string.Empty;
+    public string CancelledRemainder { get; set; } = string.Empty;
+    public int Band { get; set; }
+    public string ClosedBy { get; set; } = string.Empty;
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// No 30 / SAT-D12: the recorded force-closure of an approved order (append-only, at most one per draft): the revision closed,
 /// who, when, why, the draft version it produced, the impact preview the user confirmed (its token and each category's status
 /// and blocking flag, as JSON) and every line's closed remainder (ordered, shipped, closed remainder as exact text, as JSON).

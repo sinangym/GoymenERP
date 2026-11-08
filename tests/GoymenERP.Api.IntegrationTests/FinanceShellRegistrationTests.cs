@@ -96,6 +96,9 @@ public sealed class FinanceShellRegistrationTests
                 // API-04: the header-revision control of the detail.
                 (SalesShellCapabilityProvider.HeaderWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersHeaderWrite}"),
+                // SAT-D17 / SAT-D168: the line-closure control of the detail.
+                (SalesShellCapabilityProvider.LineCloseCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersLineClose}"),
                 // SAT-D30: the over-delivery approval control of the detail.
                 (SalesShellCapabilityProvider.OverDeliveryApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersOverDeliveryApprove}"),

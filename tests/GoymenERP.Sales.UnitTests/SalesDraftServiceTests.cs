@@ -2244,6 +2244,27 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        public List<LineClosureFacts> LineClosureRecords { get; } = [];
+
+        public List<LineClosureInput> LineClosureInputs { get; } = [];
+
+        public async Task<SalesDraftStateResult?> CloseLineAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, LineClosureInput, DateTimeOffset, LineClosureFacts> mutate,
+            SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<LineClosureInput>> beforeWrite,
+            CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.CloseLineV1) throw new ArgumentException("wrong command", nameof(commandName));
+            LineClosureInput? input = null;
+            LineClosureFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, input!, now), audit,
+                async token => input = await beforeWrite(draft!, token), cancellationToken);
+            if (input is not null) LineClosureInputs.Add(input);
+            if (recorded is not null) LineClosureRecords.Add(recorded);
+            return result;
+        }
+
         public List<RemainderChangeFacts> RemainderChanges { get; } = [];
 
         public async Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,

@@ -178,6 +178,12 @@ public static class SalesRuleCodes
     /// </summary>
     public const string OverDeliverySelfApproval = "sales_over_delivery_self_approval";
 
+    /// <summary>SAT-D17: a line closure names a line that is not on the order.</summary>
+    public const string LineClosureLineUnknown = "sales_line_closure_line_unknown";
+
+    /// <summary>SAT-D216 (EK37): the person who made a shipment of the line does not close it ("başkası kapatır").</summary>
+    public const string LineClosureSelfClosure = "sales_line_closure_self_closure";
+
     /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
     public const string DueTermsRequired = "sales_due_terms_required";
 

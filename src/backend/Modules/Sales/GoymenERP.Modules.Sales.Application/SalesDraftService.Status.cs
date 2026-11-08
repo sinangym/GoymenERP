@@ -280,7 +280,9 @@ public sealed partial class SalesDraftService
         // unreadable return owner shows no number there and does not take the realization down.
         var returned = withReturns ? await ApprovedReturnsAsync(scope, permission, draft, cancellationToken) : null;
         var closed = draft.State == SalesDraftState.Closed;
-        var needsTolerance = ordered.Any(line => SalesRealizationCalculator.NeedsTolerance(recorded[line.Id].Shipped, closed));
+        // SAT-D17: a line closed with a shortfall is measured as a closed line, beside the lines of a closed order.
+        var needsTolerance = ordered.Any(line => SalesRealizationCalculator.NeedsTolerance(recorded[line.Id].Shipped,
+            closed || draft.IsLineClosed(line.Id)));
         var policy = needsTolerance ? await ToleranceAsync(scope, permission, draft, cancellationToken) : null;
         var policyUnavailable = needsTolerance && policy is null;
 
@@ -289,7 +291,8 @@ public sealed partial class SalesDraftService
         {
             var (shipped, delivered) = recorded[line.Id];
             var (basisQuantity, basisText) = basis.Lines[line.Id];
-            if (policyUnavailable && SalesRealizationCalculator.NeedsTolerance(shipped, closed))
+            var lineClosed = closed || draft.IsLineClosed(line.Id);
+            if (policyUnavailable && SalesRealizationCalculator.NeedsTolerance(shipped, lineClosed))
             {
                 // No approved tolerance: the facts stay visible, nothing is judged (no direction, deviation, band or state).
                 lines.Add((new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, basisText,
@@ -305,8 +308,8 @@ public sealed partial class SalesDraftService
                 // SAT-D30 / SAT-D213: an approval-band over-delivery is approved only while a recorded approval covers this shipped
                 // total against this measured quantity; otherwise it awaits approval. A line that needs no tolerance (nothing
                 // shipped, open) has the same NotStarted shape in every branch.
-                realization = SalesRealizationCalculator.Line(basisQuantity, shipped, closed, policy?.Tolerance,
-                    draft.IsOverDeliveryApproved(line.Id, basisQuantity, shipped));
+                realization = SalesRealizationCalculator.Line(basisQuantity, shipped, lineClosed, policy?.Tolerance,
+                    draft.IsOverDeliveryApproved(line.Id, basisQuantity, shipped), draft.IsLineClosed(line.Id));
             }
             catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
             {
@@ -470,7 +473,8 @@ public sealed partial class SalesDraftService
 
     /// <summary>The recorded force-closure remainder of the line (No 30 / SAT-D12), verbatim; null when the order was not force-closed.</summary>
     private static string? ClosedRemainder(SalesOrderDraft draft, Guid lineId) =>
-        draft.ForceClosure?.Lines.FirstOrDefault(line => line.LineId == lineId)?.ClosedRemainder;
+        draft.ForceClosure?.Lines.FirstOrDefault(line => line.LineId == lineId)?.ClosedRemainder
+        ?? draft.LineClosures.FirstOrDefault(closure => closure.LineId == lineId)?.CancelledRemainder;
 
     /// <summary>A percent as invariant decimal text with trailing zeros dropped (1.50 → "1.5"; never rounded).</summary>
     private static string PercentText(decimal value) =>

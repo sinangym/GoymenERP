@@ -505,6 +505,15 @@ public static class ErpPermissions
     public const string SalesOrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
 
     /// <summary>
+    /// SAT-D17 / SAT-D168 (EK24), SAT-D214 / SAT-D215 / SAT-D216 (EK37): close one order line with a shortfall (Sales owner name
+    /// SalesPermissionManifestV1.OrdersLineClose). Its own name: no other Sales name (the order close, force-close and over-delivery
+    /// names included) confers it and it confers none. Registration grants nothing: no seeded role and no real user receives it;
+    /// the persona mapping stays a human gate. Company-wide only. Not Critical: no approved source adds grant-time dual control.
+    /// SAT-D216 (the shipper does not close their own line) is enforced by the Sales command.
+    /// </summary>
+    public const string SalesOrdersLineClose = "sales.orders.lines.close";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -960,6 +969,7 @@ public static class ErpPermissions
             SalesOrdersForceClose,
             SalesOrdersClose,
             SalesOrdersOverDeliveryApprove,
+            SalesOrdersLineClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1124,6 +1134,7 @@ public static class ErpPermissions
             SalesOrdersForceClose,
             SalesOrdersClose,
             SalesOrdersOverDeliveryApprove,
+            SalesOrdersLineClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,

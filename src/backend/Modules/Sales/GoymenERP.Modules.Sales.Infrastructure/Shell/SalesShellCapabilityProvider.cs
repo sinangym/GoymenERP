@@ -26,7 +26,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.17";
+    public const string OwnerContractVersion = "1.18";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -97,6 +97,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// approval of a line's approval-band over-delivery at its shipped total. No other Sales name confers it (shell contract 1.14).
     /// </summary>
     public const string OverDeliveryApproveCapabilityId = "sales.orders.over-delivery.approve";
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168: the line-closure CONTROL of the S-04 detail (read + the line-close name) — closing one order line with
+    /// a shortfall. No other Sales name confers it (shell contract 1.18).
+    /// </summary>
+    public const string LineCloseCapabilityId = "sales.orders.lines.close";
 
     /// <summary>
     /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
@@ -288,6 +294,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = OverDeliveryApproveCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersOverDeliveryApprove],
+        },
+        // SAT-D17: closing a line with a shortfall is a control of the detail, like the over-delivery approval.
+        detail with
+        {
+            CapabilityId = LineCloseCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersLineClose],
         },
         .. RequestDeclarations(),
         .. QuoteDeclarations(),

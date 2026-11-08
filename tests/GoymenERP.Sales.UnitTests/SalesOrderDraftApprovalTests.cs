@@ -162,11 +162,12 @@ public sealed class SalesOrderDraftApprovalTests
         // (RequireForceClosable only reads).
         // SAT-D2 / API-12: so is the discount exception approval. API-04: so is the header revision (RequireHeaderRevisable only reads).
         // SAT-D32: so is the user closure (RequireUserClosable only reads).
+        // SAT-D17: so is the line closure.
         // SAT-D30: so is the over-delivery approval (RequireOverDeliveryApprovable only reads); IsOverDeliveryApproved is a query.
         Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApproveOverDelivery", "ApprovePriceFloorExceptions", "ApproveRemainderChange",
-            "Cancel", "CloseByUser", "ForceClose",
+            "Cancel", "CloseByUser", "CloseLine", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected and IsOverDeliveryApproved are the reads in the population (queries).
-            "IsCustomerRejected", "IsOverDeliveryApproved", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
+            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader",
             // SAT-D167 (EK24): so is the line revision (it reuses RequireQuantityRevisable, which only reads).
             "ReviseLines", "ReviseQuantities", "Submit", "Withdraw"], entries);
@@ -200,6 +201,9 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveOverDelivery(3, Approver,
             new OverDeliveryApprovalInput(draft.Lines[0].Id, 0, draft.Lines[0].QuantityText, draft.Lines[0].Quantity.Value + 1m,
                 ["synthetic-shipper"]), T0)));
+        // SAT-D17: a withdrawn draft was never approved - no line is closed.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.CloseLine(3, Approver,
+            new LineClosureInput(draft.Lines[0].Id, 0, draft.Lines[0].QuantityText, 1m, DeliveryToleranceBand.Within, ["synthetic-shipper"]), T0)));
         // DEC-SAL-002: a withdrawn draft's quantities do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseQuantities(3,
             [new LineQuantityInput(draft.Lines[0].Id, "9", 9m)], "synthetic-reviser", "SENTETIK", T0)));

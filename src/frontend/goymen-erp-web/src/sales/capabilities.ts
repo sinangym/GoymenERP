@@ -80,6 +80,12 @@ export const SALES_HEADER_WRITE_CAPABILITY = 'sales.orders.header.write' as cons
  */
 export const SALES_OVER_DELIVERY_APPROVE_CAPABILITY = 'sales.orders.over-delivery.approve' as const
 
+/**
+ * SAT-D17 / SAT-D168: the line-closure CONTROL on S-04 ("Satırı eksikle kapat") for an order line with a shortfall. The shell
+ * publishes it only to an actor holding `sales.orders.lines.close` beside the read; no other Sales name confers it.
+ */
+export const SALES_LINE_CLOSE_CAPABILITY = 'sales.orders.lines.close' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -89,6 +95,7 @@ export type SalesCapabilityId =
   | typeof SALES_FORCE_CLOSE_CAPABILITY
   | typeof SALES_CLOSE_CAPABILITY
   | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
+  | typeof SALES_LINE_CLOSE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY

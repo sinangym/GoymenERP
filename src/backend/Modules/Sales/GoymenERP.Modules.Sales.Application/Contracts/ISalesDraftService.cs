@@ -151,6 +151,14 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> ApproveOverDeliveryAsync(Guid draftId, SalesDraftOverDeliveryApprovalRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// SAT-D17 / SAT-D168: POST …/{id}/line-closure — one line closed with a shortfall at the shipped total the user saw, under
+    /// <c>sales.orders.lines.close</c>; no reason (SAT-D215), the shipper never closes (fail-closed when the delivery owner does
+    /// not name the shipper), the block band never closes this way.
+    /// </summary>
+    Task<SalesOrderDraftResponse> CloseLineAsync(Guid draftId, SalesDraftLineClosureRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
     // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the
