@@ -261,8 +261,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
             // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
             // F2b: +4 invoice cancellation facts, ordinal-sorted (4575e229… -> c2205fa2…).
+            // F2b follow-up: +3 facts (admission after cancellation, late fence and race, status-only Down) (c2205fa2… -> 0f860d53…).
             ["tools/relational_inventory/finance.txt"] =
-                "a73d968c479c4144f195ad65b29e2eb81652fc0612a31464ba42249136d993fb",
+                "3a5f0e32618e98dc0270f1c9815208aafd074bbbe6e308e0ca56ba3010182677",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -1245,7 +1246,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // no direct connection, command, raw SQL or query-filter bypass surface.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] =
                     new(
-                        "57b8d750d7f405956a20aa5a339cb066a8a55f4f0b510aa7983db9d5857bb91b",
+                        "a2c5dcae6c456d691639780401714b000dcbbbb9c27de5aef978b6c343153174",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
