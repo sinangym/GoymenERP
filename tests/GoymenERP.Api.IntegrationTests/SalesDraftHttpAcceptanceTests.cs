@@ -676,6 +676,19 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             UserClosure(draftId);
 
+        // SAT-D30: the over-delivery approval command, recorded like the force-close's.
+        public Func<Guid, SalesDraftOverDeliveryApprovalRequest, Task<SalesOrderDraftResponse>> OverDeliveryApproval { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftOverDeliveryApprovalRequest Request, string Key)> OverDeliveryApprovalCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ApproveOverDeliveryAsync(Guid draftId, SalesDraftOverDeliveryApprovalRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            OverDeliveryApprovalCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return OverDeliveryApproval(draftId, request);
+        }
+
         public Func<Guid, SalesDraftRemainderChangeRequest, Task<SalesOrderDraftResponse>> RemainderRequest { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
 
@@ -2168,6 +2181,102 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using (var missing = await client.GetAsync(path))
         {
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval needs one canonical key and the strict body {expectedVersion, lineId,
+    /// shipped} before the service is reached; it answers 200 with the detail, carries the replay headers on a replayed result and
+    /// on a replayed terminal refusal, keeps 503 code-less and answers the block band as 422 with its stable code.
+    /// </summary>
+    [Fact]
+    public async Task Over_delivery_approval_uses_the_strict_envelope_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        const string segment = "over-delivery-approval";
+        var valid = JsonSerializer.Serialize(new SalesDraftOverDeliveryApprovalRequest("4", lineId, "102.5"), SalesDraftJson.Options);
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}")
+               {
+                   Content = new StringContent(valid, Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":4,\"lineId\":\"{lineId:D}\",\"shipped\":\"102.5\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{Guid.Empty:D}\",\"shipped\":\"102.5\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"0\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"-1\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":102.5}}",
+                     $"{{\"expectedVersion\":\"04\",\"lineId\":\"{lineId:D}\",\"shipped\":\"102.5\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"102.5\",\"reason\":\"x\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, segment, "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.OverDeliveryApprovalCalls);
+
+        service.OverDeliveryApproval = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"),
+            request.Shipped == "103", "SENTETIK-approve-first"));
+        using (var approved = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-approve", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            Assert.False(approved.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "4", lineId, "102.5", "SENTETIK-approve"),
+            (service.OverDeliveryApprovalCalls[0].DraftId, service.OverDeliveryApprovalCalls[0].Request.ExpectedVersion,
+                service.OverDeliveryApprovalCalls[0].Request.LineId, service.OverDeliveryApprovalCalls[0].Request.Shipped,
+                service.OverDeliveryApprovalCalls[0].Key));
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-approve-2",
+                   JsonSerializer.Serialize(new SalesDraftOverDeliveryApprovalRequest("4", lineId, "103"), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-approve-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.OverDeliveryApproval = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.OverDeliveryShipperUnverified,
+            [new("shippedBy", SalesDraftProblemCodesV1.OverDeliveryShipperUnverified)], true, "SENTETIK-unverified-first");
+        using (var refused = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-unverified", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal("true", Assert.Single(refused.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(SalesDraftProblemCodesV1.OverDeliveryShipperUnverified,
+                (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.OverDeliveryApproval = (_, _) => throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.OverDeliveryBlocked,
+            [new("lineId", SalesDraftProblemCodesV1.OverDeliveryBlocked)]);
+        using (var blocked = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-blocked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, blocked.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.OverDeliveryBlocked,
+                (await blocked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.OverDeliveryApproval = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.OverDeliveryPolicyUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.OverDeliveryPolicyUnavailable, await unavailable.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
         }
     }
 

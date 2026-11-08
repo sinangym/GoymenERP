@@ -257,6 +257,7 @@ export function SalesDraftDetailPage() {
           <SalesOrderStatusAxes
             key={`status:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             detail={outcome.data}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
           />
         ) : null
       }

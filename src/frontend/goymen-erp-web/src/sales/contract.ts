@@ -50,6 +50,8 @@ export const salesDraftForceCloseImpactPath = (id: string) => `${salesDraftDetai
 export const salesDraftForceClosePath = (id: string) => `${salesDraftDetailPath(id)}/force-close`
 /** SAT-D32: the user closure of a "kapanmaya hazır" order (POST, the close control's name) and its record (GET, the draft read). */
 export const salesDraftUserClosePath = (id: string) => `${salesDraftDetailPath(id)}/close`
+/** SAT-D30: POST — one line's approval-band over-delivery approved at the shipped total the user saw. */
+export const salesDraftOverDeliveryApprovalPath = (id: string) => `${salesDraftDetailPath(id)}/over-delivery-approval`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -634,6 +636,12 @@ export const SALES_PROBLEM_CODE = {
   forceCloseImpactChanged: 'sales_force_close_impact_changed',
   // SAT-D32: the order is not "kapanmaya hazır" — the server recomputed the status axes inside the save (not closed).
   orderNotReadyToClose: 'sales_order_not_ready_to_close',
+  // SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval's own answers (409 recorded, 422 block band; the 503s are code-less).
+  overDeliveryNotAwaitingApproval: 'sales_over_delivery_not_awaiting_approval',
+  overDeliveryBlocked: 'sales_over_delivery_blocked',
+  overDeliveryShippedChanged: 'sales_over_delivery_shipped_changed',
+  overDeliveryShipperUnverified: 'sales_over_delivery_shipper_unverified',
+  overDeliverySelfApproval: 'sales_over_delivery_self_approval',
   // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
   // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
   businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
@@ -1731,6 +1739,16 @@ export interface ForceCloseImpact {
   readonly impactToken: string
   readonly sources: readonly ForceCloseImpactSource[]
   readonly lines: readonly ForceCloseImpactLine[]
+}
+
+/**
+ * `SalesDraftOverDeliveryApprovalRequest` (SAT-D30): every member present — the draft version, the line and the shipped total
+ * exactly as the status read showed it (SAT-D213: the approval covers that total; another total is refused by the server).
+ */
+export interface DraftOverDeliveryApprovalRequest {
+  readonly expectedVersion: string
+  readonly lineId: string
+  readonly shipped: string
 }
 
 /** `SalesDraftForceCloseRequest`: every member present; the reason is required (the server trims and bounds it). */

@@ -2220,6 +2220,27 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        public List<OverDeliveryApprovalFacts> OverDeliveryApprovals { get; } = [];
+
+        public List<OverDeliveryApprovalInput> OverDeliveryInputs { get; } = [];
+
+        public async Task<SalesDraftStateResult?> ApproveOverDeliveryAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, OverDeliveryApprovalInput, DateTimeOffset, OverDeliveryApprovalFacts> mutate,
+            SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<OverDeliveryApprovalInput>> beforeWrite,
+            CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ApproveOverDeliveryV1) throw new ArgumentException("wrong command", nameof(commandName));
+            OverDeliveryApprovalInput? input = null;
+            OverDeliveryApprovalFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, input!, now), audit,
+                async token => input = await beforeWrite(draft!, token), cancellationToken);
+            if (input is not null) OverDeliveryInputs.Add(input);
+            if (recorded is not null) OverDeliveryApprovals.Add(recorded);
+            return result;
+        }
+
         public List<RemainderChangeFacts> RemainderChanges { get; } = [];
 
         public async Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,

@@ -435,7 +435,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 132, "durableStores": 24},
+            {"dbContexts": 18, "migrations": 133, "durableStores": 24},
             self.inventory["counts"],
         )
         actual = {
@@ -721,7 +721,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         expected_business = set(generator.NON_MESSAGE_DELIVERY_TABLES)
         discovered = set(generator._discover_message_delivery_tables(self.snapshot))
         self.assertTrue(expected_message.isdisjoint(expected_business))
-        self.assertEqual(8, len(discovered))
+        # SAT-D30: + sales.DraftOverDeliveryApprovals, a business table whose name matches "deliver".
+        self.assertEqual(9, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
@@ -1920,7 +1921,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(132, len(migrations))
+        self.assertEqual(133, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",

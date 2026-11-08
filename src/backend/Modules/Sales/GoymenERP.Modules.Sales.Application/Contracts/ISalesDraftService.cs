@@ -143,6 +143,14 @@ public interface ISalesDraftService
     Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// SAT-D30 / SAT-D213 / SAT-D216: POST …/{id}/over-delivery-approval — one line's approval-band over-delivery approved at the
+    /// shipped total the user saw, under <c>sales.orders.over-delivery.approve</c>; the shipper never approves (fail-closed when
+    /// the delivery owner does not name the shipper).
+    /// </summary>
+    Task<SalesOrderDraftResponse> ApproveOverDeliveryAsync(Guid draftId, SalesDraftOverDeliveryApprovalRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
     // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the

@@ -66,6 +66,7 @@ import {
   salesDraftForceCloseImpactPath,
   salesDraftForceClosePath,
   salesDraftUserClosePath,
+  salesDraftOverDeliveryApprovalPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -91,6 +92,7 @@ import {
   type DraftCancelRequest,
   type DraftForceCloseRequest,
   type DraftCloseRequest,
+  type DraftOverDeliveryApprovalRequest,
   type ForceCloseImpact,
   type ForceClosureRead,
   type UserClosureRead,
@@ -1220,6 +1222,50 @@ export async function sendDraftClose(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftUserClosePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D30 / SAT-D213 / SAT-D216: approve one line's approval-band over-delivery at the shipped total the status read showed.
+ * The force-close's keyed-attempt rules: 200 with the detail whose replay flag agrees with the header and whose identity is the
+ * order's in the bound company, else malformed; the server judges the band, the total and the shipper ≠ approver rule.
+ */
+export async function sendDraftOverDeliveryApproval(
+  payload: DraftOverDeliveryApprovalRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftOverDeliveryApprovalPath(context.draftId),
     {
       method: 'POST',
       headers: {

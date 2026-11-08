@@ -169,6 +169,15 @@ public static class SalesRuleCodes
     /// </summary>
     public const string HeaderRevisionQuoteCustomer = "sales_header_revision_quote_customer";
 
+    /// <summary>SAT-D30: an over-delivery approval names a line that is not on the order.</summary>
+    public const string OverDeliveryLineUnknown = "sales_over_delivery_line_unknown";
+
+    /// <summary>
+    /// SAT-D216 (EK37): the person the delivery owner names as having made a shipment of the line does not approve the line's
+    /// over-delivery ("sevki yapan kişi kendi işlemini onaylayamaz; başkası onaylar").
+    /// </summary>
+    public const string OverDeliverySelfApproval = "sales_over_delivery_self_approval";
+
     /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
     public const string DueTermsRequired = "sales_due_terms_required";
 
