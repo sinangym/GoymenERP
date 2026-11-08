@@ -49,11 +49,11 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 139
+EXPECTED_MIGRATION_COUNT = 140
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "db979e84dab0c96af66ca2b025b0cf7ba9dab86e6b15e492c85a2ea8b1cb27d5"
+    "ce09ab530944ef1add6ce69653eef9e3f0a646936119ff3937d0258c819c00f0"
 )
-EXPECTED_DURABLE_STORE_COUNT = 26
+EXPECTED_DURABLE_STORE_COUNT = 27
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
