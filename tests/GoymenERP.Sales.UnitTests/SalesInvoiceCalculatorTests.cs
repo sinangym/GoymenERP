@@ -184,6 +184,39 @@ public sealed class SalesInvoiceCalculatorTests
         Assert.Equal([Day.AddDays(30), Day.AddDays(60)], invoice.Instalments.Select(item => item.DueDate));
     }
 
+    [Theory]
+    [InlineData("0.03")]
+    [InlineData("-0.03")]
+    [InlineData("0")]
+    public void A_foreign_currency_invoice_finalized_with_a_match_difference_is_readable_again_from_the_store(string delta)
+    {
+        // Finalize splits the TL instalments against the official TL amount; the stored facts must restore against the same total.
+        var terms = SalesDueTerms.Create(
+        [
+            new SalesDueInstalment(1, SalesDueBasis.ShipmentDate, 30, "50"),
+            new SalesDueInstalment(2, SalesDueBasis.ShipmentDate, 60, "50"),
+        ]);
+        var due = SalesDueDateCalculator.Compute(terms, Day, Day);
+        var header = Header(Rate: new SalesInvoiceRateSnapshot(34.5678m, Day, Day, Try, 2)) with { CurrencyId = Usd };
+        var invoice = SalesInvoice.Create(Guid.NewGuid(), Company, "SF-2026-000002", header, [Share(1, "3", "33.33"), Share(2, "1", "0.02")],
+            due.DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
+        invoice.Submit(invoice.Version, "preparer", DateTimeOffset.UnixEpoch);
+        invoice.Approve(invoice.Version, "approver", DateTimeOffset.UnixEpoch);
+        var official = invoice.PayableFunctionalAmount + decimal.Parse(delta, System.Globalization.CultureInfo.InvariantCulture);
+        invoice.RecordMatch(invoice.Version, "matcher",
+            new SalesOfficialInvoiceFacts("GIB2026000000001", new string('A', SalesInvoice.EttnLength), header.PartyId, Usd,
+                invoice.Totals.Payable.Amount, official), 0.05m, false, null, DateTimeOffset.UnixEpoch);
+        var finalization = invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(official, finalization.Plan.Sum(item => item.FunctionalAmount!.Value));
+
+        var restored = SalesInvoice.Restore(invoice.Id, Company, invoice.DocumentNo, invoice.Header, invoice.State, invoice.Version,
+            invoice.CreatedBy, invoice.CreatedAtUtc, invoice.Lines, invoice.Instalments, invoice.Decision);
+        restored.RestoreMatch(invoice.Match!);
+        restored.RestoreFinalization(finalization);
+        Assert.Equal(finalization, restored.Finalization);
+    }
+
     [Fact]
     public void The_draft_refuses_one_shipment_twice_a_pending_due_date_and_an_unpriced_share()
     {

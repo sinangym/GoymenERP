@@ -59,11 +59,7 @@ public sealed partial class SalesInvoice
         // A recorded match is already either within the policy tolerance or approved above it with a reason (SAT-D106/D204), so a
         // non-zero difference does not block here. The official document governs (SAT-D89/D229): the TL split of the instalments
         // adds up to the official TL amount, not to the ERP's own figure.
-        var payable = FunctionalTotals?.Payable;
-        if (Header.Rate is { } rate && payable is not null && Match.Difference != 0m)
-        {
-            payable = Money.Of(Match.OfficialFunctionalAmount, rate.FunctionalCurrencyId, rate.FunctionalScale);
-        }
+        var payable = GoverningFunctionalPayable();
 
         var split = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Header.Rate, Header.CurrencyId, payable);
         var plan = new List<SalesInvoiceFinalInstalment>(instalments.Count);
@@ -107,11 +103,26 @@ public sealed partial class SalesInvoice
         return Finalization;
     }
 
+    /// <summary>
+    /// The TL total the instalment split must add up to: the official TL amount when a match with a non-zero difference is recorded
+    /// (SAT-D89/D229), otherwise the ERP's own payable. Finalize and restore share this so what is written is always readable.
+    /// </summary>
+    private Money? GoverningFunctionalPayable()
+    {
+        var payable = FunctionalTotals?.Payable;
+        if (Header.Rate is { } rate && payable is not null && Match is { } match && match.Difference != 0m)
+        {
+            return Money.Of(match.OfficialFunctionalAmount, rate.FunctionalCurrencyId, rate.FunctionalScale);
+        }
+
+        return payable;
+    }
+
     /// <summary>Attaches the stored finalisation when the aggregate is restored from the store.</summary>
     public void RestoreFinalization(SalesInvoiceFinalization facts)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        var payable = FunctionalTotals?.Payable.Amount;
+        var payable = GoverningFunctionalPayable()?.Amount;
         var admitted = facts.FinanceStatus == SalesInvoiceFinanceStatus.Admitted;
         var split = facts.Plan.Where(item => item.FunctionalAmount is not null).Sum(item => item.FunctionalAmount!.Value);
         if (State != SalesInvoiceState.Finalized || Finalization is not null || Match is null || facts.FinalizedVersion != Version
