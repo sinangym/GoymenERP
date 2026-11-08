@@ -58,7 +58,35 @@ gh api repos/sinangym/GoymenERP/pulls/<n>/reviews -X POST \
 
 Before merging check: author ≠ reviewers; required reviews present for **this** head (last APPROVE/DELTA-OK sha =
 expected head); fresh required CI green on that head (not for doc-only); no open P0/P1; new behaviour test; K3:
-locked decisions only, no open policy chosen. Then squash with expected head:
+locked decisions only, no open policy chosen.
+
+**Main freshness check (Faz 0, GOV-D2/GOV-D3 — `docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md`,
+AGENTS.md).** For any PR touching `src/backend/`, a migration, a root build-control file (`REPOSITORY_BUILD_CONTROL_PATHS` in
+`tools/generate_recovery_surface_inventory.py`: `Directory.Build.*`, `Directory.Packages.*`, `NuGet.Config`, `global.json`,
+`.editorconfig`/`.globalconfig`, `src/.editorconfig` …) or the recovery inventory
+(`tools/generate_recovery_surface_inventory.py`, `contracts/recovery/**`, `tests/recovery_surface_inventory/**`,
+`tests/release_manifest/**`), every merger (`CODEX-ORCHESTRATOR` and the Claude lane) runs, immediately before the
+squash:
+```bash
+git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected head sha>; echo "exit=$? main=$(git rev-parse origin/main)"
+```
+Write the main SHA and exit code in the merge receipt. Fresh required CI must be green on that same head. Exit ≠ 0:
+do not merge; pick the tier (Faz 0.1, GOV-D3 scope logic, #976 measurement). Run the `SCOPE=(…)` diff
+from the Faz 0 paragraph of `AGENTS.md` (same list, word for word):
+`git diff --quiet "$(git merge-base origin/main <expected head>)" origin/main -- "${SCOPE[@]}"`.
+**(a)** exit ≠ 0 (main moved inside the scope): merge main into the PR, re-pin (`main-merge-resync`), rerun CI
+(K3: GOV-D1, two reviews; K1/K2: the new head needs `DELTA-OK` per v4). **(b)** exit 0 (main moved only outside the
+scope): no re-pin expected; if CI goes red, fall back to (a). CI tests the merge ref, so a fresh one is needed; the only
+way is a **non-empty mechanical merge commit** of origin/main into the PR branch, conflict-free (never an empty commit,
+"re-run jobs" or close/reopen). No merge without green required CI on the new head. `DELTA-OK` proof:
+`git rev-parse <new head>^1` equals `<old head>`, and `git diff <old head> <new head>` equals
+`git diff $(git merge-base origin/main <old head>) origin/main` (a conflict resolution breaks the equality and leaves
+(b)). An independent reviewer signs, writing the `--stat` and the class; the author or merger cannot sign their own
+merge. K3 keeps its two exact-head reviews; (b) covers only the mechanical delta. Receipt: main SHA, tier, new green CI run id. P3: the
+squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
+merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
+
+Then squash with expected head:
 ```bash
 gh api -X PUT repos/sinangym/GoymenERP/pulls/<n>/merge -f merge_method=squash -f sha=<expected head sha>
 ```
@@ -68,7 +96,7 @@ enabling workflows in Settings → Actions, grant/rol/Critical, production activ
 ## 5. Issue #66 receipt (one line, right after merge)
 
 ```
-MERGED #<n> <40-char merge sha> — <K-level> <short title>; reviews: <url A> · <url B> (head <8-char sha>)[; CI <x>/<y> green]
+MERGED #<n> <40-char merge sha> — <K-level> <short title>; reviews: <url A> · <url B> (head <8-char sha>)[; CI <x>/<y> green][; main <8-char sha> ancestor exit 0]
 ```
 ```bash
 gh api repos/sinangym/GoymenERP/issues/66/comments -f body='MERGED #… …'

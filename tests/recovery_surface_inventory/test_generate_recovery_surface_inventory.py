@@ -41,9 +41,6 @@ EXPECTED_STORES = {
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
-    ("finance", "InvoiceCancellations"): (
-        "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
-    ),
     ("finance", "OfficialInvoiceImportCommands"): (
         "FinanceOfficialInvoiceImportCommandRow", "idempotency", "FinanceDbContext"
     ),
@@ -84,6 +81,8 @@ EXPECTED_STORES = {
         "PurchaseAttemptRow", "idempotency", "PurchasingDbContext"
     ),
     ("sales", "DraftAttempts"): ("DraftAttemptRow", "idempotency", "SalesDbContext"),
+    ("sales", "InvoiceAttempts"): ("InvoiceAttemptRow", "idempotency", "SalesDbContext"),
+    ("sales", "OutboxMessages"): ("SalesOutboxRow", "outbox", "SalesDbContext"),
     ("sales", "QuoteAttempts"): ("QuoteAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "RequestAttempts"): ("RequestAttemptRow", "idempotency", "SalesDbContext"),
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
@@ -438,7 +437,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 130, "durableStores": 25},
+            {"dbContexts": 18, "migrations": 139, "durableStores": 26},
             self.inventory["counts"],
         )
         actual = {
@@ -448,13 +447,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(25, len(actual))
+        self.assertEqual(26, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(25, len(specs_by_id))
+        self.assertEqual(26, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -724,7 +723,9 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         expected_business = set(generator.NON_MESSAGE_DELIVERY_TABLES)
         discovered = set(generator._discover_message_delivery_tables(self.snapshot))
         self.assertTrue(expected_message.isdisjoint(expected_business))
-        self.assertEqual(8, len(discovered))
+        # SAT-D30: + sales.DraftOverDeliveryApprovals, a business table whose name matches "deliver".
+        # S5 API-36: + sales.OutboxMessages (the Sales transactional outbox, a message-delivery table).
+        self.assertEqual(10, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
@@ -1923,7 +1924,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(130, len(migrations))
+        self.assertEqual(139, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2264,7 +2265,15 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1334, len(source_paths))
+        # Recovery pin Faz 1: the full-tree count is evidence (sourceSurface), not a pin.
+        self.assertEqual(
+            (len(source_paths), generator._source_surface_fingerprint(self.snapshot)[1]),
+            (
+                self.inventory["sourceSurface"]["fileCount"],
+                self.inventory["sourceSurface"]["sha256"],
+            ),
+        )
+        self.assertIs(False, self.inventory["sourceSurface"]["blocking"])
         # API-41 / API-42: the Sales report contracts, the draft service's report half and its open-order report, the store's
         # report queries and the report routes (five compilation files).
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
@@ -2421,10 +2430,20 @@ internal {{declaration}} : IDocumentObjectStoreV1
         )
         self.assertEqual(
             (
-                generator.EXPECTED_SOURCE_SURFACE_FILE_COUNT,
-                generator.EXPECTED_SOURCE_SURFACE_FINGERPRINT,
+                generator.EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT,
+                generator.EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT,
             ),
-            generator._source_surface_fingerprint(self.snapshot),
+            generator._risky_source_surface_fingerprint(self.snapshot),
+        )
+        self.assertEqual(
+            (
+                generator.EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT,
+                generator.EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT,
+            ),
+            (
+                self.inventory["sourceSurface"]["riskyFileCount"],
+                self.inventory["sourceSurface"]["riskySha256"],
+            ),
         )
         api_project = "src/backend/GoymenERP.Api/GoymenERP.Api.csproj"
         mutations = (
@@ -2508,6 +2527,203 @@ internal {{declaration}} : IDocumentObjectStoreV1
             lowercase_control.write_text("<Project />\n", encoding="utf-8")
             with self.assertRaisesRegex(generator.InventoryError, "build-control shadow"):
                 generator._require_no_worktree_source_shadows(repository, {})
+
+    def test_narrow_risky_pin_rejects_partials_hidden_sql_aliases_and_build_controls(self) -> None:
+        # Recovery pin Faz 1 negative cases: each change must move the narrow pin.
+        drift = "risky C# compilation source surface drifted"
+        ordinary = "src/backend/GoymenERP.Api/Endpoints/AuditEndpoints.cs"
+        foreign = "src/backend/Modules/Test/"
+        mutations = {
+            "store-partial": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}SalesStore.Hidden.cs",
+                "namespace Foreign.Zone;\n"
+                "internal sealed partial class SalesStore { internal int Hidden() => 1; }\n",
+            ),
+            "adapter-partial": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}FileSystemDocumentObjectStore.Hidden.cs",
+                "namespace Foreign.Zone;\n"
+                "internal sealed partial class FileSystemDocumentObjectStore { }\n",
+            ),
+            "db-context-partial": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}SalesDbContext.Hidden.cs",
+                "namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;\n"
+                "internal sealed partial class SalesDbContext { }\n",
+            ),
+            "hidden-sql-client": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}HiddenProbe.cs",
+                "namespace Foreign.Zone;\ninternal static class HiddenProbe\n{\n"
+                "    internal static object Open() => new Microsoft.Data.SqlClient.SqlConnection();\n}\n",
+            ),
+            "hidden-db-context": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}HiddenContextProbe.cs",
+                "namespace Foreign.Zone;\ninternal static class HiddenContextProbe\n{\n"
+                "#if false\n    internal static System.Type T() => "
+                "typeof(GoymenERP.Modules.Sales.Infrastructure.Persistence.SalesDbContext);\n"
+                "#endif\n}\n",
+            ),
+            "ordinary-file-gains-sql": mutate_snapshot(
+                self.snapshot,
+                ordinary,
+                lambda text: text
+                + "\ninternal static class AuditEndpointsSqlProbe\n{\n"
+                "    internal static object Open() => new SqlCommand();\n}\n",
+            ),
+            "file-local-alias": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}AliasProbe.cs",
+                "using Ctx = Foreign.Zone.Thing;\nnamespace Foreign.Zone;\n"
+                "internal static class AliasProbe { }\n",
+            ),
+            "global-alias": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}GlobalAliasProbe.cs",
+                "global using Ctx = Foreign.Zone.Thing;\nnamespace Foreign.Zone;\n"
+                "internal static class GlobalAliasProbe { }\n",
+            ),
+            "global-alias-to-db-context": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}GlobalContextAliasProbe.cs",
+                "global using Ctx = Microsoft.EntityFrameworkCore.DbContext;\n"
+                "namespace Foreign.Zone;\ninternal static class GlobalContextAliasProbe { }\n",
+            ),
+            "symbol-shadow": snapshot_with_file(
+                self.snapshot,
+                "src/backend/Modules/Documents/"
+                "GoymenERP.Modules.Documents.Infrastructure/Storage/Path.cs",
+                "namespace GoymenERP.Modules.Documents.Infrastructure.Storage;\n"
+                "internal static class Path { }\n",
+            ),
+            "internals-visible-to-assembly-attribute": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}VisibleProbe.cs",
+                "[assembly: System.Runtime.CompilerServices.InternalsVisibleTo(\"Hidden\")]\n"
+                "namespace Foreign.Zone;\ninternal static class VisibleProbe { }\n",
+            ),
+            "module-initializer": snapshot_with_file(
+                self.snapshot,
+                f"{foreign}InitializerProbe.cs",
+                "namespace Foreign.Zone;\ninternal static class InitializerProbe\n{\n"
+                "    [System.Runtime.CompilerServices.ModuleInitializer]\n"
+                "    internal static void Run() { }\n}\n",
+            ),
+            "global-json": mutate_snapshot(
+                self.snapshot, "global.json", lambda text: text.replace("{", '{ "x": 1,', 1)
+            ),
+            "directory-build-props": mutate_snapshot(
+                self.snapshot,
+                "Directory.Build.props",
+                lambda text: text.replace("</Project>", "<!-- probe --></Project>", 1),
+            ),
+            "nested-directory-build-targets": snapshot_with_file(
+                self.snapshot,
+                "src/backend/Directory.Build.targets",
+                '<Project><ItemGroup><Compile Include="Hidden.cs" /></ItemGroup></Project>\n',
+            ),
+            "project-rsp": snapshot_with_file(
+                self.snapshot,
+                "src/backend/GoymenERP.Api/Directory.Build.rsp",
+                "/p:CustomAfterMicrosoftCommonTargets=Hidden.targets\n",
+            ),
+            "csproj": mutate_snapshot(
+                self.snapshot,
+                "src/backend/GoymenERP.Api/GoymenERP.Api.csproj",
+                lambda text: text.replace("</Project>", "<!-- probe --></Project>", 1),
+            ),
+        }
+        baseline = generator._risky_source_surface_fingerprint(self.snapshot)
+        for label, changed in mutations.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(baseline, generator._risky_source_surface_fingerprint(changed))
+                with self.assertRaisesRegex(generator.InventoryError, drift):
+                    generator._require_reviewed_source_surface(changed)
+
+        # A global alias to a risky target becomes a risky token for every file that uses it.
+        aliased = mutate_snapshot(
+            mutations["global-alias-to-db-context"],
+            ordinary,
+            lambda text: text + "\ninternal static class AuditAliasUse { static Ctx? Value; }\n",
+        )
+        self.assertNotIn(ordinary, generator._risky_source_surface_paths(self.snapshot))
+        self.assertIn(ordinary, generator._risky_source_surface_paths(aliased))
+
+    def test_narrow_risky_pin_rejects_delegate_symbol_shadows(self) -> None:
+        # K3 review P2: a delegate type named like an imported type (Task, Guid) shadows it in a
+        # risky file of the same or an enclosed namespace exactly as a class would.
+        drift = "risky C# compilation source surface drifted"
+        inventory = "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        namespace = "namespace GoymenERP.Modules.Inventory.Infrastructure;\n"
+        probes = {
+            "public-delegate-task": "public delegate void Task();\n",
+            "global-namespace-guid": "delegate void Guid();\n",
+            "generic-delegate": "public delegate void Task<T>(T value);\n",
+            "internal-modifiers-attribute": (
+                "[System.Obsolete]\ninternal unsafe delegate Task<int> Guid<T>(T value) "
+                "where T : class;\n"
+            ),
+            "tuple-and-ref-return": "public delegate (int A, int B) Guid();\n",
+        }
+        baseline = generator._risky_source_surface_fingerprint(self.snapshot)
+        for label, declaration in probes.items():
+            path = f"{inventory}DelegateShadow{label.title().replace('-', '')}Probe.cs"
+            body = declaration if label == "global-namespace-guid" else namespace + declaration
+            with self.subTest(delegate=label):
+                changed = snapshot_with_file(self.snapshot, path, body)
+                self.assertNotEqual(baseline, generator._risky_source_surface_fingerprint(changed))
+                with self.assertRaisesRegex(generator.InventoryError, drift):
+                    generator._require_reviewed_source_surface(changed)
+
+        # Comments, strings and anonymous methods never declare a delegate type.
+        harmless = (
+            "// public delegate void Task();\n/* delegate void Guid(); */\n"
+            'internal static class DelegateText { const string S = "delegate void Task();"; '
+            "static void M() { System.Action a = delegate { }; a(); } }\n"
+        )
+        changed = snapshot_with_file(self.snapshot, f"{inventory}DelegateTextProbe.cs", harmless)
+        self.assertEqual(baseline, generator._risky_source_surface_fingerprint(changed))
+
+    def test_narrow_risky_pin_ignores_ordinary_endpoint_and_business_changes(self) -> None:
+        # Recovery pin Faz 1 positive case: ordinary backend edits do not need a re-pin, but the
+        # non-blocking sourceSurface evidence still records them.
+        ordinary = "src/backend/GoymenERP.Api/Endpoints/AuditEndpoints.cs"
+        self.assertNotIn(ordinary, generator._risky_source_surface_paths(self.snapshot))
+        changes = (
+            mutate_snapshot(
+                self.snapshot,
+                ordinary,
+                lambda text: text
+                + "\ninternal static class AuditEndpointsOrdinaryProbe\n{\n"
+                "    internal const int Value = 1;\n}\n",
+            ),
+            snapshot_with_file(
+                self.snapshot,
+                "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+                "Contracts/SalesOrdinaryProbeV1.cs",
+                "namespace GoymenERP.Modules.Sales.Application.Contracts;\n\n"
+                "public sealed record SalesOrdinaryProbeV1(int Value);\n",
+            ),
+        )
+        baseline_evidence = generator._source_surface_record(self.snapshot)
+        for changed in changes:
+            with self.subTest(paths=sorted(set(changed.files) ^ set(self.snapshot.files))):
+                generator._require_reviewed_source_surface(changed)
+                evidence = generator._source_surface_record(changed)
+                self.assertNotEqual(baseline_evidence["sha256"], evidence["sha256"])
+                self.assertEqual(baseline_evidence["riskySha256"], evidence["riskySha256"])
+                self.assertIs(False, evidence["blocking"])
+
+        forged = copy.deepcopy(self.inventory)
+        forged["sourceSurface"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(generator.InventoryError, "sourceSurface evidence"):
+            generator._validate_inventory_for_snapshot(self.snapshot, forged)
+        blocking = copy.deepcopy(self.inventory)
+        blocking["sourceSurface"]["blocking"] = True
+        with self.assertRaises(generator.InventoryError):
+            generator._validate_inventory_for_snapshot(self.snapshot, blocking)
 
     def test_provenance_rejects_arbitrary_commit_and_nested_root(self) -> None:
         with self.assertRaisesRegex(generator.InventoryError, "current Git HEAD"):

@@ -247,14 +247,24 @@ export interface HarnessConfig {
   readonly onForceCloseImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** No 30: a POST on `/sales/drafts/{id}/force-close`. */
   readonly onForceClose?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D30: a POST on `/sales/drafts/{id}/over-delivery-approval`. */
+  readonly onOverDeliveryApproval?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D17: a POST on `/sales/drafts/{id}/line-closure`. */
+  readonly onLineClosure?: (call: RecordedCall) => Response | Promise<Response>
   /** No 30: GET `/sales/drafts/{id}/force-close`; default: no recorded closure. */
   readonly onForceClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** SAT-D32: a POST on `/sales/drafts/{id}/close`. */
+  readonly onUserClose?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D32: GET `/sales/drafts/{id}/close`; default: no recorded user closure. */
+  readonly onUserClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-005: a POST on `/sales/drafts/{id}/cancellation`. */
   readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D167 (EK24): a POST on `/sales/drafts/{id}/line-revision`. */
+  readonly onLineRevision?: (call: RecordedCall) => Response | Promise<Response>
   /** API-04: GET `/sales/drafts/{id}/header` (the S-04 summary and the header-revision form); default: `headerOf` the served detail. */
   readonly onHeader?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** API-04: a POST on `/sales/drafts/{id}/header-revision`. */
@@ -338,9 +348,21 @@ export function installFetch(config: HarnessConfig = {}) {
           if (config.onHeaderRevision === undefined) throw new Error('unexpected header revision')
           return config.onHeaderRevision(call)
         }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/line-revision$/.test(url)) {
+          if (config.onLineRevision === undefined) throw new Error('unexpected line revision')
+          return config.onLineRevision(call)
+        }
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
           return config.onQuantityRevision(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/over-delivery-approval$/.test(url)) {
+          if (config.onOverDeliveryApproval === undefined) throw new Error('unexpected over-delivery approval')
+          return config.onOverDeliveryApproval(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/line-closure$/.test(url)) {
+          if (config.onLineClosure === undefined) throw new Error('unexpected line closure')
+          return config.onLineClosure(call)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/force-close-impact$/.test(url)) {
           if (config.onForceCloseImpact === undefined) throw new Error('unexpected force-close-impact read')
@@ -352,6 +374,13 @@ export function installFetch(config: HarnessConfig = {}) {
             return config.onForceClose(call)
           }
           return config.onForceClosure?.(url, call.companyId) ?? json({ forceClosure: null })
+        }
+        if (/\/sales\/drafts\/[^/?]+\/close$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onUserClose === undefined) throw new Error('unexpected user close')
+            return config.onUserClose(call)
+          }
+          return config.onUserClosure?.(url, call.companyId) ?? json({ userClosure: null })
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
           if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')

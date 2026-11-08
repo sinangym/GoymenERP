@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
@@ -16,7 +17,11 @@ public sealed record CreateSalesQuoteRequest(
     Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, DateOnly BusinessDate,
     IReadOnlyList<SalesQuoteLineRequest> Lines,
     IReadOnlyList<Guid>? RequestIds = null,
-    DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null);
+    DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null,
+    // SAT-D132 (EK18): the quote's due terms ("teklif vade"), entered by hand, never defaulted (SAT-D127); they carry to the order at
+    // the conversion. Omitted from the canonical replay content when absent, so an older create's attempt identity is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesDueTermsV1? DueTerms = null);
 
 public sealed record SalesQuoteLineRequest(
     Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid OrderUnitId, string Quantity,
@@ -26,7 +31,10 @@ public sealed record SalesQuoteLineRequest(
 /// <summary>API-22: the next revision of an open quote — every line and the terms replaced; the customer, currency, date and requests stay.</summary>
 public sealed record SalesQuoteRevisionRequest(
     string ExpectedVersion, IReadOnlyList<SalesQuoteLineRequest> Lines,
-    DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null);
+    DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null,
+    // SAT-D132: the terms are replaced as a whole, so an omitted value clears the due terms of the new revision.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesDueTermsV1? DueTerms = null);
 
 /// <summary>
 /// API-24 v2 (SAT-D25; <c>RecordSalesQuoteLossV2</c>, which retires the free-text v1): the loss of an open quote with the id
@@ -89,12 +97,15 @@ public sealed record SalesQuoteExpiryV1(DateOnly BusinessDay, bool IsExpired, bo
 /// <summary>
 /// The quote detail. Additive members (S4 follow-up, SAT-D24/D44): <see cref="CreatedBy"/>, <see cref="Revisions"/> (who
 /// created and revised it), <see cref="ExpiryApprovals"/> (who approved an expired conversion) and <see cref="Expiry"/>.
+/// SAT-D132: <see cref="DueTerms"/> are commercial terms disclosed only with the price read (<see cref="DueTermsDisclosure"/>
+/// <c>Visible</c>), else withheld (<c>Withheld</c>, null).
 /// </summary>
 public sealed record SalesQuoteDetailView(
     SalesQuoteSummaryView Quote, IReadOnlyList<Guid> RequestIds, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesQuoteLineView> Lines, SalesQuoteLossV1? Loss, SalesQuoteConversionV1? Conversion,
     string CreatedBy, IReadOnlyList<SalesQuoteRevisionRecordV1> Revisions, IReadOnlyList<SalesQuoteExpiryApprovalV1> ExpiryApprovals,
-    SalesQuoteExpiryV1 Expiry);
+    SalesQuoteExpiryV1 Expiry,
+    string DueTermsDisclosure = "Withheld", SalesDueTermsV1? DueTerms = null);
 
 /// <summary>
 /// SAT-D39: the default validity suggested for a new quote on <see cref="BusinessDate"/> — the quote's business date plus the
@@ -219,6 +230,7 @@ public static class SalesQuoteJson
             || request.Note?.Length > SalesQuote.MaximumNoteLength
             || request.RequestIds is { } ids && (ids.Count > SalesQuote.MaximumRequests || ids.Any(id => id == Guid.Empty) || ids.Distinct().Count() != ids.Count))
             throw new JsonException("Invalid quote fields.");
+        if (request.DueTerms is { } dueTerms) SalesDraftHeaderApiV1.RequireDueTermsShape(dueTerms);
         RequireLines(request.Lines);
         return request;
     }
@@ -230,6 +242,7 @@ public static class SalesQuoteJson
         RequireVersion(request.ExpectedVersion);
         if (request.Note?.Length > SalesQuote.MaximumNoteLength)
             throw new JsonException("Invalid note.");
+        if (request.DueTerms is { } dueTerms) SalesDraftHeaderApiV1.RequireDueTermsShape(dueTerms);
         RequireLines(request.Lines);
         return request;
     }

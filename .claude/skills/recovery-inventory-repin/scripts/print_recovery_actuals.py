@@ -5,7 +5,7 @@ Read-only helper for the recovery-inventory-repin skill. It imports the generato
 repository's own tools/ directory and evaluates the same functions the generator uses, for the
 current HEAD commit, and prints:
 
-  * source surface (EXPECTED_SOURCE_SURFACE_FILE_COUNT / _FINGERPRINT)
+  * narrow risky source surface (EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT / _FINGERPRINT)
   * DbContext and Migration declaration sets (EXPECTED_*_COUNT / _DECLARATION_FINGERPRINT)
   * Audit live-source set (EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT / _FINGERPRINT)
   * every drifted REVIEWED_OPERATIVE_METHOD_FINGERPRINTS entry
@@ -41,8 +41,8 @@ def main() -> int:
         if actual != expected:
             print(f"      {label}: pinned count={expected[0]} fingerprint={expected[1]}")
 
-    line("source surface", g._source_surface_fingerprint(snapshot),
-         (g.EXPECTED_SOURCE_SURFACE_FILE_COUNT, g.EXPECTED_SOURCE_SURFACE_FINGERPRINT))
+    line("risky source surface", g._risky_source_surface_fingerprint(snapshot),
+         (g.EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT, g.EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT))
     for label, base, count, fingerprint in (
         ("DbContext declarations", "DbContext", g.EXPECTED_DB_CONTEXT_COUNT,
          g.EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT),

@@ -121,7 +121,7 @@ public sealed partial class SalesDraftServiceTests
 
         var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
 
-        // SAT-D30: no over-delivery approval record exists yet, so the line stays "onay bekliyor" (fail-closed).
+        // SAT-D30: no over-delivery approval covers the line, so it stays "onay bekliyor" (fail-closed).
         Assert.Equal(("AwaitingApproval", false, false), (status.Realization.State, status.Realization.Warning, status.ReadyToClose));
         Assert.Equal(
             [("Completed", "Over", "0.012", "Within", false), ("AwaitingApproval", "Over", "0.045", "Approval", false)],
