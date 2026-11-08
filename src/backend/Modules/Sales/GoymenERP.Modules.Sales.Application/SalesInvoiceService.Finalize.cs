@@ -262,6 +262,17 @@ public sealed partial class SalesInvoiceService
     private static string RedriveKey(Guid invoiceId, SalesInvoiceFinalization finalization) => string.Create(CultureInfo.InvariantCulture,
         $"{AdmissionKeyPrefix}:{invoiceId:D}:{finalization.FinalizedVersion}:{finalization.AttemptCount + 1}");
 
+    /// <summary>
+    /// Whether a ledger outcome written by <see cref="OutcomeText"/> records a Finance refusal (<c>refused</c> or
+    /// <c>refused:&lt;reason&gt;</c>). Read by the Kontrol Merkezi (API-37); a null or other outcome is not a refusal.
+    /// </summary>
+    internal static bool IsRefusedFinanceOutcome(string? outcome)
+    {
+        var name = SalesFinanceAdmissionOutcomeV1.Refused.ToString().ToLowerInvariant();
+        return outcome is not null && (string.Equals(outcome, name, StringComparison.Ordinal)
+            || outcome.StartsWith(name + ":", StringComparison.Ordinal));
+    }
+
     /// <summary>The ledger's last outcome: the outcome name and a short ASCII reason, within the column.</summary>
     private static string OutcomeText(SalesFinanceAdmissionAnswerV1 answer)
     {

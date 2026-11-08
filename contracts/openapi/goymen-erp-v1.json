@@ -117861,7 +117861,9 @@
           "UninvoicedDispatchOverdue",
           "InvoiceNeedsReview",
           "InvoiceAwaitingOfficialMatch",
-          "OfficialDocumentDeviation"
+          "OfficialDocumentDeviation",
+          "InvoiceFinalizationBlocked",
+          "InvoiceFinanceAdmissionWaiting"
         ]
       },
       "SalesControlCenterCheckStateView": {
