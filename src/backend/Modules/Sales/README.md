@@ -795,3 +795,22 @@ approve their own over-delivery.
 | Readers | The status read and the API-41 open-order report feed the recorded approval to the calculator (`overDeliveryApproved`); the report measures only short-shipped lines, so it never changes there. |
 | Limits | A cancelled order, a closed order (force-closed, or closed by the user — SAT-D32 `Closed`), and an order never approved, refuse it (409 state conflict). No read of the approval history beyond the status flag and the audit trail yet. |
 | Evidence | Unit: `SalesOrderDraftOverDeliveryApprovalTests`, `SalesDraftServiceTests.OverDeliveryApproval`, `SalesPersistenceModelTests`. HTTP: `SalesDraftHttpAcceptanceTests.Over_delivery_approval_uses_the_strict_envelope_and_replay_headers`. Real SQL: `SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceTests` (six inventoried facts). Frontend: `SalesOverDeliveryApproval.test.tsx`. |
+
+## Line closure with a shortfall (SAT-D17, SAT-D168, SAT-D214, SAT-D215, SAT-D216, SAT-D222; EK24, EK37)
+
+SAT-D17: a line that shipped less than ordered can be closed by a user; the remainder is counted as cancelled and the line cannot
+ship again (SAT-D215). SAT-D216: the person who made the shipment does not close their own line.
+
+| Concern | Rule |
+|---|---|
+| Route | `POST /api/v1/sales/drafts/{id}/line-closure` (`CloseSalesOrderDraftLineV1`), strict body `{expectedVersion, lineId, shipped}` + one `Idempotency-Key`; 200 with the detail; replay headers on a replayed result or refusal. |
+| Who | Its own name `sales.orders.lines.close` (manifest v24), company-wide, NOT Critical, in `ErpPermissions.All` + `CompanyWideOnly`; no other Sales name confers it. Granted to NO role, grant or seed: who holds it is a human gate. |
+| Band | The same basis, AT-024 shipped total, Settings tolerance and `SalesRealizationCalculator` as the status read. The block band never closes (422 `sales_line_closure_blocked`). Zero shipped, or nothing short, is `sales_line_closure_not_applicable` (409). |
+| Total | The command names the shipped total the user saw; a different owner total is a recorded 409 `sales_line_closure_shipped_changed`. |
+| Shipper | The closer must be none of the actors the delivery owner names in `ShippedBy`. An owner that does not name them is refused fail-closed (`sales_line_closure_shipper_unverified`); the Logistics owner on main does not fill it yet, so the command refuses in practice until its slice fills it. |
+| Store | One save: append-only `sales.DraftLineClosures` row (key `(CompanyId, DraftId, LineId)`, so at most one closure per line; FKs to the draft and its line; unique draft version; `CK_DraftLineClosures_Identity`), header version + 1, attempt, audit. Restored before the approval axis. No line, quantity or approval column moves; no stock or money event. |
+| Migration | `AddDraftLineClosures`; its Down refuses with 51227 while any closure exists (forward fix); an empty table rolls back freely. |
+| Line port | `SalesOrderLineReferencePort` answers `NotApproved` with state `Closed` for a closed line; the other lines of the order are unchanged. |
+| Shell | Control `sales.orders.lines.close` (parent S-04 detail, read + close name), Sales shell contract 1.17. The frontend control, client and texts are not part of this slice. |
+| Limits | A closed line is not auto-blocked from line revisions or passivation (SAT-D167 is open). A cancelled, force-closed or never-approved order refuses it (409 state conflict). |
+| Evidence | Unit: `SalesOrderDraftLineClosureTests`, `SalesDraftServiceTests.LineClosure`, `SalesPersistenceModelTests`. Real SQL: `SalesOrderLineClosureSqlServerRelationalAcceptanceTests` (not run locally). |

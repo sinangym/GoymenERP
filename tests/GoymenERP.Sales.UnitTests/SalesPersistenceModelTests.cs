@@ -127,7 +127,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoices", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceApproval", StringComparison.Ordinal));
-        Assert.Equal("20261108091314_AddSalesInvoiceOfficialMatch", context.Database.GetMigrations().Last());
+        Assert.Equal("20261108135920_AddDraftLineClosures", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -262,6 +262,8 @@ public sealed class SalesPersistenceModelTests
     [InlineData("delete-user-closure")]
     [InlineData("edit-over-delivery-approval")]
     [InlineData("delete-over-delivery-approval")]
+    [InlineData("edit-line-closure")]
+    [InlineData("delete-line-closure")]
     [InlineData("unclose-draft")]
     [InlineData("closed-to-cancelled")]
     [InlineData("cancelled-to-closed")]
@@ -372,6 +374,13 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "delete-over-delivery-approval":
                 context.DraftOverDeliveryApprovals.Remove(Attach(context, OverDeliveryApproval()));
+                break;
+            // SAT-D17: a recorded line closure is append-only.
+            case "edit-line-closure":
+                Attach(context, LineClosure()).CancelledRemainder = "999";
+                break;
+            case "delete-line-closure":
+                context.DraftLineClosures.Remove(Attach(context, LineClosure()));
                 break;
             case "unclose-draft":
                 var closed = Draft();
@@ -793,6 +802,45 @@ public sealed class SalesPersistenceModelTests
         var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
         Assert.Equal(("sales", "DraftOverDeliveryApprovals"), (drop.Schema, drop.Name));
     }
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168: the line-closure table - one row per line under (company, draft, line), one row per version step, bound
+    /// to the draft and to its line, tenant-filtered, with the identity check; Up is pure DDL and Down refuses with Sales' own 51227
+    /// BEFORE it drops the table (forward fix).
+    /// </summary>
+    [Fact]
+    public void The_line_closure_table_is_keyed_per_line_bound_to_its_line_and_its_down_refuses_with_51227()
+    {
+        using var context = Context();
+        var closures = context.Model.FindEntityType(typeof(DraftLineClosureRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "LineId"], closures.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(("sales", "DraftLineClosures"), (closures.GetSchema(), closures.GetTableName()));
+        Assert.True(UniqueIndex(closures, "UX_DraftLineClosures_DraftVersion"));
+        Assert.Equal([typeof(DraftLineRow), typeof(DraftRow)],
+            closures.GetForeignKeys().Select(key => key.PrincipalEntityType.ClrType).OrderBy(type => type.Name, StringComparer.Ordinal));
+        Assert.All(closures.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Equal(SalesOrderDraft.MaximumActorLength, closures.FindProperty(nameof(DraftLineClosureRow.ClosedBy))!.GetMaxLength());
+        Assert.NotEmpty(closures.GetDeclaredQueryFilters());
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var check = Assert.Single(design.FindEntityType(typeof(DraftLineClosureRow))!.GetCheckConstraints());
+        Assert.Equal(("CK_DraftLineClosures_Identity", SalesDbContext.LineClosureIdentityConstraint), (check.Name, check.Sql));
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftLineClosures();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        Assert.Equal(2, migration.DownOperations.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftLineClosures])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51227,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
+        Assert.Equal(("sales", "DraftLineClosures"), (drop.Schema, drop.Name));
+    }
+
+    private static DraftLineClosureRow LineClosure() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineId = Guid.NewGuid(), LineNo = 1, BasisRevision = 0,
+        Ordered = "100", ShippedAtClosure = "90", CancelledRemainder = "10", Band = 2, ClosedBy = "synthetic-closer",
+        ClosedAtUtc = At, DraftVersion = 5, CorrelationId = "synthetic-correlation",
+    };
 
     private static DraftOverDeliveryApprovalRow OverDeliveryApproval() => new()
     {

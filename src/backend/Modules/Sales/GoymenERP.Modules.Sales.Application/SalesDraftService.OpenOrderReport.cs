@@ -389,6 +389,12 @@ public sealed partial class SalesDraftService
             {
                 var (accepted, awaiting) = basis.Lines[line.Id];
                 var shipped = recorded[line.Id].Shipped;
+                if (order.IsLineClosed(line.Id) && awaiting.IsZero)
+                {
+                    // SAT-D17: a line closed with a shortfall has no open remainder (counted as cancelled) — not part of the report.
+                    continue;
+                }
+
                 ToleranceRead? tolerance = null;
                 if (IsShortShipped(accepted, shipped))
                 {

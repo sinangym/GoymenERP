@@ -1487,6 +1487,151 @@ public sealed partial class SalesStore(
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
+    public async Task<SalesDraftStateResult?> CloseLineAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, LineClosureInput, DateTimeOffset, LineClosureFacts> mutate,
+        SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<LineClosureInput>> beforeWrite,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(commandName);
+        if (commandName != SalesDraftCommands.CloseLineV1)
+        {
+            throw new ArgumentException("Yalnız satır kapatma komutu satır kapatması kaydeder.", nameof(commandName));
+        }
+
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Satır kapatma komutunun audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+            }
+
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } recordedId)
+            {
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(recordedId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        var input = await beforeWrite(draft, cancellationToken)
+            ?? throw new InvalidOperationException("Satır kapatma, sahibinden yeniden okunan sevk toplamı olmadan kaydedilmez.");
+        var versionBefore = draft.Version;
+        var stateBefore = (draft.State, draft.Revision, draft.ApprovalState, draft.Approval);
+        var closuresBefore = draft.LineClosures.Count;
+        var quantitiesBefore = draft.Lines.Select(line => (line.Id, line.QuantityText)).ToArray();
+        var before = new { state = draft.State.ToString(), approvalState = draft.ApprovalState.ToString(), revision = draft.Revision, version = draft.Version };
+        var now = timeProvider.GetUtcNow();
+        var facts = mutate(draft, input, now);
+        if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId
+            || (draft.State, draft.Revision, draft.ApprovalState, draft.Approval) != stateBefore
+            || facts is null || draft.LineClosures.Count != closuresBefore + 1 || draft.LineClosures[^1] != facts
+            || facts.LineId != input.LineId
+            || !quantitiesBefore.SequenceEqual(draft.Lines.Select(line => (line.Id, line.QuantityText))))
+        {
+            throw new InvalidOperationException("Satır kapatma tam olarak bir sürüm ilerletir ve yalnız bir kapatma kaydı ekler; yaşam döngüsünü, onay eksenini ve satırları değiştirmez.");
+        }
+
+        var line = draft.Lines.Single(candidate => candidate.Id == facts.LineId);
+        dbContext.DraftLineClosures.Add(new DraftLineClosureRow
+        {
+            CompanyId = companyId,
+            DraftId = draft.Id,
+            LineId = facts.LineId,
+            LineNo = line.LineNo,
+            BasisRevision = facts.BasisRevision,
+            Ordered = facts.Ordered,
+            ShippedAtClosure = facts.ShippedAtClosure,
+            CancelledRemainder = facts.CancelledRemainder,
+            Band = (int)facts.Band,
+            ClosedBy = facts.ClosedBy,
+            ClosedAtUtc = facts.ClosedAtUtc,
+            DraftVersion = draft.Version,
+            CorrelationId = envelope.CorrelationId.Trim(),
+        });
+        row.Version = draft.Version;
+        row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            DraftId = draft.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            DraftEntityType,
+            draft.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: draft.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(new
+            {
+                state = draft.State.ToString(),
+                approvalState = draft.ApprovalState.ToString(),
+                revision = draft.Revision,
+                version = draft.Version,
+                lineClosure = new
+                {
+                    facts.LineId, line.LineNo, facts.BasisRevision, facts.Ordered, facts.ShippedAtClosure, facts.CancelledRemainder,
+                    band = facts.Band.ToString(), facts.ClosedBy, facts.ClosedAtUtc, shippedBy = input.ShippedBy.Order(StringComparer.Ordinal).ToArray(),
+                },
+            }, Json),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
     /// <summary>
     /// Partial delivery (user decision 2026-09-30): one remainder change step, one save — the cancellation's key rules and
     /// shape. The header and the line rows are tracked; <paramref name="beforeWrite"/> (the caller's fences, the domain's
@@ -1850,6 +1995,7 @@ public sealed partial class SalesStore(
         var remainderDecisions = await dbContext.DraftRemainderDecisions.AsNoTracking().Where(decision => ids.Contains(decision.DraftId)).ToListAsync(cancellationToken);
         var customerRejections = await dbContext.DraftCustomerRejections.AsNoTracking().Where(rejection => ids.Contains(rejection.DraftId)).ToListAsync(cancellationToken);
         var overDeliveryApprovals = await dbContext.DraftOverDeliveryApprovals.AsNoTracking().Where(approval => ids.Contains(approval.DraftId)).ToListAsync(cancellationToken);
+        var lineClosures = await dbContext.DraftLineClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)
         {
@@ -2035,6 +2181,20 @@ public sealed partial class SalesStore(
                     approval.Ordered, approval.ApprovedShipped, approval.ApprovedBy, approval.ApprovedAtUtc));
             }
 
+            // SAT-D17: every recorded line closure in recorded order (its draft version), BEFORE the approval axis (its version floor
+            // counts them); the stored line position must be the line's.
+            foreach (var closure in lineClosures.Where(candidate => candidate.DraftId == row.Id).OrderBy(candidate => candidate.DraftVersion))
+            {
+                if (draft.Lines.SingleOrDefault(line => line.Id == closure.LineId)?.LineNo != closure.LineNo)
+                {
+                    throw new InvalidOperationException("Kayıtlı satır kapatmasının satır sırası siparişin satırıyla uyuşmuyor.");
+                }
+
+                draft.RestoreLineClosure(new LineClosureFacts(closure.LineId, closure.BasisRevision, closure.Ordered,
+                    closure.ShippedAtClosure, closure.CancelledRemainder, (DeliveryToleranceBand)closure.Band, closure.ClosedBy,
+                    closure.ClosedAtUtc));
+            }
+
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.
             draft.RestoreApproval((InternalApprovalState)row.ApprovalState,
                 new ApprovalFacts(row.SubmittedBy, row.SubmittedAtUtc, row.DecidedBy, row.DecidedAtUtc, row.RejectionReason),
@@ -2214,7 +2374,7 @@ public sealed partial class SalesStore(
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
             or SalesDraftCommands.CloseV1
-            or SalesDraftCommands.ApproveOverDeliveryV1
+            or SalesDraftCommands.ApproveOverDeliveryV1 or SalesDraftCommands.CloseLineV1
             or SalesDraftCommands.ReviseQuantityV1 or SalesDraftCommands.ReviseHeaderV1 or SalesDraftCommands.ReviseLinesV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1

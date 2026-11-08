@@ -439,6 +439,7 @@ public static partial class SalesEndpoints
         MapForceCloseImpact(drafts);
         MapForceCloseCommand(drafts);
         MapOverDeliveryApproval(drafts);
+        MapLineClosure(drafts);
         MapForceClosure(drafts);
         MapUserClosureEndpoints(drafts);
         MapRemainderChanges(drafts);
@@ -1432,6 +1433,84 @@ public static partial class SalesEndpoints
                 SalesDraftProblemCodesV1.OverDeliveryShipperUnverified, SalesDraftProblemCodesV1.OverDeliverySelfApproval,
                 SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.OverDeliveryBlocked)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168 / SAT-D216: close one line with a shortfall (the remainder counts as cancelled). The source-owned service
+    /// enforces <c>sales.orders.lines.close</c>, the version, the band (the realization calculator over the Logistics
+    /// shipped total and the Settings tolerance), the shipped total the user saw and the shipper ≠ closer rule (fail-closed when
+    /// the delivery owner does not name the shipper). The route owns only the strict HTTP envelope (the force-close's) and never
+    /// derives a band, a tolerance, a role or a closure.
+    /// </summary>
+    private static void MapLineClosure(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/line-closure", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftLineClosureRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftLineClosureJson.Read(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.CloseLineAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("CloseSalesOrderDraftLineV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftLineClosureRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.LineClosureNotApplicable, SalesDraftProblemCodesV1.LineClosureShippedChanged,
+                SalesDraftProblemCodesV1.LineClosureShipperUnverified, SalesDraftProblemCodesV1.LineClosureSelfClosure,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.LineClosureBlocked)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }

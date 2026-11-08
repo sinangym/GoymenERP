@@ -217,6 +217,39 @@ public static class SalesDraftProblemCodesV1
     public const string OverDeliveryPolicyUnavailable = "over_delivery_policy_unavailable";
 
     /// <summary>
+    /// 409 (SAT-D17 / SAT-D16): the line is not closable with a shortfall now — nothing shipped, no shortfall, a revision awaits
+    /// re-approval (no measured quantity), or the order's lifecycle forbids it. Terminal for the key (recorded, replayed).
+    /// </summary>
+    public const string LineClosureNotApplicable = "sales_line_closure_not_applicable";
+
+    /// <summary>
+    /// 422 (SAT-D17 / SAT-D15): the line's shortfall is in the BLOCK band — it does not close this way ("kalan sevk edilir ya da
+    /// zorla kapatma uygulanır"); not recorded.
+    /// </summary>
+    public const string LineClosureBlocked = "sales_line_closure_blocked";
+
+    /// <summary>
+    /// 409 (SAT-D17): the delivery owner's shipped total of the line now differs from the total the command names — nothing is
+    /// closed over a total the user did not see. Terminal for the key.
+    /// </summary>
+    public const string LineClosureShippedChanged = "sales_line_closure_shipped_changed";
+
+    /// <summary>
+    /// 409 (SAT-D216, fail-closed): the delivery owner does not name who made the line's shipments, so the closer cannot be told
+    /// apart from the shipper — nothing is closed (SAT-D209 / SAT-D222: no new Logistics connection yet). Terminal for the key.
+    /// </summary>
+    public const string LineClosureShipperUnverified = "sales_line_closure_shipper_unverified";
+
+    /// <summary>409 (SAT-D216): the closer made a shipment of the line; another person closes. Terminal for the key.</summary>
+    public const string LineClosureSelfClosure = "sales_line_closure_self_closure";
+
+    /// <summary>
+    /// 503 (SAT-D17): the Settings delivery tolerance of the order's business date is missing, refused or invalid at the command —
+    /// no band is judged without it (never a default). Code-less on the wire.
+    /// </summary>
+    public const string LineClosurePolicyUnavailable = "line_closure_policy_unavailable";
+
+    /// <summary>
     /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
     /// a loading-instruction line) that a changed quantity would leave inconsistent — the fail-closed reading refuses the
     /// revision, exactly like the cancellation; the field errors name each blocking source. Terminal for the key (recorded,
@@ -323,4 +356,6 @@ public sealed record SalesDraftServiceBindings(
     // SAT-D32 / SAT-D168: the user closure's own name (a grant, never implied here).
     string? ClosePermission = SalesPermissionManifestV1.OrdersClose,
     // SAT-D30 / SAT-D168: the approval-band over-delivery approval name (a grant, never implied here).
-    string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove);
+    string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove,
+    // SAT-D17 / SAT-D168: the line closure's own name (a grant, never implied here).
+    string? LineClosePermission = SalesPermissionManifestV1.OrdersLineClose);
