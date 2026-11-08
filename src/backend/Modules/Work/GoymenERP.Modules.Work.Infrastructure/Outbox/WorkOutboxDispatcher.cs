@@ -41,7 +41,7 @@ public sealed class WorkOutboxDispatcher
 
     // In-process failure backoff per (company, source): a persistent storage error must not re-run consumer handlers
     // on every poll. Reuses the configured backoff; losing it on restart only costs one extra attempt.
-    private readonly ConcurrentDictionary<(Guid CompanyId, string SourceName), (int Failures, DateTimeOffset Until)> sourceFailures = new();
+    private readonly ConcurrentDictionary<(Guid CompanyId, string SourceName), (int Failures, DateTimeOffset Until)> sourceFailures = new ConcurrentDictionary<(Guid CompanyId, string SourceName), (int Failures, DateTimeOffset Until)>();
 
     public WorkOutboxDispatcher(
         IServiceScopeFactory scopes,
