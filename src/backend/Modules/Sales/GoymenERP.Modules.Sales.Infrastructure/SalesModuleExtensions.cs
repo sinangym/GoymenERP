@@ -89,6 +89,9 @@ public static class SalesModuleExtensions
         // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
+        // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
+        // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
+        services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
         return services;
     }
 
@@ -103,7 +106,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
         serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
-        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
+        serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.

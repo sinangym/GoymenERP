@@ -207,6 +207,9 @@ public sealed partial class SalesDraftServiceTests
         public FakeInvoiceStore Invoices { get; } = new();
         public FakeExchangeRates Rates { get; } = new(ExchangeRateResolutionStatesV1.Resolved, "34.5678");
         public bool NoShipments { get; set; }
+        public bool NoOfficial { get; set; }
+        public FakeOfficialInvoices Official { get; } = new();
+        public SalesInvoiceMatchTolerancePolicy? Tolerance { get; set; }
 
         /// <summary>An invoice world around an order the caller has put in the state under test.</summary>
         public static InvoiceWorld Around(World world, SalesOrderDraftDetailView order) => new(world, order);
@@ -238,7 +241,7 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesInvoiceService(company, World.User, World.Authority, new FixedCorrelation(), Invoices, World.Store, World.Settings,
-                World.Clock, NoShipments ? null : Shipments, Rates);
+                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance);
         }
     }
 
@@ -352,6 +355,215 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(0, invoicing.Invoices.DecideCalls);
     }
 
+    private const string InvoiceMatch = SalesPermissionManifestV1.InvoicesMatch;
+    private const string OfficialEttn = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+    private sealed class FakeOfficialInvoices : ISalesOfficialInvoiceReadPortV1
+    {
+        public SalesOfficialInvoiceAnswerV1 Answer { get; set; } = SalesOfficialInvoiceAnswerV1.NotFound;
+        public int Asked { get; private set; }
+
+        public Task<SalesOfficialInvoiceAnswerV1> LookupAsync(Guid companyId, string officialNo, string ettn, CancellationToken cancellationToken = default)
+        {
+            Asked++;
+            return Task.FromResult(Answer);
+        }
+
+        public void Has(decimal functionalAmount, Guid? customer = null, Guid? currency = null, string no = "GIB2026000000001") =>
+            Answer = new(SalesOfficialInvoiceOutcomeV1.Found, new SalesOfficialInvoiceFacts(no, OfficialEttn, customer ?? Party,
+                currency ?? Currency, functionalAmount, functionalAmount));
+    }
+
+    private static MatchSalesInvoiceRequest MatchRequest(string version = "3", bool approve = false, string? reason = null,
+        string no = "GIB2026000000001") => new(version, no, OfficialEttn, approve, reason);
+
+    /// <summary>An approved invoice (prepared and submitted by the world's user, approved by another); the user left is the approver.</summary>
+    private static async Task<(InvoiceWorld Invoicing, Guid Id, string Preparer)> ApprovedInvoiceAsync()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var preparer = invoicing.World.User.Id;
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-inv-create"))).Invoice;
+        await invoicing.Service().SubmitInvoiceAsync(created.Id, Command("1"), Metadata("k-inv-submit"));
+        invoicing.World.User.Id = "synthetic-invoice-approver";
+        await invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-inv-approve"));
+        invoicing.World.User.Id = "synthetic-invoice-matcher";
+        return (invoicing, created.Id, preparer!);
+    }
+
+    [Theory]
+    [InlineData("648.49", "0.00")]
+    [InlineData("648.54", "0.05")]
+    [InlineData("648.44", "0.05")]
+    public async Task A_difference_within_the_inclusive_tolerance_is_matched_without_a_second_approval_and_replays(string official, string difference)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(decimal.Parse(official, System.Globalization.CultureInfo.InvariantCulture));
+        invoicing.World.Authority.Measured.Clear();
+
+        var matched = await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-match"));
+
+        var match = Assert.IsType<SalesInvoiceMatchView>(matched.Invoice.Match);
+        Assert.Equal(("Approved", "3", false), (matched.Invoice.State, matched.Invoice.Version, matched.IsReplay));
+        Assert.Equal(("648.49", official, difference, "0.05", "synthetic-invoice-matcher", null), (match.InvoiceAmount, match.OfficialAmount,
+            match.Difference, match.Tolerance, match.MatchedBy, match.DifferenceApprovedBy));
+        Assert.Equal(InvoiceMatch, invoicing.World.Authority.Measured[0]);
+        Assert.DoesNotContain(InvoiceApprove, invoicing.World.Authority.Measured);
+
+        var replay = await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-match", "another-correlation"));
+        Assert.True(replay.IsReplay);
+        Assert.Equal(1, invoicing.Invoices.MatchCalls);
+        Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(no: "GIB2026000000002"), Metadata("k-inv-match")))));
+        Assert.Equal("Approved", (await invoicing.Service().GetInvoiceAsync(id)).State);
+        Assert.NotNull((await invoicing.Service().GetInvoiceAsync(id)).Match);
+    }
+
+    [Fact]
+    public async Task A_difference_above_the_tolerance_needs_a_separate_approval_with_a_reason_and_the_approve_permission()
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(648.55m);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-over")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.DifferenceApprovalRequired), Status(refused));
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+        Assert.DoesNotContain("k-inv-over", invoicing.Invoices.StateAttempts.Keys);
+
+        var noReason = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true), Metadata("k-inv-noreason")));
+        Assert.Equal(422, noReason.Status);
+
+        invoicing.World.Authority.Denied.Add(InvoiceApprove);
+        var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Kur farki"), Metadata("k-inv-forbid")));
+        Assert.Equal(403, forbidden.Status);
+        invoicing.World.Authority.Denied.Clear();
+
+        var approved = await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Kur farki"), Metadata("k-inv-approved"));
+        var match = Assert.IsType<SalesInvoiceMatchView>(approved.Invoice.Match);
+        Assert.Equal(("0.06", "synthetic-invoice-matcher", "Kur farki"), (match.Difference, match.DifferenceApprovedBy, match.DifferenceReason));
+    }
+
+    [Fact]
+    public async Task Approving_a_difference_that_is_within_the_tolerance_is_refused()
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(648.50m);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Gereksiz"), Metadata("k-inv-na")));
+        Assert.Equal(422, refused.Status);
+        Assert.Null((await invoicing.Service().GetInvoiceAsync(id)).Match);
+    }
+
+    [Fact]
+    public async Task The_preparer_cannot_approve_a_difference_and_the_refusal_is_recorded_and_replayed()
+    {
+        var (invoicing, id, preparer) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(700m);
+        invoicing.World.User.Id = preparer;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Kur"), Metadata("k-inv-self-match")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.SelfApproval), Status(refused));
+        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Kur"), Metadata("k-inv-self-match", "other")));
+        Assert.True(again.IsReplay);
+        Assert.Null((await invoicing.Service().GetInvoiceAsync(id)).Match);
+    }
+
+    [Theory]
+    [InlineData("customer")]
+    [InlineData("currency")]
+    public async Task A_customer_or_currency_that_differs_is_a_mismatch_that_writes_and_records_nothing(string field)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(648.49m, customer: field == "customer" ? Guid.NewGuid() : null, currency: field == "currency" ? Guid.NewGuid() : null);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-mismatch")));
+
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.OfficialMatchMismatch), Status(refused));
+        Assert.Contains(refused.Errors, error => error.Field == field);
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+        Assert.DoesNotContain("k-inv-mismatch", invoicing.Invoices.StateAttempts.Keys);
+    }
+
+    [Fact]
+    public async Task An_official_document_that_is_unknown_or_used_by_another_invoice_is_refused_and_an_absent_provider_is_503()
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        var unknown = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-unknown")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.OfficialDocumentNotFound), Status(unknown));
+
+        invoicing.Official.Answer = SalesOfficialInvoiceAnswerV1.Unavailable;
+        Assert.Equal(503, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-503")))).Status);
+        invoicing.NoOfficial = true;
+        var absent = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-503b")));
+        Assert.Equal((503, SalesInvoiceProblemCodesV1.OfficialInvoiceProviderUnavailable), Status(absent));
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+
+        invoicing.NoOfficial = false;
+        invoicing.Official.Has(648.49m);
+        await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-first"));
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(Guid.NewGuid(), MatchRequest(), Metadata("k-inv-other")));
+        Assert.Equal(404, other.Status);
+    }
+
+    [Fact]
+    public async Task The_tolerance_comes_from_the_configured_policy_and_an_unapproved_invoice_cannot_be_matched()
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Tolerance = new SalesInvoiceMatchTolerancePolicy(0.10m);
+        invoicing.Official.Has(648.59m);
+        var matched = await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-ten"));
+        Assert.Equal(("0.10", "0.10"), (matched.Invoice.Match!.Difference, matched.Invoice.Match.Tolerance));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SalesInvoiceMatchTolerancePolicy(-0.01m));
+
+        var draft = await InvoiceWorld.CreateAsync();
+        var created = (await draft.Service().CreateInvoiceAsync(draft.Request(), Metadata("k-inv-draft"))).Invoice;
+        draft.Official.Has(648.49m);
+        var notApproved = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            draft.Service().MatchInvoiceAsync(created.Id, MatchRequest("1"), Metadata("k-inv-state")));
+        Assert.Equal(409, notApproved.Status);
+    }
+
+    [Theory]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"GIB1\",\"ettn\":\"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}", true)]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"GIB1\",\"ettn\":\"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\",\"approveDifference\":true,\"differenceReason\":\"x\"}", true)]
+    [InlineData("{\"expectedVersion\":\"0\",\"officialInvoiceNo\":\"GIB1\",\"ettn\":\"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}", false)]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\" GIB1\",\"ettn\":\"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}", false)]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"GIB1\",\"ettn\":\"not-a-guid\"}", false)]
+    [InlineData("{\"expectedVersion\":\"3\",\"officialInvoiceNo\":\"GIB1\",\"ettn\":\"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\",\"extra\":1}", false)]
+    public void The_match_body_reader_is_strict(string json, bool valid)
+    {
+        if (valid)
+        {
+            Assert.Equal("3", SalesInvoiceStateJson.ReadMatch(json).ExpectedVersion);
+        }
+        else
+        {
+            Assert.ThrowsAny<System.Text.Json.JsonException>(() => SalesInvoiceStateJson.ReadMatch(json));
+        }
+    }
+
+    [Fact]
+    public void The_match_hash_depends_on_every_field_and_ignores_the_ettn_case()
+    {
+        var id = Guid.NewGuid();
+        var baseline = SalesInvoiceMatchHash.Compute(id, MatchRequest());
+        Assert.Equal(baseline, SalesInvoiceMatchHash.Compute(id, MatchRequest() with { Ettn = OfficialEttn.ToUpperInvariant() }));
+        Assert.NotEqual(baseline, SalesInvoiceMatchHash.Compute(Guid.NewGuid(), MatchRequest()));
+        Assert.NotEqual(baseline, SalesInvoiceMatchHash.Compute(id, MatchRequest("4")));
+        Assert.NotEqual(baseline, SalesInvoiceMatchHash.Compute(id, MatchRequest(approve: true, reason: "x")));
+        Assert.NotEqual(baseline, SalesInvoiceMatchHash.Compute(id, MatchRequest(no: "GIB2026000000009")));
+    }
+
     /// <summary>An in-memory invoice store with the attempt rules of the real one (same key + content + actor replays; else 409).</summary>
     private sealed class FakeInvoiceStore : ISalesInvoiceStore
     {
@@ -395,6 +607,27 @@ public sealed partial class SalesDraftServiceTests
             StateAttempts[envelope.IdempotencyKey] = (requestHash, envelope.ActorId, invoiceId, envelope.CorrelationId, null);
             return Task.FromResult<SalesInvoiceStoreResult?>(new SalesInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
         }
+
+        public int MatchCalls { get; private set; }
+
+        public Task<SalesInvoiceStoreResult?> MatchInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid invoiceId,
+            Func<SalesInvoice, DateTimeOffset, SalesInvoiceMatchFacts> record, SalesDraftStateAudit audit,
+            CancellationToken cancellationToken = default)
+        {
+            MatchCalls++;
+            if (!Stored.TryGetValue(invoiceId, out var invoice))
+            {
+                return Task.FromResult<SalesInvoiceStoreResult?>(null);
+            }
+
+            record(invoice, DateTimeOffset.UnixEpoch);
+            StateAttempts[envelope.IdempotencyKey] = (requestHash, envelope.ActorId, invoiceId, envelope.CorrelationId, null);
+            return Task.FromResult<SalesInvoiceStoreResult?>(new SalesInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
+        }
+
+        public Task<Guid?> FindMatchedInvoiceIdAsync(string officialNo, string ettn, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Stored.Values.Where(invoice => invoice.Match is { } match && (match.OfficialNo == officialNo || match.Ettn == ettn))
+                .Select(invoice => (Guid?)invoice.Id).FirstOrDefault());
 
         public Task<SalesInvoiceStoreResult> StoreInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
             Func<string, SalesInvoice> build, CancellationToken cancellationToken = default)
