@@ -286,7 +286,50 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
     /// <summary>CK_InvoiceAttempts_Command: only the invoice's own versioned commands record here.</summary>
-    internal const string InvoiceAttemptCommandConstraint = "[CommandName] IN (N'" + SalesInvoiceCommands.CreateV1 + "')";
+    internal const string InvoiceAttemptCommandConstraint = "[CommandName] IN (N'" + SalesInvoiceCommands.CreateV1 + "', N'"
+        + SalesInvoiceCommands.SubmitV1 + "', N'" + SalesInvoiceCommands.ApproveV1 + "', N'" + SalesInvoiceCommands.RejectV1 + "', N'"
+        + SalesInvoiceCommands.CancelV1 + "')";
+
+    /// <summary>CK_Invoices_State (API-33): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5.</summary>
+    internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5)";
+
+    /// <summary>
+    /// CK_Invoices_Decision (API-33): the decision facts match the state — a draft carries none; a pending invoice its submission; an
+    /// approved invoice the submission and the approver (no reason); a rejected one the submission and the rejecter; a cancelled one
+    /// its cancellation (and the submission only when it had been submitted) and no decision. The submission pair is all or none.
+    /// </summary>
+    internal const string InvoiceDecisionConstraint =
+        "(([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND [SubmittedAtUtc] IS NOT NULL)) AND ("
+        + "([State] = 1 AND [SubmittedBy] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 2 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 3 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 5 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL))";
+
+    /// <summary>
+    /// CK_Invoices_MakerChecker (SAT-D88/D204): the approver or rejecter is neither the preparer nor the submitter — compared on
+    /// the binary collation, like every actor-id maker-checker rule.
+    /// </summary>
+    internal const string InvoiceMakerCheckerConstraint =
+        "[DecidedBy] IS NULL OR ([DecidedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)";
+
+    /// <summary>CK_Invoices_Reasons: free-text reasons are never blank text.</summary>
+    internal const string InvoiceReasonsConstraint =
+        "([DecisionReason] IS NULL OR LEN([DecisionReason]) > 0) AND ([CancellationReason] IS NULL OR LEN([CancellationReason]) > 0) "
+        + "AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND ([DecidedBy] IS NULL OR LEN([DecidedBy]) > 0) "
+        + "AND ([CancelledBy] IS NULL OR LEN([CancelledBy]) > 0)";
+
+    /// <summary>TR_Invoices_Guard: a decided or cancelled invoice and the header facts are immutable (THROW 51223).</summary>
+    internal const string InvoiceGuardTrigger = "TR_Invoices_Guard";
+
+    /// <summary>TR_InvoiceLines_Guard: the lines of a non-draft invoice are immutable but for their release stamp (THROW 51224).</summary>
+    internal const string InvoiceLineGuardTrigger = "TR_InvoiceLines_Guard";
 
     /// <summary>UX_InvoiceAttempts_InvoiceId: a stored invoice is born from exactly one create attempt.</summary>
     internal const string InvoiceCreateAttemptFilter = "[InvoiceId] IS NOT NULL AND [CommandName] = N'" + SalesInvoiceCommands.CreateV1 + "'";
@@ -900,7 +943,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Invoices_State", "[State] IN (1)");
+            table.HasCheckConstraint("CK_Invoices_State", InvoiceStateConstraint);
+            table.HasCheckConstraint("CK_Invoices_Decision", InvoiceDecisionConstraint);
+            table.HasCheckConstraint("CK_Invoices_MakerChecker", InvoiceMakerCheckerConstraint);
+            table.HasCheckConstraint("CK_Invoices_Reasons", InvoiceReasonsConstraint);
+            table.HasTrigger(InvoiceGuardTrigger);
             table.HasCheckConstraint("CK_Invoices_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Invoices_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
             table.HasCheckConstraint("CK_Invoices_Rate", InvoiceRateConstraint);
@@ -922,6 +969,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         invoice.Property(x => x.InstalmentsJson).HasColumnType("nvarchar(max)").IsRequired();
         invoice.Property(x => x.CreatedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
         invoice.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        invoice.Property(x => x.SubmittedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        invoice.Property(x => x.DecidedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        invoice.Property(x => x.CancelledBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        invoice.Property(x => x.DecisionReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
+        invoice.Property(x => x.CancellationReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
         invoice.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Invoices_DocumentNo");
         invoice.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Invoices_CompanyId_CreatedAtUtc_Id");
         invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -944,6 +996,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_InvoiceLines_Functional", InvoiceLineFunctionalConstraint);
             table.HasCheckConstraint("CK_InvoiceLines_Json",
                 "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
+            table.HasTrigger(InvoiceLineGuardTrigger);
         });
         line.HasKey(x => new { x.CompanyId, x.InvoiceId, x.LineNo });
         line.HasIndex(x => new { x.CompanyId, x.LineId }).IsUnique().HasDatabaseName("UX_InvoiceLines_LineId");
@@ -1424,8 +1477,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     QuoteAttemptRow => [],
                     // ADR-SAL-001 §2: a request attempt is APPEND-ONLY (the SQL trigger refuses the same).
                     RequestAttemptRow => [],
-                    // S5 API-32: an invoice draft, its lines and its attempts are APPEND-ONLY in Fatura çekirdeği 1.
-                    InvoiceRow => [],
+                    // S5 API-32/33: an invoice header moves only along the approval axis (state, the decision facts, time; the version is the
+                    // token); its lines and attempts stay APPEND-ONLY from the app (the release stamp is TR_Invoices_Guard's, in SQL).
+                    InvoiceRow =>
+                    [
+                        nameof(InvoiceRow.State), nameof(InvoiceRow.SubmittedBy), nameof(InvoiceRow.SubmittedAtUtc), nameof(InvoiceRow.DecidedBy),
+                        nameof(InvoiceRow.DecidedAtUtc), nameof(InvoiceRow.DecisionReason), nameof(InvoiceRow.CancelledBy),
+                        nameof(InvoiceRow.CancelledAtUtc), nameof(InvoiceRow.CancellationReason),
+                    ],
                     InvoiceLineRow => [],
                     InvoiceAttemptRow => [],
                     _ => [],

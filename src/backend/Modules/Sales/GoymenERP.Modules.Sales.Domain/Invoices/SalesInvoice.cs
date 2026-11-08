@@ -4,12 +4,36 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 namespace GoymenERP.Modules.Sales.Domain.Invoices;
 
 /// <summary>
-/// The lifecycle of a sales invoice. Fatura çekirdeği 1 records only <see cref="Draft"/> (API-32); submission/approval (API-33),
+/// The lifecycle of a sales invoice. API-32 records <see cref="Draft"/>; API-33 adds the internal approval
+/// (<see cref="PendingApproval"/>, <see cref="Approved"/>, <see cref="Rejected"/>) and the pre-approval <see cref="Cancelled"/>;
 /// the official-document match (API-35) and the finalisation (API-36) add their states in their own slices — never a silent jump.
+/// <c>Draft → PendingApproval → Approved | Rejected</c>; <c>Draft | PendingApproval → Cancelled</c>. Rejected and Cancelled are
+/// terminal and release the shipment shares (SAT-D94); a rejected draft is corrected as a new draft.
 /// </summary>
 public enum SalesInvoiceState
 {
     Draft = 1,
+    PendingApproval = 2,
+    Approved = 3,
+    Rejected = 4,
+    Cancelled = 5,
+}
+
+/// <summary>
+/// The approval and cancellation facts of an invoice (API-33): who submitted it and when, who approved or rejected it (never the
+/// preparer, SAT-D88/D204) with the optional free-text reason, and who cancelled it before approval with the optional reason.
+/// </summary>
+public sealed record SalesInvoiceDecisionFacts(
+    string? SubmittedBy,
+    DateTimeOffset? SubmittedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason,
+    string? CancelledBy,
+    DateTimeOffset? CancelledAtUtc,
+    string? CancellationReason)
+{
+    public static SalesInvoiceDecisionFacts None { get; } = new(null, null, null, null, null, null, null, null);
 }
 
 /// <summary>
@@ -105,6 +129,7 @@ public sealed class SalesInvoice
     public const int MaximumDocumentNoLength = SalesOrderDraft.MaximumDocumentNoLength;
     public const int MaximumActorLength = SalesOrderDraft.MaximumActorLength;
     public const int MaximumDispatchNumberLength = 64;
+    public const int MaximumReasonLength = SalesOrderDraft.MaximumRejectionReasonLength;
 
     private readonly List<SalesInvoiceLine> lines = [];
     private readonly List<SalesInvoiceInstalment> instalments = [];
@@ -131,8 +156,16 @@ public sealed class SalesInvoice
 
     public SalesInvoiceState State { get; private set; } = SalesInvoiceState.Draft;
 
-    /// <summary>Optimistic concurrency: 1 at creation; later commands (API-33…36) advance it by one.</summary>
+    /// <summary>Optimistic concurrency: 1 at creation; every later command (API-33…36) advances it by one.</summary>
     public long Version { get; private set; }
+
+    public SalesInvoiceDecisionFacts Decision { get; private set; } = SalesInvoiceDecisionFacts.None;
+
+    /// <summary>
+    /// True when the shares are held by this invoice (AT-055, SAT-D94): a draft, a pending or an approved invoice. A rejected or
+    /// cancelled invoice has released them (the store stamps the line's <c>ReleasedAtUtc</c> in the same save).
+    /// </summary>
+    public bool HoldsShares => State is SalesInvoiceState.Draft or SalesInvoiceState.PendingApproval or SalesInvoiceState.Approved;
 
     public string CreatedBy { get; }
 
@@ -237,6 +270,69 @@ public sealed class SalesInvoice
         return invoice;
     }
 
+    /// <summary>Sends the draft for internal approval: <c>Draft → PendingApproval</c> (the submitter is recorded).</summary>
+    public void Submit(long expectedVersion, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        RequireState(SalesInvoiceState.Draft, "Yalnız taslak fatura onaya gönderilir.");
+        State = SalesInvoiceState.PendingApproval;
+        Decision = Decision with { SubmittedBy = actor, SubmittedAtUtc = now.ToUniversalTime() };
+        Advance();
+    }
+
+    /// <summary>
+    /// Approves a pending invoice: <c>PendingApproval → Approved</c>. The approver is never the preparer or the submitter
+    /// (SAT-D88/D204, <see cref="SalesRuleCodes.InvoiceSelfApproval"/>); the permission fence is the service's. Nothing else is
+    /// produced here — the official match (API-35) and the finalisation (API-36) are later slices.
+    /// </summary>
+    public void Approve(long expectedVersion, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        RequireState(SalesInvoiceState.PendingApproval, "Yalnız onay bekleyen fatura onaylanır.");
+        RequireNotPreparer(actor);
+        State = SalesInvoiceState.Approved;
+        Decision = Decision with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), DecisionReason = null };
+        Advance();
+    }
+
+    /// <summary>
+    /// Rejects a pending invoice: <c>PendingApproval → Rejected</c> with an optional free-text reason. Rejected is terminal and
+    /// releases the shares; the correction is a new draft. The decider is never the preparer or the submitter.
+    /// </summary>
+    public void Reject(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        var text = RequireReason(reason);
+        RequireState(SalesInvoiceState.PendingApproval, "Yalnız onay bekleyen fatura reddedilir.");
+        RequireNotPreparer(actor);
+        State = SalesInvoiceState.Rejected;
+        Decision = Decision with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), DecisionReason = text };
+        Advance();
+    }
+
+    /// <summary>
+    /// Cancels an invoice before its approval: <c>Draft | PendingApproval → Cancelled</c> (terminal; the shares are released).
+    /// An approved invoice is not cancelled here: its official reverse record, the allocated-payment warning (SAT-D96) and the
+    /// e-invoice warning belong to the later slice that has the Finance allocation port.
+    /// </summary>
+    public void Cancel(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        var text = RequireReason(reason);
+        if (State is not (SalesInvoiceState.Draft or SalesInvoiceState.PendingApproval))
+        {
+            throw StateConflict("Yalnız onaya girmemiş ya da onay bekleyen fatura iptal edilir.");
+        }
+
+        State = SalesInvoiceState.Cancelled;
+        Decision = Decision with { CancelledBy = actor, CancelledAtUtc = now.ToUniversalTime(), CancellationReason = text };
+        Advance();
+    }
+
     /// <summary>
     /// Rebuilds a stored invoice from its rows: the frozen amounts are taken as stored (never recomputed), but every line must be
     /// internally consistent (gross = net + VAT, payable = gross − withholding, TL present exactly on a foreign-currency invoice)
@@ -244,15 +340,17 @@ public sealed class SalesInvoice
     /// </summary>
     public static SalesInvoice Restore(Guid id, Guid companyId, string documentNo, SalesInvoiceHeader header, SalesInvoiceState state,
         long version, string createdBy, DateTimeOffset createdAtUtc, IReadOnlyList<SalesInvoiceLine> storedLines,
-        IReadOnlyList<SalesInvoiceInstalment> storedInstalments)
+        IReadOnlyList<SalesInvoiceInstalment> storedInstalments, SalesInvoiceDecisionFacts? decision = null)
     {
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(storedLines);
         ArgumentNullException.ThrowIfNull(storedInstalments);
-        var invoice = new SalesInvoice(id, companyId, documentNo, header, createdBy, createdAtUtc, version) { State = state };
-        if (!Enum.IsDefined(state) || storedLines.Count is 0 or > MaximumLines || storedInstalments.Count == 0)
+        var facts = decision ?? SalesInvoiceDecisionFacts.None;
+        var invoice = new SalesInvoice(id, companyId, documentNo, header, createdBy, createdAtUtc, version) { State = state, Decision = facts };
+        if (!Enum.IsDefined(state) || storedLines.Count is 0 or > MaximumLines || storedInstalments.Count == 0
+            || !DecisionIsConsistent(state, createdBy, facts))
         {
-            throw new InvalidOperationException("Kayıtlı fatura satırları ya da taksitleri okunamadı.");
+            throw new InvalidOperationException("Kayıtlı fatura satırları, taksitleri ya da karar bilgisi okunamadı.");
         }
 
         for (var index = 0; index < storedLines.Count; index++)
@@ -285,6 +383,67 @@ public sealed class SalesInvoice
         RequireShare(share);
         return new SalesInvoiceLine(lineNo, share, netUnitPrice, vatPercent, withholdingShare, amounts, functional);
     }
+
+    private static bool DecisionIsConsistent(SalesInvoiceState state, string createdBy, SalesInvoiceDecisionFacts facts)
+    {
+        var submitted = facts.SubmittedBy is not null && facts.SubmittedAtUtc is not null;
+        var submittedNone = facts.SubmittedBy is null && facts.SubmittedAtUtc is null;
+        var decided = facts.DecidedBy is not null && facts.DecidedAtUtc is not null;
+        var decidedNone = facts.DecidedBy is null && facts.DecidedAtUtc is null && facts.DecisionReason is null;
+        var cancelled = facts.CancelledBy is not null && facts.CancelledAtUtc is not null;
+        var cancelledNone = facts.CancelledBy is null && facts.CancelledAtUtc is null && facts.CancellationReason is null;
+        var decidedByOther = !decided || (!string.Equals(facts.DecidedBy, createdBy, StringComparison.Ordinal)
+            && !string.Equals(facts.DecidedBy, facts.SubmittedBy, StringComparison.Ordinal));
+        return state switch
+        {
+            SalesInvoiceState.Draft => submittedNone && decidedNone && cancelledNone,
+            SalesInvoiceState.PendingApproval => submitted && decidedNone && cancelledNone,
+            SalesInvoiceState.Approved => submitted && decided && facts.DecisionReason is null && cancelledNone && decidedByOther,
+            SalesInvoiceState.Rejected => submitted && decided && cancelledNone && decidedByOther,
+            SalesInvoiceState.Cancelled => cancelled && decidedNone,
+            _ => false,
+        };
+    }
+
+    private void RequireState(SalesInvoiceState expected, string message)
+    {
+        if (State != expected)
+        {
+            throw StateConflict(message);
+        }
+    }
+
+    private void RequireNotPreparer(string actor)
+    {
+        if (string.Equals(actor, CreatedBy, StringComparison.Ordinal)
+            || string.Equals(actor, Decision.SubmittedBy, StringComparison.Ordinal))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InvoiceSelfApproval,
+                "Faturayı hazırlayan ya da onaya gönderen kişi aynı faturaya karar veremez; başkası karar verir.");
+        }
+    }
+
+    private static string? RequireReason(string? reason)
+    {
+        var text = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        return text is { Length: > MaximumReasonLength }
+            ? throw new SalesRuleException(SalesRuleCodes.ApprovalReasonTooLong, $"Neden en fazla {MaximumReasonLength} karakterdir.")
+            : text;
+    }
+
+    private static string RequireActor(string actorId) => RequireText(actorId, MaximumActorLength, nameof(actorId));
+
+    private SalesRuleException StateConflict(string message) => new(SalesRuleCodes.StateConflict, $"{message} (durum: {State}).");
+
+    private void RequireVersion(long expectedVersion)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new SalesVersionConflictException(expectedVersion, Version);
+        }
+    }
+
+    private void Advance() => Version = checked(Version + 1);
 
     private static void RequireHeader(SalesInvoiceHeader header)
     {

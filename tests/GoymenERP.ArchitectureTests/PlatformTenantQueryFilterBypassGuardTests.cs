@@ -453,7 +453,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // unioned with main's facts and kept ordinal-sorted (78be7220… -> 249ea3fc…).
             // S5 API-32 (Fatura cekirdegi 1): +2 SalesInvoice facts (the invoice draft's one save, replay, active-share index and
             // company isolation; the 51221 rollback refusal), kept ordinal-sorted (95e16c66... -> 25ed266d...).
-                "d9564cc81ad2482dc9d8b6f939243f20892898a92d775cfac9b8244d9166333a",
+                // S5 API-33 (Fatura cekirdegi 2): +3 SalesInvoice facts (submit/approve by another actor and the frozen rows, the cancelled invoice's
+            // share release in the same save, the recorded and replayed terminal refusal), kept ordinal-sorted (d9564cc8... -> 0030e572...).
+                "0030e572eabcc265af69d1186ec9821c24d4bcda495fbe009213be8c7a26e47e",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -578,7 +580,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): Invoices / InvoiceLines / InvoiceAttempts tenant rows under the
                 // same company filter, the filtered unique UX_InvoiceLines_ActiveShipment and their check constraints; the write guard
                 // admits no modification of them (append-only); no query-filter bypass or direct database surface.
-                "1a8c08ee488963902f914074357ad673489fa97094a13eb5fbf4e86c5b9d022d",
+                // API-33: the header may change only its nine decision columns (state, version, submitted/decided/cancelled stamps and reasons); lines and
+                // attempts stay append-only; TR_Invoices_Guard / TR_InvoiceLines_Guard enforce the same in SQL (1a8c08ee... -> ab9a9588...).
+                "ab9a9588c067f7963809bb5e83cfc58044d4f1d84f4078d0941213a0aac6e52a",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -2377,6 +2381,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9c3a25864f2e7fed58ef3f6c02cf501f326a1d9306294361149eb95c2fc09db7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // S5 API-33 (Fatura cekirdegi 2): Up adds the two freeze triggers (TR_Invoices_Guard with the cancelled/rejected share release,
+                // TR_InvoiceLines_Guard; 51223 / 51224); the Down's only other raw SQL is the forward-fix refusal (51222) before the DROP TRIGGERs.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108025944_AddSalesInvoiceApproval.cs"] =
+                    new("df8d28cfe00b6d587ad474aca1fea1e08bce98a6a3872f6f9279daf4b1197faf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 3 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

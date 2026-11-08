@@ -129,6 +129,144 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id", ("@id", invoiceId)));
     }
 
+    [SqlServerFact]
+    public async Task An_invoice_is_submitted_approved_by_another_actor_and_then_frozen_in_sql_with_its_audit_and_attempts()
+    {
+        await using var run = await Run.StartAsync();
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var invoiceId = Guid.NewGuid();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.StoreInvoiceAsync(run.Envelope("a-create"), Hash('a'),
+                number => Invoice(invoiceId, number, run.Actor, Guid.NewGuid(), Guid.NewGuid()));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var submitted = await scope.Invoices.DecideInvoiceAsync(run.Envelope("a-submit"), Hash('b'), SalesInvoiceCommands.SubmitV1, invoiceId,
+                (invoice, now) => invoice.Submit(1, run.Actor, now), new SalesDraftStateAudit("sales.invoice.submitted.v1", "Submit", "SENTETIK"));
+            Assert.Equal(SalesInvoiceState.PendingApproval, submitted!.Invoice.State);
+        }
+
+        // SAT-D88/D204 in SQL: the decider may not be the preparer, even by a raw write that skips the domain.
+        var self = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.Invoices SET State = 3, DecidedBy = CreatedBy, DecidedAtUtc = SYSUTCDATETIME() WHERE Id = @id", ("@id", invoiceId)));
+        Assert.Contains("CK_Invoices_MakerChecker", self.Message, StringComparison.Ordinal);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var approved = await scope.Invoices.DecideInvoiceAsync(run.Envelope("a-approve", actor: approver,
+                permission: SalesPermissionManifestV1.InvoicesApprove), Hash('c'), SalesInvoiceCommands.ApproveV1, invoiceId,
+                (invoice, now) => invoice.Approve(2, approver, now), new SalesDraftStateAudit("sales.invoice.approved.v1", "Approve", "SENTETIK"));
+            Assert.Equal((SalesInvoiceState.Approved, 3L), (approved!.Invoice.State, approved.Invoice.Version));
+            var replay = await scope.Invoices.FindInvoiceStateReplayAsync(run.Envelope("a-approve", actor: approver,
+                permission: SalesPermissionManifestV1.InvoicesApprove), Hash('c'), SalesInvoiceCommands.ApproveV1);
+            Assert.Equal(invoiceId, replay!.Invoice!.Id);
+            var other = await Assert.ThrowsAsync<SalesDraftStoreException>(() => scope.Invoices.FindInvoiceStateReplayAsync(
+                run.Envelope("a-approve", actor: approver, permission: SalesPermissionManifestV1.InvoicesApprove), Hash('d'), SalesInvoiceCommands.ApproveV1));
+            Assert.Equal(SalesDraftStoreCodes.SameKeyPayloadMismatch, other.Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id AND State = 3 AND Version = 3 AND SubmittedBy = CreatedBy AND DecidedBy = @a",
+            ("@id", invoiceId), ("@a", approver)));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND Outcome = 1", ("@id", invoiceId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.Invoice' AND EventType = N'sales.invoice.approved.v1' AND EntityId = @id "
+            + "AND EntityVersionAfter = 3 AND PermissionCode = N'sales.invoices.approve'", ("@id", invoiceId.ToString("D"))));
+
+        // The approved invoice and its lines are immutable in SQL: delete, edit, state change and release all refuse.
+        // A header delete meets the attempts' foreign key first (547); the trigger (51223) is the second wall behind it.
+        var headerDelete = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync("DELETE FROM sales.Invoices WHERE Id = @id", ("@id", invoiceId)));
+        Assert.Contains(headerDelete.Number, new[] { 547, 51223 });
+        foreach (var (sql, number) in new[]
+        {
+            ("UPDATE sales.Invoices SET DocumentNo = N'SF-HACK' WHERE Id = @id", 51223),
+            ("UPDATE sales.Invoices SET SubmittedAtUtc = DATEADD(DAY, 1, SubmittedAtUtc) WHERE Id = @id", 51223),
+            ("UPDATE sales.InvoiceLines SET Quantity = Quantity + 1 WHERE InvoiceId = @id", 51224),
+            ("DELETE FROM sales.InvoiceLines WHERE InvoiceId = @id", 51224),
+            ("UPDATE sales.InvoiceLines SET ReleasedAtUtc = SYSUTCDATETIME() WHERE InvoiceId = @id", 51224),
+        })
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql, ("@id", invoiceId)));
+            Assert.Equal(number, refused.Number);
+        }
+
+        // The rollback guard refuses once an invoice left the draft state.
+        var guard = Assert.IsType<SqlOperation>(new AddSalesInvoiceApproval().DownOperations[0]).Sql;
+        var down = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51222, down.Number);
+    }
+
+    [SqlServerFact]
+    public async Task A_cancelled_invoice_releases_its_shares_in_the_same_save_and_the_shipment_can_be_invoiced_again_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var shipment = Guid.NewGuid();
+        var invoiceId = Guid.NewGuid();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.StoreInvoiceAsync(run.Envelope("c-create"), Hash('a'),
+                number => Invoice(invoiceId, number, run.Actor, shipment, Guid.NewGuid()));
+        }
+
+        // The Down guard passes while only drafts and create attempts exist (nothing to lose).
+        var guard = Assert.IsType<SqlOperation>(new AddSalesInvoiceApproval().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard.Split("DROP TRIGGER", 2)[0]);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var cancelled = await scope.Invoices.DecideInvoiceAsync(run.Envelope("c-cancel"), Hash('b'), SalesInvoiceCommands.CancelV1, invoiceId,
+                (invoice, now) => invoice.Cancel(1, run.Actor, "SENTETIK vazgecildi", now),
+                new SalesDraftStateAudit("sales.invoice.cancelled.v1", "Cancel", "SENTETIK"));
+            Assert.Equal(SalesInvoiceState.Cancelled, cancelled!.Invoice.State);
+            Assert.Empty(await scope.Invoices.FindInvoicedShipmentsAsync([shipment]));
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceLines WHERE InvoiceId = @id AND ReleasedAtUtc IS NOT NULL", ("@id", invoiceId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id AND State = 5 AND CancelledBy = @a AND CancellationReason IS NOT NULL", ("@id", invoiceId), ("@a", run.Actor)));
+
+        // AT-055: the released share is free; a new invoice takes it, and the cancelled invoice stays frozen.
+        var second = Guid.NewGuid();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.StoreInvoiceAsync(run.Envelope("c-second"), Hash('c'),
+                number => Invoice(second, number, run.Actor, shipment, Guid.NewGuid()));
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceLines WHERE InvoiceId = @id AND ReleasedAtUtc IS NULL", ("@id", second)));
+        var unrelease = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.InvoiceLines SET ReleasedAtUtc = NULL WHERE InvoiceId = @id AND [LineNo] = 2", ("@id", invoiceId)));
+        Assert.Equal(51224, unrelease.Number);
+        // A release of a line of a draft invoice (no cancel) is refused too: the stamp belongs to a decided invoice only.
+        var early = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.InvoiceLines SET ReleasedAtUtc = SYSUTCDATETIME() WHERE InvoiceId = @id", ("@id", second)));
+        Assert.Equal(51224, early.Number);
+    }
+
+    [SqlServerFact]
+    public async Task A_terminal_refusal_of_an_invoice_command_is_recorded_under_its_key_and_replayed_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var invoiceId = Guid.NewGuid();
+        await using var scope = run.Store(CompanyA);
+        await scope.Invoices.StoreInvoiceAsync(run.Envelope("r-create"), Hash('a'),
+            number => Invoice(invoiceId, number, run.Actor, Guid.NewGuid(), Guid.NewGuid()));
+
+        var refusal = new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.SelfApproval, [new("actor", "invoice_self_approval")]);
+        await scope.Invoices.RecordInvoiceRefusalAsync(run.Envelope("r-self", permission: SalesPermissionManifestV1.InvoicesApprove), Hash('b'),
+            SalesInvoiceCommands.ApproveV1, invoiceId, refusal);
+
+        var replay = await scope.Invoices.FindInvoiceStateReplayAsync(run.Envelope("r-self", permission: SalesPermissionManifestV1.InvoicesApprove),
+            Hash('b'), SalesInvoiceCommands.ApproveV1);
+        Assert.Null(replay!.Invoice);
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.SelfApproval), (replay.Refusal!.Status, replay.Refusal.Code));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.approve.v1' AND Outcome = 2", ("@id", invoiceId)));
+    }
+
     private static string Hash(char fill) => new(fill, 64);
 
     /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>
@@ -174,8 +312,9 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             return run;
         }
 
-        public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null) =>
-            new(Actor, SalesPermissionManifestV1.InvoicesWrite, ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web",
+        public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null,
+            string permission = SalesPermissionManifestV1.InvoicesWrite) =>
+            new(actor ?? Actor, permission, ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web",
                 "127.0.0.1", "SENTETIK-agent");
 
         public StoreScope Store(Guid company)

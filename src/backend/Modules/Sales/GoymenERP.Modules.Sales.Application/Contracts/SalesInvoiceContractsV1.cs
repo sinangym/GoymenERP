@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 
 namespace GoymenERP.Modules.Sales.Application.Contracts;
@@ -16,7 +17,19 @@ public static class SalesInvoiceCommands
     /// <summary>API-32: POST /api/v1/sales/invoices.</summary>
     public const string CreateV1 = "sales.invoice.create.v1";
 
-    public static bool IsInvoiceCommand(string? name) => name is CreateV1;
+    /// <summary>API-33: POST /api/v1/sales/invoices/{id}/submission (preparer sends the draft to approval).</summary>
+    public const string SubmitV1 = "sales.invoice.submit.v1";
+
+    /// <summary>API-33: POST /api/v1/sales/invoices/{id}/approval (SAT-D88/D204: the approver is not the preparer).</summary>
+    public const string ApproveV1 = "sales.invoice.approve.v1";
+
+    /// <summary>API-33: POST /api/v1/sales/invoices/{id}/rejection (a reason; the shares are released).</summary>
+    public const string RejectV1 = "sales.invoice.reject.v1";
+
+    /// <summary>API-33: POST /api/v1/sales/invoices/{id}/cancellation (a reason; the shares are released).</summary>
+    public const string CancelV1 = "sales.invoice.cancel.v1";
+
+    public static bool IsInvoiceCommand(string? name) => name is CreateV1 or SubmitV1 or ApproveV1 or RejectV1 or CancelV1;
 }
 
 /// <summary>Technical bounds of the invoice routes (not policies).</summary>
@@ -32,7 +45,22 @@ public static class SalesInvoiceApiV1
     public const string InvoicesPath = "/api/v1/sales/invoices";
 
     public const int CreatedStatus = 201;
+
+    public const string SubmissionPath = "/api/v1/sales/invoices/{id}/submission";
+    public const string ApprovalPath = "/api/v1/sales/invoices/{id}/approval";
+    public const string RejectionPath = "/api/v1/sales/invoices/{id}/rejection";
+    public const string CancellationPath = "/api/v1/sales/invoices/{id}/cancellation";
+
+    /// <summary>The four state commands answer the invoice after the command with 200 (the same key again too, with the replay headers).</summary>
+    public const int CommandStatus = 200;
 }
+
+/// <summary>
+/// API-33 cancel body. <paramref name="AcknowledgePaymentAllocationLift"/> is the explicit confirmation of Sinan S2 (SAT-D96): a
+/// cancel that lifts payment allocations needs it. Finance owns the allocation; until its port exists no allocation is known to
+/// Sales, so the field is accepted, hashed and has no further effect (next slice).
+/// </summary>
+public sealed record CancelSalesInvoiceRequest(string ExpectedVersion, string? Reason = null, bool AcknowledgePaymentAllocationLift = false);
 
 /// <summary>One requested share: the shipment of an approved dispatch note line (AT-055: a shipment is on one active note).</summary>
 public sealed record SalesInvoiceShareRequest(Guid ShipmentId);
@@ -56,6 +84,36 @@ public static class SalesInvoiceJson
     }
 }
 
+/// <summary>The strict readers of the state-command bodies (shape only; the domain decides the rules).</summary>
+public static class SalesInvoiceStateJson
+{
+    private static void RequireVersion(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length > 19 || !System.Text.RegularExpressions.Regex.IsMatch(text, "\\A[1-9][0-9]*\\z"))
+        {
+            throw new JsonException("Invalid expected version.");
+        }
+    }
+
+    /// <summary>The submission and the approval carry the expected version only (a reason is an unknown member).</summary>
+    public static SalesDraftStateCommandRequest ReadVersionOnly(string json)
+    {
+        var request = SalesDraftJson.ReadStateCommand(json, allowReason: false);
+        return request;
+    }
+
+    /// <summary>The rejection takes the expected version and a reason.</summary>
+    public static SalesDraftStateCommandRequest ReadWithReason(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: true);
+
+    public static CancelSalesInvoiceRequest ReadCancel(string json)
+    {
+        var request = JsonSerializer.Deserialize<CancelSalesInvoiceRequest>(json, SalesDraftJson.Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersion(request.ExpectedVersion);
+        return request;
+    }
+}
+
 /// <summary>The create's answer to the route: the invoice, whether it was replayed, and the first correlation (replay header).</summary>
 public sealed record SalesInvoiceCommandResult(SalesInvoiceDetailView Invoice, bool IsReplay, string OriginalCorrelationId);
 
@@ -69,6 +127,36 @@ public static class SalesInvoiceRequestHash
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 }
+
+/// <summary>The canonical content of an invoice state command for the replay identity (ADR-011 §3).</summary>
+public static class SalesInvoiceStateHash
+{
+    public static string Compute(string commandName, Guid invoiceId, SalesDraftStateCommandRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Hash(JsonSerializer.Serialize(new { command = commandName, invoiceId, request.ExpectedVersion, request.Reason },
+            SalesDraftJson.Options));
+    }
+
+    public static string Compute(Guid invoiceId, CancelSalesInvoiceRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Hash(JsonSerializer.Serialize(new
+        {
+            command = SalesInvoiceCommands.CancelV1,
+            invoiceId,
+            request.ExpectedVersion,
+            request.Reason,
+            request.AcknowledgePaymentAllocationLift,
+        }, SalesDraftJson.Options));
+    }
+
+    private static string Hash(string canonical) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+}
+
+/// <summary>What an invoice state command's key already holds: the stored invoice or the recorded terminal refusal, never both.</summary>
+public sealed record SalesInvoiceReplay(SalesInvoice? Invoice, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId);
 
 /// <summary>
 /// The reasons an invoice draft cannot be prepared now (409 <c>invoice_not_ready</c>, one field error per reason; the screen shows
@@ -108,6 +196,9 @@ public static class SalesInvoiceProblemCodesV1
 {
     /// <summary>409: the shares cannot be invoiced together now; the field errors name every reason (<see cref="SalesInvoiceReasonCodesV1"/>).</summary>
     public const string InvoiceNotReady = "invoice_not_ready";
+
+    /// <summary>409 (recorded under the key): the approver is the preparer or the submitter (SAT-D88/D204).</summary>
+    public const string SelfApproval = SalesRuleCodes.InvoiceSelfApproval;
 }
 
 /// <summary>One amount set as exact invariant text at the currency's scale.</summary>
@@ -167,7 +258,13 @@ public sealed record SalesInvoiceDetailView(
     IReadOnlyList<SalesInvoiceLineView> Lines,
     string CreatedBy,
     DateTimeOffset CreatedAtUtc,
+    SalesInvoiceDecisionView? Decision = null,
+    string? PaymentAllocationWarning = null,
     bool IsReplay = false);
+
+/// <summary>API-33 facts: who sent it to approval, who decided (and why), who cancelled (and why). Absent members are null.</summary>
+public sealed record SalesInvoiceDecisionView(string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc, string? DecisionReason, string? CancelledBy, DateTimeOffset? CancelledAtUtc, string? CancellationReason);
 
 public sealed record SalesInvoiceSummaryView(
     Guid Id,
@@ -206,6 +303,22 @@ public interface ISalesInvoiceStore
     Task<SalesInvoiceStoreResult?> FindInvoiceReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         CancellationToken cancellationToken = default);
 
+    /// <summary>The stored answer or recorded refusal of a state command key, null when the key is new; another content or actor is a 409.</summary>
+    Task<SalesInvoiceReplay?> FindInvoiceStateReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>ADR-011 §7: records a terminal refusal of an invoice state command under its key.</summary>
+    Task RecordInvoiceRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid invoiceId,
+        SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One state command on the company's stored invoice in one save (the invoice, its released shares, the attempt, the audit).
+    /// <paramref name="mutate"/> is the domain's decision; a refusal writes nothing. Null when the invoice does not exist here.
+    /// </summary>
+    Task<SalesInvoiceStoreResult?> DecideInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default);
+
     Task<SalesInvoice?> FindInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default);
 
     Task<SalesInvoicePage> ListInvoicesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
@@ -223,6 +336,22 @@ public interface ISalesInvoiceStore
 public interface ISalesInvoiceService
 {
     Task<SalesInvoiceCommandResult> CreateInvoiceAsync(CreateSalesInvoiceRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-33: sends the draft to approval. Needs <c>sales.invoices.write</c> and price read.</summary>
+    Task<SalesInvoiceCommandResult> SubmitInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-33: approves (needs <c>sales.invoices.approve</c> and price read; the approver is not the preparer, SAT-D88/D204).</summary>
+    Task<SalesInvoiceCommandResult> ApproveInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-33: rejects with a reason (needs <c>sales.invoices.approve</c> and price read); the shares are released.</summary>
+    Task<SalesInvoiceCommandResult> RejectInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-33: cancels with a reason (needs <c>sales.invoices.write</c> and price read); the shares are released (SAT-D96 S2 payment effects: next slice).</summary>
+    Task<SalesInvoiceCommandResult> CancelInvoiceAsync(Guid invoiceId, CancelSalesInvoiceRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
     Task<SalesInvoiceListResponse> GetInvoicesAsync(SalesInvoiceListQuery query, CancellationToken cancellationToken = default);

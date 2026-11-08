@@ -175,6 +175,96 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         }
     }
 
+    [Theory]
+    [InlineData("submission", "submit")]
+    [InlineData("approval", "approve")]
+    [InlineData("rejection", "reject")]
+    [InlineData("cancellation", "cancel")]
+    public async Task Each_invoice_command_route_answers_200_and_a_replay_carries_the_replay_headers(string route, string command)
+    {
+        var invoiceId = Guid.NewGuid();
+        var replay = false;
+        var service = new StubInvoiceService
+        {
+            State = (_, id) => Task.FromResult(new SalesInvoiceCommandResult(Detail(id, replay), replay, "SENTETIK-corr-2")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.SendAsync(StatePost(invoiceId, route, "{\"expectedVersion\":\"1\"}", "SENTETIK-cmd")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            Assert.True(response.Headers.CacheControl is { NoStore: true, Private: true });
+        }
+
+        replay = true;
+        using (var again = await client.SendAsync(StatePost(invoiceId, route, "{\"expectedVersion\":\"1\"}", "SENTETIK-cmd")))
+        {
+            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+            Assert.Equal("true", Assert.Single(again.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-corr-2", Assert.Single(again.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        Assert.Equal(2, service.StateBodies.Count);
+        Assert.All(service.StateBodies, b => Assert.StartsWith($"{command}:1:", b, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("submission", "{\"expectedVersion\":\"1\",\"reason\":\"x\"}")]
+    [InlineData("approval", "{\"expectedVersion\":\"1\",\"reason\":\"x\"}")]
+    [InlineData("rejection", "{\"expectedVersion\":\"1\",\"extra\":true}")]
+    [InlineData("cancellation", "{\"expectedVersion\":\"1\",\"extra\":true}")]
+    [InlineData("cancellation", "{\"expectedVersion\":\"01\"}")]
+    [InlineData("approval", "{}")]
+    public async Task An_invoice_command_body_that_is_not_strict_answers_400_before_the_service(string route, string json)
+    {
+        var service = new StubInvoiceService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(StatePost(Guid.NewGuid(), route, json, "SENTETIK-bad"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(service.Keys);
+    }
+
+    [Fact]
+    public async Task An_invoice_command_without_an_idempotency_key_answers_400_and_a_self_approval_is_409_with_its_code()
+    {
+        var service = new StubInvoiceService
+        {
+            State = (_, _) => throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.SelfApproval),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var request = StatePost(Guid.NewGuid(), "approval", "{\"expectedVersion\":\"1\"}", null))
+        using (var missing = await client.SendAsync(request))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        }
+
+        using var response = await client.SendAsync(StatePost(Guid.NewGuid(), "approval", "{\"expectedVersion\":\"1\"}", "SENTETIK-self"));
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("sales_invoice_self_approval", body.RootElement.GetProperty("code").GetString());
+    }
+
+    private static HttpRequestMessage StatePost(Guid invoiceId, string route, string json, string? key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.InvoicesPath}/{invoiceId:D}/{route}")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        if (key is not null)
+        {
+            request.Headers.Add("Idempotency-Key", key);
+        }
+
+        return request;
+    }
+
     private WebApplicationFactory<Program> CreateHost(ISalesInvoiceService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
         {
@@ -206,7 +296,7 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
     {
         var amounts = new SalesInvoiceAmountsView("10.00", "2.00", "0.00", "12.00", "12.00");
         return new SalesInvoiceDetailView(id, "SF-2026-000001", "Draft", "1", new DateOnly(2026, 11, 7), Guid.NewGuid(), Account,
-            Guid.NewGuid(), 2, null, amounts, null, [], [], [], "SENTETIK-actor", DateTimeOffset.UnixEpoch, replay);
+            Guid.NewGuid(), 2, null, amounts, null, [], [], [], "SENTETIK-actor", DateTimeOffset.UnixEpoch, IsReplay: replay);
     }
 
     private sealed class StubInvoiceService : ISalesInvoiceService
@@ -215,7 +305,29 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
             _ => throw new InvalidOperationException("The service must not be called.");
         public Func<Guid, Task<SalesInvoiceDetailView>> Detail { get; set; } = _ => throw new InvalidOperationException("not called");
         public Func<SalesInvoiceListQuery, Task<SalesInvoiceListResponse>> List { get; set; } = _ => throw new InvalidOperationException("not called");
+        public Func<string, Guid, Task<SalesInvoiceCommandResult>> State { get; set; } = (_, _) => throw new InvalidOperationException("not called");
         public List<string> Keys { get; } = [];
+        public List<string> StateBodies { get; } = [];
+
+        public Task<SalesInvoiceCommandResult> SubmitInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => Record("submit", invoiceId, request.ExpectedVersion, request.Reason, metadata);
+
+        public Task<SalesInvoiceCommandResult> ApproveInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => Record("approve", invoiceId, request.ExpectedVersion, request.Reason, metadata);
+
+        public Task<SalesInvoiceCommandResult> RejectInvoiceAsync(Guid invoiceId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => Record("reject", invoiceId, request.ExpectedVersion, request.Reason, metadata);
+
+        public Task<SalesInvoiceCommandResult> CancelInvoiceAsync(Guid invoiceId, CancelSalesInvoiceRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            Record("cancel", invoiceId, request.ExpectedVersion, request.Reason + "|" + request.AcknowledgePaymentAllocationLift, metadata);
+
+        private Task<SalesInvoiceCommandResult> Record(string command, Guid invoiceId, string version, string? reason, SalesCommandMetadata metadata)
+        {
+            Keys.Add(metadata.IdempotencyKey);
+            StateBodies.Add($"{command}:{version}:{reason}");
+            return State(command, invoiceId);
+        }
 
         public Task<SalesInvoiceCommandResult> CreateInvoiceAsync(CreateSalesInvoiceRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default)
