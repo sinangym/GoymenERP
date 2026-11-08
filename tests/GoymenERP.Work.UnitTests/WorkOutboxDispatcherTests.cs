@@ -4,6 +4,7 @@ using GoymenERP.Modules.Work.Infrastructure;
 using GoymenERP.Modules.Work.Infrastructure.Outbox;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -203,7 +204,7 @@ public sealed class WorkOutboxDispatcherTests
         var leakyRun = await leaky.RunAsync();
         Assert.Equal(0, leakyRun.Delivered);
         Assert.Empty(leakyConsumer.Handled);
-        Assert.Empty(await leaky.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+        Assert.Equal(1, leakyRun.InvalidEnvelopes);
     }
 
     [Fact]
@@ -239,6 +240,121 @@ public sealed class WorkOutboxDispatcherTests
         Assert.Empty(consumer.Handled);
     }
 
+    [Fact]
+    public async Task An_invalid_envelope_is_skipped_with_an_alarm_and_the_cursor_moves_past_it_keeping_earlier_progress()
+    {
+        var harness = new Harness(Defaults);
+        harness.Source.Add(CompanyA, Message(CompanyA, 1), Message(CompanyA, 2) with { EventType = new string('e', 161) }, Message(CompanyA, 3));
+        var consumer = harness.AddConsumer("finance");
+
+        var run = await harness.RunAsync();
+
+        Assert.Equal(1, run.InvalidEnvelopes);
+        Assert.Equal(2, run.Delivered);
+        Assert.Equal([1, 3], consumer.Handled.Select(m => int.Parse(m.Position)).ToArray());
+        Assert.Equal("3", (await harness.Db(CompanyA).OutboxSourceCursors.SingleAsync()).Position);
+        Assert.Equal(0, (await harness.RunAsync()).InvalidEnvelopes);
+    }
+
+    [Fact]
+    public async Task An_envelope_with_an_unusable_position_fails_the_source_instead_of_moving_the_cursor()
+    {
+        var harness = new Harness(Defaults);
+        harness.Source.Add(CompanyA, Message(CompanyA, 1));
+        harness.Source.RawPositions[CompanyA] = new string('p', 300);
+        var consumer = harness.AddConsumer("finance");
+
+        var run = await harness.RunAsync();
+
+        Assert.Equal(0, run.Delivered);
+        Assert.Empty(consumer.Handled);
+        Assert.Empty(await harness.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+    }
+
+    [Fact]
+    public async Task A_consumer_name_longer_than_the_stored_limit_never_runs_and_writes_nothing()
+    {
+        var harness = new Harness(Defaults);
+        harness.Source.Add(CompanyA, Message(CompanyA, 1));
+        var consumer = harness.AddConsumer(new string('c', 129));
+
+        var run = await harness.RunAsync();
+
+        Assert.Equal(0, run.Delivered);
+        Assert.Equal(0, consumer.Calls);
+        Assert.Empty(await harness.Db(CompanyA).OutboxDeliveries.ToListAsync());
+        Assert.Empty(await harness.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+    }
+
+    [Fact]
+    public async Task A_persistent_storage_error_does_not_repeat_the_handler_every_poll()
+    {
+        var harness = new Harness(Defaults);
+        harness.Source.Add(CompanyA, Message(CompanyA, 1));
+        var consumer = harness.AddConsumer("finance");
+        harness.Saves.Failure = () => new DbUpdateException("disk full");
+
+        await harness.RunAsync();
+        await harness.RunAsync();
+        await harness.RunAsync();
+        Assert.Equal(1, consumer.Calls);
+
+        harness.Time.Advance(TimeSpan.FromSeconds(10));
+        await harness.RunAsync();
+        Assert.Equal(2, consumer.Calls);
+
+        harness.Time.Advance(TimeSpan.FromSeconds(10));
+        await harness.RunAsync();
+        Assert.Equal(2, consumer.Calls);
+
+        harness.Saves.Failure = null;
+        harness.Time.Advance(TimeSpan.FromSeconds(10));
+        var recovered = await harness.RunAsync();
+        Assert.Equal(1, recovered.Delivered);
+        Assert.Equal("1", (await harness.Db(CompanyA).OutboxSourceCursors.SingleAsync()).Position);
+    }
+
+    [Fact]
+    public async Task A_concurrency_conflict_holds_the_cursor_without_failing_the_source_and_keeps_earlier_progress()
+    {
+        var harness = new Harness(Defaults);
+        harness.Source.Add(CompanyA, Message(CompanyA, 1), Message(CompanyA, 2));
+        var consumer = harness.AddConsumer("finance");
+        await harness.RunAsync();
+        harness.Source.Add(CompanyA, Message(CompanyA, 3), Message(CompanyA, 4));
+        var saves = 0;
+        harness.Saves.Failure = () => ++saves == 2 ? new DbUpdateConcurrencyException("lost race") : null;
+
+        var run = await harness.RunAsync();
+
+        Assert.Equal(1, run.Delivered);
+        Assert.Equal("3", (await harness.Db(CompanyA).OutboxSourceCursors.SingleAsync()).Position);
+        harness.Saves.Failure = null;
+        var next = await harness.RunAsync();
+        Assert.Equal(1, next.Delivered);
+        Assert.Equal("4", (await harness.Db(CompanyA).OutboxSourceCursors.SingleAsync()).Position);
+        Assert.Equal(4, consumer.Handled.Select(m => m.Position).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Cancellation_while_a_handler_runs_propagates_and_records_nothing()
+    {
+        var harness = new Harness(Defaults);
+        harness.Source.Add(CompanyA, Message(CompanyA, 1));
+        var consumer = harness.AddConsumer("finance");
+        using var cancellation = new CancellationTokenSource();
+        consumer.OnHandle = () =>
+        {
+            cancellation.Cancel();
+            throw new OperationCanceledException(cancellation.Token);
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => harness.RunAsync(cancellation.Token));
+
+        Assert.Empty(await harness.Db(CompanyA).OutboxDeliveries.ToListAsync());
+        Assert.Empty(await harness.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+    }
+
     private static OutboxMessageEnvelopeV1 Message(Guid companyId, int n) => new(
         SourceName,
         Guid.Parse($"00000000-0000-0000-0000-{n:D12}"),
@@ -266,6 +382,7 @@ public sealed class WorkOutboxDispatcherTests
     {
         private readonly Dictionary<Guid, List<OutboxMessageEnvelopeV1>> byCompany = [];
         public Func<Guid> ActiveCompany { get; set; } = () => Guid.Empty;
+        public Dictionary<Guid, string> RawPositions { get; } = [];
         public string SourceName => WorkOutboxDispatcherTests.SourceName;
 
         public void Add(Guid company, params OutboxMessageEnvelopeV1[] messages)
@@ -285,7 +402,8 @@ public sealed class WorkOutboxDispatcherTests
         {
             var after = afterPosition is null ? 0 : int.Parse(afterPosition);
             IReadOnlyList<OutboxMessageEnvelopeV1> page = byCompany.GetValueOrDefault(ActiveCompany(), [])
-                .Where(m => int.Parse(m.Position) > after).OrderBy(m => int.Parse(m.Position)).Take(maxCount).ToList();
+                .Where(m => int.Parse(m.Position) > after).OrderBy(m => int.Parse(m.Position)).Take(maxCount)
+                .Select(m => RawPositions.TryGetValue(ActiveCompany(), out var raw) ? m with { Position = raw } : m).ToList();
             return Task.FromResult(page);
         }
     }
@@ -301,10 +419,12 @@ public sealed class WorkOutboxDispatcherTests
         public int FailTimes { get; set; }
         public bool Permanent { get; set; }
         public int Calls { get; private set; }
+        public Action? OnHandle { get; set; }
 
         public Task HandleAsync(OutboxMessageEnvelopeV1 message, CancellationToken cancellationToken)
         {
             Calls++;
+            OnHandle?.Invoke();
             if (Permanent)
             {
                 throw new OutboxPermanentFailureException("schema_unsupported", "refused");
@@ -353,7 +473,8 @@ public sealed class WorkOutboxDispatcherTests
                 var context = new CompanyContext();
                 return new TrackingCompanyContext(context, id => active = id);
             });
-            services.AddDbContext<WorkDbContext>(o => o.UseInMemoryDatabase(database));
+            services.AddSingleton(Saves);
+            services.AddDbContext<WorkDbContext>((sp, o) => o.UseInMemoryDatabase(database).AddInterceptors(sp.GetRequiredService<FailingSaves>()));
             services.AddSingleton<IOutboxSourceV1>(Source);
             services.AddSingleton<IEnumerable<IOutboxConsumerV1>>(consumers);
             if (registerDirectory)
@@ -369,6 +490,7 @@ public sealed class WorkOutboxDispatcherTests
 
         public ManualTime Time { get; }
         public FakeSource Source { get; }
+        public FailingSaves Saves { get; } = new();
 
         public FakeConsumer AddConsumer(string name, params OutboxSubscriptionV1[] subscriptions)
         {
@@ -378,7 +500,8 @@ public sealed class WorkOutboxDispatcherTests
             return consumer;
         }
 
-        public Task<WorkOutboxDispatchSummary> RunAsync() => dispatcher.RunOnceAsync(CancellationToken.None);
+        public Task<WorkOutboxDispatchSummary> RunAsync(CancellationToken cancellationToken = default) =>
+            dispatcher.RunOnceAsync(cancellationToken);
 
         public WorkDbContext Db(Guid companyId)
         {
@@ -386,6 +509,18 @@ public sealed class WorkOutboxDispatcherTests
             company.Set(companyId);
             return new WorkDbContext(
                 new DbContextOptionsBuilder<WorkDbContext>().UseInMemoryDatabase(database).Options, company);
+        }
+    }
+
+    private sealed class FailingSaves : SaveChangesInterceptor
+    {
+        public Func<Exception?>? Failure { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            var failure = Failure?.Invoke();
+            return failure is null ? ValueTask.FromResult(result) : throw failure;
         }
     }
 

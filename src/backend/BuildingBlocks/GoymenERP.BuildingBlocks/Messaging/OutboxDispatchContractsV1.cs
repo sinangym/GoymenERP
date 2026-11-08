@@ -40,6 +40,9 @@ public interface IOutboxSourceV1
 /// A module's handler for versioned outbox events. Delivery is at-least-once: the dispatcher de-duplicates by
 /// (company, source, consumer, message id) but a crash between handling and recording can repeat a call, so the
 /// handler must itself be idempotent. It must not write another module's tables (use that module's port).
+/// The same consumer instance (and any scoped DbContext it holds) serves every message of a company within a cycle, so
+/// after a failure the handler must clear or reset its own context before it throws; the dispatcher cannot do that for it.
+/// Several dispatcher instances may run at once: the dedup record reduces, but does not remove, repeated calls.
 /// </summary>
 public interface IOutboxConsumerV1
 {
