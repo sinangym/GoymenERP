@@ -184,13 +184,8 @@ public sealed class SalesInvoiceCalculatorTests
         Assert.Equal([Day.AddDays(30), Day.AddDays(60)], invoice.Instalments.Select(item => item.DueDate));
     }
 
-    [Theory]
-    [InlineData("0.03")]
-    [InlineData("-0.03")]
-    [InlineData("0")]
-    public void A_foreign_currency_invoice_finalized_with_a_match_difference_is_readable_again_from_the_store(string delta)
+    private static SalesInvoice MatchedForeignCurrencyInvoice(decimal delta)
     {
-        // Finalize splits the TL instalments against the official TL amount; the stored facts must restore against the same total.
         var terms = SalesDueTerms.Create(
         [
             new SalesDueInstalment(1, SalesDueBasis.ShipmentDate, 30, "50"),
@@ -202,19 +197,44 @@ public sealed class SalesInvoiceCalculatorTests
             due.DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
         invoice.Submit(invoice.Version, "preparer", DateTimeOffset.UnixEpoch);
         invoice.Approve(invoice.Version, "approver", DateTimeOffset.UnixEpoch);
-        var official = invoice.PayableFunctionalAmount + decimal.Parse(delta, System.Globalization.CultureInfo.InvariantCulture);
         invoice.RecordMatch(invoice.Version, "matcher",
             new SalesOfficialInvoiceFacts("GIB2026000000001", new string('A', SalesInvoice.EttnLength), header.PartyId, Usd,
-                invoice.Totals.Payable.Amount, official), 0.05m, false, null, DateTimeOffset.UnixEpoch);
+                invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount + delta), 0.05m, false, null, DateTimeOffset.UnixEpoch);
+        return invoice;
+    }
+
+    [Fact]
+    public void A_foreign_currency_invoice_finalized_with_an_exact_match_is_readable_again_from_the_store()
+    {
+        // Finalize and restore split and check the TL instalments against the same total: the ERP payable (SAT-D225/D227).
+        var invoice = MatchedForeignCurrencyInvoice(0m);
         var finalization = invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid, DateTimeOffset.UnixEpoch);
 
-        Assert.Equal(official, finalization.Plan.Sum(item => item.FunctionalAmount!.Value));
+        Assert.Equal(invoice.PayableFunctionalAmount, finalization.Plan.Sum(item => item.FunctionalAmount!.Value));
 
         var restored = SalesInvoice.Restore(invoice.Id, Company, invoice.DocumentNo, invoice.Header, invoice.State, invoice.Version,
             invoice.CreatedBy, invoice.CreatedAtUtc, invoice.Lines, invoice.Instalments, invoice.Decision);
         restored.RestoreMatch(invoice.Match!);
         restored.RestoreFinalization(finalization);
         Assert.Equal(finalization, restored.Finalization);
+    }
+
+    [Theory]
+    [InlineData("0.03")]
+    [InlineData("-0.03")]
+    [InlineData("0.05")]
+    public void A_match_with_a_difference_is_never_finalized_in_any_currency(string delta)
+    {
+        // NEEDS-SINAN #3: whether the official or the ERP amount governs is undecided, so a recorded difference fails closed.
+        var invoice = MatchedForeignCurrencyInvoice(decimal.Parse(delta, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.NotEqual(0m, invoice.Match!.Difference);
+
+        var refused = Assert.Throws<SalesRuleException>(() => invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid,
+            DateTimeOffset.UnixEpoch));
+
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceOpen, refused.Code);
+        Assert.Equal(SalesInvoiceState.Approved, invoice.State);
+        Assert.Null(invoice.Finalization);
     }
 
     [Fact]

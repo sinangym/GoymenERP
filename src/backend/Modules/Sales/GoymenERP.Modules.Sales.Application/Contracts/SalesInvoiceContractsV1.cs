@@ -282,6 +282,9 @@ public static class SalesInvoiceProblemCodesV1
     /// <summary>409 (not recorded; the match can still be made): the invoice is not matched with the official document yet (SAT-D89).</summary>
     public const string MatchRequired = SalesRuleCodes.InvoiceMatchRequired;
 
+    /// <summary>409 (recorded): the recorded match carries a difference; finalisation stays blocked until it is resolved (SAT-D229).</summary>
+    public const string MatchDifferenceOpen = SalesRuleCodes.InvoiceMatchDifferenceOpen;
+
     /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative remainder (SAT-D227).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
 

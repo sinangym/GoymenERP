@@ -57653,6 +57653,7 @@
             },
             "x-erp-problem-codes": [
               "concurrent_change",
+              "sales_invoice_match_difference_open",
               "sales_invoice_match_required",
               "sales_state_conflict",
               "same_key_payload_mismatch",

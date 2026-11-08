@@ -174,25 +174,58 @@ public sealed partial class SalesDraftServiceTests
     [Theory]
     [InlineData("648.54")]
     [InlineData("648.44")]
-    public async Task A_match_recorded_within_the_tolerance_is_finalized_and_the_official_amount_governs_the_tl_split(string official)
+    public async Task A_recorded_match_difference_blocks_the_finalization_as_a_recorded_409_that_replays(string official)
     {
+        // NEEDS-SINAN #3: which amount Finance opens on a difference is an undecided money policy, so it fails closed (any currency).
         var finance = new FakeFinanceAdmission();
         var (invoicing, id, _) = await ApprovedInvoiceAsync();
         invoicing.Finance = finance;
         invoicing.Official.Has(decimal.Parse(official, System.Globalization.CultureInfo.InvariantCulture));
         await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-match"));
         invoicing.World.User.Id = "synthetic-invoice-finalizer";
-        invoicing.World.Authority.Measured.Clear();
 
-        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final")));
 
-        Assert.Equal("Finalized", done.Invoice.State);
-        var offered = Assert.Single(finance.Requests);
-        var functionalTotal = offered.Instalments.Where(item => item.FunctionalAmount is not null)
-            .Sum(item => decimal.Parse(item.FunctionalAmount!, System.Globalization.CultureInfo.InvariantCulture));
-        // A foreign-currency plan adds up to the official TL amount; a TL plan carries no TL split and the official amount stays on the match.
-        Assert.True(functionalTotal == 0m || functionalTotal == decimal.Parse(official, System.Globalization.CultureInfo.InvariantCulture));
-        Assert.Equal(official, done.Invoice.Match!.OfficialAmount);
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen), Status(refused));
+        Assert.Equal("sales_invoice_match_difference_open", refused.Code);
+        Assert.Equal(1, invoicing.Invoices.StateAttempts.Count(entry => entry.Key == "k-inv-final"));
+        Assert.NotNull(invoicing.Invoices.StateAttempts["k-inv-final"].Refusal);
+        Assert.Empty(finance.Requests);
+        Assert.Equal("Approved", (await invoicing.Service().GetInvoiceAsync(id)).State);
+
+        // The same key answers the same recorded refusal and never reaches the store's write again.
+        var calls = invoicing.Invoices.FinalizeCalls;
+        var replay = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final", "another-correlation")));
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen), Status(replay));
+        Assert.Equal(calls, invoicing.Invoices.FinalizeCalls);
+        Assert.DoesNotContain("iptal", refused.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class FenceRecordingFinanceAdmission(Func<IReadOnlyList<string>> measured) : ISalesFinanceAdmissionPortV1
+    {
+        public List<string> MeasuredAtOffer { get; } = [];
+
+        public Task<SalesFinanceAdmissionAnswerV1> AdmitAsync(SalesFinanceAdmissionRequestV1 request, CancellationToken cancellationToken)
+        {
+            MeasuredAtOffer.AddRange(measured());
+            return Task.FromResult(new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Admitted, "ok"));
+        }
+    }
+
+    [Fact]
+    public async Task The_finance_resend_measures_the_finalization_permission_right_before_it_offers()
+    {
+        var (invoicing, id) = await MatchedInvoiceAsync(new FakeFinanceAdmission { Answer = SalesFinanceAdmissionAnswerV1.Unavailable });
+        await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+        var fence = new FenceRecordingFinanceAdmission(() => [.. invoicing.World.Authority.Measured]);
+        invoicing.Finance = fence;
+
+        await invoicing.Service().ResendFinanceAdmissionAsync(id, Command("4"), Metadata("k-inv-resend"));
+
+        Assert.NotEmpty(fence.MeasuredAtOffer);
+        Assert.Equal(InvoiceFinalize, fence.MeasuredAtOffer[^1]);
     }
 
     [Fact]
@@ -216,5 +249,32 @@ public sealed partial class SalesDraftServiceTests
             root.GetProperty("instalments")[0].EnumerateObject().Select(member => member.Name).ToArray());
         Assert.Equal(stored.Id, root.GetProperty("invoiceId").GetGuid());
         Assert.Equal(stored.Finalization!.AdmissionId, root.GetProperty("admissionId").GetGuid());
+        Assert.Equal(stored.DocumentNo, root.GetProperty("documentNo").GetString());
+        Assert.Equal(stored.Version, root.GetProperty("version").GetInt64());
+        Assert.Equal(System.Text.Json.JsonValueKind.Number, root.GetProperty("payable").ValueKind);
+        Assert.Equal(stored.Totals.Payable.Amount, root.GetProperty("payable").GetDecimal());
+        var rate = root.GetProperty("rate");
+        Assert.Equal(stored.Header.Rate is null ? System.Text.Json.JsonValueKind.Null : System.Text.Json.JsonValueKind.Number, rate.ValueKind);
+        var functionalPayable = root.GetProperty("functionalPayable");
+        Assert.Equal(stored.FunctionalTotals is null ? System.Text.Json.JsonValueKind.Null : System.Text.Json.JsonValueKind.Number,
+            functionalPayable.ValueKind);
+        var match = root.GetProperty("match");
+        Assert.Equal(System.Text.Json.JsonValueKind.String, match.GetProperty("officialNo").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.String, match.GetProperty("ettn").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Number, match.GetProperty("officialFunctionalAmount").ValueKind);
+        Assert.Equal(0m, match.GetProperty("difference").GetDecimal());
+        var instalments = root.GetProperty("instalments");
+        Assert.Equal(stored.Finalization.Plan.Count, instalments.GetArrayLength());
+        foreach (var (item, expected) in instalments.EnumerateArray().Zip(stored.Finalization.Plan))
+        {
+            Assert.Equal(expected.OpenItemId, item.GetProperty("openItemId").GetGuid());
+            Assert.Equal(expected.InstallmentId, item.GetProperty("installmentId").GetGuid());
+            Assert.Equal(expected.SequenceNo, item.GetProperty("sequenceNo").GetInt32());
+            Assert.Equal(expected.DueDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                item.GetProperty("dueDate").GetString());
+            Assert.Equal(expected.Amount, item.GetProperty("amount").GetDecimal());
+            Assert.Equal(expected.FunctionalAmount is null ? System.Text.Json.JsonValueKind.Null : System.Text.Json.JsonValueKind.Number,
+                item.GetProperty("functionalAmount").ValueKind);
+        }
     }
 }

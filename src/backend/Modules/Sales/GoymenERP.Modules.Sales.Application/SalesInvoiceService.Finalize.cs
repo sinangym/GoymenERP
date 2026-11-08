@@ -60,6 +60,12 @@ public sealed partial class SalesInvoiceService
                 new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict, [new("state", exception.Code)]),
                 cancellationToken);
         }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceMatchDifferenceOpen)
+        {
+            return await TerminalAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.FinalizeV1, invoiceId,
+                new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen, [new("match", "difference_open")]),
+                cancellationToken);
+        }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceMatchRequired)
         {
             // Data, not a permanent refusal: the match can be recorded and the same key asks again.

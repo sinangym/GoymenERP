@@ -416,6 +416,9 @@ public static class SalesRuleCodes
     /// <summary>API-36: an invoice is finalised only after its official document match is recorded (SAT-D89/D229).</summary>
     public const string InvoiceMatchRequired = "sales_invoice_match_required";
 
+    /// <summary>API-36 (SAT-D229): the recorded match carries a difference; which amount Finance opens is undecided, so it fails closed.</summary>
+    public const string InvoiceMatchDifferenceOpen = "sales_invoice_match_difference_open";
+
     /// <summary>API-36 (SAT-D227): the TL split of the instalments does not add up to the TL payable total.</summary>
     public const string InvoiceInstalmentFunctionalInvalid = "sales_invoice_instalment_functional_invalid";
 

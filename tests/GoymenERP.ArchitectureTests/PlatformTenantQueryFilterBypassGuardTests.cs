@@ -464,7 +464,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
                 // SAT-D132 (quote vade): +1 Sales fact (quote due terms per revision, carry-over to the order, the 51227 rollback refusal), kept ordinal-sorted (be1b2f40... -> 525d38a4...).
                 // Merged with main's #984 (SAT-D132) fact: SAT-D17 line closure +5 facts recomputed over the union (525d38a4... -> 7c089718...).
-                "1b3664a41628b7345f26a1108b004919c6b1a7758c6c02c755586fa722746a15",
+                "55ad9807e85049a23b00ff37b1fdd19c2b8edd5eac28d1302414e9e45b227906",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -596,7 +596,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // SAT-D132: QuoteRevisions.DueTermsJson (nullable, CK_QuoteRevisions_DueTerms ISJSON) on the same company-filtered revision row; no query-filter bypass or direct database surface (5d465acf... -> da465c59...).
                 // SAT-D17: DraftLineClosures (keyed per line, FK to draft and line, CK) on the same company-filtered context; no query-filter bypass or direct database surface (da465c59... -> af489a5a...).
-                "af489a5ae624822a230aef77f3733cfe87d17b8faa7d2d174ccd1c56504cb221",
+                "17c1be196d720c8f01ebf012060b7c0e117e44b785c1560e96f76bb8979ef6fe",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"

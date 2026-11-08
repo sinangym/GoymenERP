@@ -1,5 +1,3 @@
-using GoymenERP.BuildingBlocks.Monetary;
-
 namespace GoymenERP.Modules.Sales.Domain.Invoices;
 
 /// <summary>Where the finalised invoice's open items stand with Finance (SAT-D208). Sales never calls a Waiting invoice admitted.</summary>
@@ -56,10 +54,15 @@ public sealed partial class SalesInvoice
             throw new SalesRuleException(SalesRuleCodes.InvoiceMatchRequired, "Fatura resmî belgeyle eşleşmeden kesinleştirilmez.");
         }
 
-        // A recorded match is already either within the policy tolerance or approved above it with a reason (SAT-D106/D204), so a
-        // non-zero difference does not block here. The official document governs (SAT-D89/D229): the TL split of the instalments
-        // adds up to the official TL amount, not to the ERP's own figure.
-        var payable = GoverningFunctionalPayable();
+        // Which amount Finance opens when the official document differs from the ERP figure is an undecided money policy
+        // (NEEDS-SINAN #3), so a recorded difference fails closed: nothing is finalised until it is resolved.
+        if (Match.Difference != 0m)
+        {
+            throw new SalesRuleException(SalesRuleCodes.InvoiceMatchDifferenceOpen,
+                "Resmî belgeyle eşleşmede fark bulunduğundan fatura, fark çözülene kadar kesinleştirilemez.");
+        }
+
+        var payable = FunctionalTotals?.Payable;
 
         var split = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Header.Rate, Header.CurrencyId, payable);
         var plan = new List<SalesInvoiceFinalInstalment>(instalments.Count);
@@ -103,26 +106,11 @@ public sealed partial class SalesInvoice
         return Finalization;
     }
 
-    /// <summary>
-    /// The TL total the instalment split must add up to: the official TL amount when a match with a non-zero difference is recorded
-    /// (SAT-D89/D229), otherwise the ERP's own payable. Finalize and restore share this so what is written is always readable.
-    /// </summary>
-    private Money? GoverningFunctionalPayable()
-    {
-        var payable = FunctionalTotals?.Payable;
-        if (Header.Rate is { } rate && payable is not null && Match is { } match && match.Difference != 0m)
-        {
-            return Money.Of(match.OfficialFunctionalAmount, rate.FunctionalCurrencyId, rate.FunctionalScale);
-        }
-
-        return payable;
-    }
-
     /// <summary>Attaches the stored finalisation when the aggregate is restored from the store.</summary>
     public void RestoreFinalization(SalesInvoiceFinalization facts)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        var payable = GoverningFunctionalPayable()?.Amount;
+        var payable = FunctionalTotals?.Payable.Amount;
         var admitted = facts.FinanceStatus == SalesInvoiceFinanceStatus.Admitted;
         var split = facts.Plan.Where(item => item.FunctionalAmount is not null).Sum(item => item.FunctionalAmount!.Value);
         if (State != SalesInvoiceState.Finalized || Finalization is not null || Match is null || facts.FinalizedVersion != Version
