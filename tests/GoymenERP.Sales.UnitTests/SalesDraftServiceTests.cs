@@ -1104,6 +1104,10 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("other-unit", 422, "unsupported_unit")]
     [InlineData("unit-not-found", 422, "unsupported_unit")]
     [InlineData("unit-other-company", 503, "reference_provider_invalid")]
+    [InlineData("settings-access-denied", 403, "settings_access_denied")]
+    [InlineData("settings-unavailable", 503, "settings_provider_unavailable")]
+    [InlineData("settings-unit-not-found", 422, "unsupported_unit")]
+    [InlineData("restore-failed", 503, "product_eligibility_unavailable")]
     public async Task The_product_and_its_order_unit_are_the_owners_answers(string fault, int status, string code)
     {
         var world = new World();
@@ -1997,6 +2001,11 @@ public sealed partial class SalesDraftServiceTests
             if (Fault == "unavailable") throw new ProductOperationException("product_family_policy_unavailable", 503);
             if (Fault == "conflict-exception") throw new ProductOperationException("product_selection_changed", 409);
             if (Fault == "not-found") throw new ProductOperationException("product_not_found", 404);
+            // B-31: the owner's eligibility reads its unit profiles from Settings and lets that refusal through as is.
+            if (Fault == "settings-access-denied") throw new SettingsPrerequisiteException("settings_access_denied");
+            if (Fault == "settings-unavailable") throw new SettingsPrerequisiteException("settings_provider_unavailable");
+            if (Fault == "settings-unit-not-found") throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound);
+            if (Fault == "restore-failed") throw new InvalidOperationException("Stored product could not be restored.");
             if (VersionConflict)
             {
                 IReadOnlyList<ProductFieldError> errors = [new("productId", ProductApiV1.VersionConflict)];

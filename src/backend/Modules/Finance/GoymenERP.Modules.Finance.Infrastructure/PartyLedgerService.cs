@@ -16,7 +16,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// instrument) — by its <c>OccurredOn</c>;</item>
 /// <item>every outgoing money event of a recorded payment to the account, by its <c>OccurredOn</c>;</item>
 /// <item>every admitted open item of the account, by the UTC day Finance admitted it (the source contract carries no
-/// document date yet), with its official document and due date.</item>
+/// document date yet), with its official document and due date;</item>
+/// <item>F2b: every invoice-cancellation reversal of one of those open items, by the UTC day of the cancellation.</item>
 /// </list>
 /// Drafts are never read: a draft has no money event and no open item. Each fact is one stored row, read once, so a
 /// replayed command (which stored nothing new) and a reversal (which stored its own counter-event) appear exactly as
@@ -90,7 +91,12 @@ public sealed class PartyLedgerService(
             .Select(row => new OpenItemFact(row.Id, row.SourceId, row.CurrencyId, row.OriginalAmountText, row.DueOn,
                 row.CreatedAtUtc, row.Direction))
             .ToListAsync(cancellationToken);
-        if (moneyEvents.Count + payments.Count + openItems.Count > PartyLedgerRules.MaximumEntries)
+        var cancellations = await CancellationsQuery(partyId, accountId)
+            .Where(row => row.CancelledAtUtc >= admittedFrom && row.CancelledAtUtc < admittedBefore)
+            .OrderBy(row => row.CancelledAtUtc).ThenBy(row => row.OpenItemId)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+        if (moneyEvents.Count + payments.Count + openItems.Count + cancellations.Count > PartyLedgerRules.MaximumEntries)
         {
             return await AfterReadAsync(context, PartyLedgerOutcome.TooManyEntries, cancellationToken);
         }
@@ -150,6 +156,16 @@ public sealed class PartyLedgerService(
 
             facts.Add(new PartyLedgerFact(kind, row.Id, DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime),
                 row.CreatedAtUtc, row.CurrencyId, row.AmountText, row.Id, null, null, row.DocumentId, row.DueOn));
+        }
+
+        foreach (var row in cancellations)
+        {
+            if (CancellationFactOf(row) is not { } fact)
+            {
+                return Refused(PartyLedgerOutcome.Unavailable);
+            }
+
+            facts.Add(fact);
         }
 
         IReadOnlyList<PartyLedgerCurrency> currencies;
@@ -222,7 +238,12 @@ public sealed class PartyLedgerService(
                 row.CreatedAtUtc,
             })
             .ToListAsync(cancellationToken);
-        var tooMany = moneyEvents.Count + payments.Count + openItems.Count > PartyBalanceRules.MaximumFacts;
+        var cancellations = await CancellationsQuery(partyId, accountId)
+            .OrderBy(row => row.OpenItemId)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+        var tooMany = moneyEvents.Count + payments.Count + openItems.Count + cancellations.Count
+            > PartyBalanceRules.MaximumFacts;
         var reversalSourceIds = tooMany
             ? []
             : moneyEvents.Where(row => row.Kind == MoneyEventKinds.ManualBankReceiptReversed)
@@ -285,6 +306,16 @@ public sealed class PartyLedgerService(
                 var sums = row.Direction == FinanceOpenItemDirectionCodes.Receivable ? receivable : payable;
                 sums[row.CurrencyId] = sums.TryGetValue(row.CurrencyId, out var sum) ? sum.Add(outstanding) : outstanding;
             }
+        }
+
+        foreach (var row in cancellations)
+        {
+            if (CancellationFactOf(row) is not { } fact)
+            {
+                return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
+            }
+
+            facts.Add(fact);
         }
 
         IReadOnlyList<PartyLedgerCurrency> ledger;
@@ -355,6 +386,53 @@ public sealed class PartyLedgerService(
 
     private sealed record PaymentFact(Guid Id, Guid PaymentId, Guid CurrencyId, string AmountText, DateOnly OccurredOn,
         DateTimeOffset RecordedAtUtc);
+
+    /// <summary>
+    /// F2b: the account's invoice-cancellation reversals — one per cancelled open item, with the item's direction and the
+    /// cancellation instant. Tenant-filtered like every other read here.
+    /// </summary>
+    private IQueryable<CancellationFact> CancellationsQuery(Guid partyId, Guid accountId) =>
+        from item in dbContext.InvoiceCancellationItems.AsNoTracking()
+        join cancellation in dbContext.InvoiceCancellations.AsNoTracking()
+            on new { item.CompanyId, Id = item.CancellationId } equals new { cancellation.CompanyId, cancellation.Id }
+        join openItem in dbContext.OpenItems.AsNoTracking()
+            on new { item.CompanyId, Id = item.OpenItemId } equals new { openItem.CompanyId, openItem.Id }
+        where openItem.PartyId == partyId && openItem.CompanyAccountId == accountId
+        select new CancellationFact
+        {
+            OpenItemId = openItem.Id,
+            DocumentId = openItem.SourceId,
+            CurrencyId = openItem.CurrencyId,
+            AmountText = item.ReversedAmountText,
+            CancelledAtUtc = cancellation.CancelledAtUtc,
+            Direction = openItem.Direction,
+        };
+
+    /// <summary>A reversal's row, the reverse side of its open item; an unknown direction is a broken invariant.</summary>
+    private static PartyLedgerFact? CancellationFactOf(CancellationFact row) =>
+        CancellationKind(row.Direction) is { } kind
+            ? new PartyLedgerFact(kind, row.OpenItemId, DateOnly.FromDateTime(row.CancelledAtUtc.UtcDateTime),
+                row.CancelledAtUtc, row.CurrencyId, row.AmountText, row.OpenItemId, row.OpenItemId, null, row.DocumentId,
+                null)
+            : null;
+
+    /// <summary>A member-initialised projection, so the date filter and order still translate to SQL.</summary>
+    private sealed class CancellationFact
+    {
+        public Guid OpenItemId { get; init; }
+        public Guid DocumentId { get; init; }
+        public Guid CurrencyId { get; init; }
+        public string AmountText { get; init; } = string.Empty;
+        public DateTimeOffset CancelledAtUtc { get; init; }
+        public int Direction { get; init; }
+    }
+
+    private static PartyLedgerEntryKind? CancellationKind(int direction) => direction switch
+    {
+        FinanceOpenItemDirectionCodes.Receivable => PartyLedgerEntryKind.OpenItemCancellation,
+        FinanceOpenItemDirectionCodes.Payable => PartyLedgerEntryKind.PayableOpenItemCancellation,
+        _ => null,
+    };
 
     private sealed record OpenItemFact(Guid Id, Guid DocumentId, Guid CurrencyId, string AmountText, DateOnly? DueOn,
         DateTimeOffset CreatedAtUtc, int Direction);

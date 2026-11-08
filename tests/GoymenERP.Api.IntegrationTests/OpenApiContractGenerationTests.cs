@@ -6535,7 +6535,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("outstandingAmount", "ref:AmountView"),
                     ("direction", "ref:FinanceOpenItemDirectionV1")),
                 ["FinanceOpenItemDirectionV1"] = ScalarSchema("enum:Receivable|Payable"),
-                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed"),
+                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed|Cancelled"),
                 ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
                 ["PartyLedgerCurrency"] = ObjectSchema(
                     ["currencyId", "entries", "debitTotal", "creditTotal", "closingBalance"],
@@ -6558,7 +6558,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("instrumentId", "type:null|string;format:uuid"),
                     ("documentId", "type:null|string;format:uuid"),
                     ("dueOn", "type:null|string;format:date")),
-                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem"),
+                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem|OpenItemCancellation|PayableOpenItemCancellation"),
                 ["PartyLedgerSide"] = ScalarSchema("enum:Debit|Credit"),
                 ["PartyLedgerBalanceView"] = ObjectSchema(
                     ["side", "amount"],
