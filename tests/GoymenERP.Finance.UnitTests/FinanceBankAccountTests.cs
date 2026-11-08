@@ -71,9 +71,11 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, officialInvoiceImportWorkDelivery) < Array.IndexOf(migrations, openItemDirection));
         const string openItemInvoiceExchange = "20261102220923_AddOpenItemInvoiceExchange";
         Assert.True(Array.IndexOf(migrations, openItemDirection) < Array.IndexOf(migrations, openItemInvoiceExchange));
-        // The NEWEST migration is pinned by name on purpose: the invoice exchange columns (MOD-04) are the reviewed
-        // append after the open-item direction, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal(openItemInvoiceExchange, migrations.Last());
+        const string invoiceCancellations = "20261107131505_AddInvoiceCancellations";
+        Assert.True(Array.IndexOf(migrations, openItemInvoiceExchange) < Array.IndexOf(migrations, invoiceCancellations));
+        // The NEWEST migration is pinned by name on purpose: the invoice cancellations (F2b) are the reviewed append
+        // after the invoice exchange columns, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal(invoiceCancellations, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

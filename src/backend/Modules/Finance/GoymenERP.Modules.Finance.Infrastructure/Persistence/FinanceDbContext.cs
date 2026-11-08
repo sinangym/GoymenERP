@@ -42,6 +42,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
     internal DbSet<FinanceOpenItemSourceBatchRow> OpenItemSourceBatches => Set<FinanceOpenItemSourceBatchRow>();
 
+    internal DbSet<FinanceInvoiceCancellationRow> InvoiceCancellations => Set<FinanceInvoiceCancellationRow>();
+
+    internal DbSet<FinanceInvoiceCancellationItemRow> InvoiceCancellationItems => Set<FinanceInvoiceCancellationItemRow>();
+
     internal DbSet<FinanceOfficialInvoiceImportBatchRow> OfficialInvoiceImportBatches => Set<FinanceOfficialInvoiceImportBatchRow>();
 
     internal DbSet<FinanceOfficialInvoiceImportApprovalRow> OfficialInvoiceImportApprovals => Set<FinanceOfficialInvoiceImportApprovalRow>();
@@ -79,6 +83,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureOpenItemSourceBatches(modelBuilder);
         ConfigureOfficialInvoiceImports(modelBuilder);
         ConfigureOpenItems(modelBuilder);
+        ConfigureInvoiceCancellations(modelBuilder);
         ConfigureSourceAllocationStates(modelBuilder);
         ConfigureAllocations(modelBuilder);
         ConfigureReversalProposals(modelBuilder);
@@ -465,7 +470,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "LEN([SourceBatchVersion]) > 0 AND LEN([SourceBatchChecksum]) = 64 AND "
                 + "LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND "
                 + "LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
-            table.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");
+            // F2b: 3 = cancelled by its invoice's cancellation (SAT-D96), outstanding zero, reversed by its own fact.
+            table.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_OpenItems_Version", "[Version] >= 1");
             // MOD-15: a receivable (1) or a payable (2); a known official kind can carry only its own direction.
             table.HasCheckConstraint("CK_OpenItems_Direction",
@@ -506,6 +512,55 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureInvoiceCancellations(ModelBuilder modelBuilder)
+    {
+        var header = modelBuilder.Entity<FinanceInvoiceCancellationRow>();
+        header.ToTable("InvoiceCancellations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceCancellations_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[InvoiceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_InvoiceCancellations_Text",
+                "LEN([SourceKind]) > 0 AND LEN([InvoiceVersion]) > 0 AND LEN([Reason]) > 0 AND "
+                + "LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND "
+                + "LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+        });
+        header.HasKey(x => x.Id);
+        header.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        header.Property(x => x.Id).ValueGeneratedNever();
+        header.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.InvoiceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.Reason).HasMaxLength(FinanceInvoiceCancellationRules.ReasonMaximumLength).IsRequired();
+        header.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        header.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        header.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.ResultJson).IsRequired();
+        header.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        header.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).IsUnique();
+        header.HasIndex(x => new { x.CompanyId, x.SourceKind, x.InvoiceId }).IsUnique();
+        header.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var item = modelBuilder.Entity<FinanceInvoiceCancellationItemRow>();
+        item.ToTable("InvoiceCancellationItems", Schema, table =>
+            table.HasCheckConstraint("CK_InvoiceCancellationItems_Amount", "LEN([ReversedAmountText]) > 0"));
+        item.HasKey(x => new { x.CompanyId, x.OpenItemId });
+        item.Property(x => x.ReversedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        item.HasIndex(x => new { x.CompanyId, x.CancellationId });
+        item.HasOne<FinanceInvoiceCancellationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CancellationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        item.HasOne<FinanceOpenItemRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpenItemId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        item.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureAllocations(ModelBuilder modelBuilder)

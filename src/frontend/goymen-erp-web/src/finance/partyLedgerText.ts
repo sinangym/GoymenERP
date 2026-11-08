@@ -46,6 +46,8 @@ export const KIND_LABEL: Readonly<Record<PartyLedgerEntryKind, string>> = {
   CustomerInstrumentCollection: 'Çek/senet tahsili',
   ManualBankPayment: 'Ödeme',
   PayableOpenItem: 'Alış faturası taksiti (borç)',
+  OpenItemCancellation: 'Satış faturası iptali (ters kayıt)',
+  PayableOpenItemCancellation: 'Alış faturası iptali (ters kayıt)',
 }
 
 /** Borçlu / alacaklı from the company's view of the party's account. */

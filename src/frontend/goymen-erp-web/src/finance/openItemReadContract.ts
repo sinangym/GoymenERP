@@ -11,7 +11,8 @@ import { isBoundUuid, isInstant, isPositiveInt64Text, type AmountView } from './
 import { isDateOnly } from './dateOnly'
 import { isNonNegativeDecimalText, isPositiveDecimalText, positiveDifference, sameDecimal } from './decimalText'
 
-export type OpenItemStatus = 'Open' | 'Closed'
+/** F2b: `Cancelled` — closed by its invoice's cancellation (SAT-D96), outstanding zero, reversed by its own fact. */
+export type OpenItemStatus = 'Open' | 'Closed' | 'Cancelled'
 
 /** MOD-15: a receivable (the party owes the company) or a payable (the company owes the party); stored metadata. */
 export type OpenItemDirection = 'Receivable' | 'Payable'
@@ -100,7 +101,7 @@ export function decodeOpenItem(value: unknown, companyId: string): OpenItem | nu
     || !canonicalText(sourceKind, SOURCE_KIND_MAX_LENGTH) || !canonicalText(sourceVersion, Number.MAX_SAFE_INTEGER)
     || !isPositiveInt64Text(version) || !isInstant(createdAtUtc)
     || !(dueOn === null || (typeof dueOn === 'string' && isDateOnly(dueOn)))
-    || !(status === null || status === 'Open' || status === 'Closed')
+    || !(status === null || status === 'Open' || status === 'Closed' || status === 'Cancelled')
     || !(direction === 'Receivable' || direction === 'Payable')) return null
   // A known official kind carries only its own direction (the server's CK_OpenItems_Direction); defence in depth.
   const expected = KNOWN_KIND_DIRECTION[sourceKind as string]
@@ -115,6 +116,8 @@ export function decodeOpenItem(value: unknown, companyId: string): OpenItem | nu
     const initial = initialAmount.money.amount
     const outstanding = outstandingAmount.money.amount
     if (!sameDecimal(initial, outstanding) && positiveDifference(initial, outstanding) === null) return null
+    // A cancelled item has nothing left to collect or pay.
+    if (status === 'Cancelled' && /[1-9]/.test(outstanding)) return null
   }
   return { id, companyId: body.companyId, sourceKind, sourceId, sourceLineId, sourceVersion, partyId, companyAccountId,
     currencyId, version, dueOn, status, createdAtUtc, initialAmount, outstandingAmount, direction }
