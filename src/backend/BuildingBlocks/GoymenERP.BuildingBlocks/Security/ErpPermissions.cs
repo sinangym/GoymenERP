@@ -587,6 +587,14 @@ public static class ErpPermissions
     public const string SalesInvoicesMatch = "sales.invoices.match";
 
     /// <summary>
+    /// S5 API-36 (Fatura çekirdeği 4; SAT-D208, Sinan S6): finalise a matched sales invoice and re-drive its Finance hand-off (Sales owner
+    /// name SalesPermissionManifestV1.InvoicesFinalize, same string). Its own name: the invoice write, read, approve and match names and
+    /// the order names do not confer it and it confers none of them. Registered, not granted: no seeded role and no real user receives
+    /// it (who finalises is a grant and a human gate). Company-wide only. Not marked Critical here: the Critical class is a human gate.
+    /// </summary>
+    public const string SalesInvoicesFinalize = "sales.invoices.finalize";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80; KPI No 124, No 25, SAT-D25): read the Sales reports — open order quantities, lost
     /// quotes and the invoice-to-order price variance (Sales owner name SalesPermissionManifestV1.ReportsRead, same string). Its
     /// own name: no order, quote, invoice or price name confers it and it confers none of them (an amount in a report still needs
@@ -975,6 +983,7 @@ public static class ErpPermissions
             SalesInvoicesWrite,
             SalesInvoicesApprove,
             SalesInvoicesMatch,
+            SalesInvoicesFinalize,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -1139,6 +1148,7 @@ public static class ErpPermissions
             SalesInvoicesWrite,
             SalesInvoicesApprove,
             SalesInvoicesMatch,
+            SalesInvoicesFinalize,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,

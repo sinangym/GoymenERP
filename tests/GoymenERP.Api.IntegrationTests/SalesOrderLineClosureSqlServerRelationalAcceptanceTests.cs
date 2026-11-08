@@ -68,8 +68,15 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var closuresIndex = Array.FindIndex(applied, id => id.EndsWith("_AddDraftLineClosures", StringComparison.Ordinal));
         Assert.True(closuresIndex > 0);
-        var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[closuresIndex - 1]));
+        // Whatever migrations follow the closure one are rolled back first (they hold no data here), so the guard under test is the next Down.
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[closuresIndex]);
+        Assert.Equal(applied[..(closuresIndex + 1)], await context.Database.GetAppliedMigrationsAsync());
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[closuresIndex - 1]));
         Assert.Equal(51228, rollback.Number);
+        Assert.Equal(applied[..(closuresIndex + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // Forward again: the later migrations are re-applied and the closure row survived the refused Down.
+        await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
         Assert.Equal((5L, "100", "90", "10"), (

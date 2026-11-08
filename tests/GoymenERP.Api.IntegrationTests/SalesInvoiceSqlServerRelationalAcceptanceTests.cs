@@ -384,6 +384,80 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
     }
 
+    [SqlServerFact]
+    public async Task A_finalization_is_one_save_with_ledger_outbox_attempt_and_audit_and_the_triggers_and_Down_guard_hold_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddSalesInvoiceFinalization().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var finalizer = "SENTETIK-finalizer-" + Guid.NewGuid().ToString("N");
+        var approved = await ApprovedAsync(run, "f1", approver);
+        var unmatched = await ApprovedAsync(run, "f2", approver);
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000011", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.MatchInvoiceAsync(run.Envelope("f1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
+                Hash('1'), approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+        }
+
+        // The header guard: no finalisation without a match, even by a raw write that skips the domain.
+        var unmatchedRaw = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.Invoices SET State = 6, Version = Version + 1 WHERE Id = @id", ("@id", unmatched.Id)));
+        Assert.Equal(51223, unmatchedRaw.Number);
+
+        SalesInvoiceStoreResult? finalized;
+        await using (var scope = run.Store(CompanyA))
+        {
+            finalized = await scope.Invoices.FinalizeInvoiceAsync(
+                run.Envelope("f1-final", actor: finalizer, permission: SalesPermissionManifestV1.InvoicesFinalize), Hash('2'), approved.Id,
+                (invoice, now) => invoice.Finalize(3, finalizer, Guid.NewGuid, now),
+                new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "SENTETIK"));
+        }
+
+        Assert.Equal(SalesInvoiceState.Finalized, finalized!.Invoice.State);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId = @id AND FinanceStatus = 1 AND AttemptCount = 0",
+            ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE AggregateId = @id AND EventType = N'sales.invoice.finalized.v1'",
+            ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'sales.invoice.finalized.v1' "
+            + "AND EntityVersionBefore = 3 AND EntityVersionAfter = 4", ("@id", approved.Id.ToString("D"))));
+
+        // The hand-off answer is a second, separate save of the ledger only.
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.RecordFinanceAttemptAsync(
+                run.Envelope("f1-offer", actor: finalizer, permission: SalesPermissionManifestV1.InvoicesFinalize), null, null, approved.Id,
+                (invoice, now) => invoice.RecordFinanceAttempt(true, "admitted", now),
+                new SalesDraftStateAudit("sales.invoice.finance-offered.v1", "FinanceOffer", "SENTETIK"));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId = @id AND FinanceStatus = 2 AND AttemptCount = 1",
+            ("@id", approved.Id)));
+        Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM sales.Invoices WHERE Id = @id", ("@id", approved.Id)));
+
+        foreach (var (sql, number) in new[]
+        {
+            ("UPDATE sales.Invoices SET Version = Version + 1 WHERE Id = @id", 51223),
+            ("UPDATE sales.InvoiceFinalizations SET FinanceStatus = 1, AdmittedAtUtc = NULL WHERE InvoiceId = @id", 51232),
+            ("UPDATE sales.InvoiceFinalizations SET AdmissionId = NEWID() WHERE InvoiceId = @id", 51232),
+            ("DELETE FROM sales.InvoiceFinalizations WHERE InvoiceId = @id", 51232),
+            ("UPDATE sales.OutboxMessages SET SourceOperation = N'hack' WHERE AggregateId = @id", 51233),
+            ("DELETE FROM sales.OutboxMessages WHERE AggregateId = @id", 51233),
+        })
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql, ("@id", approved.Id)));
+            Assert.Equal(number, refused.Number);
+        }
+
+        var down = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51231, down.Number);
+    }
+
     private static string Hash(char fill) => new(fill, 64);
 
     /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>

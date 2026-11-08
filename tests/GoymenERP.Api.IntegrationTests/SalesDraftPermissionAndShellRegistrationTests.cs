@@ -78,6 +78,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.InvoicesApprove, ErpPermissions.SalesInvoicesApprove)]
     // S5 API-35 (Fatura çekirdeği 3; SAT-D89/D106): the official match's own name, company-wide, not Critical, granted to no role.
     [InlineData(SalesPermissionManifestV1.InvoicesMatch, ErpPermissions.SalesInvoicesMatch)]
+    [InlineData(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize)]
     // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
     // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
     [InlineData(SalesPermissionManifestV1.QuotesWrite, ErpPermissions.SalesQuotesWrite)]

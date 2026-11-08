@@ -184,6 +184,59 @@ public sealed class SalesInvoiceCalculatorTests
         Assert.Equal([Day.AddDays(30), Day.AddDays(60)], invoice.Instalments.Select(item => item.DueDate));
     }
 
+    private static SalesInvoice MatchedForeignCurrencyInvoice(decimal delta)
+    {
+        var terms = SalesDueTerms.Create(
+        [
+            new SalesDueInstalment(1, SalesDueBasis.ShipmentDate, 30, "50"),
+            new SalesDueInstalment(2, SalesDueBasis.ShipmentDate, 60, "50"),
+        ]);
+        var due = SalesDueDateCalculator.Compute(terms, Day, Day);
+        var header = Header(Rate: new SalesInvoiceRateSnapshot(34.5678m, Day, Day, Try, 2)) with { CurrencyId = Usd };
+        var invoice = SalesInvoice.Create(Guid.NewGuid(), Company, "SF-2026-000002", header, [Share(1, "3", "33.33"), Share(2, "1", "0.02")],
+            due.DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
+        invoice.Submit(invoice.Version, "preparer", DateTimeOffset.UnixEpoch);
+        invoice.Approve(invoice.Version, "approver", DateTimeOffset.UnixEpoch);
+        invoice.RecordMatch(invoice.Version, "matcher",
+            new SalesOfficialInvoiceFacts("GIB2026000000001", new string('A', SalesInvoice.EttnLength), header.PartyId, Usd,
+                invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount + delta), 0.05m, false, null, DateTimeOffset.UnixEpoch);
+        return invoice;
+    }
+
+    [Fact]
+    public void A_foreign_currency_invoice_finalized_with_an_exact_match_is_readable_again_from_the_store()
+    {
+        // Finalize and restore split and check the TL instalments against the same total: the ERP payable (SAT-D225/D227).
+        var invoice = MatchedForeignCurrencyInvoice(0m);
+        var finalization = invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(invoice.PayableFunctionalAmount, finalization.Plan.Sum(item => item.FunctionalAmount!.Value));
+
+        var restored = SalesInvoice.Restore(invoice.Id, Company, invoice.DocumentNo, invoice.Header, invoice.State, invoice.Version,
+            invoice.CreatedBy, invoice.CreatedAtUtc, invoice.Lines, invoice.Instalments, invoice.Decision);
+        restored.RestoreMatch(invoice.Match!);
+        restored.RestoreFinalization(finalization);
+        Assert.Equal(finalization, restored.Finalization);
+    }
+
+    [Theory]
+    [InlineData("0.03")]
+    [InlineData("-0.03")]
+    [InlineData("0.05")]
+    public void A_match_with_a_difference_is_never_finalized_in_any_currency(string delta)
+    {
+        // NEEDS-SINAN #3: whether the official or the ERP amount governs is undecided, so a recorded difference fails closed.
+        var invoice = MatchedForeignCurrencyInvoice(decimal.Parse(delta, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.NotEqual(0m, invoice.Match!.Difference);
+
+        var refused = Assert.Throws<SalesRuleException>(() => invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid,
+            DateTimeOffset.UnixEpoch));
+
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceOpen, refused.Code);
+        Assert.Equal(SalesInvoiceState.Approved, invoice.State);
+        Assert.Null(invoice.Finalization);
+    }
+
     [Fact]
     public void The_draft_refuses_one_shipment_twice_a_pending_due_date_and_an_unpriced_share()
     {

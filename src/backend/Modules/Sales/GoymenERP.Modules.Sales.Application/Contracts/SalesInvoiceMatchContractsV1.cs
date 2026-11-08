@@ -67,3 +67,12 @@ public sealed class SalesInvoiceMatchTolerancePolicy
 
     public decimal ToleranceAmount { get; }
 }
+
+/// <summary>
+/// Diagnostics seam of the finalisation (host-implemented, logging only): a Finance hand-off failure after the commit is reported
+/// here and never changes the answer. Carries identifiers and the exception, no amounts and no secrets.
+/// </summary>
+public interface ISalesInvoiceDiagnosticsV1
+{
+    void FinanceHandOffFailed(Guid companyId, Guid invoiceId, string stage, Exception exception);
+}

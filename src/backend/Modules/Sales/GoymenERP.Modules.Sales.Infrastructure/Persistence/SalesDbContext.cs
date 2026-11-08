@@ -268,6 +268,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-35: the append-only official match of an approved invoice.</summary>
     internal DbSet<InvoiceMatchRow> InvoiceMatches => Set<InvoiceMatchRow>();
 
+    /// <summary>API-36: the finalisation and Finance hand-off ledger (one row per finalised invoice).</summary>
+    internal DbSet<InvoiceFinalizationRow> InvoiceFinalizations => Set<InvoiceFinalizationRow>();
+
+    /// <summary>API-36: the Sales transactional outbox (append-only).</summary>
+    internal DbSet<SalesOutboxRow> OutboxMessages => Set<SalesOutboxRow>();
+
     /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
     internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
 
@@ -292,10 +298,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>CK_InvoiceAttempts_Command: only the invoice's own versioned commands record here.</summary>
     internal const string InvoiceAttemptCommandConstraint = "[CommandName] IN (N'" + SalesInvoiceCommands.CreateV1 + "', N'"
         + SalesInvoiceCommands.SubmitV1 + "', N'" + SalesInvoiceCommands.ApproveV1 + "', N'" + SalesInvoiceCommands.RejectV1 + "', N'"
-        + SalesInvoiceCommands.CancelV1 + "', N'" + SalesInvoiceCommands.MatchV1 + "')";
+        + SalesInvoiceCommands.CancelV1 + "', N'" + SalesInvoiceCommands.MatchV1 + "', N'" + SalesInvoiceCommands.FinalizeV1 + "', N'"
+        + SalesInvoiceCommands.ResendFinanceV1 + "')";
 
-    /// <summary>CK_Invoices_State (API-33): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5.</summary>
-    internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5)";
+    /// <summary>CK_Invoices_State (API-33/36): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5, Finalized 6.</summary>
+    internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6)";
 
     /// <summary>
     /// CK_Invoices_Decision (API-33): the decision facts match the state — a draft carries none; a pending invoice its submission; an
@@ -308,7 +315,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
         + "OR ([State] = 2 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
         + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
-        + "OR ([State] = 3 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL "
+        + "OR ([State] IN (3, 6) AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL "
         + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
         + "OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
         + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
@@ -328,6 +335,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         "([DecisionReason] IS NULL OR LEN([DecisionReason]) > 0) AND ([CancellationReason] IS NULL OR LEN([CancellationReason]) > 0) "
         + "AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND ([DecidedBy] IS NULL OR LEN([DecidedBy]) > 0) "
         + "AND ([CancelledBy] IS NULL OR LEN([CancelledBy]) > 0)";
+
+    /// <summary>TR_InvoiceFinalizations_Guard (API-36): the finalisation facts are immutable; the ledger only moves forward (THROW 51232).</summary>
+    internal const string InvoiceFinalizationGuardTrigger = "TR_InvoiceFinalizations_Guard";
+
+    /// <summary>TR_OutboxMessages_Guard (API-36): an outbox message is append-only (THROW 51233).</summary>
+    internal const string SalesOutboxGuardTrigger = "TR_OutboxMessages_Guard";
+
+    /// <summary>CK_InvoiceFinalizations_Ledger (API-36): Waiting has no admission time; Admitted has one and at least one attempt.</summary>
+    internal const string InvoiceFinalizationLedgerConstraint =
+        "[AttemptCount] >= 0 AND (([AttemptCount] = 0 AND [LastAttemptAtUtc] IS NULL) OR ([AttemptCount] > 0 AND [LastAttemptAtUtc] IS NOT NULL)) "
+        + "AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))";
 
     /// <summary>TR_Invoices_Guard: a decided or cancelled invoice and the header facts are immutable (THROW 51223).</summary>
     internal const string InvoiceGuardTrigger = "TR_Invoices_Guard";
@@ -440,6 +458,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
         ConfigureInvoices(modelBuilder);
+        ConfigureInvoiceFinalizations(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1112,6 +1131,63 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         match.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // S5 API-36: the finalisation ledger of a finalised invoice and the Sales outbox (SAT-D208).
+    private void ConfigureInvoiceFinalizations(ModelBuilder modelBuilder)
+    {
+        var finalization = modelBuilder.Entity<InvoiceFinalizationRow>();
+        finalization.ToTable("InvoiceFinalizations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceFinalizations_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 2 AND LEN([FinalizedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND ISJSON([PlanJson]) = 1 AND [FinanceStatus] IN (1, 2) "
+                + "AND ([LastOutcome] IS NULL OR LEN([LastOutcome]) > 0)");
+            table.HasCheckConstraint("CK_InvoiceFinalizations_Ledger", InvoiceFinalizationLedgerConstraint);
+            table.HasTrigger(InvoiceFinalizationGuardTrigger);
+        });
+        finalization.HasKey(x => new { x.CompanyId, x.InvoiceId });
+        finalization.Property(x => x.FinalizedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
+        finalization.Property(x => x.AttemptCount).IsConcurrencyToken();
+        finalization.Property(x => x.LastOutcome).HasMaxLength(SalesInvoiceFinalization.MaximumOutcomeLength).IsUnicode(false);
+        finalization.Property(x => x.PlanJson).HasColumnType("nvarchar(max)").IsRequired();
+        finalization.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        finalization.HasIndex(x => new { x.CompanyId, x.AdmissionId }).IsUnique().HasDatabaseName("UX_InvoiceFinalizations_AdmissionId");
+        finalization.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        finalization.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        finalization.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var outbox = modelBuilder.Entity<SalesOutboxRow>();
+        outbox.ToTable("OutboxMessages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope",
+                "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 "
+                + "AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 "
+                + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+            table.HasTrigger(SalesOutboxGuardTrigger);
+        });
+        outbox.HasKey(x => x.Id);
+        outbox.Property(x => x.Id).ValueGeneratedNever();
+        outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        outbox.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
+        outbox.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        outbox.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        outbox.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        outbox.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        outbox.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
+            .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+        outbox.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        outbox.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
     private void ConfigureDraftDeliverySchedules(ModelBuilder modelBuilder)
     {
@@ -1576,6 +1652,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     InvoiceAttemptRow => [],
                     // API-35: the official match is APPEND-ONLY (TR_InvoiceMatches_Guard refuses the same).
                     InvoiceMatchRow => [],
+                    // API-36: the finalisation facts never change; only the Finance hand-off ledger moves (checked below, and by the trigger).
+                    InvoiceFinalizationRow =>
+                    [
+                        nameof(InvoiceFinalizationRow.FinanceStatus), nameof(InvoiceFinalizationRow.AdmittedAtUtc),
+                        nameof(InvoiceFinalizationRow.AttemptCount), nameof(InvoiceFinalizationRow.LastAttemptAtUtc),
+                        nameof(InvoiceFinalizationRow.LastOutcome),
+                    ],
+                    // API-36: the outbox is APPEND-ONLY (TR_OutboxMessages_Guard refuses the same).
+                    SalesOutboxRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftLineRow)
@@ -1636,6 +1721,18 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     if (active.IsModified && !((bool)active.OriginalValue! && !(bool)active.CurrentValue!))
                     {
                         throw new InvalidOperationException("Teklifin talep bağı yalnız etkinden pasife döner.");
+                    }
+                }
+
+                if (entry.Entity is InvoiceFinalizationRow)
+                {
+                    // API-36: the ledger only moves forward — Admitted never goes back to Waiting, and every save counts one attempt.
+                    var status = entry.Property(nameof(InvoiceFinalizationRow.FinanceStatus));
+                    var attempts = entry.Property(nameof(InvoiceFinalizationRow.AttemptCount));
+                    if ((status.IsModified && (int)status.OriginalValue! != (int)SalesInvoiceFinanceStatus.Waiting)
+                        || (int)attempts.CurrentValue! != (int)attempts.OriginalValue! + 1)
+                    {
+                        throw new InvalidOperationException("Finans kabul defteri yalnız ileri gider ve her kayıt bir deneme sayar.");
                     }
                 }
 

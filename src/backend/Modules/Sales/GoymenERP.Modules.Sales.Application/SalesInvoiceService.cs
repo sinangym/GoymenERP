@@ -42,7 +42,9 @@ public sealed partial class SalesInvoiceService(
     ISalesInvoiceableShipmentReadPortV1? shipments = null,
     ISettingsExchangeRateResolverV1? exchangeRates = null,
     ISalesOfficialInvoiceReadPortV1? officialInvoices = null,
-    SalesInvoiceMatchTolerancePolicy? matchTolerance = null) : ISalesInvoiceService
+    SalesInvoiceMatchTolerancePolicy? matchTolerance = null,
+    ISalesFinanceAdmissionPortV1? financeAdmission = null,
+    ISalesInvoiceDiagnosticsV1? diagnostics = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
@@ -731,7 +733,7 @@ public sealed partial class SalesInvoiceService(
                         f.NeedsReview)
                     : null))],
             invoice.CreatedBy, invoice.CreatedAtUtc, DecisionView(invoice.Decision), PaymentAllocationWarning: null, IsReplay: isReplay,
-            Match: MatchView(invoice.Match));
+            Match: MatchView(invoice.Match), Finalization: FinalizationView(invoice));
     }
 
     private static SalesInvoiceDecisionView? DecisionView(SalesInvoiceDecisionFacts facts) => facts == SalesInvoiceDecisionFacts.None

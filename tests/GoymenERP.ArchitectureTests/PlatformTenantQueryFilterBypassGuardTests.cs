@@ -136,7 +136,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // hosted-service change.
         // DEC-FIN-010 / SAT-D169 maps the Settings exchange-rate routes; no registration, generation, network or hosted-service
         // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
-        "d219b1f55a22def9d2be84284f8879dbedfca95e9404fbe19086ef430c619e77";
+        // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
+        // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
+        "f4d42b16f2f1b9facc14f4c3994516ed3252e6b69a2ca45d5afb5c49a322afa3";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -462,7 +464,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
                 // SAT-D132 (quote vade): +1 Sales fact (quote due terms per revision, carry-over to the order, the 51227 rollback refusal), kept ordinal-sorted (be1b2f40... -> 525d38a4...).
                 // Merged with main's #984 (SAT-D132) fact: SAT-D17 line closure +5 facts recomputed over the union (525d38a4... -> 7c089718...).
-                "1b3664a41628b7345f26a1108b004919c6b1a7758c6c02c755586fa722746a15",
+                "55ad9807e85049a23b00ff37b1fdd19c2b8edd5eac28d1302414e9e45b227906",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -594,7 +596,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // SAT-D132: QuoteRevisions.DueTermsJson (nullable, CK_QuoteRevisions_DueTerms ISJSON) on the same company-filtered revision row; no query-filter bypass or direct database surface (5d465acf... -> da465c59...).
                 // SAT-D17: DraftLineClosures (keyed per line, FK to draft and line, CK) on the same company-filtered context; no query-filter bypass or direct database surface (da465c59... -> af489a5a...).
-                "af489a5ae624822a230aef77f3733cfe87d17b8faa7d2d174ccd1c56504cb221",
+                "17c1be196d720c8f01ebf012060b7c0e117e44b785c1560e96f76bb8979ef6fe",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1601,9 +1603,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // service factory (company context resolved, never registered); provider branch and token counts unchanged.
                     // API-35 (Fatura cekirdegi 3): the invoice service factory also receives the optional official-invoice read port and the
                     // tolerance policy (DI-only, none registered yet; the match is 503 fail-closed); provider branch and token counts unchanged.
-                    // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 16707a32...).
+                    // API-36 (Fatura kesinlestirme): the invoice store also feeds the finalize path and the optional finance admission port (DI-only,
+                    // fail-closed 503 when unregistered); provider branch and token counts unchanged (e6274962... -> a3fdee0a...).
+                    // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 846faead...; with API-36 also feeding the finalize path).
                     new(
-                        "16707a323c888923a321f74cea787f187dbe71a860712ec4e6a7efeb195f7e4f",
+                        "7fc856210e3d20e487e046b9d24bd96ea6f9880cd95fbb586f457e1ca8db5d9d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2409,6 +2413,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("78f3bf9588b31a0a04908076237bfd611ce8937b59fc9ba6c0179998b44a1574",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // S5 API-36 (Fatura kesinlestirme): Up alters TR_Invoices_Guard (header may also gain the Finalized state) and creates the append-only
+                // finalization ledger guard (51232) and the outbox freeze guard (51233); the Down's raw SQL is the forward-fix refusal (51231) while any
+                // finalization exists, the DROP of both triggers, and the restore of the previous header guard.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108143000_AddSalesInvoiceFinalization.cs"] =
+                    new("43509d583ce1ab2fa35b9546721e9fbf2c457e4546a28250d0e1fff3ac232d9b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 6 }),
                 // SAT-D132: Down's only raw SQL is the forward-fix refusal (51227, used by no other migration) while any quote revision carries due terms.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108131842_AddQuoteDueTerms.cs"] =
                     new("61217a679714c6964973ef09bdf1476c27baf4111fb456fb0cd74dec5c2b8bfa",

@@ -128,6 +128,48 @@ internal sealed class InvoiceMatchRow : ISalesTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// API-36: the finalisation and the Finance hand-off ledger of a finalised invoice (<c>sales.InvoiceFinalizations</c>, one row per
+/// invoice). The facts are immutable; only the ledger columns move (Waiting → Admitted, the attempt counters), by the guard trigger's rules.
+/// </summary>
+internal sealed class InvoiceFinalizationRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InvoiceId { get; set; }
+    public Guid AdmissionId { get; set; }
+    public long FinalizedVersion { get; set; }
+    public string FinalizedBy { get; set; } = string.Empty;
+    public DateTimeOffset FinalizedAtUtc { get; set; }
+
+    /// <summary>1 = Waiting ("Finans kabulü bekliyor"), 2 = Admitted.</summary>
+    public int FinanceStatus { get; set; }
+    public DateTimeOffset? AdmittedAtUtc { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTimeOffset? LastAttemptAtUtc { get; set; }
+    public string? LastOutcome { get; set; }
+    public string PlanJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>API-36: the transactional outbox of the Sales invoice events (append-only; consumers dedup by <see cref="Id"/>).</summary>
+internal sealed class SalesOutboxRow : ISalesTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public int SchemaVersion { get; set; }
+    public string SourceOperation { get; set; } = string.Empty;
+    public string AggregateType { get; set; } = string.Empty;
+    public Guid AggregateId { get; set; }
+    public long AggregateVersion { get; set; }
+    public int Sequence { get; set; }
+    public string PayloadJson { get; set; } = string.Empty;
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
 /// <summary>The one mapping between a domain invoice and its rows (write) and back (read; the domain checks consistency).</summary>
 internal static class SalesInvoiceRows
 {
@@ -275,11 +317,55 @@ internal static class SalesInvoiceRows
     public static SalesInvoiceMatchFacts ToMatchFacts(InvoiceMatchRow row) => new SalesInvoiceMatchFacts(row.OfficialInvoiceNo, row.Ettn, row.InvoiceAmount,
         row.OfficialAmount, row.Difference, row.Tolerance, row.MatchedBy, row.MatchedAtUtc, row.DifferenceApprovedBy, row.DifferenceReason);
 
+    public static InvoiceFinalizationRow ToFinalizationRow(Guid companyId, Guid invoiceId, SalesInvoiceFinalization facts, string correlationId)
+    {
+        if (facts.Plan.Any(item => Money.SignificantDecimals(item.Amount) > MaximumStoredScale
+            || item.FunctionalAmount is { } functional && Money.SignificantDecimals(functional) > MaximumStoredScale))
+        {
+            throw new SalesDraftStoreException(SalesDraftStoreCodes.ValueDoesNotFit, "Taksit tutar ölçeği saklanan sütuna sığmıyor.");
+        }
+
+        return new InvoiceFinalizationRow
+        {
+            CompanyId = companyId,
+            InvoiceId = invoiceId,
+            AdmissionId = facts.AdmissionId,
+            FinalizedVersion = facts.FinalizedVersion,
+            FinalizedBy = facts.FinalizedBy,
+            FinalizedAtUtc = facts.FinalizedAtUtc,
+            FinanceStatus = (int)facts.FinanceStatus,
+            AdmittedAtUtc = facts.AdmittedAtUtc,
+            AttemptCount = facts.AttemptCount,
+            LastAttemptAtUtc = facts.LastAttemptAtUtc,
+            LastOutcome = facts.LastOutcome,
+            PlanJson = JsonSerializer.Serialize(facts.Plan.Select(item => new StoredPlanItem(item.OpenItemId, item.InstallmentId, item.SequenceNo,
+                item.DueDate, item.Amount, item.FunctionalAmount)), Json),
+            CorrelationId = correlationId.Trim(),
+        };
+    }
+
+    public static void ApplyLedger(InvoiceFinalizationRow row, SalesInvoiceFinalization facts)
+    {
+        row.FinanceStatus = (int)facts.FinanceStatus;
+        row.AdmittedAtUtc = facts.AdmittedAtUtc;
+        row.AttemptCount = facts.AttemptCount;
+        row.LastAttemptAtUtc = facts.LastAttemptAtUtc;
+        row.LastOutcome = facts.LastOutcome;
+    }
+
+    public static SalesInvoiceFinalization ToFinalizationFacts(InvoiceFinalizationRow row) => new SalesInvoiceFinalization(row.AdmissionId, row.FinalizedVersion,
+        row.FinalizedBy, row.FinalizedAtUtc, (SalesInvoiceFinanceStatus)row.FinanceStatus, row.AdmittedAtUtc, row.AttemptCount,
+        row.LastAttemptAtUtc, row.LastOutcome,
+        [.. (JsonSerializer.Deserialize<List<StoredPlanItem>>(row.PlanJson, Json)
+            ?? throw new InvalidOperationException("Fatura taksit planı okunamadı."))
+            .Select(item => new SalesInvoiceFinalInstalment(item.OpenItemId, item.InstallmentId, item.SequenceNo, item.DueDate, item.Amount,
+                item.FunctionalAmount))]);
+
     public static SalesInvoice Restore(InvoiceRow row, IReadOnlyList<InvoiceLineRow> lineRows)
     {
         var state = (SalesInvoiceState)row.State;
         if (Enum.IsDefined(state) && lineRows.Any(line => line.ReleasedAtUtc is null) != (state is SalesInvoiceState.Draft
-                or SalesInvoiceState.PendingApproval or SalesInvoiceState.Approved))
+                or SalesInvoiceState.PendingApproval or SalesInvoiceState.Approved or SalesInvoiceState.Finalized))
         {
             throw new InvalidOperationException("Kayıtlı fatura durumu ile sevk paylarının serbest bırakılması birbirini tutmuyor.");
         }
@@ -330,6 +416,9 @@ internal static class SalesInvoiceRows
             new SalesInvoiceDecisionFacts(row.SubmittedBy, row.SubmittedAtUtc, row.DecidedBy, row.DecidedAtUtc, row.DecisionReason,
                 row.CancelledBy, row.CancelledAtUtc, row.CancellationReason));
     }
+
+    private sealed record StoredPlanItem(Guid OpenItemId, Guid InstallmentId, int SequenceNo, DateOnly DueDate, decimal Amount,
+        decimal? FunctionalAmount);
 
     private sealed record StoredInstalment(int SequenceNo, DateOnly DueDate, string SharePercent, decimal Amount);
 }

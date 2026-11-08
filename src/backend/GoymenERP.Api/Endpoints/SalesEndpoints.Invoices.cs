@@ -173,6 +173,18 @@ public static partial class SalesEndpoints
                 SalesInvoiceProblemCodesV1.OfficialMatchMismatch, SalesInvoiceProblemCodesV1.DifferenceApprovalRequired,
                 SalesInvoiceProblemCodesV1.OfficialDocumentAlreadyMatched,
             ]);
+        // API-36: the finalisation of a matched invoice (permission `sales.invoices.finalize`). The strict body `{expectedVersion}`; 200 with
+        // the invoice, its finalisation ledger and the instalment plan. The Finance hand-off follows the commit (SAT-D208): a refused or
+        // unavailable Finance leaves the ledger waiting, never the invoice un-finalised. A missing match is a 409 that is NOT recorded under
+        // the key; the rest of the 409s are the key's recorded answer. The re-drive is its own command with its own key.
+        MapInvoiceCommand<SalesDraftStateCommandRequest>(invoices, "finalization", "FinalizeSalesInvoiceV1", SalesInvoiceStateJson.ReadVersionOnly,
+            (service, id, body, metadata, cancellationToken) => service.FinalizeInvoiceAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: [SalesInvoiceProblemCodesV1.InstalmentFunctionalInvalid],
+            extraConflictCodes: [SalesInvoiceProblemCodesV1.MatchRequired, SalesInvoiceProblemCodesV1.MatchDifferenceOpen]);
+        MapInvoiceCommand<SalesDraftStateCommandRequest>(invoices, "finance-admission", "ResendSalesInvoiceFinanceAdmissionV1",
+            SalesInvoiceStateJson.ReadVersionOnly,
+            (service, id, body, metadata, cancellationToken) => service.ResendFinanceAdmissionAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: [], extraConflictCodes: []);
     }
 
     /// <summary>

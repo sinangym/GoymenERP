@@ -26,7 +26,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.17";
+    public const string OwnerContractVersion = "1.18";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -100,7 +100,7 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 
     /// <summary>
     /// SAT-D17 / SAT-D168: the line-closure CONTROL of the S-04 detail (read + the line-close name) — closing one order line with
-    /// a shortfall. No other Sales name confers it (shell contract 1.17).
+    /// a shortfall. No other Sales name confers it (shell contract 1.18).
     /// </summary>
     public const string LineCloseCapabilityId = "sales.orders.lines.close";
 
