@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 29
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 601
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 604
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "29897a6dd1aa3398c9558d5b0b677c7f5c87c143566c7652ef87d699d3400df7"
+    "49bd934c2c1e606053479c667f38b794786f9c6f69c73871ca7f001d49cc2f96"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
