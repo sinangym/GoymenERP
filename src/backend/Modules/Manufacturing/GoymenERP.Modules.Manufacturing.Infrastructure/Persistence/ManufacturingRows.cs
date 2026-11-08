@@ -84,6 +84,9 @@ internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public string PayloadHash { get; set; } = string.Empty;
+
+    /// <summary>Üretim U2-d (URT-D2): the actor who saved the plan; null on a plan stored before U2-d.</summary>
+    public string? CreatedBy { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

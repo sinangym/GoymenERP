@@ -203,7 +203,9 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// which Settings had no profile of the process. Üretim U2-a (additive): <see cref="LineSpeedMetresPerMinute"/> is the
 /// plan-entered line speed (Slitting, Tube / Profile), <see cref="OrderId"/> the one order the plan opened (URT-D1),
 /// <see cref="Rejections"/> every recorded rejection (oldest first) and <see cref="Cancellation"/> the cancellation of a
-/// Cancelled plan.
+/// Cancelled plan. Üretim U2-d (additive, URT-D2): <see cref="PreparedBy"/> is the actor id of who prepared the current
+/// version (its last reviser, else who saved it) — that user cannot approve or reject it; null for a plan stored before
+/// U2-d and never revised. An id only, never a name.
 /// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
@@ -212,7 +214,7 @@ public sealed record PlanViewV1(
     CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null,
     string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
-    PlanProcessSpecViewV1? ProcessSpec = null);
+    PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -1187,6 +1189,14 @@ public sealed partial class ManufacturingCommandService(
                 var current = await plans.FindPlanAsync(planId, cancellationToken);
                 if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion)
                 {
+                    // U2-d (URT-D2): the preparer of the current version is refused before Settings or Inventory is read;
+                    // the store's domain decision refuses it again at the save.
+                    if (current.IsPreparedBy(actor))
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                            ManufacturingRuleCodes.PlanSelfApproval);
+                    }
+
                     var parameters = await ReadParameterProfileAsync(current.Process, current.WorkCenterId,
                         approval: true, cancellationToken);
                     if (parameters.Refusal is not null)
@@ -2817,7 +2827,8 @@ public sealed partial class ManufacturingCommandService(
         plan.Cancellation is { } cancellation
             ? new PlanCancellationViewV1(cancellation.Reason, cancellation.CancelledByUserId, cancellation.CancelledAtUtc)
             : null,
-        ProcessSpecView(plan.ProcessSpec));
+        ProcessSpecView(plan.ProcessSpec),
+        plan.PreparedBy);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null

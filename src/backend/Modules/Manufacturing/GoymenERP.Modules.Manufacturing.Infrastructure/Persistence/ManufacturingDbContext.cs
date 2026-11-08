@@ -196,6 +196,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL "
                 + "AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL "
                 + "AND [PaintColorCode] IS NULL))");
+            // U2-d (URT-D2): the preparer, when kept, is a non-empty actor id.
+            table.HasCheckConstraint("CK_Plans_CreatedBy", "[CreatedBy] IS NULL OR LEN([CreatedBy]) > 0");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -207,6 +209,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ProcessSpecColumns(entity);
         entity.Property(x => x.CancellationReason).HasMaxLength(ProductionPlan.DecisionReasonMaximumLength);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.CreatedBy).HasMaxLength(ProductionPlan.PreparedByMaximumLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)

@@ -1,6 +1,7 @@
 using System.Globalization;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
@@ -44,6 +45,15 @@ public sealed partial class ManufacturingCommandService
 
                 if (await plans.FindPlanAsync(planId, cancellationToken) is { } current)
                 {
+                    // U2-d (URT-D2): as the approval, the preparer of the current Draft version is refused before the
+                    // Settings read; the store's domain decision refuses it again at the save.
+                    if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion
+                        && current.IsPreparedBy(actor))
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                            ManufacturingRuleCodes.PlanSelfApproval);
+                    }
+
                     live = await ReadLiveParameterProfileAsync(current, cancellationToken);
                     if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actor, cancellationToken) is { } fenced)
                     {

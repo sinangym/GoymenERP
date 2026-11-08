@@ -3288,12 +3288,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ApproveManufacturingPlanV1:409"] =
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
-            ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
+            // Üretim U2-d (URT-D2): the preparer of the current version may not approve or reject it.
+            ["ApproveManufacturingPlanV1:422"] = [.. ManufacturingUnprocessableCodes, "manufacturing_plan_self_approval"],
             // Üretim U2-a (URT-D2, API-10/11): the rejection and the cancellation add their two lifecycle refusals.
             ["RejectManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["RejectManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["RejectManufacturingPlanV1:422"] =
-                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
+                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order",
+                    "manufacturing_plan_self_approval"],
             ["CancelManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["CancelManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["CancelManufacturingPlanV1:422"] =
@@ -6535,7 +6537,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("outstandingAmount", "ref:AmountView"),
                     ("direction", "ref:FinanceOpenItemDirectionV1")),
                 ["FinanceOpenItemDirectionV1"] = ScalarSchema("enum:Receivable|Payable"),
-                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed"),
+                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed|Cancelled"),
                 ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
                 ["PartyLedgerCurrency"] = ObjectSchema(
                     ["currencyId", "entries", "debitTotal", "creditTotal", "closingBalance"],
@@ -6558,7 +6560,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("instrumentId", "type:null|string;format:uuid"),
                     ("documentId", "type:null|string;format:uuid"),
                     ("dueOn", "type:null|string;format:date")),
-                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem"),
+                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem|OpenItemCancellation|PayableOpenItemCancellation"),
                 ["PartyLedgerSide"] = ScalarSchema("enum:Debit|Credit"),
                 ["PartyLedgerBalanceView"] = ObjectSchema(
                     ["side", "amount"],
@@ -6716,7 +6718,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("orderId", "type:null|string;format:uuid"),
                     ("rejections", "type:array|null;items:ref:PlanRejectionViewV1"),
                     ("cancellation", "oneOf:ref:PlanCancellationViewV1|type:null"),
-                    ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null")),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null"),
+                    // Üretim U2-d (URT-D2): who prepared the current version, an actor id (additive, optional).
+                    ("preparedBy", "type:null|string")),
                 // Üretim U2-b1 (API-12): the plan-entered Tube / Profile, Paint and Cold Rolling values (all members emitted).
                 ["PlanProcessSpecViewV1"] = ObjectSchema(
                     ["packageCount", "piecesPerPackage", "pieceLengthMm", "unitKg", "perimeterMm", "targetThicknessMm",
