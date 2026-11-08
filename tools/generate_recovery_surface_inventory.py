@@ -588,7 +588,7 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108132917_AddSalesInvoiceFinalization.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
-        ("dbContext.OutboxMessages.Add(new SalesOutboxRow",), mapping_tokens=("UX_OutboxMessages_AggregateSequence",),
+        ("dbContext.OutboxMessages.Add(new SalesOutboxRow",), mapping_tokens=("SourceOperation",),
     ),
     _store(
         "work.observation-inbox", "Work", "inbox", "WorkDbContext", "WorkObservationInboxRow",
