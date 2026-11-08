@@ -461,7 +461,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // S5 API-35 (Fatura cekirdegi 3): +2 SalesInvoice facts (the official match's one save with attempt and audit, the untouched Approved
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
                 // SAT-D132 (quote vade): +1 Sales fact (quote due terms per revision, carry-over to the order, the 51227 rollback refusal), kept ordinal-sorted (be1b2f40... -> 525d38a4...).
-                "525d38a40c0e4f411a8b2beb5b27d16009804747fdd1add12b3376e766426907",
+                // Merged with main's #984 (SAT-D132) fact: SAT-D17 line closure +5 facts recomputed over the union (525d38a4... -> 7c089718...).
+                "7c089718681caabb0eb9890cbacec27fa293a1865280dfbb9a3b166f6896bd9e",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -592,7 +593,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-35: the append-only InvoiceMatches tenant rows (one per invoice, unique official number and ETTN per company) under the same
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // SAT-D132: QuoteRevisions.DueTermsJson (nullable, CK_QuoteRevisions_DueTerms ISJSON) on the same company-filtered revision row; no query-filter bypass or direct database surface (5d465acf... -> da465c59...).
-                "da465c596aed4e0a905e4417939bc9673539a5ba2e67c1741541618d530b87a7",
+                // SAT-D17: DraftLineClosures (keyed per line, FK to draft and line, CK) on the same company-filtered context; no query-filter bypass or direct database surface (da465c59... -> af489a5a...).
+                "af489a5ae624822a230aef77f3733cfe87d17b8faa7d2d174ccd1c56504cb221",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
