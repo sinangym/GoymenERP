@@ -468,8 +468,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
+            // Re-fingerprinted for B-24 (Work outbox dispatcher): +3 dispatch facts (8eeffadb... -> 6e3a97bd...).
             ["tools/relational_inventory/work.txt"] =
-                "8eeffadbd31f1caf0ecf5c48a55cece883b292df8e3f3acd56ab2a1d53a29eb2",
+                "6e3a97bd3fb54018f4fff8bb0a3a3c7897b5b79baa49a342f1fef08b58451591",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string BackendTestGroupVerifierPath = "tools/verify_backend_test_groups.py";
@@ -703,8 +704,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "2d883027d5ca815850f42ca9767a175ccc40ef7ac654e3a35f699b64c3fbf2e6",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
+            // Re-fingerprinted for B-24: dispatcher cursor/delivery tables are company-filtered, company-keyed and write-guarded.
             [ReviewedWorkDbContextPath] =
-                "39248c80a4d772be8882db360b1e2fc2072431bb73af6ee4de6f54f04e48e420",
+                "ba6a0dc27cba3e5fccfa592c30fc64100035d7c782bc7e7423a74e012e06d7c1",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -1678,7 +1680,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
                  + "WorkModuleExtensions.cs"] =
                     new(
-                        "eb7df024d5d42bf62a7a6d3c915a4c872da7bc63287570b414c5bb52a4c2da49",
+                        "ecfb9f90cbce0b999aaa94acf3deed0caf0ba49e367ab70bd95add02853b1e3e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["MigrateAsync"] = 1,
@@ -2061,6 +2063,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Migrations/20261005190000_InitialWorkDesiredStateStorage.cs"] =
                     new(
                         "f75391a21884cba32bd1a285336038e8c7a126e5dbb1b7678e23445ccd259b0b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // B-24 Work outbox dispatch state (cursors, inbox/dedup, retry, poison) is durable; Down refuses
+                // (51234) while any dispatch record exists and is a forward fix then.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/"
+                 + "Migrations/20261108221330_AddWorkOutboxDispatch.cs"] =
+                    new(
+                        "02bd8e3d1660f19505ed203f1a8ef8f026fbd0067237413e23a96278a7f4e43b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
@@ -8305,20 +8317,35 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 + "GetDocument.Insider entry assembly signal.");
         }
 
+        // B-24: the Work outbox dispatcher is the second reviewed custom hosted service. It is default-off
+        // configuration and, like Identity's, registered only outside OpenAPI document generation.
+        var workHostedServicePath = ReviewedRuntimeDatabaseBypassSources.Keys.Single(path =>
+            path.EndsWith("WorkModuleExtensions.cs", StringComparison.Ordinal));
         var hostedServiceRegistrations = sources
             .Where(source => source.Value.Contains("AddHostedService<", StringComparison.Ordinal))
             .Select(source => source.Key)
+            .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
-        if (hostedServiceRegistrations.Length != 1
-            || !string.Equals(
-                hostedServiceRegistrations[0],
-                identityPath,
-                StringComparison.Ordinal))
+        var reviewedHostedServicePaths = new[] { identityPath, workHostedServicePath }
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        if (!hostedServiceRegistrations.SequenceEqual(reviewedHostedServicePaths, StringComparer.Ordinal))
         {
             errors.Add(
-                "OpenAPI build-time composition must have exactly one reviewed custom "
-                + "hosted-service registration, guarded in IdentityModuleExtensions: "
+                "OpenAPI build-time composition must have exactly the reviewed custom "
+                + "hosted-service registrations (Identity and Work outbox dispatcher): "
                 + string.Join(", ", hostedServiceRegistrations));
+        }
+
+        if (!sources.TryGetValue(workHostedServicePath, out var workHostedServiceSource)
+            || !Regex.IsMatch(
+                workHostedServiceSource,
+                @"if\s*\(\s*!OpenApiDocumentGenerationMode\.IsActive\s*\)\s*\{\s*services\.AddHostedService<WorkOutboxDispatcherHostedService>\(\);",
+                RegexOptions.CultureInvariant))
+        {
+            errors.Add(
+                "The Work outbox dispatcher hosted service must be registered only inside "
+                + "if (!OpenApiDocumentGenerationMode.IsActive).");
         }
 
         const string initializerGuard =

@@ -1,8 +1,11 @@
+using GoymenERP.BuildingBlocks.OpenApi;
+using GoymenERP.Modules.Work.Infrastructure.Outbox;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Modules.Work.Infrastructure;
 
@@ -39,6 +42,38 @@ public static class WorkModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<WorkDesiredStateStoreV2>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the ERP-000F outbox dispatcher. OFF by default: nothing runs unless
+    /// <c>Work:OutboxDispatcher:Enabled</c> is true (production activation is a human gate). Call after
+    /// <see cref="AddWorkModule"/>; sources, consumers and the company directory are registered by their owners.
+    /// </summary>
+    public static IServiceCollection AddWorkOutboxDispatcher(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var section = configuration.GetSection(WorkOutboxDispatcherOptions.SectionName);
+        services.Configure<WorkOutboxDispatcherOptions>(section);
+        var options = new WorkOutboxDispatcherOptions();
+        section.Bind(options);
+        if (!options.Enabled)
+        {
+            return services;
+        }
+
+        options.Resolve();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<WorkOutboxDispatcher>();
+        if (!OpenApiDocumentGenerationMode.IsActive)
+        {
+            services.AddHostedService<WorkOutboxDispatcherHostedService>();
+        }
+
         return services;
     }
 
