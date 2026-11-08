@@ -29,7 +29,10 @@ public static class SalesInvoiceCommands
     /// <summary>API-33: POST /api/v1/sales/invoices/{id}/cancellation (a reason; the shares are released).</summary>
     public const string CancelV1 = "sales.invoice.cancel.v1";
 
-    public static bool IsInvoiceCommand(string? name) => name is CreateV1 or SubmitV1 or ApproveV1 or RejectV1 or CancelV1;
+    /// <summary>API-35: POST /api/v1/sales/invoices/{id}/external-match (the approved invoice against the official document, SAT-D89).</summary>
+    public const string MatchV1 = "sales.invoice.match.v1";
+
+    public static bool IsInvoiceCommand(string? name) => name is CreateV1 or SubmitV1 or ApproveV1 or RejectV1 or CancelV1 or MatchV1;
 }
 
 /// <summary>Technical bounds of the invoice routes (not policies).</summary>
@@ -50,6 +53,7 @@ public static class SalesInvoiceApiV1
     public const string ApprovalPath = "/api/v1/sales/invoices/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/invoices/{id}/rejection";
     public const string CancellationPath = "/api/v1/sales/invoices/{id}/cancellation";
+    public const string ExternalMatchPath = "/api/v1/sales/invoices/{id}/external-match";
 
     /// <summary>The four state commands answer the invoice after the command with 200 (the same key again too, with the replay headers).</summary>
     public const int CommandStatus = 200;
@@ -87,6 +91,32 @@ public static class SalesInvoiceJson
 /// <summary>The strict readers of the state-command bodies (shape only; the domain decides the rules).</summary>
 public static class SalesInvoiceStateJson
 {
+    /// <summary>The match body: a version, the official number (1–64), the ETTN (canonical lowercase-or-uppercase UUID text), and the optional approval.</summary>
+    public static MatchSalesInvoiceRequest ReadMatch(string json)
+    {
+        var request = JsonSerializer.Deserialize<MatchSalesInvoiceRequest>(json, SalesDraftJson.Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersion(request.ExpectedVersion);
+        if (string.IsNullOrWhiteSpace(request.OfficialInvoiceNo) || request.OfficialInvoiceNo.Length > SalesInvoice.MaximumOfficialNoLength
+            || request.OfficialInvoiceNo != request.OfficialInvoiceNo.Trim())
+        {
+            throw new JsonException("Invalid official invoice number.");
+        }
+
+        if (request.Ettn is null || request.Ettn.Length != SalesInvoice.EttnLength
+            || !Guid.TryParseExact(request.Ettn, "D", out var ettn) || ettn == Guid.Empty)
+        {
+            throw new JsonException("Invalid ETTN.");
+        }
+
+        if (request.DifferenceReason is { Length: > SalesInvoice.MaximumReasonLength })
+        {
+            throw new JsonException("Invalid difference reason.");
+        }
+
+        return request;
+    }
+
     private static void RequireVersion(string? text)
     {
         if (string.IsNullOrEmpty(text) || text.Length > 19 || !System.Text.RegularExpressions.Regex.IsMatch(text, "\\A[1-9][0-9]*\\z"))
@@ -124,6 +154,26 @@ public static class SalesInvoiceRequestHash
     {
         ArgumentNullException.ThrowIfNull(request);
         var canonical = JsonSerializer.Serialize(new { command = SalesInvoiceCommands.CreateV1, request }, SalesDraftJson.Options);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+}
+
+/// <summary>The canonical content of an official match for the replay identity (ADR-011 §3); the ETTN is compared case-insensitively.</summary>
+public static class SalesInvoiceMatchHash
+{
+    public static string Compute(Guid invoiceId, MatchSalesInvoiceRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var canonical = JsonSerializer.Serialize(new
+        {
+            command = SalesInvoiceCommands.MatchV1,
+            invoiceId,
+            request.ExpectedVersion,
+            request.OfficialInvoiceNo,
+            ettn = request.Ettn.ToLowerInvariant(),
+            request.ApproveDifference,
+            request.DifferenceReason,
+        }, SalesDraftJson.Options);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 }
@@ -199,6 +249,24 @@ public static class SalesInvoiceProblemCodesV1
 
     /// <summary>409 (recorded under the key): the approver is the preparer or the submitter (SAT-D88/D204).</summary>
     public const string SelfApproval = SalesRuleCodes.InvoiceSelfApproval;
+
+    /// <summary>409 (not recorded; the official data can change): the official document is not found by number and ETTN.</summary>
+    public const string OfficialDocumentNotFound = "official_document_not_found";
+
+    /// <summary>409 (not recorded): the official document differs in customer or currency (field errors name each).</summary>
+    public const string OfficialMatchMismatch = "official_match_mismatch";
+
+    /// <summary>409 (not recorded): the TL difference exceeds the tolerance and no approval was sent (SAT-D106).</summary>
+    public const string DifferenceApprovalRequired = "difference_approval_required";
+
+    /// <summary>409 (recorded): the official number or ETTN is already matched to an invoice of this company.</summary>
+    public const string OfficialDocumentAlreadyMatched = "official_document_already_matched";
+
+    /// <summary>503: the official-invoice provider cannot answer; nothing is matched (fail-closed).</summary>
+    public const string OfficialInvoiceProviderUnavailable = "official_invoice_provider_unavailable";
+
+    public const string DifferenceReasonRequired = SalesRuleCodes.InvoiceMatchDifferenceReasonRequired;
+    public const string DifferenceNotApplicable = SalesRuleCodes.InvoiceMatchDifferenceNotApplicable;
 }
 
 /// <summary>One amount set as exact invariant text at the currency's scale.</summary>
@@ -260,7 +328,8 @@ public sealed record SalesInvoiceDetailView(
     DateTimeOffset CreatedAtUtc,
     SalesInvoiceDecisionView? Decision = null,
     string? PaymentAllocationWarning = null,
-    bool IsReplay = false);
+    bool IsReplay = false,
+    SalesInvoiceMatchView? Match = null);
 
 /// <summary>API-33 facts: who sent it to approval, who decided (and why), who cancelled (and why). Absent members are null.</summary>
 public sealed record SalesInvoiceDecisionView(string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? DecidedBy,
@@ -319,6 +388,17 @@ public interface ISalesInvoiceStore
         Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// API-35: records the official match of the company's approved invoice in one save (the match row, the attempt, the audit).
+    /// <paramref name="record"/> is the domain's decision; a refusal writes nothing. Null when the invoice does not exist here.
+    /// </summary>
+    Task<SalesInvoiceStoreResult?> MatchInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid invoiceId,
+        Func<SalesInvoice, DateTimeOffset, SalesInvoiceMatchFacts> record, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The invoice of this company already matched to the official number or the ETTN, null when neither is used (SAT-D89).</summary>
+    Task<Guid?> FindMatchedInvoiceIdAsync(string officialNo, string ettn, CancellationToken cancellationToken = default);
+
     Task<SalesInvoice?> FindInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default);
 
     Task<SalesInvoicePage> ListInvoicesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
@@ -352,6 +432,15 @@ public interface ISalesInvoiceService
 
     /// <summary>API-33: cancels with a reason (needs <c>sales.invoices.write</c> and price read); the shares are released (SAT-D96 S2 payment effects: next slice).</summary>
     Task<SalesInvoiceCommandResult> CancelInvoiceAsync(Guid invoiceId, CancelSalesInvoiceRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-35 (SAT-D89/D106/D229): matches the approved invoice with the official document (number, ETTN, customer, currency exact;
+    /// the TL difference within the configured tolerance, or approved with a reason). Needs <c>sales.invoices.match</c> and price
+    /// read; approving an excess also needs <c>sales.invoices.approve</c> and is never the preparer's. Fails closed (503) while the
+    /// official-invoice provider cannot answer.
+    /// </summary>
+    Task<SalesInvoiceCommandResult> MatchInvoiceAsync(Guid invoiceId, MatchSalesInvoiceRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
     Task<SalesInvoiceListResponse> GetInvoicesAsync(SalesInvoiceListQuery query, CancellationToken cancellationToken = default);

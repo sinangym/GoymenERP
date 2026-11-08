@@ -32,8 +32,8 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-04 (1.12, merged after 1.11): the header-revision control of the detail.
         // SAT-D32 (1.13): the user-closure control of the detail.
         // SAT-D30 / SAT-D168 (1.14): the over-delivery approval control of the detail.
-        // S5 API-33 (1.15): registers sales.invoices.approve (manifest v22); no screen control is declared yet (frontend lane).
-        Assert.Equal(("SALES", "1.15"), (provider.Owner, provider.ContractVersion));
+        // S5 API-35 (1.16): registers sales.invoices.match (manifest v23); API-33 (1.15) registered sales.invoices.approve (v22); no screen control is declared yet (frontend lane).
+        Assert.Equal(("SALES", "1.16"), (provider.Owner, provider.ContractVersion));
         Assert.Equal(27, declarations.Count);
         foreach (var declaration in declarations)
         {
@@ -336,11 +336,13 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.invoices.write", SalesPermissionManifestV1.InvoicesWrite);
         // S5 API-33 (Fatura çekirdeği 2; SAT-D88/D204): the SEPARATE invoice approval name; the invoice write and read names do not confer it.
         Assert.Equal("sales.invoices.approve", SalesPermissionManifestV1.InvoicesApprove);
+        // S5 API-35 (Fatura çekirdeği 3; SAT-D89/D106): the SEPARATE official-match name; the invoice write, read and approve names do not confer it.
+        Assert.Equal("sales.invoices.match", SalesPermissionManifestV1.InvoicesMatch);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
         // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
         Assert.Equal("sales.orders.over-delivery.approve", SalesPermissionManifestV1.OrdersOverDeliveryApprove);
-        Assert.Equal((22, 25), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((23, 26), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -367,6 +369,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.InvoicesRead,
                 SalesPermissionManifestV1.InvoicesWrite,
                 SalesPermissionManifestV1.InvoicesApprove,
+                SalesPermissionManifestV1.InvoicesMatch,
                 SalesPermissionManifestV1.ReportsRead,
             ],
             StringComparer.Ordinal);

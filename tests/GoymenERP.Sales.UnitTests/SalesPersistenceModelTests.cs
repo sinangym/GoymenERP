@@ -126,7 +126,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_BackfillDraftBuyerTax", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoices", StringComparison.Ordinal));
-        Assert.Equal("20261108025944_AddSalesInvoiceApproval", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceApproval", StringComparison.Ordinal));
+        Assert.Equal("20261108091314_AddSalesInvoiceOfficialMatch", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -143,6 +144,34 @@ public sealed class SalesPersistenceModelTests
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
         Assert.Contains("THROW 51222,", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    /// <summary>API-35 PR3: the append-only match table; Up adds one immutability trigger (51226), Down is a forward fix (51225).</summary>
+    [Fact]
+    public void The_invoice_match_migration_adds_one_trigger_and_its_down_refuses_with_51225_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceOfficialMatch();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        var trigger = Assert.Single(up);
+        Assert.Contains("TR_InvoiceMatches_Guard", trigger.Sql, StringComparison.Ordinal);
+        Assert.Contains("51226", trigger.Sql, StringComparison.Ordinal);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51225,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_invoice_match_model_is_keyed_per_invoice_with_unique_official_identity_and_the_widened_command_check()
+    {
+        using var context = Context();
+        var match = context.Model.FindEntityType(typeof(InvoiceMatchRow))!;
+        Assert.Equal(["CompanyId", "InvoiceId"], match.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(match, "UX_InvoiceMatches_OfficialNo"));
+        Assert.True(UniqueIndex(match, "UX_InvoiceMatches_Ettn"));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(InvoiceMatchRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceMatches_Amounts" && check.Sql == SalesDbContext.InvoiceMatchAmountsConstraint);
+        Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command" && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.MatchV1, StringComparison.Ordinal));
     }
 
     /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>

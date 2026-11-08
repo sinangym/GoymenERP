@@ -160,6 +160,19 @@ public static partial class SalesEndpoints
         MapInvoiceCommand<CancelSalesInvoiceRequest>(invoices, "cancellation", "CancelSalesInvoiceV1", SalesInvoiceStateJson.ReadCancel,
             (service, id, body, metadata, cancellationToken) => service.CancelInvoiceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [SalesRuleCodes.ApprovalReasonTooLong], extraConflictCodes: []);
+        // API-35: the official match of an approved invoice. The strict body `{expectedVersion, officialInvoiceNo, ettn,
+        // approveDifference?, differenceReason?}`; 200 with the invoice and its match. A document the provider does not know, a
+        // customer/currency mismatch and a TL difference beyond the tolerance without an approval are 409s that are NOT recorded under
+        // the key (the data may change); the rest of the 409s are the key's recorded answer. 503 while the provider is unavailable.
+        MapInvoiceCommand<MatchSalesInvoiceRequest>(invoices, "external-match", "MatchSalesInvoiceV1", SalesInvoiceStateJson.ReadMatch,
+            (service, id, body, metadata, cancellationToken) => service.MatchInvoiceAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: [SalesInvoiceProblemCodesV1.DifferenceReasonRequired, SalesInvoiceProblemCodesV1.DifferenceNotApplicable],
+            extraConflictCodes:
+            [
+                SalesInvoiceProblemCodesV1.SelfApproval, SalesInvoiceProblemCodesV1.OfficialDocumentNotFound,
+                SalesInvoiceProblemCodesV1.OfficialMatchMismatch, SalesInvoiceProblemCodesV1.DifferenceApprovalRequired,
+                SalesInvoiceProblemCodesV1.OfficialDocumentAlreadyMatched,
+            ]);
     }
 
     private static void MapInvoiceCommand<TBody>(RouteGroupBuilder invoices, string segment, string name, Func<string, TBody> read,
