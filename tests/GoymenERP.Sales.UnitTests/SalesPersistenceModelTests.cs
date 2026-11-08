@@ -869,6 +869,22 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(("sales", "DraftLineClosures"), (drop.Schema, drop.Name));
     }
 
+    /// <summary>
+    /// SAT-D17: the stored band of a line closure is never the block band. The domain's restore accepts any defined band, so the
+    /// table's identity check is what keeps a block-band row out: it admits Within (1) to Approval (3) only, and Block is 4.
+    /// </summary>
+    [Fact]
+    public void The_line_closure_identity_check_admits_within_to_approval_only_and_keeps_the_block_band_out()
+    {
+        Assert.Equal((1, 2, 3, 4), ((int)DeliveryToleranceBand.Within, (int)DeliveryToleranceBand.Warn,
+            (int)DeliveryToleranceBand.Approval, (int)DeliveryToleranceBand.Block));
+        Assert.Contains("AND [Band] BETWEEN 1 AND 3 AND", SalesDbContext.LineClosureIdentityConstraint, StringComparison.Ordinal);
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftLineClosures();
+        var table = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>(),
+            operation => operation.Name == "DraftLineClosures");
+        Assert.Equal(SalesDbContext.LineClosureIdentityConstraint, Assert.Single(table.CheckConstraints).Sql);
+    }
+
     private static DraftLineClosureRow LineClosure() => new()
     {
         CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineId = Guid.NewGuid(), LineNo = 1, BasisRevision = 0,
