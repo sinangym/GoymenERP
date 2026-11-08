@@ -656,6 +656,13 @@ export const SALES_PROBLEM_CODE = {
   // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
   // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
   businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
+  // API-36 (PR #986): the invoice finalization's own answers — a missing official match (409), an open match difference (409,
+  // recorded; no workaround), an instalment whose TL split the server refused (422) — and the API's request-context refusals.
+  invoiceMatchRequired: 'sales_invoice_match_required',
+  invoiceMatchDifferenceOpen: 'sales_invoice_match_difference_open',
+  invoiceInstalmentFunctionalInvalid: 'sales_invoice_instalment_functional_invalid',
+  companyContextInvalid: 'company_context_invalid',
+  correlationMetadataInvalid: 'correlation_metadata_invalid',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
