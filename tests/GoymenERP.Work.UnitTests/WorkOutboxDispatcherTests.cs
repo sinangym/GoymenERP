@@ -337,14 +337,43 @@ public sealed class WorkOutboxDispatcherTests
     }
 
     [Fact]
-    public void Only_unique_key_violations_and_concurrency_exceptions_count_as_conflicts()
+    public async Task An_insert_race_won_by_another_dispatcher_is_a_conflict_and_the_next_cycle_deduplicates()
     {
-        Assert.True(WorkOutboxDispatcher.IsConflict(new DbUpdateConcurrencyException("race")));
-        Assert.True(WorkOutboxDispatcher.IsConflict(new DbUpdateException("dup", new SqlException(2627))));
-        Assert.True(WorkOutboxDispatcher.IsConflict(new DbUpdateException("dup", new SqlException(2601))));
-        Assert.False(WorkOutboxDispatcher.IsConflict(new DbUpdateException("fk", new SqlException(547))));
-        Assert.False(WorkOutboxDispatcher.IsConflict(new DbUpdateException("other")));
-        Assert.False(WorkOutboxDispatcher.IsConflict(new InvalidOperationException("other")));
+        var harness = new Harness(Defaults);
+        var message = Message(CompanyA, 1);
+        harness.Source.Add(CompanyA, message);
+        var consumer = harness.AddConsumer("finance");
+        var raced = false;
+        harness.Saves.Failure = () =>
+        {
+            if (raced)
+            {
+                return null;
+            }
+
+            raced = true;
+            using var other = harness.Db(CompanyA);
+            other.OutboxDeliveries.Add(new WorkOutboxDeliveryRow
+            {
+                CompanyId = CompanyA, SourceName = SourceName, ConsumerName = "finance", MessageId = message.MessageId,
+                EventType = EventType, SchemaVersion = 1, Status = (int)WorkOutboxDeliveryStatus.Delivered,
+                PayloadSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(message.PayloadJson))),
+                AttemptCount = 1, FirstAttemptAtUtc = harness.Time.GetUtcNow(), LastAttemptAtUtc = harness.Time.GetUtcNow(),
+                DeliveredAtUtc = harness.Time.GetUtcNow(),
+            });
+            other.SaveChanges();
+            return new DbUpdateException("duplicate key");
+        };
+
+        var first = await harness.RunAsync();
+        Assert.Equal(0, first.Delivered);
+        Assert.Empty(await harness.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+
+        var second = await harness.RunAsync();
+        Assert.Equal(1, second.Duplicates);
+        Assert.Equal(1, consumer.Calls);
+        Assert.Equal("1", (await harness.Db(CompanyA).OutboxSourceCursors.SingleAsync()).Position);
     }
 
     [Fact]
@@ -521,12 +550,6 @@ public sealed class WorkOutboxDispatcherTests
             return new WorkDbContext(
                 new DbContextOptionsBuilder<WorkDbContext>().UseInMemoryDatabase(database).Options, company);
         }
-    }
-
-    // Shaped like the provider's exception (type name and Number) so the classifier can be tested without a database.
-    private sealed class SqlException(int number) : Exception("sql")
-    {
-        public int Number { get; } = number;
     }
 
     private sealed class FailingSaves : SaveChangesInterceptor

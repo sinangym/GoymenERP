@@ -214,16 +214,11 @@ public sealed class WorkOutboxDispatcher
             cursor.UpdatedAtUtc = now;
         }
 
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (Exception exception) when (IsConflict(exception))
-        {
-            // Another dispatcher instance moved the same cursor: its deliveries are deduplicated, ours repeat nothing.
-            logger.LogWarning(exception, "Outbox cursor for {Source} moved concurrently; reread next cycle.", sourceName);
-            db.ChangeTracker.Clear();
-        }
+        var inserted = cursor is null;
+        await SaveOrConflictAsync(
+            db,
+            ct => inserted ? db.OutboxSourceCursors.AsNoTracking().AnyAsync(x => x.SourceName == sourceName, ct) : Task.FromResult(false),
+            cancellationToken);
     }
 
     /// <summary>Returns true when the message is resolved for this consumer (delivered, duplicate or poisoned).</summary>
@@ -257,7 +252,7 @@ public sealed class WorkOutboxDispatcher
                     row.NextAttemptAtUtc = null;
                     row.LastErrorCode = PayloadMismatchCode;
                     // The stored hash is the first-read evidence and stays; the guard forbids changing it.
-                    await SaveRowAsync(db, cancellationToken);
+                    await SaveRowAsync(db, sourceName, consumerName, messageId, false, cancellationToken);
                     tally.Poisoned++;
                     PoisonCounter.Add(1);
                 }
@@ -343,7 +338,7 @@ public sealed class WorkOutboxDispatcher
             db.OutboxDeliveries.Add(row);
         }
 
-        if (!await SaveRowAsync(db, cancellationToken))
+        if (!await SaveRowAsync(db, sourceName, consumerName, messageId, insert, cancellationToken))
         {
             return false;
         }
@@ -367,33 +362,48 @@ public sealed class WorkOutboxDispatcher
         return resolved;
     }
 
-    private async Task<bool> SaveRowAsync(WorkDbContext db, CancellationToken cancellationToken)
+    private Task<bool> SaveRowAsync(
+        WorkDbContext db, string sourceName, string consumerName, Guid messageId, bool insert, CancellationToken cancellationToken) =>
+        SaveOrConflictAsync(
+            db,
+            ct => insert
+                ? db.OutboxDeliveries.AsNoTracking().AnyAsync(
+                    x => x.SourceName == sourceName && x.ConsumerName == consumerName && x.MessageId == messageId, ct)
+                : Task.FromResult(false),
+            cancellationToken);
+
+    /// <summary>
+    /// A save failure is a conflict only when it is a concurrency exception, or when the row this instance tried to
+    /// insert is now visible (another instance won the race on the key). Anything else is a real storage error.
+    /// </summary>
+    private async Task<bool> SaveOrConflictAsync(
+        WorkDbContext db,
+        Func<CancellationToken, Task<bool>> rowWonByAnother,
+        CancellationToken cancellationToken)
     {
         try
         {
             await db.SaveChangesAsync(cancellationToken);
             return true;
         }
-        catch (Exception exception) when (IsConflict(exception))
+        catch (DbUpdateConcurrencyException exception)
         {
-            // A concurrent dispatcher recorded the same delivery first; hold the cursor and reread next cycle.
-            logger.LogWarning(exception, "Outbox delivery record conflicted; reread next cycle.");
+            logger.LogWarning(exception, "Outbox record changed concurrently; reread next cycle.");
             db.ChangeTracker.Clear();
             return false;
         }
+        catch (DbUpdateException exception)
+        {
+            db.ChangeTracker.Clear();
+            if (await rowWonByAnother(cancellationToken))
+            {
+                logger.LogWarning(exception, "Outbox record was written first by another dispatcher; reread next cycle.");
+                return false;
+            }
+
+            throw;
+        }
     }
-
-    /// <summary>Only a lost race (unique key or concurrency token) counts as a conflict; other storage errors surface.</summary>
-    internal static bool IsConflict(Exception exception) =>
-        exception is DbUpdateConcurrencyException
-        || (exception is DbUpdateException { InnerException: { } inner } && IsUniqueViolation(inner));
-
-    // SQL Server duplicate key (2601 unique index, 2627 unique/PK constraint). Read by shape so this file does not take a
-    // direct provider-client dependency (reviewed database surfaces stay in the stores).
-    private static bool IsUniqueViolation(Exception inner) =>
-        inner.GetType().Name == "SqlException"
-        && inner.GetType().GetProperty("Number")?.GetValue(inner) is int number
-        && number is 2601 or 2627;
 
     private static bool IsPrintableAscii(string value) => value.All(c => c is >= '!' and <= '~');
 
