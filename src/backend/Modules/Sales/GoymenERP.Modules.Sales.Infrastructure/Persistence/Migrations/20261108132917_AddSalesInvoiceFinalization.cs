@@ -53,7 +53,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 {
                     table.PrimaryKey("PK_InvoiceFinalizations", x => new { x.CompanyId, x.InvoiceId });
                     table.CheckConstraint("CK_InvoiceFinalizations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 2 AND LEN([FinalizedBy]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([PlanJson]) = 1 AND [FinanceStatus] IN (1, 2) AND ([LastOutcome] IS NULL OR LEN([LastOutcome]) > 0)");
-                    table.CheckConstraint("CK_InvoiceFinalizations_Ledger", "[AttemptCount] >= 0 AND (([AttemptCount] = 0) = ([LastAttemptAtUtc] IS NULL)) AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))");
+                    table.CheckConstraint("CK_InvoiceFinalizations_Ledger", "[AttemptCount] >= 0 AND (([AttemptCount] = 0 AND [LastAttemptAtUtc] IS NULL) OR ([AttemptCount] > 0 AND [LastAttemptAtUtc] IS NOT NULL)) AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))");
                     table.ForeignKey(
                         name: "FK_InvoiceFinalizations_Companies_CompanyId",
                         column: x => x.CompanyId,
@@ -155,8 +155,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     -- facts untouched, and the official match recorded before the invoice is final (SAT-D101 / S7).
                     IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
                                WHERE d.[State] = 3 AND (i.[State] <> 6 OR i.[Version] <> d.[Version] + 1
-                                  OR ISNULL(i.[SubmittedBy], N'') <> ISNULL(d.[SubmittedBy], N'') OR NOT (i.[SubmittedAtUtc] = d.[SubmittedAtUtc] OR (i.[SubmittedAtUtc] IS NULL AND d.[SubmittedAtUtc] IS NULL))
-                                  OR ISNULL(i.[DecidedBy], N'') <> ISNULL(d.[DecidedBy], N'') OR NOT (i.[DecidedAtUtc] = d.[DecidedAtUtc] OR (i.[DecidedAtUtc] IS NULL AND d.[DecidedAtUtc] IS NULL))))
+                                  OR EXISTS (SELECT i.[SubmittedBy], i.[SubmittedAtUtc], i.[DecidedBy], i.[DecidedAtUtc]
+                                             EXCEPT SELECT d.[SubmittedBy], d.[SubmittedAtUtc], d.[DecidedBy], d.[DecidedAtUtc])))
                         THROW 51223, 'An approved sales invoice only moves to finalized, one version up, with its decision untouched.', 1;
                     IF EXISTS (SELECT 1 FROM inserted i WHERE i.[State] = 6
                                AND NOT EXISTS (SELECT 1 FROM [sales].[InvoiceMatches] m WHERE m.[CompanyId] = i.[CompanyId] AND m.[InvoiceId] = i.[Id]))

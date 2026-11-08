@@ -271,7 +271,6 @@ public sealed partial class SalesDraftServiceTests
         public FakeOfficialInvoices Official { get; } = new();
         public SalesInvoiceMatchTolerancePolicy? Tolerance { get; set; }
         public ISalesFinanceAdmissionPortV1? Finance { get; set; }
-        public SalesInvoiceWithholdingThresholdPolicy? Threshold { get; set; }
         public ISalesInvoiceDiagnosticsV1? Diagnostics { get; set; }
 
         /// <summary>An invoice world around an order the caller has put in the state under test.</summary>
@@ -304,7 +303,7 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesInvoiceService(company, World.User, World.Authority, new FixedCorrelation(), Invoices, World.Store, World.Settings,
-                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Threshold, Diagnostics);
+                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Diagnostics);
         }
     }
 

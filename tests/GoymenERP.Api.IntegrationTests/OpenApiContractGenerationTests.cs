@@ -3416,7 +3416,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["MatchSalesInvoiceV1:409"] = ["concurrent_change", "difference_approval_required", "official_document_already_matched", "official_document_not_found", "official_match_mismatch", "sales_invoice_self_approval", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["MatchSalesInvoiceV1:422"] = ["sales_invoice_match_difference_not_applicable", "sales_invoice_match_difference_reason_required"],
             ["FinalizeSalesInvoiceV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["FinalizeSalesInvoiceV1:409"] = ["concurrent_change", "sales_invoice_match_difference_open", "sales_invoice_match_required", "sales_invoice_withholding_below_threshold", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["FinalizeSalesInvoiceV1:409"] = ["concurrent_change", "sales_invoice_match_required", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["FinalizeSalesInvoiceV1:422"] = ["sales_invoice_instalment_functional_invalid"],
             ["ResendSalesInvoiceFinanceAdmissionV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ResendSalesInvoiceFinanceAdmissionV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],

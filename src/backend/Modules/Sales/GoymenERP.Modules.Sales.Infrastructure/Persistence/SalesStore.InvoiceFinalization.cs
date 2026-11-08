@@ -207,7 +207,8 @@ public sealed partial class SalesStore
             envelope.CausationId,
             envelope.IdempotencyKey);
 
-    private static string FinalizedPayload(SalesInvoice invoice, SalesInvoiceFinalization finalization) => JsonSerializer.Serialize(new
+    /// <summary>The <c>sales.invoice.finalized.v1</c> outbox payload (versioned contract; see the contract test).</summary>
+    internal static string FinalizedPayload(SalesInvoice invoice, SalesInvoiceFinalization finalization) => JsonSerializer.Serialize(new
     {
         invoiceId = invoice.Id,
         invoice.DocumentNo,
@@ -219,7 +220,13 @@ public sealed partial class SalesStore
         rate = invoice.Header.Rate?.Rate,
         payable = invoice.Totals.Payable.Amount,
         functionalPayable = invoice.FunctionalTotals?.Payable.Amount,
-        match = invoice.Match is null ? null : new { invoice.Match.OfficialNo, invoice.Match.Ettn },
+        match = invoice.Match is null ? null : new
+        {
+            invoice.Match.OfficialNo,
+            invoice.Match.Ettn,
+            invoice.Match.OfficialFunctionalAmount,
+            invoice.Match.Difference,
+        },
         instalments = finalization.Plan.Select(item => new
         {
             item.OpenItemId,

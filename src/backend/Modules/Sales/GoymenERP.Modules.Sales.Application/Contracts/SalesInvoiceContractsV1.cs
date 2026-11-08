@@ -285,12 +285,6 @@ public static class SalesInvoiceProblemCodesV1
     /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative remainder (SAT-D227).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
 
-    /// <summary>409 (recorded): a withholding invoice below the VUK 232 threshold is refused at finalisation (S5).</summary>
-    public const string WithholdingBelowThreshold = SalesRuleCodes.InvoiceWithholdingBelowThreshold;
-
-    /// <summary>409 (recorded): the match carries a difference, so the finalisation fails closed (SAT-D229).</summary>
-    public const string MatchDifferenceOpen = SalesRuleCodes.InvoiceMatchDifferenceOpen;
-
     public const string DifferenceReasonRequired = SalesRuleCodes.InvoiceMatchDifferenceReasonRequired;
     public const string DifferenceNotApplicable = SalesRuleCodes.InvoiceMatchDifferenceNotApplicable;
 }

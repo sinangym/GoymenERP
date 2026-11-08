@@ -590,7 +590,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-35: the append-only InvoiceMatches tenant rows (one per invoice, unique official number and ETTN per company) under the same
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // API-36: the append-only InvoiceFinalizations ledger and final instalment rows under the same company filter; no bypass (5d465acf... -> 64d66c31...).
-                "c014ec633794dbd7b29572274be3ddcd36f9be08755addfe0cc099b82d895547",
+                "8a85acd3db3f71f10dda94f9018b7730d967324cb0890e6a5f34a8405e2b654e",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1601,7 +1601,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // fail-closed 503 when unregistered); provider branch and token counts unchanged (e6274962... -> a3fdee0a...).
                     // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 846faead...; with API-36 also feeding the finalize path).
                     new(
-                        "78cb3e1ea925a976365477d8ac1d86a4cf35b07554a28e8487bc07ecac5ce65d",
+                        "7fc856210e3d20e487e046b9d24bd96ea6f9880cd95fbb586f457e1ca8db5d9d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2410,7 +2410,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // finalization ledger guard (51232) and the outbox freeze guard (51233); the Down's raw SQL is the forward-fix refusal (51231) while any
                 // finalization exists, the DROP of both triggers, and the restore of the previous header guard.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108132917_AddSalesInvoiceFinalization.cs"] =
-                    new("b7ff4815bed4c6ac8e624c951186f0e989e1a5bf0559ddea553ce67917bfc26e",
+                    new("43509d583ce1ab2fa35b9546721e9fbf2c457e4546a28250d0e1fff3ac232d9b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 6 }),
                 // SAT-D132: Down's only raw SQL is the forward-fix refusal (51227, used by no other migration) while any quote revision carries due terms.

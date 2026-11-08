@@ -343,7 +343,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>CK_InvoiceFinalizations_Ledger (API-36): Waiting has no admission time; Admitted has one and at least one attempt.</summary>
     internal const string InvoiceFinalizationLedgerConstraint =
-        "[AttemptCount] >= 0 AND (([AttemptCount] = 0) = ([LastAttemptAtUtc] IS NULL)) "
+        "[AttemptCount] >= 0 AND (([AttemptCount] = 0 AND [LastAttemptAtUtc] IS NULL) OR ([AttemptCount] > 0 AND [LastAttemptAtUtc] IS NOT NULL)) "
         + "AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))";
 
     /// <summary>TR_Invoices_Guard: a decided or cancelled invoice and the header facts are immutable (THROW 51223).</summary>

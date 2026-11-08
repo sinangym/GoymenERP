@@ -45,8 +45,7 @@ public sealed partial class SalesInvoiceService
         try
         {
             committed = await invoices.FinalizeInvoiceAsync(envelope, requestHash, invoiceId,
-                (target, now) => target.Finalize(expectedVersion, scope.ActorId, Guid.NewGuid, now,
-                    (withholdingThreshold ?? new SalesInvoiceWithholdingThresholdPolicy()).ThresholdAmount),
+                (target, now) => target.Finalize(expectedVersion, scope.ActorId, Guid.NewGuid, now),
                 new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "Satış faturası kesinleştirildi"), cancellationToken);
         }
         catch (SalesVersionConflictException exception)
@@ -65,19 +64,6 @@ public sealed partial class SalesInvoiceService
         {
             // Data, not a permanent refusal: the match can be recorded and the same key asks again.
             throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.MatchRequired, [new("match", "required")]);
-        }
-        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceWithholdingBelowThreshold)
-        {
-            // A recorded refusal: the draft is corrected by cancelling it and preparing a new one (the same key replays this answer).
-            return await TerminalAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.FinalizeV1, invoiceId,
-                new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.WithholdingBelowThreshold, [new("withholding", "below_threshold")]),
-                cancellationToken);
-        }
-        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceMatchDifferenceOpen)
-        {
-            return await TerminalAsync(scope, FinalizePermission, envelope, requestHash, SalesInvoiceCommands.FinalizeV1, invoiceId,
-                new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen, [new("match", "difference_open")]),
-                cancellationToken);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceInstalmentFunctionalInvalid)
         {
@@ -207,10 +193,15 @@ public sealed partial class SalesInvoiceService
             return null;
         }
 
+        if (throwOnStoreFailure)
+        {
+            // The re-drive is the caller's command: the fence is measured before the offer leaves and again before its only save.
+            await RequireStillAsync(scope, FinalizePermission, cancellationToken);
+        }
+
         var answer = await OfferAsync(scope, committed.Invoice, finalization, metadata, admissionKey, cancellationToken);
         if (throwOnStoreFailure)
         {
-            // The re-drive is the caller's command: the fence is measured again before its only save.
             await RequireStillAsync(scope, FinalizePermission, cancellationToken);
         }
 

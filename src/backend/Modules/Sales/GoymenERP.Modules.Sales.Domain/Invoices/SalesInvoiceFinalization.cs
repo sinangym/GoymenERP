@@ -1,3 +1,5 @@
+using GoymenERP.BuildingBlocks.Monetary;
+
 namespace GoymenERP.Modules.Sales.Domain.Invoices;
 
 /// <summary>Where the finalised invoice's open items stand with Finance (SAT-D208). Sales never calls a Waiting invoice admitted.</summary>
@@ -43,11 +45,9 @@ public sealed partial class SalesInvoice
     /// split of the instalments is the calculator's (SAT-D227). The finalised invoice offers its open items to Finance with a
     /// <see cref="SalesInvoiceFinanceStatus.Waiting"/> status; nothing here claims Finance accepted them.
     /// </summary>
-    public SalesInvoiceFinalization Finalize(long expectedVersion, string actorId, Func<Guid> newId, DateTimeOffset now,
-        decimal withholdingThreshold)
+    public SalesInvoiceFinalization Finalize(long expectedVersion, string actorId, Func<Guid> newId, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(newId);
-        ArgumentOutOfRangeException.ThrowIfNegative(withholdingThreshold);
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         RequireState(SalesInvoiceState.Approved, "Yalnız onaylı fatura kesinleştirilir.");
@@ -56,21 +56,16 @@ public sealed partial class SalesInvoice
             throw new SalesRuleException(SalesRuleCodes.InvoiceMatchRequired, "Fatura resmî belgeyle eşleşmeden kesinleştirilmez.");
         }
 
-        if (Match.Difference != 0m)
+        // A recorded match is already either within the policy tolerance or approved above it with a reason (SAT-D106/D204), so a
+        // non-zero difference does not block here. The official document governs (SAT-D89/D229): the TL split of the instalments
+        // adds up to the official TL amount, not to the ERP's own figure.
+        var payable = FunctionalTotals?.Payable;
+        if (Header.Rate is { } rate && payable is not null && Match.Difference != 0m)
         {
-            throw new SalesRuleException(SalesRuleCodes.InvoiceMatchDifferenceOpen,
-                "Resmî belgeyle eşleşmede fark var; fark sıfırlanmadan fatura kesinleştirilmez.");
+            payable = Money.Of(Match.OfficialFunctionalAmount, rate.FunctionalCurrencyId, rate.FunctionalScale);
         }
 
-        // S5 (VUK 232): a withholding invoice is finalised only at or above the configured threshold, measured on the TL net amount
-        // (the VAT-excluded total of the invoice; the basis awaits the advisor's confirmation). Equal to the threshold passes.
-        if (Totals.Withholding.Amount > 0m && (FunctionalTotals?.Net.Amount ?? Totals.Net.Amount) < withholdingThreshold)
-        {
-            throw new SalesRuleException(SalesRuleCodes.InvoiceWithholdingBelowThreshold,
-                "Tevkifatlı fatura, VUK 232 sınırının altında kesinleştirilemez; taslak iptal edilip yeniden hazırlanır.");
-        }
-
-        var split = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Header.Rate, Header.CurrencyId, FunctionalTotals?.Payable);
+        var split = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Header.Rate, Header.CurrencyId, payable);
         var plan = new List<SalesInvoiceFinalInstalment>(instalments.Count);
         for (var index = 0; index < instalments.Count; index++)
         {

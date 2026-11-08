@@ -1576,7 +1576,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_InvoiceFinalizations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 2 AND LEN([FinalizedBy]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([PlanJson]) = 1 AND [FinanceStatus] IN (1, 2) AND ([LastOutcome] IS NULL OR LEN([LastOutcome]) > 0)");
 
-                            t.HasCheckConstraint("CK_InvoiceFinalizations_Ledger", "[AttemptCount] >= 0 AND (([AttemptCount] = 0) = ([LastAttemptAtUtc] IS NULL)) AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))");
+                            t.HasCheckConstraint("CK_InvoiceFinalizations_Ledger", "[AttemptCount] >= 0 AND (([AttemptCount] = 0 AND [LastAttemptAtUtc] IS NULL) OR ([AttemptCount] > 0 AND [LastAttemptAtUtc] IS NOT NULL)) AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);

@@ -76,7 +76,7 @@ public sealed class SalesFinanceAdmissionAdapterV1(IFinanceInvoiceOpenItemAdmiss
             CommandOutcome.ValidationFailed => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Refused,
                 result.Issues.Count > 0 ? result.Issues[0].Code : "refused"),
             CommandOutcome.IdempotencyConflict => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.KeyConflict, "key_conflict"),
-            CommandOutcome.Denied => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Retry, "denied"),
+            CommandOutcome.Denied => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Refused, "denied"),
             CommandOutcome.VersionConflict => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Retry, "version_conflict"),
             _ => SalesFinanceAdmissionAnswerV1.Unavailable,
         };

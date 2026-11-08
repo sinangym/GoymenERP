@@ -159,69 +159,62 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task A_withholding_invoice_below_the_threshold_is_a_recorded_409_and_the_same_key_replays_it()
+    public async Task A_withholding_invoice_is_finalized_and_never_held_back_by_an_amount_threshold()
     {
+        // S5 (Sinan): withholding lines are not held; SAT-D93/EK13: the threshold basis is the VAT-inclusive total of the whole order,
+        // read from the Ayarlar port, never a second source here. Finalisation does not block on it.
         var (invoicing, id) = await MatchedWithholdingInvoiceAsync();
 
-        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final")));
+        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
 
-        Assert.Equal((409, SalesInvoiceProblemCodesV1.WithholdingBelowThreshold), Status(refused));
-        Assert.Contains("k-inv-final", invoicing.Invoices.StateAttempts.Keys);
-        Assert.Equal("Approved", (await invoicing.Service().GetInvoiceAsync(id)).State);
-        var replay = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final", "another-correlation")));
-        Assert.Equal((409, SalesInvoiceProblemCodesV1.WithholdingBelowThreshold), Status(replay));
+        Assert.Equal("Finalized", done.Invoice.State);
         Assert.Equal(1, invoicing.Invoices.FinalizeCalls);
     }
 
-    [Fact]
-    public async Task A_withholding_invoice_exactly_at_the_configured_threshold_is_finalized_and_the_threshold_is_configurable()
-    {
-        var (invoicing, id) = await MatchedWithholdingInvoiceAsync();
-        // The TL net amount of this invoice is 540.29 (see the withholding golden above); equal passes, strictly below refuses.
-        invoicing.Threshold = new SalesInvoiceWithholdingThresholdPolicy(540.29m);
-
-        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
-
-        Assert.Equal("Finalized", done.Invoice.State);
-    }
-
-    [Fact]
-    public void The_default_withholding_threshold_is_the_decided_12000_and_never_negative()
-    {
-        Assert.Equal(12000.00m, new SalesInvoiceWithholdingThresholdPolicy().ThresholdAmount);
-        Assert.Throws<ArgumentOutOfRangeException>(() => new SalesInvoiceWithholdingThresholdPolicy(-0.01m));
-    }
-
-    [Fact]
-    public async Task A_withholding_free_invoice_below_the_threshold_is_finalized()
-    {
-        var (invoicing, id) = await MatchedInvoiceAsync(finance: null);
-        invoicing.Threshold = new SalesInvoiceWithholdingThresholdPolicy(1000000m);
-
-        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
-
-        Assert.Equal("Finalized", done.Invoice.State);
-    }
-
-    [Fact]
-    public async Task A_match_with_a_difference_is_a_recorded_409_and_nothing_goes_to_finance()
+    [Theory]
+    [InlineData("648.54")]
+    [InlineData("648.44")]
+    public async Task A_match_recorded_within_the_tolerance_is_finalized_and_the_official_amount_governs_the_tl_split(string official)
     {
         var finance = new FakeFinanceAdmission();
         var (invoicing, id, _) = await ApprovedInvoiceAsync();
         invoicing.Finance = finance;
-        invoicing.Official.Has(648.54m);
+        invoicing.Official.Has(decimal.Parse(official, System.Globalization.CultureInfo.InvariantCulture));
         await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-match"));
         invoicing.World.User.Id = "synthetic-invoice-finalizer";
         invoicing.World.Authority.Measured.Clear();
 
-        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final")));
+        var done = await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
 
-        Assert.Equal((409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen), Status(refused));
-        Assert.Contains("k-inv-final", invoicing.Invoices.StateAttempts.Keys);
-        Assert.Empty(finance.Requests);
-        Assert.Equal("Approved", (await invoicing.Service().GetInvoiceAsync(id)).State);
+        Assert.Equal("Finalized", done.Invoice.State);
+        var offered = Assert.Single(finance.Requests);
+        var functionalTotal = offered.Instalments.Where(item => item.FunctionalAmount is not null)
+            .Sum(item => decimal.Parse(item.FunctionalAmount!, System.Globalization.CultureInfo.InvariantCulture));
+        // A foreign-currency plan adds up to the official TL amount; a TL plan carries no TL split and the official amount stays on the match.
+        Assert.True(functionalTotal == 0m || functionalTotal == decimal.Parse(official, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(official, done.Invoice.Match!.OfficialAmount);
+    }
+
+    [Fact]
+    public async Task The_finalized_outbox_payload_keeps_the_versioned_v1_shape()
+    {
+        var (invoicing, id) = await MatchedInvoiceAsync(finance: null);
+        await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+        var stored = invoicing.Invoices.Stored[id];
+
+        using var payload = System.Text.Json.JsonDocument.Parse(
+            GoymenERP.Modules.Sales.Infrastructure.Persistence.SalesStore.FinalizedPayload(stored, stored.Finalization!));
+
+        var root = payload.RootElement;
+        Assert.Equal(
+            ["invoiceId", "documentNo", "version", "admissionId", "partyId", "companyAccountId", "currencyId", "rate", "payable",
+                "functionalPayable", "match", "instalments"],
+            root.EnumerateObject().Select(member => member.Name).ToArray());
+        Assert.Equal(["officialNo", "ettn", "officialFunctionalAmount", "difference"],
+            root.GetProperty("match").EnumerateObject().Select(member => member.Name).ToArray());
+        Assert.Equal(["openItemId", "installmentId", "sequenceNo", "dueDate", "amount", "functionalAmount"],
+            root.GetProperty("instalments")[0].EnumerateObject().Select(member => member.Name).ToArray());
+        Assert.Equal(stored.Id, root.GetProperty("invoiceId").GetGuid());
+        Assert.Equal(stored.Finalization!.AdmissionId, root.GetProperty("admissionId").GetGuid());
     }
 }
