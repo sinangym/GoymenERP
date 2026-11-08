@@ -11,7 +11,8 @@
  *  - one line shape per state (the contract's "one shape per state"): an `Unreadable` / `PendingReapproval` line carries
  *    no quantity beyond `ordered`; a `PolicyUnavailable` line carries the facts but no direction, deviation or band; a
  *    `NotStarted` line is `Under` by exactly `ordered`; `warning` only on a `Completed` warn-band line (SAT-D29/D31);
- *    `approvedOverDelivery` only on a `Completed` over-delivery (SAT-D30);
+ *    `approvedOverDelivery` only on a `Completed` over-delivery (SAT-D30); a `Completed` approval-band line without it is a
+ *    user-closed shortfall (SAT-D17: `Under`, with its `closedRemainder`);
  *  - the tolerance (SAT-D5) was asked for the order's business date (SAT-D29) and is inside its own window;
  *  - the invoicing axis carries the Sales-owned SAT-D103 gate (EK13): `Open` at the approved revision whose prices an invoice
  *    uses (the current one once approved; the last approved one — always the previous revision — after a rejection),
@@ -270,10 +271,13 @@ function decodeLine(value: unknown): LineRealization | null {
       // Both marks are equivalences (`SalesRealizationCalculator`), checked in both directions:
       // SAT-D29 / SAT-D31: `warning` exactly when the line counts Completed with a warn-band deviation (IsCompletedWithWarning).
       if (line.warning !== (line.state === STATUS_AXIS_STATE.completed && line.band === 'Warn')) return null
-      // SAT-D30: `approvedOverDelivery` exactly when the line is Completed in the approval band — only an approved
-      // over-delivery is (an unapproved one is AwaitingApproval, a closed shortfall there is ClosedWithRemainder).
-      if (line.approvedOverDelivery !== (line.state === STATUS_AXIS_STATE.completed && line.band === 'Approval')) return null
-      if (line.approvedOverDelivery && line.direction !== 'Over') return null
+      // SAT-D30: `approvedOverDelivery` only on a Completed approval-band over-delivery (an unapproved one is AwaitingApproval).
+      if (line.approvedOverDelivery &&
+        !(line.state === STATUS_AXIS_STATE.completed && line.band === 'Approval' && line.direction === 'Over')) return null
+      // SAT-D17: the only other Completed approval-band line is a user-closed shortfall — Under, with its recorded cancelled
+      // remainder (a force-closed one there is ClosedWithRemainder).
+      if (!line.approvedOverDelivery && line.state === STATUS_AXIS_STATE.completed && line.band === 'Approval' &&
+        !(line.direction === 'Under' && line.closedRemainder !== null)) return null
       return line
   }
 }

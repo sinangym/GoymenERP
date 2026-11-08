@@ -32,6 +32,7 @@ import {
 import {
   CREATED_STATUS,
   REPLAY_HEADER,
+  ORIGINAL_CORRELATION_HEADER,
   OWNER_REFERENCE_FIELDS,
   REV_0,
   SALES_DRAFT_PATH,
@@ -67,6 +68,7 @@ import {
   salesDraftForceClosePath,
   salesDraftUserClosePath,
   salesDraftOverDeliveryApprovalPath,
+  salesDraftLineClosurePath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -93,6 +95,7 @@ import {
   type DraftForceCloseRequest,
   type DraftCloseRequest,
   type DraftOverDeliveryApprovalRequest,
+  type DraftLineClosureRequest,
   type ForceCloseImpact,
   type ForceClosureRead,
   type UserClosureRead,
@@ -139,6 +142,8 @@ export type Raw =
       readonly body: unknown
       readonly location: string | null
       readonly replayed: boolean
+      /** `Idempotency-Original-Correlation-Id` (a replay names the attempt it repeats); null when absent. */
+      readonly replayCorrelationId: string | null
       /** The Sales read contract the server says it answered with (absent on a legacy answer). */
       readonly readContract: string | null
     }
@@ -165,6 +170,7 @@ export async function request(path: string, init: RequestInit, signal: AbortSign
     body,
     location: response.headers.get('Location'),
     replayed: response.headers.get(REPLAY_HEADER) === 'true',
+    replayCorrelationId: response.headers.get(ORIGINAL_CORRELATION_HEADER),
     readContract: response.headers.get(SALES_READ_CONTRACT_HEADER),
   }
 }
@@ -1290,6 +1296,56 @@ export async function sendDraftOverDeliveryApproval(
   if (
     mutation === null ||
     mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D17 / SAT-D115 / SAT-D216: close one under-delivered line short at the shipped total the status read showed. The keyed-attempt
+ * rules of the over-delivery approval, plus the replay pair: a 200 is success only when the body's replay flag agrees with
+ * `Idempotency-Replayed`, a replay's `Idempotency-Original-Correlation-Id` equals the body's `originalCorrelationId` (a first
+ * answer carries no such header), and the detail is the order's in the bound company — else malformed (the closure may have
+ * been recorded, so the key is kept). The server judges the shortfall band, the shipped total, the shipper ≠ closer rule and
+ * the open commitments; the screen computes none of it.
+ */
+export async function sendDraftLineClosure(
+  payload: DraftLineClosureRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftLineClosurePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    (mutation.isReplay
+      ? raw.replayCorrelationId !== mutation.originalCorrelationId
+      : raw.replayCorrelationId !== null) ||
     mutation.detail.draft.id !== context.draftId ||
     mutation.detail.draft.companyId !== context.companyId
   ) {

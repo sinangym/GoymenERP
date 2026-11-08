@@ -52,6 +52,8 @@ export const salesDraftForceClosePath = (id: string) => `${salesDraftDetailPath(
 export const salesDraftUserClosePath = (id: string) => `${salesDraftDetailPath(id)}/close`
 /** SAT-D30: POST — one line's approval-band over-delivery approved at the shipped total the user saw. */
 export const salesDraftOverDeliveryApprovalPath = (id: string) => `${salesDraftDetailPath(id)}/over-delivery-approval`
+/** SAT-D17: close one under-delivered line short at the shipped total the status read showed (`CloseSalesOrderDraftLineV1`). */
+export const salesDraftLineClosurePath = (id: string) => `${salesDraftDetailPath(id)}/line-closure`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -60,6 +62,8 @@ export const salesDraftOverDeliveryApprovalPath = (id: string) => `${salesDraftD
  */
 export const CREATED_STATUS = 201
 export const REPLAY_HEADER = 'Idempotency-Replayed'
+/** The replay's original correlation; on a replay it must equal the body's `originalCorrelationId`. */
+export const ORIGINAL_CORRELATION_HEADER = 'Idempotency-Original-Correlation-Id'
 export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
 export const DRAFT_STATE = 'Draft' as const
@@ -642,6 +646,13 @@ export const SALES_PROBLEM_CODE = {
   overDeliveryShippedChanged: 'sales_over_delivery_shipped_changed',
   overDeliveryShipperUnverified: 'sales_over_delivery_shipper_unverified',
   overDeliverySelfApproval: 'sales_over_delivery_self_approval',
+  // SAT-D17 / SAT-D115 / SAT-D216: the line closure's own answers (409 recorded, 422 block band; the 503s are code-less).
+  lineClosureNotApplicable: 'sales_line_closure_not_applicable',
+  lineClosureBlocked: 'sales_line_closure_blocked',
+  lineClosureShippedChanged: 'sales_line_closure_shipped_changed',
+  lineClosureShipperUnverified: 'sales_line_closure_shipper_unverified',
+  lineClosureSelfClosure: 'sales_line_closure_self_closure',
+  lineClosureOpenCommitments: 'sales_line_closure_open_commitments',
   // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
   // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
   businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
@@ -1746,6 +1757,16 @@ export interface ForceCloseImpact {
  * exactly as the status read showed it (SAT-D213: the approval covers that total; another total is refused by the server).
  */
 export interface DraftOverDeliveryApprovalRequest {
+  readonly expectedVersion: string
+  readonly lineId: string
+  readonly shipped: string
+}
+
+/**
+ * `SalesDraftLineClosureRequest` (SAT-D17): every member present — the draft version, the line and the shipped total exactly as
+ * the status read showed it. No reason member (SAT-D215): the server refuses an extra member with 400.
+ */
+export interface DraftLineClosureRequest {
   readonly expectedVersion: string
   readonly lineId: string
   readonly shipped: string

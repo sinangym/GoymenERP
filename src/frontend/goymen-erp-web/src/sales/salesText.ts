@@ -263,6 +263,20 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'doğrulanamadığı için onay verilmedi.',
   [SALES_PROBLEM_CODE.overDeliverySelfApproval]:
     'Bu satırın sevkini siz yaptınız; kendi fazla tesliminizi onaylayamazsınız. Başka bir yetkili onaylamalı (SAT-D216).',
+  [SALES_PROBLEM_CODE.lineClosureNotApplicable]:
+    'Bu satırda kapatılacak bir eksik yok (eksik sevk yok, hiç sevk yapılmamış ya da satır zaten kapatılmış); satır kapatılmadı.',
+  [SALES_PROBLEM_CODE.lineClosureBlocked]:
+    'Eksik, teslim toleransının blok bandında; bu satır eksik kapatılamaz (blok bandında kapatma yapılmaz).',
+  [SALES_PROBLEM_CODE.lineClosureShippedChanged]:
+    'Satırın sevk toplamı siz gördükten sonra değişti; satır kapatılmadı. Güncel toplamı okuyup yeniden deneyin.',
+  [SALES_PROBLEM_CODE.lineClosureShipperUnverified]:
+    'Sevki kimin yaptığı Lojistik kaydından okunamıyor; sevki yapanın kendi satırını kapatmaması kuralı (SAT-D216) ' +
+    'doğrulanamadığı için satır kapatılmadı.',
+  [SALES_PROBLEM_CODE.lineClosureSelfClosure]:
+    'Bu satırın sevkini siz yaptınız; kendi satırınızı kapatamazsınız. Başka bir yetkili kapatmalı (SAT-D216).',
+  [SALES_PROBLEM_CODE.lineClosureOpenCommitments]:
+    'Satırda sevk edilmemiş yükleme ya da açık stok tahsisi var; satır kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan ' +
+    'sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
 }
@@ -1065,6 +1079,67 @@ export const OVER_DELIVERY_TEXT = {
   unexpected: 'Onay verilmedi. Beklenmeyen bir yanıt alındı.',
 } as const
 
+/** SAT-D17 / SAT-D115 / SAT-D215 / SAT-D216 / SAT-D222: closing one order line short on S-04 (under the realization detail). */
+export const LINE_CLOSURE_TEXT = {
+  heading: 'Satırı eksik kapat',
+  description:
+    'Sevk edilen miktarı sipariş miktarının altında kalan bir satır kapatılabilir. Teslim edilmeyen kalan "iptal edilen kalan" ' +
+    'sayılır ve satıra bir daha sevk yapılamaz (SAT-D17, SAT-D215). Eksiğin tolerans bandını kapatma anında sunucu ölçer: ' +
+    'tolerans içi, uyarı ya da onay bandında satır "Tamamlandı" olur; blok bandında kapatma yapılmaz. Sevki yapan kişi kendi ' +
+    'satırını kapatamaz (SAT-D216). Stok ve para hareketi oluşmaz.',
+  caption: 'Eksik kapatılabilecek satırlar',
+  lineNo: 'Satır',
+  ordered: 'Esas miktar',
+  shipped: 'Sevk edilen',
+  remainder: 'Kapatılacak kalan',
+  state: 'Durum',
+  action: 'İşlem',
+  close: 'Eksik kapat',
+  closeLabel: (lineNo: number) => `${lineNo}. satırı eksik kapat`,
+  confirmHeading: (lineNo: number) => `${lineNo}. satırı eksik kapat`,
+  confirmNote:
+    'Kapatma, aşağıdaki sevk toplamıyla gönderilir. Toplam Lojistik\'te değiştiyse sunucu kapatmayı yapmaz ve güncel durum ' +
+    'yeniden okunur. Kapatılan satır, onaylı bir yeniden açma olmadan değiştirilemez.',
+  tolerance: 'Teslim toleransı (sipariş tarihine göre)',
+  toleranceBand: (warn: string, approval: string, block: string) => `Uyarı %${warn} · Onay %${approval} · Blok %${block}`,
+  toleranceMeasured: 'Bant kapatma anında sunucuda ölçülür; bu ekran bant hesaplamaz.',
+  toleranceMissing: 'Onaylı tolerans bu okumada yok; kapatmayı sunucu değerlendirir.',
+  currentBand: 'Şu anki bant',
+  bandNotMeasured: 'Açık satırda ölçülmez (kapatma anında ölçülür)',
+  confirm: 'Kapatmayı onayla',
+  cancel: 'Vazgeç',
+  submitting: 'Kapatma gönderiliyor…',
+  completed: 'Satır eksik kapatıldı; kalan iptal edildi. Satır durum tablosunda kapatılmış olarak gösterilir.',
+  replayed: 'Bu kapatma daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı kapatmayı tekrar göndermek ikinci bir kapatma oluşturmaz.',
+  unknownOffline:
+    'Bağlantı yok; kapatmanın sonucu alınamadı, kaydedilmiş olabilir. Bağlantı gelince aynı kapatmayı tekrar gönderin; ' +
+    'ikinci bir kapatma oluşmaz.',
+  unknownNetwork:
+    'Sunucuya ulaşılamadı; kapatmanın sonucu alınamadı, kaydedilmiş olabilir. Aynı kapatmayı tekrar göndermek ikinci bir ' +
+    'kapatma oluşturmaz.',
+  unknownServiceUnavailable:
+    'Kapatma şu anda değerlendirilemedi: Satış servisi ya da bağlı kaynaklar (teslim toleransı, Lojistik sevk ve yükleme, ' +
+    'stok tahsisi) yanıt vermiyor. Biraz sonra aynı kapatmayı tekrar gönderin; ikinci bir kapatma oluşmaz.',
+  unknownMalformed:
+    'Sunucudan beklenmeyen bir yanıt alındı; kapatma kaydedilmiş olabilir. Aynı kapatmayı tekrar göndermek ikinci bir ' +
+    'kapatma oluşturmaz.',
+  abandoned: 'Bu işlemi bıraktınız; kapatmanın sonucu hâlâ bilinmiyor. Sipariş yeniden açıldığında güncel durum okunur.',
+  retry: 'Aynı kapatmayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; satır kapatılmadı.',
+  forbidden: 'Bu şirkette satır kapatma yetkiniz yok; satır kapatılmadı.',
+  notFound: 'Sipariş bulunamadı; satır kapatılmadı.',
+  conflict: 'Satır kapatılmadı; sipariş ve durum yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  stateConflict:
+    'Sipariş şu anda satır kapatmaya uygun değil. Satır yalnız onaylı ve aktif siparişte, onay bekleyen bir revizyon yokken ' +
+    've güncel revizyon müşteri tarafından onaylanmışken kapatılabilir. Revizyon müşteri onayı beklerken satır kapatılamaz; ' +
+    'iptal edilmiş ya da kapatılmış siparişte de kapatma yapılmaz.',
+  validation: 'Satır kapatılmadı; gönderilen bilgi geçerli değil.',
+  unexpected: 'Satır kapatılmadı. Beklenmeyen bir yanıt alındı.',
+} as const
+
 /** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
 export const FORCE_CLOSE_TEXT = {
   heading: 'Siparişi zorla kapat',
@@ -1347,6 +1422,11 @@ export const ORDER_STATUS_TEXT = {
   warningMark: 'Tolerans uyarısı',
   /** SAT-D30: "Tamamlandı + onaylı fazla teslim". */
   approvedOverDeliveryMark: 'Onaylı fazla teslim',
+  /** SAT-D17: a line a user closed short (its cancelled remainder is in the "Kapatılan kalan" column). */
+  lineClosedMark: 'Eksik kapatıldı',
+  lineClosedNote:
+    '"Eksik kapatıldı" işaretli satırlar kullanıcı tarafından kapatıldı; teslim edilmeyen kalan "Kapatılan kalan" sütununda ' +
+    'iptal edilen kalan olarak gösterilir ve bu satırlara yeniden sevk yapılmaz (SAT-D17, SAT-D215).',
   readyToClose: {
     label: 'Kapanmaya hazır',
     yes: 'Evet',
