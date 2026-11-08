@@ -171,6 +171,66 @@ public sealed partial class SalesDraftServiceTests
             invoicing.Service().GetInvoiceAsync(Guid.NewGuid()))));
     }
 
+    [Fact]
+    public async Task The_order_invoices_tab_lists_the_invoices_of_the_order_under_the_draft_read_without_any_amount_API_09()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-tab"))).Invoice;
+        invoicing.World.Authority.Measured.Clear();
+
+        var tab = await invoicing.Service().GetDraftInvoicesAsync(invoicing.Order.Draft.Id);
+
+        Assert.False(tab.HasMore);
+        var item = Assert.Single(tab.Items);
+        Assert.Equal((created.Id, created.DocumentNo, "Draft", 1, 1, true), (item.Id, item.DocumentNo, item.State, item.OrderLineCount,
+            item.InvoiceLineCount, item.HoldsShares));
+        // Only the draft read is measured: the tab answers no amount, so neither the invoice read nor the price read is needed.
+        Assert.All(invoicing.World.Authority.Measured, name => Assert.Equal(SalesPermissionManifestV1.DraftsRead, name));
+        Assert.DoesNotContain("Amount", string.Join(',', typeof(SalesDraftInvoiceItemView).GetProperties().Select(property => property.Name)),
+            StringComparison.Ordinal);
+
+        // A rejected invoice stays in the history with its shares released.
+        var submitted = await invoicing.Service().SubmitInvoiceAsync(created.Id, Command("1"), Metadata("k-invoice-tab-submit"));
+        invoicing.World.User.Id = "synthetic-invoice-approver";
+        await invoicing.Service().RejectInvoiceAsync(created.Id, new SalesDraftStateCommandRequest(submitted.Invoice.Version, "neden"),
+            Metadata("k-invoice-tab-reject"));
+        var after = Assert.Single((await invoicing.Service().GetDraftInvoicesAsync(invoicing.Order.Draft.Id)).Items);
+        Assert.Equal(("Rejected", false), (after.State, after.HoldsShares));
+
+        // Another order (or an unknown one) has no invoices; an unknown id is 404 and no invoice is read for it.
+        var reads = invoicing.Invoices.OfOrderReads;
+        Assert.Equal((404, "not_found"), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().GetDraftInvoicesAsync(Guid.NewGuid()))));
+        Assert.Equal((404, "not_found"), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().GetDraftInvoicesAsync(Guid.Empty))));
+        Assert.Equal(reads, invoicing.Invoices.OfOrderReads);
+    }
+
+    [Fact]
+    public async Task The_order_invoices_tab_needs_the_draft_read_and_fails_closed_when_it_is_lost_API_09()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var draftId = invoicing.Order.Draft.Id;
+        invoicing.World.Authority.Denied.Add(SalesPermissionManifestV1.DraftsRead);
+        Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => invoicing.Service().GetDraftInvoicesAsync(draftId))).Status);
+        Assert.Equal(0, invoicing.Invoices.OfOrderReads);
+
+        // The tab needs the draft read only: without the invoice read and the price read it still answers (no amount leaves).
+        invoicing.World.Authority.Denied.Clear();
+        invoicing.World.Authority.Denied.Add(SalesPermissionManifestV1.InvoicesRead);
+        invoicing.World.Authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+        Assert.Empty((await invoicing.Service().GetDraftInvoicesAsync(draftId)).Items);
+
+        // A grant lost after the invoice read stops the answer before any invoice leaves.
+        invoicing.World.Authority.Denied.Clear();
+        invoicing.World.Authority.LostLater = (SalesPermissionManifestV1.DraftsRead, invoicing.World.Authority.Calls + 2);
+        Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => invoicing.Service().GetDraftInvoicesAsync(draftId))).Status);
+
+        invoicing.World.User.Authenticated = false;
+        Assert.Equal((401, "unauthenticated"), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().GetDraftInvoicesAsync(draftId))));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(501)]
@@ -683,6 +743,16 @@ public sealed partial class SalesDraftServiceTests
 
         public Task<SalesInvoicePage> ListInvoicesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesInvoicePage([.. Stored.Values.Take(pageSize)], null));
+
+        public int OfOrderReads { get; private set; }
+
+        public Task<SalesOrderInvoicePage> ListInvoicesOfOrderAsync(Guid salesOrderId, int limit, CancellationToken cancellationToken = default)
+        {
+            OfOrderReads++;
+            var found = Stored.Values.Where(invoice => invoice.Lines.Any(line => line.Share.SalesOrderId == salesOrderId))
+                .OrderByDescending(invoice => invoice.CreatedAtUtc).ToList();
+            return Task.FromResult(new SalesOrderInvoicePage([.. found.Take(limit)], found.Count > limit));
+        }
 
         public Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
             CancellationToken cancellationToken = default) =>

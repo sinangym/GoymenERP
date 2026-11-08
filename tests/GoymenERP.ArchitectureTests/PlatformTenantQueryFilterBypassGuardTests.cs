@@ -1600,8 +1600,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // tolerance policy (DI-only, none registered yet; the match is 503 fail-closed); provider branch and token counts unchanged.
                     // API-36 (Fatura kesinlestirme): the invoice store also feeds the finalize path and the optional finance admission port (DI-only,
                     // fail-closed 503 when unregistered); provider branch and token counts unchanged (e6274962... -> a3fdee0a...).
+                    // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 16707a32...).
                     new(
-                        "a3fdee0a2540fddab767825c85c1bbcecee58cb67177699c5cdbf34f896b4f6a",
+                        "16707a323c888923a321f74cea787f187dbe71a860712ec4e6a7efeb195f7e4f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -92,8 +92,22 @@ public static class SalesModuleExtensions
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
         // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
         services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
+        // API-37 (Kontrol Merkezi): the read-only follow-up list over the invoice store and the Logistics shares.
+        services.TryAddSingleton(new SalesControlCenterPolicy());
+        services.AddScoped<ISalesControlCenterService>(CreateControlCenterService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing Logistics port stays null: the overdue check answers Unavailable, never a silent zero.
+    private static SalesControlCenterService CreateControlCenterService(IServiceProvider serviceProvider) => new SalesControlCenterService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ISalesInvoiceStore>(),
+        serviceProvider.GetRequiredService<SalesControlCenterPolicy>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     private static SalesInvoiceService CreateInvoiceService(IServiceProvider serviceProvider) => new SalesInvoiceService(
