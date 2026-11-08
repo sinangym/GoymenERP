@@ -224,8 +224,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for B-04a: +3 posting account mapping SQL facts (one save, race, Down guard)
             // (2865c0fb… -> 327c5913…).
             // Re-fingerprinted for B-04a review P2-1: +1 cross-company mapping SQL fact (327c5913… -> 077b19a0…).
+            // Re-fingerprinted for B-04b: +4 source document admission SQL facts (077b19a0… -> af80f704…).
             ["tools/relational_inventory/accounting.txt"] =
-                "077b19a098d5d83abaf55829844622ee183ca899067aab2d75ba9879896a8197",
+                "af80f704fc470df3882f728cd638162692f5cdd0e84a0ab2e8f2ffdb08f8f335",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
@@ -671,7 +672,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/AccountingDbContext.cs"] =
                 // Re-measured for B-04a: the posting account mapping versions and rows, both company-scoped with
                 // the CompanyId filter and company-leading keys; the write guard admits only activation facts.
-                "e44e2ab006cc5cedb66a76856cf0290757494928d7ba1b21e422a477a5945462",
+                // Re-measured for B-04b: the source document admission rows (company-scoped with the CompanyId
+                // filter and company-leading keys); the write guard admits only the status facts of the admission.
+                "379915157f0e3805a646d7eb5a2d2be808fd899ad2b7e0fee66f40f14473f876",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for AT-037: StockCounts and StockCountDecisions, each with the CompanyId query filter and a
@@ -1117,13 +1120,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // BLG-05b: re-fingerprinted for two read-only registrations (IAccountPlanMirrorReaderV1 ->
                 // ApprovedAccountPlanMirrorReaderV1, NormalJournalDraftAccountReadServiceV1); no bypass,
                 // Ensure/Migrate or initialization change (a09a1e08… -> 3783d2ed…).
-                // B-04a: re-fingerprinted for the posting account mapping store, service and resolver port
-                // registrations; no bypass, Ensure/Migrate or initialization change (3783d2ed… -> c97d6217…).
+                // B-04b: re-fingerprinted for the source document admission authority default, store and port
+                // registrations; no bypass, Ensure/Migrate or initialization change (c97d6217… -> de4305d6…).
+                // (B-04a: posting account mapping store, service and resolver port registrations.)
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "c97d6217767e0e3a50da82a0de3862eceb991c3c739bf61a8b8c95bb6d3169e7",
+                        "de4305d63cfb20da558e75c6c128ec151ab9e6d2c359c2f5e1a67d719ab893c2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2478,6 +2482,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // journal draft or line exists; the refusal precedes both destructive DropTable operations.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260924122703_AddNormalJournalDrafts.cs"] =
                     new("487ed66a9cdd2a4810b2cde704e1270bd0371b7aa2ad9017e186bb0b673337ee",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // B-04b: the Down's only raw SQL is Accounting's refusal (51240, used by no other migration) while any
+                // source document admission exists; the refusal precedes every drop. Forward fix; nothing is deleted.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261108222146_AddSourceDocumentAdmissions.cs"] =
+                    new("fe8034a5ec54b40b479bb05d23a1b7ac415604d2c22fbcc96e8220b5380a188a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // FIN-T05: the Down's only raw SQL is Finance's module refusal (51051) while any money event
