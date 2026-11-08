@@ -459,9 +459,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // share release in the same save, the recorded and replayed terminal refusal), kept ordinal-sorted (d9564cc8... -> 0030e572...).
                 // S5 API-35 (Fatura cekirdegi 3): +2 SalesInvoice facts (the official match's one save with attempt and audit, the untouched Approved
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
-                // S5 API-36 (Fatura kesinlestirme): +1 SalesInvoice fact (the finalization ledger and outbox freeze triggers, the one-save finalize, the 51227
-                // rollback refusal), kept ordinal-sorted (be1b2f40... -> e7773f28...).
-                "e7773f28ba8476290f30edc7ad080e8eec8a11b5277b6942b1147ef9dc8b1ea4",
+                // S5 API-36 + SAT-D132 merged: +2 Sales facts (finalization triggers, quote due terms), kept ordinal-sorted (be1b2f40... -> f163b715...).
+                "f163b71500684cd1203ca3085a291eb42afb52716bc721c060600d637cde416b",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -591,7 +590,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-35: the append-only InvoiceMatches tenant rows (one per invoice, unique official number and ETTN per company) under the same
                 // company filter; no query-filter bypass or direct database surface (ab9a9588... -> 5d465acf...).
                 // API-36: the append-only InvoiceFinalizations ledger and final instalment rows under the same company filter; no bypass (5d465acf... -> 64d66c31...).
-                "64d66c3106983a02616c0af2eeaef771f0db5997866490b6863143851b9781c9",
+                "6f2e817acfa6bf1d3c097a8904812dabe1cf1507ad98b7c7bab6e207f715b2d5",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
