@@ -49,9 +49,9 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 140
+EXPECTED_MIGRATION_COUNT = 141
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "ce09ab530944ef1add6ce69653eef9e3f0a646936119ff3937d0258c819c00f0"
+    "8af4c52421f0172bb492b23e2872efae3c9bd3908494311e29936ad762728e17"
 )
 EXPECTED_DURABLE_STORE_COUNT = 27
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 27
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 601
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 605
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "29897a6dd1aa3398c9558d5b0b677c7f5c87c143566c7652ef87d699d3400df7"
+    "29a12372a613460ca1c45fe1498c77972d60168e82ddb9b71505e679bef56878"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -786,7 +786,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
         "CancelAsync",
-    ): "776626fa3e5ee7a42100debd0e6055d5ce17eff2e73bb0cc6ddb7e2acb61af71",
+    ): "9c20d4960ba3fa0d90b29cbb2b79c600a74176e41a2d7dc971e666758a79fa36",
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
         "AdmitAsync",
@@ -880,7 +880,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs": "8c7a2eed1888d36d0b61c60b1296d904adaf0338c34f361236befc8e1c1d6274",
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs": "0f79216993cdbbc20d7c92d830ad1c08f3ff2ab5b0ab9084aaae03f765784c1a",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs": "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
-    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "8b02512a01241b015ea34574296825356228cef44dc923a73b2c50861ca96926",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "93aaf32671c8b0fa74827e76f9c325d7cd1f906ce1e32e80d1b733e5dbcafb62",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs": "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs": "589f03fddc02ed44c23149eac8358f69805e00a7a28cd867c98eecc9e469c88e",
     "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",
