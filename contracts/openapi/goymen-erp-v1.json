@@ -62252,6 +62252,7 @@
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
               "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_self_approval",
               "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
@@ -62673,6 +62674,7 @@
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
               "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_self_approval",
               "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
@@ -112311,6 +112313,12 @@
               {
                 "$ref": "#/components/schemas/PlanProcessSpecViewV1"
               }
+            ]
+          },
+          "preparedBy": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
