@@ -321,7 +321,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // approval capture) and +1 ManufacturingSqlServerRelationalAcceptanceTests fact (process spec migration)
                 // (f5bf9d89… -> e5d404de…). U2-b1 review: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact
                 // (process spec preview, oversized value, idempotency key) (e5d404de… -> 1a881db5…).
-                "1a881db5dd73e8f6c77786994e1877586b6179fc236c4dc86790b90f29f09984",
+                // Üretim U2-d: +2 ManufacturingSqlServerRelationalAcceptanceTests facts (preparer refusal and revision,
+                // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…). U2-d review: the migration fact
+                // renamed (Down refusal 51190) and +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the
+                // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
+                "0df4c0f37a425273955ed12bab380ff896ae0c0a6b0dba076abdf5b64404814b",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -651,7 +655,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the plan row admits only its cancellation columns beside the approval; the order index becomes unique.
                 // Üretim U2-b1: the plan and revision rows gain the nullable process spec columns and their checks (no new
                 // table, filter, key or bypass).
-                "22ba3bbe36a852feb31884fca74e5761c81421cbfedb5935d5673e537ddd7208",
+                // Üretim U2-d: the plan row gains the nullable preparer column (CreatedBy) and its check (no new table,
+                // filter, key or bypass).
+                "d2b57cd8ea08cf15f8bdb681981fa1b52dd1c05f6100deb24c4a37e0c14ed818",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1353,10 +1359,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // rule; still recognition only, no connection, command or raw SQL; SqlClient count unchanged (1).
                 // Üretim U2-b1: the process spec is written on the plan and revision rows and restored with them through the
                 // same filtered context; SqlClient count unchanged (1).
+                // Üretim U2-d: the preparer is written on the plan row and read back with the revisions through the same
+                // filtered context; SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "8701f6d5b933e1f3d1878a5f4e3516c8aaa31b2d8a0a75c3459bf79515d57183",
+                        "24e0a120a21a5172f8118682b1ca14e20c7679e9404de05b0119e6c5420a3763",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2009,6 +2017,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261102224501_AddManufacturingPlanProcessSpecs.cs"] =
                     new(
                         "94fa32cf0ecbe4a0d8b172a7e73ef62d9d41c2964b59eed1a6b69341bbe11eeb",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Üretim U2-d (URT-D2): Down's only raw SQL refuses (51190) while a Draft never revised records its
+                // preparer (dropping it would let that Draft's creator decide it after a later Up), before anything is
+                // dropped (forward fix).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261107082508_AddManufacturingPlanPreparer.cs"] =
+                    new(
+                        "4f89517e3f10cf2736d650fd3c91b93445f4625a9201554ad77a73f14b8fbb37",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
