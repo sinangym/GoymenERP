@@ -68,6 +68,12 @@ public sealed partial class SalesOrderDraft
             throw StateConflict("Bu satırın kalanı iptal edildi; yeniden açılmaz.");
         }
 
+        if (IsLineClosed(line.Id))
+        {
+            // SAT-D167 / SAT-D215 / SAT-D217: a line closed with a shortfall changes only through an approved reopen.
+            throw StateConflict("Eksikle kapatılan satırın kalanı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+        }
+
         return RequireRemainderReason(reason);
     }
 
@@ -161,6 +167,12 @@ public sealed partial class SalesOrderDraft
     {
         var actor = RequireActor(actorId);
         var pending = RequireRemainderDecidable(expectedVersion, changeNo, approving: true);
+        if (IsLineClosed(pending.Request.LineId))
+        {
+            // The line was closed with a shortfall after the request: the change does not apply (reject it; reopen first).
+            throw StateConflict("Eksikle kapatılan satırın bekleyen kalan değişikliği onaylanmaz (SAT-D217).");
+        }
+
         var line = lines.Single(candidate => candidate.Id == pending.Request.LineId);
         var loaded = RequireFloor(line, floor);
         Quantity result;

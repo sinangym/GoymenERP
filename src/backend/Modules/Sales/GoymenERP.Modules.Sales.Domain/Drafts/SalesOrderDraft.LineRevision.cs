@@ -69,6 +69,11 @@ public sealed partial class SalesOrderDraft
             var line = lines.SingleOrDefault(candidate => candidate.Id == removal.LineId)
                 ?? throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
                     "Çıkarılan satır siparişin etkin bir satırı değil.", removal.LineId);
+            if (IsLineClosed(line.Id))
+            {
+                throw StateConflict("Eksikle kapatılan satır çıkarılmaz; önce yeniden açılması gerekir (SAT-D217).");
+            }
+
             // K3 review A P3-1: a line with any remainder-change history (pending, rejected or approved) has shipped; its history
             // is restored against the active lines, so it never goes passive.
             if (line.Remainder != LineRemainderState.Open || remainderChanges.Any(change => change.Request.LineId == line.Id))

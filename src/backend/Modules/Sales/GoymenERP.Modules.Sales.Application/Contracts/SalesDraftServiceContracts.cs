@@ -240,6 +240,13 @@ public static class SalesDraftProblemCodesV1
     /// </summary>
     public const string LineClosureShipperUnverified = "sales_line_closure_shipper_unverified";
 
+    /// <summary>
+    /// 409 (SAT-D215 / SAT-D12 / No 30): the line still has goods loaded but not shipped, or an active Inventory allocation — a
+    /// closed line can no longer ship, so nothing is closed over them (ship or release them first). NOT recorded: the condition
+    /// moves, and the same key may close the line afterwards.
+    /// </summary>
+    public const string LineClosureOpenCommitments = "sales_line_closure_open_commitments";
+
     /// <summary>409 (SAT-D216): the closer made a shipment of the line; another person closes. Terminal for the key.</summary>
     public const string LineClosureSelfClosure = "sales_line_closure_self_closure";
 

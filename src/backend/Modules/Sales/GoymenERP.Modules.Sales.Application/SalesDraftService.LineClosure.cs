@@ -151,8 +151,10 @@ public sealed partial class SalesDraftService
     {
         if (Basis(draft) is not { } basis)
         {
-            // A revision awaits re-approval and the last approved quantity cannot be taken exactly: nothing is judged.
-            throw new LineClosureRefused(SalesDraftProblemCodesV1.LineClosureNotApplicable, "lineId");
+            // A revision awaits re-approval and the last approved quantity cannot be taken exactly: nothing is judged. A transient
+            // condition: NOT recorded, so the key is not burned.
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureNotApplicable,
+                [new("lineId", SalesDraftProblemCodesV1.LineClosureNotApplicable)]);
         }
 
         if (deliveries is not { } owner)
@@ -175,23 +177,34 @@ public sealed partial class SalesDraftService
         var shipped = recorded[line.Id].Shipped;
         if (shipped.Value != seenShipped)
         {
-            // The closure covers the total the user saw; another total is never closed in its name.
-            throw new LineClosureRefused(SalesDraftProblemCodesV1.LineClosureShippedChanged, "shipped");
+            // The closure covers the total the user saw; another total is never closed in its name. The total moved: NOT recorded,
+            // the user re-reads and closes with the new total under the same or a new key.
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureShippedChanged,
+                [new("shipped", SalesDraftProblemCodesV1.LineClosureShippedChanged)]);
         }
 
         var (basisQuantity, basisText) = basis.Lines[line.Id];
-        if (shipped.IsZero || !basisQuantity.IsGreaterThan(shipped))
+        if (shipped.IsZero)
         {
-            // Nothing shipped (the line is passivated or cancelled, not closed) or no shortfall: nothing to close.
+            // Nothing shipped (the line is passivated or cancelled, not closed): a transient condition, NOT recorded.
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureNotApplicable,
+                [new("lineId", SalesDraftProblemCodesV1.LineClosureNotApplicable)]);
+        }
+
+        if (!basisQuantity.IsGreaterThan(shipped))
+        {
+            // No shortfall: nothing to close.
             throw new LineClosureRefused(SalesDraftProblemCodesV1.LineClosureNotApplicable, "lineId");
         }
+
+        await RequireNoOpenCommitmentsAsync(scope, permission, draft, line, shipped.Value, cancellationToken);
 
         var policy = await ToleranceAsync(scope, permission, draft, cancellationToken)
             ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.LineClosurePolicyUnavailable);
         LineRealization realization;
         try
         {
-            realization = SalesRealizationCalculator.Line(basisQuantity, shipped, lineClosed: true, policy.Tolerance);
+            realization = SalesRealizationCalculator.Line(basisQuantity, shipped, lineClosed: true, policy.Tolerance, closedByLineClosure: true);
         }
         catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
         {
@@ -213,6 +226,31 @@ public sealed partial class SalesDraftService
         var shippers = Shippers(answer!, line.Id)
             ?? throw new LineClosureRefused(SalesDraftProblemCodesV1.LineClosureShipperUnverified, "shippedBy");
         return new LineClosureInput(line.Id, basis.RevisionNo, basisText, shipped.Value, band, shippers);
+    }
+
+    /// <summary>
+    /// SAT-D215 / SAT-D12 / No 30 (fail-closed): a closed line can no longer ship, so goods already loaded but not shipped (the
+    /// loading read's loaded total above the shipped total) or any active Inventory allocation of the line refuses the closure
+    /// (409, NOT recorded). An owner that is not composed or cannot answer is 503 — never an assumed zero.
+    /// </summary>
+    private async Task RequireNoOpenCommitmentsAsync(Scope scope, string? permission, SalesOrderDraft draft, SalesOrderDraftLine line,
+        decimal shipped, CancellationToken cancellationToken)
+    {
+        var loading = await ReadLoadingAsync(scope, permission, draft, cancellationToken)
+            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
+        if (loading.GetValueOrDefault(line.Id) is { } recorded && recorded.Loaded > shipped)
+        {
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureOpenCommitments,
+                [new("loading", SalesDraftProblemCodesV1.LineClosureOpenCommitments)]);
+        }
+
+        var allocations = await ReadAllocationsAsync(scope, permission, draft, cancellationToken)
+            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
+        if (allocations.GetValueOrDefault(line.Id) is { Count: > 0 })
+        {
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureOpenCommitments,
+                [new("allocation", SalesDraftProblemCodesV1.LineClosureOpenCommitments)]);
+        }
     }
 
     /// <summary>A recorded (terminal) refusal of the line closure: its stable code and the field it names.</summary>

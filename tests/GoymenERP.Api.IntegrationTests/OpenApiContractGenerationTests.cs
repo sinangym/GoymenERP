@@ -3382,7 +3382,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveSalesOrderDraftOverDeliveryV1:409"] = ["concurrent_change", "sales_over_delivery_not_awaiting_approval", "sales_over_delivery_self_approval", "sales_over_delivery_shipped_changed", "sales_over_delivery_shipper_unverified", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ApproveSalesOrderDraftOverDeliveryV1:422"] = ["sales_over_delivery_blocked", "validation_failed"],
             ["CloseSalesOrderDraftLineV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["CloseSalesOrderDraftLineV1:409"] = ["concurrent_change", "sales_line_closure_not_applicable", "sales_line_closure_self_closure", "sales_line_closure_shipped_changed", "sales_line_closure_shipper_unverified", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["CloseSalesOrderDraftLineV1:409"] = ["concurrent_change", "sales_line_closure_not_applicable", "sales_line_closure_open_commitments", "sales_line_closure_self_closure", "sales_line_closure_shipped_changed", "sales_line_closure_shipper_unverified", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["CloseSalesOrderDraftLineV1:422"] = ["sales_line_closure_blocked", "validation_failed"],
             ["GetSalesRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreateSalesInvoiceV1:400"] = ["command_metadata_invalid", "validation_failed"],

@@ -448,6 +448,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // customer rejection; an empty line revision reinstates), kept ordinal-sorted (a58234a1… -> 96505e5c…).
             // Merged with main's #952 (SAT-D32) Sales facts: recomputed over the union, ordinal-sorted (-> 78be7220…).
             // SAT-D17: +1 SalesOrderLineClosure fact (Down refusal 51227, the store close and restore, the PK/FK constraints), kept ordinal-sorted.
+            // SAT-D17 / SAT-D215 K3 pre-review P1-4: +4 SalesOrderLineClosure facts (the one-save close with attempt and audit, the recorded
+            // refusal and its replay, company isolation, the line port refusing a closed line), kept ordinal-sorted (aea264d8... -> 6a9fd4ab...).
             ["tools/relational_inventory/sales.txt"] =
             // SAT-D30 / SAT-D213 (merged over SAT-D32 and SAT-D167): +6 SalesOrderOverDeliveryApproval facts (the one-save approval with
             // replay, the real Logistics owner's fail-closed refusal, 404 / 403 / self-approval, the 51213 rollback refusal, two races),
@@ -458,7 +460,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // share release in the same save, the recorded and replayed terminal refusal), kept ordinal-sorted (d9564cc8... -> 0030e572...).
                 // S5 API-35 (Fatura cekirdegi 3): +2 SalesInvoice facts (the official match's one save with attempt and audit, the untouched Approved
                 // invoice and the replay; the append-only match table, its amount checks and the 51225 rollback refusal), kept ordinal-sorted (0030e572... -> be1b2f40...).
-                "aea264d8978884a38f74e2e7a720625d9b688f9080b8dac179ab3f4ed6e40bbf",
+                "6a9fd4ab10bb8931719d7ef6719e8f1e7770b9b6aa6832fea6c01e4a3f873191",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

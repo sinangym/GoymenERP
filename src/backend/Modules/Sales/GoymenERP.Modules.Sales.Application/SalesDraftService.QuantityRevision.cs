@@ -89,6 +89,8 @@ public sealed partial class SalesDraftService
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
                     // The domain's own preconditions first: a stale, cancelled, pending or withdrawn draft asks no owner.
                     draft.RequireQuantityRevisable(expectedVersion, request.Reason);
+                    // SAT-D167: a line closed with a shortfall is not revised (no reopen yet): the terminal 409, asking no owner.
+                    draft.RequireClosedLinesUnchanged(inputs);
                     var loading = await ReadLoadingAsync(scope, permission, draft, writeCancellationToken)
                         ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
                     RequireRevisionFloor(draft, inputs, loading);

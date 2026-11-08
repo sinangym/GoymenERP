@@ -1511,7 +1511,7 @@ public static partial class SalesEndpoints
             .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                 SalesDraftProblemCodesV1.LineClosureNotApplicable, SalesDraftProblemCodesV1.LineClosureShippedChanged,
                 SalesDraftProblemCodesV1.LineClosureShipperUnverified, SalesDraftProblemCodesV1.LineClosureSelfClosure,
-                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+                SalesDraftProblemCodesV1.LineClosureOpenCommitments, SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.LineClosureBlocked)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

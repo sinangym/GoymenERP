@@ -1284,6 +1284,7 @@ public sealed partial class SalesOrderDraft
                 "Miktar revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
         }
 
+        RequireClosedLinesUnchanged(inputs);
         var replacements = new List<(SalesOrderDraftLine Line, Quantity Quantity, string Text)>(inputs.Count);
         foreach (var input in inputs)
         {
@@ -1342,6 +1343,23 @@ public sealed partial class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    /// <summary>
+    /// SAT-D167 / SAT-D215 / SAT-D217: a line closed with a shortfall keeps its quantity until an approved reopen (none exists yet):
+    /// a quantity revision that changes it is the key's terminal 409. A value-equal quantity (the revision names every line) is no change.
+    /// </summary>
+    public void RequireClosedLinesUnchanged(IReadOnlyList<LineQuantityInput> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        foreach (var input in inputs)
+        {
+            if (input is not null && lineClosures.Any(closure => closure.LineId == input.LineId)
+                && lines.SingleOrDefault(candidate => candidate.Id == input.LineId) is { } line && line.Quantity.Value != input.Quantity)
+            {
+                throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+            }
+        }
     }
 
     private static void RequirePriceReferenceQuantity(SalesOrderDraftLine line, decimal quantity)

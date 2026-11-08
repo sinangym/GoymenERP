@@ -309,7 +309,7 @@ public sealed partial class SalesDraftService
                 // total against this measured quantity; otherwise it awaits approval. A line that needs no tolerance (nothing
                 // shipped, open) has the same NotStarted shape in every branch.
                 realization = SalesRealizationCalculator.Line(basisQuantity, shipped, lineClosed, policy?.Tolerance,
-                    draft.IsOverDeliveryApproved(line.Id, basisQuantity, shipped));
+                    draft.IsOverDeliveryApproved(line.Id, basisQuantity, shipped), draft.IsLineClosed(line.Id));
             }
             catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
             {

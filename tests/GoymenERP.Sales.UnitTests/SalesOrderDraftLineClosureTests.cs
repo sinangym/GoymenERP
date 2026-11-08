@@ -95,6 +95,53 @@ public sealed class SalesOrderDraftLineClosureTests
         Assert.Throws<InvalidOperationException>(() => late.RestoreLineClosure(facts));
     }
 
+    [Fact]
+    public void A_closed_line_is_not_revised_removed_or_changed_through_the_remainder_until_a_reopen_exists()
+    {
+        var draft = ApprovedDraft(out var line);
+        draft.CloseLine(4, Closer, Input(line, "90"), T0);
+        var version = draft.Version;
+
+        // SAT-D167 / SAT-D217: a changed quantity of the closed line, a removal and a remainder request are the terminal state conflict.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseQuantities(version,
+            [new LineQuantityInput(line.Id, "95", 95m)], "synthetic-reviser", "SENTETIK", T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequireClosedLinesUnchanged(
+            [new LineQuantityInput(line.Id, "95", 95m)])));
+        draft.RequireClosedLinesUnchanged([new LineQuantityInput(line.Id, "100", 100m)]);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseLines(version, [],
+            [new LineRemovalInput(line.Id)], "synthetic-reviser", "SENTETIK", T0, Day)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequireRemainderChangeable(version, line.Id, "SENTETIK")));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequestRemainderChange(version, line.Id, RemainderChangeKind.Cancel,
+            null, null, "SENTETIK", new RemainderFloor(90m, 90m, 90m), "synthetic-requester", T0)));
+        Assert.Equal((version, "100", LineRemainderState.Open), (draft.Version, draft.Lines[0].QuantityText, draft.Lines[0].Remainder));
+    }
+
+    [Fact]
+    public void A_remainder_change_requested_before_the_closure_is_not_approved_afterwards()
+    {
+        var draft = ApprovedDraft(out var line);
+        draft.RequestRemainderChange(4, line.Id, RemainderChangeKind.Revise, "80", 80m, "SENTETIK", new RemainderFloor(60m, 60m, 60m),
+            "synthetic-requester", T0);
+        draft.CloseLine(5, Closer, Input(line, "90"), T0);
+
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveRemainderChange(6, 1, new RemainderFloor(60m, 60m, 60m),
+            "synthetic-approver", T0)));
+        Assert.Equal(("100", LineRemainderState.Open), (draft.Lines[0].QuantityText, draft.Lines[0].Remainder));
+    }
+
+    [Fact]
+    public void A_force_closure_keeps_the_remainder_a_line_closure_already_cancelled()
+    {
+        var draft = ApprovedDraft(out var line);
+        draft.CloseLine(4, Closer, Input(line, "90"), T0);
+        var impact = new ForceClosureImpactSnapshot(new string('f', 64), [new("inventory.active-allocations", "None", false)]);
+
+        var facts = draft.ForceClose(5, "synthetic-force-closer", "SENTETIK", impact, [new ForceClosureLineInput(line.Id, 95m)], T0);
+
+        // 100 - 95 would be 5; the 10 the closure cancelled stays, and is never recorded a second time.
+        Assert.Equal("10", Assert.Single(facts.Lines).ClosedRemainder);
+    }
+
     private static LineClosureInput Input(SalesOrderDraftLine line, string shipped, params string[] shippedBy) =>
         new(line.Id, 0, "100", decimal.Parse(shipped, System.Globalization.CultureInfo.InvariantCulture), DeliveryToleranceBand.Warn,
             shippedBy.Length == 0 ? [Shipper] : shippedBy);

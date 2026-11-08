@@ -1,21 +1,8 @@
-using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using GoymenERP.Api.Endpoints;
-using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
-using GoymenERP.Modules.Identity.Domain.Assignments;
-using GoymenERP.Modules.Identity.Domain.Roles;
-using GoymenERP.Modules.Identity.Domain.Users;
-using GoymenERP.Modules.Identity.Infrastructure.Persistence;
-using GoymenERP.Modules.Logistics.Application.Contracts;
-using GoymenERP.Modules.Logistics.Domain.Loading;
-using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -27,9 +14,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using LogisticsQuantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Logistics.Domain.Quantities.LogisticsQuantityRefusals>;
-using LogisticsQuantityUnit = GoymenERP.BuildingBlocks.Quantities.QuantityUnit;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -58,14 +42,11 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit LineClosed =
         new("sales.order-draft.line-closed.v1", "CloseLine", "SENTETIK satır kapatıldı");
-    private static readonly LogisticsMutationAudit Issued = new("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı");
-    private static readonly LogisticsMutationAudit Loaded = new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi");
-    private static readonly LogisticsMutationAudit Shipped = new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "SENTETIK sevk edildi");
 
     [SqlServerFact]
     public async Task The_line_closure_migrations_Down_passes_with_no_closure_and_refuses_while_a_closure_exists()
     {
-        await using var run = await Run.StartAsync(owner: null);
+        await using var run = await Run.StartAsync();
         var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
         var line = Assert.Single(draft.Lines);
         var guard = Assert.IsType<SqlOperation>(new AddDraftLineClosures().DownOperations[0]).Sql;
@@ -118,7 +99,135 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
             ("@company", CompanyA), ("@id", draft.Id), ("@line", Guid.NewGuid()), ("@version", 4L)))).Number);
     }
 
-    private static LogisticsQuantity Kg(decimal value) => LogisticsQuantity.Of(value, LogisticsQuantityUnit.Kilogram);
+    [SqlServerFact]
+    public async Task A_line_closure_is_stored_in_one_save_with_its_attempt_and_audit_and_the_same_key_replays_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var line = Assert.Single(draft.Lines);
+        var attemptsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts]");
+        var envelope = run.SalesEnvelope("k-close", "SENTETIK-closer");
+        var closures = 0;
+
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var recorded = await scope.Store.CloseLineAsync(envelope, Hash("k-close"), SalesDraftCommands.CloseLineV1, draft.Id,
+                (d, input, now) => d.CloseLine(4, "SENTETIK-closer", input, now), LineClosed,
+                (_, _) => Task.FromResult(new LineClosureInput(line.Id, 0, "100", 90m, DeliveryToleranceBand.Approval, [Shipper])));
+            Assert.Equal((SalesDraftWriteOutcome.Recorded, 5L), (recorded!.Outcome, recorded.Draft.Version));
+        }
+
+        // One save: the closure row, header version + 1, the attempt and the audit event (with the shipper) are all there.
+        Assert.Equal((1, 5L), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        Assert.Equal(attemptsBefore + 1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts]"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @command AND [Outcome] = 1 AND [DraftId] = @id",
+            ("@command", SalesDraftCommands.CloseLineV1), ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'sales.order-draft.line-closed.v1' AND [EntityId] = @id "
+            + "AND [EntityVersionBefore] = 4 AND [EntityVersionAfter] = 5 AND [AfterJson] LIKE N'%' + @shipper + N'%'",
+            ("@id", draft.Id.ToString("D")), ("@shipper", Shipper)));
+
+        // The same key and content replays the stored answer and writes nothing again.
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var replay = await scope.Store.CloseLineAsync(envelope, Hash("k-close"), SalesDraftCommands.CloseLineV1, draft.Id,
+                (_, _, _) => throw new InvalidOperationException("A replay does not mutate."), LineClosed,
+                (_, _) => throw new InvalidOperationException("A replay asks no owner."));
+            closures = replay!.Draft.LineClosures.Count;
+            Assert.Equal(SalesDraftWriteOutcome.Replayed, replay.Outcome);
+        }
+
+        Assert.Equal((1, 1, attemptsBefore + 1), (closures,
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts]")));
+    }
+
+    [SqlServerFact]
+    public async Task A_recorded_line_closure_refusal_is_stored_under_the_key_and_replays_without_closing_anything_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var envelope = run.SalesEnvelope("k-refuse", "SENTETIK-closer");
+        var refusal = new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.LineClosureSelfClosure,
+            [new SalesDraftFieldError("shipped", SalesDraftProblemCodesV1.LineClosureSelfClosure)]);
+
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.RecordRefusalAsync(envelope, Hash("k-refuse"), refusal, CancellationToken.None, SalesDraftCommands.CloseLineV1, draft.Id);
+            var replay = await scope.Store.FindReplayAsync(envelope, Hash("k-refuse"), CancellationToken.None, SalesDraftCommands.CloseLineV1);
+            Assert.Null(replay!.Draft);
+            Assert.Equal((409, SalesDraftProblemCodesV1.LineClosureSelfClosure), (replay.Refusal!.Status, replay.Refusal.Code));
+        }
+
+        Assert.Equal((0, 4L, 1), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @command AND [Outcome] = 2",
+                ("@command", SalesDraftCommands.CloseLineV1))));
+
+        // The same key under different content is the payload mismatch, never a second answer.
+        await using var other = run.SalesStore(CompanyA);
+        var line = Assert.Single(draft.Lines);
+        var mismatch = await Assert.ThrowsAsync<SalesDraftStoreException>(() => other.Store.CloseLineAsync(envelope, Hash("k-other"), SalesDraftCommands.CloseLineV1,
+            draft.Id, (d, input, now) => d.CloseLine(4, "SENTETIK-closer", input, now), LineClosed,
+            (_, _) => Task.FromResult(new LineClosureInput(line.Id, 0, "100", 90m, DeliveryToleranceBand.Approval, [Shipper]))));
+        Assert.Equal(SalesDraftStoreCodes.SameKeyPayloadMismatch, mismatch.Code);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task Another_company_cannot_close_the_line_and_its_closure_is_invisible_to_it_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var line = Assert.Single(draft.Lines);
+
+        // Company B's store does not find company A's order: the command answers null (the service's 404) and writes nothing.
+        await using (var other = run.SalesStore(CompanyB))
+        {
+            var foreign = await other.Store.CloseLineAsync(run.SalesEnvelope("k-foreign", "SENTETIK-closer"), Hash("k-foreign"),
+                SalesDraftCommands.CloseLineV1, draft.Id, (d, input, now) => d.CloseLine(4, "SENTETIK-closer", input, now), LineClosed,
+                (_, _) => Task.FromResult(new LineClosureInput(line.Id, 0, "100", 90m, DeliveryToleranceBand.Approval, [Shipper])));
+            Assert.Null(foreign);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures]"));
+
+        await using (var owner = run.SalesStore(CompanyA))
+        {
+            await owner.Store.CloseLineAsync(run.SalesEnvelope("k-own", "SENTETIK-closer"), Hash("k-own"), SalesDraftCommands.CloseLineV1,
+                draft.Id, (d, input, now) => d.CloseLine(4, "SENTETIK-closer", input, now), LineClosed,
+                (_, _) => Task.FromResult(new LineClosureInput(line.Id, 0, "100", 90m, DeliveryToleranceBand.Approval, [Shipper])));
+        }
+
+        // The closure carries company A; company B reads the order as absent, so it sees no closure either.
+        Assert.Equal(CompanyA, await run.ScalarAsync<Guid>("SELECT [CompanyId] FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        await using var reader = run.SalesStore(CompanyB);
+        Assert.Null(await reader.Store.FindDraftAsync(draft.Id));
+    }
+
+    [SqlServerFact]
+    public async Task The_line_port_refuses_a_closed_line_as_closed_and_keeps_answering_the_order_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var line = Assert.Single(draft.Lines);
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.CloseLineAsync(run.SalesEnvelope("k-close", "SENTETIK-closer"), Hash("k-close"), SalesDraftCommands.CloseLineV1,
+                draft.Id, (d, input, now) => d.CloseLine(4, "SENTETIK-closer", input, now), LineClosed,
+                (_, _) => Task.FromResult(new LineClosureInput(line.Id, 0, "100", 90m, DeliveryToleranceBand.Approval, [Shipper])));
+        }
+
+        var company = new CompanyContext();
+        company.Set(CompanyA);
+        await using var read = run.SalesStore(CompanyA);
+        var port = new SalesOrderLineReferencePort(read.Store, company);
+        var answer = await port.GetApprovedLineAsync(draft.Id, line.Id);
+
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "Closed"), (answer.Outcome, answer.ApprovalState));
+    }
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
@@ -136,38 +245,9 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
         return draft;
     }
 
-    /// <summary>(sales attempts, audit events, over-delivery approvals, draft version) as SQL Server holds them.</summary>
-    private sealed record Effects(int SalesAttempts, int AuditEvents, int Approvals, long DraftVersion);
-
-    /// <summary>
-    /// A SYNTHETIC delivery owner that NAMES the shipper (the real Logistics owner does not: SAT-D209). It answers only under the
-    /// server-resolved company, creates nothing, and an order it holds nothing for is an empty list (the port's rules).
-    /// </summary>
-    private sealed class SyntheticDeliveries
-    {
-        private readonly ConcurrentDictionary<(Guid Company, Guid Order), SalesOrderLineDeliveryV1[]> lines = new();
-
-        public void Set(Guid company, Guid order, params SalesOrderLineDeliveryV1[] entries) => lines[(company, order)] = entries;
-
-        public SalesOrderDeliveryReadAnswerV1 Answer(Guid company, Guid order) =>
-            new(company, order, lines.TryGetValue((company, order), out var entries) ? entries : []);
-    }
-
-    private sealed class SyntheticDeliveryPort(SyntheticDeliveries owner, ICompanyContext company) : ISalesOrderDeliveryReadPortV1
-    {
-        public Task<SalesOrderDeliveryReadAnswerV1> ReadOrderDeliveriesAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(owner.Answer(company.CompanyId, orderId));
-    }
-
     private sealed class SalesScope(SalesDbContext dbContext, SalesStore store) : IAsyncDisposable
     {
         public ISalesOrderDraftStore Store => store;
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
-    }
-
-    private sealed class LogisticsScope(LogisticsDbContext dbContext, LogisticsStore store) : IAsyncDisposable
-    {
-        public LogisticsStore Store => store;
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
@@ -183,20 +263,13 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
 
         public SqlServerRelationalApiFactory Factory { get; }
         public string Actor { get; } = "SENTETIK-preparer-" + Guid.NewGuid().ToString("N");
-        public string Correlation { get; } = $"sales-sat-d30-{Guid.NewGuid():N}";
+        public string Correlation { get; } = $"sales-sat-d17-{Guid.NewGuid():N}";
 
-        /// <summary>The real host; with <paramref name="owner"/>, its delivery port is the synthetic owner that names the shipper.</summary>
-        public static async Task<Run> StartAsync(SyntheticDeliveries? owner)
+        /// <summary>The real host composed over a fresh database (health is probed so the migrations have run).</summary>
+        public static async Task<Run> StartAsync()
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = owner is null
-                ? new SqlServerRelationalApiFactory(baseConnectionString)
-                : new SqlServerRelationalApiFactory(baseConnectionString, services =>
-                {
-                    services.RemoveAll<ISalesOrderDeliveryReadPortV1>();
-                    services.AddScoped<ISalesOrderDeliveryReadPortV1>(provider =>
-                        new SyntheticDeliveryPort(owner, provider.GetRequiredService<ICompanyContext>()));
-                });
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
@@ -217,48 +290,8 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
             return approved!.Draft;
         }
 
-        /// <summary>An instruction for the draft's one line, issued, loaded and shipped <paramref name="shipped"/> kg through the real Logistics store.</summary>
-        public async Task ShippedInstructionAsync(Guid company, SalesOrderDraft draft, string keyPrefix, decimal shipped)
-        {
-            var orderLine = Assert.Single(draft.Lines);
-            await using var scope = LogisticsStore(company);
-            var stored = (await scope.Store.StoreInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-create"), Hash($"{keyPrefix}-l-create"), draft.Header.BusinessDate, () =>
-            {
-                var instruction = LoadingInstruction.Create(Guid.NewGuid(), company, draft.Header.PartyId, draft.Header.CompanyAccountId, T0);
-                instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(draft.Id, orderLine.Id, draft.Revision),
-                    orderLine.Product.ProductId, KgUnit, null, Kg(shipped), T0);
-                return instruction;
-            })).Instruction.Instruction;
-            var lineId = Assert.Single(stored.Lines).Id;
-            var id = stored.Id;
-            var issued = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-issue"), Hash($"{keyPrefix}-l-issue"),
-                LogisticsCommands.IssueV1, id, (instruction, now) => instruction.Issue(stored.Version, now), Issued))!.Instruction.Instruction;
-            var loaded = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"), Hash($"{keyPrefix}-l-load"),
-                LogisticsCommands.RecordLoadV1, id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(shipped),
-                    MeasurementKind.Measured, now), Loaded))!.Instruction.Instruction;
-            await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
-                LogisticsCommands.RecordShipmentV1, id, (instruction, now) => instruction.MarkShipped(loaded.Version, Guid.NewGuid(), lineId, Kg(shipped), now),
-                Shipped);
-        }
-
-        public async Task<JsonElement> JsonAsync(HttpClient client, string path)
-        {
-            using var response = await client.GetAsync(path);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            return await response.Content.ReadFromJsonAsync<JsonElement>();
-        }
-
-        public async Task<Effects> EffectsAsync(Guid draftId) => new(
-            await ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts]"),
-            await ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents]"),
-            await ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftOverDeliveryApprovals] WHERE [DraftId] = @id", ("@id", draftId)),
-            await ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draftId)));
-
         public SalesDraftWriteEnvelope SalesEnvelope(string key, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
-
-        public LogisticsWriteEnvelope LogisticsEnvelope(string key) =>
-            new(Actor, "SENTETIK-logistics-permission", ["SENTETIK-LOGISTICS"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
         public SalesDbContext SalesContext(Guid company)
         {
@@ -278,58 +311,6 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
                 .UseSqlServer(Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext)).Options, companyContext);
             return new SalesScope(dbContext, new SalesStore(dbContext, companyContext, collector, TimeProvider.System));
-        }
-
-        public LogisticsScope LogisticsStore(Guid company)
-        {
-            var companyContext = new CompanyContext();
-            companyContext.Set(company);
-            var collector = new AuditEventCollector();
-            var dbContext = new LogisticsDbContext(new DbContextOptionsBuilder<LogisticsDbContext>()
-                .UseSqlServer(Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
-                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext)).Options, companyContext);
-            return new LogisticsScope(dbContext, new LogisticsStore(dbContext, companyContext, collector, TimeProvider.System));
-        }
-
-        public HttpClient Client(string subject, Guid company)
-        {
-            var client = Factory.CreateClientFor(subject, company);
-            client.DefaultRequestHeaders.Remove("Idempotency-Key");
-            client.DefaultRequestHeaders.Remove("X-Correlation-Id");
-            return client;
-        }
-
-        /// <summary>A fresh synthetic role of the given names for the bootstrap subject in one company (company-wide scope).</summary>
-        public async Task<(string Subject, Guid UserId)> GrantAsync(string developmentUser, Guid company, params string[] permissions)
-        {
-            await using var scope = Factory.Services.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
-            var link = await dbContext.ExternalIdentities.SingleOrDefaultAsync(x => x.Issuer == BootstrapIdentityOptions.Issuer && x.Subject == developmentUser);
-            Guid actor;
-            if (link is null)
-            {
-                actor = Guid.NewGuid();
-                dbContext.Users.Add(new UserAccount(actor, "Synthetic Sales over-delivery user", null));
-                dbContext.ExternalIdentities.Add(new ExternalIdentityLink(Guid.NewGuid(), actor, BootstrapIdentityOptions.Issuer, developmentUser));
-            }
-            else
-            {
-                actor = link.UserId;
-            }
-
-            var roleId = Guid.NewGuid();
-            var role = new RoleDefinition(roleId, $"SAT-D30-{roleId:N}", "Synthetic Sales over-delivery role", true);
-            foreach (var permission in permissions)
-            {
-                role.AddPermission(permission);
-            }
-
-            var assignment = new RoleAssignment(Guid.NewGuid(), actor, roleId, company, DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
-            assignment.AddScope(AccessScopeType.Company, company);
-            dbContext.Roles.Add(role);
-            dbContext.RoleAssignments.Add(assignment);
-            await dbContext.SaveChangesAsync();
-            return (developmentUser, actor);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)

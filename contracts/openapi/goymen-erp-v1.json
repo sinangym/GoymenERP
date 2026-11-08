@@ -47036,6 +47036,7 @@
             "x-erp-problem-codes": [
               "concurrent_change",
               "sales_line_closure_not_applicable",
+              "sales_line_closure_open_commitments",
               "sales_line_closure_self_closure",
               "sales_line_closure_shipped_changed",
               "sales_line_closure_shipper_unverified",

@@ -144,7 +144,10 @@ public sealed partial class SalesOrderDraft
                 throw new ArgumentException("Sevk edilen toplam satırın biriminde geçerli değil ya da sipariş miktarını aşıyor.", nameof(inputs));
             }
 
-            result.Add(new ForceClosureLineSnapshot(line.Id, line.LineNo, line.QuantityText, Text(shipped), Text(remainder)));
+            // A line already closed with a shortfall (SAT-D17) keeps the remainder its closure cancelled: the same remainder is never
+            // recorded a second time as the force-closure's.
+            var closedRemainder = lineClosures.FirstOrDefault(closure => closure.LineId == line.Id)?.CancelledRemainder ?? Text(remainder);
+            result.Add(new ForceClosureLineSnapshot(line.Id, line.LineNo, line.QuantityText, Text(shipped), closedRemainder));
         }
 
         return result.AsReadOnly();
