@@ -22,7 +22,7 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
         // Line 2: 2.25 ordered, 2.225 shipped is a 1.11 % shortfall (warn band); the delivery owner names who shipped it.
         var deliveries = new FakeDeliveries(order => new(Company, order,
@@ -33,16 +33,16 @@ public sealed partial class SalesDraftServiceTests
         world.Authority.Measured.Clear();
 
         var response = await world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line"));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line"));
 
         Assert.False(response.IsReplay);
-        Assert.Equal(("6", "Approved", "Draft"), (response.Detail.Draft.Version, response.Detail.Draft.ApprovalState, response.Detail.Draft.State));
+        Assert.Equal(("7", "Approved", "Draft"), (response.Detail.Draft.Version, response.Detail.Draft.ApprovalState, response.Detail.Draft.State));
         Assert.Equal(LineClosePermission, world.Authority.Measured[0]);
         Assert.True(world.Authority.Measured.Count(permission => permission == LineClosePermission) >= 5);
         Assert.Equal([approved.Draft.Id], deliveries.Asked);
         Assert.Equal([Day], policies.Asked);
         var transition = world.Store.Transitions[^1];
-        Assert.Equal((SalesDraftCommands.CloseLineV1, LineClosePermission, "sales.order-draft.line-closed.v1", "CloseLine", 5L, 6L),
+        Assert.Equal((SalesDraftCommands.CloseLineV1, LineClosePermission, "sales.order-draft.line-closed.v1", "CloseLine", 6L, 7L),
             (transition.Command, transition.Envelope.PermissionCode, transition.Audit.EventType, transition.Audit.Operation,
             transition.VersionBefore, transition.VersionAfter));
         var facts = Assert.Single(world.Store.LineClosureRecords);
@@ -57,16 +57,16 @@ public sealed partial class SalesDraftServiceTests
         // The same key and content replays the stored answer: no owner is asked, nothing is closed twice.
         var asked = deliveries.Asked.Count;
         var replay = await world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line", correlation: "retry"));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line", correlation: "retry"));
         Assert.True(replay.IsReplay);
         Assert.Equal((asked, 1), (deliveries.Asked.Count, world.Store.LineClosureRecords.Count));
         var mismatch = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.2"), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, "2.2"), Metadata("k-close-line")));
         Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), Status(mismatch));
 
         // A closed line is not closed again (a recorded state conflict under a new key).
         var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line-2")));
+            new SalesDraftLineClosureRequest("7", second, "2.225"), Metadata("k-close-line-2")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(again));
         Assert.Single(world.Store.LineClosureRecords);
     }
@@ -76,16 +76,16 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         // 2.2 shipped of 2.25 is a 2.22 % shortfall (approval band).
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.2m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
         var response = await world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.2"), Metadata("k-close-line"));
+            new SalesDraftLineClosureRequest("6", second, "2.2"), Metadata("k-close-line"));
 
-        Assert.Equal("6", response.Detail.Draft.Version);
+        Assert.Equal("7", response.Detail.Draft.Version);
         var facts = Assert.Single(world.Store.LineClosureRecords);
         Assert.Equal((DeliveryToleranceBand.Approval, "0.05"), (facts.Band, facts.CancelledRemainder));
         // SAT-D17: an approved-by-action closure reads "Tamamlandi" (Completed), never ClosedWithRemainder (force-closure only).
@@ -98,13 +98,13 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         // 2.24 shipped of 2.25 is a 0.44 % shortfall (within band).
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.24m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
-        await world.Service().CloseLineAsync(approved.Draft.Id, new SalesDraftLineClosureRequest("5", second, "2.24"), Metadata("k-close-line"));
+        await world.Service().CloseLineAsync(approved.Draft.Id, new SalesDraftLineClosureRequest("6", second, "2.24"), Metadata("k-close-line"));
 
         Assert.Equal(DeliveryToleranceBand.Within, Assert.Single(world.Store.LineClosureRecords).Band);
         var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
@@ -116,13 +116,11 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var first = approved.Lines[0].LineId;
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        // The customer accepts first (acceptance is required for shipping): version 6.
-        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("5"), Metadata("k-accept"));
         var company = new CompanyContext();
         company.Set(Company);
         var port = new SalesOrderLineReferencePort(world.Store, company);
@@ -140,19 +138,19 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m)]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line")));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.LineClosureShipperUnverified), Status(refused));
         var refusal = Assert.Single(world.Store.Refusals);
         Assert.Equal((LineClosePermission, (Guid?)approved.Draft.Id), (refusal.Envelope.PermissionCode, refusal.DraftId));
         var replayed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line", correlation: "retry")));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line", correlation: "retry")));
         Assert.Equal((409, SalesDraftProblemCodesV1.LineClosureShipperUnverified, true), (replayed.Status, replayed.Code, replayed.IsReplay));
         Assert.Empty(world.Store.LineClosureRecords);
     }
@@ -162,13 +160,13 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, ["synthetic-other", Actor])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line")));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.LineClosureSelfClosure), Status(refused));
         Assert.Single(world.Store.Refusals);
@@ -184,14 +182,14 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         var value = decimal.Parse(shipped, System.Globalization.CultureInfo.InvariantCulture);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, value, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, shipped), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, shipped), Metadata("k-close-line")));
 
         Assert.Equal((status, code), Status(refused));
         Assert.Equal(recorded ? 1 : 0, world.Store.Refusals.Count);
@@ -203,19 +201,19 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.2"), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, "2.2"), Metadata("k-close-line")));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.LineClosureShippedChanged), Status(refused));
         Assert.Empty(world.Store.Refusals);
         Assert.Empty(world.Store.LineClosureRecords);
         // The same key now closes at the total the user re-read.
-        await world.Service().CloseLineAsync(approved.Draft.Id, new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line"));
+        await world.Service().CloseLineAsync(approved.Draft.Id, new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line"));
         Assert.Single(world.Store.LineClosureRecords);
     }
 
@@ -224,11 +222,11 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         var (allocations, loadings) = Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        var request = new SalesDraftLineClosureRequest("5", second, "2.225");
+        var request = new SalesDraftLineClosureRequest("6", second, "2.225");
 
         // SAT-D215: loaded (2.25) is more than shipped (2.225): the goods on the vehicle could still ship after the closure.
         loadings.Answer = order => new(Company, order, [new(second, KgUnit, 1, 2.25m, 2.25m, 2.225m, 0m)]);
@@ -254,11 +252,11 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         var (allocations, loadings) = Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        var request = new SalesDraftLineClosureRequest("5", second, "2.225");
+        var request = new SalesDraftLineClosureRequest("6", second, "2.225");
 
         world.Loadings = null;
         var noLoading = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id, request, Metadata("k-close-line")));
@@ -278,18 +276,18 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        await world.Service().CloseLineAsync(approved.Draft.Id, new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line"));
+        await world.Service().CloseLineAsync(approved.Draft.Id, new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line"));
 
         // SAT-D167 / SAT-D217: a closed line is changed only through an approved reopen, which this slice does not ship.
         var revision = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("6", "Test", [new(first, "1.25"), new(second, "3")]), Metadata("k-revise")));
+            new SalesDraftQuantityRevisionRequest("7", "Test", [new(first, "1.25"), new(second, "3")]), Metadata("k-revise")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(revision));
         var remainder = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RequestRemainderChangeAsync(approved.Draft.Id,
-            new SalesDraftRemainderChangeRequest("6", second, "Cancel", null, "Test"), Metadata("k-remainder")));
+            new SalesDraftRemainderChangeRequest("7", second, "Cancel", null, "Test"), Metadata("k-remainder")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(remainder));
     }
 
@@ -298,12 +296,12 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.Deliveries = deliveries;
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        var request = new SalesDraftLineClosureRequest("5", second, "2.225");
+        var request = new SalesDraftLineClosureRequest("6", second, "2.225");
 
         // Not granted: 403 and no owner is asked; no other Sales name confers it.
         world.Authority.Denied.Add(LineClosePermission);
@@ -313,7 +311,7 @@ public sealed partial class SalesDraftServiceTests
         world.Authority.Denied.Clear();
 
         Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().CloseLineAsync(approved.Draft.Id, request with { ExpectedVersion = "4" }, Metadata("k-stale")))));
+            world.Service().CloseLineAsync(approved.Draft.Id, request with { ExpectedVersion = "5" }, Metadata("k-stale")))));
         Assert.Empty(deliveries.Asked);
 
         var refusals = world.Store.Refusals.Count;
@@ -344,7 +342,7 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.Deliveries = deliveries;
@@ -352,7 +350,7 @@ public sealed partial class SalesDraftServiceTests
         world.Bindings = world.Bindings with { LineClosePermission = "sales.synthetic.unregistered" };
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line")));
 
         Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), Status(refused));
         Assert.Empty(deliveries.Asked);
@@ -365,16 +363,16 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var preview = await world.Service().GetForceCloseImpactAsync(approved.Draft.Id);
-        await world.Service().ForceCloseDraftAsync(approved.Draft.Id, new SalesDraftForceCloseRequest("5", "SENTETIK neden", preview.ImpactToken),
+        await world.Service().ForceCloseDraftAsync(approved.Draft.Id, new SalesDraftForceCloseRequest("6", "SENTETIK neden", preview.ImpactToken),
             Metadata("k-close"));
         var deliveries = new FakeDeliveries(order => new(Company, order, [new(approved.Lines[1].LineId, KgUnit, 2.225m, 0m, [Shipper])]));
         world.Deliveries = deliveries;
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 
         var closed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("6", approved.Lines[1].LineId, "2.225"), Metadata("k-close-line-closed")));
+            new SalesDraftLineClosureRequest("7", approved.Lines[1].LineId, "2.225"), Metadata("k-close-line-closed")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(closed));
 
         var draft = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-create-2"))).Detail;
@@ -390,14 +388,14 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
         var deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.Deliveries = deliveries;
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
         // A quantity revision of the OTHER line puts the whole order back into re-approval (the closed quantity must stay settled).
         var revised = await world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("5", "Test", [new(first, "1.5"), new(second, "2.25")]), Metadata("k-revise-open"));
+            new SalesDraftQuantityRevisionRequest("6", "Test", [new(first, "1.5"), new(second, "2.25")]), Metadata("k-revise-open"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
             new SalesDraftLineClosureRequest(revised.Detail.Draft.Version, second, "2.225"), Metadata("k-close-line-revising")));
@@ -431,20 +429,20 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         Owners(world);
-        var approved = await ApprovedTwoLineAsync(world);
+        var approved = await AcceptedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.225m, 0m, [Shipper])]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
         world.Store.Race = "version-at-store";
 
         var raced = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line")));
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line")));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.ConcurrentChange), Status(raced));
         Assert.Empty(world.Store.LineClosureRecords);
         var retried = await world.Service().CloseLineAsync(approved.Draft.Id,
-            new SalesDraftLineClosureRequest("5", second, "2.225"), Metadata("k-close-line-2"));
-        Assert.Equal("6", retried.Detail.Draft.Version);
+            new SalesDraftLineClosureRequest("6", second, "2.225"), Metadata("k-close-line-2"));
+        Assert.Equal("7", retried.Detail.Draft.Version);
         Assert.Single(world.Store.LineClosureRecords);
     }
 }

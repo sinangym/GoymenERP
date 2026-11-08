@@ -27,7 +27,7 @@ public sealed partial class SalesOrderDraft
 
     /// <summary>
     /// The closure's own preconditions WITHOUT the fact — the expected version, the lifecycle (neither cancelled nor closed), an
-    /// order that is Approved now (no pending revision, no customer-rejection fallback), the line and its not being closed yet — so the caller
+    /// order that is Approved now (no pending revision, no customer-rejection fallback) and customer-accepted (ASSUMPTION-LC-3), the line and its not being closed yet — so the caller
     /// refuses a stale, terminal, never-approved, unknown-line or already closed command before it asks any owner.
     /// </summary>
     public SalesOrderDraftLine RequireLineClosable(long expectedVersion, Guid lineId)
@@ -45,6 +45,14 @@ public sealed partial class SalesOrderDraft
             // revision and no customer-rejection fallback; a closure over a revision still to be decided (or over the older accepted
             // one) could be changed by the approval afterwards, so it is refused until the order is settled.
             throw StateConflict("Satır yalnız onaylı ve karar bekleyen revizyonu olmayan siparişte kapatılır.");
+        }
+
+        if (!IsCustomerAccepted)
+        {
+            // ASSUMPTION-LC-3 (fail closed): while the current revision awaits the customer's acceptance a rejection could still send
+            // the order back to the older accepted revision, so a closure only ever happens on a revision the customer accepted
+            // (or on an order without the acceptance gate). This is what lets a customer rejection stay possible after a closure.
+            throw StateConflict("Revizyon müşteri kabulü beklerken satır eksikle kapatılamaz.");
         }
 
         var line = lines.SingleOrDefault(candidate => candidate.Id == lineId)
@@ -78,6 +86,12 @@ public sealed partial class SalesOrderDraft
             // SAT-D216: the person who made the shipment does not close their own line ("başkası kapatır").
             throw new SalesRuleException(SalesRuleCodes.LineClosureSelfClosure,
                 "Sevki yapan kişi kendi satırını kapatamaz; başkası kapatır.");
+        }
+
+        if (input.Band == DeliveryToleranceBand.Block)
+        {
+            // SAT-D17: the block band never closes; the service answers 422 first, the domain refuses it too (defence in depth).
+            throw new ArgumentException("Engel bandındaki satır bu yolla kapatılmaz.", nameof(input));
         }
 
         if (input.BasisRevision < 0 || input.BasisRevision > Revision || !Enum.IsDefined(input.Band)

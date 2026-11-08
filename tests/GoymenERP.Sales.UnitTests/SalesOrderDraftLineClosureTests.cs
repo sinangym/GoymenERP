@@ -210,15 +210,38 @@ public sealed class SalesOrderDraftLineClosureTests
     }
 
     [Fact]
-    public void A_customer_rejection_is_refused_once_a_line_is_closed_and_an_approval_never_changes_a_closed_line()
+    public void A_line_closes_only_over_a_customer_accepted_revision_and_a_rejection_stays_possible_after_a_closure()
     {
+        // (b) A revision that awaits the customer's acceptance is not closed: Rev.0 never accepted, then a revised and approved one.
         var draft = ApprovedDraft(out var line, acceptance: true);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequireLineClosable(draft.Version, line.Id)));
         draft.RecordCustomerAcceptance(draft.Version, "synthetic-approver", T0);
         draft.ReviseQuantities(draft.Version, [new LineQuantityInput(line.Id, "120", 120m)], "synthetic-reviser", "SENTETIK", T0);
         draft.Submit(draft.Version, "synthetic-preparer", T0);
         draft.Approve(draft.Version, "synthetic-approver", T0);
-        draft.CloseLine(draft.Version, Closer, Input(line, "90") with { Ordered = "120", BasisRevision = draft.Revision }, T0);
-        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerRejection(draft.Version, "synthetic-approver", "SENTETIK", T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.CloseLine(draft.Version, Closer, Input(line, "90") with { Ordered = "120", BasisRevision = draft.Revision }, T0)));
+        Assert.Empty(draft.LineClosures);
+        // Once the customer accepted it, the line closes at the accepted quantity.
+        draft.RecordCustomerAcceptance(draft.Version, "synthetic-approver", T0);
+        Assert.Equal("120", draft.CloseLine(draft.Version, Closer, Input(line, "90") with { Ordered = "120", BasisRevision = draft.Revision }, T0).Ordered);
+
+        // (a) Two lines, line 1 closed, a revision that only changes line 2: the customer rejection IS recorded and the fallback works.
+        var order = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0, true);
+        var first = order.AddLine(order.Version, Line(Guid.NewGuid(), "100"), T0);
+        var second = order.AddLine(order.Version, Line(Guid.NewGuid(), "100"), T0);
+        order.Submit(order.Version, "synthetic-preparer", T0);
+        order.Approve(order.Version, "synthetic-approver", T0);
+        order.RecordCustomerAcceptance(order.Version, "synthetic-approver", T0);
+        var firstClosure = order.CloseLine(order.Version, Closer, Input(first, "90"), T0);
+        order.ReviseQuantities(order.Version, [new LineQuantityInput(first.Id, "100", 100m), new LineQuantityInput(second.Id, "120", 120m)], "synthetic-reviser", "SENTETIK", T0);
+        order.Submit(order.Version, "synthetic-preparer", T0);
+        order.Approve(order.Version, "synthetic-approver", T0);
+        order.RecordCustomerRejection(order.Version, "synthetic-approver", "SENTETIK", T0);
+        Assert.NotNull(order.CustomerAcceptedFallback);
+        Assert.Equal(firstClosure.Ordered, order.CustomerAcceptedFallback!.Lines.Single(candidate => candidate.LineId == first.Id).QuantityText);
+        Assert.True(order.IsLineClosed(first.Id));
+        // A closed line stays unchanged and unshippable on the fallback; the order does not close again while a fallback exists.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => order.RequireLineClosable(order.Version, second.Id)));
 
         // Defence in depth: a stored state in which the closed line's quantity differs from the closure's is refused at submit and at approve.
         var source = ApprovedDraft(out var sourceLine);
