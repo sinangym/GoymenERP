@@ -138,7 +138,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
-        "f4d42b16f2f1b9facc14f4c3994516ed3252e6b69a2ca45d5afb5c49a322afa3";
+        "498c06d97a46f871de193ed7117a89baee04f2662bac8f9796016b16f02238f8";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -1457,7 +1457,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
                         // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
-                        "5e9af601e67b444b2f9c480618af865757ecc4c99fd8cb573898cf7af6c7c95c",
+                        "70fc4daff7d7d89e7eca61cde8d827d37f5f9c9ca996d2d62a542b1be7959368",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
