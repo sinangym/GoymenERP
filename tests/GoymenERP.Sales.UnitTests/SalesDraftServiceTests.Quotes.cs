@@ -572,7 +572,13 @@ public sealed partial class SalesDraftServiceTests
                     throw new SalesRuleException(SalesRuleCodes.QuoteRequestNotApproved, "synthetic");
             }
 
-            var stored = drafts.StoreUnder(SalesQuoteCommands.ConvertV1, envelope, requestHash, build);
+            // The real store records the order's source quote in the same save (UX_Drafts_SourceQuoteId, SAT-D152).
+            var stored = drafts.StoreUnder(SalesQuoteCommands.ConvertV1, envelope, requestHash, documentNo =>
+            {
+                var order = build(documentNo);
+                order.RestoreSourceQuote(quoteId);
+                return order;
+            });
             var now = clock().GetUtcNow();
             quote.Convert(expectedQuoteVersion, stored.Draft.Id, envelope.ActorId, SalesBusinessDay.DateOf(now), now);
             return stored;

@@ -79,6 +79,11 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesDraftStoreCodes.SameKeyPayloadMismatch, mismatch.Code);
             Assert.Equal([shipment], await scope.Invoices.FindInvoicedShipmentsAsync([shipment, Guid.NewGuid()]));
             Assert.Single((await scope.Invoices.ListInvoicesAsync(10, null)).Items);
+            // API-09: the order's "Faturalar" tab reads by the order id of a line; an unknown order has none.
+            var orderId = stored.Invoice.Lines[0].Share.SalesOrderId;
+            var ofOrder = await scope.Invoices.ListInvoicesOfOrderAsync(orderId, 100);
+            Assert.Equal((invoiceId, false), (Assert.Single(ofOrder.Items).Id, ofOrder.HasMore));
+            Assert.Empty((await scope.Invoices.ListInvoicesOfOrderAsync(Guid.NewGuid(), 100)).Items);
         }
 
         // AT-055 / SAT-D94: another key taking the same shipment loses on the active-share index; nothing of it is stored.
@@ -97,6 +102,7 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyB))
         {
             Assert.Null(await scope.Invoices.FindInvoiceAsync(invoiceId));
+            Assert.Empty((await scope.Invoices.ListInvoicesOfOrderAsync(stored.Invoice.Lines[0].Share.SalesOrderId, 100)).Items);
             Assert.Empty(await scope.Invoices.FindInvoicedShipmentsAsync([shipment]));
             Assert.Null(await scope.Invoices.FindInvoiceReplayAsync(run.Envelope("i-create"), Hash('a')));
         }

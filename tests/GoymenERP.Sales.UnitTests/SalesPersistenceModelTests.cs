@@ -127,6 +127,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoices", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceApproval", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceOfficialMatch", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddQuoteDueTerms", StringComparison.Ordinal));
         Assert.Equal("20261108135920_AddDraftLineClosures", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
@@ -805,11 +807,11 @@ public sealed class SalesPersistenceModelTests
 
     /// <summary>
     /// SAT-D17 / SAT-D168: the line-closure table - one row per line under (company, draft, line), one row per version step, bound
-    /// to the draft and to its line, tenant-filtered, with the identity check; Up is pure DDL and Down refuses with Sales' own 51227
+    /// to the draft and to its line, tenant-filtered, with the identity check; Up is pure DDL and Down refuses with Sales' own 51228
     /// BEFORE it drops the table (forward fix).
     /// </summary>
     [Fact]
-    public void The_line_closure_table_is_keyed_per_line_bound_to_its_line_and_its_down_refuses_with_51227()
+    public void The_line_closure_table_is_keyed_per_line_bound_to_its_line_and_its_down_refuses_with_51228()
     {
         using var context = Context();
         var closures = context.Model.FindEntityType(typeof(DraftLineClosureRow))!;
@@ -830,7 +832,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(2, migration.DownOperations.Count);
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftLineClosures])", guard.Sql, StringComparison.Ordinal);
-        Assert.Contains("THROW 51227,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51228,", guard.Sql, StringComparison.Ordinal);
         var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
         Assert.Equal(("sales", "DraftLineClosures"), (drop.Schema, drop.Name));
     }

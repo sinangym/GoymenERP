@@ -713,11 +713,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         {
             table.HasCheckConstraint("CK_QuoteRevisions_Identity",
                 "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_QuoteRevisions_DueTerms", QuoteRevisionDueTermsCheck);
         });
         revision.HasKey(x => new { x.CompanyId, x.QuoteId, x.Revision });
         revision.Property(x => x.ValidUntil).HasColumnType("date");
         revision.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
         revision.Property(x => x.Note).HasMaxLength(SalesQuote.MaximumNoteLength);
+        revision.Property(x => x.DueTermsJson).HasColumnType("nvarchar(max)");
         revision.Property(x => x.RevisedBy).HasMaxLength(SalesQuote.MaximumActorLength).IsRequired();
         revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         revision.HasOne<QuoteRow>().WithMany()
@@ -1428,6 +1430,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .OnDelete(DeleteBehavior.Restrict);
         header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
+
+    /// <summary>SAT-D132: the quote revision's due terms, when present, are JSON (the shape is the store's strict reader's).</summary>
+    internal const string QuoteRevisionDueTermsCheck = "[DueTermsJson] IS NULL OR ISJSON([DueTermsJson]) = 1";
 
     /// <summary>API-04: a present sales owner is a real id; present due terms are JSON (the shape is the store's strict reader's).</summary>
     private const string HeaderRevisionConstraint =

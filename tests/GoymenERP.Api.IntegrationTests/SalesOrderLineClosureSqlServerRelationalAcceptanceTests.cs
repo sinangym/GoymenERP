@@ -21,7 +21,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// SAT-D17 / SAT-D168 / SAT-D215 against a REAL SQL Server and the REAL host composition: a recorded line closure is stored in
 /// one save through the real Sales store, rebuilt by the store's restore (counted by the version floor), refused a second time
 /// for the same line, held by the identity check and the draft / line foreign keys, and the migration refuses to roll back over a
-/// recorded closure (THROW 51227, forward fix). SENTETIK / NOT_ENV.
+/// recorded closure (THROW 51228, forward fix). SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
 {
@@ -63,13 +63,13 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
         }
 
         var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"));
-        Assert.Equal(51227, error.Number);
+        Assert.Equal(51228, error.Number);
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var closuresIndex = Array.FindIndex(applied, id => id.EndsWith("_AddDraftLineClosures", StringComparison.Ordinal));
         Assert.True(closuresIndex > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[closuresIndex - 1]));
-        Assert.Equal(51227, rollback.Number);
+        Assert.Equal(51228, rollback.Number);
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
         Assert.Equal((5L, "100", "90", "10"), (

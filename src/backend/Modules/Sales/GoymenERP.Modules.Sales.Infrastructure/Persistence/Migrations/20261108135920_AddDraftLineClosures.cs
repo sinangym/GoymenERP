@@ -69,12 +69,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
         {
             // SAT-D17 / SAT-D168 forward fix: a recorded line closure is closure history (who counted which remainder as cancelled
             // at which shipped total) that the status and the open-order report read and that the line port enforces (a closed
-            // line cannot ship); dropping the table would silently reopen closed lines. Refuse (51227, used by no other
+            // line cannot ship); dropping the table would silently reopen closed lines. Refuse (51228, used by no other
             // migration) while any closure exists; an empty table rolls back freely.
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [sales].[DraftLineClosures])
                 BEGIN
-                    THROW 51227, 'Line closures exist; AddDraftLineClosures is not rolled back (forward fix).', 1;
+                    THROW 51228, 'Line closures exist; AddDraftLineClosures is not rolled back (forward fix).', 1;
                 END;
                 """);
 
