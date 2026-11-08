@@ -18,6 +18,7 @@
  */
 
 import { LIMITS, type PriceDisclosure } from './contract'
+import { decodeDueTerms, type DueTerms } from './headerRevision'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
 /* ── Paths ────────────────────────────────────────────────────────────────── */
@@ -128,6 +129,8 @@ export interface SalesQuoteRevisionBody {
   readonly validUntil: string | null
   readonly requestedDeliveryDate: string | null
   readonly note: string | null
+  /** SAT-D132: the revision replaces the terms as a whole; the form carries the shown due terms (omitted = none). */
+  readonly dueTerms?: DueTerms
 }
 
 /**
@@ -300,7 +303,7 @@ export interface SalesQuoteDetail {
   readonly expiry: SalesQuoteExpiry
   /** SAT-D132: the due terms are disclosed only with the price read (`Withheld` + null otherwise); shown by a later slice. */
   readonly dueTermsDisclosure: 'Visible' | 'Withheld'
-  readonly dueTerms: object | null
+  readonly dueTerms: DueTerms | null
 }
 
 /** SAT-D25: one selectable loss reason (an active entry of the list in force). */
@@ -742,9 +745,9 @@ export function decodeQuoteDetail(value: unknown, expectedId: string | null): Sa
   if (o === null) return null
   const disclosure = o.dueTermsDisclosure
   if (disclosure !== 'Visible' && disclosure !== 'Withheld') return null
-  const dueTerms = o.dueTerms
-  const dueTermsShapeOk = dueTerms === null || (disclosure === 'Visible' && typeof dueTerms === 'object' && !Array.isArray(dueTerms))
-  if (!dueTermsShapeOk) return null
+  // The same strict decoder as the order header: a malformed shape, or a withheld answer carrying terms, is malformed.
+  const dueTerms = decodeDueTerms(o.dueTerms)
+  if (dueTerms === undefined || (disclosure === 'Withheld' && dueTerms !== null)) return null
   const quote = decodeQuoteSummary(o.quote)
   if (quote === null || (expectedId !== null && quote.id !== expectedId)) return null
   const requestIds = decodeRequestIds(o.requestIds)
@@ -784,7 +787,7 @@ export function decodeQuoteDetail(value: unknown, expectedId: string | null): Sa
     expiryApprovals,
     expiry,
     dueTermsDisclosure: disclosure,
-    dueTerms: dueTerms as object | null,
+    dueTerms,
   }
 }
 
