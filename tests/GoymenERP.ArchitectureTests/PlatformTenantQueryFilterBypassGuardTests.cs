@@ -262,7 +262,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
             // F2b: +4 invoice cancellation facts, ordinal-sorted (4575e229… -> c2205fa2…).
             ["tools/relational_inventory/finance.txt"] =
-                "c2205fa2fc74636e53d324e142201041094faee137ee7cead856ddbbaa66a216",
+                "a73d968c479c4144f195ad65b29e2eb81652fc0612a31464ba42249136d993fb",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -1254,7 +1254,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SqlClient only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "1d354b40066633c53f53eca05c28698bf46aeb701bbc0c7dc712b49a7d1f720a",
+                        "2ca8394c014c443ed51f83f11d1938199764cdf7a6c0047cf73b93202c533ba1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
