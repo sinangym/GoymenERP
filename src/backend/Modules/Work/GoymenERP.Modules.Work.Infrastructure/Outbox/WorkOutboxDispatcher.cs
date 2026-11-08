@@ -5,7 +5,6 @@ using System.Text;
 using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -387,7 +386,14 @@ public sealed class WorkOutboxDispatcher
     /// <summary>Only a lost race (unique key or concurrency token) counts as a conflict; other storage errors surface.</summary>
     internal static bool IsConflict(Exception exception) =>
         exception is DbUpdateConcurrencyException
-        || exception is DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } };
+        || (exception is DbUpdateException { InnerException: { } inner } && IsUniqueViolation(inner));
+
+    // SQL Server duplicate key (2601 unique index, 2627 unique/PK constraint). Read by shape so this file does not take a
+    // direct provider-client dependency (reviewed database surfaces stay in the stores).
+    private static bool IsUniqueViolation(Exception inner) =>
+        inner.GetType().Name == "SqlException"
+        && inner.GetType().GetProperty("Number")?.GetValue(inner) is int number
+        && number is 2601 or 2627;
 
     private static bool IsPrintableAscii(string value) => value.All(c => c is >= '!' and <= '~');
 

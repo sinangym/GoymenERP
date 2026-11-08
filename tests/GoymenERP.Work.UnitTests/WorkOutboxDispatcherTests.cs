@@ -337,6 +337,17 @@ public sealed class WorkOutboxDispatcherTests
     }
 
     [Fact]
+    public void Only_unique_key_violations_and_concurrency_exceptions_count_as_conflicts()
+    {
+        Assert.True(WorkOutboxDispatcher.IsConflict(new DbUpdateConcurrencyException("race")));
+        Assert.True(WorkOutboxDispatcher.IsConflict(new DbUpdateException("dup", new SqlException(2627))));
+        Assert.True(WorkOutboxDispatcher.IsConflict(new DbUpdateException("dup", new SqlException(2601))));
+        Assert.False(WorkOutboxDispatcher.IsConflict(new DbUpdateException("fk", new SqlException(547))));
+        Assert.False(WorkOutboxDispatcher.IsConflict(new DbUpdateException("other")));
+        Assert.False(WorkOutboxDispatcher.IsConflict(new InvalidOperationException("other")));
+    }
+
+    [Fact]
     public async Task Cancellation_while_a_handler_runs_propagates_and_records_nothing()
     {
         var harness = new Harness(Defaults);
@@ -510,6 +521,12 @@ public sealed class WorkOutboxDispatcherTests
             return new WorkDbContext(
                 new DbContextOptionsBuilder<WorkDbContext>().UseInMemoryDatabase(database).Options, company);
         }
+    }
+
+    // Shaped like the provider's exception (type name and Number) so the classifier can be tested without a database.
+    private sealed class SqlException(int number) : Exception("sql")
+    {
+        public int Number { get; } = number;
     }
 
     private sealed class FailingSaves : SaveChangesInterceptor
