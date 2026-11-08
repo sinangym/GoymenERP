@@ -1924,7 +1924,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(138, len(migrations))
+        self.assertEqual(139, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
