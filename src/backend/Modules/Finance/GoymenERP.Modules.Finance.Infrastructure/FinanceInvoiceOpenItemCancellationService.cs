@@ -115,12 +115,17 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
         {
             var item = items.Single(row => row.Id == allocation.OpenItemId);
             var sourceState = await dbContext.SourceAllocationStates
-                .SingleOrDefaultAsync(row => row.SourceId == allocation.SourceId, cancellationToken)
-                ?? throw new InvalidOperationException("Stored allocation source state is missing.");
+                .SingleOrDefaultAsync(row => row.SourceId == allocation.SourceId, cancellationToken);
+            if (sourceState is null)
+            {
+                dbContext.ChangeTracker.Clear();
+                throw new InvalidOperationException("Stored allocation source state is missing.");
+            }
             if (!FinanceExactDecimalText.TryParsePositive(allocation.AmountText, out var amount)
                 || !FinanceExactDecimalText.TryParseNonNegative(sourceState.UnallocatedAmountText, out var available)
                 || !FinanceExactDecimalText.TryParseNonNegative(item.OutstandingAmountText, out var outstanding))
             {
+                dbContext.ChangeTracker.Clear();
                 return Refused(context, CommandOutcome.ValidationFailed,
                     new ValidationIssue("invoiceId", HasAllocationsCode));
             }
@@ -179,13 +184,14 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             CausationId = context.CausationId,
             CancelledAtUtc = now,
         });
-        Audit(context, metadata, cancellation, kind, items.Count, allocations.Select(row => row.Id).ToArray());
-        // The authority is measured again right before the save: a grant withdrawn meanwhile writes nothing.
+        // The authority is measured again right before the save: a grant withdrawn meanwhile writes nothing
+        // (the audit draft is queued only after the fence, so a refusal leaves none behind).
         if (await FenceAsync(context, cancellation, cancellationToken) is { } late)
         {
             dbContext.ChangeTracker.Clear();
             return late;
         }
+        Audit(context, metadata, cancellation, kind, items.Count, allocations.Select(row => row.Id).ToArray());
 
         try
         {
