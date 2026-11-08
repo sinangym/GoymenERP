@@ -218,6 +218,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>SAT-D32: the recorded user closures of "kapanmaya hazır" orders (append-only, at most one per draft).</summary>
     internal DbSet<DraftUserClosureRow> DraftUserClosures => Set<DraftUserClosureRow>();
+    /// <summary>SAT-D30 / SAT-D213: the recorded over-delivery approvals (append-only, numbered per line).</summary>
+    internal DbSet<DraftOverDeliveryApprovalRow> DraftOverDeliveryApprovals => Set<DraftOverDeliveryApprovalRow>();
 
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
@@ -336,6 +338,16 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
+    /// <summary>
+    /// CK_DraftOverDeliveryApprovals_Identity: identities, the line position, the approval number, the basis revision, the smallest
+    /// version an approval can produce (create 1, one line 2, submit 3, approve 4, approve the over-delivery 5) and non-blank texts.
+    /// </summary>
+    internal const string OverDeliveryApprovalIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [ApprovalNo] >= 1 AND [BasisRevision] >= 0 "
+        + "AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ApprovedShipped]) > 0 AND LEN([ApprovedBy]) > 0 "
+        + "AND LEN([CorrelationId]) > 0";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -355,6 +367,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftCustomerRejections(modelBuilder);
         ConfigureDraftForceClosures(modelBuilder);
         ConfigureDraftUserClosures(modelBuilder);
+        ConfigureDraftOverDeliveryApprovals(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
@@ -492,6 +505,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
             // SAT-D176 (EK25): only a subcontract service order's line records its confirmed item type, and that is a service.
             table.HasCheckConstraint("CK_DraftLines_ItemType", "[ItemType] IS NULL OR [ItemType] = N'" + SalesOrderDraft.ServiceItemType + "'");
+            // SAT-D167 (EK24): revision numbers are never negative; a replacement exists only beside a removal and names another line.
+            table.HasCheckConstraint("CK_DraftLines_LineRevision",
+                "([AddedInRevision] IS NULL OR [AddedInRevision] >= 0) AND ([RemovedInRevision] IS NULL OR [RemovedInRevision] >= 0) "
+                + "AND ([ReinstatedInRevision] IS NULL OR [ReinstatedInRevision] >= 0) "
+                + "AND ([ReplacedByLineId] IS NULL OR ([RemovedInRevision] IS NOT NULL AND [ReplacedByLineId] <> [LineId] "
+                + "AND [ReplacedByLineId] <> '00000000-0000-0000-0000-000000000000'))");
             table.HasCheckConstraint("CK_DraftLines_Window",
                 "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
         });
@@ -1114,6 +1133,30 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D30 / SAT-D213: the recorded over-delivery approvals — append-only history beside the draft, numbered per line, one per
+    // version step. The line stays as it is; a larger shipped total is approved again under the next number.
+    private void ConfigureDraftOverDeliveryApprovals(ModelBuilder modelBuilder)
+    {
+        var approval = modelBuilder.Entity<DraftOverDeliveryApprovalRow>();
+        approval.ToTable("DraftOverDeliveryApprovals", Schema, table =>
+            table.HasCheckConstraint("CK_DraftOverDeliveryApprovals_Identity", OverDeliveryApprovalIdentityConstraint));
+        approval.HasKey(x => new { x.CompanyId, x.DraftId, x.LineId, x.ApprovalNo });
+        approval.HasIndex(x => new { x.CompanyId, x.DraftId, x.DraftVersion }).IsUnique()
+            .HasDatabaseName("UX_DraftOverDeliveryApprovals_DraftVersion");
+        approval.Property(x => x.Ordered).HasMaxLength(128).IsRequired();
+        approval.Property(x => x.ApprovedShipped).HasMaxLength(128).IsRequired();
+        approval.Property(x => x.ApprovedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        approval.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        approval.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -1325,6 +1368,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(DraftLineRow.Quantity), nameof(DraftLineRow.QuantityText),
                         // MOD-03 → Sales (SAT-D93/D97/D105): the tax snapshot moves under a commercial revision or a buyer tax change.
                         nameof(DraftLineRow.TaxJson),
+                        // SAT-D167 (EK24): a line revision passivates a line — its removal revision and replacement, null → value once
+                        // (checked below); the line is never deleted and nothing else of it moves with them.
+                        nameof(DraftLineRow.RemovedInRevision), nameof(DraftLineRow.ReplacedByLineId),
+                        // SAT-D211 (EK36): a rejection reverts the rejected revision's removal — RemovedInRevision R → null with
+                        // ReinstatedInRevision → R (checked below); nothing else of the line moves with them.
+                        nameof(DraftLineRow.ReinstatedInRevision),
                     ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
                     // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an
@@ -1341,6 +1390,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftForceClosureRow => [],
                     // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftUserClosureRow => [],
+                    // SAT-D30 / SAT-D213: a recorded over-delivery approval is APPEND-ONLY — no column of it may change afterwards.
+                    DraftOverDeliveryApprovalRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],
@@ -1379,6 +1430,28 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     InvoiceAttemptRow => [],
                     _ => [],
                 };
+                if (entry.Entity is DraftLineRow)
+                {
+                    // SAT-D167: a line goes passive by a removal (RemovedInRevision null → R, with its replacement). SAT-D211
+                    // (EK36): the ONLY way back is the rejection of that same revision — RemovedInRevision R → null, the replacement
+                    // cleared, ReinstatedInRevision → R. Nothing else moves these columns.
+                    var removedIn = entry.Property(nameof(DraftLineRow.RemovedInRevision));
+                    var replacedBy = entry.Property(nameof(DraftLineRow.ReplacedByLineId));
+                    var reinstatedIn = entry.Property(nameof(DraftLineRow.ReinstatedInRevision));
+                    var removal = removedIn.IsModified && removedIn.OriginalValue is null && removedIn.CurrentValue is not null
+                        && !reinstatedIn.IsModified && (!replacedBy.IsModified || replacedBy.OriginalValue is null);
+                    // The reinstatement's final value is what counts, not whether the column "moved": a line removed again in the SAME
+                    // revision and reverted by that revision's second rejection (or by the next revision after a customer rejection)
+                    // writes the same value (R -> R), which EF does not report as modified.
+                    var reinstatement = removedIn.IsModified && removedIn.OriginalValue is int revision && removedIn.CurrentValue is null
+                        && replacedBy.CurrentValue is null && reinstatedIn.CurrentValue is int back && back == revision;
+                    if ((removedIn.IsModified || replacedBy.IsModified || reinstatedIn.IsModified) && !removal && !reinstatement)
+                    {
+                        throw new InvalidOperationException(
+                            "Satış sipariş satırı bir kez pasif olur ve yalnız o revizyonun reddiyle geri döner.");
+                    }
+                }
+
                 if (entry.Entity is RequestRow)
                 {
                     // API-21: a decision is taken once — Submitted → Approved | Rejected, Approved → Rejected; nothing else.

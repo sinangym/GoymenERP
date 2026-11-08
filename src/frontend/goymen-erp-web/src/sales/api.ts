@@ -66,10 +66,12 @@ import {
   salesDraftForceCloseImpactPath,
   salesDraftForceClosePath,
   salesDraftUserClosePath,
+  salesDraftOverDeliveryApprovalPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
   salesDraftQuantityRevisionPath,
+  salesDraftLineRevisionPath,
   type ApprovalState,
   type ContactInformationOptions,
   type CurrencyOption,
@@ -78,6 +80,7 @@ import {
   type DraftCommercialRevisionRequest,
   type DraftPriceFloorExceptionApprovalRequest,
   type DraftQuantityRevisionRequest,
+  type DraftLineRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
   type DeliveryProgress,
@@ -89,6 +92,7 @@ import {
   type DraftCancelRequest,
   type DraftForceCloseRequest,
   type DraftCloseRequest,
+  type DraftOverDeliveryApprovalRequest,
   type ForceCloseImpact,
   type ForceClosureRead,
   type UserClosureRead,
@@ -1035,6 +1039,49 @@ export async function sendDraftQuantityRevision(
 }
 
 /**
+ * SAT-D167 (EK24): the line revision — the quantity revision's keyed-attempt and strict response rules. Success is the draft
+ * after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftLineRevision(
+  payload: DraftLineRevisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftLineRevisionPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
  * DEC-SAL-003: the delivery-schedule update — the commercial revision's keyed-attempt and strict response rules. Success is
  * the draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
  */
@@ -1175,6 +1222,50 @@ export async function sendDraftClose(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftUserClosePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * SAT-D30 / SAT-D213 / SAT-D216: approve one line's approval-band over-delivery at the shipped total the status read showed.
+ * The force-close's keyed-attempt rules: 200 with the detail whose replay flag agrees with the header and whose identity is the
+ * order's in the bound company, else malformed; the server judges the band, the total and the shipper ≠ approver rule.
+ */
+export async function sendDraftOverDeliveryApproval(
+  payload: DraftOverDeliveryApprovalRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftOverDeliveryApprovalPath(context.draftId),
     {
       method: 'POST',
       headers: {

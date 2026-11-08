@@ -161,6 +161,21 @@ internal sealed class DraftLineRow : ISalesTenantRow
 
     /// <summary>SAT-D176 (EK25): the Product owner's item type confirmed for a subcontract service order's line ("Service"); null otherwise.</summary>
     public string? ItemType { get; set; }
+
+    /// <summary>SAT-D167 (EK24): the revision a line revision added this line in; null = the line came with the create. Written once.</summary>
+    public int? AddedInRevision { get; set; }
+
+    /// <summary>SAT-D167: the revision a line revision removed (passivated) this line in; null while active. Null → value once.</summary>
+    public int? RemovedInRevision { get; set; }
+
+    /// <summary>SAT-D167: for a line removed by a product change, the replacing line's id; set together with the removal only.</summary>
+    public Guid? ReplacedByLineId { get; set; }
+
+    /// <summary>
+    /// SAT-D211 (EK36): the revision whose rejection reverted this line's removal (the line is active again); set only together
+    /// with that reinstatement (RemovedInRevision R → null, ReinstatedInRevision → R).
+    /// </summary>
+    public int? ReinstatedInRevision { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>
@@ -391,6 +406,28 @@ internal sealed class DraftCustomerRejectionRow : ISalesTenantRow
     public string RejectedBy { get; set; } = string.Empty;
     public DateTimeOffset RejectedAtUtc { get; set; }
     public string Reason { get; set; } = string.Empty;
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// SAT-D30 / SAT-D213 (EK37): one recorded over-delivery approval of one order line (append-only; numbered per line): the line
+/// (identity and position), its approval number, the realization basis revision and its measured quantity text, the shipped total
+/// the approval covers (exact text of the line's order unit), who approved it, when, the draft version it produced and the
+/// correlation. Never modified, never deleted; a larger shipped total needs the next approval (SAT-D213).
+/// </summary>
+internal sealed class DraftOverDeliveryApprovalRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public Guid LineId { get; set; }
+    public int LineNo { get; set; }
+    public int ApprovalNo { get; set; }
+    public int BasisRevision { get; set; }
+    public string Ordered { get; set; } = string.Empty;
+    public string ApprovedShipped { get; set; } = string.Empty;
+    public string ApprovedBy { get; set; } = string.Empty;
+    public DateTimeOffset ApprovedAtUtc { get; set; }
     public long DraftVersion { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }

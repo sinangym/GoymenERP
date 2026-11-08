@@ -561,6 +561,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<int>("LineNo")
                         .HasColumnType("int");
 
+                    b.Property<int?>("AddedInRevision")
+                        .HasColumnType("int");
+
                     b.Property<string>("DiscountPercent")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -668,6 +671,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<int?>("ReinstatedInRevision")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RemovedInRevision")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ReplacedByLineId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly?>("RequestedDeliveryDate")
                         .HasColumnType("date");
 
@@ -720,6 +732,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_DraftLines_LineNo", "[LineNo] >= 1");
 
+                            t.HasCheckConstraint("CK_DraftLines_LineRevision", "([AddedInRevision] IS NULL OR [AddedInRevision] >= 0) AND ([RemovedInRevision] IS NULL OR [RemovedInRevision] >= 0) AND ([ReinstatedInRevision] IS NULL OR [ReinstatedInRevision] >= 0) AND ([ReplacedByLineId] IS NULL OR ([RemovedInRevision] IS NOT NULL AND [ReplacedByLineId] <> [LineId] AND [ReplacedByLineId] <> '00000000-0000-0000-0000-000000000000'))");
+
                             t.HasCheckConstraint("CK_DraftLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_DraftLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
@@ -758,6 +772,66 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DraftNumbers_Next", "[Next] >= 1");
 
                             t.HasCheckConstraint("CK_DraftNumbers_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftOverDeliveryApprovalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ApprovalNo")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ApprovedShipped")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("BasisRevision")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("DraftVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Ordered")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "DraftId", "LineId", "ApprovalNo");
+
+                    b.HasIndex("CompanyId", "DraftId", "DraftVersion")
+                        .IsUnique()
+                        .HasDatabaseName("UX_DraftOverDeliveryApprovals_DraftVersion");
+
+                    b.HasIndex("CompanyId", "DraftId", "LineNo");
+
+                    b.ToTable("DraftOverDeliveryApprovals", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_DraftOverDeliveryApprovals_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [ApprovalNo] >= 1 AND [BasisRevision] >= 0 AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ApprovedShipped]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
                 });
 
@@ -2647,6 +2721,22 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftOverDeliveryApprovalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

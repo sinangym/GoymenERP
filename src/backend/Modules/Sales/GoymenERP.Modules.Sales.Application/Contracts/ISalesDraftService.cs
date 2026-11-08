@@ -65,6 +65,13 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    // SAT-D167 (EK24) — the line revision under `sales.orders.quantity.write`: lines added, unshipped lines removed (passive) or
+    // given another product, with a reason; an APPROVED order archives its approved revision first and advances to the next one
+    // for re-approval and customer acceptance. A line with a shipment (allocation, loading instruction, dispatch) is refused.
+    Task<SalesOrderDraftResponse> ReviseLinesAsync(Guid draftId, SalesDraftLineRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Satır revizyonu bu serviste yok.");
+
     // API-04 (DEC-SAL-002, DEC-SAL-008) — the header revision under `sales.orders.header.write`: customer account, currency,
     // due terms, sales owner and delivery references replaced with a reason; an APPROVED order archives its approved revision
     // (with its header) first and advances to the next one for re-approval. The read of the revisable header is
@@ -135,6 +142,14 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// SAT-D30 / SAT-D213 / SAT-D216: POST …/{id}/over-delivery-approval — one line's approval-band over-delivery approved at the
+    /// shipped total the user saw, under <c>sales.orders.over-delivery.approve</c>; the shipper never approves (fail-closed when
+    /// the delivery owner does not name the shipper).
+    /// </summary>
+    Task<SalesOrderDraftResponse> ApproveOverDeliveryAsync(Guid draftId, SalesDraftOverDeliveryApprovalRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;

@@ -133,8 +133,9 @@ public static class SalesRealizationCalculator
     /// The line's realization. <paramref name="ordered"/> must be positive and in the same unit as <paramref name="shipped"/>;
     /// <paramref name="tolerance"/> is required whenever <see cref="NeedsTolerance"/> is true. An arithmetic overflow of a
     /// malformed input escapes as <see cref="OverflowException"/>; the caller shows no state rather than a wrong one.
-    /// <paramref name="overDeliveryApproved"/> is whether an over-delivery approval is recorded for the line (SAT-D30); no such
-    /// record exists yet, so callers pass false and an approval-band over-delivery stays AwaitingApproval (fail-closed).
+    /// <paramref name="overDeliveryApproved"/> is whether a recorded over-delivery approval covers the line's shipped total
+    /// (SAT-D30 / SAT-D213: <see cref="SalesOrderDraft.IsOverDeliveryApproved"/>); without one an approval-band over-delivery stays
+    /// AwaitingApproval (fail-closed).
     /// </summary>
     public static LineRealization Line(Quantity ordered, Quantity shipped, bool lineClosed, SalesDeliveryTolerance? tolerance,
         bool overDeliveryApproved = false)

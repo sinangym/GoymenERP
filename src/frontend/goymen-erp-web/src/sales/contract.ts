@@ -31,6 +31,8 @@ export const salesDraftPriceFloorExceptionApprovalPath = (id: string) =>
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
 /** DEC-SAL-002 / AT-023: the quantity revision (POST, the quantity control's name). */
 export const salesDraftQuantityRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/quantity-revision`
+/** SAT-D167 (EK24): the line revision (add a line, remove an unshipped line, change an unshipped line's product). */
+export const salesDraftLineRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/line-revision`
 /** DEC-SAL-003: the delivery-schedule update (POST) and its history (GET). */
 export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedule`
 export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
@@ -48,6 +50,8 @@ export const salesDraftForceCloseImpactPath = (id: string) => `${salesDraftDetai
 export const salesDraftForceClosePath = (id: string) => `${salesDraftDetailPath(id)}/force-close`
 /** SAT-D32: the user closure of a "kapanmaya hazır" order (POST, the close control's name) and its record (GET, the draft read). */
 export const salesDraftUserClosePath = (id: string) => `${salesDraftDetailPath(id)}/close`
+/** SAT-D30: POST — one line's approval-band over-delivery approved at the shipped total the user saw. */
+export const salesDraftOverDeliveryApprovalPath = (id: string) => `${salesDraftDetailPath(id)}/over-delivery-approval`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -156,6 +160,27 @@ export interface DraftQuantityRevisionRequest {
   readonly expectedVersion: string
   readonly reason: string
   readonly lines: readonly DraftLineQuantityRequest[]
+}
+
+/**
+ * SAT-D167 (EK24, `SalesDraftLineRemovalV1`): one line taken out of the order — it goes passive (never deleted). For a
+ * product change `replacedByLineId` names the line added in the same revision that replaces it; otherwise null.
+ */
+export interface DraftLineRemovalRequest {
+  readonly lineId: string
+  readonly replacedByLineId: string | null
+}
+
+/**
+ * SAT-D167 (EK24, `SalesDraftLineRevisionRequest`): every member present — the expected version, the reason, the added lines
+ * in the create's line shape (client-minted ids) and the removals. At least one change. An approved order is archived and
+ * re-enters approval (Rev+1); every rule (unshipped, the create's line rules, fason, tax) is the server's.
+ */
+export interface DraftLineRevisionRequest {
+  readonly expectedVersion: string
+  readonly reason: string
+  readonly added: readonly DraftLineRequest[]
+  readonly removed: readonly DraftLineRemovalRequest[]
 }
 
 /**
@@ -460,6 +485,22 @@ export interface DraftLine {
    * nulls ⇒ there is none. Decided by the narrow `sales.orders.price.read`; the draft read alone never discloses.
    */
   readonly priceDisclosure: PriceDisclosure
+  /** SAT-D167 (EK24, additive): "Rev.N" on a line a line revision added; absent for a line that came with the create. */
+  readonly addedInRevision?: string
+}
+
+/** SAT-D167 (EK24, `SalesOrderDraftRemovedLineV1`): a passive line — out of the order's totals, risk and shipping; history only. */
+export interface DraftRemovedLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly productId: string
+  readonly productCode: string
+  readonly productName: string
+  readonly quantity: string
+  readonly orderUnitCode: string | null
+  readonly removedInRevision: string
+  /** The line added in the same revision that replaced it (a product change); null for a plain removal. */
+  readonly replacedByLineId: string | null
 }
 
 export type PriceDisclosure = 'Visible' | 'Withheld'
@@ -522,6 +563,8 @@ export interface DraftDetail {
   readonly isOwnDraft: boolean
   /** D2: true only when this creator is currently in the SALES_SUPPORT persona. */
   readonly isOwnDecisionRestricted: boolean
+  /** SAT-D167 (EK24, additive): the lines a line revision removed (passive), in line order; absent when there is none. */
+  readonly removedLines?: readonly DraftRemovedLine[]
 }
 
 export interface DraftMutation {
@@ -593,6 +636,12 @@ export const SALES_PROBLEM_CODE = {
   forceCloseImpactChanged: 'sales_force_close_impact_changed',
   // SAT-D32: the order is not "kapanmaya hazır" — the server recomputed the status axes inside the save (not closed).
   orderNotReadyToClose: 'sales_order_not_ready_to_close',
+  // SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval's own answers (409 recorded, 422 block band; the 503s are code-less).
+  overDeliveryNotAwaitingApproval: 'sales_over_delivery_not_awaiting_approval',
+  overDeliveryBlocked: 'sales_over_delivery_blocked',
+  overDeliveryShippedChanged: 'sales_over_delivery_shipped_changed',
+  overDeliveryShipperUnverified: 'sales_over_delivery_shipper_unverified',
+  overDeliverySelfApproval: 'sales_over_delivery_self_approval',
   // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
   // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
   businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
@@ -830,9 +879,12 @@ const LINE_KEYS = [
 ] as const
 
 function decodeLine(value: unknown): DraftLine | null {
-  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode'])
+  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision'])
   if (o === null) return null
   const slices = decodeSlices(o.requestedDeliverySlices)
+  // SAT-D167: absent (or null) for a line of the create; otherwise the revision text the line was added in.
+  if (o.addedInRevision !== undefined && o.addedInRevision !== null
+    && (typeof o.addedInRevision !== 'string' || !REVISION_RE.test(o.addedInRevision))) return null
   const orderUnitCode = o.orderUnitCode === undefined || o.orderUnitCode === null
     ? undefined
     : isText(o.orderUnitCode, 200) && o.orderUnitCode.trim().length > 0
@@ -881,6 +933,7 @@ function decodeLine(value: unknown): DraftLine | null {
     requestedDeliverySlices: slices,
     discountPercent: o.discountPercent,
     priceDisclosure: o.priceDisclosure,
+    ...(typeof o.addedInRevision === 'string' ? { addedInRevision: o.addedInRevision } : {}),
   }
 }
 
@@ -898,7 +951,7 @@ const DETAIL_KEYS = [
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeDraftDetail(value: unknown, expectedId: string | null): DraftDetail | null {
-  const o = exact(value, DETAIL_KEYS)
+  const o = exactWithOptional(value, DETAIL_KEYS, ['removedLines'])
   if (o === null) return null
   const draft = decodeDraftSummary(o.draft)
   if (draft === null || (expectedId !== null && draft.id !== expectedId)) return null
@@ -922,7 +975,9 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
   }
   const approval = decodeApproval(o.approval, draft.approvalState)
   const customerAcceptance = decodeCustomerAcceptance(o.customerAcceptance, draft.revision)
+  const removedLines = decodeRemovedLines(o.removedLines, lines, lineIds, lineNos)
   if (
+    removedLines === null ||
     approval === null ||
     customerAcceptance === null ||
     typeof o.isOwnDraft !== 'boolean' ||
@@ -943,7 +998,51 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     customerAcceptance,
     isOwnDraft: o.isOwnDraft,
     isOwnDecisionRestricted: o.isOwnDecisionRestricted,
+    ...(removedLines === undefined ? {} : { removedLines }),
   }
+}
+
+const REMOVED_LINE_KEYS = [
+  'lineId', 'lineNo', 'productId', 'productCode', 'productName', 'quantity', 'orderUnitCode', 'removedInRevision', 'replacedByLineId',
+] as const
+
+/**
+ * SAT-D167: the passive lines — absent (or null) when there is none; otherwise a non-empty list in line order, each line
+ * number and id once across the active AND passive lines, each replacement naming a line of the order.
+ */
+function decodeRemovedLines(
+  value: unknown,
+  lines: readonly DraftLine[],
+  lineIds: ReadonlySet<string>,
+  lineNos: ReadonlySet<number>,
+): DraftRemovedLine[] | undefined | null {
+  if (value === undefined || value === null) return undefined
+  if (!Array.isArray(value) || value.length === 0) return null
+  const removed: DraftRemovedLine[] = []
+  const ids = new Set(lineIds)
+  const nos = new Set(lineNos)
+  let previous = 0
+  for (const entry of value) {
+    const o = exact(entry, REMOVED_LINE_KEYS)
+    if (
+      o === null || !isReferenceId(o.lineId) || ids.has(o.lineId) || !isPositiveInt(o.lineNo, LIMITS.lines) || nos.has(o.lineNo) ||
+      o.lineNo <= previous || !isReferenceId(o.productId) || !isText(o.productCode, 200) || !isText(o.productName, 500) ||
+      !isDecimal(o.quantity, true) || !isNullable(o.orderUnitCode, (v): v is string => isText(v, 200)) ||
+      typeof o.removedInRevision !== 'string' || !REVISION_RE.test(o.removedInRevision) ||
+      !isNullable(o.replacedByLineId, isReferenceId)
+    ) return null
+    ids.add(o.lineId)
+    nos.add(o.lineNo)
+    previous = o.lineNo
+    removed.push({
+      lineId: o.lineId, lineNo: o.lineNo, productId: o.productId, productCode: o.productCode, productName: o.productName,
+      quantity: o.quantity, orderUnitCode: o.orderUnitCode, removedInRevision: o.removedInRevision, replacedByLineId: o.replacedByLineId,
+    })
+  }
+  // A replacement is a line of the order (the one added in the same revision); it never names the removed line itself.
+  const known = new Set([...lines.map((line) => line.lineId), ...removed.map((line) => line.lineId)])
+  return removed.every((line) => line.replacedByLineId === null || (line.replacedByLineId !== line.lineId && known.has(line.replacedByLineId)))
+    ? removed : null
 }
 
 /** SAT-D115: the rejections, oldest first, each of a revision above Rev.0, never the accepted one, never repeated. */
@@ -1640,6 +1739,16 @@ export interface ForceCloseImpact {
   readonly impactToken: string
   readonly sources: readonly ForceCloseImpactSource[]
   readonly lines: readonly ForceCloseImpactLine[]
+}
+
+/**
+ * `SalesDraftOverDeliveryApprovalRequest` (SAT-D30): every member present — the draft version, the line and the shipped total
+ * exactly as the status read showed it (SAT-D213: the approval covers that total; another total is refused by the server).
+ */
+export interface DraftOverDeliveryApprovalRequest {
+  readonly expectedVersion: string
+  readonly lineId: string
+  readonly shipped: string
 }
 
 /** `SalesDraftForceCloseRequest`: every member present; the reason is required (the server trims and bounds it). */

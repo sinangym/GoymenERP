@@ -169,6 +169,15 @@ public static class SalesRuleCodes
     /// </summary>
     public const string HeaderRevisionQuoteCustomer = "sales_header_revision_quote_customer";
 
+    /// <summary>SAT-D30: an over-delivery approval names a line that is not on the order.</summary>
+    public const string OverDeliveryLineUnknown = "sales_over_delivery_line_unknown";
+
+    /// <summary>
+    /// SAT-D216 (EK37): the person the delivery owner names as having made a shipment of the line does not approve the line's
+    /// over-delivery ("sevki yapan kişi kendi işlemini onaylayamaz; başkası onaylar").
+    /// </summary>
+    public const string OverDeliverySelfApproval = "sales_over_delivery_self_approval";
+
     /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
     public const string DueTermsRequired = "sales_due_terms_required";
 
@@ -328,6 +337,27 @@ public static class SalesRuleCodes
     /// typed per kilogram and approved by the order's internal approval.
     /// </summary>
     public const string SubcontractPriceListNotUsed = "sales_subcontract_price_list_not_used";
+
+    /// <summary>
+    /// SAT-D167 (EK24): a line with any shipment — a dispatch note, a loading instruction or a stock allocation (or a recorded
+    /// remainder change) — is neither removed nor given another product.
+    /// </summary>
+    public const string LineRevisionLineShipped = "sales_line_revision_line_shipped";
+
+    /// <summary>SAT-D167: a product change names a line added in the same revision, and each added line replaces at most one line.</summary>
+    public const string LineReplacementInvalid = "sales_line_replacement_invalid";
+
+    /// <summary>SAT-D219 (EK38): a line with an open linked purchase order or production order is neither removed nor given another product.</summary>
+    public const string LineRevisionLineLinked = "sales_line_revision_line_linked";
+
+    /// <summary>SAT-D211: a quantity, price or header revision waits while the customer-rejected revision's removed lines are to be reinstated.</summary>
+    public const string RevisionReinstatementPending = "sales_revision_reinstatement_pending";
+
+    /// <summary>SAT-D167: a product change must name another product (the same product's quantity or price has its own revision).</summary>
+    public const string LineReplacementSameProduct = "sales_line_replacement_same_product";
+
+    /// <summary>SAT-D167: a line revision keeps at least one active line on the order (a wrong order is cancelled, DEC-SAL-005).</summary>
+    public const string LineRevisionNoLinesLeft = "sales_line_revision_no_lines_left";
 
     /// <summary>SAT-D201 (EK31): a subcontract service order is not submitted while a service line has no per-kg price entered.</summary>
     public const string SubcontractPriceRequired = "sales_subcontract_price_required";

@@ -7,7 +7,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) — and, since shell contract 1.8,
 /// the six S-01 request / quote pool screens of UI-20 with their controls, and since 1.9 the S-07 dispatch list and the S-08
 /// invoice candidates (UI-60 / UI-61), since 1.11 the UI-80 Sales reports screen, since 1.12 the header-revision control
-/// of the detail (API-04) and since 1.13 the user-closure control of the detail (SAT-D32) — to the
+/// of the detail (API-04), since 1.13 the user-closure control of the detail (SAT-D32) and since 1.14 the over-delivery approval
+/// control of the detail (SAT-D30) — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -25,7 +26,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.13";
+    public const string OwnerContractVersion = "1.14";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -90,6 +91,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// "kapanmaya hazır" order. Create, approve, cancel and force-close never confer it (shell contract 1.13).
     /// </summary>
     public const string CloseCapabilityId = "sales.orders.close";
+
+    /// <summary>
+    /// SAT-D30 / SAT-D168: the over-delivery approval CONTROL of the S-04 detail (read + the over-delivery approval name) — the
+    /// approval of a line's approval-band over-delivery at its shipped total. No other Sales name confers it (shell contract 1.14).
+    /// </summary>
+    public const string OverDeliveryApproveCapabilityId = "sales.orders.over-delivery.approve";
 
     /// <summary>
     /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
@@ -274,6 +281,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = CloseCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersClose],
+        },
+        // SAT-D30: the over-delivery approval is a control of the detail, like the force-close.
+        detail with
+        {
+            CapabilityId = OverDeliveryApproveCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersOverDeliveryApprove],
         },
         .. RequestDeclarations(),
         .. QuoteDeclarations(),

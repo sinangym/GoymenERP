@@ -13,8 +13,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 public static class SalesPermissionManifestV1
 {
     // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write; v19 (SAT-D32 /
-    // SAT-D168): sales.orders.close; v20 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write.
-    public const int Version = 20;
+    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write.
+    public const int Version = 21;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -125,6 +125,16 @@ public static class SalesPermissionManifestV1
     public const string OrdersClose = "sales.orders.close";
 
     /// <summary>
+    /// SAT-D30 / SAT-D168 (EK24), SAT-D187–D190 (EK28): approving an over-delivery in the tolerance APPROVAL band — POST
+    /// …/{id}/over-delivery-approval. The decision names Satış Uzmanı, Satış Müdürü, Genel Müdür and Admin; which persona holds
+    /// it is a human gate (registered, granted to no role). Its own name: the create, approve, price, schedule, quantity, cancel
+    /// and force-close names do NOT confer it and it confers none of them. SAT-D216 (the shipper does not approve their own
+    /// over-delivery) is a rule of the command, not of the catalogue. Company-wide; not Critical (no approved source adds
+    /// grant-time dual control).
+    /// </summary>
+    public const string OrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
+
+    /// <summary>
     /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
     /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
     /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
@@ -189,7 +199,7 @@ public static class SalesPermissionManifestV1
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

@@ -95,8 +95,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:qaMB6mbNc6qATt250LngEo0VmqoF1thHZvzAuduQL0A";
+        "sha256:vAohlq3Zfht0zA5Csbl9jcYKSB5Rzk2EUkmml4PS3Rc";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -145,8 +147,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:yFn_7FCDCKmTO0guSgSWexWHV3GwfxS_IL6xzc7OtHc";
+        "sha256:zUWz-x01x6rvTpVVgGfo4FQJfA3ldkoUR3MpF2nhHm8";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -181,8 +185,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:olmg3SN820766851ThMYU-6vn2Z1BJ1UgKzhewADNx0";
+        "sha256:5CrZzIH4vesQWbnm1aexXRXLwi16lxkHF1Ime8w8odE";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -428,28 +434,40 @@ internal static class ShellCapabilityRegistryAuthorities
     // "...SalesV15..." rows were re-derived in place.
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:zv4IJF-oXqK4SQnhiM1VuJpUFo_TapqAqop95mwupxA";
+        "sha256:DriVddfvdHQpGCqUUyJ_HWBOkFN01VvfL7tp-3uudqE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:Ut0DOh0G8FJ0TCUUJs64LGGqlETH-7jgn1pxmWu6hD0";
+        "sha256:ZoQiH6ChFnrcFOwPyj0jLiRgMxZVXbBckOozHhacgqY";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:toUMAKG-xNoU96m8tceNLXCjhTdzwT7fO9BMuRBEp20";
+        "sha256:1Ew3beeGox-PqZDbep26AvMQ1aCtcSPlaG4i6aaqHqs";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:IJczxdjT31pLUt85CbHr074U1J--2ymM4oiKhGbguvs";
+        "sha256:4GRUThXigA1FddEN1CG-jehqTT08IQjNGuYjLIsF-VU";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:pHM1xJCE8Bk0fPSrUWs0y3z_2qYgeRwmTX-YMNp2O5U";
+        "sha256:I_loKB0uYmmv8To6CJhUejSSvkLRHGjhnq3Oa-cHwxA";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:4tgXUAerVY23ibW7G2_HT8jjn4O0A6qSObMy-4uVptw";
+        "sha256:WolzED8wNECsTyU0x8v7kz5YeOyx-_XBf-1xTIpZTEM";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -457,8 +475,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // name and value; no host composes it any more.
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
+    // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:m9bzMjAlj9w09Qzbsxgwbxi1-S3vVaGpJfnbKY4Wx20";
+        "sha256:mScXv24QdmeinY42BK0XtiMiUwqFSSS3hWLATI5tzGY";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

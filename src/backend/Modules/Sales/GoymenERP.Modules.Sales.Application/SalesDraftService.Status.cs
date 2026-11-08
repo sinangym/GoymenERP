@@ -214,7 +214,8 @@ public sealed partial class SalesDraftService
     /// quantities, never the new unapproved ones. Null (fail-closed) when that approved revision does not hold every current
     /// line in the same unit with an exact quantity.
     /// </summary>
-    private sealed record MeasurementBasis(string Revision, IReadOnlyDictionary<Guid, (Quantity Quantity, string Text)> Lines);
+    private sealed record MeasurementBasis(string Revision, IReadOnlyDictionary<Guid, (Quantity Quantity, string Text)> Lines,
+        int RevisionNo);
 
     private static MeasurementBasis? Basis(SalesOrderDraft draft)
     {
@@ -224,12 +225,17 @@ public sealed partial class SalesDraftService
         if (acceptedFallback is null && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count == 0))
         {
             return new MeasurementBasis(SalesDraftApiV1.RevisionText(draft.Revision),
-                draft.Lines.ToDictionary(line => line.Id, line => (line.Quantity, line.QuantityText)));
+                draft.Lines.ToDictionary(line => line.Id, line => (line.Quantity, line.QuantityText)), draft.Revision);
         }
 
         var approved = acceptedFallback ?? draft.ArchivedRevisions[^1];
         var lines = new Dictionary<Guid, (Quantity Quantity, string Text)>();
-        foreach (var line in draft.Lines)
+        // SAT-D211 (EK36; K3 review A P1-2): while the customer has rejected the current revision, the lines it removed ship under
+        // the accepted revision until the next revision reinstates them — they are measured with it.
+        var measured = acceptedFallback is not null && draft.ApprovalState == InternalApprovalState.Approved
+            ? draft.AllLines.Where(line => !line.IsRemoved || (line.RemovedInRevision == draft.Revision && line.AddedInRevision != draft.Revision))
+            : draft.Lines;
+        foreach (var line in measured)
         {
             var archived = approved.Lines.FirstOrDefault(candidate => candidate.LineId == line.Id);
             if (archived is null || archived.OrderUnitId != line.OrderUnit.UnitId
@@ -248,7 +254,7 @@ public sealed partial class SalesDraftService
             }
         }
 
-        return new MeasurementBasis(SalesDraftApiV1.RevisionText(approved.Revision), lines);
+        return new MeasurementBasis(SalesDraftApiV1.RevisionText(approved.Revision), lines, approved.Revision);
     }
 
     private async Task<SalesDraftRealizationAxisV1> RealizationAsync(Scope scope, string? permission, SalesOrderDraft draft,
@@ -296,9 +302,11 @@ public sealed partial class SalesDraftService
             LineRealization realization;
             try
             {
-                // SAT-D30: no over-delivery approval record exists yet, so an approval-band over-delivery awaits approval. A line
-                // that needs no tolerance (nothing shipped, open) has the same NotStarted shape in every branch.
-                realization = SalesRealizationCalculator.Line(basisQuantity, shipped, closed, policy?.Tolerance, overDeliveryApproved: false);
+                // SAT-D30 / SAT-D213: an approval-band over-delivery is approved only while a recorded approval covers this shipped
+                // total against this measured quantity; otherwise it awaits approval. A line that needs no tolerance (nothing
+                // shipped, open) has the same NotStarted shape in every branch.
+                realization = SalesRealizationCalculator.Line(basisQuantity, shipped, closed, policy?.Tolerance,
+                    draft.IsOverDeliveryApproved(line.Id, basisQuantity, shipped));
             }
             catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
             {

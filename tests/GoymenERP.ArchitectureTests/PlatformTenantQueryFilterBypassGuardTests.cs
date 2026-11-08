@@ -432,10 +432,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
+            // SAT-D167 (EK24): +3 SalesOrderLineRevision facts (an approved order's line revision adds a row, passivates a line,
+            // archives Rev.0 and rebuilds; the write guard, CK_DraftLines_LineRevision and the 51142 rollback refusal; the route's grant,
+            // replay and company refusals), kept
+            // ordinal-sorted (1f679068… -> ba7de976…).
+            // SAT-D211 (EK36; K3 review B P2-1): +1 SalesOrderLineRevision fact (a rejected removal brings the line back in the
+            // stored order, the line port and the approved-line list; the guard admits no other reinstatement move), kept
+            // ordinal-sorted (ba7de976… -> ee57b276…).
+            // SAT-D219 (EK38): +1 SalesOrderLineRevision fact (the route refuses a removal of a line with an open linked supply, asks the
+            // owner for the server company, and passes once the link is closed), kept ordinal-sorted (ee57b276… -> a2ac1f92…).
+            // K3 review A/B P1-1 + B P2-2 (SAT-D211 / SAT-D219): +3 SalesOrderLineRevision facts (the second rejection of one revision, a
+            // customer rejection after a second removal, the submission and approval re-read of the linked supply on the real routes),
+            // kept ordinal-sorted (a2ac1f92… -> a58234a1…).
+            // K3 review A P1-1 / P2-1 (SAT-D211): +1 SalesOrderLineRevision fact (a quantity revision waits for the reinstatement after a
+            // customer rejection; an empty line revision reinstates), kept ordinal-sorted (a58234a1… -> 96505e5c…).
+            // Merged with main's #952 (SAT-D32) Sales facts: recomputed over the union, ordinal-sorted (-> 78be7220…).
+            ["tools/relational_inventory/sales.txt"] =
+            // SAT-D30 / SAT-D213 (merged over SAT-D32 and SAT-D167): +6 SalesOrderOverDeliveryApproval facts (the one-save approval with
+            // replay, the real Logistics owner's fail-closed refusal, 404 / 403 / self-approval, the 51213 rollback refusal, two races),
+            // unioned with main's facts and kept ordinal-sorted (78be7220… -> 249ea3fc…).
             // S5 API-32 (Fatura cekirdegi 1): +2 SalesInvoice facts (the invoice draft's one save, replay, active-share index and
             // company isolation; the 51221 rollback refusal), kept ordinal-sorted (95e16c66... -> 25ed266d...).
-            ["tools/relational_inventory/sales.txt"] =
-                "25ed266d72871cc0061dc47339a8da18d1cf287d3da1738cf802cb84d1b104b9",
+                "d9564cc81ad2482dc9d8b6f939243f20892898a92d775cfac9b8244d9166333a",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -546,12 +564,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Drafts.BuyerTaxJson and DraftLines.TaxJson; no query-filter bypass or direct database surface.
             // Re-fingerprinted for SAT-D175/D176 (EK25): Drafts / DraftRevisionHeaders.IsSubcontractService and DraftLines.ItemType
             // (CK_DraftLines_ItemType); the write guard is NOT widened (the flag and the item type never change after the insert).
+            // Re-fingerprinted for SAT-D167 (EK24): DraftLines.AddedInRevision / RemovedInRevision / ReplacedByLineId
+            // (CK_DraftLines_LineRevision); the write guard is widened by exactly DraftLines.RemovedInRevision and ReplacedByLineId,
+            // and a removal is never undone or changed (a passive line never comes back).
+            // Re-fingerprinted for SAT-D211 (EK36): DraftLines.ReinstatedInRevision (in CK_DraftLines_LineRevision); the guard admits it
+            // and exactly one way back — RemovedInRevision R → null with the replacement cleared and ReinstatedInRevision → R.
+            // Re-fingerprinted for K3 review A/B P1-1: the way back judges ReinstatedInRevision's FINAL value (== R), not whether EF
+            // reports it modified (a line removed again in the same revision and reverted again writes R -> R).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
+            // Re-fingerprinted for SAT-D30 / SAT-D213 (merged over SAT-D32 and SAT-D167): the company-filtered DraftOverDeliveryApprovals
+            // table (company-leading key, FKs to the draft and its line, CK_DraftOverDeliveryApprovals_Identity, append-only in the write guard).
                 // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): Invoices / InvoiceLines / InvoiceAttempts tenant rows under the
                 // same company filter, the filtered unique UX_InvoiceLines_ActiveShipment and their check constraints; the write guard
                 // admits no modification of them (append-only); no query-filter bypass or direct database surface.
-                "364d7ad5f85e3147db0c43e59ea794d5dca62faf448dc531a456ae81730aa636",
+                "1a8c08ee488963902f914074357ad673489fa97094a13eb5fbf4e86c5b9d022d",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1552,10 +1579,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
                     // Re-fingerprinted for S-1 / MOD-03: the draft service also receives the supply owners' optional linked-supply
                     // adapters (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D219 (EK38): the draft service also receives the supply owners' optional recorder
+                    // declarations (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): the invoice store over the same SalesStore and the invoice
                     // service factory (company context resolved, never registered); provider branch and token counts unchanged.
                     new(
-                        "1304d380073d60dcb6f92d160de4ec175e07d8cb385e2f9f3e1336779e17d98a",
+                        "eb8a79e024193377ae7551c8f60e9a4df8582021e148a5fd23e2f5438e230aa2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1602,10 +1631,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
                     // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D167 (EK24): the line revision passivates removed line rows (RemovedInRevision /
+                    // ReplacedByLineId) and inserts added line rows, and the restore rebuilds both, through the same filtered context;
+                    // SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D211 (EK36): a rejection (and the next revision of a customer-rejected one) writes the
+                    // reverted lines' revision columns (ReinstatedInRevision) through the same filtered context, checked move by move;
+                    // the restore rebuilds reinstatements; SqlClient count unchanged.
+                    // Re-fingerprinted for K3 review A/B P1-1: the line revision's audit picture also carries ReinstatedInRevision.
+                    // Re-fingerprinted for K3 review A P1-1 / P2-1: an empty line revision that only reinstates is a valid line command.
                     // Re-fingerprinted for S5 API-32 (Fatura cekirdegi 1): the list cursor gains the invoice ordering label (the invoice
                     // store itself is the partial SalesStore.Invoices.cs over the same filtered context); SqlClient count unchanged.
                     new(
-                        "f5c0a0941bcfa247f878395b303d468624a99e0931063d78efa501c6ab1b6346",
+                    // Re-fingerprinted for SAT-D30 / SAT-D213: the over-delivery approval write (one save: approval row, header version,
+                    // attempt, audit) and its restore through the same filtered context; SqlClient count unchanged.
+                        "1012e77656b6c2b4afc264f654d4ad4e92715b7d8e4c4eaec06c233731083587",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2314,10 +2353,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // SAT-D167 (EK24): the Down's only raw SQL is Sales' refusal (51142, used by no other migration) while any line was
+                // added, removed or (SAT-D211) reinstated by a line revision; the THROW precedes every drop. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102212525_AddDraftLineRevisions.cs"] =
+                    new("32e82f8eec6987b42b9a4b1ae631cb6256d0798705bd6f9e29728c748c37766d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // SAT-D32: the Down's only raw SQL is Sales' refusal (51212, used by no other migration) while any user closure row or
                 // recorded close attempt exists; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261103073447_AddDraftUserClosures.cs"] =
                     new("586dd38857e8a9c76bb654243710782e28d627ce64abc58ea7783f6c8b5c0d97",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D30 / SAT-D213: the Down's only raw SQL is Sales' refusal (51213, used by no other migration) while any
+                // over-delivery approval is recorded; the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261107103824_AddDraftOverDeliveryApprovals.cs"] =
+                    new("666f5e3e6cc223d58cc46874a5ea36d36c79a55f66f33c331fd6e487a81786d4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // S5 API-32 (Fatura cekirdegi 1): the Down's only raw SQL is Sales' refusal (51221, used by no other migration) while

@@ -111,6 +111,7 @@ import { SalesDraftLinePricing } from './SalesDraftLinePricing'
 import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
+import { SalesDraftLineRevisionForm } from './SalesDraftLineRevisionForm'
 import { SalesDraftHeaderRevisionForm } from './SalesDraftHeaderRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
@@ -256,6 +257,7 @@ export function SalesDraftDetailPage() {
           <SalesOrderStatusAxes
             key={`status:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             detail={outcome.data}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
           />
         ) : null
       }
@@ -303,6 +305,14 @@ export function SalesDraftDetailPage() {
           <>
             <SalesDraftQuantityRevisionForm
               key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+            {/* SAT-D167 (EK24): the line revision (add / remove / product change) beside the quantity revision. */}
+            <SalesDraftLineRevisionForm
+              key={`lines:${namespace ?? ''}:${outcome.data.draft.id}`}
               shell={shell}
               detail={outcome.data}
               companyId={companyId}
@@ -793,6 +803,7 @@ export function DraftView({
                 {detail.lines.map((line) => (
                   <LineView key={line.lineId} line={line} unitCodes={unitCodes} />
                 ))}
+                {detail.removedLines === undefined ? null : <RemovedLinesView detail={detail} />}
                 {quantityRevision}
                 {deliverySchedule}
               </section>
@@ -1206,7 +1217,9 @@ function commandNotice(attempt: CommandAttempt): string | null {
                   : T.approval.unexpected
       // SAT-D111 / SAT-D112: a submission or approval of a revised order refused below the shipped or loaded total.
       const floor = (attempt.problem?.errors ?? []).map((error) =>
-        error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
+        error.code === 'sales_line_revision_line_shipped' ? T.approval.lineShipped
+          : error.code === 'sales_line_revision_line_linked' ? T.approval.lineLinked
+          : error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
           : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded
             // SAT-D123 (EK18): no approval without due terms.
             : error.code === 'sales_due_terms_required' ? T.approval.dueTermsRequired
@@ -1224,6 +1237,27 @@ function commandNotice(attempt: CommandAttempt): string | null {
   }
 }
 
+/** SAT-D167 (EK24): the passive lines a line revision removed — history only, out of every order total. */
+function RemovedLinesView({ detail }: { readonly detail: DraftDetail }) {
+  const R = T.removedLines
+  const lineNoOf = (lineId: string | null) => (lineId === null ? null : detail.lines.find((line) => line.lineId === lineId)?.lineNo ?? null)
+  return (
+    <section className={styles.line} aria-labelledby="sales-removed-lines-heading" data-testid="sales-removed-lines">
+      <h3 id="sales-removed-lines-heading" className={styles.lineTitle}>{R.heading}</h3>
+      <p className={styles.muted}>{R.description}</p>
+      <ul>
+        {(detail.removedLines ?? []).map((line) => (
+          <li key={line.lineId} data-testid={`sales-removed-line-${line.lineNo}`}>
+            {line.lineNo}. {line.productCode} — {line.productName} · {line.quantity}{line.orderUnitCode === null ? '' : ` ${line.orderUnitCode}`}
+            {' · '}{R.removedIn(line.removedInRevision)}
+            {line.replacedByLineId === null ? null : <>{' · '}{R.replacedBy(lineNoOf(line.replacedByLineId))}</>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
   const plan = unplannedQuantity(line, line.requestedDeliverySlices)
   const headingId = `sales-line-${line.lineId}`
@@ -1232,6 +1266,9 @@ function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unit
       <h3 id={headingId} className={styles.lineTitle}>
         {line.lineNo}. {line.productCode} — {line.productName}
       </h3>
+      {line.addedInRevision === undefined ? null : (
+        <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-added-in`}>{T.addedInRevision(line.addedInRevision)}</p>
+      )}
       <dl className={`${styles.facts} ${styles.lineFacts}`} data-testid={`sales-line-${line.lineNo}-facts`}>
         <div>
           <dt>{T.productVersion}</dt>
