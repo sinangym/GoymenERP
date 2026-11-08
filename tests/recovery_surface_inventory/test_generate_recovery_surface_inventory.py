@@ -436,7 +436,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 133, "durableStores": 24},
+            {"dbContexts": 18, "migrations": 134, "durableStores": 25},
             self.inventory["counts"],
         )
         actual = {
