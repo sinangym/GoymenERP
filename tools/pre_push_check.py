@@ -6,7 +6,11 @@ Usage:
   python3 tools/pre_push_check.py --full     # also recovery/release pin tests (~8 min, needs a clean git tree)
   python3 tools/pre_push_check.py --list     # print the steps and exit
 
-Every step runs the same command CI runs. A step whose tool is missing (for
+This is a convenience pre-check, NOT a substitute for CI evidence: it does not
+replace the required CI checks, the SQL Server shards, the architecture/api/modules
+test groups or the recovery/release jobs, and its result is never merge evidence.
+
+Every step runs the same command CI runs, from the repository root. A step whose tool is missing (for
 example `dotnet`) is reported as SKIPPED, never as passed; the exit code is 1
 if any step fails, 0 otherwise. Nothing is uploaded and no CI job is started.
 """
@@ -17,8 +21,10 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 PY = ("python3", "-I", "-S", "-B")
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def unittest_step(directory: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
@@ -33,12 +39,16 @@ LIGHT = (
     ("git diff --check", ("git", "diff", "--check", "origin/main...HEAD"), ("git",)),
     ("dotnet bootstrap integrity", (*PY, "tools/validate_dotnet_bootstrap_integrity.py"), ()),
     unittest_step("tests/dotnet_bootstrap_integrity"),
+    ("task manifest validator", (*PY, "tools/validate_task_manifest.py"), ()),
+    unittest_step("tests/task_manifest_validator"),
     ("delivery backlog validator", (*PY, "tools/validate_delivery_backlog.py"), ()),
     unittest_step("tests/delivery_backlog_validator"),
     # Test-group inventory: group/shard partition logic and proof schema.
     unittest_step("tests/backend_test_group_verifier"),
     unittest_step("tests/rcsi_relational_acceptance_verifier"),
     unittest_step("tests/ci_safe_trx_summary"),
+    unittest_step("tests/openapi_contract_drift"),
+    unittest_step("tests/pre_push_check"),
     # OpenAPI drift: generate with the contract test, then compare with the baseline.
     (
         "OpenAPI contract generation",
@@ -60,7 +70,7 @@ FULL = (
 )
 
 
-def run(steps: tuple) -> int:
+def run(steps: tuple, cwd: Path = REPO_ROOT) -> int:
     failed: list[str] = []
     skipped: list[str] = []
     for name, command, needs in steps:
@@ -70,7 +80,7 @@ def run(steps: tuple) -> int:
             skipped.append(name)
             continue
         started = time.monotonic()
-        result = subprocess.run(command, check=False, capture_output=True, text=True)
+        result = subprocess.run(command, check=False, capture_output=True, text=True, cwd=cwd)
         seconds = time.monotonic() - started
         if result.returncode == 0:
             print(f"OK       {name} ({seconds:.1f}s)", flush=True)
