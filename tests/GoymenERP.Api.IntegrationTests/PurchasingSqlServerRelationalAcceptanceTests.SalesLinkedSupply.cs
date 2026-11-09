@@ -34,10 +34,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Guid requestId = await StoreApprovedRequestAsync(run, a, request, "sl-a");
 
         Guid approvedOrder, draftOrder, cancelledOrder, manualOrder;
-        Guid techLine = Guid.NewGuid();
         await using (StoreScope s = run.Store(CompanyA))
         {
-            // Approved: SL1 100 kg (25 kg of it broken down to a technical slice), SL2 40 kg, the other Sales order's line 15 kg.
+            // Approved: SL1 100 kg, SL2 40 kg, the other Sales order's line 15 kg.
             PurchaseOrder o1 = PurchaseOrder.CreateForRequest(Guid.NewGuid(), a.Company, a.Party, requestId, T0);
             Guid general1 = Guid.NewGuid();
             o1.AddLine(o1.Version, general1, Product, KgUnit, Kg(100m), reqLine1, T0);
@@ -45,9 +44,6 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             o1.AddLine(o1.Version, Guid.NewGuid(), Product, KgUnit, Kg(15m), reqOther, T0);
             approvedOrder = (await s.Store.StoreOrderAsync(run.Envelope("sl-o1"), Hash("sl-o1"), a.Account, Day, () => o1, VersionsOf(o1))).Order.Order.Id;
             await ApproveOrderAsync(run, s, approvedOrder, "sl-o1-approve");
-            await s.Store.MutateOrderAsync(run.Envelope("sl-o1-breakdown"), Hash("sl-o1-breakdown"), "purchasing.purchase-order.break-down.v1", approvedOrder,
-                (order, now) => order.BreakDown(order.Version, general1, techLine, Product, Kg(25m), now),
-                new PurchasingMutationAudit("purchasing.purchase-order.break-down.v1", "Update", "SENTETIK teknik kırılım"));
 
             // Draft: never listed.
             PurchaseOrder o2 = Order(a, requestId, reqLine1, 10m);
@@ -87,7 +83,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var all = await ReadLinkedSupplyAsync(run, CompanyA, CompanyA, salesOrder, null);
         Assert.Equal(2, all.Count);
         Assert.All(all, line => Assert.Equal((CompanyA, approvedOrder, "Approved"), (line.CompanyId, line.PurchaseOrderId, line.Status)));
-        // 100 kg ordered on the general line (75 general + 25 technical) is ONE commitment of 100, not two lines.
+        // Technical-slice folding is pinned by the unit tests; no production command creates a slice before the acceptance slice.
         Assert.Equal("100", Assert.Single(all, line => line.SalesOrderLineId == salesLine1).OpenQuantityText);
         Assert.Equal("40", Assert.Single(all, line => line.SalesOrderLineId == salesLine2).OpenQuantityText);
         Assert.DoesNotContain(all, line => line.PurchaseOrderId == draftOrder || line.PurchaseOrderId == cancelledOrder || line.PurchaseOrderId == manualOrder || line.PurchaseOrderId == orderB);
