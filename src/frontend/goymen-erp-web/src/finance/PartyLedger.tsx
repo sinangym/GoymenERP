@@ -142,6 +142,8 @@ function SourceLinks({ entry }: { readonly entry: PartyLedgerEntry }) {
       return <Link to={manualBankPaymentDetailPath(entry.sourceId)}>{`${OPEN_PAYMENT} · ${reference(entry.sourceId)}`}</Link>
     case 'OpenItem':
     case 'PayableOpenItem':
+    case 'OpenItemCancellation':
+    case 'PayableOpenItemCancellation':
       return <span>{`${OPEN_ITEM_NO_SCREEN} · ${reference(entry.documentId ?? entry.sourceId)}`}</span>
   }
 }
@@ -164,7 +166,7 @@ function CurrencyTable({ currency, codes }: { readonly currency: PartyLedgerCurr
       </thead>
       <tbody>
         {currency.entries.map((entry) => (
-          <tr key={entry.entryId} data-ledger-entry={entry.entryId} data-ledger-kind={entry.kind}>
+          <tr key={`${entry.kind}:${entry.entryId}`} data-ledger-entry={entry.entryId} data-ledger-kind={entry.kind}>
             <td>{dayText(entry.occurredOn)}</td>
             <th scope="row">{KIND_LABEL[entry.kind]}</th>
             <td><SourceLinks entry={entry} /></td>

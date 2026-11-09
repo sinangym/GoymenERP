@@ -24,9 +24,14 @@ public sealed record UnitProfileV1(Guid CompanyId, Guid UnitId, string UnitCode,
     string DimensionCode, bool IsKilogram, ProfileVersionV1 Profile, int Scale,
     bool IsActive, DateOnly EffectiveFrom, DateOnly? EffectiveThrough);
 
+/// <summary>
+/// A money profile as answered for one operation. <see cref="Scale"/> is the final amount's decimals.
+/// <see cref="UnitPriceScale"/> (A2a-1b, optional and additive) is the unit-price decimals approved for
+/// THIS operation, or null when none is approved for it: a consumer must then not invent one.
+/// </summary>
 public sealed record MoneyProfileV1(Guid CompanyId, Guid CurrencyId, string CurrencyCode,
     string Operation, ProfileVersionV1 Profile, int Scale, bool IsActive,
-    DateOnly EffectiveFrom, DateOnly? EffectiveThrough);
+    DateOnly EffectiveFrom, DateOnly? EffectiveThrough, int? UnitPriceScale = null);
 
 /// <summary>
 /// Eligibility applies only to this company, operation and exact date pair.

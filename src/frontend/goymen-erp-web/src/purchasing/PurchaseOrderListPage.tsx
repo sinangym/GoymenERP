@@ -28,7 +28,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { fetchPurchaseOrders } from './api'
 import { PURCHASING_CAPABILITY, PURCHASING_ROUTE, purchaseOrderDetailPath } from './capabilities'
-import { supplierDisplayOf, type PurchaseOrderStatus, type PurchaseOrderSummary } from './contract'
+import { supplierDisplayOf, type PurchaseOrderReadSummary, type PurchaseOrderStatus, type PurchaseOrderSummary } from './contract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -358,7 +358,15 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   const orderCell = (row: PurchaseOrderSummary) => canOpen
     ? <Link className={styles.orderLink} to={purchaseOrderDetailPath(row.id)}>…{row.id.slice(-8)}</Link>
     : <span className={styles.orderId}>…{row.id.slice(-8)}</span>
-  const statusCell = (row: PurchaseOrderSummary) => <StatusIndicator tone={PURCHASE_ORDER_STATUS_TONE[row.status]}>{STATUS[row.status]}</StatusIndicator>
+  // A2a-2 (ALS-D18): "fiyat bekliyor" beside the status, only when the server says so (a holder of the price read); never inferred.
+  const statusCell = (row: PurchaseOrderSummary) => (
+    <>
+      <StatusIndicator tone={PURCHASE_ORDER_STATUS_TONE[row.status]}>{STATUS[row.status]}</StatusIndicator>
+      {(row as PurchaseOrderReadSummary).pricePending === true
+        ? <> <span data-testid={`purchase-order-price-pending-${row.id}`}>{LIST_TEXT.pricePending}</span></>
+        : null}
+    </>
+  )
   // The filter action sits beside the identity, outside it: the identity element holds the supplier and nothing else.
   // While a supplier filter is active every row is that supplier's, so the action is not repeated on each of them.
   const supplierCell = (row: PurchaseOrderSummary) => {

@@ -27,6 +27,14 @@ Satış ile aynı port: `IFinanceInvoiceOpenItemAdmissionPortV1`, `Producer = Pu
 - Yeniden gönderim ve yetki çiti FS-1 ile aynıdır (yeni anahtar + aynı `AdmissionId` → replay;
   `IFinanceInvoiceOpenItemAdmissionAuthorityV1`); bağlantı A5'te.
 
+## FA-2b · Gelen fatura iptali → borç kaleminin ters kaydı (API-11)
+
+Satış ile aynı port: `IFinanceInvoiceOpenItemCancellationPortV1`, `Producer = Purchasing`
+(`docs/handoffs/FINANS_SATIS_DEVIR_v1.md` FS-1b). Ters satır cari ekstrede borç sütununda "Alış faturası iptali (ters
+kayıt)" olarak görünür. Öneri anahtar `purchasing-invoice-cancel:{invoiceId}:{invoiceVersion}`. Aktif ödeme dağıtımı olan
+fatura önce uyarı olarak reddedilir; onayla (`ReleaseActiveAllocations = true`) dağıtımlar kaldırılır, ödeme banka/kasa
+hareketini değiştirmez (SAT-D96, 8 Kasım). Bağlantı Alış'ın iptal komutunda.
+
 ## FA-3 · Sipariş başlığında bakiye (MOD-02)
 
 `GET /api/v1/finance/party-balance?partyId&companyAccountId` (API-04, #912): para birimi bazında Toplam Borç / Toplam

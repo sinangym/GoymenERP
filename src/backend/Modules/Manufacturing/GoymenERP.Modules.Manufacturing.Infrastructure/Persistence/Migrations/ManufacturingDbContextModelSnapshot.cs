@@ -577,6 +577,46 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputAllocationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ParentRollId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AllocatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("AllocatedKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("AllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("LabelVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("PlanVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "PlanId", "ParentRollId");
+
+                    b.HasIndex("CompanyId", "AllocationId")
+                        .IsUnique();
+
+                    b.ToTable("PlanInputAllocations", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PlanInputAllocations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000' AND [AllocationId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PlanInputAllocations_Values", "[LabelVersionAfter] >= 1 AND [AllocatedKg] > 0 AND [PlanVersion] >= 2");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1141,6 +1181,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<decimal?>("LineSpeedMetresPerMinute")
                         .HasPrecision(18, 6)
                         .HasColumnType("decimal(18,6)");
@@ -1227,6 +1271,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Plans_Approval", "([Status] = 1 AND [ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL) OR ([Status] = 3 AND (([ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedByUserId] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)))");
 
                             t.HasCheckConstraint("CK_Plans_Cancellation", "([Status] = 3 AND [CancelledByUserId] IS NOT NULL AND [CancelledByUserId] <> '00000000-0000-0000-0000-000000000000' AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) OR ([Status] <> 3 AND [CancelledByUserId] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)");
+
+                            t.HasCheckConstraint("CK_Plans_CreatedBy", "[CreatedBy] IS NULL OR LEN([CreatedBy]) > 0");
 
                             t.HasCheckConstraint("CK_Plans_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)");
 
@@ -1340,6 +1386,16 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanCutLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PlanId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputAllocationRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
                         .WithMany()

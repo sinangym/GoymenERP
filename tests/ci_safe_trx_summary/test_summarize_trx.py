@@ -24,7 +24,7 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76"
+    "263e6785dc43fc5889c8cdc641bb8e60ff3d062a55eb4ddd861b3d7e9fbe9e61"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
     "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
@@ -841,10 +841,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "backend-test-group": (
                 "Produce secret-free backend group summary",
                 "Upload secret-free backend group summary",
-                '"artifacts/ci-test-results/backend-groups/${{ matrix.group }}"',
-                '"artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json"',
-                "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
-                "ci-test-summary-backend-group-${{ matrix.group }}-" + head_ref,
+                '"artifacts/ci-test-results/backend-groups/${{ matrix.unit }}"',
+                '"artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json"',
+                "artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json",
+                "ci-test-summary-backend-group-${{ matrix.unit }}-" + head_ref,
                 "artifacts/ci-test-results/backend-groups/*/*.trx",
                 "test-suite",
             ),
@@ -930,14 +930,14 @@ class SafeTrxSummaryTests(unittest.TestCase):
             [
                 "uses: actions/upload-artifact@v7",
                 "with:",
-                "name: ci-backend-test-group-proof-${{ matrix.group }}",
-                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "name: ci-backend-test-group-proof-${{ matrix.unit }}",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json",
                 "if-no-files-found: error",
                 "retention-days: 7",
             ],
         )
         self.assertIn(
-            '--results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \\',
+            '--results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.unit }}" \\',
             self._workflow_step_lines(backend_worker, "Run exact backend test group"),
         )
         shard = jobs["relational-shard"]
@@ -1665,8 +1665,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "backend proof passed as summary",
-                "path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
-                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "path: artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json",
             ),
             (
                 "wrong producer identity",

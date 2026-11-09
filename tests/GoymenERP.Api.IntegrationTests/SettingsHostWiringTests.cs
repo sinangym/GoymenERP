@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
@@ -42,16 +43,16 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void S1_the_host_composes_no_linked_supply_adapter_yet_so_the_categories_stay_no_source()
+    public void S1_the_host_composes_only_the_purchasing_linked_supply_adapter_and_recorder_so_production_stays_no_source()
     {
-        // S-1 / MOD-03: Sales owns ISalesOrderLinkedSupplyReadPortV1; the Production (U5-a) and Purchasing (MOD-03) adapters are
-        // the owners' and not on main. The draft service resolves (an empty set, optional) and keeps "no source".
+        // S-1 / MOD-03: Sales owns ISalesOrderLinkedSupplyReadPortV1; the Purchasing adapter (A4 / MOD-03) is the owner's and is composed
+        // in the host together with its recorder declaration (SAT-D219); the Production adapter (U5-a) is not on main, so that kind
+        // stays "no source". One adapter per kind: a second one would make the kind Unreadable.
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
-        Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
-        // SAT-D219: no module declares that it records links to Sales order lines yet, so "no source" blocks nothing.
-        Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
+        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>().Select(port => port.SupplyKind));
+        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>().Select(recorder => recorder.SupplyKind));
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesDraftService>());
     }
 
@@ -309,6 +310,8 @@ public sealed class SettingsHostWiringTests
                 FinanceMoneyOperations.ManualBankPaymentV1, FinanceMoneyOperations.ManualBankReceiptV1,
                 SalesMoneyOperations.OrderDraftV1,
                 AccountingMoneyOperations.JournalAmountV1,
+                // A2a-1b: the Purchasing owner's key (ALS-D63 narrow exception).
+                PurchasingMoneyOperationsV1.OrderV1,
             }.Order(StringComparer.Ordinal),
             ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
@@ -354,10 +357,11 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_owner_s_published_key()
+    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_and_Purchasing_owners_published_keys()
     {
-        Assert.Equal([SalesMoneyOperations.OrderDraftV1], ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.ToArray());
-        Assert.Equal([SalesMoneyOperations.OrderDraftV1], ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.ToArray());
+        var expected = new[] { SalesMoneyOperations.OrderDraftV1, PurchasingMoneyOperationsV1.OrderV1 }.Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+        Assert.Equal(expected, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
 
     [Fact]

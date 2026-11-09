@@ -51,6 +51,9 @@ public interface IPurchasingService
 
     Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default);
 
+    /// <summary>A2a-2 (API-20): the order's totals under the read name; amounts only with the price read (PRS-02).</summary>
+    Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default);
+
     Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>A2a-1 (TEK-01): the currencies the purchasing order operation's Settings money profile answers, under the create name.</summary>
