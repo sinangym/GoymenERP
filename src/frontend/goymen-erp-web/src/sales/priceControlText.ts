@@ -27,7 +27,6 @@ export const PRICE_CONTROL_TEXT = {
     floorStatus: 'Taban istisnası',
     discountStatus: 'İskonto limiti',
     withheld: 'Fiyat ayrıntılarını görme yetkiniz yok; karşılaştırma gösterilmiyor.',
-    noLines: 'Bu siparişte fiyatlanacak satır yok.',
     unreadable: 'Satır fiyat ayrıntıları okunamadı.',
     stale: 'Fiyatlar siparişin gösterilen sürümüne ait değil; sipariş siz baktıktan sonra değişmiş olabilir.',
     refresh: 'Siparişi ve fiyatları yeniden oku',
