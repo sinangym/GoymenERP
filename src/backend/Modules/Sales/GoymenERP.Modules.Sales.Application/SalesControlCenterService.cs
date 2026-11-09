@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Sales.Application;
 
 /// <summary>
 /// API-37 — Kontrol Merkezi (Satış hazırlık planı v1 §3.3; dispatch/invoice design spec §3.5). K2, read-only: no table, command,
-/// attempt or audit; no money. Three checks over what main can see, each stated in the answer (never a silent empty list):
+/// attempt or audit; no money. Six checks over what main can see, each stated in the answer (never a silent empty list):
 /// <list type="bullet">
 /// <item><b>Uninvoiced shipment overdue</b> (SAT-D95): the Logistics owner's approved shares (<see cref="ISalesInvoiceableShipmentReadPortV1"/>)
 /// that are on no active invoice line and whose Europe/Istanbul shipment day is more than the grace days (SAT-D95: 7 from the
@@ -19,6 +19,8 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>Approved invoice awaiting the official document</b> (SAT-D7): Approved invoices with no API-35 match record.</item>
 /// <item><b>Official document deviation</b> (SAT-D229): matched invoices whose recorded TL difference is not zero, with the tolerance
 /// class. The due-date and rate comparison (SAT-D86) has no recorded source and is not claimed.</item>
+/// <item><b>Finalisation blocked</b> (API-36, NEEDS-SINAN #3): Approved invoices whose recorded match carries a difference.</item>
+/// <item><b>Finance admission waiting</b> (API-36, SAT-D208): Finalized invoices Finance has not admitted; a recorded refusal is Critical.</item>
 /// </list> The name <c>sales.invoices.read</c> is measured fresh before anything is read, after every
 /// awaited owner or store read and before the answer is built; the owner ports carry no authority.
 /// </summary>
@@ -64,6 +66,27 @@ public sealed class SalesControlCenterService(
                     invoice.Lines.Count, invoice.Id, null, null, null));
             }
 
+            if (invoice.State == SalesInvoiceState.Approved && invoice.Match is { Difference: not 0m })
+            {
+                // API-36 refuses this invoice (409 sales_invoice_match_difference_open) until NEEDS-SINAN #3 is decided, and there is
+                // no Approved cancel path yet: without this item it would sit unseen.
+                items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceFinalizationBlocked,
+                    SalesControlCenterSeverityView.Critical, invoice.Header.PartyId, invoice.Header.CompanyAccountId,
+                    invoice.DocumentNo, invoice.Header.BusinessDate, age, invoice.Lines.Count, invoice.Id, null, null, null));
+            }
+
+            if (invoice.State == SalesInvoiceState.Finalized && invoice.Finalization is { FinanceStatus: SalesInvoiceFinanceStatus.Waiting } waiting)
+            {
+                // SAT-D208: Sales never calls a waiting invoice admitted. A recorded refusal has no automatic way on (only the explicit
+                // re-drive), so it is Critical; an unanswered or retryable hand-off is informational.
+                items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceFinanceAdmissionWaiting,
+                    SalesInvoiceService.IsRefusedFinanceOutcome(waiting.LastOutcome)
+                        ? SalesControlCenterSeverityView.Critical
+                        : SalesControlCenterSeverityView.Info,
+                    invoice.Header.PartyId, invoice.Header.CompanyAccountId, invoice.DocumentNo, invoice.Header.BusinessDate, age,
+                    invoice.Lines.Count, invoice.Id, null, null, null));
+            }
+
             if (invoice.State == SalesInvoiceState.Approved && invoice.Match is null)
             {
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch,
@@ -86,6 +109,9 @@ public sealed class SalesControlCenterService(
             new(SalesControlCenterCheckKindView.InvoiceNeedsReview, SalesControlCenterCheckStateView.Measured, invoicesTruncated),
             new(SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch, SalesControlCenterCheckStateView.Measured, invoicesTruncated),
             new(SalesControlCenterCheckKindView.OfficialDocumentDeviation, SalesControlCenterCheckStateView.Measured, invoicesTruncated),
+            new(SalesControlCenterCheckKindView.InvoiceFinalizationBlocked, SalesControlCenterCheckStateView.Measured, invoicesTruncated),
+            new(SalesControlCenterCheckKindView.InvoiceFinanceAdmissionWaiting, SalesControlCenterCheckStateView.Measured,
+                invoicesTruncated),
         ], ordered);
     }
 
