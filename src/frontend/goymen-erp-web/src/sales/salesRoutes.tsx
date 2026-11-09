@@ -27,12 +27,16 @@ import { SalesDispatchListPage } from './SalesDispatchListPage'
 import { SalesInvoiceCandidatesPage } from './SalesInvoiceCandidatesPage'
 import { SalesReportsPage } from './SalesReportsPage'
 import { SalesInvoiceListPage } from './SalesInvoiceListPage'
+import { SalesPriceControlPage } from './SalesPriceControlPage'
+import { SalesApprovalsPage } from './SalesApprovalsPage'
 import { SalesControlCenterPage } from './SalesControlCenterPage'
 
 /** The shell's `CapabilityId` union carries the three Sales route ids, so no cast is needed. */
 function gate(capability: CapabilityId, children: ReactNode) {
   return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
 }
+
+const APPROVALS_GATE: readonly string[] = [SALES_CAPABILITY.ordersApprove]
 
 export const salesRoutes: RouteObject[] = [
   { path: SALES_ROUTE.list.slice(1), element: gate(SALES_CAPABILITY.draftsList, <SalesDraftListPage />) },
@@ -57,6 +61,11 @@ export const salesRoutes: RouteObject[] = [
   { path: SALES_ROUTE.invoices.slice(1), element: gate(SALES_CAPABILITY.invoicesList, <SalesInvoiceListPage />) },
   // UI-80 (Sales shell 1.11): the Sales reports screen on its own published id.
   { path: SALES_ROUTE.reports.slice(1), element: gate(SALES_CAPABILITY.reportsView, <SalesReportsPage />) },
+  // UI-50 S-05: a read-only comparison of one draft, under the detail's own published id (no new capability).
+  { path: SALES_ROUTE.priceControl.slice(1), element: gate(SALES_CAPABILITY.draftsDetail, <SalesPriceControlPage />) },
+  // UI-51 S-06: the Sales approval queue, under the existing approve control's id (no new capability, no nav entry). The
+  // control id is no registry route id, so it is passed as the one-entry list form the D-05 inbox uses.
+  { path: SALES_ROUTE.approvals.slice(1), element: <CapabilityRoute capability={APPROVALS_GATE}><SalesApprovalsPage /></CapabilityRoute> },
   // UI-65 Kontrol Merkezi (API-37): no own published id yet, so it stands on the S-08 id, which the shell publishes only beside the
   // same `sales.invoices.read` API-37 measures. No new capability or permission; the API re-measures every call.
   { path: SALES_ROUTE.controlCenter.slice(1), element: gate(SALES_CAPABILITY.invoiceCandidatesList, <SalesControlCenterPage />) },

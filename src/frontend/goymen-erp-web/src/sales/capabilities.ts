@@ -118,6 +118,10 @@ export const SALES_ROUTE = {
   invoices: '/satis/faturalar',
   /** UI-80: static, never a draft id. */
   reports: '/satis/raporlar',
+  /** UI-50 S-05 Fiyat–İskonto–Marj–Risk Kontrolü: a read-only view of one draft, under the detail's own id. */
+  priceControl: '/satis/siparisler/:draftId/kontrol',
+  /** UI-51 S-06 Satış Onayları: static, never a draft id; under the existing approve control's id (no new capability). */
+  approvals: '/satis/onaylar',
   /**
    * UI-65 Kontrol Merkezi (API-37, `sales.invoices.read`): static, never a draft id. The backend publishes no own id for it yet;
    * the route stands on the S-08 id, published beside the same `sales.invoices.read` (./salesRoutes.tsx).
@@ -126,6 +130,7 @@ export const SALES_ROUTE = {
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
+export const salesPriceControlPath = (draftId: string) => `${salesDetailPath(draftId)}/kontrol`
 
 /**
  * UI-20 / S-01 "Satış Talebi / Teklif Havuzu": the ids the backend shell provider publishes (Sales shell contract 1.9), keyed
