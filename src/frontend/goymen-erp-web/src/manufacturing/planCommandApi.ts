@@ -324,6 +324,20 @@ export type PlanLifecycleSnapshot =
       readonly idempotencyKey: string
       readonly orderId: string
     }
+  /** U2-a API-10: the Draft's approver rejects it with a reason; the plan stays a Draft one version on. */
+  | {
+      readonly kind: 'reject'
+      readonly idempotencyKey: string
+      readonly expectedVersion: number
+      readonly reason: string
+    }
+  /** U2-a API-11: the plan is kept as Cancelled, with a reason. */
+  | {
+      readonly kind: 'cancel'
+      readonly idempotencyKey: string
+      readonly expectedVersion: number
+      readonly reason: string
+    }
   | {
       readonly kind: 'revise'
       readonly idempotencyKey: string
@@ -776,6 +790,80 @@ export async function approvePlan(
     plan.planId !== planId ||
     plan.companyId !== companyId ||
     plan.status !== 'Approved' ||
+    plan.version !== snapshot.expectedVersion + 1
+  ) {
+    return { type: 'unknown', reason: 'undecodable' }
+  }
+  return { type: 'applied', resource: plan, ...metadata }
+}
+
+/** The server's decision reason bound (`ProductionPlan.DecisionReasonMaximumLength`). */
+export const DECISION_REASON_MAXIMUM_LENGTH = 256
+
+/** The trimmed reason the server accepts (non-empty, at most 256 characters, no control characters), else null. */
+export function decisionReason(value: string): string | null {
+  const text = value.trim()
+  return text.length === 0 || text.length > DECISION_REASON_MAXIMUM_LENGTH || /\p{Cc}/u.test(text) ? null : text
+}
+
+/** Rejects exactly the Draft version read by the detail screen; the plan stays a Draft at the next version. */
+export async function rejectPlan(
+  companyId: string,
+  planId: string,
+  snapshot: Extract<PlanLifecycleSnapshot, { kind: 'reject' }>,
+  signal?: AbortSignal,
+): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(
+    `${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/rejection`,
+    companyId,
+    snapshot.idempotencyKey,
+    { expectedVersion: snapshot.expectedVersion, reason: snapshot.reason },
+    200,
+    signal,
+  )
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  if (
+    metadata === null ||
+    plan === null ||
+    plan.planId !== planId ||
+    plan.companyId !== companyId ||
+    plan.status !== 'Draft' ||
+    plan.version !== snapshot.expectedVersion + 1 ||
+    plan.rejections.length === 0
+  ) {
+    return { type: 'unknown', reason: 'undecodable' }
+  }
+  return { type: 'applied', resource: plan, ...metadata }
+}
+
+/** Cancels exactly the version read by the detail screen; the plan is kept as Cancelled. */
+export async function cancelPlan(
+  companyId: string,
+  planId: string,
+  snapshot: Extract<PlanLifecycleSnapshot, { kind: 'cancel' }>,
+  signal?: AbortSignal,
+): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(
+    `${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/cancellation`,
+    companyId,
+    snapshot.idempotencyKey,
+    { expectedVersion: snapshot.expectedVersion, reason: snapshot.reason },
+    200,
+    signal,
+  )
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  if (
+    metadata === null ||
+    plan === null ||
+    plan.planId !== planId ||
+    plan.companyId !== companyId ||
+    plan.status !== 'Cancelled' ||
     plan.version !== snapshot.expectedVersion + 1
   ) {
     return { type: 'unknown', reason: 'undecodable' }

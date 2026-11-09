@@ -4,7 +4,8 @@
  * `sales.invoices.approve`. Proves: a command shows only when the server's state offers it AND the control is held; each send
  * carries `{ expectedVersion }` (plus a trimmed or null `reason` for reject / cancel) with `X-Company-Id` and an Idempotency-Key;
  * a refusal shows its Turkish text; a conflict reads the invoice again; an unknown outcome keeps the SAME key for the retry;
- * 401/403 go to the auth boundary.
+ * 401/403 go to the auth boundary and say so; a 412 is the same conflict as a 409; the attempt outlives the panel, so a remount
+ * retries an unknown outcome (or a send still in flight when the panel went) under the SAME key.
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -15,6 +16,7 @@ import { INVOICE_DRAFT_ACTIONS_TEXT as A } from './invoiceDraftText'
 import { INVOICE_FINALIZATION_TEXT as T } from './invoiceText'
 import { LIMITS } from './contract'
 import { INVOICE_ID, invoiceDetail } from './invoiceTestData'
+import { resetPendingPoolAttempts } from './pendingPoolAttempts'
 
 const boundary = vi.hoisted(() => ({ capture: vi.fn(() => ({ token: 1 })), report: vi.fn() }))
 const shell = vi.hoisted(() => ({
@@ -122,6 +124,7 @@ beforeEach(() => {
   shell.state = { activeContext: { scopeMode: 'single', companyId: COMPANY, userId: 'actor-a' }, sessionEpoch: 1, routeEntryGeneration: 0 }
   boundary.capture.mockClear()
   boundary.report.mockClear()
+  resetPendingPoolAttempts()
 })
 
 afterEach(() => {
@@ -298,5 +301,98 @@ describe('UI-64 commands', () => {
     mount()
     fireEvent.click(within(await panel()).getByTestId('sales-invoice-draft-submit'))
     await waitFor(() => expect(boundary.report).toHaveBeenCalledWith(status, { token: 1 }))
+  })
+
+  it.each([
+    [401, 'approve', T.unauthenticated],
+    [403, 'approve', T.forbidden],
+    [401, 'submit', T.unauthenticated],
+    [403, 'submit', T.forbidden],
+  ] as const)('says a %s refusal of %s plainly, reports it and does not read the invoice again', async (status, kind, text) => {
+    const calls = serve(() => json(kind === 'submit' ? draft() : pending()), () => problem(status, null))
+    const { onRecorded } = mount()
+    const section = await panel()
+    fireEvent.click(within(section).getByTestId(`sales-invoice-draft-${kind}`))
+    expect((await notice()).textContent).toBe(text)
+    expect(boundary.report).toHaveBeenCalledWith(status, { token: 1 })
+    expect(onRecorded).not.toHaveBeenCalled()
+    expect(reads(calls)).toHaveLength(1)
+    // A definite refusal closes the attempt: no retry of the same key is offered.
+    expect(within(section).queryByTestId('sales-invoice-draft-retry')).toBeNull()
+  })
+
+  it('treats a 412 stale expected version as the same conflict as a 409 and reads the invoice again', async () => {
+    const calls = serve(() => json(draft()), () => problem(412, 'version_conflict'))
+    const { onRecorded } = mount()
+    fireEvent.click(within(await panel()).getByTestId('sales-invoice-draft-submit'))
+    expect((await notice()).textContent).toBe(`${T.conflict} ${T.versionConflict}`)
+    await waitFor(() => expect(onRecorded).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(reads(calls).length).toBeGreaterThanOrEqual(2))
+    expect(boundary.report).not.toHaveBeenCalled()
+  })
+})
+
+describe('UI-64 command attempt outlives the panel', () => {
+  it('brings an unknown outcome back after a remount and retries it under the same key', async () => {
+    const answers: Answer[] = [() => problem(503, null), () => json(pending())]
+    const calls = serve(() => json(draft()), (call) => answers[posts(calls).indexOf(call)](call))
+    mount()
+    fireEvent.click(within(await panel()).getByTestId('sales-invoice-draft-submit'))
+    expect((await notice()).textContent).toBe(T.unknownServiceUnavailable)
+    cleanup()
+
+    mount()
+    const section = await panel()
+    expect((await notice()).textContent).toBe(T.unknownServiceUnavailable)
+    // No new command under a new key while the first may be recorded.
+    expect(within(section).getByTestId('sales-invoice-draft-submit')).toHaveProperty('disabled', true)
+    fireEvent.click(within(section).getByTestId('sales-invoice-draft-retry'))
+    await waitFor(async () => expect((await notice()).textContent).toBe(A.completed.submit))
+    expect(posts(calls)).toHaveLength(2)
+    expect(posts(calls)[1].key).toBe(posts(calls)[0].key)
+    expect(posts(calls)[1].body).toBe(posts(calls)[0].body)
+  })
+
+  it('brings a send still in flight when the panel went back as unknown, and retries it under the same key', async () => {
+    const answers: Answer[] = [() => new Promise<Response>(() => {}), () => json(pending())]
+    const calls = serve(() => json(draft()), (call) => answers[posts(calls).indexOf(call)](call))
+    mount()
+    fireEvent.click(within(await panel()).getByTestId('sales-invoice-draft-submit'))
+    await waitFor(() => expect(posts(calls)).toHaveLength(1))
+    cleanup()
+
+    mount()
+    const section = await panel()
+    expect((await notice()).textContent).toBe(T.unknownNetwork)
+    fireEvent.click(within(section).getByTestId('sales-invoice-draft-retry'))
+    await waitFor(async () => expect((await notice()).textContent).toBe(A.completed.submit))
+    expect(posts(calls)[1].key).toBe(posts(calls)[0].key)
+  })
+
+  it('does not carry the attempt into another company or actor', async () => {
+    const calls = serve(() => json(draft()), () => problem(503, null))
+    mount()
+    fireEvent.click(within(await panel()).getByTestId('sales-invoice-draft-submit'))
+    expect((await notice()).textContent).toBe(T.unknownServiceUnavailable)
+    cleanup()
+
+    shell.state = { ...shell.state, activeContext: { scopeMode: 'single', companyId: COMPANY, userId: 'actor-b' } }
+    mount()
+    const section = await panel()
+    expect(within(section).queryByTestId('sales-invoice-draft-notice')).toBeNull()
+    expect(within(section).getByTestId('sales-invoice-draft-submit')).toHaveProperty('disabled', false)
+    expect(posts(calls)).toHaveLength(1)
+  })
+
+  it('settles a definite refusal: a remount starts clean', async () => {
+    serve(() => json(draft()), () => problem(403, null))
+    mount()
+    fireEvent.click(within(await panel()).getByTestId('sales-invoice-draft-submit'))
+    expect((await notice()).textContent).toBe(T.forbidden)
+    cleanup()
+
+    mount()
+    const section = await panel()
+    expect(within(section).queryByTestId('sales-invoice-draft-notice')).toBeNull()
   })
 })

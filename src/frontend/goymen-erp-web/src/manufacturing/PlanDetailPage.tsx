@@ -5,7 +5,10 @@ import { fetchPlan, fetchPlanRevisions } from './api'
 import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath, planListPath } from './capabilities'
 import {
   approvePlan,
+  cancelPlan,
   createOrder,
+  decisionReason,
+  rejectPlan,
   revisePlan,
   pendingPlanLifecycleKey,
   readPendingPlanLifecycle,
@@ -47,6 +50,8 @@ type Attempt =
 type RefreshExpectation =
   | { readonly kind: 'approved'; readonly approved: ProductionPlanView }
   | { readonly kind: 'revised'; readonly revised: ProductionPlanView }
+  | { readonly kind: 'rejected'; readonly rejected: ProductionPlanView }
+  | { readonly kind: 'cancelled'; readonly cancelled: ProductionPlanView }
   | { readonly kind: 'conflict'; readonly failure: string }
 
 function newId(): string {
@@ -109,6 +114,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const canCreateOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.planOrderCreate)
   // MFG-PLAN-EDIT: the Draft edit is its own control on the plan save's grant; the server decides again either way.
   const canEdit = hasCapability(shell, MANUFACTURING_CAPABILITY.planEdit)
+  // U2-a: the rejection runs under the approval's grant (API-10); the cancellation has its own (API-11).
+  const canCancel = hasCapability(shell, MANUFACTURING_CAPABILITY.planCancel)
   const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
   // MFG-PLAN-LIST: back to the saved plans, only where the list itself is published to this actor.
   const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
@@ -117,6 +124,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   // Only a proven-empty slot opens idle; an unreadable one stays blocked for this mount, whatever the read shows.
   const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanLifecycle(storeKey), sessionBinding))
   const [editing, setEditing] = useState(false)
+  const [decision, setDecision] = useState<'reject' | 'cancel' | null>(null)
+  const [reasonText, setReasonText] = useState('')
   const generation = useRef(0)
   const inFlight = useRef(false)
   const queryKey = useMemo(
@@ -161,8 +170,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
 
   const planProcess = plan?.process ?? ''
   const allowed = useCallback((kind: PlanLifecycleSnapshot['kind']) =>
-    kind === 'approve' ? canApprove : kind === 'revise' ? canEdit : canCreateOrder,
-  [canApprove, canCreateOrder, canEdit])
+    kind === 'approve' || kind === 'reject' ? canApprove
+      : kind === 'cancel' ? canCancel
+        : kind === 'revise' ? canEdit : canCreateOrder,
+  [canApprove, canCancel, canCreateOrder, canEdit])
 
   const refreshPlan = useCallback(async (expectation: RefreshExpectation) => {
     const security = boundary.capture()
@@ -184,6 +195,18 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       setAttempt({ phase: 'applied', message: PLAN_EDIT_TEXT.applied(fresh.version) })
       return
     }
+    if (isCurrent && expectation.kind === 'rejected' && fresh.status === 'Draft' && fresh.version === expectation.rejected.version) {
+      queryClient.setQueryData(queryKey, refreshed)
+      await queryClient.invalidateQueries({ queryKey: historyKey })
+      setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.rejectedRefreshed })
+      return
+    }
+    if (isCurrent && expectation.kind === 'cancelled' && fresh.status === 'Cancelled' && fresh.version === expectation.cancelled.version) {
+      queryClient.setQueryData(queryKey, refreshed)
+      await queryClient.invalidateQueries({ queryKey: historyKey })
+      setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.cancelledRefreshed })
+      return
+    }
     if (isCurrent && expectation.kind === 'conflict') {
       queryClient.setQueryData(queryKey, refreshed)
       await queryClient.invalidateQueries({ queryKey: historyKey })
@@ -197,7 +220,11 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         ? PLAN_DETAIL_TEXT.approvedRefreshPending
         : expectation.kind === 'revised'
           ? PLAN_EDIT_TEXT.appliedRefreshPending
-          : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
+          : expectation.kind === 'rejected'
+            ? PLAN_DETAIL_TEXT.rejectedRefreshPending
+            : expectation.kind === 'cancelled'
+              ? PLAN_DETAIL_TEXT.cancelledRefreshPending
+              : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
     })
   }, [boundary, companyId, historyKey, planId, queryClient, queryKey])
 
@@ -225,9 +252,13 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     const security = boundary.capture()
     const outcome = pending.snapshot.kind === 'approve'
       ? await approvePlan(companyId, planId, pending.snapshot)
-      : pending.snapshot.kind === 'revise'
-        ? await revisePlan(companyId, planId, pending.snapshot)
-        : await createOrder(companyId, planId, pending.snapshot)
+      : pending.snapshot.kind === 'reject'
+        ? await rejectPlan(companyId, planId, pending.snapshot)
+        : pending.snapshot.kind === 'cancel'
+          ? await cancelPlan(companyId, planId, pending.snapshot)
+          : pending.snapshot.kind === 'revise'
+            ? await revisePlan(companyId, planId, pending.snapshot)
+            : await createOrder(companyId, planId, pending.snapshot)
     if (commandGeneration !== generation.current) return
     inFlight.current = false
     if (outcome.type === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
@@ -251,6 +282,14 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     }
     if (pending.snapshot.kind === 'approve') {
       await refreshPlan({ kind: 'approved', approved: outcome.resource as ProductionPlanView })
+      return
+    }
+    if (pending.snapshot.kind === 'reject' || pending.snapshot.kind === 'cancel') {
+      setDecision(null)
+      setReasonText('')
+      await refreshPlan(pending.snapshot.kind === 'reject'
+        ? { kind: 'rejected', rejected: outcome.resource as ProductionPlanView }
+        : { kind: 'cancelled', cancelled: outcome.resource as ProductionPlanView })
       return
     }
     if (pending.snapshot.kind === 'revise') {
@@ -303,6 +342,12 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const current = history === null ? null : currentRevision(history)
   const editable = plan.status === 'Draft' && canEdit && plan.slittingSpec === null
   const editReady = current !== null && current.planVersion === plan.version
+  // U2-d (URT-D2): the preparer of the current version may not approve or reject it. A null preparer is unknown, so
+  // the controls stay and the server decides (422 manufacturing_plan_self_approval).
+  const selfPrepared = plan.preparedBy !== null && actorId !== null
+    && plan.preparedBy.toLowerCase() === actorId.toLowerCase()
+  const cancellable = (plan.status === 'Draft' || (plan.status === 'Approved' && plan.orderId === null)) && canCancel
+  const validReason = decisionReason(reasonText)
   const startRevision = (request: RevisePlanRequest) =>
     start({ kind: 'revise', idempotencyKey: newId(), request })
 
@@ -320,7 +365,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       </header>
       <dl className={styles.facts}>
         <div><dt>{PLAN_DETAIL_TEXT.plan}</dt><dd className={styles.mono}>{plan.planId}</dd></div>
-        <div><dt>{PLAN_DETAIL_TEXT.status}</dt><dd>{plan.status === 'Draft' ? PLAN_STATUS_LABEL.Draft : PLAN_STATUS_LABEL.Approved}</dd></div>
+        <div><dt>{PLAN_DETAIL_TEXT.status}</dt><dd>{PLAN_STATUS_LABEL[plan.status]}</dd></div>
         <div><dt>{PLAN_DETAIL_TEXT.version}</dt><dd>{plan.version}</dd></div>
         <div><dt>{PLAN_FORM_TEXT.workCenter}</dt><dd className={styles.mono}>{plan.workCenterId}</dd></div>
         <div><dt>{PLAN_DETAIL_TEXT.process}</dt><dd>{plan.process}</dd></div>
@@ -475,7 +520,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             ) : null}
             {plan.status === 'Approved' && canEdit ? <p className={styles.note}>{PLAN_EDIT_TEXT.approvedNote}</p> : null}
             {plan.status === 'Draft' && canEdit && plan.slittingSpec !== null ? <p className={styles.note}>{PLAN_EDIT_TEXT.specNote}</p> : null}
-            {plan.status === 'Draft' && canApprove && !editing ? (
+            {plan.status === 'Draft' && canApprove && selfPrepared ? (
+              <p className={styles.note}>{PLAN_DETAIL_TEXT.selfApprovalNote}</p>
+            ) : null}
+            {plan.status === 'Draft' && canApprove && !selfPrepared && !editing ? (
               <div className={styles.actions}>
                 <Button
                   type="button"
@@ -483,10 +531,74 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                   aria-busy={busy}
                   onClick={() => start({ kind: 'approve', idempotencyKey: newId(), expectedVersion: plan.version })}
                 >
-                  {busy ? PLAN_DETAIL_TEXT.approving : PLAN_DETAIL_TEXT.approve}
+                  {busy && attempt.phase === 'sending' && attempt.pending.snapshot.kind === 'approve'
+                    ? PLAN_DETAIL_TEXT.approving : PLAN_DETAIL_TEXT.approve}
+                </Button>
+                <Button type="button" disabled={busy} onClick={() => { setDecision('reject'); setReasonText('') }}>
+                  {busy && attempt.phase === 'sending' && attempt.pending.snapshot.kind === 'reject'
+                    ? PLAN_DETAIL_TEXT.rejecting : PLAN_DETAIL_TEXT.reject}
                 </Button>
               </div>
             ) : null}
+            {cancellable && !editing ? (
+              <div className={styles.actions}>
+                <Button type="button" disabled={busy} onClick={() => { setDecision('cancel'); setReasonText('') }}>
+                  {busy && attempt.phase === 'sending' && attempt.pending.snapshot.kind === 'cancel'
+                    ? PLAN_DETAIL_TEXT.cancelling : PLAN_DETAIL_TEXT.cancel}
+                </Button>
+              </div>
+            ) : null}
+            {decision !== null && !editing && (decision === 'cancel' ? cancellable : plan.status === 'Draft' && canApprove && !selfPrepared) ? (
+              <div>
+                <label htmlFor="manufacturing-plan-decision-reason">{PLAN_DETAIL_TEXT.reasonLabel}</label>
+                <input
+                  id="manufacturing-plan-decision-reason"
+                  type="text"
+                  value={reasonText}
+                  maxLength={256}
+                  disabled={busy}
+                  aria-describedby="manufacturing-plan-decision-hint"
+                  onChange={(event) => setReasonText(event.target.value)}
+                />
+                <p id="manufacturing-plan-decision-hint" className={styles.note}>
+                  {reasonText !== '' && validReason === null ? PLAN_DETAIL_TEXT.reasonInvalid : PLAN_DETAIL_TEXT.reasonHint}
+                </p>
+                <div className={styles.actions}>
+                  <Button
+                    type="button"
+                    disabled={busy || validReason === null}
+                    aria-busy={busy}
+                    onClick={() => {
+                      if (validReason === null) return
+                      start({ kind: decision, idempotencyKey: newId(), expectedVersion: plan.version, reason: validReason })
+                    }}
+                  >
+                    {decision === 'reject' ? PLAN_DETAIL_TEXT.rejectConfirm : PLAN_DETAIL_TEXT.cancelConfirm}
+                  </Button>
+                  <Button type="button" disabled={busy} onClick={() => { setDecision(null); setReasonText('') }}>
+                    {PLAN_DETAIL_TEXT.dismiss}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            {plan.status === 'Cancelled' ? (
+              <p className={styles.note}>
+                {PLAN_DETAIL_TEXT.cancelledReadOnly}
+                {plan.cancellation === null ? '' : ` ${PLAN_DETAIL_TEXT.cancelledBy}: ${plan.cancellation.reason}`}
+              </p>
+            ) : null}
+            {plan.rejections.length === 0 ? null : (
+              <div>
+                <h3>{PLAN_DETAIL_TEXT.rejectionsHeading}</h3>
+                <ul>
+                  {plan.rejections.map((rejection) => (
+                    <li key={rejection.number}>
+                      {PLAN_DETAIL_TEXT.rejectionLine(rejection.number, rejection.reason, rejection.planVersion)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {plan.status === 'Approved' && canCreateOrder ? (
               <div className={styles.actions}>
                 <Button
