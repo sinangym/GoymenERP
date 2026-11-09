@@ -277,12 +277,13 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
     private const string OfficialEttn = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 
     /// <summary>Stores an invoice and takes it to Approved by another actor (version 3), through the real store.</summary>
-    private static async Task<SalesInvoice> ApprovedAsync(Run run, string prefix, string approver)
+    private static async Task<SalesInvoice> ApprovedAsync(Run run, string prefix, string approver,
+        Func<Guid, string, SalesInvoice>? build = null)
     {
         var invoiceId = Guid.NewGuid();
         await using var scope = run.Store(CompanyA);
         await scope.Invoices.StoreInvoiceAsync(run.Envelope(prefix + "-create"), Hash('a'),
-            number => Invoice(invoiceId, number, run.Actor, Guid.NewGuid(), Guid.NewGuid()));
+            number => build is null ? Invoice(invoiceId, number, run.Actor, Guid.NewGuid(), Guid.NewGuid()) : build(invoiceId, number));
         await scope.Invoices.DecideInvoiceAsync(run.Envelope(prefix + "-submit"), Hash('b'), SalesInvoiceCommands.SubmitV1, invoiceId,
             (invoice, now) => invoice.Submit(1, run.Actor, now), new SalesDraftStateAudit("sales.invoice.submitted.v1", "Submit", "SENTETIK"));
         var approved = await scope.Invoices.DecideInvoiceAsync(run.Envelope(prefix + "-approve", actor: approver,
@@ -501,6 +502,66 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
 
         var down = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(51231, down.Number);
+    }
+
+    [SqlServerFact]
+    public async Task A_single_instalment_usd_invoice_whose_tl_payable_is_zero_is_refused_at_finalization_and_writes_nothing_on_real_sql()
+    {
+        // SAT-D245 (EK48): 1 kg at 0.01 USD at rate 0.4 is stored with a TL payable of exactly 0.00. Finalisation refuses the single
+        // instalment with the SAT-D233/SAT-D237 code; no ledger, outbox row, finalize attempt or audit event is written and the invoice
+        // stays approved at its version (the service answers 422 sales_invoice_instalment_functional_invalid without a stored refusal).
+        await using var run = await Run.StartAsync();
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var finalizer = "SENTETIK-finalizer-" + Guid.NewGuid().ToString("N");
+        var approved = await ApprovedAsync(run, "z1", approver, (id, number) => ZeroTlInvoice(id, number, run.Actor));
+        Assert.Equal((0.01m, 0m), (approved.Totals.Payable.Amount, approved.PayableFunctionalAmount));
+        Assert.Single(approved.Instalments);
+        Assert.Equal(0m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(FunctionalNetAmount + FunctionalVatAmount - FunctionalWithholdingAmount) FROM sales.InvoiceLines WHERE InvoiceId = @id",
+            ("@id", approved.Id)));
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000245", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+            approved.Totals.Payable.Amount, approved.PayableFunctionalAmount);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.MatchInvoiceAsync(run.Envelope("z1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
+                Hash('d'), approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<SalesRuleException>(() => scope.Invoices.FinalizeInvoiceAsync(
+                run.Envelope("z1-final", actor: finalizer, permission: SalesPermissionManifestV1.InvoicesFinalize), Hash('e'), approved.Id,
+                (invoice, now) => invoice.Finalize(3, finalizer, Guid.NewGuid, now),
+                new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "SENTETIK")));
+            Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id AND State = 3 AND Version = 3",
+            ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId = @id", ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE AggregateId = @id", ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'" + SalesInvoiceCommands.FinalizeV1 + "'",
+            ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
+            + "AND EventType = N'sales.invoice.finalized.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
+    }
+
+    /// <summary>SAT-D245: one 20 % line of 1 kg at 0.01 USD at rate 0.4 (0.004 TL, frozen as 0.00 TL), due in one instalment.</summary>
+    private static SalesInvoice ZeroTlInvoice(Guid id, string number, string actor)
+    {
+        var tax = new SalesLineTaxSnapshot(Product, Day, "Normal", "Steel", "Resolved", null, "Record", Guid.NewGuid(), 1, "Resolved", 20m,
+            "NotRequired", null, null, "NotApplied", null, "NotRequired", null, null, null, 0, "Normal", false);
+        var share = new SalesInvoiceShareInput(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "IRS-2026-000245", 1, Day, Guid.NewGuid(),
+            Guid.NewGuid(), 0, Product, Kg, 1m, "1", new CommercialDraftFields("0.01", Kg, null), tax);
+        var terms = SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, 30, "100")]);
+        return SalesInvoice.Create(id, CompanyA, number,
+            new SalesInvoiceHeader(Guid.NewGuid(), Guid.NewGuid(), Usd, Guid.NewGuid(), "1", 2, Day,
+                new SalesInvoiceRateSnapshot(0.4m, Day, Day.AddDays(-1), Try, 2)),
+            [share], SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms, actor, DateTimeOffset.UtcNow);
     }
 
     private static string Hash(char fill) => new(fill, 64);

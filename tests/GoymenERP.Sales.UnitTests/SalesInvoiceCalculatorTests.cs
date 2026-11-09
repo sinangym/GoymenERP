@@ -299,6 +299,30 @@ public sealed class SalesInvoiceCalculatorTests
     }
 
     [Fact]
+    public void A_single_instalment_usd_invoice_whose_tl_payable_rounds_to_zero_is_not_finalized_under_sat_d245()
+    {
+        // SAT-D245 (EK48): 1 kg at 0.01 USD with 20 % VAT is 0.01 USD payable (the 0.002 USD VAT rounds away); at 0.4 its TL payable is
+        // 0.004, frozen as exactly 0.00 TL. An exact match records nothing to resolve, and finalisation is refused with the SAT-D233 code.
+        var terms = TestDueTerms.PointDue30;
+        var header = Header(Rate: new SalesInvoiceRateSnapshot(0.4m, Day, Day, Try, 2)) with { CurrencyId = Usd };
+        var invoice = SalesInvoice.Create(Guid.NewGuid(), Company, "SF-2026-000245", header, [Share(1, "1", "0.01")],
+            SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
+        invoice.Submit(invoice.Version, "preparer", DateTimeOffset.UnixEpoch);
+        invoice.Approve(invoice.Version, "approver", DateTimeOffset.UnixEpoch);
+        Assert.Equal(("0.01", 0m), (Text(invoice.Totals.Payable), invoice.PayableFunctionalAmount));
+        Assert.Single(invoice.Instalments);
+        invoice.RecordMatch(invoice.Version, "matcher", Official(invoice, invoice.Totals.Payable.Amount, 0m), 0.05m, false, null,
+            DateTimeOffset.UnixEpoch);
+        var version = invoice.Version;
+
+        var refused = Assert.Throws<SalesRuleException>(() => invoice.Finalize(version, "finalizer", Guid.NewGuid, DateTimeOffset.UnixEpoch));
+
+        Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
+        Assert.Equal((SalesInvoiceState.Approved, version), (invoice.State, invoice.Version));
+        Assert.Null(invoice.Finalization);
+    }
+
+    [Fact]
     public void The_draft_refuses_one_shipment_twice_a_pending_due_date_and_an_unpriced_share()
     {
         var terms = TestDueTerms.PointDue30;

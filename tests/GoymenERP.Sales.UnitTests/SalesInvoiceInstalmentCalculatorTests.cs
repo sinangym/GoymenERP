@@ -65,6 +65,27 @@ public sealed class SalesInvoiceInstalmentCalculatorTests
     }
 
     [Fact]
+    public void A_single_instalment_whose_tl_payable_rounds_to_zero_is_refused_under_sat_d245()
+    {
+        // SAT-D245 (EK48): with one instalment the last instalment is the whole TL payable. 0.01 USD at rate 0.4 is 0.004 TL, which the
+        // invoice froze as exactly 0.00 TL; the single instalment is refused with the SAT-D233/SAT-D237 code, never written as 0 TL.
+        var instalments = new[] { Instalment(1, "100", 0.01m) };
+        var refused = Assert.Throws<SalesRuleException>(() =>
+            SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Rate(0.4m), Usd, Money.Of(0m, Try, 2)));
+        Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
+    }
+
+    [Fact]
+    public void A_single_instalment_of_the_smallest_positive_tl_payable_is_accepted()
+    {
+        // The SAT-D245 boundary: one kuruş is a payable amount, so the single instalment carries it whole.
+        var instalments = new[] { Instalment(1, "100", 0.01m) };
+        var result = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Rate(0.6m), Usd, Money.Of(0.01m, Try, 2));
+
+        Assert.Equal([0.01m], result);
+    }
+
+    [Fact]
     public void The_smallest_positive_last_tl_instalment_is_accepted()
     {
         var instalments = new[] { Instalment(1, "50", 50m), Instalment(2, "50", 50m) };

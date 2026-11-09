@@ -487,7 +487,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // nothing unapproved and is stored approved), recomputed over the union, kept ordinal-sorted (096ea842... -> 2016a227...).
                 // EK46 P3 follow-up (API-24, SAT-D234): +1 SalesQuote fact (a catalogued loss reason loses the quote through the real host
                 // with its Settings snapshot, attempt and audit), kept ordinal-sorted (2016a227... -> 21fade35...).
-                "21fade3573edc43e7b41449cc51cf8f09ad84dc4c0093bffcd455cadbcbe7e58",
+                // SAT-D245 (EK48): +1 SalesInvoice fact (a single-instalment USD invoice whose TL payable is 0,00 is refused at finalisation
+                // and writes nothing), kept ordinal-sorted (21fade35... -> 834500af...).
+                "834500af4999a11dca77d9c212f25bb53261eb9a4496d95021bc26bf1d659e5f",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
