@@ -295,6 +295,59 @@ purchase line purpose, service purchase → `expense`, scrap sale → `revenue` 
 - **Known, not a defect here**: an export scrap sale resolves
   `Ambiguous` until a business rule names the winner; the resolver never guesses.
 
+## B-04b: source document acceptance port (backend only, no HTTP)
+
+Sinan #66 6707619685 and the 7 Kasım kararı (KLN-D6…D19, SAT-D208/D223/D226): a FINALISED sales invoice becomes ONE
+DRAFT voucher in Accounting's own tables. The port is `IAccountingSourceDocumentAdmissionPortV1`
+(`Application/Contracts`); Accounting writes only `SourceDocumentAdmissions`, `SourceDocumentVoucherDrafts` and
+`SourceDocumentVoucherDraftLines`, never the producer's tables. No permission is registered and no grant is made.
+
+- **Call (Sales host adapter, AFTER the finalisation commit)**:
+
+  ```csharp
+  var answer = await port.AdmitAsync(new AccountingSourceDocumentAdmissionRequestV1(
+      CompanyId: companyId, ActorId: actorId, CorrelationId: correlationId, CausationId: null,
+      IdempotencyKey: AccountingSourceDocumentKindsV1.SalesInvoiceKey(invoiceId, finalizedVersion),
+      DocumentKind: AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId: sourceDocumentId,
+      InvoiceId: invoiceId, FinalizedVersion: finalizedVersion, SourceActorId: finalizedByUserId,
+      PartyId: partyId, CurrencyId: currencyId, ExchangeRate: null /* TL; else the single fixed rate text */,
+      DocumentDate: invoiceDate, DueDate: dueDate,
+      DocumentTotals: new("1200", "240", "0", "1440"), FunctionalTotals: new("1200", "240", "0", "1440"),
+      Lines: lines /* functional-currency net/VAT/withholding per line, VatRateCode per group */), ct);
+  ```
+
+  Key: `sales-invoice-accounting:{invoiceId:D}:{finalizedVersion}`. The same key with other content is refused
+  (`idempotency_conflict`), never replayed.
+- **Answers**: `Admitted` (voucher draft id; a replay says `IsReplay`) · `Refused` + reason ≤ 64 chars +
+  `Retryable` · `Unavailable` (no authority measurement, failed read, lost race: nothing is known; re-drive the same
+  key). A missing producer port or `Unavailable` leaves the invoice "waiting for Accounting", re-drivable.
+- **Fail-closed mapping ("eşleme bekliyor")**: a missing, inactive, not-yet-effective or ambiguous account mapping
+  is a retryable `Refused` (`mapping_pending` | `mapping_ambiguous`), recorded as a `Waiting` row (the attempt is
+  counted); the same key is admitted once Accounting has configured the mapping. No account is guessed.
+- **Content refusals** (`totals_mismatch`, `withholding_exceeds_vat`, `amount_invalid`, `exchange_rate_invalid`,
+  `line_invalid`, `document_invalid`, `voucher_unbalanced`, `mapping_query_invalid`) are recorded terminal refusals
+  and replay for the key. Malformed identity (`request_invalid`, `document_kind_unsupported`,
+  `idempotency_key_invalid`) is refused unrecorded.
+- **Voucher** (no recomputation, no threshold; Accounting uses the producer's amounts): debit `receivable` =
+  net + VAT − withholding; credit `revenue` per invoice line = net; credit `vat-output` per `VatRateCode` group =
+  Σ(VAT − withholding). Zero lines are skipped and the voucher must balance. The 12.000 TL tevkifat threshold is
+  the producer's configuration. `PeriodId` is stamped only if an Open period covers the date, else null
+  ("dönem bekliyor"); the draft is never refused for a closed or missing period (KLN-D15).
+- **Authority** is host-injected (`IAccountingSourceDocumentAdmissionAuthorityV1`, the Finance pattern); the default is
+  `UnavailableAccountingSourceDocumentAdmissionAuthorityV1`, so an unwired host answers `Unavailable`.
+- **Database**: the admission row is the attempt record and the terminal refusal record
+  (`UX_SourceDocumentAdmissions_Key` / `_Document` unique per company; draft and lines immutable).
+- **Migration** `20261108222146_AddSourceDocumentAdmissions`: Down refuses with **THROW 51240** while any admission
+  or draft exists (forward fix). 51234 is taken by an open PR.
+
+### Not decided yet (B-04b)
+
+- NEEDS-SINAN: the sales-side withholding counter-account (#66 6707860683): no withholding line is written.
+- NEEDS-SINAN: the reversing voucher's period and the FX-difference accounting; cancel/return
+  (`sales-invoice-cancel:…`, KLN-D16) and the purchase kind are not in V1 (`document_kind_unsupported`).
+- NEEDS-SINAN: which permission measures this port, and the host adapter (Sales/host lane).
+- NEEDS-SINAN: "dönem bekliyor" is a null `PeriodId` in V1; whether it should be a stored queue flag is open.
+
 ## Rule codes and read-only views (ACC-2)
 
 - Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and
