@@ -30,7 +30,8 @@ public sealed class FinanceDraftPersistenceModelTests
                  {
                      typeof(ReceiptDraftRow), typeof(FinanceCommandRow), typeof(MoneyEventRow),
                      typeof(ReversalProposalRow), typeof(FinanceOpenItemRow), typeof(FinanceSourceAllocationStateRow),
-                     typeof(FinanceAllocationRow),
+                     typeof(FinanceAllocationRow), typeof(FinancePaymentAllocationRow),
+                     typeof(FinancePaymentAllocationStateRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;

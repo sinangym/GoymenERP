@@ -263,8 +263,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
             // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
             // F2b: +4 invoice cancellation facts, ordinal-sorted (4575e229… -> c2205fa2…).
+            // F3a / API-20: +7 payment allocation facts, ordinal-sorted (c2205fa2… -> 13687b4d777b499c9350a572fb9e146030f3097d818c05cbea38c693f16ca438…).
             ["tools/relational_inventory/finance.txt"] =
-                "a73d968c479c4144f195ad65b29e2eb81652fc0612a31464ba42249136d993fb",
+                "13687b4d777b499c9350a572fb9e146030f3097d818c05cbea38c693f16ca438",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -680,7 +681,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/FinanceDbContext.cs"] =
             // F2b: InvoiceCancellations / InvoiceCancellationItems carry the CompanyId filter and company-leading keys;
             // CK_OpenItems_Status admits 3 = Cancelled (973395d3… -> 578e4f20…).
-            "578e4f20fbf62e55557a56945ab2f6579f50d0a02ef1f05c43d6334e878fe697",
+            // F3a / API-20: PaymentAllocations / PaymentAllocationStates carry the CompanyId filter, company-leading
+            // keys to ManualBankPayments and OpenItems, and a release-only write guard (578e4f20… -> 95024798…).
+            "950247983a8a0742e9ce5aed9b14d527f92e5f9a507ad745637a8d01ff0d52b6",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1193,12 +1196,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
                 // registration (no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for
                 // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
-                // items, no writer); the provider branch and its token counts are unchanged.
+                // items, no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for F3a /
+                // API-20: the payment allocation writer and read service registrations; token counts unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "5a5f1c4239042ad6e4ad501ccda884f63f5ffb7bee6a9ba366ab96b9d71b7135",
+                        "8b1954b128e2250150ae17f60f2f3955d43209940a863fb59730fa8e84a719a5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1249,11 +1253,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs"] =
                     new(
-                        "c4520eee191baaca06faadc0e30fe720384bdad9903636fe02dd111737bde4bf",
+                        "8c7d635fa13b3389f377319a03bd4fe8bd498162c1a7ff9384d26c33efe26138",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // F3a / API-20: the payment allocation writer has the F-03 allocation shape. SqlClient is referenced
+                // only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinancePaymentAllocationService.cs"] =
+                    new(
+                        "8fdf328ab45447718739ad839a916758e7d71f8e754a76c1a89c09458c949b5b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // F3a / API-20 reads use only the tenant-filtered FinanceDbContext through EF/DI.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinancePaymentAllocationReadService.cs"] =
+                    new(
+                        "11c5db6eef3c3c73e0bac2f2c6f91b1a7ff5300bd5e39b4c3f592b7d3d7fb5da",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-03 reads use only the tenant-filtered FinanceDbContext through EF/DI. The exact
                 // fingerprint and empty API inventory keep direct SQL and filter-bypass surfaces closed.
                 ["src/backend/Modules/Finance/"
@@ -1283,9 +1303,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // F2b invoice cancellation: the same shape as the F2a admission — tenant-filtered FinanceDbContext,
                 // SqlClient only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
+                // F3a / API-20: an active payment allocation also refuses (one more tenant-filtered EF read;
+                // 2ae7b299… -> f9ef0286…).
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "8b02512a01241b015ea34574296825356228cef44dc923a73b2c50861ca96926",
+                        "93aaf32671c8b0fa74827e76f9c325d7cd1f906ce1e32e80d1b733e5dbcafb62",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2621,6 +2643,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
+                // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107154419_AddPaymentAllocations.cs"] =
+                    new("5fee84517da703301d4b2d551731a6458efa4795948e491d457cc14016aba90a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // F2b: the Down's only raw SQL is Finance's module refusal (51051) while any invoice cancellation or cancelled
                 // open item is stored; the THROW precedes the table drops and the status constraint narrowing. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107131505_AddInvoiceCancellations.cs"] =
