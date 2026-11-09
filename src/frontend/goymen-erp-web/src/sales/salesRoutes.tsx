@@ -27,6 +27,7 @@ import { SalesDispatchListPage } from './SalesDispatchListPage'
 import { SalesInvoiceCandidatesPage } from './SalesInvoiceCandidatesPage'
 import { SalesReportsPage } from './SalesReportsPage'
 import { SalesInvoiceListPage } from './SalesInvoiceListPage'
+import { SalesControlCenterPage } from './SalesControlCenterPage'
 
 /** The shell's `CapabilityId` union carries the three Sales route ids, so no cast is needed. */
 function gate(capability: CapabilityId, children: ReactNode) {
@@ -56,4 +57,7 @@ export const salesRoutes: RouteObject[] = [
   { path: SALES_ROUTE.invoices.slice(1), element: gate(SALES_CAPABILITY.invoicesList, <SalesInvoiceListPage />) },
   // UI-80 (Sales shell 1.11): the Sales reports screen on its own published id.
   { path: SALES_ROUTE.reports.slice(1), element: gate(SALES_CAPABILITY.reportsView, <SalesReportsPage />) },
+  // UI-65 Kontrol Merkezi (API-37): no own published id yet, so it stands on the S-08 id, which the shell publishes only beside the
+  // same `sales.invoices.read` API-37 measures. No new capability or permission; the API re-measures every call.
+  { path: SALES_ROUTE.controlCenter.slice(1), element: gate(SALES_CAPABILITY.invoiceCandidatesList, <SalesControlCenterPage />) },
 ]
