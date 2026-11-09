@@ -139,7 +139,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        "069c2674ae7e2722fa3d5322fd54a115420df2e353e2d30472384aa90393a65d";
+        "a1562dc161cfd5fba787dbf77820476905448ebba901af6b6f85f5499cb9d4d5";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -385,8 +385,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A2a-1 (plan TEK-01/API-20): +4 order line price SQL facts (one save + audit + rebuild + approval + the price/money checks,
             // unpriced columns null + priced technical line refused, company isolation, Down refusal 51169), kept ordinal-sorted
             // (ae6ee9f7… -> 2085f158…); +1 explicit zero price fact (Sinan #66 6704170096; 2085f158… -> c3fa56d7…).
+            // A2a-1c (ALS-D72): +2 unit-price scale SQL facts (four-decimal price stored + rebuilt + the scale check, Down refusal
+            // 51170), kept ordinal-sorted (c3fa56d7… -> dab7b47e…).
+            // A2a-2 (ALS-D38, ALS-D75): +2 maturity surcharge SQL facts (stored + audited + rebuilt + the surcharge check, Down refusal
+            // 51171), kept ordinal-sorted (dab7b47e… -> e4eea63d…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "c3fa56d75efb7e365f4c472a1f96f6aaebb91d9171416ced71900a4beae0f0de",
+                "e4eea63d0cddb2f77d49ce6e8947f39f45befa0a3be7ec53b9d7de2616c6b289",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -631,9 +635,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A2a-1 (plan TEK-01/API-20): the order's money snapshot columns and their check, the line's price
             // columns (precisions) and their check (a unit price ≥ 0: an explicit 0 is a price); the write guard's allow-list is
             // unchanged (prices never move); filters and keys unchanged.
+            // Re-measured for A2a-1c (ALS-D72): the order's nullable UnitPriceScale and its own check (beside a currency, 0..28);
+            // the money check, the write guard's allow-list, filters and keys unchanged.
+            // Re-measured for A2a-2 (ALS-D38, ALS-D75): the line's two maturity surcharge columns (precisions) and their own check
+            // (one, beside a unit price above 0); the price check, the write guard's allow-list, filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "8112bf51baf7536d49baf3ce3f5725815da9cd107e548955db94e2d595e1adbd",
+                "cfa97b2c51734eece7f384f6374495387dfeb39ecb239bfa36a3da025660bb9e",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1496,7 +1504,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
                         // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
-                        "5e9af601e67b444b2f9c480618af865757ecc4c99fd8cb573898cf7af6c7c95c",
+                        // A2a-2: and the existing Settings line tax port (ISettingsLineTaxResolverV1, optional); counts unchanged.
+                        "d5f40fbd4d6fb1d6ba628d929dc580778f9def9f3710bcd85617150fe3fdb22c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1562,10 +1571,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
                 // Re-fingerprinted for A2a-1: the order's money snapshot and the line prices written once, audited and rebuilt
                 // through the domain; same token count.
+                // Re-fingerprinted for A2a-1c: the order's unit-price scale written once with the money snapshot, audited and
+                // rebuilt through the domain; same SqlClient use.
+                // Re-fingerprinted for A2a-2: the line's maturity surcharge written once with the price, audited and rebuilt through
+                // the domain; same SqlClient use.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
+                        "5257fa0e68814752f86879618bd492de6848f93fe63c09d1418934e3cf5c4af4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2257,6 +2270,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
                     new(
                         "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // A2a-1c (ALS-D72): one reviewed statement, before every drop. Down refuses (51170, used by no other migration)
+                // while any order carries a unit-price scale, which dropping the column would leave with unit prices wider than
+                // the amount scale the domain rebuilds them with. Up only adds a nullable column and its check.
+                // A2a-2 (ALS-D38, ALS-D75): one reviewed statement, before every drop. Down refuses (51171, used by no other migration)
+                // while any line carries a maturity surcharge, which dropping the columns would silently remove from its net and
+                // amount. Up only adds two nullable columns and their check.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261107151838_AddPurchaseOrderLineDeferral.cs"] =
+                    new(
+                        "e98ff6107f7fad6094c8d38ea90ebff6d90625f3812da4d611838927dd710af0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261107131321_AddPurchaseOrderUnitPriceScale.cs"] =
+                    new(
+                        "d08f90d904a061f55578696a5c233fca4a4cf3015b73714d69dab4c47b8a84ef",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
