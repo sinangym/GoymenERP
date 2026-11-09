@@ -139,6 +139,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * `identity.assignments.read` company-wide; the role card is reached from a row.
    */
   'identity.assignments.list',
+  /** UI-K02 (KLN-D2): the read-only audit log, drawn only where the server granted `identity.audit.read` company-wide. */
+  'identity.audit.list',
   /** SAT-D61…D70: the Settings discount limit screen, drawn only where the server granted its one name. */
   'settings.sales-discount-limits.manage',
   /** MOD-03: the Settings tax master screen, drawn only where the server granted its one name. */
@@ -228,6 +230,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
+  'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
@@ -367,6 +370,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
       'identity.assignments.list',
+      // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
+      'identity.audit.list',
       'inventory.opening-stock.record',
     ],
     subheadings: {

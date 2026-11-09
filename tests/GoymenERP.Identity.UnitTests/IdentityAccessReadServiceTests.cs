@@ -246,20 +246,32 @@ public sealed class IdentityAccessReadServiceTests
     }
 
     [Fact]
-    public void The_shell_provider_declares_two_read_screens_on_the_one_read_name_and_no_control()
+    public void The_shell_provider_declares_two_access_screens_and_the_audit_list_each_on_its_one_read_name_and_no_control()
     {
-        var declarations = new IdentityShellCapabilityProvider().GetDeclarations();
+        var provider = new IdentityShellCapabilityProvider();
+        var declarations = provider.GetDeclarations();
 
+        Assert.Equal("1.1", provider.ContractVersion);
         Assert.Equal(
             [
                 ("identity.assignments.list", "/ayarlar/kullanicilar-ve-yetkiler", "SY-01"),
                 ("identity.roles.detail", "/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId", "SY-02"),
+                ("identity.audit.list", "/ayarlar/denetim-kaydi", "SY-07"),
             ],
             declarations.Select(declaration =>
                 (declaration.CapabilityId, declaration.RoutePath, declaration.ScreenId)));
+        Assert.Equal(
+            [
+                [IdentityPermissionManifestV1.AssignmentsRead],
+                [IdentityPermissionManifestV1.AssignmentsRead],
+                [ErpPermissions.IdentityAuditRead],
+            ],
+            declarations.Select(declaration => declaration.RequiredPermissions.ToArray()));
+        Assert.Equal(
+            GoymenERP.BuildingBlocks.Shell.ShellCapabilityRoutePrecedence.Static,
+            declarations.Single(declaration => declaration.CapabilityId == "identity.audit.list").RoutePrecedence);
         Assert.All(declarations, declaration =>
         {
-            Assert.Equal([IdentityPermissionManifestV1.AssignmentsRead], declaration.RequiredPermissions);
             Assert.Null(declaration.ParentCapabilityId);
             Assert.True(declaration.ImplementationAvailable);
             Assert.Equal(GoymenERP.BuildingBlocks.Shell.ShellCapabilityScopeRequirement.CompanyWide,

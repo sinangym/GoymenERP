@@ -248,6 +248,11 @@ export const CAPABILITY = {
   /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
   identityRolesDetail: 'identity.roles.detail',
   /**
+   * UI-K02 (KLN-D2) "Denetim kaydı": the company's audit events, read-only. Route `/ayarlar/denetim-kaydi`, owner
+   * Identity 1.1, on the existing `identity.audit.read` (company-wide, Critical); no grant is added here.
+   */
+  identityAuditList: 'identity.audit.list',
+  /**
    * SAT-D61…D70 Ayarlar > İskonto limitleri: the Sales discount limit groups, their limits and the person → group
    * bindings. Route `/ayarlar/iskonto-limitleri`, owner Settings; one non-Critical name, granted to no role here.
    */
@@ -367,6 +372,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
+  [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
