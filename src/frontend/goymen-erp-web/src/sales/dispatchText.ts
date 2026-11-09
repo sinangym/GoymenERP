@@ -32,6 +32,7 @@ export const DISPATCH_TEXT = {
     nav: 'Satış irsaliye ve fatura ekranları',
     dispatchesTab: 'Sevkiyat / İrsaliyeler',
     candidatesTab: 'Faturaya Hazır',
+    controlCenterTab: 'Kontrol Merkezi',
   },
   dispatches: {
     heading: 'Sevkiyat / İrsaliyeler',
