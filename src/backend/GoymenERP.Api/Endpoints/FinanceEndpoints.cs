@@ -21,6 +21,7 @@ public static class FinanceEndpoints
     public const string BankAccountCurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string AllocationsPath = "/api/v1/finance/allocations";
+    public const string PaymentAllocationsPath = "/api/v1/finance/payment-allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
     public const string PartyLedgerPath = "/api/v1/finance/party-ledger";
     public const string PartyBalancePath = "/api/v1/finance/party-balance";
@@ -85,6 +86,7 @@ public static class FinanceEndpoints
         MapManualReceiptEndpoints(endpoints);
         MapManualBankPaymentEndpoints(endpoints);
         MapFinanceAllocationEndpoints(endpoints);
+        MapFinancePaymentAllocationEndpoints(endpoints);
         MapCustomerInstrumentEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
@@ -808,6 +810,129 @@ public static class FinanceEndpoints
             .Produces<FinanceAllocationCommandResult>(StatusCodes.Status200OK)
             .Produces<FinanceAllocationCommandResult>(StatusCodes.Status409Conflict)
             .Produces<FinanceAllocationCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>F3a / API-20: a recorded manual bank payment applied to payable items, behind the allocation permissions.</summary>
+    private static void MapFinancePaymentAllocationEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(PaymentAllocationsPath, async (
+                HttpContext httpContext,
+                IFinancePaymentAllocationReadService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ListAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinancePaymentAllocationsV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationRead)
+            .RequireCompanyContext()
+            .Produces<FinancePaymentAllocationPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(PaymentAllocationsPath + "/{allocationId:guid}", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                IFinancePaymentAllocationReadService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.GetAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), allocationId, cancellationToken));
+            })
+            .WithName("GetFinancePaymentAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationRead)
+            .RequireCompanyContext()
+            .Produces<FinancePaymentAllocationDetail>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(PaymentAllocationsPath, async (
+                HttpContext httpContext,
+                IFinancePaymentAllocationService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<CreateFinancePaymentAllocationRequest>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.CreateAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("CreateFinancePaymentAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationWrite)
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CreateFinancePaymentAllocationRequest>("application/json")
+            .Produces<FinancePaymentAllocationCommandResult>(StatusCodes.Status200OK)
+            .Produces<FinancePaymentAllocationCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<FinancePaymentAllocationCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(PaymentAllocationsPath + "/{allocationId:guid}/release", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                IFinancePaymentAllocationService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<ReleaseFinanceAllocationRequest>(httpContext, cancellationToken)
+                    is not { } request || request.AllocationId != allocationId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.ReleaseAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ReleaseFinancePaymentAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationWrite)
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ReleaseFinanceAllocationRequest>("application/json")
+            .Produces<FinancePaymentAllocationCommandResult>(StatusCodes.Status200OK)
+            .Produces<FinancePaymentAllocationCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<FinancePaymentAllocationCommandResult>(StatusCodes.Status422UnprocessableEntity)
             .ProducesErpAuthenticatedProblems()
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()

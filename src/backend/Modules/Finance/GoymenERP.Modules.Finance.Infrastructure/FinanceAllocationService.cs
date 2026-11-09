@@ -126,10 +126,10 @@ public sealed class FinanceAllocationService(
         dbContext.Allocations.Add(allocation);
         var result = Succeeded(context, allocation);
         AddCommand(context, metadata, CreateCommandName, payloadHash, null, allocation.Id, result, now);
-        Audit(context, metadata, allocation, "finance.allocation.created.v1", "Create", null, 1,
-            "{}", AuditJson(allocation), "Existing Finance source allocated; no money event created");
         return await SaveAsync(context, metadata, CreateCommandName, payloadHash,
-            allocation.Id, result, cancellationToken);
+            allocation.Id, result, cancellationToken,
+            () => Audit(context, metadata, allocation, "finance.allocation.created.v1", "Create", null, 1,
+            "{}", AuditJson(allocation), "Existing Finance source allocated; no money event created"));
     }
 
     public async Task<FinanceAllocationCommandResult> ReleaseAsync(
@@ -195,10 +195,10 @@ public sealed class FinanceAllocationService(
 
         var result = Succeeded(context, allocation);
         AddCommand(context, metadata, ReleaseCommandName, payloadHash, null, allocation.Id, result, now);
-        Audit(context, metadata, allocation, "finance.allocation.released.v1", "Release", 1, allocation.Version,
-            before, AuditJson(allocation), normalizedRequest.Reason);
         return await SaveAsync(context, metadata, ReleaseCommandName, payloadHash,
-            allocation.Id, result, cancellationToken);
+            allocation.Id, result, cancellationToken,
+            () => Audit(context, metadata, allocation, "finance.allocation.released.v1", "Release", 1, allocation.Version,
+            before, AuditJson(allocation), normalizedRequest.Reason));
     }
 
     private async Task<FinanceAllocationCommandResult?> StartAsync(
@@ -265,13 +265,15 @@ public sealed class FinanceAllocationService(
 
     private async Task<FinanceAllocationCommandResult> SaveAsync(
         FinanceContext context, CommandMetadata metadata, string command, string payloadHash,
-        Guid? permissionTargetId, FinanceAllocationCommandResult result, CancellationToken cancellationToken)
+        Guid? permissionTargetId, FinanceAllocationCommandResult result, CancellationToken cancellationToken,
+        Action? audit = null)
     {
         if (await FenceAsync(context, permissionTargetId, cancellationToken) is { } fenced)
         {
             dbContext.ChangeTracker.Clear();
             return fenced;
         }
+        audit?.Invoke();
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
