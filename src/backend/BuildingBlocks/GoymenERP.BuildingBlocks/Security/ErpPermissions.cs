@@ -590,7 +590,10 @@ public static class ErpPermissions
     /// S5 API-36 (Fatura çekirdeği 4; SAT-D208, Sinan S6): finalise a matched sales invoice and re-drive its Finance hand-off (Sales owner
     /// name SalesPermissionManifestV1.InvoicesFinalize, same string). Its own name: the invoice write, read, approve and match names and
     /// the order names do not confer it and it confers none of them. Registered, not granted: no seeded role and no real user receives
-    /// it (who finalises is a grant and a human gate). Company-wide only. Not marked Critical here: the Critical class is a human gate.
+    /// it (who finalises is a grant and a human gate). Company-wide only. Critical (SAT-D235, SINAN_KARARLARI_2026-11-09_SATIS_EK46.md):
+    /// granting it follows the Critical class's human gate and grant-time dual control. Critical is a grant-time property only — it adds
+    /// no segregation of duties to finalisation (SAT-D235 (2): the preparer, approver or matcher may finalise when granted; KLN-D17
+    /// still applies to the 120 voucher).
     /// </summary>
     public const string SalesInvoicesFinalize = "sales.invoices.finalize";
 
@@ -1101,6 +1104,7 @@ public static class ErpPermissions
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
             CounterpartyPartiesTaxIdentityApprove,
+            SalesInvoicesFinalize,
         ],
         StringComparer.Ordinal);
 

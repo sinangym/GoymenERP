@@ -15,7 +15,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// SALES-API (#321): the Sales owner's permission names are registered centrally with the same
-/// strings (company-wide only, not Critical, no grant), and the staged Sales shell provider joins the
+/// strings (company-wide only, no grant; not Critical except sales.invoices.finalize, SAT-D235), and the staged Sales shell provider joins the
 /// module table with its own reviewed normal-host authority.
 /// </summary>
 public sealed class SalesDraftPermissionAndShellRegistrationTests
@@ -78,7 +78,6 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.InvoicesApprove, ErpPermissions.SalesInvoicesApprove)]
     // S5 API-35 (Fatura çekirdeği 3; SAT-D89/D106): the official match's own name, company-wide, not Critical, granted to no role.
     [InlineData(SalesPermissionManifestV1.InvoicesMatch, ErpPermissions.SalesInvoicesMatch)]
-    [InlineData(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize)]
     // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
     // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
     [InlineData(SalesPermissionManifestV1.QuotesWrite, ErpPermissions.SalesQuotesWrite)]
@@ -90,6 +89,19 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         Assert.Single(ErpPermissions.All, known => known == ownerName);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(ownerName));
         Assert.False(ErpPermissions.IsCritical(ownerName));
+    }
+
+    [Fact]
+    public void The_finalize_name_is_registered_company_wide_and_is_the_only_critical_sales_name_under_sat_d235()
+    {
+        // SAT-D235 (SINAN_KARARLARI_2026-11-09_SATIS_EK46.md): sales.invoices.finalize is Critical — a grant-time class, no
+        // segregation of duties and no grant here. Every other Sales name stays not Critical.
+        Assert.Equal(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize);
+        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.Single(ErpPermissions.All, known => known == SalesPermissionManifestV1.InvoicesFinalize);
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.True(ErpPermissions.IsCritical(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.Equal([SalesPermissionManifestV1.InvoicesFinalize], SalesPermissionManifestV1.Names.Where(ErpPermissions.IsCritical));
     }
 
     [Fact]
