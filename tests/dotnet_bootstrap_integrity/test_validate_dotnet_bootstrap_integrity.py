@@ -975,10 +975,25 @@ class WorkflowOrderingTests(unittest.TestCase):
             "backend-build": ["    name:", "    runs-on:", "    steps:"],
             "backend-test-group": ["    name:", "    runs-on:", "    strategy:", "    steps:"],
             "backend": ["    name:", "    needs:", "    if:", "    runs-on:", "    steps:"],
-            "frontend": [
+            "frontend-static": [
                 "    name:",
                 "    runs-on:",
+                "    outputs:",
                 "    defaults:",
+                "    steps:",
+            ],
+            "frontend-test": [
+                "    name:",
+                "    runs-on:",
+                "    strategy:",
+                "    defaults:",
+                "    steps:",
+            ],
+            "frontend": [
+                "    name:",
+                "    needs:",
+                "    if:",
+                "    runs-on:",
                 "    steps:",
             ],
             "relational": [
@@ -1014,16 +1029,17 @@ class WorkflowOrderingTests(unittest.TestCase):
                 ]
                 self.assertEqual(keys, expected_keys)
 
-        frontend_defaults = re.search(
-            r"(?ms)^    defaults:\n(.*?)(?=^    \S)",
-            self.job_body("frontend"),
-        )
-        self.assertIsNotNone(frontend_defaults)
-        self.assertEqual(
-            frontend_defaults.group(1),
-            "      run:\n"
-            "        working-directory: src/frontend/goymen-erp-web\n",
-        )
+        for frontend_job in ("frontend-static", "frontend-test"):
+            frontend_defaults = re.search(
+                r"(?ms)^    defaults:\n(.*?)(?=^    \S)",
+                self.job_body(frontend_job),
+            )
+            self.assertIsNotNone(frontend_defaults)
+            self.assertEqual(
+                frontend_defaults.group(1),
+                "      run:\n"
+                "        working-directory: src/frontend/goymen-erp-web\n",
+            )
 
         for job_name in self.RELATIONAL_EXECUTION_JOBS:
             relational_env = re.search(
@@ -1058,13 +1074,13 @@ class WorkflowOrderingTests(unittest.TestCase):
         # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
             "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
-            "backend-test-group": "4138b2c1aa82cb51ccbaf6cbe3a42a54416a93b61b598ca776a0a9207272be58",
+            "backend-test-group": "a8ed7bcd80535e04609a8f14f443b6ccb2005f0973a2b882079bce2deb310c16",
             "backend": (
                 "e2e37178376493f6a14224f36a3682680223ee9ce509742a7ef287e80bda78d3"
             ),
-            "frontend": (
-                "202453e576ee28ee342819117d1533b9b0aa3aacd7348bc893cb21672fa789df"
-            ),
+            "frontend-static": "a346a83a55223cf27f2568392cc02e2ee3cb8e268761e2fe08d5c4b9f15e6bbb",
+            "frontend-test": "ae92e87899200dca4b66f33a0749a5e272240cfbc2f1242ddb499eff31113aaf",
+            "frontend": "da83a5f80558cd202195fd7a04e99f8046f47df9d791399f70da3ee305063ac7",
             "relational-shard": (
                 "f8414c3df38ceeddf840369521891220587c981491d11ad11df60447dd77fa7b"
             ),
@@ -1135,23 +1151,44 @@ class WorkflowOrderingTests(unittest.TestCase):
             ],
         )
 
-        frontend_run_steps = re.findall(
-            r"^      - run: (.+)$", self.job_body("frontend"), re.M
+        frontend_static_steps = re.findall(
+            r"^      - run: (.+)$", self.job_body("frontend-static"), re.M
         )
         self.assertEqual(
-            frontend_run_steps,
+            frontend_static_steps,
             [
                 "npm ci",
                 "npm audit --audit-level=high",
                 "npm run lint",
-                "npm test -- --maxWorkers=1 --no-file-parallelism",
                 "npm run build",
             ],
         )
+        frontend_test = self.job_body("frontend-test")
+        self.assertEqual(
+            re.findall(r"^      - run: (.+)$", frontend_test, re.M), ["npm ci"]
+        )
+        self.assertIn("shard: [1, 2, 3, 4]", frontend_test)
+        self.assertIn(
+            "npm test -- --maxWorkers=1 --no-file-parallelism "
+            "--shard=${{ matrix.shard }}/4",
+            " ".join(frontend_test.split()),
+        )
+        frontend_gate = self.job_body("frontend")
+        for required in (
+            "- frontend-static",
+            "- frontend-test",
+            "if: ${{ always() }}",
+            'test "$STATIC_RESULT" = success',
+            'test "$TEST_RESULT" = success',
+            'test "$shards" -eq 4',
+            'test "$total" -eq "$EXPECTED"',
+        ):
+            self.assertIn(required, frontend_gate)
 
     def assert_backend_execution_and_aggregate_boundaries(self) -> None:
         head_ref = "${{ github.event.pull_request.head.sha || github.sha }}"
         group_ref = "${{ matrix.group }}"
+        unit_ref = "${{ matrix.unit }}"
         build = self.job_body("backend-build")
         worker = self.job_body("backend-test-group")
         aggregate = self.job_body("backend")
@@ -1177,12 +1214,17 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertNotIn("dotnet test GoymenERP.slnx", build)
         self.assertEqual(
             re.findall(r"^    \S.*$", worker, re.M),
-            ["    name: Backend test group (${{ matrix.group }})",
+            ["    name: Backend test group (${{ matrix.unit }})",
              "    runs-on: ubuntu-latest", "    strategy:", "    steps:"],
         )
         self.assertIn(
             "    strategy:\n      fail-fast: false\n      matrix:\n"
-            "        group: [architecture, api, modules]\n",
+            "        include:\n"
+            '          - { group: architecture, unit: architecture, shard_args: "" }\n'
+            '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n'
+            '          - { group: api, unit: api-2, shard_args: "--shard 2" }\n'
+            '          - { group: api, unit: api-3, shard_args: "--shard 3" }\n'
+            '          - { group: modules, unit: modules, shard_args: "" }\n',
             worker,
         )
         self.assertNotIn("continue-on-error:", worker)
@@ -1205,9 +1247,9 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "run: |",
                 "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
                 "python3 -I -S -B tools/verify_backend_test_groups.py \\",
-                f'--group "{group_ref}" \\',
-                f'--results-directory "artifacts/ci-test-results/backend-groups/{group_ref}" \\',
-                f'--proof-output "artifacts/ci-backend-group-proofs/proof-{group_ref}.json" \\',
+                f'--group "{group_ref}" ${{{{ matrix.shard_args }}}} \\',
+                f'--results-directory "artifacts/ci-test-results/backend-groups/{unit_ref}" \\',
+                f'--proof-output "artifacts/ci-backend-group-proofs/proof-{unit_ref}.json" \\',
                 f'--source-head "{head_ref}" \\',
                 '--tested-commit "$(git rev-parse HEAD)"',
             ],
@@ -1217,8 +1259,8 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "uses: actions/upload-artifact@v7",
                 "with:",
-                f"name: ci-backend-test-group-proof-{group_ref}",
-                f"path: artifacts/ci-backend-group-proofs/proof-{group_ref}.json",
+                f"name: ci-backend-test-group-proof-{unit_ref}",
+                f"path: artifacts/ci-backend-group-proofs/proof-{unit_ref}.json",
                 "if-no-files-found: error",
                 "retention-days: 7",
             ],
@@ -1295,10 +1337,11 @@ class WorkflowOrderingTests(unittest.TestCase):
     def test_backend_execution_and_aggregate_boundaries_reject_mutants(self) -> None:
         self.assert_backend_execution_and_aggregate_boundaries()
         mutations = (
-            ("missing group", "group: [architecture, api, modules]",
-             "group: [architecture, api]"),
-            ("duplicate group", "group: [architecture, api, modules]",
-             "group: [architecture, api, modules, modules]"),
+            ("missing group", '          - { group: modules, unit: modules, shard_args: "" }\n', ""),
+            ("duplicate group", '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n',
+             '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n'
+             '          - { group: api, unit: api-1, shard_args: "--shard 1" }\n'),
+            ("missing api shard", '          - { group: api, unit: api-3, shard_args: "--shard 3" }\n', ""),
             ("conditional worker", "  backend-test-group:\n    name:",
              "  backend-test-group:\n    if: ${{ false }}\n    name:"),
             ("soft worker", "  backend-test-group:\n    name:",

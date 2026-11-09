@@ -82,6 +82,9 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}"),
+                // SAT-D32: the user-closure control of the detail.
+                (SalesShellCapabilityProvider.CloseCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersClose}"),
                 (SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId,
                     SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}"),
@@ -93,6 +96,12 @@ public sealed class FinanceShellRegistrationTests
                 // API-04: the header-revision control of the detail.
                 (SalesShellCapabilityProvider.HeaderWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersHeaderWrite}"),
+                // SAT-D17 / SAT-D168: the line-closure control of the detail.
+                (SalesShellCapabilityProvider.LineCloseCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersLineClose}"),
+                // SAT-D30: the over-delivery approval control of the detail.
+                (SalesShellCapabilityProvider.OverDeliveryApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersOverDeliveryApprove}"),
                 (SalesShellCapabilityProvider.PriceFloorExceptionApproveCapabilityId,
                     SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove}"),

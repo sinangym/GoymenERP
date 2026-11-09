@@ -158,6 +158,419 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPostingAccountMappingEntryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MappingVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AccountCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool?>("IsExport")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ItemType")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("LinePurpose")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("MappingKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("VatRateCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "MappingVersion", "LineNumber");
+
+                    b.HasIndex("CompanyId", "MappingVersion", "Purpose", "MappingKey", "ItemType", "LinePurpose", "IsExport", "VatRateCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PostingAccountMappingRows_Selector");
+
+                    b.ToTable("PostingAccountMappingRows", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_PostingAccountMappingRows_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MappingVersion] >= 1 AND [LineNumber] >= 1 AND [AccountId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingRows_Key", "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output', N'withholding-receivable')) OR ([Purpose] = N'purchase-invoice' AND [MappingKey] IN (N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense'))");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingRows_Text", "LEN([AccountCode]) > 0 AND ([ItemType] IS NULL OR LEN([ItemType]) > 0) AND ([LinePurpose] IS NULL OR LEN([LinePurpose]) > 0)");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingRows_VatRate", "[VatRateCode] IS NULL OR (LEN([VatRateCode]) > 0 AND [MappingKey] IN (N'vat-output', N'vat-input'))");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPostingAccountMappingVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MappingVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("AccountPlanSourceSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("AccountPlanSourceVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset?>("ActivatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ActivatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PreparedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "MappingVersion");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PostingAccountMappingVersions_Active")
+                        .HasFilter("[Status] = 2");
+
+                    b.ToTable("PostingAccountMappingVersions", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_PostingAccountMappingVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MappingVersion] >= 1 AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingVersions_MakerChecker", "[ActivatedByUserId] IS NULL OR [ActivatedByUserId] <> [PreparedByUserId]");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingVersions_Plan", "LEN([AccountPlanSourceVersion]) > 0 AND LEN([AccountPlanSourceSha256]) = 64");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingVersions_Status", "([Status] = 1 AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR ([Status] IN (2, 3) AND [ActivatedByUserId] IS NOT NULL AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PostingAccountMappingVersions_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentAdmissionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("FinalizedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("FirstAttemptedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("LastAttemptedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourceActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("VoucherDraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "SourceDocumentId");
+
+                    b.HasIndex("CompanyId", "IdempotencyKeyHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SourceDocumentAdmissions_Key");
+
+                    b.HasIndex("CompanyId", "VoucherDraftId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SourceDocumentAdmissions_Draft")
+                        .HasFilter("[VoucherDraftId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "DocumentKind", "InvoiceId", "FinalizedVersion")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SourceDocumentAdmissions_Document");
+
+                    b.ToTable("SourceDocumentAdmissions", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_SourceDocumentAdmissions_Attempts", "[AttemptCount] >= 1 AND [Version] >= 1");
+
+                            t.HasCheckConstraint("CK_SourceDocumentAdmissions_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_SourceDocumentAdmissions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceActorId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 1 AND LEN([DocumentKind]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_SourceDocumentAdmissions_Status", "([Status] = 1 AND [VoucherDraftId] IS NULL AND LEN([ReasonCode]) > 0) OR ([Status] = 2 AND [VoucherDraftId] IS NOT NULL AND [ReasonCode] = 'admitted') OR ([Status] = 3 AND [VoucherDraftId] IS NULL AND LEN([ReasonCode]) > 0 AND [ReasonCode] <> 'admitted')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<string>("MappingKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Side")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SourceLineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VatRateCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "DraftId", "LineNumber");
+
+                    b.ToTable("SourceDocumentVoucherDraftLines", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDraftLines_Amount", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDraftLines_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [AccountId] <> '00000000-0000-0000-0000-000000000000' AND [LineNumber] >= 1 AND ([SourceLineNumber] IS NULL OR [SourceLineNumber] >= 1) AND LEN([MappingKey]) > 0");
+
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDraftLines_Side", "[Side] IN (1, 2)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("DocumentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal>("DocumentNet")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<decimal>("DocumentPayable")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<decimal>("DocumentVat")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<decimal>("DocumentWithholding")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ExchangeRate")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<long>("FinalizedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("FunctionalNet")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<decimal>("FunctionalPayable")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<decimal>("FunctionalVat")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<decimal>("FunctionalWithholding")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("decimal(38,18)");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MappingVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("PartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourceActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "SourceDocumentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SourceDocumentVoucherDrafts_Source");
+
+                    b.ToTable("SourceDocumentVoucherDrafts", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Amounts", "[DocumentNet] >= 0 AND [DocumentVat] >= 0 AND [DocumentWithholding] >= 0 AND [DocumentPayable] >= 0 AND [FunctionalNet] >= 0 AND [FunctionalVat] >= 0 AND [FunctionalWithholding] >= 0 AND [FunctionalPayable] >= 0 AND [FunctionalWithholding] <= [FunctionalVat] AND [FunctionalPayable] = [FunctionalNet] + [FunctionalVat] - [FunctionalWithholding]");
+
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceActorId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 1 AND [MappingVersion] >= 1");
+
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Status", "[Status] = 1");
+
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ApprovedAccountingSourceCatalogRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1000,6 +1413,56 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "SourceJournalId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPostingAccountMappingEntryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPostingAccountMappingVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "MappingVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPostingAccountMappingVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentAdmissionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "VoucherDraftId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

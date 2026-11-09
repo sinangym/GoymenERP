@@ -309,6 +309,25 @@ public sealed class SalesQuotePersistenceModelTests
     }
 
     [Fact]
+    public void The_quote_due_terms_migration_down_refuses_with_51227_and_its_up_is_one_nullable_column_with_a_json_check()
+    {
+        var down = new AddQuoteDueTerms().DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("[DueTermsJson] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51227,", guard.Sql, StringComparison.Ordinal);
+        Assert.All(down.Skip(1), operation => Assert.IsNotType<SqlOperation>(operation));
+        var up = new AddQuoteDueTerms().UpOperations;
+        Assert.DoesNotContain(up, operation => operation is SqlOperation or UpdateDataOperation or DeleteDataOperation);
+        var column = Assert.Single(up.OfType<AddColumnOperation>());
+        Assert.True(column.IsNullable);
+        Assert.Equal("QuoteRevisions", column.Table);
+        Assert.Equal("DueTermsJson", column.Name);
+        var check = Assert.Single(up.OfType<AddCheckConstraintOperation>());
+        Assert.Equal("CK_QuoteRevisions_DueTerms", check.Name);
+        Assert.Equal(SalesDbContext.QuoteRevisionDueTermsCheck, check.Sql);
+    }
+
+    [Fact]
     public void The_quote_list_cursor_is_neither_a_request_nor_a_draft_cursor()
     {
         var id = Guid.NewGuid();

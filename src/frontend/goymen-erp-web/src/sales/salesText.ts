@@ -245,13 +245,50 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.cancellationImpactChanged]:
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
-    'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); miktar değiştirilmedi. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+    'Siparişe bağlı kayıtlar var (tahsis, yükleme, satın alma ya da üretim); işlem yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.forceCloseBlocked]:
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
     'Kapatma etkisi siz gördükten sonra değişti; sipariş kapatılmadı. Güncel etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.orderNotReadyToClose]:
+    'Sipariş kapanmaya hazır değil; kapatılmadı. Bütün durum eksenleri tamamlandığında yeniden deneyin.',
+  [SALES_PROBLEM_CODE.overDeliveryNotAwaitingApproval]:
+    'Bu satır artık onay bekleyen bir fazla teslim değil; fazla teslim onaylanmadı. Güncel durum gösteriliyor.',
+  [SALES_PROBLEM_CODE.overDeliveryBlocked]:
+    'Fazla teslim blok eşiğini aşıyor; bu fazla teslim onaylanamaz.',
+  [SALES_PROBLEM_CODE.overDeliveryShippedChanged]:
+    'Satırın sevk toplamı siz gördükten sonra değişti; fazla teslim onaylanmadı. Güncel toplamı okuyup yeniden onaylayın.',
+  [SALES_PROBLEM_CODE.overDeliveryShipperUnverified]:
+    'Sevki kimin yaptığı Lojistik kaydından okunamıyor; sevki yapanın kendi fazla teslimini onaylamaması kuralı (SAT-D216) ' +
+    'doğrulanamadığı için onay verilmedi.',
+  [SALES_PROBLEM_CODE.overDeliverySelfApproval]:
+    'Bu satırın sevkini siz yaptınız; kendi fazla tesliminizi onaylayamazsınız. Başka bir yetkili onaylamalı (SAT-D216).',
+  [SALES_PROBLEM_CODE.lineClosureNotApplicable]:
+    'Bu satırda kapatılacak bir eksik yok (eksik sevk yok, hiç sevk yapılmamış ya da satır zaten kapatılmış); satır kapatılmadı.',
+  [SALES_PROBLEM_CODE.lineClosureBlocked]:
+    'Eksik, teslim toleransının blok bandında; bu satır eksik kapatılamaz (blok bandında kapatma yapılmaz).',
+  [SALES_PROBLEM_CODE.lineClosureShippedChanged]:
+    'Satırın sevk toplamı siz gördükten sonra değişti; satır kapatılmadı. Güncel toplamı okuyup yeniden deneyin.',
+  [SALES_PROBLEM_CODE.lineClosureShipperUnverified]:
+    'Sevki kimin yaptığı Lojistik kaydından okunamıyor; sevki yapanın kendi satırını kapatmaması kuralı (SAT-D216) ' +
+    'doğrulanamadığı için satır kapatılmadı.',
+  [SALES_PROBLEM_CODE.lineClosureSelfClosure]:
+    'Bu satırın sevkini siz yaptınız; kendi satırınızı kapatamazsınız. Başka bir yetkili kapatmalı (SAT-D216).',
+  [SALES_PROBLEM_CODE.lineClosureOpenCommitments]:
+    'Satırda sevk edilmemiş yükleme ya da açık stok tahsisi var; satır kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan ' +
+    'sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
+  [SALES_PROBLEM_CODE.invoiceMatchRequired]:
+    'Resmî e-fatura eşleşmesi kaydedilmeden fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceMatchDifferenceOpen]:
+    'Resmî e-fatura ile ERP tutarı arasında fark açıkken fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceInstalmentFunctionalInvalid]:
+    'Sunucu vade taksitlerinin TL karşılığını doğrulayamadı; fatura kesinleştirilmedi.',
+  [SALES_PROBLEM_CODE.companyContextInvalid]:
+    'İstekteki şirket bağlamı geçerli değil; işlem yapılmadı. Şirket seçimini kontrol edip yeniden deneyin.',
+  [SALES_PROBLEM_CODE.correlationMetadataInvalid]:
+    'İstekteki izleme bilgisi geçerli değil; işlem yapılmadı.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -276,6 +313,16 @@ const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
   sales_discount_out_of_range: 'İskonto yüzdesi 0 ile 100 arasında olmalıdır.',
   sales_discount_without_price: 'İskonto için birim fiyat gerekir.',
 }
+
+/**
+ * SAT-D211 (EK36): a quantity, price or header revision refused because the customer-rejected revision's removed lines wait to be
+ * reinstated (422 `sales_revision_reinstatement_pending`); the way forward is the line revision's empty request.
+ */
+export const REINSTATEMENT_PENDING_CODE = 'sales_revision_reinstatement_pending'
+export const REINSTATEMENT_PENDING_TEXT =
+  'Müşterinin reddettiği revizyonda çıkarılan satır geri gelmeden miktar, fiyat ya da başlık revizyonu yapılamaz. Önce "Satır revizyonu" ile (satır değiştirmeden) yeni revizyonu açın; satır geri gelir.'
+export const reinstatementPendingText = (errors: readonly { readonly code: string }[]): string =>
+  errors.some((error) => error.code === REINSTATEMENT_PENDING_CODE) ? REINSTATEMENT_PENDING_TEXT : ''
 
 /** A server field error's text on the create form: the stable problem codes first, then the line-price rule codes. */
 export function createFieldErrorText(code: string | null): string | null {
@@ -422,6 +469,11 @@ export const ORDER_DETAIL_TEXT = {
     /** SAT-D201 (EK31). */
     subcontractPriceRequired:
       'Fason siparişte kg fiyatı girilmemiş hizmet satırı var; sipariş onaya gönderilemez. Fiyatı "Fiyat revizyonu" ile kg başına girin.',
+    /** SAT-D167 / SAT-D219: a line this revision removed got a link after the revision was recorded (409 `sales_revision_blocked`). */
+    lineShipped:
+      'Bu revizyonda çıkarılan bir satıra sonradan tahsis ya da yükleme bağlanmış; işlem yapılmadı. Bağ kendi ekranında kapatıldıktan sonra yeniden deneyin.',
+    lineLinked:
+      'Bu revizyonda çıkarılan bir satıra sonradan açık satın alma ya da üretim bağlanmış; işlem yapılmadı. Bağ satın alma/üretim tarafında kapatılsın ya da çözülsün, sonra yeniden deneyin.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -535,6 +587,94 @@ export const ORDER_DETAIL_TEXT = {
       reason === 'reason-required' ? 'Revizyon gerekçesi zorunludur.'
         : reason === 'no-change' ? 'Hiçbir satırın miktarı değişmedi; onay boşuna düşürülmez.'
           : `${lineNo ?? ''}. satırın miktarı sıfırdan büyük, noktayla yazılmış bir sayı olmalıdır.`,
+  },
+  /**
+   * SAT-D167 (EK24): the line revision — add a line, remove an unshipped line (it goes passive), change an unshipped line's
+   * product. Texts only; every rule is the server's.
+   */
+  lineRevision: {
+    heading: 'Satır revizyonu',
+    open: 'Satır ekle / çıkar / ürün değiştir',
+    close: 'Satır revizyonundan vazgeç',
+    description:
+      'Siparişe yeni satır ekleyin, sevk edilmemiş bir satırı çıkarın ya da sevk edilmemiş bir satırın ürününü değiştirin. ' +
+      'Çıkarılan satır silinmez, pasif olur; tutar, risk ve sevkiyatın dışında kalır (çıkarma onay beklerken sevk edilmez; reddedilirse satır geri gelir ve son onaylı revizyonla sevk edilir). Vergi, satırın ürününe göre Ayarlar listelerinden belirlenir.',
+    approvedWarning:
+      'Onaylı siparişte satır değişikliği mevcut revizyonu gerekçesiyle arşivler; sipariş yeni revizyonla iç onaya, gerekiyorsa yeniden müşteri kabulüne girer.',
+    linkedWarning:
+      'Stok tahsisi ya da yükleme talimatı olan (sevki başlamış) ya da açık satın alma siparişi / üretim emri bağlı satır çıkarılamaz ve ürünü değiştirilemez.',
+    reinstatementNote:
+      'Müşteri, çıkarılan satır(lar) içeren revizyonu reddetti. Satır değiştirmeden gönderirseniz yeni revizyon açılır ve çıkarılan satır(lar) geri gelir; miktar, fiyat ve başlık revizyonu bundan sonra yapılır.',
+    subcontractNote: 'Fason hizmet siparişinde yalnız "Hizmet" kalemli ürün eklenir; birim ve fiyat birimi kg, fiyat kg başına elle yazılır.',
+    stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapanmış siparişte satır revizyonu yapılamaz.',
+    revisionDay: (day: string) => `Yeni satırın ürünü, birimi ve vergisi revizyon gününün (${day}) değerleriyle okunur; mevcut satırlar değişmez.`,
+    action: 'Bu satır',
+    actions: { keep: 'Değişmesin', remove: 'Satırı çıkar (pasif)', replace: 'Ürününü değiştir' } as const,
+    replacementHeading: 'Yerine gelecek satır',
+    addedHeading: (n: number) => `Yeni satır +${n}`,
+    addLine: 'Yeni satır ekle',
+    removeAdded: 'Bu yeni satırı kaldır',
+    noAdded: 'Henüz yeni satır eklenmedi.',
+    product: 'Ürün',
+    productChoose: 'Ürün seçin',
+    productSearch: 'Ürün ara',
+    productSearchSubmit: 'Ara',
+    productsLoading: 'Ürün listesi okunuyor…',
+    productsUnavailable: 'Ürün listesi okunamadı; yeni satır ve ürün değişikliği şu anda yapılamaz.',
+    productsRetry: 'Ürün listesini yeniden oku',
+    productsEmpty: 'Bu tarih için satılabilir ürün listelenmiyor.',
+    unit: 'Sipariş birimi',
+    unitChoose: 'Birim seçin',
+    quantity: 'Miktar',
+    unitPrice: 'Birim fiyat (boş bırakılabilir)',
+    priceUnit: 'Fiyat birimi',
+    reason: 'Revizyon gerekçesi',
+    reasonHint: 'Zorunlu; en fazla 4000 karakter.',
+    submit: 'Satır revizyonunu kaydet',
+    submitting: 'Satır revizyonu gönderiliyor…',
+    unknown: 'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi aynı anahtarla tekrar deneyin.',
+    completed: 'Satır revizyonu kaydedildi. Sipariş yeniden onaya gönderilmelidir.',
+    completedUnapproved: 'Satır revizyonu kaydedildi.',
+    replayed: 'Bu satır revizyonu daha önce kaydedilmişti; güncel sipariş gösteriliyor.',
+    retry: 'Aynı revizyonu tekrar dene',
+    abandon: 'Bu denemeyi bırak',
+    unauthenticated: 'Oturumunuz sona erdi; satır revizyonu uygulanmadı.',
+    forbidden: 'Bu şirkette satır revizyonu ya da fiyat yazma yetkiniz yok; işlem uygulanmadı.',
+    notFound: 'Sipariş taslağı bulunamadı; işlem uygulanmadı.',
+    conflict: 'Satır revizyonu uygulanmadı; güncel kayıt yeniden okunuyor.',
+    versionConflict: 'Kayıt sürümü değişti; güncel satırları yeniden inceleyin.',
+    validation: 'Satır revizyonu uygulanmadı; satırları ve gerekçeyi kontrol edin.',
+    unavailable: 'Bağlı kayıt sahiplerine (stok, sevkiyat, ürün, ayarlar) şu anda ulaşılamıyor; satırlar değiştirilmedi. Daha sonra tekrar deneyin.',
+    unexpected: 'Satır revizyonu uygulanmadı. Beklenmeyen bir yanıt alındı.',
+    /** The server's rule codes on `added[i]…` / `removed[i]…`, named for their row. */
+    ruleCode: {
+      sales_line_revision_line_shipped: 'Satırın stok tahsisi ya da yükleme talimatı var (sevki başladı); çıkarılamaz, ürünü değiştirilemez.',
+      // SAT-D219 (EK38): an open linked purchase order or production order, as the owner answers it (Sales does not interpret it).
+      sales_line_revision_line_linked:
+        'Satıra açık bir satın alma siparişi ya da üretim emri bağlı; çıkarılamaz, ürünü değiştirilemez. Önce satın alma/üretim tarafında kapatılsın ya da bağı çözülsün.',
+      sales_line_replacement_same_product: 'Ürün değişikliği başka bir ürün ister; aynı ürünün miktarı miktar revizyonuyla değişir.',
+      sales_line_replacement_invalid: 'Ürünü değişen satırın yerine aynı revizyonda eklenen tek bir satır gelir.',
+      sales_line_revision_no_lines_left: 'Siparişte en az bir etkin satır kalmalıdır.',
+      sales_revision_lines_mismatch: 'Çıkarılan satır siparişin etkin bir satırı değil; güncel siparişi yeniden okuyun.',
+      sales_duplicate_line_id: 'Aynı satır kimliği ikinci kez gönderildi.',
+      sales_subcontract_line_not_service: 'Fason hizmet siparişine yalnız kalem tipi "Hizmet" olan ürün eklenir.',
+      sales_subcontract_unit_not_kilogram: 'Fason hizmet satırının birimi ve fiyat birimi kg olmalıdır.',
+      sales_subcontract_price_list_not_used: 'Fason hizmet satırında fiyat listesi kullanılmaz; fiyatı kg başına elle yazın.',
+    } as Readonly<Record<string, string>>,
+    rowError: (row: string | null, text: string) => (row === null ? text : `${row}: ${text}`),
+    localError: (row: string | null, problem: string) => {
+      const text = problem === 'reason-required' ? 'Revizyon gerekçesi zorunludur.'
+        : problem === 'no-change' ? 'Hiçbir satır eklenmedi, çıkarılmadı ya da ürünü değişmedi; onay boşuna düşürülmez.'
+          : problem === 'no-lines-left' ? 'Siparişte en az bir etkin satır kalmalıdır.'
+            : problem === 'product-required' ? 'Listeden bir ürün seçin.'
+              : problem === 'unit-required' ? 'Ürünün sunduğu birimlerden birini seçin.'
+                : problem === 'quantity-format' ? 'Miktar sıfırdan büyük bir sayı olmalıdır.'
+                  : problem === 'price-format' ? 'Birim fiyat geçerli bir sayı olmalıdır.'
+                    : problem === 'price-unit-required' ? 'Birim fiyat için ürünün birimlerinden bir fiyat birimi seçin.'
+                      : problem === 'same-product' ? 'Ürün değişikliği için mevcut üründen farklı bir ürün seçin.'
+                        : 'Satır revizyonu gönderilemedi.'
+      return row === null ? text : `${row}: ${text}`
+    },
   },
   /**
    * DEC-SAL-003: the planner's delivery-date update (dates only, no re-approval, audited). Texts only; the rules are the
@@ -719,6 +859,14 @@ export const ORDER_DETAIL_TEXT = {
   note: 'İç açıklama',
   commercialHeading: 'Ticari bilgiler',
   linesHeading: 'Sipariş satırları',
+  /** SAT-D167 (EK24): a line a line revision added, and the passive (removed) lines kept as history. */
+  addedInRevision: (revision: string) => `${revision} ile eklendi`,
+  removedLines: {
+    heading: 'Pasif satırlar',
+    description: 'Satır revizyonuyla çıkarılan satırlar silinmez; tutar, risk, vergi ve sevkiyatın dışında kalır, geçmiş olarak görünür.',
+    removedIn: (revision: string) => `${revision} ile çıkarıldı`,
+    replacedBy: (lineNo: number | null) => (lineNo === null ? 'Ürün değişikliğiyle yerine yeni satır geldi' : `Ürün değişikliği: yerine ${lineNo}. satır geldi`),
+  },
   lineNo: '#',
   product: 'Ürün',
   productVersion: 'Ürün sürümü',
@@ -911,9 +1059,100 @@ export function partyDisplayText(party: { readonly code: string; readonly legalN
   return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
 }
 
+/** SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval on S-04 (inside the realization detail of the status card). */
+export const OVER_DELIVERY_TEXT = {
+  heading: 'Onay bekleyen fazla teslim',
+  description:
+    'Bu satırlarda sevk edilen miktar, tolerans onay eşiğini aşıyor ama blok eşiğinin altında. Onay, şu anki sevk toplamını ' +
+    'kapsar; sonradan fazlalık artarsa yeniden onay gerekir (SAT-D213). Sevki yapan kişi kendi fazla teslimini onaylayamaz (SAT-D216).',
+  caption: 'Onay bekleyen fazla teslim satırları',
+  lineNo: 'Satır',
+  ordered: 'Sipariş',
+  shipped: 'Sevk edilen',
+  excess: 'Fazlalık',
+  action: 'İşlem',
+  approve: 'Fazla teslimi onayla',
+  approveLabel: (lineNo: number) => `${lineNo}. satırın fazla teslimini onayla`,
+  empty: 'Onay bekleyen fazla teslim yok.',
+  submitting: 'Onay gönderiliyor…',
+  unknown: 'Onayın sonucu alınamadı; kaydedilmiş olabilir. Aynı onayı tekrar göndermek ikinci bir onay oluşturmaz.',
+  completed: 'Fazla teslim onaylandı; satır "Tamamlandı + onaylı fazla teslim" olarak gösterilir.',
+  replayed: 'Bu onay daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  retry: 'Aynı onayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; onay verilmedi.',
+  forbidden: 'Bu şirkette fazla teslim onaylama yetkiniz yok; onay verilmedi.',
+  notFound: 'Sipariş bulunamadı; onay verilmedi.',
+  conflict: 'Onay verilmedi; sipariş ve durum yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  validation: 'Onay verilmedi; gönderilen bilgi geçerli değil.',
+  unexpected: 'Onay verilmedi. Beklenmeyen bir yanıt alındı.',
+} as const
+
+/** SAT-D17 / SAT-D115 / SAT-D215 / SAT-D216 / SAT-D222: closing one order line short on S-04 (under the realization detail). */
+export const LINE_CLOSURE_TEXT = {
+  heading: 'Satırı eksik kapat',
+  description:
+    'Sevk edilen miktarı sipariş miktarının altında kalan bir satır kapatılabilir. Teslim edilmeyen kalan "iptal edilen kalan" ' +
+    'sayılır ve satıra bir daha sevk yapılamaz (SAT-D17, SAT-D215). Eksiğin tolerans bandını kapatma anında sunucu ölçer: ' +
+    'tolerans içi, uyarı ya da onay bandında satır "Tamamlandı" olur; blok bandında kapatma yapılmaz. Sevki yapan kişi kendi ' +
+    'satırını kapatamaz (SAT-D216). Stok ve para hareketi oluşmaz.',
+  caption: 'Eksik kapatılabilecek satırlar',
+  lineNo: 'Satır',
+  ordered: 'Esas miktar',
+  shipped: 'Sevk edilen',
+  remainder: 'Kapatılacak kalan',
+  state: 'Durum',
+  action: 'İşlem',
+  close: 'Eksik kapat',
+  closeLabel: (lineNo: number) => `${lineNo}. satırı eksik kapat`,
+  confirmHeading: (lineNo: number) => `${lineNo}. satırı eksik kapat`,
+  confirmNote:
+    'Kapatma, aşağıdaki sevk toplamıyla gönderilir. Toplam Lojistik\'te değiştiyse sunucu kapatmayı yapmaz ve güncel durum ' +
+    'yeniden okunur. Kapatılan satır, onaylı bir yeniden açma olmadan değiştirilemez.',
+  tolerance: 'Teslim toleransı (sipariş tarihine göre)',
+  toleranceBand: (warn: string, approval: string, block: string) => `Uyarı %${warn} · Onay %${approval} · Blok %${block}`,
+  toleranceMeasured: 'Bant kapatma anında sunucuda ölçülür; bu ekran bant hesaplamaz.',
+  toleranceMissing: 'Onaylı tolerans bu okumada yok; kapatmayı sunucu değerlendirir.',
+  currentBand: 'Şu anki bant',
+  bandNotMeasured: 'Açık satırda ölçülmez (kapatma anında ölçülür)',
+  confirm: 'Kapatmayı onayla',
+  cancel: 'Vazgeç',
+  submitting: 'Kapatma gönderiliyor…',
+  completed: 'Satır eksik kapatıldı; kalan iptal edildi. Satır durum tablosunda kapatılmış olarak gösterilir.',
+  replayed: 'Bu kapatma daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı kapatmayı tekrar göndermek ikinci bir kapatma oluşturmaz.',
+  unknownOffline:
+    'Bağlantı yok; kapatmanın sonucu alınamadı, kaydedilmiş olabilir. Bağlantı gelince aynı kapatmayı tekrar gönderin; ' +
+    'ikinci bir kapatma oluşmaz.',
+  unknownNetwork:
+    'Sunucuya ulaşılamadı; kapatmanın sonucu alınamadı, kaydedilmiş olabilir. Aynı kapatmayı tekrar göndermek ikinci bir ' +
+    'kapatma oluşturmaz.',
+  unknownServiceUnavailable:
+    'Kapatma şu anda değerlendirilemedi: Satış servisi ya da bağlı kaynaklar (teslim toleransı, Lojistik sevk ve yükleme, ' +
+    'stok tahsisi) yanıt vermiyor. Biraz sonra aynı kapatmayı tekrar gönderin; ikinci bir kapatma oluşmaz.',
+  unknownMalformed:
+    'Sunucudan beklenmeyen bir yanıt alındı; kapatma kaydedilmiş olabilir. Aynı kapatmayı tekrar göndermek ikinci bir ' +
+    'kapatma oluşturmaz.',
+  abandoned: 'Bu işlemi bıraktınız; kapatmanın sonucu hâlâ bilinmiyor. Sipariş yeniden açıldığında güncel durum okunur.',
+  retry: 'Aynı kapatmayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; satır kapatılmadı.',
+  forbidden: 'Bu şirkette satır kapatma yetkiniz yok; satır kapatılmadı.',
+  notFound: 'Sipariş bulunamadı; satır kapatılmadı.',
+  conflict: 'Satır kapatılmadı; sipariş ve durum yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  stateConflict:
+    'Sipariş şu anda satır kapatmaya uygun değil. Satır yalnız onaylı ve aktif siparişte, onay bekleyen bir revizyon yokken ' +
+    've güncel revizyon müşteri tarafından onaylanmışken kapatılabilir. Revizyon müşteri onayı beklerken satır kapatılamaz; ' +
+    'iptal edilmiş ya da kapatılmış siparişte de kapatma yapılmaz.',
+  validation: 'Satır kapatılmadı; gönderilen bilgi geçerli değil.',
+  unexpected: 'Satır kapatılmadı. Beklenmeyen bir yanıt alındı.',
+} as const
+
 /** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
 export const FORCE_CLOSE_TEXT = {
-  heading: 'Siparişi kapat',
+  heading: 'Siparişi zorla kapat',
   description:
     'Teslim edilmeyen kalan "iptal edilen kalan" olarak kapatılır; teslim edilen bölüm, satırlar ve geçmiş değişmez. ' +
     'Açık tahsis, sevk edilmemiş yükleme ya da okunamayan bir kaynak varken kapatma yapılmaz. Faturalanmamış irsaliye ' +
@@ -934,7 +1173,7 @@ export const FORCE_CLOSE_TEXT = {
   warning: 'Faturalanmamış irsaliye var. Kapatma bunu engellemez; fatura işi açık kalır.',
   reasonLabel: 'Kapatma nedeni (zorunlu)',
   reasonRequired: 'Kapatma nedeni zorunludur.',
-  submit: 'Siparişi kapat',
+  submit: 'Siparişi zorla kapat',
   submitting: 'Kapatma gönderiliyor…',
   unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir kapatma oluşturmaz.',
   completed: 'Sipariş kapatıldı; kalan iptal edilen kalan olarak kaydedildi.',
@@ -948,7 +1187,7 @@ export const FORCE_CLOSE_TEXT = {
   versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
   validation: 'Kapatma uygulanmadı; gönderilen bilgi geçerli değil.',
   unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
-  recordHeading: 'Kapatma kaydı',
+  recordHeading: 'Zorla kapatma kaydı',
   recordSubject: 'kapatma kaydı',
   closedBy: 'Kapatan',
   closedAt: 'Kapatma zamanı',
@@ -965,6 +1204,42 @@ export const FORCE_CLOSE_TEXT = {
     Unreadable: 'Okunamadı; sıfır varsayılmaz',
     NoSource: 'Kaynak yok; bu bağı tutan modül henüz yok',
   } satisfies Record<CancellationStatus, string>,
+} as const
+
+/**
+ * SAT-D32 / SAT-D168 / SAT-D215: the user closure of a "kapanmaya hazır" order ("Siparişi kapat") and its record. The same
+ * "Kapalı" lifecycle as a force-closure; the record's own label tells them apart.
+ */
+export const USER_CLOSE_TEXT = {
+  heading: 'Siparişi kapat',
+  description:
+    'Sipariş kapanmaya hazır: bütün durum eksenleri tamamlandı. Sipariş kendiliğinden kapanmaz; kapatmak sizin işleminizdir. ' +
+    'Gerekçe istenmez. Kapatılan siparişe yeni sevk yapılmaz; satırlar ve geçmiş değişmez, stok ve para hareketi oluşmaz.',
+  submit: 'Siparişi kapat',
+  submitting: 'Kapatma gönderiliyor…',
+  unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir kapatma oluşturmaz.',
+  completed: 'Sipariş kapatıldı.',
+  replayed: 'Bu kapatma daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  retry: 'Aynı kapatmayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; kapatma uygulanmadı.',
+  forbidden: 'Bu şirkette sipariş kapatma yetkiniz yok; kapatma uygulanmadı.',
+  notFound: 'Sipariş bulunamadı; kapatma uygulanmadı.',
+  conflict: 'Kapatma uygulanmadı; sipariş ve durumu yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  validation: 'Kapatma uygulanmadı; gönderilen bilgi geçerli değil.',
+  unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
+  statusSubject: 'kapanmaya hazır bilgisi',
+  recordHeading: 'Kapatma kaydı (kullanıcı kapattı)',
+  /** While the record is loading or could not be read: which closure it was is not known yet. */
+  recordPendingHeading: 'Kapatma kaydı',
+  recordSubject: 'kapatma kaydı',
+  recordNote:
+    'Sipariş kapanmaya hazırken kullanıcı tarafından kapatıldı (zorla kapatma değil). Onay bilgileri, satırlar ve geçmiş ' +
+    'silinmez; sipariş başka işlem kabul etmez.',
+  closedBy: 'Kapatan',
+  closedAt: 'Kapatma zamanı',
+  revision: 'Kapatılan revizyon',
 } as const
 
 /** AT-024: the partly delivered remainder panel (`SalesDraftRemainderChangePanel`). */
@@ -1019,7 +1294,7 @@ export const ORDER_TABS_TEXT = {
   },
   allocationNote: 'Kaynak stratejisi (stok, satın alma, üretim) henüz bu ekrandan seçilmiyor; tahsisler Stok sahibinden okunur.',
   realizationNotApproved: 'Teslimat ve irsaliye bilgisi sipariş onaylandıktan sonra gösterilir.',
-  invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
+  invoicesEmpty: 'Faturalar yalnız tek bir şirket seçiliyken gösterilir.',
   documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
 } as const
 
@@ -1157,6 +1432,11 @@ export const ORDER_STATUS_TEXT = {
   warningMark: 'Tolerans uyarısı',
   /** SAT-D30: "Tamamlandı + onaylı fazla teslim". */
   approvedOverDeliveryMark: 'Onaylı fazla teslim',
+  /** SAT-D17: a line a user closed short (its cancelled remainder is in the "Kapatılan kalan" column). */
+  lineClosedMark: 'Eksik kapatıldı',
+  lineClosedNote:
+    '"Eksik kapatıldı" işaretli satırlar kullanıcı tarafından kapatıldı; teslim edilmeyen kalan "Kapatılan kalan" sütununda ' +
+    'iptal edilen kalan olarak gösterilir ve bu satırlara yeniden sevk yapılmaz (SAT-D17, SAT-D215).',
   readyToClose: {
     label: 'Kapanmaya hazır',
     yes: 'Evet',

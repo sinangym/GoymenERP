@@ -3,6 +3,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using Microsoft.EntityFrameworkCore;
@@ -215,6 +216,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>No 30 / SAT-D12: the recorded force-closures (append-only, at most one per draft).</summary>
     internal DbSet<DraftForceClosureRow> DraftForceClosures => Set<DraftForceClosureRow>();
 
+    /// <summary>SAT-D32: the recorded user closures of "kapanmaya hazır" orders (append-only, at most one per draft).</summary>
+    internal DbSet<DraftUserClosureRow> DraftUserClosures => Set<DraftUserClosureRow>();
+    /// <summary>SAT-D30 / SAT-D213: the recorded over-delivery approvals (append-only, numbered per line).</summary>
+    internal DbSet<DraftOverDeliveryApprovalRow> DraftOverDeliveryApprovals => Set<DraftOverDeliveryApprovalRow>();
+    internal DbSet<DraftLineClosureRow> DraftLineClosures => Set<DraftLineClosureRow>();
+
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
 
@@ -250,6 +257,113 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>API-20 / API-21 (ADR-SAL-001 §2): the request commands' own attempt records (append-only).</summary>
     internal DbSet<RequestAttemptRow> RequestAttempts => Set<RequestAttemptRow>();
+
+    /// <summary>S5 API-32 (Fatura çekirdeği 1): the invoice drafts, their share lines and the invoice commands' attempts.</summary>
+    internal DbSet<InvoiceRow> Invoices => Set<InvoiceRow>();
+
+    internal DbSet<InvoiceLineRow> InvoiceLines => Set<InvoiceLineRow>();
+
+    internal DbSet<InvoiceAttemptRow> InvoiceAttempts => Set<InvoiceAttemptRow>();
+
+    /// <summary>API-35: the append-only official match of an approved invoice.</summary>
+    internal DbSet<InvoiceMatchRow> InvoiceMatches => Set<InvoiceMatchRow>();
+
+    /// <summary>API-36: the finalisation and Finance hand-off ledger (one row per finalised invoice).</summary>
+    internal DbSet<InvoiceFinalizationRow> InvoiceFinalizations => Set<InvoiceFinalizationRow>();
+
+    /// <summary>API-36: the Sales transactional outbox (append-only).</summary>
+    internal DbSet<SalesOutboxRow> OutboxMessages => Set<SalesOutboxRow>();
+
+    /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
+    internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
+
+    /// <summary>CK_Invoices_Rate (SAT-D172): a TL invoice carries no rate; a foreign-currency invoice all five rate facts.</summary>
+    internal const string InvoiceRateConstraint =
+        "([ExchangeRate] IS NULL AND [RateDay] IS NULL AND [RateBulletinDate] IS NULL AND [FunctionalCurrencyId] IS NULL "
+        + "AND [FunctionalScale] IS NULL) OR ([ExchangeRate] > 0 AND [RateDay] IS NOT NULL AND [RateBulletinDate] IS NOT NULL "
+        + "AND [FunctionalCurrencyId] IS NOT NULL AND [FunctionalCurrencyId] <> [CurrencyId] AND [FunctionalScale] >= 0 "
+        + "AND [FunctionalScale] <= 8)";
+
+    /// <summary>CK_InvoiceLines_Functional (EK42): the three TL amounts are present together or not at all.</summary>
+    internal const string InvoiceLineFunctionalConstraint =
+        "([FunctionalNetAmount] IS NULL AND [FunctionalVatAmount] IS NULL AND [FunctionalWithholdingAmount] IS NULL "
+        + "AND [FunctionalAdjusted] IS NULL AND [FunctionalNeedsReview] = 0) OR ([FunctionalNetAmount] IS NOT NULL "
+        + "AND [FunctionalVatAmount] IS NOT NULL AND [FunctionalWithholdingAmount] IS NOT NULL)";
+
+    /// <summary>CK_InvoiceAttempts_Outcome: the request attempt's outcome rule for invoices.</summary>
+    internal const string InvoiceAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [InvoiceId] IS NOT NULL AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    /// <summary>CK_InvoiceAttempts_Command: only the invoice's own versioned commands record here.</summary>
+    internal const string InvoiceAttemptCommandConstraint = "[CommandName] IN (N'" + SalesInvoiceCommands.CreateV1 + "', N'"
+        + SalesInvoiceCommands.SubmitV1 + "', N'" + SalesInvoiceCommands.ApproveV1 + "', N'" + SalesInvoiceCommands.RejectV1 + "', N'"
+        + SalesInvoiceCommands.CancelV1 + "', N'" + SalesInvoiceCommands.MatchV1 + "', N'" + SalesInvoiceCommands.FinalizeV1 + "', N'"
+        + SalesInvoiceCommands.ResendFinanceV1 + "')";
+
+    /// <summary>CK_Invoices_State (API-33/36): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5, Finalized 6.</summary>
+    internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6)";
+
+    /// <summary>
+    /// CK_Invoices_Decision (API-33): the decision facts match the state — a draft carries none; a pending invoice its submission; an
+    /// approved invoice the submission and the approver (no reason); a rejected one the submission and the rejecter; a cancelled one
+    /// its cancellation (and the submission only when it had been submitted) and no decision. The submission pair is all or none.
+    /// </summary>
+    internal const string InvoiceDecisionConstraint =
+        "(([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND [SubmittedAtUtc] IS NOT NULL)) AND ("
+        + "([State] = 1 AND [SubmittedBy] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 2 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] IN (3, 6) AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
+        + "OR ([State] = 5 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL))";
+
+    /// <summary>
+    /// CK_Invoices_MakerChecker (SAT-D88/D204): the approver or rejecter is neither the preparer nor the submitter — compared on
+    /// the binary collation, like every actor-id maker-checker rule.
+    /// </summary>
+    internal const string InvoiceMakerCheckerConstraint =
+        "[DecidedBy] IS NULL OR ([DecidedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)";
+
+    /// <summary>CK_Invoices_Reasons: free-text reasons are never blank text.</summary>
+    internal const string InvoiceReasonsConstraint =
+        "([DecisionReason] IS NULL OR LEN([DecisionReason]) > 0) AND ([CancellationReason] IS NULL OR LEN([CancellationReason]) > 0) "
+        + "AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND ([DecidedBy] IS NULL OR LEN([DecidedBy]) > 0) "
+        + "AND ([CancelledBy] IS NULL OR LEN([CancelledBy]) > 0)";
+
+    /// <summary>TR_InvoiceFinalizations_Guard (API-36): the finalisation facts are immutable; the ledger only moves forward (THROW 51232).</summary>
+    internal const string InvoiceFinalizationGuardTrigger = "TR_InvoiceFinalizations_Guard";
+
+    /// <summary>TR_OutboxMessages_Guard (API-36): an outbox message is append-only (THROW 51233).</summary>
+    internal const string SalesOutboxGuardTrigger = "TR_OutboxMessages_Guard";
+
+    /// <summary>CK_InvoiceFinalizations_Ledger (API-36): Waiting has no admission time; Admitted has one and at least one attempt.</summary>
+    internal const string InvoiceFinalizationLedgerConstraint =
+        "[AttemptCount] >= 0 AND (([AttemptCount] = 0 AND [LastAttemptAtUtc] IS NULL) OR ([AttemptCount] > 0 AND [LastAttemptAtUtc] IS NOT NULL)) "
+        + "AND (([FinanceStatus] = 1 AND [AdmittedAtUtc] IS NULL) OR ([FinanceStatus] = 2 AND [AdmittedAtUtc] IS NOT NULL AND [AttemptCount] >= 1))";
+
+    /// <summary>TR_Invoices_Guard: a decided or cancelled invoice and the header facts are immutable (THROW 51223).</summary>
+    internal const string InvoiceGuardTrigger = "TR_Invoices_Guard";
+
+    /// <summary>TR_InvoiceLines_Guard: the lines of a non-draft invoice are immutable but for their release stamp (THROW 51224).</summary>
+    internal const string InvoiceLineGuardTrigger = "TR_InvoiceLines_Guard";
+
+    /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
+    internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
+
+    /// <summary>CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106): within the tolerance no approver; beyond it an approver and a reason.</summary>
+    internal const string InvoiceMatchAmountsConstraint =
+        "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) "
+        + "AND (([Difference] <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) "
+        + "OR ([Difference] > [Tolerance] AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))";
+
+    /// <summary>UX_InvoiceAttempts_InvoiceId: a stored invoice is born from exactly one create attempt.</summary>
+    internal const string InvoiceCreateAttemptFilter = "[InvoiceId] IS NOT NULL AND [CommandName] = N'" + SalesInvoiceCommands.CreateV1 + "'";
 
     /// <summary>CK_DraftRemainderChanges_Kind: a cancel carries no quantity; a revise carries a positive quantity and its text.</summary>
     internal const string RemainderKindConstraint =
@@ -290,6 +404,41 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([Reason]) > 0 "
         + "AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0";
 
+    /// <summary>
+    /// CK_DraftUserClosures_Identity: identities, the revision counter, the smallest version a user closure can produce (create
+    /// 1, one line 2, submit 3, approve 4, close 5) and non-blank texts.
+    /// </summary>
+    internal const string UserClosureIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
+    /// CK_DraftOverDeliveryApprovals_Identity: identities, the line position, the approval number, the basis revision, the smallest
+    /// version an approval can produce (create 1, one line 2, submit 3, approve 4, approve the over-delivery 5) and non-blank texts.
+    /// </summary>
+    internal const string OverDeliveryApprovalIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [ApprovalNo] >= 1 AND [BasisRevision] >= 0 "
+        + "AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ApprovedShipped]) > 0 AND LEN([ApprovedBy]) > 0 "
+        + "AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
+    /// CK_DraftLineClosures_Identity: identities, the line position, the basis revision, the band (SAT-D15 numbers Within 1 ... Block 4;
+    /// a closure is never the block band), the smallest version a closure can produce (create 1, one line 2, submit 3, approve 4,
+    /// close the line 5) and non-blank texts.
+    /// </summary>
+    internal const string LineClosureIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [BasisRevision] >= 0 "
+        + "AND [Band] BETWEEN 1 AND 3 AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ShippedAtClosure]) > 0 "
+        + "AND LEN([CancelledRemainder]) > 0 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
+    /// AK_DraftLines_LineIdentity: (company, draft, line position, line identity) of a draft line - the principal key of the
+    /// line-identity foreign keys of the line-bound history rows.
+    /// </summary>
+    internal const string DraftLineIdentityKey = "AK_DraftLines_LineIdentity";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -308,9 +457,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftCancellations(modelBuilder);
         ConfigureDraftCustomerRejections(modelBuilder);
         ConfigureDraftForceClosures(modelBuilder);
+        ConfigureDraftUserClosures(modelBuilder);
+        ConfigureDraftOverDeliveryApprovals(modelBuilder);
+        ConfigureDraftLineClosures(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
+        ConfigureInvoices(modelBuilder);
+        ConfigureInvoiceFinalizations(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -444,11 +598,20 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
             // SAT-D176 (EK25): only a subcontract service order's line records its confirmed item type, and that is a service.
             table.HasCheckConstraint("CK_DraftLines_ItemType", "[ItemType] IS NULL OR [ItemType] = N'" + SalesOrderDraft.ServiceItemType + "'");
+            // SAT-D167 (EK24): revision numbers are never negative; a replacement exists only beside a removal and names another line.
+            table.HasCheckConstraint("CK_DraftLines_LineRevision",
+                "([AddedInRevision] IS NULL OR [AddedInRevision] >= 0) AND ([RemovedInRevision] IS NULL OR [RemovedInRevision] >= 0) "
+                + "AND ([ReinstatedInRevision] IS NULL OR [ReinstatedInRevision] >= 0) "
+                + "AND ([ReplacedByLineId] IS NULL OR ([RemovedInRevision] IS NOT NULL AND [ReplacedByLineId] <> [LineId] "
+                + "AND [ReplacedByLineId] <> '00000000-0000-0000-0000-000000000000'))");
             table.HasCheckConstraint("CK_DraftLines_Window",
                 "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
         });
         entity.HasKey(x => new { x.CompanyId, x.DraftId, x.LineNo });
         entity.HasIndex(x => new { x.CompanyId, x.DraftId, x.LineId }).IsUnique().HasDatabaseName("UX_DraftLines_LineId");
+        // The line's position and identity together: the principal the line-bound history rows (over-delivery approvals, line
+        // closures, remainder changes) reference, so a stored LineId can never name another line than the one at its LineNo.
+        entity.HasAlternateKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId }).HasName(DraftLineIdentityKey);
         entity.Property(x => x.ProductVersion).HasMaxLength(128).IsRequired();
         entity.Property(x => x.ProductCode).HasMaxLength(128).IsRequired();
         entity.Property(x => x.ProductName).HasMaxLength(256).IsRequired();
@@ -578,11 +741,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         {
             table.HasCheckConstraint("CK_QuoteRevisions_Identity",
                 "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_QuoteRevisions_DueTerms", QuoteRevisionDueTermsCheck);
         });
         revision.HasKey(x => new { x.CompanyId, x.QuoteId, x.Revision });
         revision.Property(x => x.ValidUntil).HasColumnType("date");
         revision.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
         revision.Property(x => x.Note).HasMaxLength(SalesQuote.MaximumNoteLength);
+        revision.Property(x => x.DueTermsJson).HasColumnType("nvarchar(max)");
         revision.Property(x => x.RevisedBy).HasMaxLength(SalesQuote.MaximumActorLength).IsRequired();
         revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         revision.HasOne<QuoteRow>().WithMany()
@@ -823,6 +988,215 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // S5 API-32 (Fatura çekirdeği 1): invoice drafts, their whole-share lines and attempts — append-only in this slice.
+    private void ConfigureInvoices(ModelBuilder modelBuilder)
+    {
+        var invoice = modelBuilder.Entity<InvoiceRow>();
+        invoice.ToTable("Invoices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Invoices_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Invoices_State", InvoiceStateConstraint);
+            table.HasCheckConstraint("CK_Invoices_Decision", InvoiceDecisionConstraint);
+            table.HasCheckConstraint("CK_Invoices_MakerChecker", InvoiceMakerCheckerConstraint);
+            table.HasCheckConstraint("CK_Invoices_Reasons", InvoiceReasonsConstraint);
+            table.HasTrigger(InvoiceGuardTrigger);
+            table.HasCheckConstraint("CK_Invoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_Invoices_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
+            table.HasCheckConstraint("CK_Invoices_Rate", InvoiceRateConstraint);
+            table.HasCheckConstraint("CK_Invoices_Instalments", "ISJSON([InstalmentsJson]) = 1");
+            table.HasCheckConstraint("CK_Invoices_Text",
+                "LEN([DocumentNo]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        invoice.HasKey(x => x.Id);
+        invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.DocumentNo).HasMaxLength(SalesInvoice.MaximumDocumentNoLength).IsRequired();
+        invoice.Property(x => x.Version).IsConcurrencyToken();
+        invoice.Property(x => x.RowVersion).IsRowVersion();
+        invoice.Property(x => x.BusinessDate).HasColumnType("date");
+        invoice.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        invoice.Property(x => x.ExchangeRate).HasPrecision(28, 10);
+        invoice.Property(x => x.RateDay).HasColumnType("date");
+        invoice.Property(x => x.RateBulletinDate).HasColumnType("date");
+        invoice.Property(x => x.InstalmentsJson).HasColumnType("nvarchar(max)").IsRequired();
+        invoice.Property(x => x.CreatedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
+        invoice.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        invoice.Property(x => x.SubmittedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        invoice.Property(x => x.DecidedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        invoice.Property(x => x.CancelledBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        invoice.Property(x => x.DecisionReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
+        invoice.Property(x => x.CancellationReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
+        invoice.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Invoices_DocumentNo");
+        invoice.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Invoices_CompanyId_CreatedAtUtc_Id");
+        invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<InvoiceLineRow>();
+        line.ToTable("InvoiceLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceLines_LineNo", "[LineNo] >= 1 AND [NoteLineNo] >= 1 AND [PriceBasisRevision] >= 0");
+            table.HasCheckConstraint("CK_InvoiceLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DispatchNoteId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_InvoiceLines_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0 AND LEN([DispatchNoteNumber]) > 0");
+            table.HasCheckConstraint("CK_InvoiceLines_Amounts",
+                "LEN([NetUnitPrice]) > 0 AND [VatPercent] >= 0 AND [VatPercent] <= 100 AND ([WithholdingShare] IS NULL OR "
+                + "([WithholdingShare] > 0 AND [WithholdingShare] <= 1)) AND [NetAmount] >= 0 AND [VatAmount] >= 0 AND [WithholdingAmount] >= 0");
+            table.HasCheckConstraint("CK_InvoiceLines_Functional", InvoiceLineFunctionalConstraint);
+            table.HasCheckConstraint("CK_InvoiceLines_Json",
+                "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
+            table.HasTrigger(InvoiceLineGuardTrigger);
+        });
+        line.HasKey(x => new { x.CompanyId, x.InvoiceId, x.LineNo });
+        line.HasIndex(x => new { x.CompanyId, x.LineId }).IsUnique().HasDatabaseName("UX_InvoiceLines_LineId");
+        line.HasIndex(x => new { x.CompanyId, x.ShipmentId }).IsUnique().HasDatabaseName("UX_InvoiceLines_ActiveShipment")
+            .HasFilter(ActiveInvoiceShipmentFilter);
+        line.Property(x => x.DispatchNoteNumber).HasMaxLength(SalesInvoice.MaximumDispatchNumberLength).IsRequired();
+        line.Property(x => x.ShipmentDate).HasColumnType("date");
+        line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
+        line.Property(x => x.UnitPrice).HasMaxLength(64);
+        line.Property(x => x.DiscountPercent).HasMaxLength(64);
+        line.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
+        line.Property(x => x.TaxJson).HasColumnType("nvarchar(max)").IsRequired();
+        line.Property(x => x.NetUnitPrice).HasMaxLength(64).IsUnicode(false).IsRequired();
+        line.Property(x => x.VatPercent).HasPrecision(9, 4);
+        line.Property(x => x.WithholdingShare).HasPrecision(18, 10);
+        line.Property(x => x.NetAmount).HasPrecision(28, 8);
+        line.Property(x => x.VatAmount).HasPrecision(28, 8);
+        line.Property(x => x.WithholdingAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalNetAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalVatAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalWithholdingAmount).HasPrecision(28, 8);
+        line.Property(x => x.FunctionalAdjusted).HasMaxLength(64).IsUnicode(false);
+        line.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<InvoiceAttemptRow>();
+        attempt.ToTable("InvoiceAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_InvoiceAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_InvoiceAttempts_Command", InvoiceAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_InvoiceAttempts_Outcome", InvoiceAttemptOutcomeConstraint);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasIndex(x => new { x.CompanyId, x.InvoiceId }).IsUnique().HasDatabaseName("UX_InvoiceAttempts_InvoiceId")
+            .HasFilter(InvoiceCreateAttemptFilter);
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var match = modelBuilder.Entity<InvoiceMatchRow>();
+        match.ToTable("InvoiceMatches", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceMatches_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_InvoiceMatches_Amounts", InvoiceMatchAmountsConstraint);
+            table.HasTrigger(InvoiceMatchGuardTrigger);
+        });
+        match.HasKey(x => new { x.CompanyId, x.InvoiceId });
+        match.Property(x => x.OfficialInvoiceNo).HasMaxLength(SalesInvoice.MaximumOfficialNoLength).UseCollation(IdentityCollation).IsRequired();
+        match.Property(x => x.Ettn).HasMaxLength(SalesInvoice.EttnLength).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        match.Property(x => x.InvoiceAmount).HasPrecision(28, 8);
+        match.Property(x => x.OfficialAmount).HasPrecision(28, 8);
+        match.Property(x => x.Difference).HasPrecision(28, 8);
+        match.Property(x => x.Tolerance).HasPrecision(28, 8);
+        match.Property(x => x.MatchedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
+        match.Property(x => x.DifferenceApprovedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
+        match.Property(x => x.DifferenceReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
+        match.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        match.HasIndex(x => new { x.CompanyId, x.OfficialInvoiceNo }).IsUnique().HasDatabaseName("UX_InvoiceMatches_OfficialNo");
+        match.HasIndex(x => new { x.CompanyId, x.Ettn }).IsUnique().HasDatabaseName("UX_InvoiceMatches_Ettn");
+        match.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        match.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        match.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    // S5 API-36: the finalisation ledger of a finalised invoice and the Sales outbox (SAT-D208).
+    private void ConfigureInvoiceFinalizations(ModelBuilder modelBuilder)
+    {
+        var finalization = modelBuilder.Entity<InvoiceFinalizationRow>();
+        finalization.ToTable("InvoiceFinalizations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_InvoiceFinalizations_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 2 AND LEN([FinalizedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND ISJSON([PlanJson]) = 1 AND [FinanceStatus] IN (1, 2) "
+                + "AND ([LastOutcome] IS NULL OR LEN([LastOutcome]) > 0)");
+            table.HasCheckConstraint("CK_InvoiceFinalizations_Ledger", InvoiceFinalizationLedgerConstraint);
+            table.HasTrigger(InvoiceFinalizationGuardTrigger);
+        });
+        finalization.HasKey(x => new { x.CompanyId, x.InvoiceId });
+        finalization.Property(x => x.FinalizedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
+        finalization.Property(x => x.AttemptCount).IsConcurrencyToken();
+        finalization.Property(x => x.LastOutcome).HasMaxLength(SalesInvoiceFinalization.MaximumOutcomeLength).IsUnicode(false);
+        finalization.Property(x => x.PlanJson).HasColumnType("nvarchar(max)").IsRequired();
+        finalization.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        finalization.HasIndex(x => new { x.CompanyId, x.AdmissionId }).IsUnique().HasDatabaseName("UX_InvoiceFinalizations_AdmissionId");
+        finalization.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        finalization.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        finalization.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var outbox = modelBuilder.Entity<SalesOutboxRow>();
+        outbox.ToTable("OutboxMessages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope",
+                "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 "
+                + "AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 "
+                + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+            table.HasTrigger(SalesOutboxGuardTrigger);
+        });
+        outbox.HasKey(x => x.Id);
+        outbox.Property(x => x.Id).ValueGeneratedNever();
+        outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        outbox.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
+        outbox.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        outbox.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        outbox.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        outbox.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        outbox.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
+            .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+        outbox.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        outbox.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
     private void ConfigureDraftDeliverySchedules(ModelBuilder modelBuilder)
     {
@@ -937,6 +1311,82 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D32: the recorded user closure of a "kapanmaya hazır" order — append-only history beside the draft, at most one per
+    // draft; no reason (SAT-D215), no remainder.
+    private void ConfigureDraftUserClosures(ModelBuilder modelBuilder)
+    {
+        var closure = modelBuilder.Entity<DraftUserClosureRow>();
+        closure.ToTable("DraftUserClosures", Schema, table =>
+            table.HasCheckConstraint("CK_DraftUserClosures_Identity", UserClosureIdentityConstraint));
+        closure.HasKey(x => new { x.CompanyId, x.DraftId });
+        closure.Property(x => x.ClosedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        closure.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        closure.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    // SAT-D30 / SAT-D213: the recorded over-delivery approvals — append-only history beside the draft, numbered per line, one per
+    // version step. The line stays as it is; a larger shipped total is approved again under the next number.
+    private void ConfigureDraftOverDeliveryApprovals(ModelBuilder modelBuilder)
+    {
+        var approval = modelBuilder.Entity<DraftOverDeliveryApprovalRow>();
+        approval.ToTable("DraftOverDeliveryApprovals", Schema, table =>
+            table.HasCheckConstraint("CK_DraftOverDeliveryApprovals_Identity", OverDeliveryApprovalIdentityConstraint));
+        approval.HasKey(x => new { x.CompanyId, x.DraftId, x.LineId, x.ApprovalNo });
+        approval.HasIndex(x => new { x.CompanyId, x.DraftId, x.DraftVersion }).IsUnique()
+            .HasDatabaseName("UX_DraftOverDeliveryApprovals_DraftVersion");
+        approval.Property(x => x.Ordered).HasMaxLength(128).IsRequired();
+        approval.Property(x => x.ApprovedShipped).HasMaxLength(128).IsRequired();
+        approval.Property(x => x.ApprovedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        approval.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        approval.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        // The stored line identity is the line at that position (the review finding: LineNo alone let LineId name another line).
+        approval.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    // SAT-D17: the recorded line closures - append-only history beside the draft, at most one per line, one per version step. The
+    // line, its quantities and the approval axis stay as they are; the remainder is only counted as cancelled.
+    private void ConfigureDraftLineClosures(ModelBuilder modelBuilder)
+    {
+        var closure = modelBuilder.Entity<DraftLineClosureRow>();
+        closure.ToTable("DraftLineClosures", Schema, table =>
+            table.HasCheckConstraint("CK_DraftLineClosures_Identity", LineClosureIdentityConstraint));
+        closure.HasKey(x => new { x.CompanyId, x.DraftId, x.LineId });
+        closure.HasIndex(x => new { x.CompanyId, x.DraftId, x.DraftVersion }).IsUnique()
+            .HasDatabaseName("UX_DraftLineClosures_DraftVersion");
+        closure.Property(x => x.Ordered).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.ShippedAtClosure).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.CancelledRemainder).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.ClosedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        closure.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        closure.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        // The stored line identity is the line at that position (the review finding: LineNo alone let LineId name another line).
+        closure.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -969,6 +1419,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .OnDelete(DeleteBehavior.Restrict);
         change.HasOne<DraftLineRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        // The stored line identity is the line at that position (the review finding: LineNo alone let LineId name another line).
+        change.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
             .OnDelete(DeleteBehavior.Restrict);
         change.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
@@ -1076,6 +1531,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>SAT-D132: the quote revision's due terms, when present, are JSON (the shape is the store's strict reader's).</summary>
+    internal const string QuoteRevisionDueTermsCheck = "[DueTermsJson] IS NULL OR ISJSON([DueTermsJson]) = 1";
+
     /// <summary>API-04: a present sales owner is a real id; present due terms are JSON (the shape is the store's strict reader's).</summary>
     private const string HeaderRevisionConstraint =
         "([SalesOwnerUserId] IS NULL OR [SalesOwnerUserId] <> '00000000-0000-0000-0000-000000000000') "
@@ -1148,6 +1606,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(DraftLineRow.Quantity), nameof(DraftLineRow.QuantityText),
                         // MOD-03 → Sales (SAT-D93/D97/D105): the tax snapshot moves under a commercial revision or a buyer tax change.
                         nameof(DraftLineRow.TaxJson),
+                        // SAT-D167 (EK24): a line revision passivates a line — its removal revision and replacement, null → value once
+                        // (checked below); the line is never deleted and nothing else of it moves with them.
+                        nameof(DraftLineRow.RemovedInRevision), nameof(DraftLineRow.ReplacedByLineId),
+                        // SAT-D211 (EK36): a rejection reverts the rejected revision's removal — RemovedInRevision R → null with
+                        // ReinstatedInRevision → R (checked below); nothing else of the line moves with them.
+                        nameof(DraftLineRow.ReinstatedInRevision),
                     ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
                     // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an
@@ -1162,6 +1626,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftCustomerRejectionRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
+                    // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.
+                    DraftUserClosureRow => [],
+                    // SAT-D30 / SAT-D213: a recorded over-delivery approval is APPEND-ONLY — no column of it may change afterwards.
+                    DraftOverDeliveryApprovalRow => [],
+                    // SAT-D17: a recorded line closure is APPEND-ONLY - no column of it may change afterwards.
+                    DraftLineClosureRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],
@@ -1194,8 +1664,51 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     QuoteAttemptRow => [],
                     // ADR-SAL-001 §2: a request attempt is APPEND-ONLY (the SQL trigger refuses the same).
                     RequestAttemptRow => [],
+                    // S5 API-32/33: an invoice header moves only along the approval axis (state, the decision facts, time; the version is the
+                    // token); its lines and attempts stay APPEND-ONLY from the app (the release stamp is TR_Invoices_Guard's, in SQL).
+                    InvoiceRow =>
+                    [
+                        nameof(InvoiceRow.State), nameof(InvoiceRow.SubmittedBy), nameof(InvoiceRow.SubmittedAtUtc), nameof(InvoiceRow.DecidedBy),
+                        nameof(InvoiceRow.DecidedAtUtc), nameof(InvoiceRow.DecisionReason), nameof(InvoiceRow.CancelledBy),
+                        nameof(InvoiceRow.CancelledAtUtc), nameof(InvoiceRow.CancellationReason),
+                    ],
+                    InvoiceLineRow => [],
+                    InvoiceAttemptRow => [],
+                    // API-35: the official match is APPEND-ONLY (TR_InvoiceMatches_Guard refuses the same).
+                    InvoiceMatchRow => [],
+                    // API-36: the finalisation facts never change; only the Finance hand-off ledger moves (checked below, and by the trigger).
+                    InvoiceFinalizationRow =>
+                    [
+                        nameof(InvoiceFinalizationRow.FinanceStatus), nameof(InvoiceFinalizationRow.AdmittedAtUtc),
+                        nameof(InvoiceFinalizationRow.AttemptCount), nameof(InvoiceFinalizationRow.LastAttemptAtUtc),
+                        nameof(InvoiceFinalizationRow.LastOutcome),
+                    ],
+                    // API-36: the outbox is APPEND-ONLY (TR_OutboxMessages_Guard refuses the same).
+                    SalesOutboxRow => [],
                     _ => [],
                 };
+                if (entry.Entity is DraftLineRow)
+                {
+                    // SAT-D167: a line goes passive by a removal (RemovedInRevision null → R, with its replacement). SAT-D211
+                    // (EK36): the ONLY way back is the rejection of that same revision — RemovedInRevision R → null, the replacement
+                    // cleared, ReinstatedInRevision → R. Nothing else moves these columns.
+                    var removedIn = entry.Property(nameof(DraftLineRow.RemovedInRevision));
+                    var replacedBy = entry.Property(nameof(DraftLineRow.ReplacedByLineId));
+                    var reinstatedIn = entry.Property(nameof(DraftLineRow.ReinstatedInRevision));
+                    var removal = removedIn.IsModified && removedIn.OriginalValue is null && removedIn.CurrentValue is not null
+                        && !reinstatedIn.IsModified && (!replacedBy.IsModified || replacedBy.OriginalValue is null);
+                    // The reinstatement's final value is what counts, not whether the column "moved": a line removed again in the SAME
+                    // revision and reverted by that revision's second rejection (or by the next revision after a customer rejection)
+                    // writes the same value (R -> R), which EF does not report as modified.
+                    var reinstatement = removedIn.IsModified && removedIn.OriginalValue is int revision && removedIn.CurrentValue is null
+                        && replacedBy.CurrentValue is null && reinstatedIn.CurrentValue is int back && back == revision;
+                    if ((removedIn.IsModified || replacedBy.IsModified || reinstatedIn.IsModified) && !removal && !reinstatement)
+                    {
+                        throw new InvalidOperationException(
+                            "Satış sipariş satırı bir kez pasif olur ve yalnız o revizyonun reddiyle geri döner.");
+                    }
+                }
+
                 if (entry.Entity is RequestRow)
                 {
                     // API-21: a decision is taken once — Submitted → Approved | Rejected, Approved → Rejected; nothing else.
@@ -1232,6 +1745,18 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     if (active.IsModified && !((bool)active.OriginalValue! && !(bool)active.CurrentValue!))
                     {
                         throw new InvalidOperationException("Teklifin talep bağı yalnız etkinden pasife döner.");
+                    }
+                }
+
+                if (entry.Entity is InvoiceFinalizationRow)
+                {
+                    // API-36: the ledger only moves forward — Admitted never goes back to Waiting, and every save counts one attempt.
+                    var status = entry.Property(nameof(InvoiceFinalizationRow.FinanceStatus));
+                    var attempts = entry.Property(nameof(InvoiceFinalizationRow.AttemptCount));
+                    if ((status.IsModified && (int)status.OriginalValue! != (int)SalesInvoiceFinanceStatus.Waiting)
+                        || (int)attempts.CurrentValue! != (int)attempts.OriginalValue! + 1)
+                    {
+                        throw new InvalidOperationException("Finans kabul defteri yalnız ileri gider ve her kayıt bir deneme sayar.");
                     }
                 }
 

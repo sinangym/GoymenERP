@@ -21,6 +21,8 @@ export function DispatchTabs() {
   const tabs = [
     hasCapability(shell, SALES_CAPABILITY.dispatchesList) ? { to: SALES_ROUTE.dispatches, label: C.dispatchesTab } : null,
     hasCapability(shell, SALES_CAPABILITY.invoiceCandidatesList) ? { to: SALES_ROUTE.invoiceCandidates, label: C.candidatesTab } : null,
+    // UI-65: the Kontrol Merkezi stands on the S-08 id (./salesRoutes.tsx).
+    hasCapability(shell, SALES_CAPABILITY.invoiceCandidatesList) ? { to: SALES_ROUTE.controlCenter, label: C.controlCenterTab } : null,
   ].filter((tab) => tab !== null)
   if (tabs.length < 2) return null
   return (

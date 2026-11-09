@@ -13,7 +13,7 @@ public enum SalesDraftKind
 /// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the states this code can reach exist: <see cref="Draft"/> (every
 /// order, approved or not — "Aktif" is not derived here), <see cref="Cancelled"/> (DEC-SAL-005: an approved order cancelled
 /// after its impact preview; terminal, nothing deleted) and <see cref="Closed"/> (No 30 / SAT-D12: an approved order
-/// force-closed after its impact preview; terminal, nothing deleted).
+/// force-closed after its impact preview; SAT-D32: a "kapanmaya hazır" order closed by the user; terminal, nothing deleted).
 /// </summary>
 public enum SalesDraftState
 {
@@ -30,7 +30,10 @@ public enum SalesDraftState
     /// force-closed with a reason after its impact preview; the not-shipped remainder of every line is recorded as the
     /// closed ("iptal edilen") remainder — a separate axis from the line quantities, which do not move (DEC-SAL-001).
     /// Terminal like <see cref="Cancelled"/>: every mutation entry refuses it; the approval facts, lines, revisions and
-    /// schedules stay. No stock or money event exists.
+    /// schedules stay. No stock or money event exists. SAT-D32 (EK3) / SAT-D215 (EK37): a "kapanmaya hazır" order closed by the
+    /// user (no reason, no remainder) reaches the SAME state with its own record (<see cref="UserClosureFacts"/>) — a
+    /// reversible implementation detail (EK37 "Sınırlar"): the lines and the owners' ports treat both as closed, the screens
+    /// label them differently.
     /// </summary>
     Closed = 3,
 }
@@ -177,6 +180,9 @@ public sealed partial class SalesOrderDraft
 
     private readonly List<SalesOrderDraftLine> lines = [];
 
+    /// <summary>SAT-D167 (EK24): the lines a line revision removed (passive, never deleted), in removal order.</summary>
+    private readonly List<SalesOrderDraftLine> removedLines = [];
+
     /// <summary>Set once the stored approval axis has been restored onto this instance; restoring is not a transition and runs once.</summary>
     private bool approvalRestored;
 
@@ -266,7 +272,7 @@ public sealed partial class SalesOrderDraft
 
     /// <summary>The schedule history as shown: schedule 0 (as created) followed by every recorded change.</summary>
     public IReadOnlyList<DeliveryScheduleSnapshot> DeliveryScheduleHistory =>
-        [originalSchedule ?? CurrentSchedule(0, null, null), .. deliverySchedules];
+        [originalSchedule ?? OriginalSchedule(), .. deliverySchedules];
 
     /// <summary>The Settings money profile of the order's currency on its business date; a header revision of the currency replaces it (API-04).</summary>
     public MoneyProfileSnapshot Money { get; private set; }
@@ -275,7 +281,17 @@ public sealed partial class SalesOrderDraft
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
+    /// <summary>The ACTIVE lines — what the order is: every rule, total, risk, tax, print and consumer read works on these only.</summary>
     public IReadOnlyList<SalesOrderDraftLine> Lines => lines.AsReadOnly();
+
+    /// <summary>
+    /// SAT-D167 (EK24): every line ever on the order — the active ones and the ones a line revision removed (passive, history) —
+    /// in line-number order. For persistence and history only.
+    /// </summary>
+    public IReadOnlyList<SalesOrderDraftLine> AllLines => [.. lines.Concat(removedLines).OrderBy(line => line.LineNo)];
+
+    /// <summary>SAT-D167: the removed (passive) lines, in line-number order.</summary>
+    public IReadOnlyList<SalesOrderDraftLine> RemovedLines => [.. removedLines.OrderBy(line => line.LineNo)];
 
     public static SalesOrderDraft Create(Guid id, Guid companyId, string documentNo, SalesDraftHeader header,
         MoneyProfileSnapshot money, DateTimeOffset now, bool customerAcceptanceRequired = false)
@@ -340,22 +356,40 @@ public sealed partial class SalesOrderDraft
     {
         RequireVersion(expectedVersion);
         ArgumentNullException.ThrowIfNull(input);
+        RequireDraft();
+        var line = BuildLine(input, Header.BusinessDate);
+        lines.Add(line);
+        Touch(now);
+        return line;
+    }
+
+    /// <summary>
+    /// Every rule of a new line, in ONE place — the create's <see cref="AddLine"/> and (SAT-D167) a line revision's added line: the
+    /// line count and identity (across active AND removed lines; removed lines keep their numbers), the snapshots, Ö2, the note, the
+    /// commercial pairing, the plan, the tax snapshot and the subcontract rules. The new line takes the next line number.
+    /// </summary>
+    /// <summary>
+    /// One line under every create-line rule. <paramref name="snapshotDay"/> is the day its Product and Settings snapshots must be
+    /// taken for: the order's business date for a create line; SAT-D212 (EK36) the revision day for a line a line revision adds.
+    /// </summary>
+    private SalesOrderDraftLine BuildLine(SalesDraftLineInput input, DateOnly snapshotDay)
+    {
+        ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Product);
         ArgumentNullException.ThrowIfNull(input.OrderUnit);
-        RequireDraft();
         Identity.Require(input.LineId, nameof(input.LineId));
-        if (lines.Count >= MaximumLines)
+        if (lines.Count + removedLines.Count >= MaximumLines)
         {
             throw new SalesRuleException(SalesRuleCodes.TooManyLines, $"Bir taslak en fazla {MaximumLines} satır taşır.");
         }
 
-        if (lines.Any(line => line.Id == input.LineId))
+        if (AllLines.Any(line => line.Id == input.LineId))
         {
             throw new SalesRuleException(SalesRuleCodes.DuplicateLineId, "Aynı satır kimliği ikinci kez eklenemez.");
         }
 
         RequireNote(input.Note);
-        RequireSnapshots(input.Product, input.OrderUnit);
+        RequireLineSnapshots(CompanyId, snapshotDay, input.Product, input.OrderUnit);
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
         RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
@@ -372,11 +406,8 @@ public sealed partial class SalesOrderDraft
         }
 
         RequireSubcontractCommercial(commercial, input.OrderUnit, input.LineId);
-        var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
+        return new SalesOrderDraftLine(input.LineId, lines.Count + removedLines.Count + 1, input.Product, input.OrderUnit, quantity,
             input.QuantityText, input.RequestedDeliveryDate, input.Note, commercial, slices, input.Tax, input.ItemType);
-        lines.Add(line);
-        Touch(now);
-        return line;
     }
 
     // ---- subcontract service order (SAT-D175/D176, EK25; SAT-D195, EK29) ---------------------------
@@ -705,6 +736,7 @@ public sealed partial class SalesOrderDraft
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
         RequireSubcontractPricesEntered();
+        RequireClosedLinesIntact();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
@@ -730,6 +762,7 @@ public sealed partial class SalesOrderDraft
         var actor = RequireActor(actorId);
         RequirePriceFloorExceptionsApproved();
         RequireDiscountExceptionsApproved();
+        RequireClosedLinesIntact();
         if (ApprovalState != InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
@@ -805,6 +838,8 @@ public sealed partial class SalesOrderDraft
 
         ApprovalState = InternalApprovalState.Rejected;
         Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = trimmedReason };
+        // SAT-D211 (EK36): "reddedilirse satır geri döner ve sevk edilebilir" — the rejected revision's removals are reverted.
+        RevertRemovalsOf(Revision);
         Touch(now);
     }
 
@@ -916,8 +951,8 @@ public sealed partial class SalesOrderDraft
     {
         ArgumentNullException.ThrowIfNull(facts);
         RequireApprovalNotRestored();
-        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || facts.Revision != Revision
-            || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
+        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || UserClosure is not null
+            || facts.Revision != Revision || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
             || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumCancellationReasonLength
             || !IsImpact(facts.Impact))
         {
@@ -944,8 +979,8 @@ public sealed partial class SalesOrderDraft
         && impact.Sources.Select(entry => entry.Source).Distinct(StringComparer.Ordinal).Count() == impact.Sources.Count;
 
     /// <summary>
-    /// The terminal lifecycle guard of every mutation entry: a cancelled (DEC-SAL-005) or force-closed (No 30 / SAT-D12)
-    /// order is a <see cref="SalesRuleCodes.StateConflict"/>. <paramref name="message"/> names the cancelled case; the
+    /// The terminal lifecycle guard of every mutation entry: a cancelled (DEC-SAL-005), force-closed (No 30 / SAT-D12) or
+    /// user-closed (SAT-D32) order is a <see cref="SalesRuleCodes.StateConflict"/>. <paramref name="message"/> names the cancelled case; the
     /// closed case has its own text.
     /// </summary>
     private void RequireNotCancelled(string message)
@@ -957,8 +992,10 @@ public sealed partial class SalesOrderDraft
 
         if (State == SalesDraftState.Closed)
         {
-            throw new SalesRuleException(SalesRuleCodes.StateConflict,
-                $"Zorla kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State}).");
+            // SAT-D32: a user-closed order is as terminal as a force-closed one; only the text names which closure it was.
+            throw new SalesRuleException(SalesRuleCodes.StateConflict, UserClosure is not null
+                ? $"Kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State})."
+                : $"Zorla kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State}).");
         }
     }
 
@@ -1052,16 +1089,16 @@ public sealed partial class SalesOrderDraft
                 "Fiyat revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
         }
 
+        // SAT-D211 (K3 review A P2-1): the lines this command named were validated against the lines held NOW; the revert would
+        // change that set after the archive — refused until the reinstatement is made by a line revision.
+        RequirePendingReinstatementDone();
         ApprovedRevisionSnapshot? archived = null;
         if (ApprovalState == InternalApprovalState.Approved)
         {
             // The approved revision as it stands, archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), Header: CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         foreach (var (line, fields) in replacements)
@@ -1249,6 +1286,7 @@ public sealed partial class SalesOrderDraft
                 "Miktar revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
         }
 
+        RequireClosedLinesUnchanged(inputs);
         var replacements = new List<(SalesOrderDraftLine Line, Quantity Quantity, string Text)>(inputs.Count);
         foreach (var input in inputs)
         {
@@ -1285,16 +1323,15 @@ public sealed partial class SalesOrderDraft
                 "Miktar revizyonu hiçbir satırın miktarını değiştirmiyor; onay boşuna düşürülmez.");
         }
 
+        // SAT-D211 (K3 review A P2-1): see ReviseCommercial.
+        RequirePendingReinstatementDone();
         ApprovedRevisionSnapshot? archived = null;
         if (ApprovalState == InternalApprovalState.Approved)
         {
             // The approved revision as it stands, archived BEFORE anything of it changes — with the reason it is superseded.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
-            archivedRevisions.Add(archived);
-            Revision += 1;
-            ApprovalState = InternalApprovalState.Preparing;
-            Approval = ApprovalFacts.None;
+            AdvanceRevision(archived);
         }
 
         foreach (var (line, quantity, text) in replacements)
@@ -1308,6 +1345,40 @@ public sealed partial class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    /// <summary>
+    /// SAT-D167 / SAT-D215 / SAT-D217: a line closed with a shortfall keeps its quantity until an approved reopen (none exists yet):
+    /// a quantity revision that changes it is the key's terminal 409. A value-equal quantity (the revision names every line) is no change.
+    /// </summary>
+    public void RequireClosedLinesUnchanged(IReadOnlyList<LineQuantityInput> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        foreach (var input in inputs)
+        {
+            if (input is not null && lineClosures.Any(closure => closure.LineId == input.LineId)
+                && lines.SingleOrDefault(candidate => candidate.Id == input.LineId) is { } line && line.Quantity.Value != input.Quantity)
+            {
+                throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+            }
+        }
+    }
+
+    /// <summary>
+    /// SAT-D167 / SAT-D215 defence in depth: a line closed with a shortfall keeps the quantity its closure measured. A submit or an
+    /// approval that would stand over a different quantity of a closed line (a state the closure entry itself refuses) is a state
+    /// conflict, so an approval never changes a closed line.
+    /// </summary>
+    private void RequireClosedLinesIntact()
+    {
+        foreach (var closure in lineClosures)
+        {
+            if (lines.SingleOrDefault(candidate => candidate.Id == closure.LineId) is { } line
+                && !string.Equals(line.QuantityText, closure.Ordered, StringComparison.Ordinal))
+            {
+                throw StateConflict("Eksikle kapatılan satırın miktarı değişmez; önce yeniden açılması gerekir (SAT-D217).");
+            }
+        }
     }
 
     private static void RequirePriceReferenceQuantity(SalesOrderDraftLine line, decimal quantity)
@@ -1443,7 +1514,7 @@ public sealed partial class SalesOrderDraft
             throw new SalesRuleException(SalesRuleCodes.ScheduleNoChange, "Termin güncellemesi hiçbir tarihi değiştirmiyor.");
         }
 
-        originalSchedule ??= CurrentSchedule(0, null, null);
+        originalSchedule ??= OriginalSchedule();
         Header = Header with { RequestedDeliveryDate = requestedDeliveryDate };
         foreach (var (line, date, sliceDates) in plan)
         {
@@ -1466,17 +1537,22 @@ public sealed partial class SalesOrderDraft
     {
         ArgumentNullException.ThrowIfNull(schedule);
         RequireApprovalNotRestored();
+        // SAT-D167 (EK24): line revisions add and remove lines over time, so a recorded schedule names the ACTIVE lines of ITS
+        // moment — each a line of the order (active or removed now), each once; a line added after it is simply not in it.
+        var all = AllLines;
         if (schedule.ScheduleNo != deliverySchedules.Count + 1 || string.IsNullOrWhiteSpace(schedule.ChangedBy)
-            || schedule.ChangedAtUtc is null || schedule.Lines is null || schedule.Lines.Count != lines.Count)
+            || schedule.ChangedAtUtc is null || schedule.Lines is null || schedule.Lines.Count == 0 || schedule.Lines.Count > all.Count
+            || schedule.Lines.Any(stored => stored is null)
+            || schedule.Lines.Select(stored => stored.LineId).Distinct().Count() != schedule.Lines.Count)
         {
             throw new InvalidOperationException("Kayıtlı termin geçmişi taslakla uyuşmuyor.");
         }
 
-        var plan = new List<(SalesOrderDraftLine Line, LineScheduleSnapshot Stored)>(lines.Count);
-        foreach (var line in lines)
+        var plan = new List<(SalesOrderDraftLine Line, LineScheduleSnapshot Stored)>(schedule.Lines.Count);
+        foreach (var stored in schedule.Lines)
         {
-            var stored = schedule.Lines.SingleOrDefault(candidate => candidate?.LineId == line.Id);
-            if (stored is null || stored.LineNo != line.LineNo || stored.Slices is null
+            var line = all.SingleOrDefault(candidate => candidate.Id == stored.LineId);
+            if (line is null || stored.LineNo != line.LineNo || stored.Slices is null
                 || stored.Slices.Count != line.RequestedDeliverySlices.Count)
             {
                 throw new InvalidOperationException("Kayıtlı termin satırları taslağın satırlarıyla uyuşmuyor.");
@@ -1496,7 +1572,7 @@ public sealed partial class SalesOrderDraft
             plan.Add((line, stored));
         }
 
-        originalSchedule ??= CurrentSchedule(0, null, null);
+        originalSchedule ??= OriginalSchedule();
         Header = Header with { RequestedDeliveryDate = schedule.RequestedDeliveryDate };
         foreach (var (line, stored) in plan)
         {
@@ -1508,9 +1584,20 @@ public sealed partial class SalesOrderDraft
     }
 
     /// <summary>The draft's delivery dates as they stand now, as schedule <paramref name="scheduleNo"/>.</summary>
+    /// <summary>
+    /// Schedule 0, the dates as the draft was created: SAT-D167 — the lines the CREATE brought (a line a line revision added later
+    /// was not in it; a create line removed later was), with the dates they carry before the first recorded change.
+    /// </summary>
+    private DeliveryScheduleSnapshot OriginalSchedule() =>
+        Schedule(0, null, null, AllLines.Where(line => line.AddedInRevision is null));
+
     private DeliveryScheduleSnapshot CurrentSchedule(int scheduleNo, string? changedBy, DateTimeOffset? changedAtUtc) =>
+        Schedule(scheduleNo, changedBy, changedAtUtc, lines);
+
+    private DeliveryScheduleSnapshot Schedule(int scheduleNo, string? changedBy, DateTimeOffset? changedAtUtc,
+        IEnumerable<SalesOrderDraftLine> scheduled) =>
         new(scheduleNo, Header.RequestedDeliveryDate, changedBy, changedAtUtc,
-            [.. lines.Select(line => new LineScheduleSnapshot(line.Id, line.LineNo, line.RequestedDeliveryDate,
+            [.. scheduled.Select(line => new LineScheduleSnapshot(line.Id, line.LineNo, line.RequestedDeliveryDate,
                 [.. line.RequestedDeliverySlices.Select((slice, index) =>
                     new SliceScheduleSnapshot(slice.SliceId, index + 1, slice.QuantityText, slice.RequestedDeliveryDate))]))]);
 
@@ -1688,7 +1775,9 @@ public sealed partial class SalesOrderDraft
 
         var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
         // No 30 / SAT-D12: a recorded force-closure was one step of its own, and only an APPROVED order without a pending
-        // remainder change is ever force-closed - a stored closure beside anything else is refused, not repaired.
+        // remainder change is ever force-closed - a stored closure beside anything else is refused, not repaired. SAT-D32: a
+        // recorded USER closure is the same one lifecycle step under the same preconditions (the Closed state counts once,
+        // whichever record closed it; the store and RestoreUserClosure/RestoreForceClosure refuse both records at once).
         if (State == SalesDraftState.Closed && (state != InternalApprovalState.Approved || PendingRemainderChange is not null))
         {
             throw new InvalidOperationException("Kayıtlı zorla kapatma yalnız karar bekleyen kalan değişikliği olmayan onaylı bir siparişin yanında durur.");
@@ -1707,9 +1796,13 @@ public sealed partial class SalesOrderDraft
         }
 
         var customerRejectionTransitions = (long)customerRejections.Count;
+        // SAT-D30 / SAT-D213: every recorded over-delivery approval was one step of its own (restored just before this).
+        var overDeliveryApprovalTransitions = (long)overDeliveryApprovals.Count;
+        // SAT-D17: every recorded line closure was one step of its own (restored just before this).
+        var lineClosureTransitions = (long)lineClosures.Count;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
             + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions
-            + customerRejectionTransitions);
+            + customerRejectionTransitions + overDeliveryApprovalTransitions + lineClosureTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
@@ -1749,9 +1842,6 @@ public sealed partial class SalesOrderDraft
 
     private SalesRuleException StateConflict(string message) =>
         new(SalesRuleCodes.StateConflict, $"{message} (durum: {ApprovalState}).");
-
-    private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit) =>
-        RequireLineSnapshots(CompanyId, Header.BusinessDate, product, orderUnit);
 
     /// <summary>
     /// The owner-snapshot rules of one line, shared by every Sales record that carries a product line (the order draft, and

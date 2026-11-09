@@ -55,6 +55,12 @@ export const SALES_CANCEL_CAPABILITY = 'sales.orders.cancel' as const
 export const SALES_FORCE_CLOSE_CAPABILITY = 'sales.orders.force-close' as const
 
 /**
+ * SAT-D32 / SAT-D168: the user-closure CONTROL on S-04 ("Siparişi kapat") for a "kapanmaya hazır" order. The shell publishes
+ * it only to an actor holding `sales.orders.close` beside the read; cancel and force-close never confer it.
+ */
+export const SALES_CLOSE_CAPABILITY = 'sales.orders.close' as const
+
+/**
  * DEC-SAL-002: the quantity-revision CONTROL on S-04 ("Revizyon oluştur"). The shell publishes it only to an actor holding
  * `sales.orders.quantity.write` beside the read; create, approve, price, schedule and cancel never confer it.
  */
@@ -67,6 +73,19 @@ export const SALES_QUANTITY_WRITE_CAPABILITY = 'sales.orders.quantity.write' as 
  */
 export const SALES_HEADER_WRITE_CAPABILITY = 'sales.orders.header.write' as const
 
+/**
+ * SAT-D30 / SAT-D168: the over-delivery approval CONTROL on S-04 ("Fazla teslimi onayla") for a line awaiting approval in the
+ * tolerance approval band. The shell publishes it only to an actor holding `sales.orders.over-delivery.approve` beside the
+ * read; no other Sales name confers it.
+ */
+export const SALES_OVER_DELIVERY_APPROVE_CAPABILITY = 'sales.orders.over-delivery.approve' as const
+
+/**
+ * SAT-D17 / SAT-D168: the line-closure CONTROL on S-04 ("Satırı eksikle kapat") for an order line with a shortfall. The shell
+ * publishes it only to an actor holding `sales.orders.lines.close` beside the read; no other Sales name confers it.
+ */
+export const SALES_LINE_CLOSE_CAPABILITY = 'sales.orders.lines.close' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -74,6 +93,9 @@ export type SalesCapabilityId =
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
   | typeof SALES_FORCE_CLOSE_CAPABILITY
+  | typeof SALES_CLOSE_CAPABILITY
+  | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
+  | typeof SALES_LINE_CLOSE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY
@@ -89,6 +111,11 @@ export const SALES_ROUTE = {
   invoiceCandidates: '/satis/faturaya-hazir',
   /** UI-80: static, never a draft id. */
   reports: '/satis/raporlar',
+  /**
+   * UI-65 Kontrol Merkezi (API-37, `sales.invoices.read`): static, never a draft id. The backend publishes no own id for it yet;
+   * the route stands on the S-08 id, published beside the same `sales.invoices.read` (./salesRoutes.tsx).
+   */
+  controlCenter: '/satis/kontrol-merkezi',
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`

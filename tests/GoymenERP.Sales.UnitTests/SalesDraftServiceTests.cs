@@ -1104,6 +1104,10 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("other-unit", 422, "unsupported_unit")]
     [InlineData("unit-not-found", 422, "unsupported_unit")]
     [InlineData("unit-other-company", 503, "reference_provider_invalid")]
+    [InlineData("settings-access-denied", 403, "settings_access_denied")]
+    [InlineData("settings-unavailable", 503, "settings_provider_unavailable")]
+    [InlineData("settings-unit-not-found", 422, "unsupported_unit")]
+    [InlineData("restore-failed", 503, "product_eligibility_unavailable")]
     public async Task The_product_and_its_order_unit_are_the_owners_answers(string fault, int status, string code)
     {
         var world = new World();
@@ -1692,14 +1696,23 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings);
+                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders);
         }
 
         /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
         public IProductItemTypeReaderV1? ItemTypes { get; set; }
 
+        /// <summary>SAT-D32: the owner-less axes seam (null = not composed: NoSource, never ready).</summary>
+        public ISalesOrderOwnerAxesSourceV1? OwnerAxes { get; set; }
+
         /// <summary>SAT-D175: the Production / customer-goods binding hook (null = not composed).</summary>
         public ISalesSubcontractOrderBindingReadPortV1? SubcontractBindings { get; set; }
+
+        /// <summary>S-1 / MOD-03: the supply owners' linked-supply adapters (none by default, as on the host).</summary>
+        public List<ISalesOrderLinkedSupplyReadPortV1> LinkedSupplies { get; } = [];
+
+        /// <summary>SAT-D219: the supply owners' declarations that they record links to Sales order lines (none by default).</summary>
+        public List<ISalesOrderLinkedSupplyRecorderV1> LinkedSupplyRecorders { get; } = [];
 
         public SalesDraftReadServiceV1 ReadService()
         {
@@ -1940,6 +1953,9 @@ public sealed partial class SalesDraftServiceTests
         public int Calls { get; set; }
         public (string Operation, Guid Currency, DateOnly On)? MoneyAsked { get; private set; }
 
+        /// <summary>A test-chosen money profile id answered instead of the default (SAT-D101 profile mismatch).</summary>
+        public Guid? MoneyProfileOverride { get; set; }
+
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
             Calls++;
@@ -1950,7 +1966,7 @@ public sealed partial class SalesDraftServiceTests
                 "money-access-denied" => Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException("settings_access_denied")),
                 "money-unavailable" => Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
                 _ => Task.FromResult(new MoneyProfileV1(Fault == "money-other-company" ? Guid.NewGuid() : Company, currencyId, "TRY", operation,
-                    new ProfileVersionV1(MoneyProfile, 3), 2, true, Fault == "money-not-in-effect" ? Day.AddDays(1) : new DateOnly(2026, 9, 1), null)),
+                    new ProfileVersionV1(MoneyProfileOverride ?? MoneyProfile, 3), 2, true, Fault == "money-not-in-effect" ? Day.AddDays(1) : new DateOnly(2026, 9, 1), null)),
             };
         }
 
@@ -1975,13 +1991,21 @@ public sealed partial class SalesDraftServiceTests
         public bool VersionConflict { get; set; }
         public int Calls { get; set; }
         public Action? BeforeErrorsEnumerated { get; set; }
+        /// <summary>The day each selection was evaluated for (SAT-D212: an added line's revision day).</summary>
+        public List<DateOnly> AskedOn { get; } = [];
 
         public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
         {
             Calls++;
+            AskedOn.Add(selection.EffectiveOn);
             if (Fault == "unavailable") throw new ProductOperationException("product_family_policy_unavailable", 503);
             if (Fault == "conflict-exception") throw new ProductOperationException("product_selection_changed", 409);
             if (Fault == "not-found") throw new ProductOperationException("product_not_found", 404);
+            // B-31: the owner's eligibility reads its unit profiles from Settings and lets that refusal through as is.
+            if (Fault == "settings-access-denied") throw new SettingsPrerequisiteException("settings_access_denied");
+            if (Fault == "settings-unavailable") throw new SettingsPrerequisiteException("settings_provider_unavailable");
+            if (Fault == "settings-unit-not-found") throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound);
+            if (Fault == "restore-failed") throw new InvalidOperationException("Stored product could not be restored.");
             if (VersionConflict)
             {
                 IReadOnlyList<ProductFieldError> errors = [new("productId", ProductApiV1.VersionConflict)];
@@ -2102,6 +2126,20 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        public async Task<SalesDraftStateResult?> ReviseDraftLinesAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ReviseLinesV1) throw new ArgumentException("wrong command", nameof(commandName));
+            ApprovedRevisionSnapshot? archived = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => archived = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (archived is not null) Archived.Add(archived);
+            return result;
+        }
+
         /// <summary>The reason each recorded header revision handed the store (SAT-D126), in order.</summary>
         public List<string> HeaderRevisionReasons { get; } = [];
 
@@ -2175,6 +2213,64 @@ public sealed partial class SalesDraftServiceTests
                 (target, now) => recorded = mutate(target, plan!, now), audit,
                 async token => plan = await beforeWrite(draft!, token), cancellationToken);
             if (recorded is not null) ForceClosures.Add(recorded);
+            return result;
+        }
+
+        public List<UserClosureFacts> UserClosures { get; } = [];
+
+        public async Task<SalesDraftStateResult?> CloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, UserClosureFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.CloseV1) throw new ArgumentException("wrong command", nameof(commandName));
+            UserClosureFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) UserClosures.Add(recorded);
+            return result;
+        }
+
+        public List<OverDeliveryApprovalFacts> OverDeliveryApprovals { get; } = [];
+
+        public List<OverDeliveryApprovalInput> OverDeliveryInputs { get; } = [];
+
+        public async Task<SalesDraftStateResult?> ApproveOverDeliveryAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, OverDeliveryApprovalInput, DateTimeOffset, OverDeliveryApprovalFacts> mutate,
+            SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<OverDeliveryApprovalInput>> beforeWrite,
+            CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ApproveOverDeliveryV1) throw new ArgumentException("wrong command", nameof(commandName));
+            OverDeliveryApprovalInput? input = null;
+            OverDeliveryApprovalFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, input!, now), audit,
+                async token => input = await beforeWrite(draft!, token), cancellationToken);
+            if (input is not null) OverDeliveryInputs.Add(input);
+            if (recorded is not null) OverDeliveryApprovals.Add(recorded);
+            return result;
+        }
+
+        public List<LineClosureFacts> LineClosureRecords { get; } = [];
+
+        public List<LineClosureInput> LineClosureInputs { get; } = [];
+
+        public async Task<SalesDraftStateResult?> CloseLineAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, LineClosureInput, DateTimeOffset, LineClosureFacts> mutate,
+            SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<LineClosureInput>> beforeWrite,
+            CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.CloseLineV1) throw new ArgumentException("wrong command", nameof(commandName));
+            LineClosureInput? input = null;
+            LineClosureFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, input!, now), audit,
+                async token => input = await beforeWrite(draft!, token), cancellationToken);
+            if (input is not null) LineClosureInputs.Add(input);
+            if (recorded is not null) LineClosureRecords.Add(recorded);
             return result;
         }
 

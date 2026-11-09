@@ -130,6 +130,10 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("other-unit", 422, "unsupported_unit")]
     [InlineData("unavailable", 503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable)]
     [InlineData("unit-not-found", 422, "unsupported_unit")]
+    [InlineData("settings-access-denied", 403, "settings_access_denied")]
+    [InlineData("settings-unavailable", 503, "settings_provider_unavailable")]
+    [InlineData("settings-unit-not-found", 422, "unsupported_unit")]
+    [InlineData("restore-failed", 503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable)]
     public async Task Requests_the_product_and_its_order_unit_are_the_owners_answers(string fault, int status, string code)
     {
         var world = new World();

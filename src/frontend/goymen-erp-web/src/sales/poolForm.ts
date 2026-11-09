@@ -16,6 +16,7 @@
 
 import { LIMITS } from './contract'
 import type { OrderDraftOptions } from './orderDraftForm'
+import type { DueTerms } from './headerRevision'
 import {
   QUOTE_MAXIMUM_REQUESTS,
   type CreateSalesQuoteBody,
@@ -410,8 +411,15 @@ export function validateQuoteForm(
   }
 }
 
-/** API-22 revision: every line and the terms; the customer, currency, date and requests stay as stored. */
-export function validateQuoteRevision(values: PoolFormValues, expectedVersion: string): PoolValidation<SalesQuoteRevisionBody> {
+/**
+ * API-22 revision: every line and the terms; the customer, currency, date and requests stay as stored. SAT-D132: the
+ * revision replaces the terms as a whole, so the quote's shown due terms are carried (`dueTerms`); null sends none.
+ */
+export function validateQuoteRevision(
+  values: PoolFormValues,
+  expectedVersion: string,
+  dueTerms: DueTerms | null = null,
+): PoolValidation<SalesQuoteRevisionBody> {
   const errors: Record<string, string> = {}
   if (values.requestedDeliveryDate !== '' && !isDateOnly(values.requestedDeliveryDate)) {
     errors[POOL_FIELD.requestedDeliveryDate] = POOL_TEXT.validation.dateInvalid
@@ -428,6 +436,7 @@ export function validateQuoteRevision(values: PoolFormValues, expectedVersion: s
       validUntil: dateOrNull(values.validUntil),
       requestedDeliveryDate: dateOrNull(values.requestedDeliveryDate),
       note: noteOrNull(values.note),
+      ...(dueTerms === null ? {} : { dueTerms }),
     },
   }
 }

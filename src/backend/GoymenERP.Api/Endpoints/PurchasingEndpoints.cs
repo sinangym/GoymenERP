@@ -18,7 +18,7 @@ namespace GoymenERP.Api.Endpoints;
 /// (POST create → 201 + Location, GET list, GET detail, POST submission → 200, A1-1's POST approval / rejection
 /// → 200 under <c>purchasing.requests.approve</c>, and A1-1b's POST withdrawal → 200 under
 /// <c>purchasing.requests.withdraw</c>) and purchase orders (POST
-/// create → 201 + Location, GET list, GET detail, POST approval → 200, and A1-3's GET cancel-impact / POST cancellation → 200
+/// create → 201 + Location, GET list, GET detail, A2a-2's GET totals, POST approval → 200, and A1-3's GET cancel-impact / POST cancellation → 200
 /// under <c>purchasing.orders.cancel</c>), and A2a-1's GET references/currencies (the purchasing order operation's currency
 /// candidates, under <c>purchasing.orders.create</c>). The route reads nothing but the
 /// server context and the wire body; <see cref="IPurchasingService"/> decides, with a fresh central
@@ -299,6 +299,33 @@ public static class PurchasingEndpoints
         })
             .WithName("GetPurchaseOrderV1")
             .Produces<PurchaseOrderReadDetailViewV1>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // A2a-2 (plan API-20; ALS-D74): the order's totals — line amounts, VAT per line from the Settings item-type default and gross;
+        // withholding "hesaplanamıyor" until N-20. Read-only under purchasing.orders.read; amounts only with the price read (PRS-02).
+        group.MapGet("/{id:guid}/totals", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetOrderTotalsAsync(id, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetPurchaseOrderTotalsV1")
+            .Produces<PurchaseOrderTotalsView>()
+            .ProducesErpBadRequest("validation_failed")
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
