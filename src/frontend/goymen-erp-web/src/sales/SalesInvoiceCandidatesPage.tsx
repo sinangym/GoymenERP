@@ -2,24 +2,32 @@
  * UI-61 / S-08 "Faturaya Hazır": the posted sales shipment shares (lines of approved, not cancelled dispatch notes) grouped by
  * the server along DEC-SAL-006, pinned to `GET /api/v1/sales/invoice-candidates[?companyAccountId]` (API-31, its own
  * `sales.invoices.read`). Sinan's S5 answer (2026-10-28): the default proposal is the largest compatible group per customer; the
- * user splits a group or takes partial quantities on the invoice draft (API-32, a later slice) — not here.
+ * user splits a group by choosing some of its shares on the invoice draft create (UI-62 / API-32, `SalesInvoiceDraftCreate`);
+ * a partial quantity is a later slice.
  *
- * Read-only and money-free: no price, amount, VAT or total (API-03 is not on main; the screen never computes money). The group,
- * its unresolved key parts and the per-unit quantity totals are the server's; nothing is regrouped, summed or filtered here.
- * A group whose key parts are not all resolved says so and is never presented as one invoice. No "Fatura Kes" (SAT-D7).
+ * Money-free: no price, amount, VAT or total (the screen never computes money). The group, its unresolved key parts and the
+ * per-unit quantity totals are the server's; nothing is regrouped, summed or filtered here. A group whose key parts are not
+ * all resolved says so and offers no draft. The draft create follows the `sales.invoices.write` control id (not published by
+ * the shell yet, so it fails closed); the prepared draft opens below with its UI-64 controls. The official invoice is issued in
+ * the external program — no "Fatura Kes" (SAT-D7).
  */
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
 import { fetchInvoiceCandidates } from './dispatchApi'
 import type { InvoiceCandidateGroup, InvoiceCandidateShare } from './dispatchContract'
 import { DISPATCH_TEXT, GROUP_KEY_PART_TEXT } from './dispatchText'
-import { SALES_ROUTE } from './capabilities'
+import { SALES_INVOICE_APPROVE_CAPABILITY, SALES_INVOICE_WRITE_CAPABILITY, SALES_ROUTE } from './capabilities'
+import { INVOICE_DRAFT_CREATE_TEXT as CT } from './invoiceDraftText'
+import type { SalesInvoiceDetail } from './invoiceFinalizationContract'
+import { SalesInvoiceDraftCreate } from './SalesInvoiceDraftCreate'
+import { SalesInvoiceFinalizationPanel } from './SalesInvoiceFinalization'
 import { DispatchCustomerCell, DispatchOrderCell, DispatchTabs } from './SalesDispatchShared'
 import { formatBusinessDate, formatInstant } from './format'
 import { isReferenceId } from './wirePrimitives'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -48,6 +56,10 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
   // A malformed account in the address is never sent: the whole list is shown instead.
   const companyAccountId = requested !== null && isReferenceId(requested) ? requested : null
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
+  const canCreate = hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)
+  const canApprove = hasCapability(shell, SALES_INVOICE_APPROVE_CAPABILITY)
+  // The draft this screen prepared: its group leaves the candidates, so the draft is shown at the page level.
+  const [created, setCreated] = useState<SalesInvoiceDetail | null>(null)
 
   const read = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-invoice-candidates', companyAccountId ?? 'all'],
@@ -82,6 +94,29 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
     </header>
   )
 
+  const createdDraft =
+    created === null || namespace === null || companyId === null ? null : (
+      <section className={styles.section} aria-labelledby="sales-invoice-created-heading" data-testid="sales-invoice-created">
+        <h2 id="sales-invoice-created-heading" className={styles.subtitle}>
+          {CT.newDraftHeading}
+        </h2>
+        <p role="status" className={styles.notice} data-testid="sales-invoice-created-notice">
+          {created.isReplay ? CT.replayed(created.documentNo) : CT.completed(created.documentNo)}
+        </p>
+        <SalesInvoiceFinalizationPanel
+          key={`invoice:${namespace}:${shell.routeEntryGeneration}:${created.id}`}
+          invoiceId={created.id}
+          companyId={companyId}
+          namespace={namespace}
+          entryGeneration={shell.routeEntryGeneration}
+          canControl={false}
+          canWrite={canCreate}
+          canApprove={canApprove}
+          onRecorded={() => void read.refetch()}
+        />
+      </section>
+    )
+
   const data = read.data?.type === 'ok-single' ? read.data.data : null
   if (data === null) {
     const state: RemoteViewState<unknown> =
@@ -89,6 +124,7 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
     return (
       <section className={styles.page} aria-labelledby="sales-invoice-candidates-heading">
         {header}
+        {createdDraft}
         <StateBlock state={state} subject={T.subject} onRetry={() => void read.refetch()} />
       </section>
     )
@@ -97,6 +133,7 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
   return (
     <section className={styles.page} aria-labelledby="sales-invoice-candidates-heading">
       {header}
+      {createdDraft}
       {data.truncated ? (
         <p className={styles.notice} role="status" data-testid="sales-invoice-candidates-truncated">
           {T.truncated}
@@ -106,7 +143,20 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
       {data.groups.length === 0 ? (
         <StateBlock state={{ kind: filtered ? 'empty-filtered' : 'empty-no-data' }} subject={T.subject} />
       ) : (
-        data.groups.map((group, index) => <CandidateGroup key={groupKey(group)} group={group} index={index + 1} filtered={filtered} />)
+        data.groups.map((group, index) => (
+          <CandidateGroup
+            key={groupKey(group)}
+            group={group}
+            index={index + 1}
+            filtered={filtered}
+            canCreate={canCreate}
+            onCreated={(detail) => {
+              setCreated(detail)
+              void read.refetch()
+            }}
+            onConflict={() => void read.refetch()}
+          />
+        ))
       )}
     </section>
   )
@@ -129,7 +179,21 @@ function rateText(rate: InvoiceCandidateGroup['key']['exchangeRate']): string {
   return T.rateUnresolved(formatBusinessDate(rate.shipmentDate ?? ''))
 }
 
-function CandidateGroup({ group, index, filtered }: { readonly group: InvoiceCandidateGroup; readonly index: number; readonly filtered: boolean }) {
+function CandidateGroup({
+  group,
+  index,
+  filtered,
+  canCreate,
+  onCreated,
+  onConflict,
+}: {
+  readonly group: InvoiceCandidateGroup
+  readonly index: number
+  readonly filtered: boolean
+  readonly canCreate: boolean
+  readonly onCreated: (detail: SalesInvoiceDetail) => void
+  readonly onConflict: () => void
+}) {
   const headingId = `sales-invoice-group-${index}`
   const columns: readonly DataTableColumn<InvoiceCandidateShare>[] = [
     {
@@ -241,6 +305,19 @@ function CandidateGroup({ group, index, filtered }: { readonly group: InvoiceCan
         rowKey={(share) => share.shipmentId}
         rowAttributes={(share) => ({ 'data-shipment-id': share.shipmentId })}
       />
+      {!canCreate ? (
+        group.invoiceable ? (
+          <p className={styles.muted} data-testid={`sales-invoice-group-${index}-draft-unavailable`}>
+            {CT.unavailable}
+          </p>
+        ) : null
+      ) : group.invoiceable ? (
+        <SalesInvoiceDraftCreate group={group} groupIdentity={groupKey(group)} index={index} onCreated={onCreated} onConflict={onConflict} />
+      ) : (
+        <p className={styles.muted} data-testid={`sales-invoice-group-${index}-draft-blocked`}>
+          {CT.notInvoiceableHint}
+        </p>
+      )}
     </section>
   )
 }

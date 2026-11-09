@@ -8,13 +8,15 @@
  *  - The finalize / re-send controls show only when the server's state allows them AND the caller may use them. The shell
  *    publishes no capability for `sales.invoices.finalize` yet, so the routed tab mounts the panel with `canControl` false and
  *    says so neutrally (NEEDS-SINAN). No new capability, permission or grant is introduced here.
+ *  - UI-64 (API-33): a draft's submit / approve / reject / cancel controls (`SalesInvoiceDraftActions`) follow the
+ *    `sales.invoices.write` / `sales.invoices.approve` control ids, which the shell does not publish yet — so they fail closed.
  *  - Open policies are said neutrally, never decided: the dead end after Finance's authority refusal (`refused:denied`) and the
  *    automatic background re-send (NEEDS-SINAN).
  *  - 401/403 go to the shell's auth boundary; the screen does not change the session or the authority itself.
  */
 import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { SALES_CAPABILITY } from './capabilities'
+import { SALES_CAPABILITY, SALES_INVOICE_APPROVE_CAPABILITY, SALES_INVOICE_WRITE_CAPABILITY } from './capabilities'
 import { fetchDraftInvoices, fetchSalesInvoice } from './invoiceApi'
 import {
   FINANCE_STAGE,
@@ -31,7 +33,11 @@ import {
   useInvoiceFinalization,
   type InvoiceFinalizationController,
 } from './invoiceFinalization'
+import { useInvoiceDraftCommand } from './invoiceDraft'
+import { InvoiceDecisionFacts, InvoiceDraftAttemptNotice, SalesInvoiceDraftActions } from './SalesInvoiceDraftActions'
 import { isOutcomeStillUnknown } from './orderAttempt'
+import { SalesInvoiceMatchPanel } from './SalesInvoiceMatchPanel'
+import { INVOICE_MATCH_TEXT as M } from './invoiceMatchText'
 import { formatBusinessDate, formatInstant } from './format'
 import {
   FINANCE_STAGE_TEXT,
@@ -139,6 +145,8 @@ export function SalesOrderInvoices({
             namespace={namespace}
             entryGeneration={entryGeneration}
             canControl={false}
+            canWrite={hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)}
+            canApprove={hasCapability(shell, SALES_INVOICE_APPROVE_CAPABILITY)}
             onRecorded={() => void query.refetch()}
           />
         ) : null}
@@ -167,6 +175,10 @@ export function SalesInvoiceFinalizationPanel({
   namespace,
   entryGeneration,
   canControl,
+  canWrite = false,
+  canApprove = false,
+  canMatch = false,
+  canApproveDifference = false,
   onRecorded,
 }: {
   readonly invoiceId: string
@@ -175,6 +187,14 @@ export function SalesInvoiceFinalizationPanel({
   readonly entryGeneration: number
   /** The caller may use the finalize / re-send controls (a shell capability); the server's state decides the rest. */
   readonly canControl: boolean
+  /** UI-64: the caller holds the draft submit / cancel control (`sales.invoices.write`); the server's state decides the rest. */
+  readonly canWrite?: boolean
+  /** UI-64: the caller holds the draft approve / reject control (`sales.invoices.approve`); the server decides who may approve. */
+  readonly canApprove?: boolean
+  /** UI-64b: the caller may use the official e-invoice match form (a shell capability; none is published yet). */
+  readonly canMatch?: boolean
+  /** UI-64b: the caller may approve a match difference above tolerance (a shell capability; none is published yet). */
+  readonly canApproveDifference?: boolean
   /** Called after a recorded command or a conflict, so the list is read again too. */
   readonly onRecorded?: () => void
 }) {
@@ -192,15 +212,12 @@ export function SalesInvoiceFinalizationPanel({
       return signal.aborted ? { type: 'fence-stale' } : outcome
     },
   })
-  const controller = useInvoiceFinalization({
-    shell,
-    invoiceId,
-    companyId,
-    onRecorded: () => {
-      void queryClient.invalidateQueries({ queryKey })
-      onRecorded?.()
-    },
-  })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey })
+    onRecorded?.()
+  }
+  const controller = useInvoiceFinalization({ shell, invoiceId, companyId, onRecorded: refresh })
+  const draftController = useInvoiceDraftCommand({ shell, invoiceId, companyId, onRecorded: refresh })
   const headingId = useId()
   const outcome = query.data
   if (outcome?.type !== 'ok-single') {
@@ -212,6 +229,7 @@ export function SalesInvoiceFinalizationPanel({
           onRetry={() => void query.refetch()}
         />
         <AttemptNotice controller={controller} />
+        <InvoiceDraftAttemptNotice controller={draftController} />
       </section>
     )
   }
@@ -230,7 +248,17 @@ export function SalesInvoiceFinalizationPanel({
           <div><dt>{T.paymentAllocationWarning}</dt><dd>{detail.paymentAllocationWarning}</dd></div>
         )}
       </dl>
+      <InvoiceDecisionFacts decision={detail.decision} />
+      <InvoiceDraftAttemptNotice controller={draftController} />
+      <SalesInvoiceDraftActions detail={detail} canWrite={canWrite} canApprove={canApprove} controller={draftController} />
       <MatchFacts detail={detail} />
+      <SalesInvoiceMatchPanel
+        detail={detail}
+        companyId={companyId}
+        canMatch={canMatch}
+        canApproveDifference={canApproveDifference}
+        onRecorded={refresh}
+      />
       <FinalizationFacts finalization={detail.finalization} />
       <InstalmentTable detail={detail} />
       <AttemptNotice controller={controller} />
@@ -256,6 +284,13 @@ function MatchFacts({ detail }: { readonly detail: SalesInvoiceDetail }) {
           <div><dt>{T.tolerance}</dt><dd className={styles.numericValue}>{match.tolerance}</dd></div>
           <div><dt>{T.matchedBy}</dt><dd>{match.matchedBy}</dd></div>
           <div><dt>{T.matchedAt}</dt><dd>{formatInstant(match.matchedAtUtc)}</dd></div>
+          <div>
+            <dt>{M.differenceApprovedBy}</dt>
+            <dd data-testid="sales-invoice-match-approved-by">{match.differenceApprovedBy ?? M.noDifferenceApproval}</dd>
+          </div>
+          {match.differenceReason === null ? null : (
+            <div><dt>{M.differenceReasonFact}</dt><dd data-testid="sales-invoice-match-reason-fact">{match.differenceReason}</dd></div>
+          )}
         </dl>
       )}
     </>
