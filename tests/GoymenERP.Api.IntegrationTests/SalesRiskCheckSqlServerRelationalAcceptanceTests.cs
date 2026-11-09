@@ -46,7 +46,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// of another module is inserted directly. SENTETIK / NOT_ENV.
 /// </para>
 /// </summary>
-public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
+public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -342,14 +342,18 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>Approved official invoice installments of the customer, admitted through the real Finance admission service.</summary>
-        public async Task AdmitOpenItemsAsync(Guid company, Customer customer, params string[] amounts)
+        public Task AdmitOpenItemsAsync(Guid company, Customer customer, params string[] amounts) =>
+            AdmitOpenItemsInAsync(company, customer, Currency, amounts);
+
+        /// <summary>Approved official invoice installments of the customer in <paramref name="currency"/>, through the real Finance admission service.</summary>
+        public async Task AdmitOpenItemsInAsync(Guid company, Customer customer, Guid currency, params string[] amounts)
         {
             var batchId = Guid.NewGuid();
             var batchVersion = $"approved-file-{batchId:N}";
             var checksum = Convert.ToHexStringLower(SHA256.HashData(batchId.ToByteArray()));
             var rows = amounts.Select((amount, index) => new ApprovedFinanceOpenItemSourceRow(
                     Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), $"invoice-v1-{index}",
-                    FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument, customer.PartyId, customer.AccountId, Currency, amount,
+                    FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument, customer.PartyId, customer.AccountId, currency, amount,
                     Day.AddDays(30 + index)))
                 .ToArray();
             var batch = new ApprovedFinanceOpenItemSourceBatch(batchId, company, batchVersion, checksum, rows);

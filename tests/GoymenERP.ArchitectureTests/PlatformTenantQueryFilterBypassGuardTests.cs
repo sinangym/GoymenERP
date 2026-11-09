@@ -481,9 +481,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Merged with main's #984 (SAT-D132) fact: SAT-D17 line closure +5 facts recomputed over the union (525d38a4... -> 7c089718...).
                 // Line identity FKs (review finding): +1 SalesOrderLineClosure fact (a LineId of another line is refused by the three
                 // 4-column FKs; the Up guard 51234 refuses a mismatch), kept ordinal-sorted (55ad9807... -> e2b0d6ba...).
-                // SAT-D232 (EK46): +1 SalesInvoice fact (a USD invoice's 0,06 TL difference writes nothing unapproved and is stored
-                // approved), kept ordinal-sorted (e2b0d6ba... -> 305bc98e...).
-                "305bc98e6d8245b9efa69d3e8c45bf4db2a280e67cb1ae5b7af71a1e22d476b9",
+                // Satis modul baglantilari 4a/4d/5d/5e/5f/5k2: +6 facts (the real Settings rate resolver and rate lists, the real Cari
+                // account, contact and account selection ports, the real Identity SALES_SUPPORT reader), kept ordinal-sorted (e2b0d6ba... -> 096ea842...).
+                // Merged with main's #1020 (+6 facts) and SAT-D232 (EK46): +1 SalesInvoice fact (a USD invoice's 0,06 TL difference writes
+                // nothing unapproved and is stored approved), recomputed over the union, kept ordinal-sorted (096ea842... -> 2016a227...).
+                "2016a227ad88d96fd08c7216537f4ace094768a09f5684d49aa798d785fd6129",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
