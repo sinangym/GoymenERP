@@ -668,6 +668,14 @@ class RelationalInventoryLoaderTests(unittest.TestCase):
             prefix + "Snapshot_read_rejects_row_outbox_disagreement_without_recording_an_effect",
             prefix + "Versionless_and_foreign_observations_write_nothing_and_tenant_filter_hides_other_company",
         }
+        dispatch_prefix = (
+            VERIFIER.TEST_NAMESPACE + "WorkOutboxDispatchSqlServerRelationalAcceptanceTests."
+        )
+        required |= {
+            dispatch_prefix + "Dispatch_delivers_once_per_company_with_cursor_and_inbox_rows_in_real_SQL",
+            dispatch_prefix + "Dispatch_state_constraints_and_dedup_key_refuse_bad_rows_in_real_SQL",
+            dispatch_prefix + "Down_refuses_while_dispatch_records_exist_and_drops_the_empty_tables",
+        }
         self.assertEqual(required, set(VERIFIER.BROAD_INVENTORY["work"]))
         for omitted in required:
             with self.subTest(omitted=omitted):
