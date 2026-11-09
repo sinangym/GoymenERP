@@ -6,9 +6,9 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Settings.UnitTests;
 
 /// <summary>
-/// SAT-D25 / SAT-D39: the Settings-owned Sales quote policies. The reviewed catalog is EMPTY on purpose — the list content and
-/// the day count are Settings records Sinan enters (EK3/EK4) — so the served companies answer "not found" and nothing is a
-/// code constant. Synthetic entries are used only for catalog validation and window behaviour.
+/// SAT-D25 / SAT-D39: the Settings-owned Sales quote policies. SAT-D234 (2026-11-09) decides the content of the reviewed
+/// catalog: five standard loss reasons and a 15-day default validity for each SAT-D14 company. Synthetic entries are used only
+/// for catalog validation and window behaviour.
 /// </summary>
 public sealed class ApprovedSalesQuotePolicyProviderTests
 {
@@ -19,20 +19,58 @@ public sealed class ApprovedSalesQuotePolicyProviderTests
     private static readonly Guid SyntheticProfile = Guid.Parse("71000000-0000-4000-8000-0000000000ab");
     private static readonly Guid SyntheticReason = Guid.Parse("71000000-0000-4000-8000-0000000000a1");
     private static readonly DateOnly From = new(2026, 10, 27);
+    private static readonly DateOnly DecisionDate = new(2026, 11, 9);
 
     [Theory]
     [InlineData("10000000-0000-0000-0000-000000000001")]
     [InlineData("10000000-0000-0000-0000-000000000002")]
     [InlineData("10000000-0000-0000-0000-000000000003")]
-    public async Task The_approved_catalog_serves_the_SAT_D14_companies_with_no_list_and_no_default_validity(string company)
+    public async Task The_approved_catalog_serves_each_SAT_D14_company_the_five_SAT_D234_reasons_and_fifteen_days(string company)
     {
-        var provider = Provider(Guid.Parse(company));
+        var companyId = Guid.Parse(company);
+        Assert.Contains(companyId, new[] { Gdc, Gsp, Gin });
+        var provider = Provider(companyId);
 
-        Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyNotFound,
-            (await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => provider.GetSalesQuoteLossReasonsAsync(From))).Code);
-        Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyNotFound,
-            (await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => provider.GetSalesQuoteDefaultValidityAsync(From))).Code);
-        Assert.Contains(Guid.Parse(company), new[] { Gdc, Gsp, Gin });
+        var list = await provider.GetSalesQuoteLossReasonsAsync(DecisionDate);
+        Assert.Equal((companyId, 1L, true, DecisionDate, (DateOnly?)null),
+            (list.CompanyId, list.Profile.Version, list.IsActive, list.EffectiveFrom, list.EffectiveThrough));
+        Assert.Equal(
+            [
+                ("price_too_high", "Fiyat yüksek", false, true),
+                ("delivery_not_suitable", "Termin uygun değil", false, true),
+                ("competitor_chosen", "Rakip seçildi", false, true),
+                ("customer_withdrew", "Müşteri vazgeçti", false, true),
+                ("other", "Diğer", true, true),
+            ],
+            list.Reasons.Select(reason => (reason.Code, reason.Label, reason.RequiresExplanation, reason.IsActive)));
+
+        var validity = await provider.GetSalesQuoteDefaultValidityAsync(DecisionDate.AddDays(30));
+        Assert.Equal((companyId, 1L, 15, true, DecisionDate, (DateOnly?)null),
+            (validity.CompanyId, validity.Profile.Version, validity.ValidityDays, validity.IsActive, validity.EffectiveFrom,
+                validity.EffectiveThrough));
+    }
+
+    [Fact]
+    public async Task The_SAT_D234_versions_have_their_own_ids_per_company_and_are_not_in_force_before_the_decision_date()
+    {
+        var lists = new List<SalesQuoteLossReasonListV1>();
+        var validities = new List<SalesQuoteDefaultValidityPolicyV1>();
+        foreach (var company in new[] { Gdc, Gsp, Gin })
+        {
+            lists.Add(await Provider(company).GetSalesQuoteLossReasonsAsync(DecisionDate));
+            validities.Add(await Provider(company).GetSalesQuoteDefaultValidityAsync(DecisionDate));
+        }
+
+        var ids = lists.Select(list => list.Profile.ProfileId).Concat(validities.Select(validity => validity.Profile.ProfileId))
+            .Concat(lists.SelectMany(list => list.Reasons.Select(reason => reason.ReasonId))).ToArray();
+        Assert.Equal(3 + 3 + 15, ids.Length);
+        Assert.Equal(ids.Length, ids.Distinct().Count());
+        Assert.DoesNotContain(Guid.Empty, ids);
+
+        // Asked before its window, the version comes back with its REAL window, so the Sales consumer's own date check refuses it.
+        var early = await Provider(Gdc).GetSalesQuoteLossReasonsAsync(DecisionDate.AddDays(-1));
+        Assert.True(early.EffectiveFrom > DecisionDate.AddDays(-1));
+        Assert.Equal(new Guid("ba9544f6-a1ab-52f2-accd-1ffa79cccdbc"), ApprovedSalesQuotePolicyCatalog.GdcLossReasonsV1.ProfileId);
     }
 
     [Fact]

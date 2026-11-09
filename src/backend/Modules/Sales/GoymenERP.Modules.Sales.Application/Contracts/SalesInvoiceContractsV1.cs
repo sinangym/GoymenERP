@@ -285,7 +285,7 @@ public static class SalesInvoiceProblemCodesV1
     /// <summary>409 (recorded): the recorded match carries a difference; finalisation stays blocked until it is resolved (SAT-D229).</summary>
     public const string MatchDifferenceOpen = SalesRuleCodes.InvoiceMatchDifferenceOpen;
 
-    /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative remainder (SAT-D227).</summary>
+    /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative or zero last remainder (SAT-D227, SAT-D233).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
 
     public const string DifferenceReasonRequired = SalesRuleCodes.InvoiceMatchDifferenceReasonRequired;

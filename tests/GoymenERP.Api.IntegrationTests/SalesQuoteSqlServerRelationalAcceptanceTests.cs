@@ -691,28 +691,40 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
                 ("@h", SalesStore.IdempotencyKeyHash(key))));
         }
 
-        // SAT-D25 in the REAL composition: the host's approved Settings catalog holds no loss reason list, so the loss is refused
-        // (code-less 503) and nothing is recorded — and the list read says so.
+        // SAT-D25 / SAT-D234 in the REAL composition: the host's approved Settings catalog serves this company (GDC) the five
+        // standard reasons from 2026-11-09 on, so a reason id outside that closed list is refused (422 `sales_quote_loss_reason_unknown`)
+        // and nothing is recorded — and the list read shows the five reasons.
         using (var lost = await readerClient.SendAsync(Command(quoteId, "loss", "SENTETIK-lose",
                    $"{{\"expectedVersion\":\"1\",\"reasonId\":\"{PriceReason:D}\"}}")))
         {
-            Assert.Equal(HttpStatusCode.ServiceUnavailable, lost.StatusCode);
-            Assert.DoesNotContain(SalesQuoteProblemCodesV1.LossReasonsUnavailable, await lost.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, lost.StatusCode);
+            Assert.Equal(SalesQuoteProblemCodesV1.LossReasonUnknown, (await lost.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         }
 
         using (var reasons = await readerClient.GetAsync($"{SalesEndpoints.QuotesPath}/loss-reasons"))
         {
             Assert.Equal(HttpStatusCode.OK, reasons.StatusCode);
             var body = await reasons.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal((false, 0), (body.GetProperty("isDefined").GetBoolean(), body.GetProperty("reasons").GetArrayLength()));
+            Assert.True(body.GetProperty("isDefined").GetBoolean());
+            Assert.Equal(["price_too_high", "delivery_not_suitable", "competitor_chosen", "customer_withdrew", "other"],
+                body.GetProperty("reasons").EnumerateArray().Select(reason => reason.GetProperty("code").GetString()));
+            Assert.DoesNotContain(body.GetProperty("reasons").EnumerateArray(), reason => reason.GetProperty("reasonId").GetGuid() == PriceReason);
         }
 
         using (var suggestion = await readerClient.GetAsync($"{SalesEndpoints.QuotesPath}/validity-suggestion?businessDate=2026-10-27"))
         {
-            // SAT-D39 in the REAL composition: no Settings value, no suggestion.
+            // SAT-D39 / SAT-D234 in the REAL composition: the 15-day value is not in force before 2026-11-09, so no suggestion.
             Assert.Equal(HttpStatusCode.OK, suggestion.StatusCode);
             var body = await suggestion.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(JsonValueKind.Null, body.GetProperty("suggestedValidUntil").ValueKind);
+        }
+
+        using (var suggestion = await readerClient.GetAsync($"{SalesEndpoints.QuotesPath}/validity-suggestion?businessDate=2026-11-09"))
+        {
+            // From the decision date on, the server suggests business date + 15 days.
+            Assert.Equal(HttpStatusCode.OK, suggestion.StatusCode);
+            var body = await suggestion.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal((15, "2026-11-24"), (body.GetProperty("validityDays").GetInt32(), body.GetProperty("suggestedValidUntil").GetString()));
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteAttempts WHERE IdempotencyKeyHash = @h",
