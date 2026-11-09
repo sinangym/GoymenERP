@@ -360,7 +360,7 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            var refused = await Assert.ThrowsAsync<SalesRuleException>(() => scope.Invoices.MatchInvoiceAsync(envelope, Hash('g'), approved.Id,
+            var refused = await Assert.ThrowsAsync<SalesRuleException>(() => scope.Invoices.MatchInvoiceAsync(envelope, Hash('a'), approved.Id,
                 (invoice, now) => invoice.RecordMatch(3, matcher, official, tolerance, false, null, now),
                 new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK")));
             Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
@@ -372,7 +372,7 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            var matched = await scope.Invoices.MatchInvoiceAsync(envelope, Hash('h'), approved.Id,
+            var matched = await scope.Invoices.MatchInvoiceAsync(envelope, Hash('b'), approved.Id,
                 (invoice, now) => invoice.RecordMatch(3, matcher, official, tolerance, true, "SENTETIK kur yuvarlama farkı", now),
                 new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
             Assert.Equal((SalesDraftWriteOutcome.Recorded, 0.06m), (matched!.Outcome, matched.Invoice.Match!.Difference));
