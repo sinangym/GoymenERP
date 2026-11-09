@@ -92,6 +92,13 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
         {
             return Refused(context, CommandOutcome.ValidationFailed, new ValidationIssue("invoiceId", NotAdmittedCode));
         }
+        if (items.Any(row => row.Status == FinanceOpenItemStatuses.Cancelled))
+        {
+            // A concurrent cancellation committed between the receipt check above and this read: the receipt and the
+            // status change are one transaction, so this is the same already-cancelled refusal, not an unknown shape.
+            return Refused(context, CommandOutcome.ValidationFailed,
+                new ValidationIssue("invoiceId", AlreadyCancelledCode));
+        }
         if (items.Any(row => row.SourceVersion != cancellation.InvoiceVersion))
         {
             return Refused(context, CommandOutcome.ValidationFailed,
@@ -103,7 +110,12 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             .Where(row => itemIds.Contains(row.OpenItemId) && row.Status == FinanceAllocationStatuses.Active)
             .OrderBy(row => row.Id)
             .ToListAsync(cancellationToken);
-        if (allocations.Count > 0 && !cancellation.ReleaseActiveAllocations)
+        // F3a / API-20: an active PAYMENT allocation on a payable is released the same way (warn, then confirm).
+        var paymentAllocations = await dbContext.PaymentAllocations
+            .Where(row => itemIds.Contains(row.OpenItemId) && row.Status == FinanceAllocationStatuses.Active)
+            .OrderBy(row => row.Id)
+            .ToListAsync(cancellationToken);
+        if ((allocations.Count > 0 || paymentAllocations.Count > 0) && !cancellation.ReleaseActiveAllocations)
         {
             // The warning: the producer shows it and asks again with the confirmation (SAT-D96).
             return Refused(context, CommandOutcome.ValidationFailed,
@@ -138,6 +150,36 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             sourceState.Version = checked(sourceState.Version + 1);
             sourceState.UpdatedBy = context.ActorId;
             sourceState.UpdatedAtUtc = now;
+            item.OutstandingAmountText = outstanding.Add(amount).Text;
+            item.Status = FinanceOpenItemStatuses.Open;
+        }
+        foreach (var allocation in paymentAllocations)
+        {
+            var item = items.Single(row => row.Id == allocation.OpenItemId);
+            var paymentState = await dbContext.PaymentAllocationStates
+                .SingleOrDefaultAsync(row => row.PaymentId == allocation.PaymentId, cancellationToken);
+            if (paymentState is null)
+            {
+                dbContext.ChangeTracker.Clear();
+                throw new InvalidOperationException("Stored payment allocation state is missing.");
+            }
+            if (!FinanceExactDecimalText.TryParsePositive(allocation.AmountText, out var amount)
+                || !FinanceExactDecimalText.TryParseNonNegative(paymentState.UnallocatedAmountText, out var available)
+                || !FinanceExactDecimalText.TryParseNonNegative(item.OutstandingAmountText, out var outstanding))
+            {
+                dbContext.ChangeTracker.Clear();
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    new ValidationIssue("invoiceId", HasAllocationsCode));
+            }
+            allocation.Status = FinanceAllocationStatuses.Released;
+            allocation.Version = checked(allocation.Version + 1);
+            allocation.ReleasedBy = context.ActorId;
+            allocation.ReleasedAtUtc = now;
+            allocation.ReleaseReason = cancellation.Reason;
+            paymentState.UnallocatedAmountText = available.Add(amount).Text;
+            paymentState.Version = checked(paymentState.Version + 1);
+            paymentState.UpdatedBy = context.ActorId;
+            paymentState.UpdatedAtUtc = now;
             item.OutstandingAmountText = outstanding.Add(amount).Text;
             item.Status = FinanceOpenItemStatuses.Open;
         }
@@ -191,7 +233,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             dbContext.ChangeTracker.Clear();
             return late;
         }
-        Audit(context, metadata, cancellation, kind, items.Count, allocations.Select(row => row.Id).ToArray());
+        Audit(context, metadata, cancellation, kind, items.Count, allocations.Select(row => row.Id).Concat(paymentAllocations.Select(row => row.Id)).ToArray());
 
         try
         {

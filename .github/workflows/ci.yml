@@ -403,9 +403,11 @@ jobs:
           printf 'release_manifest_sha256=%s\n' "$(sha256sum "$first_manifest" | cut -d ' ' -f 1)"
           printf 'release_manifest_bytes=%s\n' "$(wc -c < "$first_manifest" | tr -d '[:space:]')"
 
-  frontend:
-    name: Frontend lint, test and build
+  frontend-static:
+    name: Frontend audit, lint and build
     runs-on: ubuntu-latest
+    outputs:
+      test_file_count: ${{ steps.count.outputs.test_file_count }}
     defaults:
       run:
         working-directory: src/frontend/goymen-erp-web
@@ -420,10 +422,88 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      # Leave memory headroom on the isolated runner.
-      # Keep every test, without competing jsdom workers or longer assertions.
-      - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
+
+      # Expected test-file total the shards must add up to (fail-closed in `frontend`).
+      - name: Count test files
+        id: count
+        run: |
+          count="$(npx vitest list --filesOnly | grep -c '\.test\.tsx\?$')"
+          test "$count" -gt 0
+          echo "test_file_count=$count" >> "$GITHUB_OUTPUT"
+
+  frontend-test:
+    name: Frontend test (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: src/frontend/goymen-erp-web
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: npm ci
+      # Same isolation flags as before; only the file set is split (vitest --shard is
+      # a deterministic partition of the sorted file list). Every test still runs once.
+      - name: Run shard
+        run: >-
+          npm test -- --maxWorkers=1 --no-file-parallelism
+          --shard=${{ matrix.shard }}/4
+          --reporter=default --reporter=json --outputFile.json=shard-result.json
+
+      - name: Record executed test files
+        run: |
+          node -e "const r=require('./shard-result.json');if(!r.success)process.exit(1);require('fs').writeFileSync('shard-count.txt',String(r.testResults.length))"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frontend-shard-count-${{ matrix.shard }}
+          path: src/frontend/goymen-erp-web/shard-count.txt
+          retention-days: 1
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend lint, test and build
+    needs:
+      - frontend-static
+      - frontend-test
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require static job and test shards
+        env:
+          STATIC_RESULT: ${{ needs.frontend-static.result }}
+          TEST_RESULT: ${{ needs.frontend-test.result }}
+        run: |
+          test "$STATIC_RESULT" = success
+          test "$TEST_RESULT" = success
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: frontend-shard-count-*
+          path: shard-counts
+
+      - name: Require every test file to have run exactly once
+        env:
+          EXPECTED: ${{ needs.frontend-static.outputs.test_file_count }}
+        run: |
+          total=0
+          shards=0
+          for f in shard-counts/*/shard-count.txt; do
+            total=$((total + $(cat "$f")))
+            shards=$((shards + 1))
+          done
+          echo "shards=$shards files=$total expected=$EXPECTED"
+          test "$shards" -eq 4
+          test "$total" -eq "$EXPECTED"
 
   relational-shard:
     name: SQL Server relational shard (${{ matrix.shard }})

@@ -24,7 +24,7 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "a2a65d4b9bc4ed68ffce54b05a686e9c5dd0b5f4b09924b3297de60eb98bbd83"
+    "525876972bb40735b565aa237b16b29155a7f73ea6a9fef99a0c412da4b77447"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
     "d04b7794ab2a9a180539258568d3d810ec2437ee468657e27574a50db4c04459"
@@ -813,6 +813,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "backend-test-group",
             "backend",
             "frontend",
+            "frontend-static",
+            "frontend-test",
             "relational-shard",
             "relational-rcsi",
             "relational",
@@ -1004,9 +1006,22 @@ class SafeTrxSummaryTests(unittest.TestCase):
         for job_name, body in jobs.items():
             if job_name not in summaries:
                 self.assertNotIn("tools/ci/summarize_trx.py", body)
-                self.assertNotIn("actions/upload-artifact@v7", body)
+                if job_name == "frontend-test":
+                    # The only non-summary upload: a one-day, secret-free
+                    # per-shard test-file count (a single text file).
+                    self.assertEqual(body.count("actions/upload-artifact@v7"), 1)
+                    self.assertIn(
+                        "name: frontend-shard-count-${{ matrix.shard }}", body
+                    )
+                    self.assertIn(
+                        "path: src/frontend/goymen-erp-web/shard-count.txt", body
+                    )
+                    self.assertIn("retention-days: 1", body)
+                    self.assertIn("if-no-files-found: error", body)
+                else:
+                    self.assertNotIn("actions/upload-artifact@v7", body)
         self.assertEqual(workflow.count("tools/ci/summarize_trx.py"), 4)
-        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 6)
+        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 7)
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*ci-test-results")
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*\.trx\b")
         self.assertIn("permissions:\n  contents: read", workflow)
