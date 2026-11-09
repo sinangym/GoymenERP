@@ -353,8 +353,8 @@ public sealed partial class SalesDraftService
     /// S-1 / MOD-03: the "bağlı üretim" / "bağlı satın alma" category from the supply owner's adapter of that kind
     /// (<see cref="ISalesOrderLinkedSupplyReadPortV1"/>), asked under the caller's own name (fenced before and after):
     /// <list type="bullet">
-    /// <item>no adapter of the kind → <see cref="SalesCancellationImpactStatusesV1.NoSource"/> (today's behaviour, not a
-    /// blocker);</item>
+    /// <item>no adapter of the kind and no recorder declaring it → <see cref="SalesCancellationImpactStatusesV1.NoSource"/> (not a
+    /// blocker; on main only Production, since #998 registers Purchasing's adapter and recorder);</item>
     /// <item>more than one adapter of the kind, a throwing adapter, an Unreadable answer or a malformed one (another company,
     /// order or kind; an empty or repeated id; a document type of another kind; a line not on the order; an invalid kilogram
     /// text) → <see cref="SalesCancellationImpactStatusesV1.Unreadable"/>;</item>
