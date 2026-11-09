@@ -175,4 +175,24 @@ describe('UI-51 S-06 sales approvals', () => {
     expect(link !== null).toBe(shown)
     if (link !== null) expect(link.getAttribute('href')).toBe(PATH)
   })
+
+  it('marks the record named by the Work inbox link (SAT-D243) and reads nothing extra for it', async () => {
+    const { work } = installWork(() => json(page([item(FIRST), item(SECOND)], null)))
+    renderSalesApp(`${PATH}?onay=${SECOND.toUpperCase()}`)
+
+    const table = await screen.findByTestId('sales-approvals-table')
+    expect(table.querySelector(`[data-approval-id="${SECOND}"]`)?.getAttribute('aria-current')).toBe('true')
+    expect(table.querySelector(`[data-approval-id="${FIRST}"]`)?.getAttribute('aria-current')).toBeNull()
+    expect(work.map((call) => new URL(call.url, 'http://localhost').searchParams.get('kind'))).toEqual(['sales.order-draft.v1'])
+    expect(work.every((call) => !call.url.includes(SECOND))).toBe(true)
+  })
+
+  it('marks nothing when the named record is not on the page the server returned', async () => {
+    installWork(() => json(page([item(FIRST)], null)))
+    renderSalesApp(`${PATH}?onay=${SECOND}`)
+
+    const table = await screen.findByTestId('sales-approvals-table')
+    expect(table.querySelector('[aria-current]')).toBeNull()
+    expect(table.querySelector(`[data-approval-id="${SECOND}"]`)).toBeNull()
+  })
 })

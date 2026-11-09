@@ -103,4 +103,7 @@ export const WORKSPACE_PICK = 'Seçiniz'
 export const WORKSPACE_ACCOUNTS_LOADING = 'Cari hesapları yükleniyor...'
 export const WORKSPACE_ACCOUNTS_INVALID = 'Cari hesapları doğrulanamadı; ekstre seçimi kapalı tutuldu.'
 export const WORKSPACE_NO_ACCOUNTS = 'Kullanılabilir aktif cari hesabı yok.'
+export const WORKSPACE_ACCOUNTS_SUBJECT = 'cari hesap listesi'
+export const WORKSPACE_ACCOUNTS_PARTIAL =
+  'Cari listesi tamamlanamadı: ilk sayfalardaki cariler gösteriliyor, listede olmayan bir cari için Cari Kartlar ekranından açın.'
 export const WORKSPACE_NEEDS_COMPANY = 'cari hesap ekstresi'

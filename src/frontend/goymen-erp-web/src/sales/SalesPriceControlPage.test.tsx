@@ -188,6 +188,42 @@ describe('UI-50 S-05 price, discount, margin and risk control', () => {
     expect(within(screen.getByTestId('sales-price-control-margin')).getByText(T.margin.unavailable)).toBeTruthy()
   })
 
+  it('routes a 403 detail read through the real auth boundary: the page closes and no figure or pricing read is left', async () => {
+    const harness = installFetch({ onDetail: () => json({ status: 403 }, 403), onLinePricing: () => json(pricing()) })
+    renderSalesApp(PATH)
+
+    // The house rule: a current 403 is the shell's (capability re-fence), so the protected route closes as the neutral block.
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    expect(screen.queryByTestId('sales-price-control-lines')).toBeNull()
+    expect(screen.queryByTestId('sales-price-control-table')).toBeNull()
+    expect(harness.calls.some((call) => call.url.includes('/line-pricing'))).toBe(false)
+  })
+
+  it('routes a 403 pricing read through the real auth boundary: the comparison closes and no figure is left', async () => {
+    installFetch({ onDetail: () => json(detail()), onLinePricing: () => json({ status: 403 }, 403) })
+    renderSalesApp(PATH)
+
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    expect(screen.queryByTestId('sales-price-control-lines')).toBeNull()
+    expect(screen.queryByTestId('sales-price-control-summary')).toBeNull()
+    expect(screen.queryByText('42000.50 TRY')).toBeNull()
+  })
+
+  it.each<[string, () => unknown]>([
+    ['a pricing body without lines', () => ({ version: '3' })],
+    ['a pricing line with an unknown member', () => ({ ...pricing(), lines: [{ ...pricing().lines[0], margin: '12' }] })],
+    ['a pricing line with a numeric net', () => pricing('3', { netUnitPrice: 34320 })],
+    ['a non-object pricing body', () => ['SENTETIK']],
+  ])('fails closed on %s and paints no figure', async (_name, body) => {
+    installFetch({ onDetail: () => json(detail()), onLinePricing: () => json(body()) })
+    renderSalesApp(PATH)
+
+    const block = await screen.findByTestId('sales-price-control-unreadable')
+    await findState('malformed-response', block)
+    expect(screen.queryByTestId('sales-price-control-table')).toBeNull()
+    expect(screen.queryByTestId('sales-price-control-summary')).toBeNull()
+  })
+
   it('opens under the detail capability only: without it nothing is read', async () => {
     const harness = installFetch({ capabilities: [SALES_CAPABILITY.draftsList], onDetail: () => json(detail()) })
     renderSalesApp(PATH)

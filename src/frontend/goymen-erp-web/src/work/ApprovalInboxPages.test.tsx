@@ -25,7 +25,7 @@ import {
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
 } from '../inventory/capabilities'
-import { APPROVALS_TEXT, formatSignedKg } from './workText'
+import { APPROVALS_TEXT, SALES_SOURCE, formatSignedKg } from './workText'
 import { WORK_APPROVAL_CONTRACT_HEADER } from './approvalInboxContract'
 
 const USER = '11111111-1111-1111-1111-111111111111'
@@ -464,6 +464,106 @@ describe('/onaylarim — Sales and Finance as separate connected sources', () =>
     await renderAt('/onaylarim')
     await waitFor(() => expect(notFound()).not.toBeNull())
     expect(work()).toEqual([])
+  })
+})
+
+/**
+ * SAT-D243 (EK48): Sales approvals are listed both on S-06 `/satis/onaylar` and here under the "Satış" filter — one record,
+ * two views, the same Work read. The filter is offered only with the Sales approve capability; each row also links to the
+ * same record on S-06, which marks it. Every state of the filtered list is its own block.
+ */
+describe('/onaylarim — the Sales filter (SAT-D243)', () => {
+  const SALES_APPROVE = SALES_CAPABILITY.ordersApprove
+  const SALES_DETAIL = SALES_CAPABILITY.draftsDetail
+  const SALES_LIST = '/api/v1/work/approvals?kind=sales.order-draft.v1'
+  const QUEUE_LABEL = SALES_SOURCE.queue?.label ?? ''
+  const financePage = () => json({ companyId: COMPANY, items: [item], nextCursor: null })
+  const listBy = (sales: () => Response) => (url: string) => url.includes('kind=sales.order-draft.v1') ? sales() : financePage()
+  const salesPage = (items: readonly unknown[]) => json({ companyId: COMPANY, items, nextCursor: null })
+
+  it('offers the Sales filter only with the Sales approve capability', async () => {
+    installFetch([APPROVE, INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY], { list: listBy(() => salesPage([salesItem])) })
+    await renderAt('/onaylarim')
+    const nav = await screen.findByRole('navigation', { name: APPROVALS_TEXT.sources })
+    expect(within(nav).queryByRole('link', { name: 'Satış' })).toBeNull()
+  })
+
+  it('lists the Sales items under the filter and links each row to the same record on S-06', async () => {
+    const { work } = installFetch([APPROVE, SALES_APPROVE, SALES_DETAIL], { list: listBy(() => salesPage([salesItem])) })
+    await renderAt('/onaylarim?kaynak=satis')
+    const nav = await screen.findByRole('navigation', { name: APPROVALS_TEXT.sources })
+    expect(within(nav).getByRole('link', { name: 'Satış' }).getAttribute('aria-current')).toBe('page')
+    const table = await screen.findByTestId('work-approvals-table')
+    expect(table.getAttribute('data-kind')).toBe('sales.order-draft.v1')
+    const row = within(table).getAllByRole('row')[1]
+    expect(within(row).getByRole('link', { name: QUEUE_LABEL }).getAttribute('href')).toBe(`/satis/onaylar?onay=${DRAFT}`)
+    // The same read S-06 makes: no new endpoint, no second record.
+    expect(work().map((call) => call.url)).toEqual([SALES_LIST])
+  })
+
+  it('opens S-06 from the row with that record marked as the current one', async () => {
+    const OTHER_DRAFT = '22222222-2222-4222-8222-222222222222'
+    installFetch([SALES_APPROVE, SALES_DETAIL], {
+      list: listBy(() => salesPage([salesItem, { ...salesItem, approvalId: OTHER_DRAFT, documentNo: 'SO-2026-000124' }])),
+    })
+    const router = await renderAt('/onaylarim?kaynak=satis')
+    const row = (await screen.findByTestId('work-approvals-table')).querySelector(`[data-approval-id="${DRAFT}"]`) as HTMLElement
+    await userEvent.setup().click(within(row).getByRole('link', { name: QUEUE_LABEL }))
+    const queue = await screen.findByTestId('sales-approvals-table')
+    expect(router.state.location.pathname).toBe('/satis/onaylar')
+    expect(queue.querySelector(`[data-approval-id="${DRAFT}"]`)?.getAttribute('aria-current')).toBe('true')
+    expect(queue.querySelector(`[data-approval-id="${OTHER_DRAFT}"]`)?.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('the Sales detail also links the same record on S-06', async () => {
+    installFetch([SALES_APPROVE], { detail: () => json(salesDetail) })
+    await renderAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    await screen.findByTestId('work-approval-facts')
+    expect(screen.getByRole('link', { name: QUEUE_LABEL }).getAttribute('href')).toBe(`/satis/onaylar?onay=${DRAFT}`)
+  })
+
+  it('shows loading while the Sales list is pending', async () => {
+    const late = deferredResponse()
+    installFetch([APPROVE, SALES_APPROVE], { list: (url) => url.includes('kind=sales.order-draft.v1') ? late.response : financePage() })
+    await renderAt('/onaylarim?kaynak=satis')
+    await waitFor(() => expect(document.querySelector('[data-state="initial-loading"]')).not.toBeNull())
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    late.resolve(salesPage([salesItem]))
+    await screen.findByTestId('work-approvals-table')
+  })
+
+  it('an empty Sales list under the filter is filtered-empty, not "nothing waits"', async () => {
+    installFetch([APPROVE, SALES_APPROVE], { list: listBy(() => salesPage([])) })
+    await renderAt('/onaylarim?kaynak=satis')
+    await waitFor(() => expect(document.querySelector('[data-state="empty-filtered"]')).not.toBeNull())
+    expect(document.querySelector('[data-state="empty-no-data"]')).toBeNull()
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+  })
+
+  it('an empty Sales list of a Sales-only approver is "nothing waits": there is no filter to blame', async () => {
+    installFetch([SALES_APPROVE], { list: listBy(() => salesPage([])) })
+    await renderAt('/onaylarim?kaynak=satis')
+    await waitFor(() => expect(document.querySelector('[data-state="empty-no-data"]')).not.toBeNull())
+    expect(document.querySelector('[data-state="empty-filtered"]')).toBeNull()
+  })
+
+  it('a 403 on the Sales list closes it through the auth boundary and shows no row', async () => {
+    installFetch([APPROVE, SALES_APPROVE], { list: listBy(() => json({ status: 403 }, 403)) })
+    await renderAt('/onaylarim?kaynak=satis')
+    await waitFor(() => expect(document.querySelector('[data-state="forbidden"], [data-state="not-found"]')).not.toBeNull())
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(screen.queryByRole('link', { name: QUEUE_LABEL })).toBeNull()
+  })
+
+  it.each([
+    ['service-unavailable', () => json({ status: 503 }, 503)],
+    ['malformed-response', () => json({ companyId: COMPANY, items: [{ ...salesItem, status: 'Approved' }], nextCursor: null })],
+    ['malformed-response', () => json({ companyId: OTHER_COMPANY, items: [{ ...salesItem, companyId: OTHER_COMPANY }], nextCursor: null })],
+  ])('an unreadable Sales list is the %s state, never rows', async (state, answer) => {
+    installFetch([APPROVE, SALES_APPROVE], { list: listBy(answer) })
+    await renderAt('/onaylarim?kaynak=satis')
+    await waitFor(() => expect(document.querySelector(`[data-state="${state}"]`)).not.toBeNull())
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
   })
 })
 
