@@ -158,8 +158,11 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // approval control; Sales 1.11 (UI-80) the reports screen; Sales 1.12 (API-04) the header-revision control; Sales 1.13
         // (SAT-D32) the user-closure control.
         // (SAT-D30) the over-delivery approval control; Sales 1.17 (SAT-D17) the line-closure control; Sales 1.19 (UI-63) the
-        // S-09 invoice list screen.
-        Assert.Equal(29, sales.Length);
+        // S-09 invoice list screen; Sales 1.20 (S-2 API-11) the source-plan control.
+        Assert.Equal(30, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.SourcePlanWriteCapabilityId)
+                .Declaration.ParentCapabilityId);
         Assert.Null(Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.InvoiceListCapabilityId)
             .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.RequestDetailCapabilityId,

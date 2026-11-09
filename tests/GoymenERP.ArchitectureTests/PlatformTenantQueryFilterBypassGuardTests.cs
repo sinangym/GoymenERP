@@ -485,7 +485,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // account, contact and account selection ports, the real Identity SALES_SUPPORT reader), kept ordinal-sorted (e2b0d6ba... -> 096ea842...).
                 // Merged with main's #1020 (+6 facts) and SAT-D232 (EK46): +1 SalesInvoice fact (a USD invoice's 0,06 TL difference writes
                 // nothing unapproved and is stored approved), recomputed over the union, kept ordinal-sorted (096ea842... -> 2016a227...).
-                "2016a227ad88d96fd08c7216537f4ace094768a09f5684d49aa798d785fd6129",
+                // SAT-D252..SAT-D255 (API-11 source plan): +8 SalesDraftSourcePlan facts (one save with attempt and audit, the CK and FKs,
+                // company isolation, the partial-delivery remainder, terminal refusals, unreadable owners, the permission, the 51241
+                // rollback refusal), kept ordinal-sorted (2016a227... -> 1ed7b4e8...).
+                "1ed7b4e83841101b9837bd864d5fbe6837399bf002df5c22fc40bedadaee0827",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -620,7 +623,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D17: DraftLineClosures (keyed per line, FK to draft and line, CK) on the same company-filtered context; no query-filter bypass or direct database surface (da465c59... -> af489a5a...).
                 // Line identity FKs (review finding): alternate key AK_DraftLines_LineIdentity (CompanyId, DraftId, LineNo, LineId) and a 4-column
                 // Restrict FK to it from DraftOverDeliveryApprovals, DraftLineClosures and DraftRemainderChanges; no query-filter bypass or direct database surface (17c1be19... -> 1d567f05...).
-                "1d567f05ec040972ea65978fac493551da5f03309e9094846c02595ff0b2bbc3",
+                // SAT-D252..SAT-D255: DraftSourcePlanLines (keyed per draft version and line, FKs to the draft and its line identity,
+                // CK_DraftSourcePlanLines_Identity), append-only in the write guard, on the same company-filtered context; no query-filter
+                // bypass or direct database surface (1d567f05... -> 8e5e0f35...).
+                "8e5e0f35b62a4656ab104f17c34c7260dc50fe05af74825a2c4c61724244178a",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1761,7 +1767,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                     // Re-fingerprinted for SAT-D30 / SAT-D213: the over-delivery approval write (one save: approval row, header version,
                     // attempt, audit) and its restore through the same filtered context; SqlClient count unchanged.
-                        "819cb8e6bfa8364eb404dbbdcd35a32dd684e8a3b230d5386bb81c7b8a6ca8d1",
+                    // Re-fingerprinted for SAT-D252..SAT-D255: the source-plan command joins the draft replay command set (its write is the
+                    // partial SalesStore.SourcePlan.cs over the same filtered context); SqlClient count unchanged.
+                        "44b86f834573a8bcb472126adc49b8321475b72965073de66a4d4513f829638c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2584,6 +2592,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the Down is pure DDL (dropping the FKs, indexes and alternate key loses no data).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108194345_AddDraftLineIdentityForeignKeys.cs"] =
                     new("35b2d66e710fe11d6710eabf69a0d56ab5a259c55986a1e75b523d9700c97989",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D252..SAT-D255 (source plan): Up creates DraftSourcePlanLines; the Down's only raw SQL is the forward-fix refusal (51241,
+                // used by no other migration) while any recorded source plan exists, before the DropTable (an empty table rolls back freely).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261109221322_AddDraftSourcePlanLines.cs"] =
+                    new("b4961b6aae644bb81eb7bd9b82d84013862f6b0e951f6e89e5f2abb03e47424d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

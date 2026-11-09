@@ -69,6 +69,7 @@ import {
   salesDraftUserClosePath,
   salesDraftOverDeliveryApprovalPath,
   salesDraftLineClosurePath,
+  salesDraftSourcePlanPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -124,6 +125,7 @@ import {
   type RemainderChanges,
   type RemainderDecisionRequest,
 } from './remainderChange'
+import { decodeSourcePlan, type SourcePlan, type SourcePlanRequest } from './sourcePlan'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -1319,6 +1321,72 @@ export async function sendDraftLineClosure(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftLineClosurePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    (mutation.isReplay
+      ? raw.replayCorrelationId !== mutation.originalCorrelationId
+      : raw.replayCorrelationId !== null) ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * API-11 (SAT-D252..SAT-D255): the order's source plan under the draft read — the locked part, the stock part the allocation
+ * owner answers, the suggestion, the recorded plan and the warnings of every active line. Data only when it describes exactly
+ * `detail` (version, revision and every active line); the server derives every figure, the screen none.
+ */
+export async function fetchDraftSourcePlan(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<SourcePlan>> {
+  const raw = await request(salesDraftSourcePlanPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const plan = decodeSourcePlan(raw.body, detail)
+  return plan === null ? { type: 'malformed' } : { type: 'ok-single', data: plan }
+}
+
+/**
+ * API-11: record the plan of the listed lines. The line closure's keyed-attempt rules: a 200 is success only when the body's
+ * replay flag agrees with `Idempotency-Replayed`, a replay's `Idempotency-Original-Correlation-Id` equals the body's
+ * `originalCorrelationId` (a first answer carries none), and the detail is the order's in the bound company — else malformed
+ * (the plan may have been recorded, so the key is kept). The sum, the locked part, the stock part and the linked-supply warning
+ * are the server's to judge.
+ */
+export async function sendDraftSourcePlan(
+  payload: SourcePlanRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftSourcePlanPath(context.draftId),
     {
       method: 'POST',
       headers: {

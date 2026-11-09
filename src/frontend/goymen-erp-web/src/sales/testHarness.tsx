@@ -251,6 +251,10 @@ export interface HarnessConfig {
   readonly onOverDeliveryApproval?: (call: RecordedCall) => Response | Promise<Response>
   /** SAT-D17: a POST on `/sales/drafts/{id}/line-closure`. */
   readonly onLineClosure?: (call: RecordedCall) => Response | Promise<Response>
+  /** API-11: GET `/sales/drafts/{id}/source-plan`; default: `sourcePlanOf` the served detail (read only, no plan recorded). */
+  readonly onSourcePlan?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-11: a POST on `/sales/drafts/{id}/source-plan`. */
+  readonly onSourcePlanSave?: (call: RecordedCall) => Response | Promise<Response>
   /** No 30: GET `/sales/drafts/{id}/force-close`; default: no recorded closure. */
   readonly onForceClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** SAT-D32: a POST on `/sales/drafts/{id}/close`. */
@@ -371,6 +375,13 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/line-closure$/.test(url)) {
           if (config.onLineClosure === undefined) throw new Error('unexpected line closure')
           return config.onLineClosure(call)
+        }
+        if (/\/sales\/drafts\/[^/?]+\/source-plan$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onSourcePlanSave === undefined) throw new Error('unexpected source plan save')
+            return config.onSourcePlanSave(call)
+          }
+          return config.onSourcePlan?.(url, call.companyId) ?? sourcePlanOf(details.get(url.replace(/\/source-plan$/, '')))
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/force-close-impact$/.test(url)) {
           if (config.onForceCloseImpact === undefined) throw new Error('unexpected force-close-impact read')
@@ -771,6 +782,44 @@ export function riskCheckOf(detail: unknown): Response {
     thisOrder: figure('ThisOrder', 'sales.this-order', 'Available', null),
     creditLimit: figure('CreditLimit', 'finance.party-credit-limit', 'NoSource', 'finance_credit_limit_owner_missing'),
     collateral: figure('Collateral', 'finance.party-collateral', 'NoSource', 'finance_collateral_owner_missing'),
+  })
+}
+
+/**
+ * API-11: a source-plan read for the served detail — every line read only (the order is not open to planning), nothing
+ * delivered, no stock allocated, no plan recorded, no linked document. `line` overrides each line's members.
+ */
+export function sourcePlanOf(
+  detail: unknown,
+  overrides: { readonly writable?: boolean; readonly linkedSupply?: unknown; readonly line?: (line: Record<string, unknown>) => Record<string, unknown> } = {},
+): Response {
+  const body = detail as { draft?: { version?: unknown; revision?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  const writable = overrides.writable ?? false
+  return json({
+    version: body.draft.version,
+    revision: body.draft.revision,
+    writable,
+    linkedSupply: overrides.linkedSupply ?? [{ kind: 'Production', status: 'None' }, { kind: 'Purchasing', status: 'None' }],
+    lines: body.lines.map((line) => {
+      const base: Record<string, unknown> = {
+        lineId: line.lineId,
+        lineNo: line.lineNo,
+        orderUnitId: line.orderUnitId,
+        quantity: line.quantity,
+        locked: '0',
+        remaining: line.quantity,
+        stockStatus: 'Derived',
+        stock: '0',
+        suggestion: 'Unavailable',
+        suggestionReason: 'FreeStockUnavailable',
+        saved: null,
+        writable,
+        lockReason: writable ? null : 'OrderState',
+        warnings: ['NoPlan'],
+      }
+      return overrides.line === undefined ? base : overrides.line(base)
+    }),
   })
 }
 

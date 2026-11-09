@@ -54,6 +54,8 @@ export const salesDraftUserClosePath = (id: string) => `${salesDraftDetailPath(i
 export const salesDraftOverDeliveryApprovalPath = (id: string) => `${salesDraftDetailPath(id)}/over-delivery-approval`
 /** SAT-D17: close one under-delivered line short at the shipped total the status read showed (`CloseSalesOrderDraftLineV1`). */
 export const salesDraftLineClosurePath = (id: string) => `${salesDraftDetailPath(id)}/line-closure`
+/** API-11 (SAT-D252..SAT-D255): GET the order's source plan under the draft read; POST records it. */
+export const salesDraftSourcePlanPath = (id: string) => `${salesDraftDetailPath(id)}/source-plan`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -653,6 +655,11 @@ export const SALES_PROBLEM_CODE = {
   lineClosureShipperUnverified: 'sales_line_closure_shipper_unverified',
   lineClosureSelfClosure: 'sales_line_closure_self_closure',
   lineClosureOpenCommitments: 'sales_line_closure_open_commitments',
+  // SAT-D252..SAT-D255 / API-11: the source plan save's own answers (409 recorded, 422 not recorded; the 503s are code-less).
+  sourcePlanSumMismatch: 'sales_source_plan_sum_mismatch',
+  sourcePlanUnitUnsupported: 'sales_source_plan_unit_unsupported',
+  sourcePlanLineLocked: 'sales_source_plan_line_locked',
+  sourcePlanLinkedSupplyUnconfirmed: 'sales_source_plan_linked_supply_unconfirmed',
   // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
   // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
   businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
