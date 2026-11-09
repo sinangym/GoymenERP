@@ -3,7 +3,8 @@
  * attempt, both on the Sales attempt machine (./orderAttempt.ts) — one Idempotency-Key per submitted snapshot, an unknown
  * outcome keeps the key and offers only "retry the same" or "leave it". The rule that offers a command reads the server's state
  * only; who may approve (never the preparer, SAT-D88 / SAT-D204) is the server's answer, never the screen's guess. Kept apart
- * from the components so they export components only.
+ * from the components so they export components only. Both attempts outlive the panel (./pendingPoolAttempts.ts). A 412 is the
+ * same conflict as a 409.
  */
 import { useEffect, useRef, useState } from 'react'
 import { SALES_PROBLEM_CODE, type SalesProblem } from './contract'
@@ -30,8 +31,10 @@ import {
   orderAttemptBinding,
   type OrderAttemptSnapshot,
   type OrderAttemptState,
+  type OrderCommandOutcome,
 } from './orderAttempt'
 import { usePoolAttempt, type PoolAttempt } from './poolAttempt'
+import { recallPoolAttempt, rememberPoolAttempt } from './pendingPoolAttempts'
 import { problemCodeText } from './salesText'
 import type { ShellState } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -53,6 +56,19 @@ const COMMANDS: readonly InvoiceDraftCommand[] = [
   INVOICE_DRAFT_COMMAND.reject,
   INVOICE_DRAFT_COMMAND.cancel,
 ]
+/** The status a refused precondition (a stale `If-Match` / expected version) answers with. */
+export const PRECONDITION_FAILED_STATUS = 412
+const CONFLICT_STATUS = 409
+
+/**
+ * A 412 says what a 409 `version_conflict` says: the invoice moved after this screen read it. It is classed as the same
+ * conflict (the Turkish conflict text, and the invoice is read again) instead of an unexpected refusal; the problem body,
+ * with its own status, travels unchanged.
+ */
+export function asDraftCommandOutcome(outcome: OrderCommandOutcome<SalesInvoiceDetail>): OrderCommandOutcome<SalesInvoiceDetail> {
+  return outcome.type === 'http' && outcome.status === PRECONDITION_FAILED_STATUS ? { ...outcome, status: CONFLICT_STATUS } : outcome
+}
+
 export const draftCommandOf = (snapshot: OrderAttemptSnapshot<InvoiceDraftCommandPayload>): InvoiceDraftCommand =>
   COMMANDS.find((kind) => snapshot.path.endsWith(`/${kind}`)) ?? INVOICE_DRAFT_COMMAND.submit
 
@@ -87,10 +103,29 @@ export function useInvoiceDraftCommand({
   readonly onRecorded: () => void
 }): InvoiceDraftCommandController {
   const boundary = useAuthBoundary()
-  const [attempt, setAttempt] = useState<InvoiceDraftAttempt>({ phase: 'idle' })
+  // The attempt outlives the panel (./pendingPoolAttempts.ts, the creates' pattern): an unknown outcome, or a send still in
+  // flight when the panel went, comes back under the same binding, so the retry reuses its Idempotency-Key.
+  const [attempt, setAttempt] = useState<InvoiceDraftAttempt>(
+    () =>
+      recallPoolAttempt<InvoiceDraftCommandPayload, SalesInvoiceDetail, null>(orderAttemptBinding(shell, commandScopeOf(invoiceId)))
+        ?.attempt ?? { phase: 'idle' },
+  )
   const attemptRef = useRef(attempt)
   // The shell as it is NOW: an answer that lands after the actor, session or company changed is dropped by `applyOutcome`.
   const shellRef = useRef(shell)
+  const mountedRef = useRef(false)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  // A recalled success has now been shown on this panel: it is settled.
+  useEffect(() => {
+    if (attempt.phase === 'completed') rememberPoolAttempt(attempt.snapshot.binding, attempt, null, true)
+  }, [attempt])
 
   useEffect(() => {
     attemptRef.current = attempt
@@ -102,6 +137,8 @@ export function useInvoiceDraftCommand({
 
   function commit(next: InvoiceDraftAttempt) {
     attemptRef.current = next
+    // Synchronously, before any await: a panel torn down mid-send leaves its key behind.
+    if (next.phase !== 'idle') rememberPoolAttempt(next.snapshot.binding, next, null, mountedRef.current)
     setAttempt(next)
   }
 
@@ -110,16 +147,20 @@ export function useInvoiceDraftCommand({
     const inFlight = beginSend<InvoiceDraftCommandPayload, SalesInvoiceDetail>(snapshot)
     commit(inFlight)
     const security = boundary.capture()
-    const outcome = await sendInvoiceDraftCommand(draftCommandOf(snapshot), snapshot.payload, {
-      idempotencyKey: snapshot.key,
-      companyId: snapshot.companyId,
-      invoiceId,
-    })
+    const outcome = asDraftCommandOutcome(
+      await sendInvoiceDraftCommand(draftCommandOf(snapshot), snapshot.payload, {
+        idempotencyKey: snapshot.key,
+        companyId: snapshot.companyId,
+        invoiceId,
+      }),
+    )
     if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, security)
     const next = applyOutcome(inFlight, snapshot, orderAttemptBinding(shellRef.current, commandScopeOf(invoiceId)), outcome, previous)
     if (next === inFlight) return
     commit(next)
-    // A recorded command, or a conflict (the version, the state or the approver moved): read the invoice again.
+    // A recorded command, or a conflict (the version, the state or the approver moved): read the invoice again. A late
+    // answer for a panel that is gone changes nothing on screen; the held attempt is what the next visit resumes.
+    if (!mountedRef.current) return
     if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onRecorded()
   }
 

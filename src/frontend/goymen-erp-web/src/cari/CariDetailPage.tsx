@@ -41,7 +41,7 @@ import {
 } from './pendingTaxIdentityAttempt'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
-import { partyLedgerPath } from '../finance/capabilities'
+import { FINANCE_ROUTE, partyLedgerPath } from '../finance/capabilities'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -124,7 +124,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     [directory, activeCompanyId],
   )
   const canEditContact = hasCapability(shell, CAPABILITY.cariAccountsContactUpdate)
-  const canOpenLedger = hasCapability(shell, CAPABILITY.financeReceiptsList)
+  const canOpenLedger = hasCapability(shell, CAPABILITY.financePartyLedgerCari)
   /**
    * The status action's own control capability — read straight from the server snapshot,
    * exactly like the route capabilities, and never derived from the detail grant: reading
@@ -450,7 +450,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           </Link>
         ) : null}
         {canOpenLedger && activeCompanyId !== null && account.companyId === activeCompanyId ? (
-          <Link className={styles.action} to={partyLedgerPath(detail.id, account.id)}>
+          <Link className={styles.action} to={partyLedgerPath(detail.id, account.id, undefined, FINANCE_ROUTE.partyLedgerCari)}>
             {CARD.openLedger}
           </Link>
         ) : null}
