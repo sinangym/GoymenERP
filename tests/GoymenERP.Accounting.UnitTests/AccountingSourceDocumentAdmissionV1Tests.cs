@@ -48,6 +48,17 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
     }
 
     [Fact]
+    public async Task An_in_process_call_without_a_request_correlation_audits_with_a_defined_source_channel()
+    {
+        var harness = new Harness { ResolveCorrelation = false };
+        var answer = await harness.AdmitAsync(Valid());
+
+        Assert.Equal(AccountingSourceDocumentAdmissionOutcomeV1.Admitted, answer.Outcome);
+        var audit = Assert.Single(harness.Audit.Events);
+        Assert.Equal(SourceChannels.Integration, audit.SourceChannel);
+    }
+
+    [Fact]
     public async Task A_mapped_invoice_becomes_one_balanced_draft_voucher_with_audit_and_one_attempt()
     {
         var harness = new Harness();
@@ -436,6 +447,8 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
 
         public bool ResolveCompany { get; set; } = true;
 
+        public bool ResolveCorrelation { get; set; } = true;
+
         public SyntheticMappings Mappings { get; } = new();
 
         public SyntheticAuthority Authority { get; } = new();
@@ -454,7 +467,7 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
 
             await using var db = NewContext(companyContext);
             var store = new AccountingSourceDocumentAdmissionStoreV1(db, companyContext, Audit, new FixedTimeProvider(Now));
-            var service = new AccountingSourceDocumentAdmissionServiceV1(store, Mappings, Authority, companyContext, new FixedCorrelation());
+            var service = new AccountingSourceDocumentAdmissionServiceV1(store, Mappings, Authority, companyContext, new FixedCorrelation(ResolveCorrelation));
             return await service.AdmitAsync(request);
         }
 
@@ -589,9 +602,9 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
         public void Enqueue(AuditEventDraft auditEvent) => Events.Add(auditEvent);
     }
 
-    private sealed class FixedCorrelation : ICorrelationContext
+    private sealed class FixedCorrelation(bool resolved = true) : ICorrelationContext
     {
-        public bool IsResolved => true;
+        public bool IsResolved => resolved;
         public string CorrelationId => "synthetic-b04b";
         public string? CausationId => null;
         public string SourceChannel => "UnitTest";

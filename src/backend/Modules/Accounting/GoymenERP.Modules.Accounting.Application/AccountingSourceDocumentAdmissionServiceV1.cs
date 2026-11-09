@@ -269,7 +269,7 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
             request.CorrelationId,
             request.CausationId,
             request.IdempotencyKey,
-            correlation.IsResolved ? correlation.SourceChannel : "port",
+            correlation.IsResolved ? correlation.SourceChannel : SourceChannels.Integration,
             correlation.IsResolved ? correlation.ClientIpAddress : null,
             correlation.IsResolved ? correlation.UserAgent : null);
         try
