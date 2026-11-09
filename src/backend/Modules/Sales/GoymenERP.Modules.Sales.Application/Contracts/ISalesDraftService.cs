@@ -65,6 +65,13 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    // SAT-D167 (EK24) — the line revision under `sales.orders.quantity.write`: lines added, unshipped lines removed (passive) or
+    // given another product, with a reason; an APPROVED order archives its approved revision first and advances to the next one
+    // for re-approval and customer acceptance. A line with a shipment (allocation, loading instruction, dispatch) is refused.
+    Task<SalesOrderDraftResponse> ReviseLinesAsync(Guid draftId, SalesDraftLineRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Satır revizyonu bu serviste yok.");
+
     // API-04 (DEC-SAL-002, DEC-SAL-008) — the header revision under `sales.orders.header.write`: customer account, currency,
     // due terms, sales owner and delivery references replaced with a reason; an APPROVED order archives its approved revision
     // (with its header) first and advances to the next one for re-approval. The read of the revisable header is
@@ -127,6 +134,30 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId,
         CancellationToken cancellationToken = default);
+
+    // SAT-D32 / SAT-D168 / SAT-D215 — the user closure of a "kapanmaya hazır" order under `sales.orders.close` (no reason; the
+    // status read's readiness recomputed inside the save, 409 when not ready), and the read of the recorded user closure
+    // (`sales.drafts.read`).
+    Task<SalesOrderDraftResponse> CloseDraftAsync(Guid draftId, SalesDraftCloseRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// SAT-D30 / SAT-D213 / SAT-D216: POST …/{id}/over-delivery-approval — one line's approval-band over-delivery approved at the
+    /// shipped total the user saw, under <c>sales.orders.over-delivery.approve</c>; the shipper never approves (fail-closed when
+    /// the delivery owner does not name the shipper).
+    /// </summary>
+    Task<SalesOrderDraftResponse> ApproveOverDeliveryAsync(Guid draftId, SalesDraftOverDeliveryApprovalRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168: POST …/{id}/line-closure — one line closed with a shortfall at the shipped total the user saw, under
+    /// <c>sales.orders.lines.close</c>; no reason (SAT-D215), the shipper never closes (fail-closed when the delivery owner does
+    /// not name the shipper), the block band never closes this way.
+    /// </summary>
+    Task<SalesOrderDraftResponse> CloseLineAsync(Guid draftId, SalesDraftLineClosureRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;

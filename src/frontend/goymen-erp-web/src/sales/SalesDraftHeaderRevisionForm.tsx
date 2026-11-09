@@ -26,7 +26,7 @@ import {
   type OrderAttemptState,
 } from './orderAttempt'
 import { SalesContactInformationSourceContext, SalesCurrencySourceContext, SalesReferenceSourceContext } from './referenceSource'
-import { HEADER_REVISION_TEXT as T } from './salesText'
+import { HEADER_REVISION_TEXT as T, reinstatementPendingText } from './salesText'
 import { SalesDueTermsEditor } from './SalesDueTermsEditor'
 import { BuyerTaxFields } from './SalesTaxFields'
 import { buyerTaxInputOf, readOptions, situationOf, type BuyerTaxInput } from './orderTax'
@@ -425,7 +425,8 @@ function revisionNotice(attempt: HeaderAttempt): string | null {
             : attempt.failure === 'conflict' ? (code === SALES_PROBLEM_CODE.versionConflict ? T.versionConflict : T.conflict)
               : attempt.failure === 'validation' ? T.validation
                 : T.unexpected
-      return [base, blocked, fields].filter((part) => part !== '').join(' ')
+      const pending = attempt.failure === 'validation' ? reinstatementPendingText(errors) : ''
+      return [base, blocked, fields, pending].filter((part) => part !== '').join(' ')
     }
     default: return null
   }

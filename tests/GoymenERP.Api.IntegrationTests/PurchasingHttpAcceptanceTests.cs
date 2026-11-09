@@ -243,39 +243,39 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         // A1-2 (plan API-02): the optional line source is read strictly; the response carries it on the line and the
         // summary's kinds. No new permission or route: the create route is unchanged.
         var id = Guid.NewGuid();
-        var salesOrder = Guid.NewGuid();
-        var salesOrderLine = Guid.NewGuid();
+        var productionPlan = Guid.NewGuid();
+        var productionPlanLine = Guid.NewGuid();
         var detail = RequestDetail(id, "Draft", "2") with
         {
-            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Sales"] },
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Production"] },
             Lines = [new PurchaseRequestLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", Guid.NewGuid(), "6")
             {
-                Source = new PurchaseRequestLineSourceView("Sales", salesOrder, salesOrderLine),
+                Source = new PurchaseRequestLineSourceView("Production", productionPlan, productionPlanLine),
             }],
         };
         var service = new StubService { CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(detail, false, "SENTETIK-corr-1")) };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
 
-        var source = $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""";
+        var source = $$""","source":{"kind":"Production","documentId":"{{productionPlan:D}}","documentLineId":"{{productionPlanLine:D}}"}""";
         using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-source", RequestBody(source))))
         {
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
             var line = body.GetProperty("detail").GetProperty("lines")[0].GetProperty("source");
-            Assert.Equal(("Sales", salesOrder.ToString("D"), salesOrderLine.ToString("D")),
+            Assert.Equal(("Production", productionPlan.ToString("D"), productionPlanLine.ToString("D")),
                 (line.GetProperty("kind").GetString(), line.GetProperty("documentId").GetString(), line.GetProperty("documentLineId").GetString()));
-            Assert.Equal("[\"Sales\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+            Assert.Equal("[\"Production\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
         }
 
-        Assert.Equal(new PurchaseRequestLineSourceRequest("Sales", salesOrder, salesOrderLine), service.LastCreateRequest!.Lines[0].Source);
+        Assert.Equal(new PurchaseRequestLineSourceRequest("Production", productionPlan, productionPlanLine), service.LastCreateRequest!.Lines[0].Source);
 
         foreach (var loose in new[]
         {
-            $$""","source":{"kind":"Manual","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
-            $$""","source":{"kind":"Sales","documentId":"{{Guid.Empty:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
-            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}"}""",
-            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}","extra":1}""",
+            $$""","source":{"kind":"Manual","documentId":"{{productionPlan:D}}","documentLineId":"{{productionPlanLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{Guid.Empty:D}}","documentLineId":"{{productionPlanLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{productionPlan:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{productionPlan:D}}","documentLineId":"{{productionPlanLine:D}}","extra":1}""",
         })
         {
             using var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, $"SENTETIK-loose-{Guid.NewGuid():N}", RequestBody(loose)));
@@ -303,6 +303,34 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
 
         Assert.Null(service.LastCreateRequest!.Lines[0].Source);
         Assert.Equal(2, service.Calls);
+    }
+
+    [Fact]
+    public async Task A_sales_sourced_line_is_read_strictly_and_the_services_refusal_is_a_422_naming_the_line_source()
+    {
+        // A1-2b (SAT-D219, SAT-D220; fail-closed): "Sales" is still a well-formed kind on the wire (strict JSON is unchanged), but
+        // the service refuses it until MOD-03; the refusal reaches the client as 422 validation_failed with lines[i].source.
+        var service = new StubService
+        {
+            CreateRequest = () => throw new PurchasingServiceException(422, "validation_failed",
+                [new("lines[0].source", "purchasing_request_source_sales_unavailable")]),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        var source = $$""","source":{"kind":"Sales","documentId":"{{Guid.NewGuid():D}}","documentLineId":"{{Guid.NewGuid():D}}"}""";
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-sales-source", RequestBody(source))))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("validation_failed", problem.GetProperty("code").GetString());
+            var error = Assert.Single(problem.GetProperty("errors").EnumerateArray());
+            Assert.Equal(("lines[0].source", "purchasing_request_source_sales_unavailable"),
+                (error.GetProperty("field").GetString(), error.GetProperty("code").GetString()));
+        }
+
+        Assert.Equal("Sales", service.LastCreateRequest!.Lines[0].Source!.Kind);
+        Assert.Equal(1, service.Calls);
     }
 
     [Fact]

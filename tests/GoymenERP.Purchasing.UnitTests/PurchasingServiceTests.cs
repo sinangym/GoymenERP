@@ -673,6 +673,16 @@ public sealed partial class PurchasingServiceTests
         public void PlantWinner(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId, string correlation) =>
             _attempts[(commandName, envelope.IdempotencyKey)] =
                 new Attempt(envelope.ActorId, requestHash, null, _orders.Single(candidate => candidate.Order.Id == orderId), null, correlation);
+        /// <summary>A1-2b: a create attempt recorded earlier (e.g. a Sales-sourced request stored before A1-2b) under the key.</summary>
+        public StoredPurchaseRequest PlantRequestAttempt(string key, string actor, string requestHash, PurchaseRequest request, DateOnly effectiveOn,
+            IReadOnlyDictionary<Guid, string> productVersionsByLineId, string correlation)
+        {
+            var stored = new StoredPurchaseRequest(request, effectiveOn, productVersionsByLineId);
+            _requests.Add(stored);
+            _attempts[(PurchasingCommands.RequestCreateV1, key)] = new Attempt(actor, requestHash, stored, null, null, correlation);
+            return stored;
+        }
+
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
         public bool OverSourced { get; set; }

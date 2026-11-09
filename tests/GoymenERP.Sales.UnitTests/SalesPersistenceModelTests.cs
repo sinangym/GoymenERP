@@ -124,8 +124,88 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftHeaderRevisions", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftOrderTax", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_BackfillDraftBuyerTax", StringComparison.Ordinal));
-        Assert.Equal("20261102115043_AddDraftSubcontractService", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSubcontractService", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoices", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceApproval", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceOfficialMatch", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceFinalization", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddQuoteDueTerms", StringComparison.Ordinal));
+        Assert.Equal("20261108143000_AddSalesInvoiceFinalization", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    /// <summary>API-33 PR2: approval columns, widened state/command CKs and the two immutability triggers; Down is a forward fix (51222).</summary>
+    [Fact]
+    public void The_invoice_approval_migration_adds_two_triggers_and_its_down_refuses_with_51222_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceApproval();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(2, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("TR_Invoices_Guard", StringComparison.Ordinal) && op.Sql.Contains("51223", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_InvoiceLines_Guard", StringComparison.Ordinal) && op.Sql.Contains("51224", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51222,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    /// <summary>API-35 PR3: the append-only match table; Up adds one immutability trigger (51226), Down is a forward fix (51225).</summary>
+    [Fact]
+    public void The_invoice_match_migration_adds_one_trigger_and_its_down_refuses_with_51225_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceOfficialMatch();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        var trigger = Assert.Single(up);
+        Assert.Contains("TR_InvoiceMatches_Guard", trigger.Sql, StringComparison.Ordinal);
+        Assert.Contains("51226", trigger.Sql, StringComparison.Ordinal);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51225,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_invoice_match_model_is_keyed_per_invoice_with_unique_official_identity_and_the_widened_command_check()
+    {
+        using var context = Context();
+        var match = context.Model.FindEntityType(typeof(InvoiceMatchRow))!;
+        Assert.Equal(["CompanyId", "InvoiceId"], match.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(match, "UX_InvoiceMatches_OfficialNo"));
+        Assert.True(UniqueIndex(match, "UX_InvoiceMatches_Ettn"));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(InvoiceMatchRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceMatches_Amounts" && check.Sql == SalesDbContext.InvoiceMatchAmountsConstraint);
+        Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command" && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.MatchV1, StringComparison.Ordinal));
+    }
+
+    /// <summary>API-36 PR4: the invoice guard is altered, two triggers are added (51232, 51233); Down is a forward fix (51231) first.</summary>
+    [Fact]
+    public void The_invoice_finalization_migration_alters_one_trigger_adds_two_and_its_down_refuses_with_51231_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceFinalization();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(3, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("ALTER TRIGGER [sales].[TR_Invoices_Guard]", StringComparison.Ordinal) && op.Sql.Contains("51223", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_InvoiceFinalizations_Guard", StringComparison.Ordinal) && op.Sql.Contains("51232", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_OutboxMessages_Guard", StringComparison.Ordinal) && op.Sql.Contains("51233", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51231,", guard.Sql, StringComparison.Ordinal);
+        Assert.Equal(3, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().Count());
+        Assert.DoesNotContain("DROP TRIGGER", guard.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_invoice_finalization_model_keeps_one_ledger_per_invoice_and_widens_the_state_and_command_checks()
+    {
+        using var context = Context();
+        var ledger = context.Model.FindEntityType(typeof(InvoiceFinalizationRow))!;
+        Assert.Equal(["CompanyId", "InvoiceId"], ledger.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(ledger, "UX_InvoiceFinalizations_AdmissionId"));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command"
+            && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.FinalizeV1, StringComparison.Ordinal)
+            && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.ResendFinanceV1, StringComparison.Ordinal));
+        Assert.Contains(design.FindEntityType(typeof(InvoiceRow))!.GetCheckConstraints(), check => check.Name == "CK_Invoices_State" && check.Sql.Contains('6'));
     }
 
     /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>
@@ -212,6 +292,12 @@ public sealed class SalesPersistenceModelTests
     [InlineData("draft-to-unknown-state")]
     [InlineData("edit-force-closure")]
     [InlineData("delete-force-closure")]
+    [InlineData("edit-user-closure")]
+    [InlineData("delete-user-closure")]
+    [InlineData("edit-over-delivery-approval")]
+    [InlineData("delete-over-delivery-approval")]
+    [InlineData("edit-line-closure")]
+    [InlineData("delete-line-closure")]
     [InlineData("unclose-draft")]
     [InlineData("closed-to-cancelled")]
     [InlineData("cancelled-to-closed")]
@@ -308,6 +394,27 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "delete-force-closure":
                 context.DraftForceClosures.Remove(Attach(context, ForceClosure()));
+                break;
+            // SAT-D32: a recorded user closure is append-only too (no column may change, no row may go).
+            case "edit-user-closure":
+                Attach(context, UserClosure()).ClosedBy = "another-closer";
+                break;
+            case "delete-user-closure":
+                context.DraftUserClosures.Remove(Attach(context, UserClosure()));
+                break;
+            // SAT-D30 / SAT-D213: a recorded over-delivery approval is append-only.
+            case "edit-over-delivery-approval":
+                Attach(context, OverDeliveryApproval()).ApprovedShipped = "999";
+                break;
+            case "delete-over-delivery-approval":
+                context.DraftOverDeliveryApprovals.Remove(Attach(context, OverDeliveryApproval()));
+                break;
+            // SAT-D17: a recorded line closure is append-only.
+            case "edit-line-closure":
+                Attach(context, LineClosure()).CancelledRemainder = "999";
+                break;
+            case "delete-line-closure":
+                context.DraftLineClosures.Remove(Attach(context, LineClosure()));
                 break;
             case "unclose-draft":
                 var closed = Draft();
@@ -649,6 +756,148 @@ public sealed class SalesPersistenceModelTests
         var restored = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(down[3]);
         Assert.Equal("[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)", restored.Sql);
     }
+
+    /// <summary>
+    /// SAT-D32: the user-closure table — keyed by (company, draft), bound to the draft, no reason and no remainder column; the
+    /// header's state reuses Closed (3), so CK_Drafts_State does not change.
+    /// </summary>
+    [Fact]
+    public void The_user_closure_table_is_keyed_by_the_draft_bound_to_it_and_carries_no_reason_or_remainder()
+    {
+        using var context = Context();
+        var closures = context.Model.FindEntityType(typeof(DraftUserClosureRow))!;
+        Assert.Equal(["CompanyId", "DraftId"], closures.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(("DraftUserClosures", "sales"), (closures.GetTableName(), closures.GetSchema()));
+        var foreignKey = Assert.Single(closures.GetForeignKeys());
+        Assert.Equal(typeof(DraftRow), foreignKey.PrincipalEntityType.ClrType);
+        Assert.Equal(["CompanyId", "Id"], foreignKey.PrincipalKey.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
+        Assert.Equal(["ClosedAtUtc", "ClosedBy", "CompanyId", "CorrelationId", "DraftId", "DraftVersion", "Revision"],
+            closures.GetProperties().Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal((128, 128), (closures.FindProperty(nameof(DraftUserClosureRow.ClosedBy))!.GetMaxLength(),
+            closures.FindProperty(nameof(DraftUserClosureRow.CorrelationId))!.GetMaxLength()));
+        Assert.NotEmpty(closures.GetDeclaredQueryFilters());
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var constraint = Assert.Single(design.FindEntityType(typeof(DraftUserClosureRow))!.GetCheckConstraints());
+        Assert.Equal(("CK_DraftUserClosures_Identity", SalesDbContext.UserClosureIdentityConstraint), (constraint.Name, constraint.Sql));
+        Assert.Contains("[DraftVersion] >= 5", constraint.Sql, StringComparison.Ordinal);
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
+            design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(item => item.Name == "CK_Drafts_State").Sql);
+    }
+
+    /// <summary>SAT-D32: the user-closure rollback refuses with Sales' own 51212 BEFORE the table is dropped (forward fix).</summary>
+    [Fact]
+    public void The_user_closure_migration_down_refuses_with_51212_before_it_drops_anything()
+    {
+        var down = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftUserClosures().DownOperations;
+        Assert.Equal(2, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftUserClosures])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[CommandName] = N'sales.order-draft.close.v1' AND [Outcome] = 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51212,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[1]);
+        Assert.Equal(("sales", "DraftUserClosures"), (drop.Schema, drop.Name));
+    }
+
+    private static DraftUserClosureRow UserClosure() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, ClosedBy = "synthetic-closer", ClosedAtUtc = At,
+        DraftVersion = 5, CorrelationId = "synthetic-correlation",
+    };
+
+    /// <summary>
+    /// SAT-D30 / SAT-D213: the over-delivery approval table — numbered per line under (company, draft, line, number), one row per
+    /// version step, bound to the draft and to its line, tenant-filtered, with the identity check; Up is pure DDL and Down refuses
+    /// with Sales' own 51213 BEFORE it drops the table (forward fix).
+    /// </summary>
+    [Fact]
+    public void The_over_delivery_approval_table_is_numbered_per_line_bound_to_its_line_and_its_down_refuses_with_51213()
+    {
+        using var context = Context();
+        var approvals = context.Model.FindEntityType(typeof(DraftOverDeliveryApprovalRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "LineId", "ApprovalNo"], approvals.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(("sales", "DraftOverDeliveryApprovals"), (approvals.GetSchema(), approvals.GetTableName()));
+        Assert.True(UniqueIndex(approvals, "UX_DraftOverDeliveryApprovals_DraftVersion"));
+        Assert.Equal([typeof(DraftLineRow), typeof(DraftRow)],
+            approvals.GetForeignKeys().Select(key => key.PrincipalEntityType.ClrType).OrderBy(type => type.Name, StringComparer.Ordinal));
+        Assert.All(approvals.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Equal(SalesOrderDraft.MaximumActorLength, approvals.FindProperty(nameof(DraftOverDeliveryApprovalRow.ApprovedBy))!.GetMaxLength());
+        Assert.NotEmpty(approvals.GetDeclaredQueryFilters());
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var check = Assert.Single(design.FindEntityType(typeof(DraftOverDeliveryApprovalRow))!.GetCheckConstraints());
+        Assert.Equal(("CK_DraftOverDeliveryApprovals_Identity", SalesDbContext.OverDeliveryApprovalIdentityConstraint), (check.Name, check.Sql));
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftOverDeliveryApprovals();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        Assert.Equal(2, migration.DownOperations.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftOverDeliveryApprovals])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51213,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
+        Assert.Equal(("sales", "DraftOverDeliveryApprovals"), (drop.Schema, drop.Name));
+    }
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168: the line-closure table - one row per line under (company, draft, line), one row per version step, bound
+    /// to the draft and to its line, tenant-filtered, with the identity check; Up is pure DDL and Down refuses with Sales' own 51228
+    /// BEFORE it drops the table (forward fix).
+    /// </summary>
+    [Fact]
+    public void The_line_closure_table_is_keyed_per_line_bound_to_its_line_and_its_down_refuses_with_51228()
+    {
+        using var context = Context();
+        var closures = context.Model.FindEntityType(typeof(DraftLineClosureRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "LineId"], closures.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(("sales", "DraftLineClosures"), (closures.GetSchema(), closures.GetTableName()));
+        Assert.True(UniqueIndex(closures, "UX_DraftLineClosures_DraftVersion"));
+        Assert.Equal([typeof(DraftLineRow), typeof(DraftRow)],
+            closures.GetForeignKeys().Select(key => key.PrincipalEntityType.ClrType).OrderBy(type => type.Name, StringComparer.Ordinal));
+        Assert.All(closures.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Equal(SalesOrderDraft.MaximumActorLength, closures.FindProperty(nameof(DraftLineClosureRow.ClosedBy))!.GetMaxLength());
+        Assert.NotEmpty(closures.GetDeclaredQueryFilters());
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var check = Assert.Single(design.FindEntityType(typeof(DraftLineClosureRow))!.GetCheckConstraints());
+        Assert.Equal(("CK_DraftLineClosures_Identity", SalesDbContext.LineClosureIdentityConstraint), (check.Name, check.Sql));
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftLineClosures();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        Assert.Equal(2, migration.DownOperations.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftLineClosures])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51228,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
+        Assert.Equal(("sales", "DraftLineClosures"), (drop.Schema, drop.Name));
+    }
+
+    /// <summary>
+    /// SAT-D17: the stored band of a line closure is never the block band. The domain's restore accepts any defined band, so the
+    /// table's identity check is what keeps a block-band row out: it admits Within (1) to Approval (3) only, and Block is 4.
+    /// </summary>
+    [Fact]
+    public void The_line_closure_identity_check_admits_within_to_approval_only_and_keeps_the_block_band_out()
+    {
+        Assert.Equal((1, 2, 3, 4), ((int)DeliveryToleranceBand.Within, (int)DeliveryToleranceBand.Warn,
+            (int)DeliveryToleranceBand.Approval, (int)DeliveryToleranceBand.Block));
+        Assert.Contains("AND [Band] BETWEEN 1 AND 3 AND", SalesDbContext.LineClosureIdentityConstraint, StringComparison.Ordinal);
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftLineClosures();
+        var table = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>(),
+            operation => operation.Name == "DraftLineClosures");
+        Assert.Equal(SalesDbContext.LineClosureIdentityConstraint, Assert.Single(table.CheckConstraints).Sql);
+    }
+
+    private static DraftLineClosureRow LineClosure() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineId = Guid.NewGuid(), LineNo = 1, BasisRevision = 0,
+        Ordered = "100", ShippedAtClosure = "90", CancelledRemainder = "10", Band = 2, ClosedBy = "synthetic-closer",
+        ClosedAtUtc = At, DraftVersion = 5, CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftOverDeliveryApprovalRow OverDeliveryApproval() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineId = Guid.NewGuid(), LineNo = 1, ApprovalNo = 1, BasisRevision = 0,
+        Ordered = "100", ApprovedShipped = "102.5", ApprovedBy = "synthetic-approver", ApprovedAtUtc = At, DraftVersion = 5,
+        CorrelationId = "synthetic-correlation",
+    };
 
     private static DraftForceClosureRow ForceClosure() => new()
     {
