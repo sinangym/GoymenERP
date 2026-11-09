@@ -1505,7 +1505,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
                         // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
                         // A2a-2: and the existing Settings line tax port (ISettingsLineTaxResolverV1, optional); counts unchanged.
-                        "d5f40fbd4d6fb1d6ba628d929dc580778f9def9f3710bcd85617150fe3fdb22c",
+                        "43993f95fc72e36d13c577191f719248d10a132c6aa88f9fe7328dc87189369c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
