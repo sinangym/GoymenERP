@@ -2,6 +2,12 @@ name: C-01 real-browser E2E
 
 on:
   pull_request:
+    # Docs-only pull requests (no backend/frontend/tooling bytes) carry no browser evidence to prove;
+    # the AGENTS.md scope list (src/backend, build-control, recovery, contracts, tests) never matches these.
+    paths-ignore:
+      - 'docs/**'
+      - 'AGENTS.md'
+      - '.claude/**'
   push:
     branches:
       - main

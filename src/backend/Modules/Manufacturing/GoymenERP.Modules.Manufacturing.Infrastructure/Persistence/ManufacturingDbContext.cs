@@ -90,6 +90,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>Üretim U2-a: the recorded rejections of Draft plans (append-only).</summary>
     internal DbSet<PlanRejectionRow> PlanRejections => Set<PlanRejectionRow>();
 
+    /// <summary>Üretim U3-a: the Inventory allocations written for a plan's inputs at its approval (append-only).</summary>
+    internal DbSet<PlanInputAllocationRow> PlanInputAllocations => Set<PlanInputAllocationRow>();
+
     /// <summary>Üretim U1-b: the parameter profile captured at plan approval (append-only).</summary>
     internal DbSet<PlanParameterSnapshotRow> PlanParameterSnapshots => Set<PlanParameterSnapshotRow>();
 
@@ -120,6 +123,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanCutLines(modelBuilder);
         ConfigurePlanRevisions(modelBuilder);
         ConfigurePlanRejections(modelBuilder);
+        ConfigurePlanInputAllocations(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
@@ -196,6 +200,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL "
                 + "AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL "
                 + "AND [PaintColorCode] IS NULL))");
+            // U2-d (URT-D2): the preparer, when kept, is a non-empty actor id.
+            table.HasCheckConstraint("CK_Plans_CreatedBy", "[CreatedBy] IS NULL OR LEN([CreatedBy]) > 0");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -207,6 +213,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ProcessSpecColumns(entity);
         entity.Property(x => x.CancellationReason).HasMaxLength(ProductionPlan.DecisionReasonMaximumLength);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.CreatedBy).HasMaxLength(ProductionPlan.PreparedByMaximumLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -398,6 +405,32 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         rejection.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// Üretim U3-a (URT-D21, B-01): one row per (company, plan, parent roll), written with the plan's approval in the same
+    /// transaction as Inventory's allocation. Append-only: the write guard admits no column of the table.
+    /// </summary>
+    private void ConfigurePlanInputAllocations(ModelBuilder modelBuilder)
+    {
+        var allocation = modelBuilder.Entity<PlanInputAllocationRow>();
+        allocation.ToTable("PlanInputAllocations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanInputAllocations_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AllocationId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PlanInputAllocations_Values",
+                "[LabelVersionAfter] >= 1 AND [AllocatedKg] > 0 AND [PlanVersion] >= 2");
+        });
+        allocation.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
+        allocation.HasIndex(x => new { x.CompanyId, x.AllocationId }).IsUnique();
+        allocation.Property(x => x.AllocatedKg).HasPrecision(18, 3);
+        allocation.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        allocation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void ConfigureTechnicalSnapshot<TRow>(EntityTypeBuilder<TRow> entity)
@@ -697,6 +730,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                     PlanRevisionCutLineRow => [],
                     // U2-a: a rejection is append-only too.
                     PlanRejectionRow => [],
+                    // U3-a: a plan input allocation is append-only too.
+                    PlanInputAllocationRow => [],
                     _ => [],
                 };
                 var changed = entry.Properties

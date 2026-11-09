@@ -83,6 +83,17 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   Sales adaptor (S-A1/MOD-03) and the Üretim action (A-2/U5-c) will need; its Down refuses (`THROW 51167`) while any line
   carries a source (dropping the columns would silently turn it manual). The P-01 form opens manual requests only; the
   detail and list show the source read-only. The plan's "istenen tarih" (requested date) of API-02 is not in this slice.
+  **A1-2b — `Sales` closed for new lines until MOD-03 (Sales SAT-D219, SAT-D220; fail-closed):** a new line with
+  `source.kind` `Sales` is refused before any owner read with 422 `validation_failed`, field `lines[i].source` =
+  `purchasing_request_source_sales_unavailable` (no attempt recorded, so the same key may be retried with a corrected
+  body). In the domain the rule lives only in the new-line factory (`PurchaseRequestLineSource.ForNewLine` /
+  `IsOpenForNewLines`), which the service uses for the lines it creates; `PurchaseRequest.AddLine` itself accepts any
+  defined source, because the store rebuilds stored lines through it with `Of`, so a `Sales` line recorded before
+  A1-2b stays readable. `Sales` is still a well-formed
+  kind on the wire (strict JSON unchanged); `Stock`, `Production` and manual lines, their content hashes and the OpenAPI
+  contract are unchanged; no migration. MOD-03 reopens it only together with reading `ISalesOrderLineReferencePortV1`
+  (refusing every sales order line that is not `Approved`) and wiring the `ISalesOrderLinkedSupplyReadPortV1` adaptor in
+  the same delivery — a link without the adaptor reads as `Unreadable` in Sales and blocks its cancellation/removal.
 - **Order creation:** an order is created with or without a source request (`CreatePurchaseOrderRequest.SourceRequestId`
   is optional); when given, the request must be **Approved** (A1-1, ALS-D2/ALS-D16; 409 `purchasing_request_state`,
   field `sourceRequestId` = `not_approved`) and of the same company (`PurchasingService.ReadSourceRequestAsync`). An
@@ -118,15 +129,16 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   defaulting to the line's unit, and at most one of `discountPercent` / `discountAmount`), all exact decimal text. The
   currency is verified through the existing `ISettingsPrerequisiteProvider.GetMoneyProfileAsync` for the operation key
   `purchasing.order.v1` (`PurchasingMoneyOperationsV1`) on the order's business date and recorded as a snapshot
-  (`CurrencyId`, `CurrencyCode`, `MoneyProfileId`, `MoneyProfileVersion`, `MoneyScale`). **Fail-closed today:** the approved
-  Settings money catalog has no profile for `purchasing.order.v1` (Sinan #66 6704170096 approved it as a narrow ALS-D58 exception; it lands in A2a-1b), so the
-  owner answers `settings_provider_unavailable` and a priced order is a 503 while an unpriced one is unaffected;
-  `GET references/currencies` (under `purchasing.orders.create`) lists the operation's currencies and is a 503 until then.
+  (`CurrencyId`, `CurrencyCode`, `MoneyProfileId`, `MoneyProfileVersion`, `MoneyScale`, and since A2a-1c `UnitPriceScale`).
+  Since A2a-1b the approved Settings money catalog answers `purchasing.order.v1` (ALS-D69, within ALS-D63's narrow exception)
+  for GDC, GSP and GIN with TRY: amount scale 2 and unit-price scale 4 (ALS-D72), so a priced order opens in TRY;
+  `GET references/currencies` (under `purchasing.orders.create`) lists TRY. A currency without an approved profile is
+  `unsupported_currency` (422); an owner that answers unavailable is still a 503, and an unpriced order never asks.
   Rules (domain, 422 on `lines[i].price`): a currency is required (`purchasing_price_currency_required`); the price is never negative
   (`purchasing_price_negative`; an explicit 0 is a price with a 0 line amount, apart from no price = "fiyat bekliyor", ALS-D18 —
   Sinan #66 6704170096; on a 0 price a discount amount above 0 is refused as exceeding the price); the price unit is the line's entry
   unit, because the Product conversion port is deferred (`purchasing_price_unit_conversion_unavailable`); the unit price and a
-  discount amount carry at most min(profile scale, 6) decimals, never rounded (`purchasing_price_scale_exceeded`); a discount is a
+  discount amount carry at most min(unit-price scale — or, without one, the amount scale — and 6) decimals (4 for TRY, see below), never rounded (`purchasing_price_scale_exceeded`); a discount is a
   percent 0..100 (≤ 6 decimals) or an amount 0..unit price, never both. No minimum price, margin or discount ceiling is decided for
   purchasing and none is invented. The net unit price (exact, SAT-D76) and the line amount (ordered quantity × net, rounded once
   half away from zero to the profile's scale, SAT-D11) come from the shared `BuildingBlocks/Monetary/CommercialLinePriceCalculator`
@@ -143,6 +155,36 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   general line with a price ≥ 0 and at most one bounded discount); its Down refuses (`THROW 51169`) while any order has a
   currency or any line a price. P-04 gains the optional price fieldset (currency, unit price, discount; the net and the amount
   are shown only after the save), P-03-DETAIL the price columns, "fiyat bekliyor" and the withheld notice.
+- **Unit-price scale (A2a-1b, A2a-1c; ALS-D69, ALS-D72):** since A2a-1b the approved Settings money catalog answers
+  `purchasing.order.v1` (GDC, GSP, GIN; TRY, amount scale 2) with `MoneyProfileV1.UnitPriceScale` 4. A2a-1c snapshots that scale with the order (`UnitPriceScale`, nullable) and holds a unit price and a discount
+  amount to min(unit-price scale, 6) decimals — 4 for TRY (`41.2575`; `10.12345` is `purchasing_price_scale_exceeded`). Without a
+  unit-price scale (a profile that answers none, or an order recorded before A2a-1c) the A2a-1 rule stays: min(amount scale, 6).
+  The line amount is still rounded once to the amount scale (SAT-D11) and the net is exact (SAT-D76). An answered scale outside
+  0..28 is `reference_provider_invalid`. The wire is unchanged (`currency.scale` stays the amount scale). Migration
+  `20261107131321_AddPurchaseOrderUnitPriceScale` adds the column and `CK_PurchaseOrders_UnitPriceScale` (null, or beside a
+  currency within 0..28; `CK_PurchaseOrders_Money` unchanged, no backfill); its Down refuses (`THROW 51170`) while any order has a
+  unit-price scale.
+- **Maturity surcharge, totals and "fiyat bekliyor" on the list (A2a-2, plan API-20; ALS-D38, ALS-D74…D77, EK13 #66
+  6708738330 / 6708953113):** a line price may carry at most one maturity surcharge (vade farkı) — `deferralPercent` of the
+  DISCOUNTED unit price (0..100, ≤ 6 decimals) or `deferralAmount` per unit (≥ 0, the unit-price scale) — added after the discount,
+  as Sales does (ALS-D75 "Satış'la aynı"); never on a 0 price (`purchasing_deferral_on_zero_price`); two at once is
+  `purchasing_deferral_kind_conflict`, a percent out of bounds `purchasing_deferral_percent_out_of_range`, a negative amount
+  `purchasing_deferral_amount_negative` (all 422 on `lines[i].price`). A deferred price typed directly is a plain price with no flag
+  (ALS-D76). The detail's price carries `deferralPercent` / `deferralAmount`; the net unit price includes the surcharge (exact).
+  `GET orders/{id}/totals` (under `purchasing.orders.read`) answers the general lines' amounts and their sum, the VAT per line and its
+  sum, and the gross amount through the shared `BuildingBlocks/Monetary/CommercialTaxTotalsCalculator` (the Sales totals rules —
+  VAT per line rounded once, withholding from the rounded VAT, SAT-D75 — pinned to `SalesOrderTotalsCalculator` by a golden parity
+  test; moving Sales onto it is a TEK-03 hand-off). The VAT rate is the item type's default from the existing Settings
+  `ISettingsLineTaxResolverV1` for buyer situation `Normal` on the order's business date (ALS-D74; `Exempt`/`ZeroRated` = 0 %); a
+  product without an item type or default, or an unreadable port, makes that line's VAT `NotComputable` (with the Settings reason)
+  and the document VAT `NotComputable` with the count — never guessed. VAT is computed on the line amount INCLUDING the surcharge
+  (ALS-D77 "Vade farkı dahil hesaplansın"; it replaces ALS-D38's EK3 note). Purchase withholding is always `NotComputable`
+  (`withholding_unconfirmed`, N-20), so the withheld VAT and the payable amount are null; supplier exemptions are not modelled yet. An
+  unpriced line makes the totals `Incomplete`. PRS-02: without `purchasing.orders.price.read` every state is `Withheld`, every amount
+  null and no line is listed. The order list carries `pricePending` per item for a holder of the price read only (never written
+  otherwise). Migration `20261107151838_AddPurchaseOrderLineDeferral` adds `DeferralPercent` decimal(9,6) and `DeferralAmount`
+  decimal(24,6) and `CK_PurchaseOrderLines_Deferral` (none, or one in bounds beside a unit price above 0; `CK_PurchaseOrderLines_Price`
+  unchanged, no backfill); its Down refuses (`THROW 51171`) while any line carries a surcharge.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
@@ -265,3 +307,9 @@ The published P-03 reads and approval control are currently `SingleCompany`: the
 ## AT-025 — the open-line read for the operations work list
 
 `IPurchaseOpenLineReadPortV1` (Contracts) / `PurchaseOpenLineReadPort` (Infrastructure, registered in `AddPurchasingModule`): the context company's APPROVED purchase order lines whose remaining (committed − accepted, where committed = ordered − technical) is above zero, as a LINE page (1–100), newest order first then by line number, with an opaque keyset cursor (created time, order id, line number) bound to the company that read it (a foreign or malformed cursor is `ArgumentException`). Draft and fully received lines are not listed; another company's orders are invisible under the tenant filter; no company context is refused before any read. Quantities are the owner's exact canonical texts (Ö2). Price-free (Purchasing holds no price, T28). The port carries no authority: its consumer (Logistics's operations work list, L-09) measures its own name. Evidence: `PurchaseOpenLineReadPortTests`, `LogisticsOperationsWorkSqlServerRelationalAcceptanceTests`.
+
+## A4 / MOD-03 — sales-order-linked supply (SAT-D219/SAT-D220)
+
+`IPurchaseSalesLinkedSupplyReadPortV1` (Contracts) / `PurchaseSalesLinkedSupplyReadPort` (Infrastructure, registered in `AddPurchasingModule`): the context company's open purchase order lines whose request line came from a given sales order (through the `PurchaseRequestLines` source index), optionally narrowed to sales order line ids (at most 500). `OpenQuantity` is the remaining quantity: a general line is ordered − technical − accepted − cancelled, technical slices add ordered − accepted − cancelled, and a technical line carries its general line's request line so it is never listed or counted twice. Purchasing does not reference Sales, so the Sales contract is adapted in the Api host (`PurchasingSalesLinkedSupplyHostPorts.cs`): `ISalesOrderLinkedSupplyReadPortV1` (Present / None / Unreadable with `purchasing_linked_supply_unreadable`; any failure is Unreadable, fail-closed) and `ISalesOrderLinkedSupplyRecorderV1` (the notice that a source exists). The ports carry no authority and create nothing.
+
+SAT-D220 (A4b): `PurchasingService.CreateRequestAsync` reads every Sales-sourced new line through `IPurchaseRequestSalesSourcePortV1` (host adapter over `ISalesOrderLineReferencePortV1.GetApprovedLineAsync`) before any product read: Approved is recorded; NotApproved / NotFound → 422 `validation_failed` with `lines[i].source` = `purchasing_request_source_sales_not_approved` / `_not_found`; owner failure → service code `purchasing_request_source_sales_unavailable` (on the wire a code-less 503, like every Purchasing 503); no adapter composed → 422 `purchasing_request_source_sales_unavailable` (still closed). Nothing is stored on a refusal. Evidence: `PurchasingServiceTests.RequestSource`. Real-SQL acceptance of the Present path of the linked-supply read is a follow-up.
