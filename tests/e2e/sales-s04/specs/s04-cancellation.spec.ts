@@ -244,11 +244,13 @@ test('S04-CX-01 the canceller previews the approved order\'s impact, cancels wit
   await section.getByRole('button', { name: 'İptal etkisini göster' }).click()
   expect((await previewRead).status()).toBe(200)
 
-  // Each category as its owner answered: Inventory and Logistics read "nothing recorded"; the four without an owner on main
-  // read "kaynak yok" — never 0.
+  // Each category as its owner answered: Inventory, Logistics and Purchasing (its linked-supply adapter, #998) read "nothing
+  // recorded"; the three without an owner on main read "kaynak yok" — never 0.
   await expect(page.getByTestId('sales-cancellation-source-inventory.active-allocations')).toHaveAttribute('data-status', 'None')
   await expect(page.getByTestId('sales-cancellation-source-logistics.loading-without-dispatch-note')).toHaveAttribute('data-status', 'None')
-  for (const source of ['purchasing.linked-orders', 'manufacturing.linked-orders', 'invoicing.uninvoiced-dispatch-notes', 'finance.unmatched-advances']) {
+  await expect(page.getByTestId('sales-cancellation-source-purchasing.linked-orders')).toHaveAttribute('data-status', 'None')
+  await expect(page.getByTestId('sales-cancellation-source-purchasing.linked-orders')).toContainText('Kayıt yok')
+  for (const source of ['manufacturing.linked-orders', 'invoicing.uninvoiced-dispatch-notes', 'finance.unmatched-advances']) {
     await expect(page.getByTestId(`sales-cancellation-source-${source}`)).toHaveAttribute('data-status', 'NoSource')
     await expect(page.getByTestId(`sales-cancellation-source-${source}`)).toContainText('Kaynak yok')
   }

@@ -43,5 +43,8 @@ kadar `NoSource`.
 
 ## FA-4 · Ödendi / avans (MOD-03)
 
-Tedarikçi ödemesinin borç kalemine dağıtımı Finans F3'tedir (API-20); avans ALS-D50 ile Finans'ta ödeme olarak
+Tedarikçi ödemesinin borç kalemine dağıtımı Finans F3a'da yapıldı (API-20): kesin kayda alınmış elle banka
+ödemesi, aynı cari hesap ve para birimindeki açık **borç** kalemine (`POST /api/v1/finance/payment-allocations`)
+dağıtılır ve serbest bırakılabilir; kalan sıfırsa kalem kapanır, cari bakiyedeki açık borç kendiliğinden düşer
+(DEC-FIN-006: ekstreye satır eklenmez). Ekranı sonraki dilimdedir. Avans ALS-D50 ile Finans'ta ödeme olarak
 tutulur. Durum olayı `finance.open-item.settled.v1` Finans outbox dilimi (F2-OB, ERP-000F sonrası).

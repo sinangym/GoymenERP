@@ -20,6 +20,7 @@
  *   manufacturing.plans.create  <- manufacturing.plans.write
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
+ *   manufacturing.plans.cancel  <- manufacturing.plans.read + manufacturing.plans.cancel (U2-a API-11; see planCancel)
  *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
  *   manufacturing.plans.edit    <- manufacturing.plans.read + manufacturing.plans.write (MFG-PLAN-EDIT: the plan save's grant)
  *   manufacturing.plans.list    <- manufacturing.plans.read (MFG-PLAN-LIST: the plan read's own grant)
@@ -53,6 +54,12 @@ export const MANUFACTURING_CAPABILITY = {
   planDetail: 'manufacturing.plans.detail',
   /** Approve the Draft shown on the plan detail screen. Not a route — a control. */
   planApprove: 'manufacturing.plans.approve',
+  /**
+   * Cancel the plan shown on the detail screen (API-11, `manufacturing.plans.cancel`). Not a route — a control. The
+   * shell provider must publish this id (permission-capability-registration); until it does `hasCapability` answers
+   * false and no cancel control is drawn. The rejection (API-10) needs no id of its own: it runs under `planApprove`.
+   */
+  planCancel: 'manufacturing.plans.cancel',
   /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
   planOrderCreate: 'manufacturing.plans.order-create',
   /** MFG-PLAN-EDIT: edit the Draft shown on the detail screen, with its history. Not a route — a control. */

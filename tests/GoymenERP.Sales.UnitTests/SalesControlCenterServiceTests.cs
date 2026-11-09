@@ -83,6 +83,77 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Theory]
+    [InlineData("648.49", false)]
+    [InlineData("648.54", true)]
+    [InlineData("648.60", true)]
+    public async Task An_approved_invoice_whose_match_carries_a_difference_is_listed_as_a_critical_blocked_finalization(string official,
+        bool blocked)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        var amount = decimal.Parse(official, System.Globalization.CultureInfo.InvariantCulture);
+        invoicing.Official.Has(amount);
+        var over = amount - 648.49m > 0.05m;
+        await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: over, reason: over ? "Kur farki" : null), Metadata("k-inv-match"));
+
+        var answer = await ControlCenter(invoicing, new DateOnly(2026, 11, 20)).GetControlCenterAsync();
+
+        var items = answer.Items.Where(item => item.Kind == SalesControlCenterCheckKindView.InvoiceFinalizationBlocked).ToArray();
+        Assert.Equal(blocked, items.Length == 1);
+        if (blocked)
+        {
+            Assert.Equal((id, SalesControlCenterSeverityView.Critical, 1), (items[0].InvoiceId, items[0].Severity, items[0].Count));
+            Assert.Equal(id, answer.Items[0].InvoiceId);
+            Assert.Equal(SalesControlCenterSeverityView.Critical, answer.Items[0].Severity);
+        }
+
+        Assert.Equal(SalesControlCenterCheckStateView.Measured,
+            answer.Checks.Single(check => check.Kind == SalesControlCenterCheckKindView.InvoiceFinalizationBlocked).State);
+    }
+
+    [Theory]
+    [InlineData("refused", "Critical")]
+    [InlineData("unavailable", "Info")]
+    [InlineData("admitted", null)]
+    public async Task A_finalized_invoice_finance_has_not_admitted_is_listed_and_a_recorded_refusal_is_critical(string outcome,
+        string? severity)
+    {
+        var answerOf = outcome switch
+        {
+            "refused" => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Refused, "party_account_ineligible"),
+            "unavailable" => SalesFinanceAdmissionAnswerV1.Unavailable,
+            _ => new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Admitted, "ok"),
+        };
+        var (invoicing, id) = await MatchedInvoiceAsync(new FakeFinanceAdmission { Answer = answerOf });
+        await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+
+        var answer = await ControlCenter(invoicing, new DateOnly(2026, 11, 20)).GetControlCenterAsync();
+
+        var items = answer.Items.Where(item => item.Kind == SalesControlCenterCheckKindView.InvoiceFinanceAdmissionWaiting).ToArray();
+        Assert.Equal(severity, items.SingleOrDefault()?.Severity.ToString());
+        if (severity is not null)
+        {
+            Assert.Equal((id, 1), (items[0].InvoiceId, items[0].Count));
+        }
+
+        Assert.DoesNotContain(answer.Items, item => item.Kind is SalesControlCenterCheckKindView.InvoiceFinalizationBlocked
+            or SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch);
+        Assert.Equal(SalesControlCenterCheckStateView.Measured,
+            answer.Checks.Single(check => check.Kind == SalesControlCenterCheckKindView.InvoiceFinanceAdmissionWaiting).State);
+    }
+
+    [Fact]
+    public async Task A_finalized_invoice_with_no_finance_answer_yet_is_listed_as_informational_waiting()
+    {
+        var (invoicing, id) = await MatchedInvoiceAsync(finance: null);
+        await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+
+        var answer = await ControlCenter(invoicing, new DateOnly(2026, 11, 20)).GetControlCenterAsync();
+
+        var item = Assert.Single(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.InvoiceFinanceAdmissionWaiting);
+        Assert.Equal((id, SalesControlCenterSeverityView.Info), (item.InvoiceId, item.Severity));
+    }
+
+    [Theory]
     [InlineData("absent")]
     [InlineData("throw")]
     [InlineData("unavailable")]

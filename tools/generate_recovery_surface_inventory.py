@@ -49,11 +49,11 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 144
+EXPECTED_MIGRATION_COUNT = 148
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "f12162856977dc37c122e805d92133ab0dea20ccc2859a7bb1c015bba8b20008"
+    "7ad655dc5ec5fa94a8134a5d0111502e365579001b1c8aad2505fd89935ab39d"
 )
-EXPECTED_DURABLE_STORE_COUNT = 27
+EXPECTED_DURABLE_STORE_COUNT = 30
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 27
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 611
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 623
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "0181313850ad87586bc7c2f236f0940d9878fd38a0a514fba63c5f34b8462d90"
+    "b369cb24ae9717d97ec3baf6137fc063d635b302445d22d52d030802675d3309"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -184,6 +184,7 @@ EXPECTED_OUTBOX_CONTRACT_PATHS = (
 )
 EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("accounting", "Commands"),
+    ("accounting", "SourceDocumentAdmissions"),
     ("audit", "AuditEvents"),
     ("documents", "DocumentAttempts"),
     ("finance", "Commands"),
@@ -219,7 +220,9 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("inventory", "OutboxMessages"),
     ("sales", "OutboxMessages"),
     ("work", "ObservationInbox"),
+    ("work", "OutboxDeliveries"),
     ("work", "OutboxMessages"),
+    ("work", "OutboxSourceCursors"),
 )
 NON_MESSAGE_DELIVERY_TABLES = (
     ("sales", "DraftDeliveryScheduleDates"),
@@ -341,6 +344,10 @@ ACCOUNTING_STORE = (
     "src/backend/Modules/Accounting/"
     "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"
 )
+ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE = (
+    "src/backend/Modules/Accounting/"
+    "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceDocumentAdmissionStoreV1.cs"
+)
 DOCUMENTS_CONTEXT = (
     "src/backend/Modules/Documents/"
     "GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsDbContext.cs"
@@ -389,6 +396,14 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260918180000_InitialAccounting.cs",
         ACCOUNTING_STORE, ("dbContext.Deliveries.Add(new DeliveryRow",),
         mapping_tokens=("Consumer", "MessageId"),
+    ),
+    _store(
+        "accounting.source-document-admissions", "Accounting", "idempotency", "AccountingDbContext",
+        "AccountingSourceDocumentAdmissionRow", "accounting", "SourceDocumentAdmissions", ACCOUNTING_CONTEXT,
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261108222146_AddSourceDocumentAdmissions.cs",
+        ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE,
+        ("dbContext.SourceDocumentAdmissions.Add(row)",),
+        mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "documents.document-attempts", "Documents", "idempotency", "DocumentsDbContext",
@@ -606,6 +621,20 @@ DURABLE_STORE_SPECS = (
         ("dbContext.ObservationInbox.Add(inbox)",), mapping_tokens=("SourceKeyDigest", "ObservationOrdinal"),
     ),
     _store(
+        "work.outbox-cursor", "Work", "delivery", "WorkDbContext", "WorkOutboxSourceCursorRow",
+        "work", "OutboxSourceCursors", WORK_CONTEXT,
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261108221330_AddWorkOutboxDispatch.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+        ("db.OutboxSourceCursors.Add(new WorkOutboxSourceCursorRow",), mapping_tokens=("SourceName", "Position"),
+    ),
+    _store(
+        "work.outbox-delivery", "Work", "inbox", "WorkDbContext", "WorkOutboxDeliveryRow",
+        "work", "OutboxDeliveries", WORK_CONTEXT,
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261108221330_AddWorkOutboxDispatch.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+        ("db.OutboxDeliveries.Add(row)",), mapping_tokens=("ConsumerName", "PayloadSha256"),
+    ),
+    _store(
         "work.outbox", "Work", "outbox", "WorkDbContext", "WorkOutboxRow", "work",
         "OutboxMessages", WORK_CONTEXT,
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261005190000_InitialWorkDesiredStateStorage.cs",
@@ -621,6 +650,7 @@ DURABLE_STORE_SPECS = (
 WRITER_METHOD_SCOPES = {
     ("accounting.command-replay", ACCOUNTING_STORE): "AddCommand",
     ("accounting.delivery-inbox", ACCOUNTING_STORE): "AddDelivery",
+    ("accounting.source-document-admissions", ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE): "WriteAsync",
     ("documents.document-attempts", DOCUMENTS_STORE): "StoreUploadAsync",
     (
         "finance.command-replay",
@@ -722,17 +752,28 @@ WRITER_METHOD_SCOPES = {
         "work.outbox",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
     ): "ReconcileAsync",
+    (
+        "work.outbox-cursor",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+    ): "DispatchSourceAsync",
+    (
+        "work.outbox-delivery",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+    ): "DeliverAsync",
 }
 
 
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    ("src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs", "DeliverAsync"): "7c65493812d044fcaa417c763ee889d4347170530235b24fb954e17d339c42a5",
+    ("src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs", "DispatchSourceAsync"): "5b93bdfc12986a5831e035efbfbfac1dd3025d38904d6bb58256f6108d19a86d",
     (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs",
         "FinalizeInvoiceAsync",
     ): "2eaf24a1922b322c203825a80973b4140f737c66cf9e7e41588537329ba0f522",
     (ACCOUNTING_STORE, "AddCommand"): "db718449f8e13e277eb0aa197b20d7210130ab1c0d2091dd6011e43e781e47a1",
+    (ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE, "WriteAsync"): "c423293f58f6e35e18fa31020e002b0cb8ec68535c1a5c9c9722642d41f96d5c",
     (ACCOUNTING_STORE, "AddDelivery"): "b24889ce6551605bb62723f3bce1a2baa59c3680894167c71b3fd51ce0be1cb0",
     (DOCUMENT_MODULE_PATH, "AddDocumentsModule"): "178f03a58d3a9ef775bb91f777db991fd935e3d776d7d91112cb5179e4f9f57e",
     (DOCUMENT_MODULE_PATH, "RegisterProductionStorageAndScanner"): "bfea0db0f27c66dcdab7d411b5e5e6d2b986a25d157d0693fc70cbd3d5d0b19b",
@@ -786,7 +827,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
         "CancelAsync",
-    ): "776626fa3e5ee7a42100debd0e6055d5ce17eff2e73bb0cc6ddb7e2acb61af71",
+    ): "ee5be34f68ce948bbf89e402e54b448d2981afda8d044e0c417f4dd0d952abaa",
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
         "AdmitAsync",
@@ -873,6 +914,8 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 # The full blobs retain reachability evidence around the pinned methods (for example,
 # private writer call sites) and bind every emitted source record to reviewed bytes.
 REVIEWED_LIVE_SOURCE_SHA256 = {
+    "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "c6d5396b8a36720c0a1fb003e415b1744f2da9aa1af850b34c4f1a2b2154c069",
+    ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE: "ec26c7c5129480f90736b4f68d2b137d017c93da1b8c7ee42d01cd573e2abf88",
     ACCOUNTING_STORE: "9b6e088b496de1fc3c9e912e2d83397ef341e9eed6f54b79dfa1eb1c6deb8041",
     DOCUMENT_MODULE_PATH: "8e6108de29ca7aae5133131abf8deb981d097bc33ea7964403652f04f0ebc610",
     DOCUMENTS_STORE: "076a0c5b55a961716d99f2d407bf0ae7f1d48c835de7b82b9cf64ce3a3c822ea",
@@ -880,7 +923,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs": "8c7a2eed1888d36d0b61c60b1296d904adaf0338c34f361236befc8e1c1d6274",
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs": "0f79216993cdbbc20d7c92d830ad1c08f3ff2ab5b0ab9084aaae03f765784c1a",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs": "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
-    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "8b02512a01241b015ea34574296825356228cef44dc923a73b2c50861ca96926",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "2abc569a4100b56bb7f92ef0179366961763b35ba25db881d3daaca62fc7c6d3",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs": "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs": "589f03fddc02ed44c23149eac8358f69805e00a7a28cd867c98eecc9e469c88e",
     "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",

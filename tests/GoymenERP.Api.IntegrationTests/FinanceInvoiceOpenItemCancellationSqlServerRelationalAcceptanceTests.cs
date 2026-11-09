@@ -218,6 +218,100 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
             ("@id", invoice.Installments[0].OpenItemId)));
     }
 
+    [SqlServerFact]
+    public async Task A_cancelled_invoice_is_not_admitted_again_and_another_company_finds_nothing_to_cancel()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "80.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("late-1", invoice)).Outcome);
+
+        // Company B, resolved and authorised in its own context, cannot see company A's invoice.
+        var other = await run.CancelAsync("late-other-company", Cancellation(invoice), [PermissionDecision.Allowed], company: CompanyB);
+        Assert.Contains(other.Issues, issue => issue.Code == FinanceInvoiceOpenItemCancellationService.NotAdmittedCode);
+
+        Assert.Equal(CommandOutcome.Succeeded, (await run.CancelAsync("late-1", Cancellation(invoice))).Outcome);
+        // A late or resent admission of the cancelled invoice (new admission id and key) is refused, never a reuse.
+        var late = await run.AdmitAsync("late-2", invoice with
+        {
+            AdmissionId = Guid.NewGuid(),
+            Installments = [invoice.Installments[0] with { OpenItemId = Guid.NewGuid() }],
+        });
+        Assert.Equal(CommandOutcome.ValidationFailed, late.Outcome);
+        Assert.Contains(late.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemAdmissionService.AlreadyCancelledCode);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3", ("@id", invoice.InvoiceId)));
+    }
+
+    [SqlServerFact]
+    public async Task An_authority_withdrawn_before_the_save_and_a_concurrent_second_cancellation_write_nothing_more()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "90.00"), Installment(2, "10.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("race-1", invoice)).Outcome);
+
+        // Allowed at the first fence, denied right before the save: nothing is written and no audit is queued.
+        var withdrawn = await run.CancelAsync("race-withdrawn", Cancellation(invoice),
+            authority: [PermissionDecision.Allowed, PermissionDecision.Denied]);
+        Assert.Equal(CommandOutcome.Denied, withdrawn.Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellations"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = 'finance.invoice-open-items.cancelled.v1'"));
+
+        // Two cancellations of the same invoice under different ids at once: exactly one reverses it.
+        var results = await Task.WhenAll(
+            run.CancelAsync("race-a", Cancellation(invoice)),
+            run.CancelAsync("race-b", Cancellation(invoice)));
+        Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
+        Assert.Single(results, result => result.Outcome is CommandOutcome.VersionConflict
+            || result.Issues.Any(issue => issue.Code is FinanceInvoiceOpenItemCancellationService.AlreadyCancelledCode
+                or FinanceInvoiceOpenItemCancellationService.NotAdmittedCode
+                or FinanceInvoiceOpenItemCancellationService.VersionMismatchCode));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellations"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellationItems"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3 AND Version = 2",
+            ("@id", invoice.InvoiceId)));
+    }
+
+    [SqlServerFact]
+    public async Task A_cancellation_that_reads_the_open_items_after_a_concurrent_commit_is_refused_as_already_cancelled()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "7.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("late-read-1", invoice)).Outcome);
+        // The receipt check saw no receipt, then the winner committed: the loser reads items that are already cancelled.
+        // Without its receipt in view that state is reproduced by a status-only row; the refusal must be the stable code.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE finance.OpenItems SET Status = 3, OutstandingAmountText = '0' WHERE Id = @id; SELECT @@ROWCOUNT",
+            ("@id", invoice.Installments[0].OpenItemId)));
+
+        var loser = await run.CancelAsync("late-read-2", Cancellation(invoice));
+        Assert.Equal(CommandOutcome.ValidationFailed, loser.Outcome);
+        Assert.Contains(loser.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemCancellationService.AlreadyCancelledCode);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellations"));
+    }
+
+    [SqlServerFact]
+    public async Task The_rollback_refuses_while_a_cancelled_open_item_is_stored_even_without_its_receipt()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "5.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("status-only", invoice)).Outcome);
+        // A stray status-3 row (no cancellation receipt) would break the narrowed status check: the Down refuses first.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE finance.OpenItems SET Status = 3, OutstandingAmountText = '0' WHERE Id = @id; SELECT @@ROWCOUNT",
+            ("@id", invoice.Installments[0].OpenItemId)));
+
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.MigrateFinanceAsync(BeforeCancellations));
+        Assert.Equal(51051, refused.Number);
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') "
+            + "AND name IN (N'InvoiceCancellations', N'InvoiceCancellationItems')"));
+    }
+
     private static FinanceInvoiceOpenItemAdmissionV1 Invoice(FinanceInvoiceProducerV1 producer,
         params FinanceInvoiceInstallmentV1[] installments) =>
         new(Guid.NewGuid(), producer, Guid.NewGuid(), "invoice-v1", Party, Account, Lira, null, installments);
@@ -266,18 +360,25 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
                 new CommandMetadata($"f2b-admit-{key}"), invoice, CancellationToken.None);
         }
 
-        public async Task<FinanceInvoiceOpenItemCancellationResultV1> CancelAsync(string key,
+        public Task<FinanceInvoiceOpenItemCancellationResultV1> CancelAsync(string key,
             FinanceInvoiceOpenItemCancellationV1 cancellation, Guid? contextCompany = null,
-            PermissionDecision authority = PermissionDecision.Allowed, string actor = Actor)
+            PermissionDecision authority = PermissionDecision.Allowed, string actor = Actor) =>
+            CancelAsync(key, cancellation, [authority], contextCompany, actor);
+
+        /// <summary><paramref name="authority"/> answers each fence in turn; the last answer repeats.</summary>
+        public async Task<FinanceInvoiceOpenItemCancellationResultV1> CancelAsync(string key,
+            FinanceInvoiceOpenItemCancellationV1 cancellation, PermissionDecision[] authority,
+            Guid? contextCompany = null, string actor = Actor, Guid? company = null)
         {
-            var (companyContext, collector) = Scope(CompanyA);
+            var scopeCompany = company ?? CompanyA;
+            var (companyContext, collector) = Scope(scopeCompany);
             await using var dbContext = new FinanceDbContext(Options(companyContext, collector), companyContext);
             var service = new FinanceInvoiceOpenItemCancellationService(dbContext, companyContext,
-                new FixedCurrentUser(actor, CompanyA), new SyntheticCancellationAuthority(authority), collector,
+                new FixedCurrentUser(actor, scopeCompany), new SyntheticCancellationAuthority(authority), collector,
                 new FinanceAuditEnvelope("synthetic.finance.invoice-open-items.cancel", ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System);
             return await service.CancelAsync(
-                new FinanceContext(contextCompany ?? CompanyA, actor, $"f2b-{Guid.NewGuid():N}", null),
+                new FinanceContext(contextCompany ?? scopeCompany, actor, $"f2b-{Guid.NewGuid():N}", null),
                 new CommandMetadata($"f2b-{key}"), cancellation, CancellationToken.None);
         }
 
@@ -449,11 +550,14 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
     }
 
     /// <summary>SENTETIK: the host-owned cancellation authority answer. Not a grant.</summary>
-    private sealed class SyntheticCancellationAuthority(PermissionDecision decision)
+    private sealed class SyntheticCancellationAuthority(PermissionDecision[] decisions)
         : IFinanceInvoiceOpenItemCancellationAuthorityV1
     {
+        private int calls;
+
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceInvoiceProducerV1 producer,
-            Guid invoiceId, CancellationToken cancellationToken) => Task.FromResult(decision);
+            Guid invoiceId, CancellationToken cancellationToken) =>
+            Task.FromResult(decisions[Math.Min(calls++, decisions.Length - 1)]);
     }
 
     /// <summary>SENTETIK: the ledger read and amount authorities. Not a grant.</summary>

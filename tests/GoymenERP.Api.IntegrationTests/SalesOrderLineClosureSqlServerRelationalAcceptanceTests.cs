@@ -265,10 +265,79 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
         Assert.Single(reloaded.LineClosures);
     }
 
+    /// <summary>
+    /// Review finding: the line-bound history rows bind (CompanyId, DraftId, LineNo, LineId) to the line at that position. On a
+    /// two-line order a row that names line 1's position with line 2's identity passes the position-only foreign key but is
+    /// refused (547) by the line-identity foreign key in all three tables, while the matching row is stored; and the migration's
+    /// Up guard refuses (THROW 51234) while such a mismatched row exists (here planted with the new key disabled), repairing nothing.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_line_identity_foreign_keys_refuse_a_line_id_of_another_line_and_the_up_guard_refuses_a_mismatch()
+    {
+        await using var run = await Run.StartAsync();
+        SalesOrderDraft draft;
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            draft = (await scope.Store.StoreDraftAsync(run.SalesEnvelope("k-create"), Hash("k-create"),
+                documentNo => Draft(CompanyA, documentNo, "100", lines: 2))).Draft;
+        }
+
+        Assert.Equal(2, draft.Lines.Count);
+        var (first, second) = (draft.Lines[0], draft.Lines[1]);
+        Assert.NotEqual(first.LineNo, second.LineNo);
+        Assert.Equal(first.LineNo, await run.ScalarAsync<int>(
+            "SELECT [LineNo] FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [LineId] = @line", ("@id", draft.Id), ("@line", first.Id)));
+
+        const string closure = "INSERT INTO [sales].[DraftLineClosures] ([CompanyId],[DraftId],[LineId],[LineNo],[BasisRevision],[Ordered],"
+            + "[ShippedAtClosure],[CancelledRemainder],[Band],[ClosedBy],[ClosedAtUtc],[DraftVersion],[CorrelationId]) "
+            + "VALUES (@company, @id, @line, @lineNo, 0, N'100', N'90', N'10', 2, N'x', SYSDATETIMEOFFSET(), @version, N'x'); SELECT 1";
+        const string approval = "INSERT INTO [sales].[DraftOverDeliveryApprovals] ([CompanyId],[DraftId],[LineId],[LineNo],[ApprovalNo],"
+            + "[BasisRevision],[Ordered],[ApprovedShipped],[ApprovedBy],[ApprovedAtUtc],[DraftVersion],[CorrelationId]) "
+            + "VALUES (@company, @id, @line, @lineNo, 1, 0, N'100', N'102', N'x', SYSDATETIMEOFFSET(), @version, N'x'); SELECT 1";
+        const string change = "INSERT INTO [sales].[DraftRemainderChanges] ([CompanyId],[DraftId],[ChangeNo],[Revision],[LineNo],[LineId],[Kind],"
+            + "[OrderedQuantityText],[RequestedQuantity],[RequestedQuantityText],[Reason],[RequestedBy],[RequestedAtUtc],[LoadedQuantity],"
+            + "[ShippedQuantity],[DeliveredQuantity],[DraftVersion],[CorrelationId]) "
+            + "VALUES (@company, @id, 1, 0, @lineNo, @line, 1, N'100', NULL, NULL, N'x', N'x', SYSDATETIMEOFFSET(), 10, 10, 0, @version, N'x'); SELECT 1";
+        foreach (var (insert, table) in new[] { (closure, "DraftLineClosures"), (approval, "DraftOverDeliveryApprovals"), (change, "DraftRemainderChanges") })
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(insert,
+                ("@company", CompanyA), ("@id", draft.Id), ("@line", second.Id), ("@lineNo", first.LineNo), ("@version", 5L)));
+            Assert.Equal(547, refused.Number);
+            Assert.Contains($"FK_{table}_DraftLines_CompanyId_DraftId_LineNo_LineId", refused.Message, StringComparison.Ordinal);
+            Assert.Equal(0, await run.ScalarAsync<int>($"SELECT COUNT(*) FROM [sales].[{table}] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        }
+
+        // The matching pair is stored.
+        await run.ScalarAsync<int>(closure, ("@company", CompanyA), ("@id", draft.Id), ("@line", first.Id), ("@lineNo", first.LineNo), ("@version", 5L));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
+
+        // The Up guard passes over consistent rows, and refuses while a mismatched row exists (planted with the new key disabled).
+        var guard = Assert.IsType<SqlOperation>(new AddDraftLineIdentityForeignKeys().UpOperations[0]).Sql;
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+        const string key = "[FK_DraftLineClosures_DraftLines_CompanyId_DraftId_LineNo_LineId]";
+        await run.ScalarAsync<int>($"ALTER TABLE [sales].[DraftLineClosures] NOCHECK CONSTRAINT {key}; SELECT 1");
+        await run.ScalarAsync<int>(closure, ("@company", CompanyA), ("@id", draft.Id), ("@line", second.Id), ("@lineNo", first.LineNo), ("@version", 6L));
+        var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"));
+        Assert.Equal(51234, error.Number);
+        // The guard repairs nothing: both rows are still there as stored.
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(first.LineNo, await run.ScalarAsync<int>(
+            "SELECT [LineNo] FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id AND [LineId] = @line", ("@id", draft.Id), ("@line", second.Id)));
+
+        // Without the mismatched row the key is re-validated WITH CHECK and the guard passes again.
+        await run.ScalarAsync<int>("DELETE FROM [sales].[DraftLineClosures] WHERE [DraftId] = @id AND [LineId] = @line; SELECT 1",
+            ("@id", draft.Id), ("@line", second.Id));
+        await run.ScalarAsync<int>($"ALTER TABLE [sales].[DraftLineClosures] WITH CHECK CHECK CONSTRAINT {key}; SELECT 1");
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+    }
+
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A one-line draft (the given kg quantity) from SYNTHETIC owner snapshots in the approved kg unit: version 2.</summary>
-    private static SalesOrderDraft Draft(Guid company, string documentNo, string quantity)
+    /// <summary>
+    /// A draft of <paramref name="lines"/> lines (each the given kg quantity) from SYNTHETIC owner snapshots in the approved kg unit:
+    /// version 1 + lines (one line: version 2).
+    /// </summary>
+    private static SalesOrderDraft Draft(Guid company, string documentNo, string quantity, int lines = 1)
     {
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
@@ -276,8 +345,12 @@ public sealed class SalesOrderLineClosureSqlServerRelationalAcceptanceTests
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
-        draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, quantity,
-            decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), Day.AddDays(3)), T0);
+        for (var index = 0; index < lines; index++)
+        {
+            draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, quantity,
+                decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), Day.AddDays(3)), T0);
+        }
+
         return draft;
     }
 

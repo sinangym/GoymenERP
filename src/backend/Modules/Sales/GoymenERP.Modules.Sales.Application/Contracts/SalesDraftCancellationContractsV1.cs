@@ -84,14 +84,14 @@ public static class SalesCancellationImpactSourcesV1
     public const string ActiveAllocations = "inventory.active-allocations";
 
     /// <summary>
-    /// "bağlı satın alma" — the Purchasing owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (MOD-03); until it is
-    /// registered: no source.
+    /// "bağlı satın alma" — the Purchasing owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (MOD-03); registered by
+    /// the host on main (#998, with its recorder declaration), so the category is Present, None or Unreadable, never no source.
     /// </summary>
     public const string LinkedPurchasing = "purchasing.linked-orders";
 
     /// <summary>
-    /// "bağlı üretim" — the Production owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (S-1, U5-a); until it is
-    /// registered: no source.
+    /// "bağlı üretim" — the Production owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (S-1, U5-a); not on main
+    /// yet, so the category is no source until it is registered.
     /// </summary>
     public const string LinkedProduction = "manufacturing.linked-orders";
 
