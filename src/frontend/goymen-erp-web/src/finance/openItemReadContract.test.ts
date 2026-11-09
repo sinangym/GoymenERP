@@ -34,6 +34,13 @@ describe('FI04 open item decoder', () => {
     expect(decodeOpenItem(wire({ dueOn: null }), COMPANY)?.dueOn).toBeNull()
   })
 
+  it('accepts a cancelled item only with nothing outstanding (F2b)', () => {
+    expect(decodeOpenItem(wire({ status: 'Cancelled', outstandingAmount: visible('0.00') }), COMPANY)?.status)
+      .toBe('Cancelled')
+    expect(decodeOpenItem(wire({ status: 'Cancelled', outstandingAmount: visible('0.01') }), COMPANY)).toBeNull()
+    expect(decodeOpenItem(wire({ status: 'Cancelled', outstandingAmount: wire().initialAmount }), COMPANY)).toBeNull()
+  })
+
   it('keeps a withheld amount and status withheld: no zero, no Closed, no money', () => {
     const item = decodeOpenItem(metadataOnly(), COMPANY)
     expect(item?.status).toBeNull()

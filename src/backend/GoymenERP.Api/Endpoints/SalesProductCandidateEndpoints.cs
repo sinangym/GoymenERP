@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
@@ -80,6 +81,15 @@ public static class SalesProductCandidateEndpoints
             catch (ProductOperationException exception)
             {
                 if (exception.StatusCode == StatusCodes.Status403Forbidden
+                    || !await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
+                    return Problem(StatusCodes.Status403Forbidden);
+                return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
+            }
+            catch (SettingsPrerequisiteException exception)
+            {
+                // B-31: the owner's eligibility reads unit profiles from Settings and lets its refusal through; the same
+                // public answer the Purchasing picker gives, never an unmapped 500.
+                if (string.Equals(exception.Code, "settings_access_denied", StringComparison.Ordinal)
                     || !await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");

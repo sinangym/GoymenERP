@@ -103,6 +103,16 @@ describe('quote form', () => {
     })
   })
 
+  it('SAT-D132: a revision carries the quote\'s shown due terms and omits them when there are none', () => {
+    const terms = { instalments: [{ sequenceNo: 1, basis: 'OrderDate', daysAfter: 30, sharePercent: '100' }] }
+    const quote = decodeQuoteDetail(quoteDetail({}, { dueTermsDisclosure: 'Visible', dueTerms: terms }), QUOTE_ID)!
+    const values: PoolFormValues = { ...emptyPoolForm(LINE), businessDate: '2026-10-22', lines: quote.lines.map((line) => lineFromQuote(line)) }
+    const carried = validateQuoteRevision(values, '3', quote.dueTerms)
+    expect(carried.ok && carried.payload.dueTerms).toEqual(terms)
+    const none = validateQuoteRevision(values, '3', null)
+    expect(none.ok && Object.hasOwn(none.payload, 'dueTerms')).toBe(false)
+  })
+
   it('P1: a row whose price is withheld is never sent in a revision (it would erase the price)', () => {
     const withheld = decodeQuoteDetail(
       quoteDetail({}, { lines: [quoteLine({ unitPrice: null, priceUnitId: null, priceDisclosure: 'Withheld' })] }),

@@ -16,7 +16,7 @@ import {
 } from './orderAttempt'
 import { recallQuantityRevisionAttempt, rememberQuantityRevisionAttempt } from './pendingQuantityRevisions'
 import { buildQuantityRevisionRequest, quantityRowsFromDetail, type QuantityRevisionRow } from './quantityRevision'
-import { ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
+import { ORDER_DETAIL_TEXT as T, problemCodeText, reinstatementPendingText } from './salesText'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
 import { Button } from '../ui/Button'
@@ -228,7 +228,8 @@ function revisionNotice(attempt: RevisionAttempt, rows: readonly QuantityRevisio
               : attempt.failure === 'validation' ? text.validation
                 : text.unexpected
       const floor = attempt.failure === 'validation' ? floorText(attempt.problem?.errors ?? [], rows) : ''
-      return [base, codeText, blocked, floor].filter((part) => part !== null && part !== '').join(' ')
+      const pending = attempt.failure === 'validation' ? reinstatementPendingText(attempt.problem?.errors ?? []) : ''
+      return [base, codeText, blocked, floor, pending].filter((part) => part !== null && part !== '').join(' ')
     }
     default: return null
   }

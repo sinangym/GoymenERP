@@ -42,7 +42,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             Assert.Equal(2, history[0].Inputs.Count);
 
             // Approval counts the revision's step; the order snapshots the revised content.
-            var approved = await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Actor, At, Metadata(run));
+            var approved = await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             Assert.Equal(3L, approved.Version);
             var orderId = Guid.NewGuid();
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));

@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Requests;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
@@ -13,6 +14,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// write that breaks the kind/identity pairing or uses an undefined kind; the write guard never lets a stored source move;
 /// company B sees nothing; and the migration's Down guard (51167) refuses while a sourced line exists. Purchasing never reads
 /// a Sales, Manufacturing or Inventory table: the identities are SENTETIK opaque references. SENTETIK owners.
+/// A1-2b (SAT-D219, SAT-D220): a NEW line can no longer record a Sales source (the service refuses it before the store; the
+/// domain's <see cref="PurchaseRequestLineSource.ForNewLine"/> refuses it too). The Sales line below is built through
+/// <see cref="PurchaseRequestLineSource.Of"/> as a row recorded before A1-2b, and proves such a row stays stored and readable.
 /// </summary>
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
@@ -24,6 +28,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task A_sourced_request_stores_its_line_sources_in_one_save_audits_them_and_rebuilds_them_and_the_check_holds_the_pairing()
     {
+        // A1-2b: the new-line path refuses Sales; the line below stands for a row recorded before A1-2b.
+        Assert.Equal(PurchasingRuleCodes.RequestSourceSalesUnavailable, Assert.Throws<PurchasingRuleException>(() =>
+            PurchaseRequestLineSource.ForNewLine(PurchaseRequestSourceKind.Sales, SourceSalesOrder, SourceSalesOrderLine)).Code);
         await using Run run = await Run.StartAsync();
         Owners owners = Owners.For(CompanyA);
         PurchaseRequest built = PurchaseRequest.Create(Guid.NewGuid(), owners.Company, run.Actor, T0);
