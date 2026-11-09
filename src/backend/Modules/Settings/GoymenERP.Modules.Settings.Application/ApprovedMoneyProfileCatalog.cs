@@ -3,7 +3,9 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Settings.Application;
 
 /// <summary>
-/// One approved, immutable money-profile version, the operations it answers and the decision it comes from.
+/// One approved money-profile version, the operations it answers and the decision it comes from. A version's answer for an
+/// operation it already lists never changes (a changed value is a new version); an approved decision may add a NEW operation to
+/// it (A2a-1b: <c>purchasing.order.v1</c>, ALS-D69), which leaves every existing answer as it was.
 /// <paramref name="UnitPriceScales"/> (A2a-1b) is the unit-price decimals approved PER OPERATION, keyed by an operation listed in
 /// <paramref name="Operations"/>; an operation without a key has no approved unit-price scale and is answered with
 /// <see cref="MoneyProfileV1.UnitPriceScale"/> null, never a guessed one.
@@ -32,7 +34,7 @@ public sealed record ApprovedMoneyProfileEntry(
 /// operations listed on it: the consuming module's technical mapping (Business #254 5654539215),
 /// published by its owner — Finance <c>finance.manual-bank-receipt.v1</c>, Sales
 /// <c>sales.order-draft.v1</c>, Accounting <c>accounting.journal-amount.v1</c> (ACC-V0a: a journal amount is a
-/// final TRY amount, Ö2 "nihai tutar 2"), Purchasing <c>purchasing.order.v1</c> (A2a-1b: ALS-D63's narrow
+/// final TRY amount, Ö2 "nihai tutar 2"), Purchasing <c>purchasing.order.v1</c> (A2a-1b: ALS-D69, EK11, within ALS-D63's narrow
 /// Settings exception, Sinan #66 6704170096). Settings references none of them; an integration test pins these
 /// literals to the owners' constants.
 /// </para>
@@ -50,7 +52,8 @@ public sealed class ApprovedMoneyProfileCatalog
     public const int MaximumUnitPriceScale = 28;
 
     private const string PurchasingSource =
-        "purchasing.order.v1 and its unit-price scale 4: ALS-D63 narrow exception (SINAN_KARARLARI_2026-11-02_ALIS_EK9.md), Sinan #66 6704170096";
+        "purchasing.order.v1: ALS-D69 and its unit-price scale 4: ALS-D72 (SINAN_KARARLARI_2026-11-07_ALIS_EK11.md), "
+        + "within ALS-D63's narrow Settings exception (SINAN_KARARLARI_2026-11-02_ALIS_EK9.md), Sinan #66 6704170096";
 
     // Declared before the entries that use it: static initializers run in textual order.
     private static readonly IReadOnlyDictionary<string, int> PurchasingUnitPriceScales =
@@ -63,13 +66,13 @@ public sealed class ApprovedMoneyProfileCatalog
     /// 2026-09-18 (#66 5722637822);</item>
     /// <item>scale 2: Ö2 "TL/USD/EUR nihai tutar 2" — the final amount;</item>
     /// <item>unit-price scale: only for the Purchasing owner's <c>purchasing.order.v1</c>, 4 — Sinan's answer
-    /// "birim fiyat 4 ondalık" for the purchasing order (A2a-1b, under ALS-D63's narrow exception). Ö2's general
+    /// "birim fiyat 4 ondalık" for the purchasing order (ALS-D72, EK11; A2a-1b, under ALS-D63's narrow exception). Ö2's general
     /// "birim fiyat gerektiğinde 6 ondalığa kadar" is NOT published for the other operations: no owner decision
     /// narrows it for them, so they get no unit-price scale (null);</item>
     /// <item>effective from 2026-09-18 with no end: Ö2, "profil geçerliliği açık onaydan itibaren
     /// sürümlü ve bitişsizse açıkça süresiz";</item>
     /// <item>operations: the Accounting, Finance, Sales and Purchasing owners' published keys (see the class
-    /// remarks); <c>purchasing.order.v1</c> since A2a-1b (ALS-D63 narrow exception, Sinan #66 6704170096);</item>
+    /// remarks); <c>purchasing.order.v1</c> since A2a-1b (ALS-D69, unit-price scale ALS-D72 — EK11 — within ALS-D63's narrow exception, Sinan #66 6704170096);</item>
     /// <item>profile id and version: technical, the implementer's work (Ö2); UUIDv5 name
     /// "money-profile:10000000-0000-0000-0000-000000000001:TRY:v1" in the namespace documented on
     /// <see cref="SettingsCurrencyIdentitiesV1"/>.</item>
@@ -101,7 +104,7 @@ public sealed class ApprovedMoneyProfileCatalog
     /// <summary>
     /// GSP/TRY, version 1: scale 2 (final amount, Ö2) as GDC's, as its own per-company version, but
     /// answering ONLY the Sales owner's <c>sales.order-draft.v1</c> and, since A2a-1b, the Purchasing owner's
-    /// <c>purchasing.order.v1</c> (unit-price scale 4, as GDC's; ALS-D63 narrow exception). SAT-D18 (Sinan, 2026-10-26,
+    /// <c>purchasing.order.v1</c> (unit-price scale 4, as GDC's; ALS-D69 and ALS-D72, EK11, within ALS-D63's narrow exception). SAT-D18 (Sinan, 2026-10-26,
     /// <c>docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md</c>): Accounting and Finance operations
     /// for GSP/GIN need a separate decision, so they are not listed and stay unavailable. Effective from
     /// 2026-10-26 with no end. Profile id: UUIDv5 name "money-profile:10000000-0000-0000-0000-000000000002:TRY:v1".

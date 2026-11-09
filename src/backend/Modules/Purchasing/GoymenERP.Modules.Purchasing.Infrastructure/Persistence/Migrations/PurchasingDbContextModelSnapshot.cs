@@ -504,6 +504,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("SupplierPartyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("UnitPriceScale")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -533,6 +536,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2, 3)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseOrders_UnitPriceScale", "[UnitPriceScale] IS NULL OR ([CurrencyId] IS NOT NULL AND [UnitPriceScale] >= 0 AND [UnitPriceScale] <= 28)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Version", "[Version] >= 1");
                         });

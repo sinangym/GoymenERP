@@ -208,9 +208,9 @@ The approved profiles: `ApprovedMoneyProfileCatalog.GdcTurkishLiraV1`, and since
 |---|---|---|
 | Company | GDC `10000000-0000-0000-0000-000000000001` | Ö2 "ilk kabul profili GDC/TRY" |
 | Currency | TRY `9e60dcf0-f4bd-5bca-b464-f9a2db98e31a` (`SettingsCurrencyIdentitiesV1.TurkishLira`) | Ö2; id is technical |
-| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`, `purchasing.order.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2"); the Purchasing owner's key since A2a-1b (ALS-D63 narrow exception, Sinan #66 6704170096) |
+| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`, `purchasing.order.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2"); the Purchasing owner's key since A2a-1b (ALS-D69, EK11, within ALS-D63's narrow exception; Sinan #66 6704170096) |
 | Scale | 2 (final amount) | Ö2 "nihai tutar 2" |
-| Unit-price scale | 4, for `purchasing.order.v1` only; none (null) for every other operation | Sinan, A2a-1b: purchasing unit price "4 ondalık" |
+| Unit-price scale | 4, for `purchasing.order.v1` only; none (null) for every other operation | ALS-D72 (EK11): purchasing unit price "4 ondalık" |
 | Profile | `7f836492-a54f-512f-a8f4-5f556b3f0f9d`, version 1 | technical (Ö2) |
 | Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 |
 
@@ -226,9 +226,15 @@ leaves the Accounting (`accounting.journal-amount.v1`) and Finance
 separate decision, so those keys answer `settings_provider_unavailable` there: the operation
 check is per company. GIN stays invoice-closed (DEC-ORG-005).
 
+**Purchasing on GSP and GIN (ALS-D69).** ALS-D69 approves the purchasing order key "GDC: TRY; GSP/GIN
+ayrı, Satış'taki gibi". It is read through SAT-D18's approved per-company GSP/GIN TRY profiles: those
+profiles (same ids, versions, scale and windows) also answer `purchasing.order.v1`, with the unit-price
+scale 4 of ALS-D72. No new profile or company-wide default is created, and the Accounting/Finance keys
+stay unavailable for GSP/GIN.
+
 | Company | Profile | Operations | Effective from |
 |---|---|---|---|
-| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft | 2026-09-18 |
+| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft, `purchasing.order.v1` (A2a-1b) | 2026-09-18 |
 | GSP | `5b863ed2-e21a-5c43-b219-fa113dcc50b3` | `sales.order-draft.v1`, `purchasing.order.v1` (A2a-1b) | 2026-10-26 |
 | GIN | `d78eee0d-4940-52e3-bd80-3b5ebdb6d760` | `sales.order-draft.v1`, `purchasing.order.v1` (A2a-1b) | 2026-10-26 |
 
@@ -239,7 +245,7 @@ literals to `FinanceMoneyOperations.ManualBankReceiptV1` and
 `SalesMoneyOperations.OrderDraftV1`. The profile answers for the operation asked, so
 consumers' exact-operation check holds.
 
-**Unit-price scale (A2a-1b).** `MoneyProfileV1.UnitPriceScale` (optional, additive; null by
+**Unit-price scale (A2a-1b; ALS-D72, EK11).** `MoneyProfileV1.UnitPriceScale` (optional, additive; null by
 default) carries the unit-price decimals approved for the operation asked, from the entry's
 per-operation `UnitPriceScales`. Only `purchasing.order.v1` has one (4, on GDC, GSP and GIN);
 every other operation answers null, because Ö2's general "birim fiyat gerektiğinde 6 ondalığa

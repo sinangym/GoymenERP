@@ -385,8 +385,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A2a-1 (plan TEK-01/API-20): +4 order line price SQL facts (one save + audit + rebuild + approval + the price/money checks,
             // unpriced columns null + priced technical line refused, company isolation, Down refusal 51169), kept ordinal-sorted
             // (ae6ee9f7… -> 2085f158…); +1 explicit zero price fact (Sinan #66 6704170096; 2085f158… -> c3fa56d7…).
+            // A2a-1c (ALS-D72): +2 unit-price scale SQL facts (four-decimal price stored + rebuilt + the scale check, Down refusal
+            // 51170), kept ordinal-sorted (c3fa56d7… -> dab7b47e…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "c3fa56d75efb7e365f4c472a1f96f6aaebb91d9171416ced71900a4beae0f0de",
+                "dab7b47e83780ff4bb2f2a4efbed702f7ade883913ec3103354b9806457ba69d",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -631,9 +633,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A2a-1 (plan TEK-01/API-20): the order's money snapshot columns and their check, the line's price
             // columns (precisions) and their check (a unit price ≥ 0: an explicit 0 is a price); the write guard's allow-list is
             // unchanged (prices never move); filters and keys unchanged.
+            // Re-measured for A2a-1c (ALS-D72): the order's nullable UnitPriceScale and its own check (beside a currency, 0..28);
+            // the money check, the write guard's allow-list, filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "8112bf51baf7536d49baf3ce3f5725815da9cd107e548955db94e2d595e1adbd",
+                "a46de0735f830dea7ac40ecabae8709362382a92079db9c2a1087d6f08d70189",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1562,10 +1566,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // through the domain; cancelled orders keep counting in the request line's Σ-shares); same token count.
                 // Re-fingerprinted for A2a-1: the order's money snapshot and the line prices written once, audited and rebuilt
                 // through the domain; same token count.
+                // Re-fingerprinted for A2a-1c: the order's unit-price scale written once with the money snapshot, audited and
+                // rebuilt through the domain; same SqlClient use.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "5f415e9dc8179a42806b128eee290227371cb152df77a38ef56dc247538b9e5b",
+                        "c14c287c891c13e60188b05179bc53f07cf1d96af9b0fa7ef188aa3d94abd588",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2257,6 +2263,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
                     new(
                         "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // A2a-1c (ALS-D72): one reviewed statement, before every drop. Down refuses (51170, used by no other migration)
+                // while any order carries a unit-price scale, which dropping the column would leave with unit prices wider than
+                // the amount scale the domain rebuilds them with. Up only adds a nullable column and its check.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261107131321_AddPurchaseOrderUnitPriceScale.cs"] =
+                    new(
+                        "d08f90d904a061f55578696a5c233fca4a4cf3015b73714d69dab4c47b8a84ef",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

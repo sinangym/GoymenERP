@@ -68,7 +68,9 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
 /// The order header (the commitment towards one supplier); only Status, Version and UpdatedAtUtc move after the first commit,
 /// and A1-3's cancellation facts (CancelledBy, CancelledAtUtc, CancellationReason) with the Approved → Cancelled move (No.161 §2).
 /// A2a-1 (TEK-01): the order's currency as the Settings money profile snapshot (CurrencyId, CurrencyCode, MoneyProfileId,
-/// MoneyProfileVersion, MoneyScale) — all five or none, written once with the order.
+/// MoneyProfileVersion, MoneyScale) — all five or none, written once with the order. A2a-1c (ALS-D72): UnitPriceScale, the profile's
+/// unit-price scale for the purchasing order operation — only with a currency, null for an order recorded before A2a-1c or a profile
+/// that answered none.
 /// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
@@ -93,6 +95,7 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
     public Guid? MoneyProfileId { get; set; }
     public long? MoneyProfileVersion { get; set; }
     public int? MoneyScale { get; set; }
+    public int? UnitPriceScale { get; set; }
 }
 
 /// <summary>
