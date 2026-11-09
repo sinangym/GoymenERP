@@ -827,7 +827,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
         "CancelAsync",
-    ): "ee5be34f68ce948bbf89e402e54b448d2981afda8d044e0c417f4dd0d952abaa",
+    ): "9521c8b292b6606115df30033224d072d870051cf7ebc21aaa3d7ebb9a5fff69",
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
         "AdmitAsync",
