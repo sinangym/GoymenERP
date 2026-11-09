@@ -101,4 +101,43 @@ public sealed partial class SalesDraftServiceTests
 
         Assert.Equal((status, code), (refused.Status, refused.Code));
     }
+
+    [Fact]
+    public async Task Print_pricing_carries_the_calculators_line_vat_withholding_and_document_totals_at_the_current_revision()
+    {
+        // SAT-D11 / SAT-D75 (MOD-07): the PDF prints the ONE totals calculator's answer — never a figure of its own.
+        var world = new World { LineTaxes = new FakeLineTaxes() };
+        var created = (await world.Service().CreateDraftAsync(PricedRequest("10", "100"), Metadata("k-print-tax-1"))).Detail;
+        var calculated = await world.Service().GetDraftTotalsAsync(created.Draft.Id);
+
+        var pricing = await world.Service().GetOrderPrintPricingAsync(created.Draft.Id);
+
+        var totals = pricing.Totals!;
+        Assert.Equal(created.Draft.Revision, totals.Revision);
+        // 10 kg × 100 = 1000.00; VAT 20 % = 200.00; withheld 50 % of the rounded VAT = 100.00; gross 1200.00; payable 1100.00.
+        Assert.Equal(("Computed", "1000.00", "Computed", "200.00", "100.00", "1200.00", "1100.00"), (totals.Document.State,
+            totals.Document.NetAmount, totals.Document.TaxState, totals.Document.VatAmount, totals.Document.WithheldVatAmount,
+            totals.Document.GrossAmount, totals.Document.PayableAmount));
+        Assert.Equal(calculated.Totals, totals.Document);
+        var line = Assert.Single(totals.Lines);
+        Assert.Equal(Assert.Single(calculated.Lines), line.Total);
+        Assert.Equal(("50", (string?)null, (string?)null), (line.WithholdingPercent, line.ExemptionCode, line.WithholdingCode));
+    }
+
+    [Fact]
+    public async Task Print_pricing_of_a_line_without_a_tax_source_has_its_net_and_no_tax_and_the_withheld_marker_has_no_totals()
+    {
+        var world = new World { LineTaxes = new FakeLineTaxes { Defaults = [] } };
+        var created = (await world.Service().CreateDraftAsync(PricedRequest("10", "100"), Metadata("k-print-tax-2"))).Detail;
+
+        var totals = (await world.Service().GetOrderPrintPricingAsync(created.Draft.Id)).Totals!;
+
+        Assert.Equal(("1000.00", "NoSource", (string?)null, (string?)null, 1), (totals.Document.NetAmount, totals.Document.TaxState,
+            totals.Document.VatAmount, totals.Document.PayableAmount, totals.Document.TaxUnavailableLineCount));
+        var line = Assert.Single(totals.Lines);
+        Assert.Equal(("1000.00", (string?)null, (string?)null), (line.Total.NetAmount, line.Total.VatAmount, line.WithholdingPercent));
+
+        world.Authority.Denied.Add(PriceReadPermission);
+        Assert.Null((await world.Service().GetOrderPrintPricingAsync(created.Draft.Id)).Totals);
+    }
 }
