@@ -33,6 +33,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
     internal const string CommandName = "finance.invoice-open-items.admit.v1";
     internal const string AlreadyAdmittedCode = "finance_invoice_already_admitted";
     internal const string AdmissionIdentityConflictCode = "finance_invoice_admission_identity_conflict";
+    internal const string AlreadyCancelledCode = FinanceInvoiceOpenItemCancellationService.AlreadyCancelledCode;
     private const int TokenMaximumLength = 128;
     private const string EntityType = "Finance.InvoiceOpenItemAdmission";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -107,6 +108,12 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
             return Refused(context, CommandOutcome.ValidationFailed,
                 new ValidationIssue("invoiceId", AlreadyAdmittedCode));
         }
+        // F2b: a cancelled invoice is closed; a late or resent admission is not told it is admitted (re-issue instead).
+        if (existing.Any(row => row.Status == FinanceOpenItemStatuses.Cancelled))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed,
+                new ValidationIssue("invoiceId", AlreadyCancelledCode));
+        }
 
         var now = timeProvider.GetUtcNow();
         if (!reused)
@@ -165,13 +172,15 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
             AdmittedAtUtc = now,
         };
         dbContext.OpenItemSourceBatches.Add(receipt);
-        Audit(context, metadata, invoice, kind, reused);
-        // The authority is measured again right before the save: a grant withdrawn meanwhile writes nothing.
+        // The authority is measured again right before the save: a grant withdrawn meanwhile writes nothing, and no
+        // audit event is queued for it.
         if (await FenceAsync(context, invoice, cancellationToken) is { } late)
         {
             dbContext.ChangeTracker.Clear();
             return late;
         }
+
+        Audit(context, metadata, invoice, kind, reused);
 
         try
         {
