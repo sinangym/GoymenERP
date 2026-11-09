@@ -276,6 +276,25 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
     }
 
     [SqlServerFact]
+    public async Task A_cancellation_that_reads_the_open_items_after_a_concurrent_commit_is_refused_as_already_cancelled()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "7.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("late-read-1", invoice)).Outcome);
+        // The receipt check saw no receipt, then the winner committed: the loser reads items that are already cancelled.
+        // Without its receipt in view that state is reproduced by a status-only row; the refusal must be the stable code.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE finance.OpenItems SET Status = 3, OutstandingAmountText = '0' WHERE Id = @id; SELECT @@ROWCOUNT",
+            ("@id", invoice.Installments[0].OpenItemId)));
+
+        var loser = await run.CancelAsync("late-read-2", Cancellation(invoice));
+        Assert.Equal(CommandOutcome.ValidationFailed, loser.Outcome);
+        Assert.Contains(loser.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemCancellationService.AlreadyCancelledCode);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellations"));
+    }
+
+    [SqlServerFact]
     public async Task The_rollback_refuses_while_a_cancelled_open_item_is_stored_even_without_its_receipt()
     {
         await using var run = await Run.StartAsync();

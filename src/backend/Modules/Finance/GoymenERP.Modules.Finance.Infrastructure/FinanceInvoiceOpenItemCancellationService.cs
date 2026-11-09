@@ -92,6 +92,13 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
         {
             return Refused(context, CommandOutcome.ValidationFailed, new ValidationIssue("invoiceId", NotAdmittedCode));
         }
+        if (items.Any(row => row.Status == FinanceOpenItemStatuses.Cancelled))
+        {
+            // A concurrent cancellation committed between the receipt check above and this read: the receipt and the
+            // status change are one transaction, so this is the same already-cancelled refusal, not an unknown shape.
+            return Refused(context, CommandOutcome.ValidationFailed,
+                new ValidationIssue("invoiceId", AlreadyCancelledCode));
+        }
         if (items.Any(row => row.SourceVersion != cancellation.InvoiceVersion))
         {
             return Refused(context, CommandOutcome.ValidationFailed,
