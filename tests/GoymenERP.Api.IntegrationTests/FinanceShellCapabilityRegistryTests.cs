@@ -39,6 +39,8 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.official-invoice-import.upload", "F-02-OFFICIAL-INVOICE-UPLOAD", null),
                 ("finance.open-items.detail", "F-03-OPEN-ITEM-DETAIL", null),
                 ("finance.open-items.list", "F-03-OPEN-ITEMS", null),
+                ("finance.party-ledger.accounting", "M-03", null),
+                ("finance.party-ledger.cari", "C-04", null),
                 ("finance.receipts.detail", "F-02-DETAIL", null),
                 ("finance.receipts.draft", "F-02-NEW", null),
                 ("finance.receipts.list", "F-02", null),
@@ -68,7 +70,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(21, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(23, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]
