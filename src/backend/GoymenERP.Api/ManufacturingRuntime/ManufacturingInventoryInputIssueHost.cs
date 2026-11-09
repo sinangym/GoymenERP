@@ -25,7 +25,8 @@ internal sealed class ManufacturingInventoryInputIssueHost(
     ICompanyContext companyContext,
     IErpAuthorityRevalidationService authority,
     ISettingsPrerequisiteProvider settings,
-    Func<ManufacturingInventoryIssueStage, CancellationToken, Task>? observer = null)
+    Func<ManufacturingInventoryIssueStage, CancellationToken, Task>? observer = null,
+    IInventoryLabelDetailsV1? labelDetails = null)
     : IManufacturingInventoryInputIssuePortV1
 {
     async Task<ManufacturingInventoryInputIssuePortResultV1> IManufacturingInventoryInputIssuePortV1.IssueAsync(
@@ -105,6 +106,16 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                     ManufacturingInventoryInputIssueHostCodes.IncompleteRealization);
             }
 
+            // U3-a (URT-D21, API-21): an input allocated at the plan's approval is issued from its own allocation.
+            // The label is revalidated at the version Inventory holds now: another plan's or a sale's allocation of the
+            // same label (URT-D3) moves it after the order froze its snapshot. A replayed fact keeps the frozen version.
+            var allocation = await orders.FindPlanInputAllocationAsync(stored.PlanId, command.ParentLabelId,
+                cancellationToken);
+            if (allocation is not null && manufacturingOutcome == ManufacturingWriteOutcome.Recorded)
+            {
+                expectedLabelVersion = await CurrentLabelVersionAsync(command.ParentLabelId, cancellationToken);
+            }
+
             var inventoryMetadata = InventoryMetadata(metadata, companyId, command);
             var request = new InventoryManufacturingInputIssueRequestV1(
                 companyId,
@@ -115,7 +126,11 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 expectedLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
                 command.Quantity.Value.ToString("0.###", CultureInfo.InvariantCulture),
-                command.OccurredAtUtc);
+                command.OccurredAtUtc)
+            {
+                AllocationId = allocation?.AllocationId,
+                PlanId = allocation is null ? null : stored.PlanId,
+            };
             var connection = manufacturing.Database.GetDbConnection();
             var databaseTransaction = transaction.GetDbTransaction();
             await using var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
@@ -222,6 +237,50 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 manufacturing.ChangeTracker.Clear();
             }
         }
+    }
+
+    private async Task<long> CurrentLabelVersionAsync(Guid labelId, CancellationToken cancellationToken)
+    {
+        if (labelDetails is null)
+        {
+            throw InventoryManufacturingRealizationException.Refused(StatusCodes.Status503ServiceUnavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        InventoryLabelDetailV1 detail;
+        try
+        {
+            detail = await labelDetails.GetAsync(labelId, cancellationToken);
+        }
+        catch (InventoryLabelDetailException exception) when (exception.StatusCode is 401 or 403)
+        {
+            throw new UnauthorizedAccessException(exception.Code, exception);
+        }
+        catch (InventoryLabelDetailException exception) when (exception.StatusCode == 404)
+        {
+            throw InventoryManufacturingRealizationException.Refused(StatusCodes.Status404NotFound,
+                InventoryManufacturingRealizationCodesV1.InvalidReference);
+        }
+        catch (InventoryLabelDetailException exception) when (exception.StatusCode == 409)
+        {
+            throw InventoryManufacturingRealizationException.Refused(StatusCodes.Status409Conflict,
+                InventoryManufacturingRealizationCodesV1.LabelVersionConflict);
+        }
+        catch (InventoryLabelDetailException)
+        {
+            throw InventoryManufacturingRealizationException.Refused(StatusCodes.Status503ServiceUnavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        if (detail?.Identity?.LabelId != labelId
+            || !long.TryParse(detail.LabelVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+            || version < 1)
+        {
+            throw InventoryManufacturingRealizationException.Refused(StatusCodes.Status503ServiceUnavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        return version;
     }
 
     private Guid RequireCompany()

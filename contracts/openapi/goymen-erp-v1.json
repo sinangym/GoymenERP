@@ -62183,7 +62183,10 @@
             },
             "x-erp-problem-codes": [
               "idempotency_conflict",
+              "inventory_label_detail_read_conflict",
               "inventory_label_version_conflict",
+              "inventory_manufacturing_allocation_insufficient_free_stock",
+              "inventory_manufacturing_allocation_owner_mismatch",
               "inventory_manufacturing_input_return_exceeds_issued",
               "inventory_manufacturing_output_label_already_registered",
               "inventory_manufacturing_output_lot_or_label_conflict",
@@ -62198,6 +62201,8 @@
               "manufacturing_concurrent_change",
               "manufacturing_fact_id_conflict",
               "manufacturing_order_id_conflict",
+              "manufacturing_plan_allocation_label_identity_changed",
+              "manufacturing_plan_allocation_label_not_found",
               "manufacturing_plan_id_conflict",
               "manufacturing_version_conflict"
             ]
@@ -64935,6 +64940,8 @@
             },
             "x-erp-problem-codes": [
               "idempotency_conflict",
+              "inventory_manufacturing_allocation_exceeded",
+              "inventory_manufacturing_allocation_not_usable",
               "inventory_manufacturing_input_return_exceeds_issued",
               "inventory_manufacturing_output_label_already_registered",
               "inventory_manufacturing_output_lot_or_label_conflict",

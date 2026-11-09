@@ -12,6 +12,7 @@ using GoymenERP.Api.Contracts;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Http;
@@ -3286,8 +3287,15 @@ public sealed partial class OpenApiContractGenerationTests
                     "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
             // Üretim U2-a: the approval reads each roll's current label for the slitting gate (Inventory's 409s join).
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
+            // Üretim U3-a (URT-D21, URT-D3): the approval allocates the inputs in Inventory at the label version read
+            // from the label detail, so the allocation's and that read's refusals join.
             ["ApproveManufacturingPlanV1:409"] =
-                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
+                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict",
+                    InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock,
+                    InventoryManufacturingRealizationCodesV1.AllocationOwnerMismatch,
+                    InventoryLabelDetailCodesV1.ReadConflict,
+                    ManufacturingPlanAllocationCodesV1.LabelNotFound,
+                    ManufacturingPlanAllocationCodesV1.LabelIdentityChanged],
             // Üretim U2-d (URT-D2): the preparer of the current version may not approve or reject it.
             ["ApproveManufacturingPlanV1:422"] = [.. ManufacturingUnprocessableCodes, "manufacturing_plan_self_approval"],
             // Üretim U2-a (URT-D2, API-10/11): the rejection and the cancellation add their two lifecycle refusals.
@@ -3305,7 +3313,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CreateManufacturingOrderV1:422"] = [.. ManufacturingUnprocessableCodes, "manufacturing_plan_order_exists"],
             ["IssueManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
-            ["IssueManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
+            // Üretim U3-a (API-21): an issue from its plan allocation meets the allocation's own refusals too.
+            ["IssueManufacturingInputV1:409"] =
+                [.. ManufacturingInventoryRealizationConflictCodes,
+                    InventoryManufacturingRealizationCodesV1.AllocationNotUsable,
+                    InventoryManufacturingRealizationCodesV1.AllocationExceeded],
             ["IssueManufacturingInputV1:422"] = ManufacturingUnprocessableCodes,
             ["ReturnManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
             ["ReturnManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
