@@ -43,9 +43,11 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             o1.AddLine(o1.Version, general1, Product, KgUnit, Kg(100m), reqLine1, T0);
             o1.AddLine(o1.Version, Guid.NewGuid(), Product, KgUnit, Kg(40m), reqLine2, T0);
             o1.AddLine(o1.Version, Guid.NewGuid(), Product, KgUnit, Kg(15m), reqOther, T0);
-            o1.BreakDown(o1.Version, general1, techLine, Product, Kg(25m), T0);
             approvedOrder = (await s.Store.StoreOrderAsync(run.Envelope("sl-o1"), Hash("sl-o1"), a.Account, Day, () => o1, VersionsOf(o1))).Order.Order.Id;
             await ApproveOrderAsync(run, s, approvedOrder, "sl-o1-approve");
+            await s.Store.MutateOrderAsync(run.Envelope("sl-o1-breakdown"), Hash("sl-o1-breakdown"), "purchasing.purchase-order.break-down.v1", approvedOrder,
+                (order, now) => order.BreakDown(order.Version, general1, techLine, Product, Kg(25m), now),
+                new PurchasingMutationAudit("purchasing.purchase-order.break-down.v1", "Update", "SENTETIK teknik kırılım"));
 
             // Draft: never listed.
             PurchaseOrder o2 = Order(a, requestId, reqLine1, 10m);
