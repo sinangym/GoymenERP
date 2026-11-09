@@ -31,7 +31,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// create answers today with the real owners — the first owner that cannot answer refuses, and
 /// nothing is stored. Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
+public sealed partial class SalesDraftApiSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -738,7 +738,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             await command.ExecuteNonQueryAsync();
         }
 
-        private async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+        public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();

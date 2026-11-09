@@ -163,13 +163,35 @@ export const PLAN_DETAIL_TEXT = {
   createOrder: 'Üretim emri oluştur',
   approvedReadOnly: 'Onaylı plan bu ekranda salt okunurdur.',
   draftReadOnly: 'Taslak plan bu ekranda salt okunurdur.',
+  reject: 'Planı reddet',
+  rejecting: 'Plan reddediliyor…',
+  cancel: 'Planı iptal et',
+  cancelling: 'Plan iptal ediliyor…',
+  selfApprovalNote: 'Bu sürümü siz hazırladınız; hazırlayan onaylayamaz veya reddedemez. Kararı başka bir kullanıcı vermelidir.',
+  reasonLabel: 'Gerekçe',
+  reasonHint: 'En fazla 256 karakter; satır sonu kullanılamaz.',
+  reasonInvalid: 'Gerekçe boş olamaz, en fazla 256 karakter olabilir ve denetim karakteri içeremez.',
+  rejectConfirm: 'Reddi gönder',
+  cancelConfirm: 'İptali gönder',
+  dismiss: 'Vazgeç',
+  rejectedRefreshed: 'Plan reddedildi; taslak olarak kaldı ve güncel kayıt yeniden okundu.',
+  rejectedRefreshPending: 'Plan reddedildi; güncel kayıt henüz yeniden okunamadı.',
+  cancelledRefreshed: 'Plan iptal edildi ve güncel kayıt yeniden okundu.',
+  cancelledRefreshPending: 'Plan iptal edildi; güncel kayıt henüz yeniden okunamadı.',
+  cancelledReadOnly: 'İptal edilmiş plan bu ekranda salt okunurdur.',
+  cancelledBy: 'İptal gerekçesi',
+  rejectionsHeading: 'Önceki redler',
+  rejectionLine: (number: number, reason: string, planVersion: number) => `${number}. ret (sürüm ${planVersion}): ${reason}`,
 } as const
 
-type LifecycleKind = 'approve' | 'create-order'
+type LifecycleKind = 'approve' | 'create-order' | 'reject' | 'cancel'
 
 /** An approval's or order creation's refusal, in the user's terms (a revision's is `revisionFailureText`). */
 export function lifecycleFailureText(kind: LifecycleKind, status: number, code: string | null): string {
-  const subject = kind === 'approve' ? 'Plan onayı' : 'Üretim emri'
+  const subject = kind === 'approve' ? 'Plan onayı'
+    : kind === 'reject' ? 'Plan reddi'
+      : kind === 'cancel' ? 'Plan iptali'
+        : 'Üretim emri'
   if (status === 401 || status === 403) return `${subject} yetkiniz artık geçerli değil.`
   if (status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
   // U3-a (URT-D21, URT-D3): the approval allocates the plan's inputs in Inventory; its two common refusals are named.
@@ -184,10 +206,23 @@ export function lifecycleFailureText(kind: LifecycleKind, status: number, code: 
   if (status === 422 && code === 'manufacturing_plan_self_approval') {
     return 'Planın bu sürümünü siz hazırladınız; onayı başka bir kullanıcı vermelidir.'
   }
+  if (status === 422 && code === 'manufacturing_plan_has_order') {
+    return 'Bu plandan üretim emri açıldığı için plan iptal edilemez.'
+  }
+  if (status === 422 && code === 'manufacturing_plan_cancelled') {
+    return 'Plan zaten iptal edilmiş; yeni karar verilemez.'
+  }
+  if (status === 400 && (kind === 'reject' || kind === 'cancel')) {
+    return `${subject} gerekçesi veya sürümü sunucu tarafından kabul edilmedi.`
+  }
   if (status === 422) return `${subject} iş kuralı tarafından reddedildi (${code ?? 'rule_refusal'}).`
   return `${subject} uygulanmadı (${code ?? status}).`
 }
 
 export function lifecycleUnknownText(kind: LifecycleKind): string {
-  return `${kind === 'approve' ? 'Plan onayının' : 'Emir oluşturmanın'} sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.`
+  const subject = kind === 'approve' ? 'Plan onayının'
+    : kind === 'reject' ? 'Plan reddinin'
+      : kind === 'cancel' ? 'Plan iptalinin'
+        : 'Emir oluşturmanın'
+  return `${subject} sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.`
 }
