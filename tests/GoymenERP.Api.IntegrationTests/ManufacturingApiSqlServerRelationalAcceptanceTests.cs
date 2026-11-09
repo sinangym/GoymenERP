@@ -140,8 +140,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var kind = process.ToString();
             var workCenter = await run.WorkCenterOfKindAsync(CompanyA, kind);
+            // U3-a: each approval allocates 100 kg of the roll and moves its label version; each plan names the current one.
             var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-                [new PlannedInputRequestV1(roll.Id, "100", roll.Version)], null);
+                [new PlannedInputRequestV1(roll.Id, "100", await run.CurrentLabelVersionAsync(roll.Id))], null);
             var response = await client.PostWithKeyAsync($"{Base}/plans", request);
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
@@ -368,7 +369,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var roll = await run.StockedLabelAsync("SYN-MFG-PLAN-READ");
 
         var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-            [new PlannedInputRequestV1(roll.Id, "1000.250", roll.Version)], new TargetRequestV1("GoodOutputMass", "900"));
+            [new PlannedInputRequestV1(roll.Id, "1000.120", roll.Version)], new TargetRequestV1("GoodOutputMass", "900"));
         PlanViewV1 created;
         using (var client = run.ClientFor(reader, CompanyA))
         {
@@ -384,11 +385,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var view = (await reopened.Content.ReadFromJsonAsync<PlanViewV1>())!;
             Assert.Equal(JsonSerializer.Serialize(created), JsonSerializer.Serialize(view));
             // Not vacuous: the comparison is over a view that carries the plan's content. The kilogram is
-            // "1000.25", not the "1000.250" that was sent: the read projects through the SAME Text(decimal)
+            // "1000.12", not the "1000.120" that was sent: the read projects through the SAME Text(decimal)
             // normalization the write answer uses, so a trailing zero the caller typed does not survive
             // either answer. Measured on the formatter, and on the existing journey case where a declared
             // "900.000" reads back as "900".
-            Assert.Equal(("Draft", 1L, "1000.25"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
+            Assert.Equal(("Draft", 1L, "1000.12"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
 
             // The read answers from STORAGE: approving through another command changes what it returns.
             Assert.Equal(HttpStatusCode.OK,
@@ -1054,7 +1055,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var firstRoll = await run.StockedLabelAsync("SYN-MFG-PLAN-LIST-1");
         var secondRoll = await run.StockedLabelAsync("SYN-MFG-PLAN-LIST-2");
         var first = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-            [new PlannedInputRequestV1(firstRoll.Id, "1000.250", firstRoll.Version)], new TargetRequestV1("GoodOutputMass", "900"));
+            [new PlannedInputRequestV1(firstRoll.Id, "1000.120", firstRoll.Version)], new TargetRequestV1("GoodOutputMass", "900"));
         var second = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
             [new PlannedInputRequestV1(secondRoll.Id, "400", secondRoll.Version)], null);
 
@@ -1078,7 +1079,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal([second.PlanId, first.PlanId], page.Plans.Select(row => row.PlanId));
             var summary = page.Plans.Single(row => row.PlanId == first.PlanId);
             // The stored row as text: one planned roll, the plan read's own kilogram normalisation, its target.
-            Assert.Equal((workCenter, "Slitting", "Draft", 1L, 1, "1000.25"),
+            Assert.Equal((workCenter, "Slitting", "Draft", 1L, 1, "1000.12"),
                 (summary.WorkCenterId, summary.Process, summary.Status, summary.Version, summary.PlannedRollCount,
                     summary.PlannedInputKg));
             Assert.Equal(new TargetViewV1("GoodOutputMass", "900"), summary.Target);
@@ -1398,6 +1399,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             if (!approvers.TryGetValue(company, out var approver))
             {
+                // SiteAuditReader is only a second configured identity here: it gets a fresh role with the preparer's
+                // own grants, so it differs from the preparer by identity alone (URT-D2), not by its audit role.
                 await GrantAsync(TestUsers.SiteAuditReader, company, [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
                 approver = ClientFor(TestUsers.SiteAuditReader, company);
                 approvers[company] = approver;
@@ -1492,6 +1495,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             return new ParentRollFixture(label.Id, version.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
+        /// <summary>Üretim U3-a: a label's version as Inventory holds it now (an approval's allocation moves it).</summary>
+        public async Task<string> CurrentLabelVersionAsync(Guid labelId) =>
+            (await ScalarAsync<long>("SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", labelId)))
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
         public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(
             string user,
@@ -1530,10 +1538,6 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             return (await response.Content.ReadFromJsonAsync<OrderViewV1>())!;
         }
 
-        /// <summary>
-        /// A synthetic role with exactly these permissions in one company, assigned to a configured
-        /// development user (linked to a new ERP account first if it has none). Returns the header value.
-        /// </summary>
         /// <summary>The server user id of a development user (the actor id the API records).</summary>
         public async Task<Guid> UserIdOfAsync(string developmentUser)
         {
@@ -1543,6 +1547,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 x => x.Issuer == BootstrapIdentityOptions.Issuer && x.Subject == developmentUser)).UserId;
         }
 
+        /// <summary>
+        /// A synthetic role with exactly these permissions in one company, assigned to a configured
+        /// development user (linked to a new ERP account first if it has none). Returns the header value.
+        /// </summary>
         public async Task<string> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();

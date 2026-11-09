@@ -136,7 +136,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'CreatedBy' "
                 + "AND [object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingPlanPreparer", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+            Assert.EndsWith("_AddManufacturingPlanInputAllocations", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
         }
 

@@ -98,7 +98,8 @@ public sealed partial class ManufacturingCommandService
                     return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
                 }
 
-                if (await plans.FindPlanAsync(planId, cancellationToken) is { ApprovedAtUtc: null } current)
+                var found = await plans.FindPlanAsync(planId, cancellationToken);
+                if (found is { ApprovedAtUtc: null } current)
                 {
                     live = await ReadLiveParameterProfileAsync(current, cancellationToken);
                     if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actor, cancellationToken) is { } fenced)
@@ -107,11 +108,102 @@ public sealed partial class ManufacturingCommandService
                     }
                 }
 
-                var cancelled = await planLifecycle.CancelPlanAsync(planId, request.ExpectedVersion, actor,
-                    timeProvider.GetUtcNow(), reason, metadata, cancellationToken);
+                var cancelledAt = timeProvider.GetUtcNow();
+                Task<ProductionPlan> Cancel(CancellationToken token) => planLifecycle.CancelPlanAsync(planId,
+                    request.ExpectedVersion, actor, cancelledAt, reason, metadata, token);
+
+                // U3-a (URT-D21): an approved plan holds its inputs' allocation; its cancellation releases what remains in
+                // the same transaction. A draft holds no allocation and is cancelled as before.
+                var cancelled = planAllocations is not null && found is { Status: PlanStatus.Approved }
+                    ? await planAllocations.WriteAndReleaseAsync(planId,
+                        ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled, Cancel, metadata, cancellationToken)
+                    : await Cancel(cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(cancelled, live), false,
                     null);
             }, stored => PlanView((ProductionPlan)stored, live), cancellationToken);
+    }
+
+    /// <summary>
+    /// Üretim U3-a (URT-D3): each planned parent label's version as Inventory holds it now, through Inventory's public label
+    /// detail read. Another plan's or a sale's allocation of the same label moves its version, so the approval allocates at
+    /// this version, not at the one the plan accepted. A label whose product is no longer the plan's technical snapshot's
+    /// product refuses (409); an unknown label refuses (409); a read conflict is a retryable 409; a denial 403; an
+    /// unavailable owner 503. The fence runs after every owner await.
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<Guid, long>? Versions, ManufacturingApiResult<object>? Refusal)>
+        ReadCurrentLabelVersionsAsync(ProductionPlan plan, string permission, Guid companyId, Guid actorId,
+            CancellationToken cancellationToken)
+    {
+        if (labelDetails is null)
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryLabelDetailCodesV1.Unavailable));
+        }
+
+        var versions = new Dictionary<Guid, long>();
+        foreach (var input in plan.Inputs)
+        {
+            InventoryLabelDetailV1 detail;
+            try
+            {
+                detail = await labelDetails.GetAsync(input.ParentRollId, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (InventoryLabelDetailException exception)
+            {
+                if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+                {
+                    return (null, fenced);
+                }
+
+                return (null, exception.StatusCode switch
+                {
+                    401 or 403 => Denied<object>(),
+                    404 => new ManufacturingApiResult<object>(ManufacturingApiStatus.Conflict, null, false,
+                        ManufacturingPlanAllocationCodesV1.LabelNotFound),
+                    409 => new ManufacturingApiResult<object>(ManufacturingApiStatus.Conflict, null, false,
+                        exception.Code),
+                    _ => new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                        InventoryLabelDetailCodesV1.Unavailable),
+                });
+            }
+            catch (Exception)
+            {
+                if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+                {
+                    return (null, fenced);
+                }
+
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    InventoryLabelDetailCodesV1.Unavailable));
+            }
+
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } afterRead)
+            {
+                return (null, afterRead);
+            }
+
+            if (detail?.Identity is null || detail.Identity.LabelId != input.ParentRollId
+                || !long.TryParse(detail.LabelVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+                || version < 1)
+            {
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    InventoryLabelDetailCodesV1.Unavailable));
+            }
+
+            if (input.TechnicalSnapshot is { } technical && detail.Identity.ProductId != technical.ProductId)
+            {
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Conflict, null, false,
+                    ManufacturingPlanAllocationCodesV1.LabelIdentityChanged));
+            }
+
+            versions[input.ParentRollId] = version;
+        }
+
+        return (versions, null);
     }
 
     /// <summary>The trimmed reason of a rejection or cancellation, or null when it is empty, too long or has control characters.</summary>
@@ -141,12 +233,15 @@ public sealed partial class ManufacturingCommandService
     /// </summary>
     private async Task<(IReadOnlyDictionary<Guid, bool>? Usable, ManufacturingApiResult<object>? Refusal)>
         ReadLabelUsabilityAsync(ProductionPlan plan, string permission, Guid companyId, Guid actorId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken, IReadOnlyDictionary<Guid, long>? currentVersions = null)
     {
         var usable = new Dictionary<Guid, bool>();
         foreach (var input in plan.Inputs)
         {
-            if (input.ExpectedLabelVersion is not { } version)
+            // U3-a (URT-D3): with the allocation, the label is checked at the version Inventory holds now.
+            if ((currentVersions is not null && currentVersions.TryGetValue(input.ParentRollId, out var now)
+                    ? now
+                    : input.ExpectedLabelVersion) is not { } version)
             {
                 continue;
             }
