@@ -510,8 +510,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // NOTE (UI-K02, KLN-D2): Identity 1.1 adds the read-only audit log screen (identity.audit.list, SY-07, on
+    // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
+    // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:rMo5fIpvrqiIzyecIaR8IHO2XBSTQdYINRfmwd3N3mI";
+        "sha256:NbnfNzL3H4XMTC_UPAv_PBH7ISgCpUDZUiC597gUnUE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -522,8 +525,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // NOTE (UI-K02, KLN-D2): Identity 1.1 adds the read-only audit log screen (identity.audit.list, SY-07, on
+    // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
+    // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:Qi52eVlpZDK1lmQ01dusMxa0VL5kyRpKVC__SxkgEiQ";
+        "sha256:Qwu-7x_e5d7XDsbc-J6WQrrUruk-YhV1DLh-xWjNo04";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -539,8 +545,11 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // NOTE (UI-K02, KLN-D2): Identity 1.1 adds the read-only audit log screen (identity.audit.list, SY-07, on
+    // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
+    // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:b3CvMUrzNaSQbHwkTrLwH6DhDx9xaELmjVUPOn88V24";
+        "sha256:GL3HdDUHxr_1xRULEdUOEDsifsgZlYXPUk5RAUH8_Ro";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
