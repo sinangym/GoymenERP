@@ -14,7 +14,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Shell;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-/// <summary>SY-01/SY-02: the normal host with Identity 1.0 beside every published module.</summary>
+/// <summary>SY-01/SY-02 and UI-K02 (SY-07 audit log): the normal host with Identity 1.1 beside every published module.</summary>
 public sealed class IdentityShellAuthorityTests
 {
     [Fact]

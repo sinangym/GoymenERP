@@ -45,6 +45,35 @@ public sealed class SalesInvoiceInstalmentCalculatorTests
     }
 
     [Fact]
+    public void A_negative_last_tl_instalment_is_refused_under_sat_d233()
+    {
+        // 60 + 40 USD at rate 2: the first instalment is 120 TL, so a 110 TL payable leaves -10 TL for the last one.
+        var instalments = new[] { Instalment(1, "60", 60m), Instalment(2, "40", 40m) };
+        var refused = Assert.Throws<SalesRuleException>(() =>
+            SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Rate(2m), Usd, Money.Of(110m, Try, 2)));
+        Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
+    }
+
+    [Fact]
+    public void A_zero_last_tl_instalment_is_refused_like_a_negative_one()
+    {
+        // 50 + 50 USD at rate 2: the first instalment is 100 TL, so a 100 TL payable leaves exactly 0 TL for the last one.
+        var instalments = new[] { Instalment(1, "50", 50m), Instalment(2, "50", 50m) };
+        var refused = Assert.Throws<SalesRuleException>(() =>
+            SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Rate(2m), Usd, Money.Of(100m, Try, 2)));
+        Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
+    }
+
+    [Fact]
+    public void The_smallest_positive_last_tl_instalment_is_accepted()
+    {
+        var instalments = new[] { Instalment(1, "50", 50m), Instalment(2, "50", 50m) };
+        var result = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Rate(2m), Usd, Money.Of(100.01m, Try, 2));
+
+        Assert.Equal([100m, 0.01m], result);
+    }
+
+    [Fact]
     public void An_empty_instalment_list_is_refused()
     {
         Assert.Throws<ArgumentException>(() => SalesInvoiceInstalmentCalculator.FunctionalAmounts([], Rate(2m), Usd, Money.Of(1m, Try, 2)));

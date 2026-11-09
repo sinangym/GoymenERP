@@ -78,6 +78,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.InvoicesApprove, ErpPermissions.SalesInvoicesApprove)]
     // S5 API-35 (Fatura çekirdeği 3; SAT-D89/D106): the official match's own name, company-wide, not Critical, granted to no role.
     [InlineData(SalesPermissionManifestV1.InvoicesMatch, ErpPermissions.SalesInvoicesMatch)]
+    // S5 API-36 (SAT-D208): the finalisation name; not Critical by SAT-D249 (replaces SAT-D235 (1)).
     [InlineData(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize)]
     // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
     // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
@@ -90,6 +91,20 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         Assert.Single(ErpPermissions.All, known => known == ownerName);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(ownerName));
         Assert.False(ErpPermissions.IsCritical(ownerName));
+    }
+
+    [Fact]
+    public void The_finalize_name_is_registered_company_wide_and_no_sales_name_is_critical_under_sat_d249()
+    {
+        // SAT-D249 (SINAN_KARARLARI_2026-11-09_SATIS_EK49.md, replaces SAT-D235 (1)): sales.invoices.finalize is NOT Critical; it
+        // stays a normal, company-wide permission with no grant here. No Sales name is in the Critical class.
+        Assert.Equal(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize);
+        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.Single(ErpPermissions.All, known => known == SalesPermissionManifestV1.InvoicesFinalize);
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.False(ErpPermissions.IsCritical(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.DoesNotContain(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.Critical);
+        Assert.DoesNotContain(SalesPermissionManifestV1.Names, ErpPermissions.IsCritical);
     }
 
     [Fact]

@@ -186,6 +186,17 @@ public sealed class SalesInvoiceCalculatorTests
 
     private static SalesInvoice MatchedForeignCurrencyInvoice(decimal delta)
     {
+        var invoice = ApprovedForeignCurrencyInvoice();
+        invoice.RecordMatch(invoice.Version, "matcher", Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount + delta),
+            0.05m, false, null, DateTimeOffset.UnixEpoch);
+        return invoice;
+    }
+
+    private static SalesOfficialInvoiceFacts Official(SalesInvoice invoice, decimal payable, decimal payableFunctional) =>
+        new("GIB2026000000001", new string('A', SalesInvoice.EttnLength), invoice.Header.PartyId, Usd, payable, payableFunctional);
+
+    private static SalesInvoice ApprovedForeignCurrencyInvoice()
+    {
         var terms = SalesDueTerms.Create(
         [
             new SalesDueInstalment(1, SalesDueBasis.ShipmentDate, 30, "50"),
@@ -197,10 +208,60 @@ public sealed class SalesInvoiceCalculatorTests
             due.DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
         invoice.Submit(invoice.Version, "preparer", DateTimeOffset.UnixEpoch);
         invoice.Approve(invoice.Version, "approver", DateTimeOffset.UnixEpoch);
-        invoice.RecordMatch(invoice.Version, "matcher",
-            new SalesOfficialInvoiceFacts("GIB2026000000001", new string('A', SalesInvoice.EttnLength), header.PartyId, Usd,
-                invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount + delta), 0.05m, false, null, DateTimeOffset.UnixEpoch);
         return invoice;
+    }
+
+    [Theory]
+    [InlineData("0.05")]
+    [InlineData("-0.05")]
+    public void A_foreign_currency_tl_difference_of_exactly_five_kurus_is_matched_without_approval_under_sat_d232(string delta)
+    {
+        // SAT-D232: the FX tolerance is 0,05 TL, inclusive, measured on the TL equivalent at the invoice's own locked rate.
+        var tolerance = new GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        Assert.Equal(0.05m, tolerance);
+        var invoice = ApprovedForeignCurrencyInvoice();
+        var match = invoice.RecordMatch(invoice.Version, "matcher",
+            Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount + decimal.Parse(delta, System.Globalization.CultureInfo.InvariantCulture)),
+            tolerance, false, null, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(0.05m, match.Difference);
+        Assert.Equal(0.05m, match.Tolerance);
+        Assert.False(match.DifferenceWasApproved);
+        Assert.Equal(invoice.PayableFunctionalAmount, match.InvoiceFunctionalAmount);
+    }
+
+    [Fact]
+    public void A_foreign_currency_tl_difference_of_six_kurus_needs_a_separate_approval_under_sat_d232()
+    {
+        var tolerance = new GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        var invoice = ApprovedForeignCurrencyInvoice();
+        var official = Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount + 0.06m);
+
+        var refused = Assert.Throws<SalesRuleException>(() => invoice.RecordMatch(invoice.Version, "matcher", official, tolerance, false,
+            null, DateTimeOffset.UnixEpoch));
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
+        Assert.Null(invoice.Match);
+
+        var match = invoice.RecordMatch(invoice.Version, "matcher", official, tolerance, true, "Kur yuvarlama farkı", DateTimeOffset.UnixEpoch);
+        Assert.Equal(0.06m, match.Difference);
+        Assert.Equal("matcher", match.DifferenceApprovedBy);
+    }
+
+    [Fact]
+    public void The_foreign_currency_match_is_measured_on_tl_and_not_on_the_invoice_currency_amount()
+    {
+        // SAT-D232: there is no separate invoice-currency tolerance. A one-dollar gap with an equal TL equivalent is no difference,
+        // and a TL gap above 0,05 is one even when the dollar amounts agree exactly.
+        var tolerance = new GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        var invoice = ApprovedForeignCurrencyInvoice();
+        var dollarGap = invoice.EvaluateMatch(Official(invoice, invoice.Totals.Payable.Amount + 1m, invoice.PayableFunctionalAmount));
+        Assert.Equal(0m, dollarGap.Difference);
+
+        var tlGap = invoice.EvaluateMatch(Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount - 0.06m));
+        Assert.Equal(0.06m, tlGap.Difference);
+        Assert.True(tlGap.Difference > tolerance);
+        Assert.NotNull(invoice.FunctionalTotals);
+        Assert.NotEqual(invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount);
     }
 
     [Fact]
