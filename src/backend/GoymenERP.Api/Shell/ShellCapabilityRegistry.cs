@@ -54,12 +54,12 @@ public sealed partial class ShellCapabilityRegistry
             {
                 var subset = all.Where((_, i) => (mask & (1 << i)) != 0).ToArray();
                 var names = subset.Select(p => p.Owner).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-                if (names.Any(n => late.Contains(n)) || !names.Contains("MANUFACTURING"))
+                if (!names.Contains("IDENTITY") || !names.Contains("MANUFACTURING"))
                 {
                     continue;
                 }
 
-                Console.Error.WriteLine("TMPDIAG4 " + string.Join("+", names) + " => " + ComputeCandidateRevision(subset));
+                Console.Error.WriteLine("TMPDIAG5 " + string.Join("+", names) + " => " + ComputeCandidateRevision(subset));
             }
             catch (Exception)
             {
