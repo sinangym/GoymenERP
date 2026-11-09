@@ -38,6 +38,8 @@ import {
 } from './officialInvoiceImportRoutes'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
+import { PartyLedgerWorkspacePage } from './PartyLedgerWorkspacePage'
+import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CARI } from './partyLedgerText'
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import {
@@ -65,6 +67,14 @@ function usePaymentContext() {
   const context = useShellState().activeContext
   if (context?.scopeMode !== 'single' || context.companyId === null) return null
   return { ...context, companyId: context.companyId }
+}
+
+/** B-05: the party-ledger workspace on one of its two routes; it needs a single active company. */
+function PartyLedgerWorkspaceRoute({ base, title }: { readonly base: string; readonly title: string }) {
+  const context = usePaymentContext()
+  return context === null
+    ? <StateBlock state={{ kind: 'not-found' }} subject={WORKSPACE_NEEDS_COMPANY} />
+    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} />
 }
 
 function ManualBankPaymentListRoute() {
@@ -200,5 +210,16 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.openItemsDetail.slice(1),
     element: gate(FINANCE_CAPABILITY.openItemsDetail, <OpenItemDetailPage />),
+  },
+  // B-05 (KLN-D3): the party ledger from Muhasebe (M-03) and from Cari (C-04), both under finance.party-ledger.read.
+  {
+    path: FINANCE_ROUTE.partyLedgerAccounting.slice(1),
+    element: gate(FINANCE_CAPABILITY.partyLedgerAccounting,
+      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING} />),
+  },
+  {
+    path: FINANCE_ROUTE.partyLedgerCari.slice(1),
+    element: gate(FINANCE_CAPABILITY.partyLedgerCari,
+      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerCari} title={WORKSPACE_TITLE_CARI} />),
   },
 ]

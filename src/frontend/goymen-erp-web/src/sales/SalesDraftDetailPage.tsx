@@ -98,7 +98,9 @@ import {
   SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY,
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
+  salesPriceControlPath,
 } from './capabilities'
+import { PRICE_CONTROL_TEXT } from './priceControlText'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE, currentRevisionRejection } from './contract'
 import { classifyOutcome } from '../shell/uiState'
@@ -226,7 +228,15 @@ export function SalesDraftDetailPage() {
     <DraftView
       detail={outcome.data}
       canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
-      backLink={backLink}
+      backLink={
+        <>
+          {backLink}
+          {/* UI-50 S-05: the read-only price/discount/margin/risk comparison of this draft, under this screen's own id. */}
+          <Link className={styles.backLink} to={salesPriceControlPath(outcome.data.draft.id)} data-testid="sales-open-price-control">
+            {PRICE_CONTROL_TEXT.openControl}
+          </Link>
+        </>
+      }
       activeTab={activeTab}
       onTabChange={changeTab}
       pdfAction={
