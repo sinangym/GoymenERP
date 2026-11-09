@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 
@@ -82,9 +83,10 @@ public sealed class PurchasingSalesOrderLinkedSupplyRecorder : ISalesOrderLinked
 /// SAT-D220 (reader only): the host's translation of Sales's approved-line port to Purchasing's
 /// <see cref="IPurchaseRequestSalesSourcePortV1"/>. Approved only when Sales answers Approved with that very order and line in the
 /// context company; an unknown outcome, a mismatched line or any exception is Unavailable (fail-closed), never Approved. Reading
-/// creates nothing; this adapter is not yet called by request creation (see the Purchasing README).
+/// creates nothing; request creation calls this adapter since A4b (see the Purchasing README). Defence in depth: the answered line must
+/// also belong to the context company.
 /// </summary>
-public sealed class PurchasingRequestSalesSourcePort(ISalesOrderLineReferencePortV1 salesLines) : IPurchaseRequestSalesSourcePortV1
+public sealed class PurchasingRequestSalesSourcePort(ISalesOrderLineReferencePortV1 salesLines, ICompanyContext companyContext) : IPurchaseRequestSalesSourcePortV1
 {
     public async Task<PurchaseRequestSalesSourceOutcomeV1> CheckSalesOrderLineAsync(
         Guid salesOrderId, Guid salesOrderLineId, CancellationToken cancellationToken = default)
@@ -95,6 +97,7 @@ public sealed class PurchasingRequestSalesSourcePort(ISalesOrderLineReferencePor
             return answer.Outcome switch
             {
                 SalesOrderLineReferenceOutcomeV1.Approved when answer.Line is { } line && line.OrderId == salesOrderId && line.LineId == salesOrderLineId
+                    && companyContext.IsResolved && line.CompanyId == companyContext.CompanyId
                     => PurchaseRequestSalesSourceOutcomeV1.Approved,
                 SalesOrderLineReferenceOutcomeV1.NotApproved => PurchaseRequestSalesSourceOutcomeV1.NotApproved,
                 SalesOrderLineReferenceOutcomeV1.NotFound => PurchaseRequestSalesSourceOutcomeV1.NotFound,

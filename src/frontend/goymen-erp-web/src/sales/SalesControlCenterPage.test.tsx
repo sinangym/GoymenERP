@@ -3,17 +3,19 @@
  * (./examples). Component evidence, NOT_ENV: the route opens only on the S-08 id that stands on the same `sales.invoices.read`;
  * the read is company-bound and sends no query member; the server's order, severity and ages are shown as given; the kind filter
  * narrows the answer on screen only; loading, empty, filtered-empty, unavailable, truncated, forbidden, 503 and malformed each have
- * their state. Data SENTETIK.
+ * their state; a 401 goes through the real auth boundary, offline and an unreachable server keep their own retryable states, and a
+ * response that arrives for a company the shell has already left is never shown (#1014 P3). Data SENTETIK.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import controlCenterResponse from './examples/control-center-response.json'
 import { SALES_CAPABILITY } from './capabilities'
 import { CONTROL_CENTER_KIND_TEXT, CONTROL_CENTER_STATE_TEXT, CONTROL_CENTER_TEXT as T } from './controlCenterText'
-import { COMPANY_A, installPoolFetch, json, type PoolCall } from './poolFixtures'
+import { COMPANY_A, COMPANY_B, installPoolFetch, json, type PoolCall } from './poolFixtures'
 import { renderPool } from './poolTestHarness'
+import { deferred } from './testHarness'
 import { CAPABILITY } from '../shell/capabilities'
 
 afterEach(() => {
@@ -183,4 +185,98 @@ describe('Kontrol Merkezi (API-37)', () => {
     expect(await itemRows()).toHaveLength(5)
     expect(fetch.calls).toHaveLength(2)
   })
+})
+
+describe('session, connection and company context (#1014 P3)', () => {
+  it('routes a 401 through the real auth boundary: the session ends and no list is shown', async () => {
+    const fetch = installPoolFetch(controlCenter(() => problem(401)), GRANTED)
+    renderPool(PATH)
+    expect(await screen.findByText('Oturum sonlandı — oturum')).toBeTruthy()
+    expect(screen.queryByRole('table', { name: T.itemsCaption })).toBeNull()
+    expect(screen.queryByRole('table', { name: T.checksCaption })).toBeNull()
+    expect(fetch.calls).toHaveLength(1)
+  })
+
+  it('shows offline as its own state and retries the same company-bound read once the connection is back', async () => {
+    const user = userEvent.setup()
+    let online = false
+    vi.spyOn(navigator, 'onLine', 'get').mockImplementation(() => online)
+    let attempts = 0
+    const fetch = installPoolFetch(
+      controlCenter(() => {
+        if (++attempts === 1) throw new TypeError('SENTETIK offline')
+        return json(controlCenterResponse)
+      }),
+      GRANTED,
+    )
+    renderPool(PATH)
+    expect(await screen.findByText(`Bağlantı yok — ${T.subject}`)).toBeTruthy()
+    expect(screen.queryByText(/Sunucuya ulaşılamadı/)).toBeNull()
+    expect(screen.queryByRole('table', { name: T.itemsCaption })).toBeNull()
+    online = true
+    await user.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    expect(await itemRows()).toHaveLength(5)
+    expect(fetch.calls).toHaveLength(2)
+    expect(fetch.calls[1]).toEqual(fetch.calls[0])
+  })
+
+  it('shows an unreachable server as network-error, not offline, and retries the same read', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let attempts = 0
+    const fetch = installPoolFetch(
+      controlCenter(() => {
+        if (++attempts === 1) throw new TypeError('SENTETIK network failure')
+        return json(controlCenterResponse)
+      }),
+      GRANTED,
+    )
+    renderPool(PATH)
+    expect(await screen.findByText(`Sunucuya ulaşılamadı — ${T.subject}`)).toBeTruthy()
+    expect(screen.queryByText(/Bağlantı yok/)).toBeNull()
+    expect(screen.queryByRole('table', { name: T.itemsCaption })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    expect(await itemRows()).toHaveLength(5)
+    expect(fetch.calls).toHaveLength(2)
+    expect(fetch.calls[1]).toEqual(fetch.calls[0])
+  })
+
+  it.each([200, 401, 403])(
+    'never shows a departed company response (%s) after a company switch, nor after switching back',
+    async (status) => {
+      const user = userEvent.setup()
+      const pending = deferred<Response>()
+      const late = clone(controlCenterResponse) as Body
+      late.items = [{ ...late.items[0], reference: 'IRS-SENTETIK-ESKI-SIRKET' }]
+      const empty = clone(controlCenterResponse) as Body
+      empty.items = []
+      let aReads = 0
+      const fetch = installPoolFetch((call) => {
+        if (!call.url.includes('/sales/control-center')) return notFound(call)
+        if (call.companyId === COMPANY_A && ++aReads === 1) return pending.promise
+        return json(empty)
+      }, GRANTED)
+      renderPool(PATH)
+      await waitFor(() => expect(fetch.calls.some((call) => call.companyId === COMPANY_A)).toBe(true))
+
+      await user.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+      expect(await screen.findByText(/^Kayıt yok/)).toBeTruthy()
+      expect(fetch.calls.some((call) => call.companyId === COMPANY_B)).toBe(true)
+
+      await act(async () => {
+        pending.resolve(status === 200 ? json(late) : problem(status))
+      })
+      // The late answer for company A neither renders nor moves the session or the page of company B.
+      expect(screen.queryByText('IRS-SENTETIK-ESKI-SIRKET')).toBeNull()
+      expect(screen.queryByText('Oturum sonlandı — oturum')).toBeNull()
+      expect(screen.queryByText(/Yetkiniz yok|Bulunamadı — sayfa/)).toBeNull()
+      expect(screen.getByText(/^Kayıt yok/)).toBeTruthy()
+
+      await user.selectOptions(screen.getByLabelText('Şirket'), COMPANY_A)
+      await waitFor(() => expect(aReads).toBe(2))
+      expect(await screen.findByText(/^Kayıt yok/)).toBeTruthy()
+      expect(screen.queryByText('IRS-SENTETIK-ESKI-SIRKET')).toBeNull()
+      expect(fetch.calls.every((call) => call.method === 'GET' && call.idempotencyKey === null)).toBe(true)
+    },
+  )
 })
