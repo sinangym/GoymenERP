@@ -104,6 +104,18 @@ export type SalesCapabilityId =
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY
+  | typeof SALES_INVOICE_WRITE_CAPABILITY
+  | typeof SALES_INVOICE_APPROVE_CAPABILITY
+
+/**
+ * API-32 / API-33 (SAT-D202): the invoice-draft CONTROLS — "Fatura taslağı hazırla" on S-08, and submit / cancel on the draft —
+ * follow `sales.invoices.write`; approve / reject follow `sales.invoices.approve` (never the preparer, SAT-D88 / SAT-D204, which
+ * the server decides). Non-routed control ids named after the backend permissions. The Sales shell provider does not publish
+ * them yet, so `hasCapability` fails closed and the controls stay hidden behind a neutral note (NEEDS-SINAN); the API
+ * re-measures every call either way.
+ */
+export const SALES_INVOICE_WRITE_CAPABILITY = 'sales.invoices.write' as const
+export const SALES_INVOICE_APPROVE_CAPABILITY = 'sales.invoices.approve' as const
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

@@ -10,6 +10,7 @@ import {
   INVOICE_FINALIZATION_KIND,
   SALES_DRAFT_INVOICES_FIELDS,
   SALES_DRAFT_INVOICE_ITEM_FIELDS,
+  SALES_INVOICE_DECISION_FIELDS,
   SALES_INVOICE_DETAIL_FIELDS,
   SALES_INVOICE_FINALIZATION_FIELDS,
   SALES_INVOICE_FINAL_INSTALMENT_FIELDS,
@@ -241,5 +242,43 @@ describe('Finance stage and the offered command (server state only)', () => {
     ]) {
       expect(problemCodeText(code), code).toMatch(/\S/)
     }
+  })
+})
+
+describe('API-33 decision record on the invoice detail', () => {
+  const decision = (over: Wire = {}): Wire => ({
+    submittedBy: 'company-a-user',
+    submittedAtUtc: '2026-11-01T09:00:00Z',
+    decidedBy: 'company-a-approver',
+    decidedAtUtc: '2026-11-01T10:00:00Z',
+    decisionReason: null,
+    cancelledBy: null,
+    cancelledAtUtc: null,
+    cancellationReason: null,
+    ...over,
+  })
+
+  it('pins the decision members to the schema and decodes the record as written', () => {
+    expect([...SALES_INVOICE_DECISION_FIELDS]).toEqual(declared('SalesInvoiceDecisionView'))
+    const detail = detailOf(invoiceDetail({ state: 'Rejected', decision: decision({ decisionReason: 'Fiyat hatali' }) }))
+    expect(detail?.decision).toEqual({
+      submittedBy: 'company-a-user',
+      submittedAtUtc: '2026-11-01T09:00:00Z',
+      decidedBy: 'company-a-approver',
+      decidedAtUtc: '2026-11-01T10:00:00Z',
+      decisionReason: 'Fiyat hatali',
+      cancelledBy: null,
+      cancelledAtUtc: null,
+      cancellationReason: null,
+    })
+  })
+
+  it('accepts a reason up to the server limit and refuses a longer, blank or stray-member record', () => {
+    expect(detailOf(invoiceDetail({ decision: decision({ decisionReason: 'a'.repeat(600) }) }))).not.toBeNull()
+    expect(detailOf(invoiceDetail({ decision: decision({ cancellationReason: 'a'.repeat(4000) }) }))).not.toBeNull()
+    expect(detailOf(invoiceDetail({ decision: decision({ cancellationReason: 'a'.repeat(4001) }) }))).toBeNull()
+    expect(detailOf(invoiceDetail({ decision: decision({ decisionReason: '   ' }) }))).toBeNull()
+    expect(detailOf(invoiceDetail({ decision: { ...decision(), extra: null } }))).toBeNull()
+    expect(detailOf(invoiceDetail({ decision: decision({ submittedAtUtc: 'yesterday' }) }))).toBeNull()
   })
 })

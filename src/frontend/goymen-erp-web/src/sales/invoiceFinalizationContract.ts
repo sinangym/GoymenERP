@@ -8,6 +8,7 @@
  * amount, rate and percentage stays the server's TEXT (never a JS `number`), and a value outside the shapes below makes the
  * whole answer `null` — "Beklenmeyen yanıt" — never a partial object. Nothing here adds, rounds or compares an amount.
  */
+import { LIMITS } from './contract'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
 type Obj = Record<string, unknown>
@@ -213,18 +214,41 @@ function decodeLine(value: unknown): InvoiceLine | null {
   return { lineId: o.lineId, lineNo: o.lineNo, quantity: o.quantity, netUnitPrice: o.netUnitPrice, vatPercent: o.vatPercent, amounts }
 }
 
-const DECISION_FIELDS = [
+export const SALES_INVOICE_DECISION_FIELDS = [
   'submittedBy', 'submittedAtUtc', 'decidedBy', 'decidedAtUtc', 'decisionReason', 'cancelledBy', 'cancelledAtUtc', 'cancellationReason',
 ] as const
 
-function decodeDecision(value: unknown): true | null {
-  const o = exact(value, DECISION_FIELDS)
+/**
+ * A decision or cancellation reason: the server accepts up to its approval-reason limit (`LIMITS.note`, 4000), wider than a
+ * name — a long reason must not turn the whole detail into "Beklenmeyen yanıt".
+ */
+const isNullableReason = (value: unknown): value is string | null =>
+  value === null || (typeof value === 'string' && value.trim().length > 0 && value.length <= LIMITS.note)
+
+/** API-33: who sent the draft to approval, who decided, who cancelled — the server's record, shown as written. */
+export interface InvoiceDecision {
+  readonly submittedBy: string | null
+  readonly submittedAtUtc: string | null
+  readonly decidedBy: string | null
+  readonly decidedAtUtc: string | null
+  readonly decisionReason: string | null
+  readonly cancelledBy: string | null
+  readonly cancelledAtUtc: string | null
+  readonly cancellationReason: string | null
+}
+
+function decodeDecision(value: unknown): InvoiceDecision | null {
+  const o = exact(value, SALES_INVOICE_DECISION_FIELDS)
   if (
     o === null || !isNullableText(o.submittedBy) || !isNullableInstant(o.submittedAtUtc) || !isNullableText(o.decidedBy)
-    || !isNullableInstant(o.decidedAtUtc) || !isNullableText(o.decisionReason) || !isNullableText(o.cancelledBy)
-    || !isNullableInstant(o.cancelledAtUtc) || !isNullableText(o.cancellationReason)
+    || !isNullableInstant(o.decidedAtUtc) || !isNullableReason(o.decisionReason) || !isNullableText(o.cancelledBy)
+    || !isNullableInstant(o.cancelledAtUtc) || !isNullableReason(o.cancellationReason)
   ) return null
-  return true
+  return {
+    submittedBy: o.submittedBy, submittedAtUtc: o.submittedAtUtc, decidedBy: o.decidedBy, decidedAtUtc: o.decidedAtUtc,
+    decisionReason: o.decisionReason, cancelledBy: o.cancelledBy, cancelledAtUtc: o.cancelledAtUtc,
+    cancellationReason: o.cancellationReason,
+  }
 }
 
 /** The recorded match of the official e-invoice (SAT-D14): the server's amounts and its tolerance, shown, never judged. */
@@ -343,6 +367,8 @@ export interface SalesInvoiceDetail {
   readonly lines: readonly InvoiceLine[]
   readonly createdBy: string
   readonly createdAtUtc: string
+  /** API-33's approval record; `null` until the draft is first sent to approval or cancelled. */
+  readonly decision: InvoiceDecision | null
   readonly paymentAllocationWarning: string | null
   readonly isReplay: boolean
   readonly match: InvoiceMatch | null
@@ -374,9 +400,10 @@ export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): Sal
   const lines = list(o.lines, decodeLine)
   const match = o.match === null ? null : decodeMatch(o.match)
   const finalization = o.finalization === null ? null : decodeFinalization(o.finalization)
+  const decision = o.decision === null ? null : decodeDecision(o.decision)
   if (
     (o.exchangeRate !== null && exchangeRate === null) || totals === null || functionalTotals === undefined || vatGroups === null
-    || instalments === null || lines === null || (o.decision !== null && decodeDecision(o.decision) === null)
+    || instalments === null || lines === null || (o.decision !== null && decision === null)
     || (o.match !== null && match === null) || (o.finalization !== null && finalization === null)
   ) return null
   // A finalization exists exactly on a finalized invoice.
@@ -384,7 +411,7 @@ export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): Sal
   return {
     id: o.id, documentNo: o.documentNo, state: o.state, version: o.version, businessDate: o.businessDate, partyId: o.partyId,
     companyAccountId: o.companyAccountId, currencyId: o.currencyId, amountScale: o.amountScale, exchangeRate, totals,
-    functionalTotals, vatGroups, instalments, lines, createdBy: o.createdBy, createdAtUtc: o.createdAtUtc,
+    functionalTotals, vatGroups, instalments, lines, createdBy: o.createdBy, createdAtUtc: o.createdAtUtc, decision,
     paymentAllocationWarning: o.paymentAllocationWarning, isReplay: o.isReplay, match, finalization,
   }
 }

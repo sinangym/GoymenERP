@@ -195,6 +195,10 @@ export const CAPABILITY = {
   financeOpenItemsList: 'finance.open-items.list',
   /** FI04 one open item. Route `/finans/acik-kalemler/:openItemId`; reached from a row. */
   financeOpenItemsDetail: 'finance.open-items.detail',
+  /** B-05 (KLN-D3, M-03) party ledger from Muhasebe. Route `/muhasebe/cari-hesaplar`, owner the Finance lane. */
+  financePartyLedgerAccounting: 'finance.party-ledger.accounting',
+  /** B-05 (KLN-D3, C-04) party ledger from Cari. Route `/cari/hesap-takibi`, owner the Finance lane. */
+  financePartyLedgerCari: 'finance.party-ledger.cari',
   /** FIN-T06 pending reversal checker queue. Route `/finans/ters-kayit-onaylari`. */
   financeReceiptsReverseApprove: 'finance.receipts.reverse.approve',
   /** F-04 bank-account master. Route `/finans/banka-hesaplari`. */
@@ -341,6 +345,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeAllocationsList]: '/finans/dagitimlar',
   [CAPABILITY.financeOpenItemsList]: '/finans/acik-kalemler',
   [CAPABILITY.financeOpenItemsDetail]: '/finans/acik-kalemler/:openItemId',
+  [CAPABILITY.financePartyLedgerAccounting]: '/muhasebe/cari-hesaplar',
+  [CAPABILITY.financePartyLedgerCari]: '/cari/hesap-takibi',
   [CAPABILITY.financeReceiptsReverseApprove]: '/finans/ters-kayit-onaylari',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
