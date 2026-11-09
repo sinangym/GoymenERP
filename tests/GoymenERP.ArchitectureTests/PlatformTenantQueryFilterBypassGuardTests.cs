@@ -199,10 +199,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (tools/relational_inventory/purchasing.txt, pinned below).
     // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
-    // Re-fingerprinted for CI-HIZ: SHARD_MODULES moves logistics from shard C to shard B (wall-clock balance only);
+    // Re-fingerprinted for CI-HIZ: SHARD_MODULES moves logistics from shard C to shard B and purchasing from shard A
+    // to shard C (wall-clock balance only);
     // the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "f932bda3bc39f2b4c10b15e034a6c75c472eefce641c095be4bcb5c197a9a342";
+        "927c37c7ae5c9bcb26e14549d144a3a1a4c5f54276b352aacd5d7404c61a2841";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
