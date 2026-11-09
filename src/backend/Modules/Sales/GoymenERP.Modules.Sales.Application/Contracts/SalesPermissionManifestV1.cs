@@ -216,9 +216,10 @@ public static class SalesPermissionManifestV1
     /// S5 API-36 (Fatura çekirdeği 4; SAT-D208, Sinan S6): POST /api/v1/sales/invoices/{id}/finalization and …/finance-admission (the
     /// re-drive of the Finance hand-off). Its own SEPARATE name: the invoice write, read, approve and match names and the order names do
     /// NOT confer it, and it confers none of them. Company-wide; registered, granted to no role (the grant is a human gate). It is also
-    /// the authority the host measures when Finance admits the open items on Sales' behalf. SAT-D235 (2026-11-09) classes it Critical;
-    /// the class is registered centrally (ErpPermissions.Critical), not here. It adds no segregation of duties: whoever prepared,
-    /// approved or matched the invoice may finalise it when granted (KLN-D17 on the 120 voucher stays as it is).
+    /// the authority the host measures when Finance admits the open items on Sales' behalf. Not Critical: SAT-D249 (2026-11-09,
+    /// SINAN_KARARLARI_2026-11-09_SATIS_EK49.md) keeps it a normal permission and replaces SAT-D235 (1). It adds no segregation of
+    /// duties (SAT-D235 (2)): whoever prepared, approved or matched the invoice may finalise it when granted (KLN-D17 on the 120
+    /// voucher stays as it is).
     /// </summary>
     public const string InvoicesFinalize = "sales.invoices.finalize";
 
