@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.5"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(11, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.6"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(12, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -100,6 +100,12 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         // order creation confers it.
         AssertControl(declarations, planDetail, "manufacturing.plans.edit",
             [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansWrite]);
+        // TAKIP-URT-02: the cancellation on its own API-11 permission — approval and plan save do not confer it.
+        AssertControl(declarations, planDetail, "manufacturing.plans.cancel",
+            [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansCancel]);
+        var cancel = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.plans.cancel");
+        Assert.DoesNotContain(ErpPermissions.ManufacturingPlansApprove, cancel.RequiredPermissions);
+        Assert.DoesNotContain(ErpPermissions.ManufacturingPlansWrite, cancel.RequiredPermissions);
         var edit = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.plans.edit");
         Assert.DoesNotContain(ErpPermissions.ManufacturingPlansApprove, edit.RequiredPermissions);
         Assert.DoesNotContain(ErpPermissions.ManufacturingOrdersCreate, edit.RequiredPermissions);

@@ -154,6 +154,8 @@ export const CAPABILITY = {
   salesDispatchesList: 'sales.dispatches.list',
   /** UI-61 S-08 Faturaya Hazır (API-31). Route `/satis/faturaya-hazir`. Granted on its own `sales.invoices.read`. */
   salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
+  /** UI-63 S-09 Satış faturaları (API-32 list). Route `/satis/faturalar`. Granted on `sales.invoices.read` + `sales.orders.price.read`. */
+  salesInvoicesList: 'sales.invoices.list',
   /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
   salesReportsView: 'sales.reports.view',
   /**
@@ -246,6 +248,11 @@ export const CAPABILITY = {
   /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
   identityRolesDetail: 'identity.roles.detail',
   /**
+   * UI-K02 (KLN-D2) "Denetim kaydı": the company's audit events, read-only. Route `/ayarlar/denetim-kaydi`, owner
+   * Identity 1.1, on the existing `identity.audit.read` (company-wide, Critical); no grant is added here.
+   */
+  identityAuditList: 'identity.audit.list',
+  /**
    * SAT-D61…D70 Ayarlar > İskonto limitleri: the Sales discount limit groups, their limits and the person → group
    * bindings. Route `/ayarlar/iskonto-limitleri`, owner Settings; one non-Critical name, granted to no role here.
    */
@@ -318,6 +325,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Two static Sales siblings; neither is a draft id under `/satis/siparisler/:draftId`.
   [CAPABILITY.salesDispatchesList]: '/satis/sevkiyatlar',
   [CAPABILITY.salesInvoiceCandidatesList]: '/satis/faturaya-hazir',
+  // UI-63: another static Sales sibling, never a draft id.
+  [CAPABILITY.salesInvoicesList]: '/satis/faturalar',
   // UI-80: another static Sales sibling, never a draft id.
   [CAPABILITY.salesReportsView]: '/satis/raporlar',
   [CAPABILITY.salesRequestsList]: '/satis/talepler',
@@ -363,6 +372,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
+  [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
