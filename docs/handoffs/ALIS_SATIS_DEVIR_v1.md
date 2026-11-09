@@ -82,3 +82,11 @@ istek yoktur.
 SAT-D11, SAT-D76) Alış için `BuildingBlocks/Monetary/CommercialLinePriceCalculator` olarak yazıldı; kurallar
 `SalesLinePriceCalculator` ile aynıdır (vade farkı A2a-2'de eklenecek). Satış dosyaları değişmedi; Satış'ın bu ortak
 hesaplayıcıya geçişi yukarıdaki gibi ileride ayrı notla istenir.
+
+**Bilgi (A2a-2, 2026-11-07; TEK-03 görev notu):** `CommercialLinePriceCalculator` vade farkını (iskontolu fiyata yüzde veya birim
+başına tutar; SAT-D42 sırası, ALS-D75 "Satış'la aynı") aldı; belge toplamları (satır KDV'si satırda bir kez yuvarlanır, tevkifat
+yuvarlanmış KDV'den, SAT-D75; brüt ve ödenecek tam toplam) `BuildingBlocks/Monetary/CommercialTaxTotalsCalculator` olarak
+yazıldı. İkisi de `SalesLinePriceCalculator` / `SalesOrderTotalsCalculator` ile entegrasyon projesindeki altın eşlik testiyle
+(`PurchasingPricingGuardTests`) sabitlendi. Satış dosyaları değişmedi. **TEK-03 devri:** Satış'ın bu iki ortak hesaplayıcıya
+geçmesi (kendi kopyalarını kaldırması) Satış şeridinin işidir; geçişte altın eşlik testi tek kaynağa dönüşür. Bu not istek değil,
+bilgidir; istek yukarıdaki gibi ayrı notla yapılır.

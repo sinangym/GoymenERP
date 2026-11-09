@@ -390,6 +390,7 @@ public sealed class PurchaseOrder
             RequireMoneyText(amount, money.PriceScale);
         }
 
+        RequireDeferral(price, money);
         try
         {
             _ = price.NetUnitPrice;
@@ -398,6 +399,46 @@ public sealed class PurchaseOrder
         catch (OverflowException)
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.PriceOutOfRange, "Fiyat, miktar ve iskonto hesabı decimal sınırını aşıyor.");
+        }
+    }
+
+    /// <summary>
+    /// A2a-2 (ALS-D38, ALS-D75 "Satış'la aynı"): a maturity surcharge is a percent (0..100, at most six decimals — the Sales bound) of the
+    /// discounted unit price OR an amount per unit (zero or more, at most the price scale), never both, and never on a 0 unit price
+    /// (Sinan, EK13). A deferred price typed directly as the unit price carries none (ALS-D76).
+    /// </summary>
+    private static void RequireDeferral(PurchaseOrderLinePrice price, PurchaseOrderMoney money)
+    {
+        if (!price.HasDeferral)
+        {
+            return;
+        }
+
+        if (price.DeferralPercent is not null && price.DeferralAmount is not null)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.DeferralKindConflict, "Vade farkı ya yüzde ya tutar olarak verilir; ikisi birden verilmez.");
+        }
+
+        if (price.UnitPrice == 0m)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.DeferralOnZeroPrice, "0 fiyatlı satıra vade farkı girilmez.");
+        }
+
+        if (price.DeferralPercent is { } percent
+            && (percent < 0m || percent > 100m || BuildingBlocks.Monetary.Money.SignificantDecimals(percent) > PurchaseOrderLinePrice.PercentScale))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.DeferralPercentOutOfRange,
+                $"Vade farkı yüzdesi 0 ile 100 arasında ve en fazla {PurchaseOrderLinePrice.PercentScale} ondalık olmalıdır.");
+        }
+
+        if (price.DeferralAmount is { } amount)
+        {
+            if (amount < 0m)
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.DeferralAmountNegative, "Vade farkı tutarı negatif olamaz.");
+            }
+
+            RequireMoneyText(amount, money.PriceScale);
         }
     }
 
