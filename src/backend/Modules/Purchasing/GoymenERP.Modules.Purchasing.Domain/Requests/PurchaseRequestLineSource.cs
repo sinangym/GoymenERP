@@ -54,7 +54,7 @@ public sealed record PurchaseRequestLineSource
     /// <summary>
     /// A1-2b (SAT-D219, SAT-D220; fail-closed): whether a NEW line may record this kind. <see cref="PurchaseRequestSourceKind.Sales"/>
     /// may not: Sales requires the line to be read through its reference port (only an Approved sales order line is linked) and
-    /// the linked-supply read adaptor to exist from the first recorded link, and neither exists until MOD-03. Stock and
+    /// the linked-supply read adaptor to exist from the first recorded link, and both exist since A4b (see the verified overload). Stock and
     /// Production are unaffected. A stored line is read back through <see cref="Of"/>, which this never narrows.
     /// </summary>
     public static bool IsOpenForNewLines(PurchaseRequestSourceKind kind) =>

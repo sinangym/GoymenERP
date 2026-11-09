@@ -1,4 +1,5 @@
 using GoymenERP.Api.Endpoints;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 
@@ -127,7 +128,7 @@ public sealed class PurchasingSalesLinkedSupplyHostPortTests
     [Fact]
     public async Task A_failing_sales_port_is_Unavailable_and_the_stable_codes_are_pinned()
     {
-        var failing = new PurchasingRequestSalesSourcePort(new FakeSales(new InvalidOperationException("off")));
+        var failing = new PurchasingRequestSalesSourcePort(new FakeSales(new InvalidOperationException("off")), new FixedCompany(Company));
         Assert.Equal(PurchaseRequestSalesSourceOutcomeV1.Unavailable, await failing.CheckSalesOrderLineAsync(Order, SalesLine));
 
         Assert.Null(PurchaseRequestSalesSourceCodesV1.CodeOf(PurchaseRequestSalesSourceOutcomeV1.Approved));
@@ -137,7 +138,7 @@ public sealed class PurchasingSalesLinkedSupplyHostPortTests
     }
 
     private static Task<PurchaseRequestSalesSourceOutcomeV1> Check(SalesOrderLineReferenceAnswerV1 answer) =>
-        new PurchasingRequestSalesSourcePort(new FakeSales(answer)).CheckSalesOrderLineAsync(Order, SalesLine);
+        new PurchasingRequestSalesSourcePort(new FakeSales(answer), new FixedCompany(Company)).CheckSalesOrderLineAsync(Order, SalesLine);
 
     private static SalesOrderLineReferenceAnswerV1 Approved(Guid order, Guid line) => new(SalesOrderLineReferenceOutcomeV1.Approved,
         new SalesOrderLineReferenceV1(Company, order, line, 1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "1", Unit, "10", 1, 1), null);
@@ -162,6 +163,25 @@ public sealed class PurchasingSalesLinkedSupplyHostPortTests
             SeenLines = salesOrderLineIds;
             return failure is null ? Task.FromResult(lines!) : Task.FromException<IReadOnlyList<PurchaseSalesLinkedSupplyLineV1>>(failure);
         }
+    }
+
+    [Fact]
+    public async Task An_approved_answer_for_another_company_or_without_a_resolved_company_is_never_Approved()
+    {
+        var other = Guid.Parse("22222222-2222-4222-8222-222222222222");
+        Assert.Equal(PurchaseRequestSalesSourceOutcomeV1.Approved,
+            await new PurchasingRequestSalesSourcePort(new FakeSales(Approved(Order, SalesLine)), new FixedCompany(Company)).CheckSalesOrderLineAsync(Order, SalesLine));
+        Assert.Equal(PurchaseRequestSalesSourceOutcomeV1.Unavailable,
+            await new PurchasingRequestSalesSourcePort(new FakeSales(Approved(Order, SalesLine)), new FixedCompany(other)).CheckSalesOrderLineAsync(Order, SalesLine));
+        Assert.Equal(PurchaseRequestSalesSourceOutcomeV1.Unavailable,
+            await new PurchasingRequestSalesSourcePort(new FakeSales(Approved(Order, SalesLine)), new FixedCompany(Guid.Empty)).CheckSalesOrderLineAsync(Order, SalesLine));
+    }
+
+    private sealed class FixedCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => companyId != Guid.Empty;
+        public Guid CompanyId => companyId;
+        public void Set(Guid value) => throw new NotSupportedException();
     }
 
     private sealed class FakeSales : ISalesOrderLineReferencePortV1
