@@ -74,6 +74,7 @@ public sealed partial class PurchasingService(
             return ReplayedRequest(replay);
         }
 
+        RequireOpenLineSources(request);
         var lines = new List<(PurchaseRequestLineRequest Line, string ProductVersion, Quantity Quantity)>(request.Lines.Count);
         try
         {
@@ -902,8 +903,33 @@ public sealed partial class PurchasingService(
         source is null
             ? null
             : PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
-                ? PurchaseRequestLineSource.Of(kind, source.DocumentId, source.DocumentLineId)
+                ? PurchaseRequestLineSource.ForNewLine(kind, source.DocumentId, source.DocumentLineId)
                 : throw new ArgumentException("Talep satırı kaynağı tanımlı değil.", nameof(source));
+
+    /// <summary>
+    /// A1-2b (SAT-D219, SAT-D220; fail-closed): a line whose source kind is closed for new lines (Sales, until MOD-03 validates it
+    /// through the Sales order line reference port and wires the linked-supply read adaptor) is a 422 <c>validation_failed</c>
+    /// with <c>lines[i].source</c> = <see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>, before any owner read and
+    /// without recording an attempt (the same key may be retried with a corrected body). Stock, Production and manual lines pass.
+    /// </summary>
+    private static void RequireOpenLineSources(CreatePurchaseRequestRequest request)
+    {
+        var errors = new List<PurchasingFieldError>();
+        for (var index = 0; index < request.Lines.Count; index++)
+        {
+            if (request.Lines[index].Source is { } source
+                && PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
+                && !PurchaseRequestLineSource.IsOpenForNewLines(kind))
+            {
+                errors.Add(new($"lines[{index}].source", PurchasingRuleCodes.RequestSourceSalesUnavailable));
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new PurchasingServiceException(422, "validation_failed", errors);
+        }
+    }
 
     private static PurchaseRequestLineSourceView? SourceView(PurchaseRequestLineSource? source) =>
         source is null ? null : new PurchaseRequestLineSourceView(PurchaseRequestSourceKindsV1.Name(source.Kind), source.DocumentId, source.DocumentLineId);
