@@ -5,7 +5,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // API-37 (Satış hazırlık planı v1 §3.3): Kontrol Merkezi — the read-only list of what needs a person's attention among the sales
 // invoices and the shipments waiting for one: SAT-D95 (an uninvoiced shipment past the grace days), EK42 SAT-D223…D226 (a TL
 // amount the group difference flipped or exceeded is flagged, never corrected) and SAT-D7/D86/D90/D172/D225/D229 (the official
-// document comparison). It reads only; it writes nothing in any module and carries no money.
+// document comparison), plus the two API-36 states with no way on in this slice (a finalisation blocked by a match difference, a
+// finalised invoice Finance has not admitted). It reads only; it writes nothing in any module and carries no money.
 
 /// <summary>The wire constants of the Kontrol Merkezi read.</summary>
 public static class SalesControlCenterApiV1
@@ -60,6 +61,18 @@ public enum SalesControlCenterCheckKindView
 
     /// <summary>SAT-D229: a matched invoice whose recorded TL difference against the official document is not zero.</summary>
     OfficialDocumentDeviation = 4,
+
+    /// <summary>
+    /// API-36 (NEEDS-SINAN #3): an approved invoice whose recorded match carries a difference; finalisation refuses it until that
+    /// difference is decided and this slice has no Approved cancel path, so a person must see it.
+    /// </summary>
+    InvoiceFinalizationBlocked = 5,
+
+    /// <summary>
+    /// API-36 (SAT-D208): a finalised invoice that Finance has not admitted yet ("Finans kabulü bekliyor"). A recorded Finance
+    /// refusal is Critical: only the explicit re-drive moves it and no cancel path exists in this slice.
+    /// </summary>
+    InvoiceFinanceAdmissionWaiting = 6,
 }
 
 /// <summary>The result classes of the dispatch/invoice design spec §3.5; all four are produced.</summary>

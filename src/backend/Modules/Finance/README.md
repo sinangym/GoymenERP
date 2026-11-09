@@ -466,3 +466,23 @@ closes that invoice's open items with a reversal. Nothing is deleted.
 | Migration `20261107131505_AddInvoiceCancellations` | Adds the two tables and widens `CK_OpenItems_Status` to `(1, 2, 3)`. `Down` refuses with `THROW 51051` while any cancellation or cancelled item is stored (forward fix) |
 
 Not registered in the host yet: the producers' cancellation commands (Sales, Purchasing) wire it when they exist.
+
+## API-20: supplier payment → payable allocation (F3a) — DEC-FIN-006
+
+A RECORDED manual bank payment (R47, money out) is applied to one or more open PAYABLE items. Like the receipt
+allocation (F-03) it is not a money event and not a ledger row: the payment's one outgoing money event stays the only
+fact; the allocation records how much of it settles which supplier item. Party balance "open payable" falls by itself
+because it sums the outstanding of open payables.
+
+| Part | What |
+|---|---|
+| HTTP | `POST /api/v1/finance/payment-allocations` (`CreateFinancePaymentAllocationV1`), `POST …/{allocationId}/release` (`ReleaseFinancePaymentAllocationV1`, body `ReleaseFinanceAllocationRequest`), `GET` list (window of 50) and detail. Same status codes, idempotency header rule and replay headers as `/api/v1/finance/allocations` |
+| Authority | The existing `finance.allocation.write` / `finance.allocation.read` permissions (no new name, no grant). Fenced before the first read and right before the save; context company/actor must match |
+| Rules | Payment `Status = Recorded` with its one outgoing money event (same amount, account, currency); same company, `CompanyAccountId` and currency as the item; item `Open` and `Direction = Payable` — a receivable is `finance_allocation_direction_mismatch` (an offset is its own operation, API-07); positive exact decimal text ≤ payment unallocated (`finance_allocation_exceeds_source`) and ≤ item outstanding (`finance_allocation_exceeds_open_item`); expected payment and item versions (`version_conflict`); reason required. Outstanding zero closes the item; release restores the payment balance and reopens the item |
+| Persistence | `PaymentAllocations` (company-leading FKs to `ManualBankPayments` and `OpenItems`, `CK_PaymentAllocations_*`, status rule = `CK_Allocations_Status`) and `PaymentAllocationStates` (one concurrency row per payment: original/unallocated amount). Write guard: an allocation changes only by a versioned Active → Released step; a state changes only its unallocated amount and update stamp. The receipt allocation tables are untouched |
+| Idempotency | `finance.Commands` rows `finance.payment-allocation.create.v1` / `.release.v1` target the payment (`ManualBankPaymentId`), so the command table's schema and exactly-one-target rule are unchanged; the allocation id is in the stored answer. State refusals are recorded terminal answers that the same key replays. Audit `finance.payment-allocation.created.v1` / `.released.v1` |
+| F2b | Invoice cancellation also refuses (`finance_invoice_cancellation_has_allocations`) while a payable has an active payment allocation |
+| Migration `20261107154419_AddPaymentAllocations` | Pure DDL up (two tables). `Down` refuses with `THROW 51051` while any payment allocation or payment allocation state is stored (forward fix) |
+
+Not in this slice: the payment allocation screen (the receipt allocation UI is the model), a payment reversal (API-23,
+which must refuse while a payment allocation is active), advances (API-21) and cross-currency allocation (API-22).

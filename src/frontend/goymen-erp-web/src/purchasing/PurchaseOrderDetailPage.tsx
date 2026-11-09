@@ -98,9 +98,13 @@ function PriceCells({ line, currency }: { readonly line: PurchaseOrderLine; read
   const discount = price.discountPercent !== null
     ? T.discountPercentValue(price.discountPercent)
     : price.discountAmount !== null ? T.money(price.discountAmount, currency.currencyCode) : T.noDiscount
+  // A2a-2 (ALS-D38): the maturity surcharge is shown as given, beside the discount; the net and the amount already include it.
+  const deferral = price.deferralPercent != null
+    ? T.deferral(T.discountPercentValue(price.deferralPercent))
+    : price.deferralAmount != null ? T.deferral(T.money(price.deferralAmount, currency.currencyCode)) : null
   return <>
     <Cell label={T.unitPrice} numeric>{T.money(price.unitPrice, currency.currencyCode)}</Cell>
-    <Cell label={T.discount} numeric>{discount}</Cell>
+    <Cell label={T.discount} numeric>{deferral === null ? discount : `${discount} · ${deferral}`}</Cell>
     <Cell label={T.netUnitPrice} numeric>{T.money(price.netUnitPrice, currency.currencyCode)}</Cell>
     <Cell label={T.lineAmount} numeric>{T.money(price.lineAmount, currency.currencyCode)}</Cell>
   </>

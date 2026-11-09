@@ -243,39 +243,39 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         // A1-2 (plan API-02): the optional line source is read strictly; the response carries it on the line and the
         // summary's kinds. No new permission or route: the create route is unchanged.
         var id = Guid.NewGuid();
-        var salesOrder = Guid.NewGuid();
-        var salesOrderLine = Guid.NewGuid();
+        var productionPlan = Guid.NewGuid();
+        var productionPlanLine = Guid.NewGuid();
         var detail = RequestDetail(id, "Draft", "2") with
         {
-            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Sales"] },
+            Request = RequestDetail(id, "Draft", "2").Request with { SourceKinds = ["Production"] },
             Lines = [new PurchaseRequestLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", Guid.NewGuid(), "6")
             {
-                Source = new PurchaseRequestLineSourceView("Sales", salesOrder, salesOrderLine),
+                Source = new PurchaseRequestLineSourceView("Production", productionPlan, productionPlanLine),
             }],
         };
         var service = new StubService { CreateRequest = () => Task.FromResult(new PurchaseRequestResponse(detail, false, "SENTETIK-corr-1")) };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
 
-        var source = $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""";
+        var source = $$""","source":{"kind":"Production","documentId":"{{productionPlan:D}}","documentLineId":"{{productionPlanLine:D}}"}""";
         using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-source", RequestBody(source))))
         {
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
             var line = body.GetProperty("detail").GetProperty("lines")[0].GetProperty("source");
-            Assert.Equal(("Sales", salesOrder.ToString("D"), salesOrderLine.ToString("D")),
+            Assert.Equal(("Production", productionPlan.ToString("D"), productionPlanLine.ToString("D")),
                 (line.GetProperty("kind").GetString(), line.GetProperty("documentId").GetString(), line.GetProperty("documentLineId").GetString()));
-            Assert.Equal("[\"Sales\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
+            Assert.Equal("[\"Production\"]", body.GetProperty("detail").GetProperty("request").GetProperty("sourceKinds").GetRawText());
         }
 
-        Assert.Equal(new PurchaseRequestLineSourceRequest("Sales", salesOrder, salesOrderLine), service.LastCreateRequest!.Lines[0].Source);
+        Assert.Equal(new PurchaseRequestLineSourceRequest("Production", productionPlan, productionPlanLine), service.LastCreateRequest!.Lines[0].Source);
 
         foreach (var loose in new[]
         {
-            $$""","source":{"kind":"Manual","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
-            $$""","source":{"kind":"Sales","documentId":"{{Guid.Empty:D}}","documentLineId":"{{salesOrderLine:D}}"}""",
-            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}"}""",
-            $$""","source":{"kind":"Sales","documentId":"{{salesOrder:D}}","documentLineId":"{{salesOrderLine:D}}","extra":1}""",
+            $$""","source":{"kind":"Manual","documentId":"{{productionPlan:D}}","documentLineId":"{{productionPlanLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{Guid.Empty:D}}","documentLineId":"{{productionPlanLine:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{productionPlan:D}}"}""",
+            $$""","source":{"kind":"Sales","documentId":"{{productionPlan:D}}","documentLineId":"{{productionPlanLine:D}}","extra":1}""",
         })
         {
             using var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, $"SENTETIK-loose-{Guid.NewGuid():N}", RequestBody(loose)));
@@ -303,6 +303,34 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
 
         Assert.Null(service.LastCreateRequest!.Lines[0].Source);
         Assert.Equal(2, service.Calls);
+    }
+
+    [Fact]
+    public async Task A_sales_sourced_line_is_read_strictly_and_the_services_refusal_is_a_422_naming_the_line_source()
+    {
+        // A1-2b (SAT-D219, SAT-D220; fail-closed): "Sales" is still a well-formed kind on the wire (strict JSON is unchanged), but
+        // the service refuses it until MOD-03; the refusal reaches the client as 422 validation_failed with lines[i].source.
+        var service = new StubService
+        {
+            CreateRequest = () => throw new PurchasingServiceException(422, "validation_failed",
+                [new("lines[0].source", "purchasing_request_source_sales_unavailable")]),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        var source = $$""","source":{"kind":"Sales","documentId":"{{Guid.NewGuid():D}}","documentLineId":"{{Guid.NewGuid():D}}"}""";
+        using (var response = await client.SendAsync(Post(PurchasingApiV1.RequestsPath, "SENTETIK-sales-source", RequestBody(source))))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("validation_failed", problem.GetProperty("code").GetString());
+            var error = Assert.Single(problem.GetProperty("errors").EnumerateArray());
+            Assert.Equal(("lines[0].source", "purchasing_request_source_sales_unavailable"),
+                (error.GetProperty("field").GetString(), error.GetProperty("code").GetString()));
+        }
+
+        Assert.Equal("Sales", service.LastCreateRequest!.Lines[0].Source!.Kind);
+        Assert.Equal(1, service.Calls);
     }
 
     [Fact]
@@ -937,6 +965,51 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         }
     }
 
+    [Fact]
+    public async Task The_totals_route_answers_the_owners_view_privately_and_refuses_a_query_before_the_service()
+    {
+        // A2a-2 (plan API-20): GET …/totals reads only; withholding is "NotComputable" (N-20) and its amounts null; an unknown query
+        // is a 400 before the service; 403 / 404 / 503 stay the platform's code-less shapes.
+        var id = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubService
+        {
+            Totals = orderId => Task.FromResult(new PurchaseOrderTotalsView(orderId, "2", "Visible", new PurchaseOrderCurrencyView(Guid.NewGuid(), "TRY", 2),
+                "Computed", 0, "100", "Computed", 0, "20", "120", "NotComputable", "withholding_unconfirmed", null, null,
+                [new PurchaseOrderLineTotalView(lineId, 1, "Computed", "10", "100", "Computed", null, "20", "20", "120", "NotComputable")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{id:D}/totals"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateNoStore(response);
+            var totals = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(("120", "NotComputable", "withholding_unconfirmed", JsonValueKind.Null),
+                (totals.GetProperty("grossAmount").GetString(), totals.GetProperty("withholdingState").GetString(),
+                    totals.GetProperty("withholdingReason").GetString(), totals.GetProperty("payableAmount").ValueKind));
+            Assert.Equal("20", totals.GetProperty("lines")[0].GetProperty("vatAmount").GetString());
+        }
+
+        var calls = service.Calls;
+        using (var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{id:D}/totals?scale=4"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+        foreach (var (status, code) in new[] { (403, "forbidden"), (404, "not_found"), (503, "reference_provider_invalid") })
+        {
+            service.Totals = _ => throw new PurchasingServiceException(status, code);
+            using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{id:D}/totals");
+            Assert.Equal((HttpStatusCode)status, response.StatusCode);
+            var payload = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(id.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("reference_provider_invalid", payload, StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [InlineData(403, "forbidden")]
     [InlineData(404, "not_found")]
@@ -1126,6 +1199,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Guid, CancelPurchaseOrderRequest, Task<PurchaseOrderResponse>> CancelOrder { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderCancelImpactView>> CancelImpact { get; set; } = _ => throw new InvalidOperationException("not expected");
+        public Func<Guid, Task<PurchaseOrderTotalsView>> Totals { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
@@ -1234,6 +1308,12 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             Calls++;
             return CancelImpact(orderId);
+        }
+
+        public Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Totals(orderId);
         }
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>

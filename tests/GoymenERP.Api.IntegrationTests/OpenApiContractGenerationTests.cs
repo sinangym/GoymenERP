@@ -12,6 +12,7 @@ using GoymenERP.Api.Contracts;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Http;
@@ -525,6 +526,18 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/ReleaseFinanceAllocationRequest",
             ParameterValues: ["path:allocationId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/payment-allocations", "GetFinancePaymentAllocationsV1",
+            AuthenticatedResponses("200:application/json", "503:application/problem+json")),
+        new("get", "/api/v1/finance/payment-allocations/{allocationId}", "GetFinancePaymentAllocationV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:allocationId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/payment-allocations", "CreateFinancePaymentAllocationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CreateFinancePaymentAllocationRequest"),
+        new("post", "/api/v1/finance/payment-allocations/{allocationId}/release", "ReleaseFinancePaymentAllocationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ReleaseFinanceAllocationRequest",
+            ParameterValues: ["path:allocationId:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/manual-receipts/{sourceId}/record", "RecordFinanceManualReceiptV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/RecordRequest", ["path:sourceId:true:type:string;format:uuid"]),
@@ -989,6 +1002,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/purchasing/orders/{id}/approval", "ApprovePurchaseOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ApprovePurchaseOrderRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/purchasing/orders/{id}/totals", "GetPurchaseOrderTotalsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/orders/{id}/cancel-impact", "GetPurchaseOrderCancelImpactV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -1453,6 +1469,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReleaseFinanceAllocationV1"] = "ref:FinanceAllocationCommandResult",
             ["GetFinanceAllocationsV1"] = "ref:FinanceAllocationPage",
             ["GetFinanceAllocationV1"] = "ref:FinanceAllocationDetail",
+            ["CreateFinancePaymentAllocationV1"] = "ref:FinancePaymentAllocationCommandResult",
+            ["ReleaseFinancePaymentAllocationV1"] = "ref:FinancePaymentAllocationCommandResult",
+            ["GetFinancePaymentAllocationsV1"] = "ref:FinancePaymentAllocationPage",
+            ["GetFinancePaymentAllocationV1"] = "ref:FinancePaymentAllocationDetail",
             ["ProposeFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["ApproveFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["RejectFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
@@ -1578,6 +1598,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreatePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
             ["GetPurchaseOrderV1"] = "ref:PurchaseOrderReadDetailViewV1",
             ["ApprovePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
+            ["GetPurchaseOrderTotalsV1"] = "ref:PurchaseOrderTotalsView",
             ["GetPurchaseOrderCancelImpactV1"] = "ref:PurchaseOrderCancelImpactView",
             ["CancelPurchaseOrderV1"] = "ref:PurchaseOrderResponse",
             ["GetPurchaseGoodsReceiptsV1"] = "ref:PurchaseGoodsReceiptPageV1",
@@ -1743,6 +1764,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceAllocationV1",
         "CreateFinanceAllocationV1",
         "ReleaseFinanceAllocationV1",
+        "GetFinancePaymentAllocationsV1",
+        "GetFinancePaymentAllocationV1",
+        "CreateFinancePaymentAllocationV1",
+        "ReleaseFinancePaymentAllocationV1",
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
@@ -1911,6 +1936,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreatePurchaseOrderV1",
         "GetPurchaseOrderV1",
         "ApprovePurchaseOrderV1",
+        "GetPurchaseOrderTotalsV1",
         "GetPurchaseOrderCancelImpactV1",
         "CancelPurchaseOrderV1",
         "GetPurchaseGoodsReceiptsV1",
@@ -2065,6 +2091,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordFinanceManualBankPaymentV1",
         "CreateFinanceAllocationV1",
         "ReleaseFinanceAllocationV1",
+        "CreateFinancePaymentAllocationV1",
+        "ReleaseFinancePaymentAllocationV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
@@ -2325,6 +2353,14 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                ["CreateFinancePaymentAllocationV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ReleaseFinancePaymentAllocationV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["ProposeFinanceManualReceiptReversalV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
@@ -2556,6 +2592,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordFinanceManualBankPaymentV1",
         "CreateFinanceAllocationV1",
         "ReleaseFinanceAllocationV1",
+        "CreateFinancePaymentAllocationV1",
+        "ReleaseFinancePaymentAllocationV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
@@ -2733,6 +2771,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetIdentityAccessUserV1:404",
         "GetIdentityAccessRoleV1:404",
         "GetFinanceAllocationV1:404",
+        "GetFinancePaymentAllocationV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryLabelDetailV1:404",
@@ -2863,6 +2902,7 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
         "ApprovePurchaseOrderV1:404",
+        "GetPurchaseOrderTotalsV1:404",
         "GetPurchaseOrderCancelImpactV1:404",
         "CancelPurchaseOrderV1:404",
         "GetPurchaseGoodsReceiptsV1:404",
@@ -2971,6 +3011,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordFinanceManualBankPaymentV1:400",
         "CreateFinanceAllocationV1:400",
         "ReleaseFinanceAllocationV1:400",
+        "CreateFinancePaymentAllocationV1:400",
+        "ReleaseFinancePaymentAllocationV1:400",
         "ProposeFinanceBankAccountV1:400",
         "ApproveFinanceBankAccountV1:400",
         "ProposeFinanceBankAccountIbanChangeV1:400",
@@ -3286,14 +3328,23 @@ public sealed partial class OpenApiContractGenerationTests
                     "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
             // Üretim U2-a: the approval reads each roll's current label for the slitting gate (Inventory's 409s join).
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
+            // Üretim U3-a (URT-D21, URT-D3): the approval allocates the inputs in Inventory at the label version read
+            // from the label detail, so the allocation's and that read's refusals join.
             ["ApproveManufacturingPlanV1:409"] =
-                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
-            ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
+                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict",
+                    InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock,
+                    InventoryManufacturingRealizationCodesV1.AllocationOwnerMismatch,
+                    InventoryLabelDetailCodesV1.ReadConflict,
+                    ManufacturingPlanAllocationCodesV1.LabelNotFound,
+                    ManufacturingPlanAllocationCodesV1.LabelIdentityChanged],
+            // Üretim U2-d (URT-D2): the preparer of the current version may not approve or reject it.
+            ["ApproveManufacturingPlanV1:422"] = [.. ManufacturingUnprocessableCodes, "manufacturing_plan_self_approval"],
             // Üretim U2-a (URT-D2, API-10/11): the rejection and the cancellation add their two lifecycle refusals.
             ["RejectManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["RejectManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["RejectManufacturingPlanV1:422"] =
-                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
+                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order",
+                    "manufacturing_plan_self_approval"],
             ["CancelManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["CancelManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["CancelManufacturingPlanV1:422"] =
@@ -3303,7 +3354,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CreateManufacturingOrderV1:422"] = [.. ManufacturingUnprocessableCodes, "manufacturing_plan_order_exists"],
             ["IssueManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
-            ["IssueManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
+            // Üretim U3-a (API-21): an issue from its plan allocation meets the allocation's own refusals too.
+            ["IssueManufacturingInputV1:409"] =
+                [.. ManufacturingInventoryRealizationConflictCodes,
+                    InventoryManufacturingRealizationCodesV1.AllocationNotUsable,
+                    InventoryManufacturingRealizationCodesV1.AllocationExceeded],
             ["IssueManufacturingInputV1:422"] = ManufacturingUnprocessableCodes,
             ["ReturnManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
             ["ReturnManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
@@ -3585,6 +3640,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApprovePurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ApprovePurchaseOrderV1:409"] = ["concurrent_change", "purchasing_order_state", "purchasing_request_line_over_sourced", "purchasing_request_state", "same_key_payload_mismatch", "version_conflict"],
             ["ApprovePurchaseOrderV1:422"] = ["validation_failed"],
+            ["GetPurchaseOrderTotalsV1:400"] = ["validation_failed"],
             ["GetPurchaseOrderCancelImpactV1:400"] = ["validation_failed"],
             ["CancelPurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CancelPurchaseOrderV1:409"] = ["concurrent_change", "purchasing_order_nothing_to_cancel", "purchasing_order_state", "same_key_payload_mismatch",
@@ -4405,7 +4461,45 @@ public sealed partial class OpenApiContractGenerationTests
                     ("discountPercent", "type:null|string"),
                     ("discountAmount", "type:null|string"),
                     ("netUnitPrice", "type:string"),
-                    ("lineAmount", "type:string")),
+                    ("lineAmount", "type:string"),
+                    // A2a-2 (ALS-D38, ALS-D75): the maturity surcharge as given.
+                    ("deferralPercent", "type:null|string"),
+                    ("deferralAmount", "type:null|string")),
+                // A2a-2 (plan API-20; ALS-D74, ALS-D77): the order totals; withholding never computed (N-20).
+                ["PurchaseOrderTotalsView"] = ObjectSchema(
+                    ["orderId", "version", "priceDisclosure", "currency", "state", "unpricedLineCount", "netAmount", "vatState",
+                        "vatNotComputableLineCount", "vatAmount", "grossAmount", "withholdingState", "withholdingReason", "withheldVatAmount",
+                        "payableAmount", "lines"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("priceDisclosure", "type:string"),
+                    ("currency", "oneOf:ref:PurchaseOrderCurrencyView|type:null"),
+                    ("state", "type:string"),
+                    ("unpricedLineCount", "type:integer|string;format:int32"),
+                    ("netAmount", "type:null|string"),
+                    ("vatState", "type:string"),
+                    ("vatNotComputableLineCount", "type:integer|string;format:int32"),
+                    ("vatAmount", "type:null|string"),
+                    ("grossAmount", "type:null|string"),
+                    ("withholdingState", "type:string"),
+                    ("withholdingReason", "type:null|string"),
+                    ("withheldVatAmount", "type:null|string"),
+                    ("payableAmount", "type:null|string"),
+                    ("lines", "type:array;items:ref:PurchaseOrderLineTotalView")),
+                ["PurchaseOrderLineTotalView"] = ObjectSchema(
+                    ["lineId", "lineNo", "state", "netUnitPrice", "netAmount", "vatState", "vatReason", "vatPercent", "vatAmount", "grossAmount",
+                        "withholdingState"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("state", "type:string"),
+                    ("netUnitPrice", "type:null|string"),
+                    ("netAmount", "type:null|string"),
+                    ("vatState", "type:string"),
+                    ("vatReason", "type:null|string"),
+                    ("vatPercent", "type:null|string"),
+                    ("vatAmount", "type:null|string"),
+                    ("grossAmount", "type:null|string"),
+                    ("withholdingState", "type:string")),
                 ["PurchasingCurrencyCandidatesResponseV1"] = ObjectSchema(
                     ["items"],
                     ("items", "type:array;items:ref:PurchasingCurrencyCandidateViewV1")),
@@ -4560,7 +4654,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("updatedAtUtc", "type:string;format:date-time"),
                     ("lineCount", "type:integer|string;format:int32"),
-                    ("supplierDisplay", "ref:PurchasingSupplierDisplayV1")),
+                    ("supplierDisplay", "ref:PurchasingSupplierDisplayV1"),
+                    // A2a-2: on a list item only, for a holder of the price read (never written otherwise).
+                    ("pricePending", "type:boolean|null")),
                 ["PurchaseOrderSummaryView"] = ObjectSchema(
                     ["id", "companyId", "status", "version", "supplierPartyId", "companyAccountId", "sourceRequestId", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount"],
                     ("id", "type:string;format:uuid"),
@@ -4573,7 +4669,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("effectiveOn", "type:string;format:date"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("updatedAtUtc", "type:string;format:date-time"),
-                    ("lineCount", "type:integer|string;format:int32")),
+                    ("lineCount", "type:integer|string;format:int32"),
+                    ("pricePending", "type:boolean|null")),
                 ["PurchasingSupplierDisplayV1"] = ObjectSchema(
                     ["partyId", "code", "legalName", "tradeName"],
                     ("partyId", "type:string;format:uuid"),
@@ -5622,7 +5719,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("tradeName", "type:null|string")),
                 ["SalesDispatchNoteStateView"] = ScalarSchema("enum:Draft|Approved|Cancelled"),
                 ["SalesInvoicedStateView"] = ScalarSchema("enum:NoSource"),
-                ["SalesControlCenterCheckKindView"] = ScalarSchema("enum:UninvoicedDispatchOverdue|InvoiceNeedsReview|InvoiceAwaitingOfficialMatch|OfficialDocumentDeviation"),
+                ["SalesControlCenterCheckKindView"] = ScalarSchema("enum:UninvoicedDispatchOverdue|InvoiceNeedsReview|InvoiceAwaitingOfficialMatch|OfficialDocumentDeviation|InvoiceFinalizationBlocked|InvoiceFinanceAdmissionWaiting"),
                 ["SalesControlCenterCheckStateView"] = ScalarSchema("enum:Measured|NoSource|Unavailable"),
                 ["SalesControlCenterSeverityView"] = ScalarSchema("enum:Critical|ApprovalRequired|WithinTolerance|Info"),
                 ["SalesInvoiceGroupKeyPart"] = ScalarSchema("enum:ExchangeRate|InvoiceType"),
@@ -6340,6 +6437,38 @@ public sealed partial class OpenApiContractGenerationTests
                     ("releasedBy", "type:null|string"),
                     ("releasedAtUtc", "type:null|string;format:date-time"),
                     ("releaseReason", "type:null|string")),
+                ["FinancePaymentAllocationCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:FinancePaymentAllocationView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["FinancePaymentAllocationPage"] = ObjectSchema(
+                    ["companyId", "items", "windowFull"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:FinancePaymentAllocationView"),
+                    ("windowFull", "type:boolean")),
+                ["FinancePaymentAllocationDetail"] = ObjectSchema(
+                    ["allocation", "openItemVersion"],
+                    ("allocation", "ref:FinancePaymentAllocationView"),
+                    ("openItemVersion", "type:string")),
+                ["FinancePaymentAllocationView"] = ObjectSchema(
+                    ["id", "companyId", "paymentId", "openItemId", "currencyId", "amount", "status", "version", "reason", "createdBy", "createdAtUtc", "releasedBy", "releasedAtUtc", "releaseReason"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("paymentId", "type:string;format:uuid"),
+                    ("openItemId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("amount", "type:string"),
+                    ("status", "ref:FinanceAllocationStatus"),
+                    ("version", "type:string"),
+                    ("reason", "type:string"),
+                    ("createdBy", "type:string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("releasedBy", "type:null|string"),
+                    ("releasedAtUtc", "type:null|string;format:date-time"),
+                    ("releaseReason", "type:null|string")),
                 ["ManualBankPaymentLinkedDocument"] = ObjectSchema(
                     ["documentId", "version"],
                     ("documentId", "type:string;format:uuid"),
@@ -6716,7 +6845,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("orderId", "type:null|string;format:uuid"),
                     ("rejections", "type:array|null;items:ref:PlanRejectionViewV1"),
                     ("cancellation", "oneOf:ref:PlanCancellationViewV1|type:null"),
-                    ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null")),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null"),
+                    // Üretim U2-d (URT-D2): who prepared the current version, an actor id (additive, optional).
+                    ("preparedBy", "type:null|string")),
                 // Üretim U2-b1 (API-12): the plan-entered Tube / Profile, Paint and Cold Rolling values (all members emitted).
                 ["PlanProcessSpecViewV1"] = ObjectSchema(
                     ["packageCount", "piecesPerPackage", "pieceLengthMm", "unitKg", "perimeterMm", "targetThicknessMm",
@@ -8261,7 +8392,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("unitPrice", "type:string"),
                     ("priceUnitId", "type:null|string;format:uuid"),
                     ("discountPercent", "type:null|string"),
-                    ("discountAmount", "type:null|string")),
+                    ("discountAmount", "type:null|string"),
+                    // A2a-2 (ALS-D38, ALS-D75): at most one maturity surcharge.
+                    ("deferralPercent", "type:null|string"),
+                    ("deferralAmount", "type:null|string")),
                 ["PurchaseRequestLineRequest"] = ObjectSchema(
                     ["lineId", "productId", "expectedProductVersion", "unitId", "quantity"],
                     ("lineId", "type:string;format:uuid"),
@@ -8756,6 +8890,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("allocationId", "type:string;format:uuid"),
                     ("sourceId", "type:string;format:uuid"),
                     ("expectedSourceVersion", "type:string"),
+                    ("openItemId", "type:string;format:uuid"),
+                    ("expectedOpenItemVersion", "type:string"),
+                    ("amount", "type:string"),
+                    ("reason", "type:string")),
+                ["CreateFinancePaymentAllocationRequest"] = ObjectSchema(
+                    ["allocationId", "paymentId", "expectedPaymentVersion", "openItemId", "expectedOpenItemVersion", "amount", "reason"],
+                    ("allocationId", "type:string;format:uuid"),
+                    ("paymentId", "type:string;format:uuid"),
+                    ("expectedPaymentVersion", "type:string"),
                     ("openItemId", "type:string;format:uuid"),
                     ("expectedOpenItemVersion", "type:string"),
                     ("amount", "type:string"),

@@ -96,12 +96,16 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal((ManufacturingRuleCodes.VersionConflict, "1", "2"), await Problem(stale));
 
         // The next step reads the edited plan: the approval names version 2 and the order snapshots the edit.
-        var approval = await client.PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(2));
+        var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(2));
         Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
         var approved = (await approval.Content.ReadFromJsonAsync<PlanViewV1>())!;
         Assert.Equal(3L, approved.Version);
-        // The revision's actor is the same server-resolved user that then approved.
-        Assert.Equal(approved.ApprovedByUserId, Guid.Parse(history.Revisions[1].RevisedBy!));
+        // U2-d (URT-D2): the revision's server-resolved actor (the editing user) prepared version 2, so the approval
+        // came from another server-resolved user.
+        var reviserId = await run.UserIdOfAsync(TestUsers.CompanyA);
+        Assert.Equal(reviserId, Guid.Parse(history.Revisions[1].RevisedBy!));
+        Assert.Equal(reviserId, Guid.Parse(approved.PreparedBy!));
+        Assert.Equal(await run.UserIdOfAsync(TestUsers.SiteAuditReader), approved.ApprovedByUserId);
         var orderId = Guid.NewGuid();
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/orders",
             new CreateOrderRequestV1(orderId, created.PlanId))).StatusCode);

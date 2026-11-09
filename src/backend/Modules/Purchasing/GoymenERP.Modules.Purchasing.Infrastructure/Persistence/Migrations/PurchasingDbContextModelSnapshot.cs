@@ -360,6 +360,14 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("DeferralAmount")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.Property<decimal?>("DeferralPercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
                     b.Property<decimal?>("DiscountAmount")
                         .HasPrecision(24, 6)
                         .HasColumnType("decimal(24,6)");
@@ -423,6 +431,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PurchaseOrderLines", "purchasing", t =>
                         {
+                            t.HasCheckConstraint("CK_PurchaseOrderLines_Deferral", "([DeferralPercent] IS NULL AND [DeferralAmount] IS NULL) OR ([UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND ([DeferralPercent] IS NULL OR [DeferralAmount] IS NULL) AND ([DeferralPercent] IS NULL OR ([DeferralPercent] >= 0 AND [DeferralPercent] <= 100)) AND ([DeferralAmount] IS NULL OR [DeferralAmount] >= 0))");
+
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProductVersion]) > 0 AND ([ParentLineId] IS NULL OR [ParentLineId] <> '00000000-0000-0000-0000-000000000000') AND ([SourceRequestLineId] IS NULL OR [SourceRequestLineId] <> '00000000-0000-0000-0000-000000000000')");
 
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Kind", "([Kind] = 1 AND [ParentLineId] IS NULL) OR ([Kind] = 2 AND [ParentLineId] IS NOT NULL)");
@@ -504,6 +514,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("SupplierPartyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("UnitPriceScale")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -533,6 +546,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseOrders_Status", "[Status] IN (1, 2, 3)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseOrders_UnitPriceScale", "[UnitPriceScale] IS NULL OR ([CurrencyId] IS NOT NULL AND [UnitPriceScale] >= 0 AND [UnitPriceScale] <= 28)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Version", "[Version] >= 1");
                         });

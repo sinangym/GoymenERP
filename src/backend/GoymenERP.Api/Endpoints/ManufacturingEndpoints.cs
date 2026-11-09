@@ -79,6 +79,27 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanNetWidthExceedsParent,
     ];
 
+    // Üretim U3-a (URT-D21, URT-D3, B-01): the approval allocates the plan's inputs in Inventory with the approval, at the
+    // label version read from Inventory's label detail; Inventory's allocation refusals and the label read's join its 409
+    // set. Declared on the approval only.
+    private static readonly string[] ApprovePlanConflictCodes =
+    [
+        .. SavePlanConflictCodes,
+        InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock,
+        InventoryManufacturingRealizationCodesV1.AllocationOwnerMismatch,
+        InventoryLabelDetailCodesV1.ReadConflict,
+        ManufacturingPlanAllocationCodesV1.LabelNotFound,
+        ManufacturingPlanAllocationCodesV1.LabelIdentityChanged,
+    ];
+
+    // Üretim U3-a (API-21): an input issue from its plan allocation may meet the allocation's own refusals.
+    private static readonly string[] IssueInputConflictCodes =
+    [
+        .. ConflictCodes,
+        InventoryManufacturingRealizationCodesV1.AllocationNotUsable,
+        InventoryManufacturingRealizationCodesV1.AllocationExceeded,
+    ];
+
     // Üretim U2-a (URT-D2, API-10/11): the rejection's and the cancellation's own 422 set — the write set plus the two
     // lifecycle rules. Declared on those endpoints only, so no existing endpoint's contract moves.
     private static readonly string[] PlanDecisionUnprocessableCodes =
@@ -86,6 +107,20 @@ public static class ManufacturingEndpoints
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.PlanCancelled,
         ManufacturingRuleCodes.PlanHasOrder,
+    ];
+
+    // Üretim U2-d (URT-D2): the approval's and the rejection's 422 sets add "the preparer of the current version may not
+    // decide". Declared on those two endpoints only, so the cancellation and every other endpoint keep their contract.
+    private static readonly string[] ApprovePlanUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanSelfApproval,
+    ];
+
+    private static readonly string[] RejectPlanUnprocessableCodes =
+    [
+        .. PlanDecisionUnprocessableCodes,
+        ManufacturingRuleCodes.PlanSelfApproval,
     ];
 
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
@@ -242,7 +277,7 @@ public static class ManufacturingEndpoints
             .WithName("RejectManufacturingPlanV1")
             .Accepts<RejectPlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
-            .WithPlanDecisionProblems();
+            .WithPlanDecisionProblems(RejectPlanUnprocessableCodes);
 
         // Üretim U2-a (API-11): the cancellation of a Draft, or of an approved plan that opened no order, with a reason,
         // under its own grant (`manufacturing.plans.cancel`, company-wide, granted to no role). The plan is kept as
@@ -382,7 +417,7 @@ public static class ManufacturingEndpoints
             .WithName("IssueManufacturingInputV1")
             .Accepts<IssueInventoryInputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithWriteProblems(notFound: true, IssueInputConflictCodes);
 
         group.MapPost("/orders/{orderId:guid}/input-returns", async (
                 Guid orderId,
@@ -529,13 +564,14 @@ public static class ManufacturingEndpoints
             .WithWriteProblems(notFound: true);
     }
 
-    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound)
+    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
+        string[]? conflictCodes = null)
     {
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpConflict(conflictCodes ?? ConflictCodes)
             .ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
@@ -549,19 +585,20 @@ public static class ManufacturingEndpoints
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(SavePlanConflictCodes)
-            .ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpConflict(ApprovePlanConflictCodes)
+            .ProducesErpUnprocessableEntity(ApprovePlanUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();
 
-    private static RouteHandlerBuilder WithPlanDecisionProblems(this RouteHandlerBuilder builder) =>
+    private static RouteHandlerBuilder WithPlanDecisionProblems(this RouteHandlerBuilder builder,
+        string[]? unprocessableCodes = null) =>
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(ConflictCodes)
-            .ProducesErpUnprocessableEntity(PlanDecisionUnprocessableCodes)
+            .ProducesErpUnprocessableEntity(unprocessableCodes ?? PlanDecisionUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();
