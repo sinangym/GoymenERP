@@ -234,6 +234,24 @@ internal sealed class PlanRejectionRow : IManufacturingTenantRow
 }
 
 /// <summary>
+/// Üretim U3-a (URT-D21, B-01): Manufacturing's copy of the allocation Inventory wrote for one plan input at the plan's
+/// approval, in the same transaction. The label version Inventory returned is what the plan's order and its input issue
+/// use; the allocation identity is what the input issue names. Inventory remains the owner of the allocation's state
+/// (active, consumed, released); this row is append-only.
+/// </summary>
+internal sealed class PlanInputAllocationRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public Guid ParentRollId { get; set; }
+    public Guid AllocationId { get; set; }
+    public long LabelVersionAfter { get; set; }
+    public decimal AllocatedKg { get; set; }
+    public long PlanVersion { get; set; }
+    public DateTimeOffset AllocatedAtUtc { get; set; }
+}
+
+/// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a recorded revision, in the revision's own order, with the Inventory
 /// label version accepted for it. The complete input set of the revision; append-only.
 /// </summary>

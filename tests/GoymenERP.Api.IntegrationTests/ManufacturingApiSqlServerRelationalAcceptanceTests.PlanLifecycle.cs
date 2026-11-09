@@ -141,6 +141,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         // A Draft and an approved plan without an order are cancelled and kept; the active list leaves them out.
+        // U3-a: the first plan's approval allocated its roll's kilograms, so these plans plan another roll.
+        var other = await run.StockedLabelAsync($"SYN-MFG-U2A-B-{Guid.NewGuid():N}");
+        inputs = [new PlannedInputRequestV1(other.Id, "1000", other.Version)];
         var draftId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans", new SavePlanRequestV1(draftId, tube, inputs, null));
         var cancelledDraft = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{draftId}/cancellation",
@@ -210,7 +213,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var slitting = await run.WorkCenterOfKindAsync(CompanyA, "Slitting");
         // The synthetic Product snapshot captures 1 mm × 1000 mm coils; the label holds 1000.125 kg of free stock.
         var roll = await run.StockedLabelAsync($"SYN-MFG-U2A-SLT-{Guid.NewGuid():N}");
-        PlannedInputRequestV1[] Inputs(string kg) => [new PlannedInputRequestV1(roll.Id, kg, roll.Version)];
+        var rollVersion = roll.Version;
+        PlannedInputRequestV1[] Inputs(string kg) => [new PlannedInputRequestV1(roll.Id, kg, rollVersion)];
         SlittingSpecRequestV1 Spec(string netWidth) => new([new SlitLineRequestV1("490", 2)], null, netWidth);
 
         using (var tooWide = await client.PostWithKeyAsync($"{Base}/plans",
@@ -245,6 +249,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             ("@c", CompanyA), ("@p", planId)));
 
         // A roll whose free stock does not cover the planned kg is not usable: the approval is refused, nothing changes.
+        // U3-a: the approval above allocated the roll and moved its label version; the next plan names the current one.
+        rollVersion = await run.CurrentLabelVersionAsync(roll.Id);
         var shortId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans",
             new SavePlanRequestV1(shortId, slitting, Inputs("1500"), null, Spec("980"), null, "50"));
