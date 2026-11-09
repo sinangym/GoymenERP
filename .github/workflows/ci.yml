@@ -298,10 +298,10 @@ jobs:
           }
           trap cleanup EXIT
 
-          python3 -I -S -B -m unittest discover \
-            -s tests/recovery_surface_inventory \
-            -p "test_*.py" \
-            -v
+          python3 -I -S -B tools/run_unittest_shards.py \
+            --start-dir tests/recovery_surface_inventory \
+            --pattern "test_*.py" \
+            --shards 4
 
           git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"
           test "$(git hash-object "$generator_temp")" = "$generator_blob"
@@ -378,10 +378,10 @@ jobs:
           trap cleanup EXIT
 
           test "$(git hash-object "$generator_path")" = "$generator_blob"
-          python3 -I -S -B -m unittest discover \
-            -s tests/release_manifest \
-            -p "test_*.py" \
-            -v
+          python3 -I -S -B tools/run_unittest_shards.py \
+            --start-dir tests/release_manifest \
+            --pattern "test_*.py" \
+            --shards 4
 
           python3 -I -S -B "$generator_path" \
             --repository-root "$GITHUB_WORKSPACE" \

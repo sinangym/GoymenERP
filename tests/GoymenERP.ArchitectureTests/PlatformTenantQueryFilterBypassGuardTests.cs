@@ -493,7 +493,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "263e6785dc43fc5889c8cdc641bb8e60ff3d062a55eb4ddd861b3d7e9fbe9e61";
+        "a2a65d4b9bc4ed68ffce54b05a686e9c5dd0b5f4b09924b3297de60eb98bbd83";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
