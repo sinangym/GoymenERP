@@ -266,7 +266,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F2b: +4 invoice cancellation facts, ordinal-sorted (4575e229… -> c2205fa2…).
             // F3a / API-20 +7 facts, then F2b follow-up +3 facts (admission after cancellation, late fence and race, status-only Down), ordinal-sorted (c2205fa2… -> bfc11064…).
             ["tools/relational_inventory/finance.txt"] =
-                "bfc1106436b7247234652f764772c7f91f810c900d52fe9ef31ebe5d9dc64f6e",
+                "33dcc442bc29b42c999874cb3ae42dfc8602e782cdad0489719f83d139349deb",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -1314,7 +1314,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // 2ae7b299… -> f9ef0286…).
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "93aaf32671c8b0fa74827e76f9c325d7cd1f906ce1e32e80d1b733e5dbcafb62",
+                        "2abc569a4100b56bb7f92ef0179366961763b35ba25db881d3daaca62fc7c6d3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
