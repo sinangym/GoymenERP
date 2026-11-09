@@ -24,13 +24,13 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "d980b704cb21d5313b647b5d2e8b48489b546f6456b94148a32c8c3144a73500"
+    "525876972bb40735b565aa237b16b29155a7f73ea6a9fef99a0c412da4b77447"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
-    "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
+    "d04b7794ab2a9a180539258568d3d810ec2437ee468657e27574a50db4c04459"
 )
 REVIEWED_RELEASE_MANIFEST_JOB_FINGERPRINT = (
-    "d20f56609a1f034815a34502584a5258c711d1f3ec65195c5c5f5d467e2b1138"
+    "7c3609e2522192735d9d7b8409f0de7aab607187c263b55a60e46231cbdfca9e"
 )
 
 
@@ -1151,18 +1151,18 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "target suite command",
-                "python3 -I -S -B -m unittest discover \\",
-                "python3 -I -S -B -m unittest \\",
+                "python3 -I -S -B tools/run_unittest_shards.py \\",
+                "python3 -I -S -B tools/other_runner.py \\",
             ),
             (
                 "target suite path",
-                "-s tests/recovery_surface_inventory \\",
-                "-s tests \\",
+                "--start-dir tests/recovery_surface_inventory \\",
+                "--start-dir tests \\",
             ),
             (
                 "target suite pattern",
-                '-p "test_*.py" \\',
-                '-p "other_*.py" \\',
+                '--pattern "test_*.py" \\',
+                '--pattern "other_*.py" \\',
             ),
             (
                 "immutable generator extraction",
@@ -1230,9 +1230,9 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "python executable overridden",
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
                 "          python3() { :; }\n"
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
             ),
             (
                 "successful early exit",
@@ -1468,18 +1468,18 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "target suite command",
-                "python3 -I -S -B -m unittest discover \\",
-                "python3 -I -S -B -m unittest \\",
+                "python3 -I -S -B tools/run_unittest_shards.py \\",
+                "python3 -I -S -B tools/other_runner.py \\",
             ),
             (
                 "target suite path",
-                "-s tests/release_manifest \\",
-                "-s tests \\",
+                "--start-dir tests/release_manifest \\",
+                "--start-dir tests \\",
             ),
             (
                 "target suite pattern",
-                '-p "test_*.py" \\',
-                '-p "other_*.py" \\',
+                '--pattern "test_*.py" \\',
+                '--pattern "other_*.py" \\',
             ),
             (
                 "first generator execution",
@@ -1550,9 +1550,9 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "python executable overridden",
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
                 "          python3() { :; }\n"
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
             ),
             (
                 "successful early exit",
@@ -1766,10 +1766,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             'generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"',
             'generator_temp="$(mktemp --suffix=.py)"',
             'inventory_temp="$(mktemp --suffix=.json)"',
-            "python3 -I -S -B -m unittest discover \\",
-            "-s tests/recovery_surface_inventory \\",
-            '-p "test_*.py" \\',
-            "-v",
+            "python3 -I -S -B tools/run_unittest_shards.py \\",
+            "--start-dir tests/recovery_surface_inventory \\",
+            '--pattern "test_*.py" \\',
+            "--shards 4",
             'git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"',
             'test "$(git hash-object "$generator_temp")" = "$generator_blob"',
             'python3 -I -S -B "$generator_temp" \\',
@@ -1866,10 +1866,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "}",
             "trap cleanup EXIT",
             'test "$(git hash-object "$generator_path")" = "$generator_blob"',
-            "python3 -I -S -B -m unittest discover \\",
-            "-s tests/release_manifest \\",
-            '-p "test_*.py" \\',
-            "-v",
+            "python3 -I -S -B tools/run_unittest_shards.py \\",
+            "--start-dir tests/release_manifest \\",
+            '--pattern "test_*.py" \\',
+            "--shards 4",
             'python3 -I -S -B "$generator_path" \\',
             '--repository-root "$GITHUB_WORKSPACE" \\',
             '--source-commit "$SOURCE_COMMIT" \\',
