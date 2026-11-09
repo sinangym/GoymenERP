@@ -27,6 +27,7 @@ import { logisticsRoutes } from '../logistics/logisticsRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
+import { auditRoutes } from '../audit/auditRoutes'
 import { settingsRoutes } from '../settings/settingsRoutes'
 import { searchRoutes } from '../search/searchRoutes'
 import { workRoutes } from '../work/workRoutes'
@@ -204,6 +205,8 @@ export const shellRoutes: RouteObject[] = [
       ...purchasingRoutes,
       ...inventoryRoutes,
       ...identityRoutes,
+      // UI-K02: the read-only audit log (`/ayarlar/denetim-kaydi`), behind its own capability gate.
+      ...auditRoutes,
       ...settingsRoutes,
       /**
        * AT-002: the global search results (`/arama`), declared in `src/search/searchRoutes.tsx` behind the shared entry
