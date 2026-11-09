@@ -36,8 +36,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // S5 API-36 (1.18, merged after SAT-D17): registers sales.invoices.finalize (manifest v25); no new screen control.
         // SAT-D17 (1.17): registers sales.orders.lines.close (manifest v24) and its detail control.
         // S5 API-35 (1.16): registers sales.invoices.match (manifest v23); API-33 (1.15) registered sales.invoices.approve (v22); no screen control is declared yet (frontend lane).
-        Assert.Equal(("SALES", "1.19"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(29, declarations.Count);
+        // SAT-D252..SAT-D255 / API-11 (1.20): registers sales.orders.source-plan.write (manifest v26) and its detail control.
+        Assert.Equal(("SALES", "1.20"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(30, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -154,6 +155,15 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.orders.lines.close", lineClose.CapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, lineClose.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersLineClose], lineClose.RequiredPermissions);
+
+        // SAT-D252..SAT-D255 / API-11: the source plan save is a control of the detail - the read plus its own name only.
+        var sourcePlan = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.SourcePlanWriteCapabilityId);
+        Assert.Equal("sales.orders.source-plan.write", sourcePlan.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (sourcePlan.RouteId, sourcePlan.RoutePath, sourcePlan.ScreenId, sourcePlan.RoutePrecedence, sourcePlan.ContextRequirement,
+                sourcePlan.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, sourcePlan.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersSourcePlanWrite], sourcePlan.RequiredPermissions);
 
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
@@ -376,7 +386,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
         // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
         Assert.Equal("sales.orders.over-delivery.approve", SalesPermissionManifestV1.OrdersOverDeliveryApprove);
-        Assert.Equal((25, 28), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // SAT-D252..SAT-D255 / API-11: the source plan's own write name; the order, price and schedule names do not confer it.
+        Assert.Equal("sales.orders.source-plan.write", SalesPermissionManifestV1.OrdersSourcePlanWrite);
+        Assert.Equal((26, 29), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -407,6 +419,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.InvoicesMatch,
                 SalesPermissionManifestV1.InvoicesFinalize,
                 SalesPermissionManifestV1.ReportsRead,
+                SalesPermissionManifestV1.OrdersSourcePlanWrite,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));

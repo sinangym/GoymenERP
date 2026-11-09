@@ -514,6 +514,15 @@ public static class ErpPermissions
     public const string SalesOrdersLineClose = "sales.orders.lines.close";
 
     /// <summary>
+    /// SAT-D179 (EK25) / SAT-D251–SAT-D255 (EK50): write the source plan of an order's lines (Sales owner name
+    /// SalesPermissionManifestV1.OrdersSourcePlanWrite). Its own name: no other Sales name confers it and it confers none.
+    /// Registration grants nothing: no seeded role and no real user receives it; the persona mapping (SAT-D179 names Satış
+    /// Destek, Satış Uzmanı, Müdür and Admin) stays a human gate. Company-wide only. Not Critical: no approved source adds
+    /// grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersSourcePlanWrite = "sales.orders.source-plan.write";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -972,6 +981,7 @@ public static class ErpPermissions
             SalesOrdersClose,
             SalesOrdersOverDeliveryApprove,
             SalesOrdersLineClose,
+            SalesOrdersSourcePlanWrite,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1137,6 +1147,7 @@ public static class ErpPermissions
             SalesOrdersClose,
             SalesOrdersOverDeliveryApprove,
             SalesOrdersLineClose,
+            SalesOrdersSourcePlanWrite,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,

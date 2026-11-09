@@ -184,6 +184,18 @@ public static class SalesRuleCodes
     /// <summary>SAT-D216 (EK37): the person who made a shipment of the line does not close it ("başkası kapatır").</summary>
     public const string LineClosureSelfClosure = "sales_line_closure_self_closure";
 
+    /// <summary>SAT-D252: a source plan names a line that is not an active line of the order.</summary>
+    public const string SourcePlanLineUnknown = "sales_source_plan_line_unknown";
+
+    /// <summary>SAT-D252 / SAT-D255 (fail-closed): the line's order unit is not the kilogram; the allocation is not converted.</summary>
+    public const string SourcePlanUnitUnsupported = "sales_source_plan_unit_unsupported";
+
+    /// <summary>SAT-D252: the plan parts of a line do not add up to the line quantity.</summary>
+    public const string SourcePlanSumMismatch = "sales_source_plan_sum_mismatch";
+
+    /// <summary>SAT-D253 (3): the line is fully delivered; its plan no longer changes.</summary>
+    public const string SourcePlanLineLocked = "sales_source_plan_line_locked";
+
     /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
     public const string DueTermsRequired = "sales_due_terms_required";
 

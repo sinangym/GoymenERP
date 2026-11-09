@@ -222,6 +222,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal DbSet<DraftOverDeliveryApprovalRow> DraftOverDeliveryApprovals => Set<DraftOverDeliveryApprovalRow>();
     internal DbSet<DraftLineClosureRow> DraftLineClosures => Set<DraftLineClosureRow>();
 
+    /// <summary>SAT-D252..SAT-D255 / API-11: the recorded order source plans (append-only, one row per planned line and save).</summary>
+    internal DbSet<DraftSourcePlanLineRow> DraftSourcePlanLines => Set<DraftSourcePlanLineRow>();
+
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
 
@@ -434,6 +437,19 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND LEN([CancelledRemainder]) > 0 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
     /// <summary>
+    /// CK_DraftSourcePlanLines_Identity: identities, the line position, the smallest version a plan save can produce (create 1, one
+    /// line 2, plan 3), non-negative parts, a locked (delivered) part below the line quantity (SAT-D253 (3)), the ONE equality of
+    /// SAT-D252 (locked + stock + production + purchasing + subcontract = line quantity) and non-blank texts.
+    /// </summary>
+    internal const string SourcePlanLineIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [DraftVersion] >= 3 "
+        + "AND [LineQuantity] > 0 AND [LockedQuantity] >= 0 AND [StockQuantity] >= 0 AND [ProductionQuantity] >= 0 "
+        + "AND [PurchasingQuantity] >= 0 AND [SubcontractQuantity] >= 0 AND [LockedQuantity] < [LineQuantity] "
+        + "AND [LockedQuantity] + [StockQuantity] + [ProductionQuantity] + [PurchasingQuantity] + [SubcontractQuantity] = [LineQuantity] "
+        + "AND LEN([SavedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
     /// AK_DraftLines_LineIdentity: (company, draft, line position, line identity) of a draft line - the principal key of the
     /// line-identity foreign keys of the line-bound history rows.
     /// </summary>
@@ -460,6 +476,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftUserClosures(modelBuilder);
         ConfigureDraftOverDeliveryApprovals(modelBuilder);
         ConfigureDraftLineClosures(modelBuilder);
+        ConfigureDraftSourcePlanLines(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
@@ -1387,6 +1404,39 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D252..SAT-D255 / API-11: the recorded source plans - append-only history beside the draft, one row per planned line and
+    // save (the current plan of a line is its row with the highest draft version). The line, its quantities, the revision and the
+    // approval axis stay as they are; the plan reserves nothing and writes no other module's record.
+    private void ConfigureDraftSourcePlanLines(ModelBuilder modelBuilder)
+    {
+        var plan = modelBuilder.Entity<DraftSourcePlanLineRow>();
+        plan.ToTable("DraftSourcePlanLines", Schema, table =>
+            table.HasCheckConstraint("CK_DraftSourcePlanLines_Identity", SourcePlanLineIdentityConstraint));
+        plan.HasKey(x => new { x.CompanyId, x.DraftId, x.DraftVersion, x.LineId });
+        plan.HasIndex(x => new { x.CompanyId, x.DraftId, x.LineId, x.DraftVersion })
+            .HasDatabaseName("IX_DraftSourcePlanLines_Line");
+        plan.Property(x => x.LineQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.LockedQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.StockQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.ProductionQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.PurchasingQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.SubcontractQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.SavedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        plan.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        plan.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        plan.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        plan.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        plan.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -1632,6 +1682,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftOverDeliveryApprovalRow => [],
                     // SAT-D17: a recorded line closure is APPEND-ONLY - no column of it may change afterwards.
                     DraftLineClosureRow => [],
+                    // SAT-D252..SAT-D255: a recorded source plan line is APPEND-ONLY - a new save is a new row.
+                    DraftSourcePlanLineRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],

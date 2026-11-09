@@ -131,7 +131,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceFinalization", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddQuoteDueTerms", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftLineIdentityForeignKeys", StringComparison.Ordinal));
-        Assert.Equal("20261108194345_AddDraftLineIdentityForeignKeys", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSourcePlanLines", StringComparison.Ordinal));
+        Assert.Equal("20261109221322_AddDraftSourcePlanLines", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -960,6 +961,35 @@ public sealed class SalesPersistenceModelTests
         Assert.DoesNotContain(migration.DownOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
         Assert.Equal(3, migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropForeignKeyOperation>().Count());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropUniqueConstraintOperation>());
+    }
+
+    /// <summary>
+    /// SAT-D252..SAT-D255 / API-11: the append-only source plan table carries the ONE equality as a check; Up has no SQL; Down is a
+    /// forward fix that refuses with 51241 (its own number) FIRST while a recorded plan exists.
+    /// </summary>
+    [Fact]
+    public void The_source_plan_migration_checks_the_one_equality_and_its_down_refuses_with_51241_first()
+    {
+        using var context = Context();
+        var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DraftSourcePlanLineRow))!;
+        Assert.Equal(("sales", "DraftSourcePlanLines"), (entity.GetSchema(), entity.GetTableName()));
+        Assert.Equal(["CompanyId", "DraftId", "DraftVersion", "LineId"], entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var check = Assert.Single(entity.GetCheckConstraints());
+        Assert.Equal(("CK_DraftSourcePlanLines_Identity", SalesDbContext.SourcePlanLineIdentityConstraint), (check.Name, check.Sql));
+        Assert.Contains("[LockedQuantity] + [StockQuantity] + [ProductionQuantity] + [PurchasingQuantity] + [SubcontractQuantity] = [LineQuantity]",
+            check.Sql, StringComparison.Ordinal);
+        Assert.Contains("[LockedQuantity] < [LineQuantity]", check.Sql, StringComparison.Ordinal);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftSourcePlanLines();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var table = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>());
+        Assert.Equal(SalesDbContext.SourcePlanLineIdentityConstraint, Assert.Single(table.CheckConstraints).Sql);
+        Assert.All(table.ForeignKeys, foreignKey => Assert.Equal(Microsoft.EntityFrameworkCore.Migrations.ReferentialAction.Restrict, foreignKey.OnDelete));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftSourcePlanLines])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51241,", guard.Sql, StringComparison.Ordinal);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(Assert.Single(migration.DownOperations.Skip(1)));
     }
 
     private static DraftLineClosureRow LineClosure() => new()
