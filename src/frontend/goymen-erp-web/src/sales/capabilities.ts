@@ -124,6 +124,11 @@ export const SALES_ROUTE = {
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
 export const salesPriceControlPath = (draftId: string) => `${salesDetailPath(draftId)}/kontrol`
+/** S-06 query member naming the approval row to bring into view (SAT-D243: the Work inbox links each Sales row here). */
+export const SALES_APPROVAL_PARAM = 'onay'
+/** S-06 with one approval row marked: the same record the Work `/onaylarim` "Satış" filter lists (one record, two views). */
+export const salesApprovalPath = (approvalId: string) =>
+  `${SALES_ROUTE.approvals}?${new URLSearchParams({ [SALES_APPROVAL_PARAM]: approvalId }).toString()}`
 
 /**
  * UI-20 / S-01 "Satış Talebi / Teklif Havuzu": the ids the backend shell provider publishes (Sales shell contract 1.9), keyed
