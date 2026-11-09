@@ -485,7 +485,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // account, contact and account selection ports, the real Identity SALES_SUPPORT reader), kept ordinal-sorted (e2b0d6ba... -> 096ea842...).
                 // Merged with main's #1020 (+6 facts) and SAT-D232 (EK46): +1 SalesInvoice fact (a USD invoice's 0,06 TL difference writes
                 // nothing unapproved and is stored approved), recomputed over the union, kept ordinal-sorted (096ea842... -> 2016a227...).
-                "2016a227ad88d96fd08c7216537f4ace094768a09f5684d49aa798d785fd6129",
+                // EK46 P3 follow-up (API-24, SAT-D234): +1 SalesQuote fact (a catalogued loss reason loses the quote through the real host
+                // with its Settings snapshot, attempt and audit), kept ordinal-sorted (2016a227... -> 21fade35...).
+                "21fade3573edc43e7b41449cc51cf8f09ad84dc4c0093bffcd455cadbcbe7e58",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

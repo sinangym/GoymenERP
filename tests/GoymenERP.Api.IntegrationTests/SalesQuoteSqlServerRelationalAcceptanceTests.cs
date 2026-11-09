@@ -748,6 +748,74 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_catalogued_loss_reason_loses_the_quote_through_the_real_host_with_its_settings_snapshot_on_real_sql()
+    {
+        // API-24 positive path in the REAL composition (SAT-D25 / SAT-D234): the host's approved Settings catalog
+        // (ApprovedSalesQuotePolicyCatalog) serves this company (GDC) the five standard reasons, so a reason id taken from the list
+        // read loses the quote: the reason snapshot, the attempt and the audit event are recorded in one save and the key replays.
+        await using var run = await Run.StartAsync();
+        var party = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        Guid quoteId;
+        await using (var scope = run.Store(CompanyA))
+        {
+            quoteId = (await run.Service(scope, run.Actor).CreateQuoteAsync(CreateQuote(party, account, [], "9.90"), run.Metadata("c-create"))).Detail.Quote.Id;
+        }
+
+        var writer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite);
+        using var writerClient = run.Factory.CreateClientFor(writer, CompanyA);
+        writerClient.DefaultRequestHeaders.Remove("Idempotency-Key");
+        writerClient.DefaultRequestHeaders.Remove("X-Correlation-Id");
+
+        Guid reasonId;
+        Guid profileId;
+        using (var reasons = await writerClient.GetAsync($"{SalesEndpoints.QuotesPath}/loss-reasons"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reasons.StatusCode);
+            var body = await reasons.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.True(body.GetProperty("isDefined").GetBoolean());
+            var price = Assert.Single(body.GetProperty("reasons").EnumerateArray(), reason => reason.GetProperty("code").GetString() == "price_too_high");
+            Assert.Equal(("Fiyat yüksek", false), (price.GetProperty("label").GetString(), price.GetProperty("requiresExplanation").GetBoolean()));
+            reasonId = price.GetProperty("reasonId").GetGuid();
+            profileId = body.GetProperty("profileId").GetGuid();
+        }
+
+        var correlation = Guid.NewGuid().ToString("N");
+        var lossBody = $"{{\"expectedVersion\":\"1\",\"reasonId\":\"{reasonId:D}\"}}";
+        using (var lost = await writerClient.SendAsync(Command(quoteId, "loss", "SENTETIK-lose-catalogued", lossBody, correlation)))
+        {
+            Assert.Equal(HttpStatusCode.OK, lost.StatusCode);
+            var detail = (await lost.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            var loss = detail.GetProperty("loss");
+            Assert.Equal(("Lost", "2"), (detail.GetProperty("quote").GetProperty("state").GetString(),
+                detail.GetProperty("quote").GetProperty("version").GetString()));
+            Assert.Equal((reasonId, "price_too_high", "Fiyat yüksek"),
+                (loss.GetProperty("reasonId").GetGuid(), loss.GetProperty("reasonCode").GetString(), loss.GetProperty("reasonLabel").GetString()));
+        }
+
+        using (var replay = await writerClient.SendAsync(Command(quoteId, "loss", "SENTETIK-lose-catalogued", lossBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(correlation, Assert.Single(replay.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Quotes WHERE CompanyId = @c AND Id = @q AND State = 3 AND Version = 2 AND LostBy IS NOT NULL "
+            + "AND LossReasonId = @r AND LossReasonCode = N'price_too_high' AND LossReasonLabel = N'Fiyat yüksek' "
+            + "AND LossReasonProfileId = @p AND LossReasonProfileVersion = 1",
+            ("@c", CompanyA), ("@q", quoteId), ("@r", reasonId), ("@p", profileId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.QuoteAttempts WHERE CommandName = N'sales.quote.lose.v2' AND QuoteId = @q AND Outcome = 1 AND IdempotencyKeyHash = @h",
+            ("@q", quoteId), ("@h", SalesStore.IdempotencyKeyHash("SENTETIK-lose-catalogued"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c AND EntityType = N'Sales.Quote' AND EventType = N'sales.quote.lost.v1' "
+            + "AND EntityId = @q AND CorrelationId = @corr AND EntityVersionBefore = 1 AND EntityVersionAfter = 2 "
+            + "AND PermissionCode = N'sales.quotes.write'",
+            ("@c", CompanyA), ("@q", quoteId.ToString("D")), ("@corr", correlation)));
+    }
+
+    [SqlServerFact]
     public async Task An_expired_quote_converts_only_after_a_recorded_approval_and_the_client_date_never_reopens_it_on_real_sql()
     {
         // SAT-D24 / SAT-D44 over the real store: the approval row, the quote's version step, the attempt and the audit event in one

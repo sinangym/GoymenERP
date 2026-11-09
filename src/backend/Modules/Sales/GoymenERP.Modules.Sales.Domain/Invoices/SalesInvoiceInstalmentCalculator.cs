@@ -6,8 +6,8 @@ namespace GoymenERP.Modules.Sales.Domain.Invoices;
 /// The TL value of each instalment of a foreign-currency invoice (S5 API-36, SAT-D227). Every instalment but the last is its
 /// invoice-currency amount converted at the invoice's own rate and rounded once, half away from zero, at the TL scale (SAT-D11);
 /// the last instalment takes the remainder so that the instalments add up to the frozen TL payable total (SAT-D124, SAT-D226).
-/// A TL invoice has no TL split (null). A last instalment whose TL remainder is negative (SAT-D233) or exactly zero (#66, 9 Nov 2026
-/// extension of SAT-D233) is refused with <see cref="SalesRuleCodes.InvoiceInstalmentFunctionalInvalid"/>, never clamped.
+/// A TL invoice has no TL split (null). A last instalment whose TL remainder is negative (SAT-D233) or exactly zero (SAT-D237, EK47;
+/// the #66, 9 Nov 2026 extension of SAT-D233) is refused with <see cref="SalesRuleCodes.InvoiceInstalmentFunctionalInvalid"/>, never clamped.
 /// </summary>
 public static class SalesInvoiceInstalmentCalculator
 {

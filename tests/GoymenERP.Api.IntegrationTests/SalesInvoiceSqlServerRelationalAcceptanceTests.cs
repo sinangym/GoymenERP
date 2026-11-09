@@ -369,6 +369,9 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'", ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
+            + "AND EventType = N'sales.invoice.matched.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
 
         await using (var scope = run.Store(CompanyA))
         {
