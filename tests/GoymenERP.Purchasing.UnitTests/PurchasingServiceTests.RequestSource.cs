@@ -145,6 +145,27 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task A_mixed_request_names_only_the_refused_sales_line_and_the_same_key_is_retried_with_a_corrected_body()
+    {
+        var world = new World { SalesSources = new FakeSalesSource(PurchaseRequestSalesSourceOutcomeV1.Approved, PurchaseRequestSalesSourceOutcomeV1.NotApproved, PurchaseRequestSalesSourceOutcomeV1.Approved) };
+        var request = new CreatePurchaseRequestRequest(Day,
+        [
+            new PurchaseRequestLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "5",
+                new PurchaseRequestLineSourceRequest(PurchaseRequestSourceKindsV1.Sales, SalesOrder, SalesOrderLine)),
+            new PurchaseRequestLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "6",
+                new PurchaseRequestLineSourceRequest(PurchaseRequestSourceKindsV1.Sales, SalesOrder, Guid.NewGuid())),
+        ]);
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateRequestAsync(request, Metadata("k-mixed")));
+        Assert.Equal([new PurchasingFieldError("lines[1].source", "purchasing_request_source_sales_not_approved")], refusal.Errors);
+        Assert.Empty(world.Store.Envelopes);
+
+        var corrected = request with { Lines = [request.Lines[0], request.Lines[1] with { Source = null }] };
+        var created = await world.Service().CreateRequestAsync(corrected, Metadata("k-mixed"));
+        Assert.False(created.IsReplay);
+    }
+
+    [Fact]
     public async Task A_sales_sourced_line_the_owner_cannot_answer_is_503_fail_closed_and_nothing_is_stored()
     {
         var world = new World { SalesSources = new FakeSalesSource(PurchaseRequestSalesSourceOutcomeV1.Unavailable) };
