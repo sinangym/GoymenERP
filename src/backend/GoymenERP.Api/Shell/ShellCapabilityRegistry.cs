@@ -26,6 +26,7 @@ public sealed partial class ShellCapabilityRegistry
 
         _registrations = BuildValidatedRegistrations(providers);
         Revision = ComputeRevision(_registrations);
+        TmpDiagDumpSubsets(providers); // TMPDIAG6 - geri alinacak
         if (_registrations.Count > 0 && !authorityCatalog.Accepts(Revision))
         {
             throw new InvalidOperationException(
@@ -36,6 +37,33 @@ public sealed partial class ShellCapabilityRegistry
     public IReadOnlyList<ShellCapabilityRegistration> Registrations => _registrations;
 
     public string Revision { get; }
+
+    // TMPDIAG6 - geri alinacak
+    private static void TmpDiagDumpSubsets(IEnumerable<IShellCapabilityProvider> providers)
+    {
+        var all = providers.ToArray();
+        if (all.Length < 2 || all.Length > 14)
+        {
+            return;
+        }
+
+        string[] wanted = ["CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+MANUFACTURING+PRODUCT+SALES", "CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+LOGISTICS+MANUFACTURING+PRODUCT+SALES", "CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+LOGISTICS+MANUFACTURING+PRODUCT+PURCHASING+SALES", "ACCOUNTING+CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+LOGISTICS+MANUFACTURING+PRODUCT+PURCHASING+SALES", "ACCOUNTING+CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+INVENTORY+LOGISTICS+MANUFACTURING+PRODUCT+PURCHASING+SALES", "ACCOUNTING+CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+IDENTITY+INVENTORY+LOGISTICS+MANUFACTURING+PRODUCT+PURCHASING+SALES", "ACCOUNTING+CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+IDENTITY+INVENTORY+LOGISTICS+MANUFACTURING+PRODUCT+PRODUCT-PRICE-LISTS+PURCHASING+SALES", "ACCOUNTING+CHATGPT-BUSINESS/CARI+CHATGPT-BUSINESS/FINANCE+CHATGPT-BUSINESS/ORGANIZATION+IDENTITY+INVENTORY+LOGISTICS+MANUFACTURING+PRODUCT+PRODUCT-PRICE-LISTS+PURCHASING+SALES+SETTINGS"];
+        for (var mask = 1; mask < (1 << all.Length); mask++)
+        {
+            try
+            {
+                var subset = all.Where((_, i) => (mask & (1 << i)) != 0).ToArray();
+                var key = string.Join("+", subset.Select(p => p.Owner).OrderBy(x => x, StringComparer.Ordinal));
+                if (wanted.Contains(key))
+                {
+                    Console.Error.WriteLine("TMPDIAG6 " + key + " => " + ComputeCandidateRevision(subset));
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
 
     internal static string ComputeCandidateRevision(
         IEnumerable<IShellCapabilityProvider> providers)

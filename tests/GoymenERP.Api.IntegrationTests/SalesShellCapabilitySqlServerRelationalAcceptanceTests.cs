@@ -79,6 +79,17 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
                     SalesOnly(await ReadAsync(reporter)));
             }
 
+            // + sales.orders.price.read (Sales 1.19, UI-63): the invoice read alone never opened the S-09 invoice list; with the
+            // price read its list read measures, exactly sales.invoices.list joins; no control.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.OrdersPriceRead, AccessScopeType.Company, CompanyA);
+            using (var priceReader = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
+            {
+                Assert.Equal(
+                    new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list", "sales.invoice-candidates.list",
+                        "sales.invoices.list", "sales.reports.view" },
+                    SalesOnly(await ReadAsync(priceReader)));
+            }
+
             // The grant is company A's. The same actor gets a non-Sales assignment in company B, so the
             // company-B context resolves and the answer is measured (ORG #328 P2-1): no Sales screen there.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
