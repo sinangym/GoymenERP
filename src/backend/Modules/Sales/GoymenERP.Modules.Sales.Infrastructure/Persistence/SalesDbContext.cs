@@ -433,6 +433,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [Band] BETWEEN 1 AND 3 AND [DraftVersion] >= 5 AND LEN([Ordered]) > 0 AND LEN([ShippedAtClosure]) > 0 "
         + "AND LEN([CancelledRemainder]) > 0 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
+    /// <summary>
+    /// AK_DraftLines_LineIdentity: (company, draft, line position, line identity) of a draft line - the principal key of the
+    /// line-identity foreign keys of the line-bound history rows.
+    /// </summary>
+    internal const string DraftLineIdentityKey = "AK_DraftLines_LineIdentity";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -603,6 +609,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         });
         entity.HasKey(x => new { x.CompanyId, x.DraftId, x.LineNo });
         entity.HasIndex(x => new { x.CompanyId, x.DraftId, x.LineId }).IsUnique().HasDatabaseName("UX_DraftLines_LineId");
+        // The line's position and identity together: the principal the line-bound history rows (over-delivery approvals, line
+        // closures, remainder changes) reference, so a stored LineId can never name another line than the one at its LineNo.
+        entity.HasAlternateKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId }).HasName(DraftLineIdentityKey);
         entity.Property(x => x.ProductVersion).HasMaxLength(128).IsRequired();
         entity.Property(x => x.ProductCode).HasMaxLength(128).IsRequired();
         entity.Property(x => x.ProductName).HasMaxLength(256).IsRequired();
@@ -1340,6 +1349,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         approval.HasOne<DraftLineRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
             .OnDelete(DeleteBehavior.Restrict);
+        // The stored line identity is the line at that position (the review finding: LineNo alone let LineId name another line).
+        approval.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
         approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
@@ -1364,6 +1378,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .OnDelete(DeleteBehavior.Restrict);
         closure.HasOne<DraftLineRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        // The stored line identity is the line at that position (the review finding: LineNo alone let LineId name another line).
+        closure.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
             .OnDelete(DeleteBehavior.Restrict);
         closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
@@ -1400,6 +1419,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .OnDelete(DeleteBehavior.Restrict);
         change.HasOne<DraftLineRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        // The stored line identity is the line at that position (the review finding: LineNo alone let LineId name another line).
+        change.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
             .OnDelete(DeleteBehavior.Restrict);
         change.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 

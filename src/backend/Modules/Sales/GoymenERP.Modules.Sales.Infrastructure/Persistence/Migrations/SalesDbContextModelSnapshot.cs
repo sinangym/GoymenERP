@@ -607,7 +607,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_DraftLineClosures_DraftVersion");
 
-                    b.HasIndex("CompanyId", "DraftId", "LineNo");
+                    b.HasIndex("CompanyId", "DraftId", "LineNo", "LineId");
 
                     b.ToTable("DraftLineClosures", "sales", t =>
                         {
@@ -785,6 +785,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                     b.HasKey("CompanyId", "DraftId", "LineNo");
 
+                    b.HasAlternateKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasName("AK_DraftLines_LineIdentity");
+
                     b.HasIndex("CompanyId", "DraftId", "LineId")
                         .IsUnique()
                         .HasDatabaseName("UX_DraftLines_LineId");
@@ -892,7 +895,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_DraftOverDeliveryApprovals_DraftVersion");
 
-                    b.HasIndex("CompanyId", "DraftId", "LineNo");
+                    b.HasIndex("CompanyId", "DraftId", "LineNo", "LineId");
 
                     b.ToTable("DraftOverDeliveryApprovals", "sales", t =>
                         {
@@ -975,7 +978,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_DraftRemainderChanges_DraftVersion");
 
-                    b.HasIndex("CompanyId", "DraftId", "LineNo");
+                    b.HasIndex("CompanyId", "DraftId", "LineNo", "LineId");
 
                     b.ToTable("DraftRemainderChanges", "sales", t =>
                         {
@@ -3057,6 +3060,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "DraftId", "LineNo")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasPrincipalKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", b =>
@@ -3092,6 +3102,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "DraftId", "LineNo")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasPrincipalKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderChangeRow", b =>
@@ -3106,6 +3123,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasPrincipalKey("CompanyId", "DraftId", "LineNo", "LineId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
