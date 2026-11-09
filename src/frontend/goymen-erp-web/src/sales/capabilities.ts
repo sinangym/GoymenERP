@@ -25,6 +25,11 @@ export const SALES_CAPABILITY = {
   dispatchesList: 'sales.dispatches.list',
   /** UI-61 S-08 Faturaya Hazır — API-31 under its own `sales.invoices.read` (Sales shell contract 1.9). */
   invoiceCandidatesList: 'sales.invoice-candidates.list',
+  /**
+   * UI-63 S-09 Satış faturaları — API-32 GET list under `sales.invoices.read` AND `sales.orders.price.read` (the two names the
+   * list read measures; Sales shell contract 1.19). No control: a row opens the invoice detail read-only.
+   */
+  invoicesList: 'sales.invoices.list',
   /** UI-80 Satış raporları — API-41 / API-42 under their own `sales.reports.read` (Sales shell contract 1.11). */
   reportsView: 'sales.reports.view',
 } as const
@@ -109,6 +114,8 @@ export const SALES_ROUTE = {
   dispatches: '/satis/sevkiyatlar',
   /** S-08: static, never a draft id. */
   invoiceCandidates: '/satis/faturaya-hazir',
+  /** UI-63 S-09: static, never a draft id. */
+  invoices: '/satis/faturalar',
   /** UI-80: static, never a draft id. */
   reports: '/satis/raporlar',
 } as const
