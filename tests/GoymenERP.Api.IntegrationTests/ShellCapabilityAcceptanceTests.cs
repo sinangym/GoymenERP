@@ -6,6 +6,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Identity.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.AspNetCore.Hosting;
@@ -67,6 +68,9 @@ public sealed class ShellCapabilityAcceptanceTests(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
+                // UI-K02: the seeded group admin holds identity.audit.read in CompanyA, so Identity 1.1's audit list
+                // (single company, company-wide) is published in the selected context and never headerless.
+                IdentityShellCapabilityProvider.AuditListCapabilityId,
                 .. OrganizationCapabilities(),
             ],
             selectedSnapshot.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()!));
@@ -192,6 +196,9 @@ public sealed class ShellCapabilityAcceptanceTests(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
+                // UI-K02: the seeded group admin holds identity.audit.read in CompanyA, so Identity 1.1's audit list
+                // (single company, company-wide) is published in the selected context and never headerless.
+                IdentityShellCapabilityProvider.AuditListCapabilityId,
                 .. OrganizationCapabilities(),
             ],
             capabilities);
