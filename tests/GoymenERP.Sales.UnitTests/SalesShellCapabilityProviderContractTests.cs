@@ -32,11 +32,12 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-04 (1.12, merged after 1.11): the header-revision control of the detail.
         // SAT-D32 (1.13): the user-closure control of the detail.
         // SAT-D30 / SAT-D168 (1.14): the over-delivery approval control of the detail.
+        // UI-63 (1.19): the S-09 sales invoice list on the invoice read plus the price read; no control.
         // S5 API-36 (1.18, merged after SAT-D17): registers sales.invoices.finalize (manifest v25); no new screen control.
         // SAT-D17 (1.17): registers sales.orders.lines.close (manifest v24) and its detail control.
         // S5 API-35 (1.16): registers sales.invoices.match (manifest v23); API-33 (1.15) registered sales.invoices.approve (v22); no screen control is declared yet (frontend lane).
-        Assert.Equal(("SALES", "1.18"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(28, declarations.Count);
+        Assert.Equal(("SALES", "1.19"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(29, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -273,8 +274,31 @@ public sealed class SalesShellCapabilityProviderContractTests
             Assert.Contains($"'{item.Path}'", source);
         }
 
-        // The invoice read name is S-08's alone: no other declaration asks for it.
-        Assert.Single(declarations, candidate => candidate.RequiredPermissions.Contains(SalesPermissionManifestV1.InvoicesRead));
+        // The invoice read name opens only S-08 and the S-09 invoice list (UI-63, 1.19): no other declaration asks for it.
+        Assert.Equal(["sales.invoice-candidates.list", "sales.invoices.list"],
+            declarations.Where(candidate => candidate.RequiredPermissions.Contains(SalesPermissionManifestV1.InvoicesRead))
+                .Select(candidate => candidate.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void The_UI63_invoice_list_is_a_routed_screen_on_the_invoice_read_and_the_price_read_without_a_control()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
+        var declarations = new SalesShellCapabilityProvider().GetDeclarations();
+
+        // API-32 GET invoices measures sales.invoices.read and sales.orders.price.read (the summary carries the payable amount);
+        // the screen asks for exactly those two existing names, so it never opens onto its own 403. No new name, no control.
+        var invoices = Assert.Single(declarations, candidate => candidate.CapabilityId == "sales.invoices.list");
+        Assert.Equal(("sales.invoices.list", "/satis/faturalar", "S-09", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, ShellCapabilityScopeRequirement.CompanyWide),
+            (invoices.RouteId, invoices.RoutePath, invoices.ScreenId, invoices.RoutePrecedence, invoices.ContextRequirement,
+                invoices.ScopeRequirement));
+        Assert.Equal([SalesPermissionManifestV1.InvoicesRead, SalesPermissionManifestV1.OrdersPriceRead], invoices.RequiredPermissions);
+        Assert.Null(invoices.ParentCapabilityId);
+        Assert.True(invoices.ImplementationAvailable);
+        Assert.DoesNotContain(declarations, candidate => candidate.ParentCapabilityId == invoices.CapabilityId);
+        Assert.Contains("'sales.invoices.list'", source);
+        Assert.Contains("'/satis/faturalar'", source);
     }
 
     [Fact]

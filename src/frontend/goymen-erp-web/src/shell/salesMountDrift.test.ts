@@ -78,6 +78,15 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.invoiceCandidates)).toBeNull()
   })
 
+  it('names UI-63 S-09 under the Sales menu on the lane id and route, never read as a draft id', () => {
+    expect(CAPABILITY.salesInvoicesList).toBe(SALES_CAPABILITY.invoicesList)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesInvoicesList]).toBe(SALES_ROUTE.invoices)
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesInvoicesList]).toBe('Satış faturaları')
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesInvoicesList)
+    expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesInvoicesList)
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.invoices)).toBeNull()
+  })
+
   it('names UI-80 under the Sales menu, drawn only where its own capability is granted', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesReportsView]).toBe('Satış raporları')
     expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesReportsView)
