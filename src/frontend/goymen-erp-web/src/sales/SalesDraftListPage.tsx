@@ -22,6 +22,7 @@ import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
 import { APPROVAL_STATE, CANCELLED_STATE, CLOSED_STATE, isTerminalState, type ApprovalState, type DraftSummaryWithParty, type PartyDisplay } from './contract'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
+import { SALES_APPROVALS_TEXT } from './approvalsText'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT, partyDisplayText } from './salesText'
 import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -93,6 +94,8 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const canOpen = hasCapability(shell, SALES_CAPABILITY.draftsDetail)
   const canCreate = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  // UI-51 S-06: the approval queue opens under the existing approve control's id; no nav entry of its own.
+  const canOpenApprovals = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
   // SALES-A1: the internal approval filter is the server's (`approvalState`); changing it restarts the list.
@@ -148,6 +151,11 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
         {canCreate ? (
           <Link className={styles.createLink} to={SALES_ROUTE.create}>
             {ORDER_LIST_TEXT.newDraft}
+          </Link>
+        ) : null}
+        {canOpenApprovals ? (
+          <Link to={SALES_ROUTE.approvals} data-testid="sales-open-approvals">
+            {SALES_APPROVALS_TEXT.openLink}
           </Link>
         ) : null}
       </div>
