@@ -29,7 +29,7 @@ public sealed partial class ShellCapabilityRegistry
         if (_registrations.Count > 0 && !authorityCatalog.Accepts(Revision))
         {
             throw new InvalidOperationException(
-                "Shell capability provider seti kabul edilmiş owner kaynağıyla eşleşmiyor.");
+                "Shell capability provider seti kabul edilmiş owner kaynağıyla eşleşmiyor. TMPDIAG Actual: " + Revision);
         }
     }
 
