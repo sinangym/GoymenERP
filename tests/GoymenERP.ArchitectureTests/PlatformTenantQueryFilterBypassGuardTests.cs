@@ -390,7 +390,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A2a-2 (ALS-D38, ALS-D75): +2 maturity surcharge SQL facts (stored + audited + rebuilt + the surcharge check, Down refusal
             // 51171), kept ordinal-sorted (dab7b47e… -> e4eea63d…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "e4eea63d0cddb2f77d49ce6e8947f39f45befa0a3be7ec53b9d7de2616c6b289",
+                "708218280f44c7c30e52b589a953397a45804c3348a74c5ca1a00cab1d5a68fc",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
