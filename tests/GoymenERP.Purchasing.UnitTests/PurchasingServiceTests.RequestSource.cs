@@ -96,6 +96,82 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(["Manual", "Production"], created.Detail.Request.SourceKinds);
     }
 
+    private sealed class FakeSalesSource(params PurchaseRequestSalesSourceOutcomeV1[] outcomes) : IPurchaseRequestSalesSourcePortV1
+    {
+        private int _next;
+        public List<(Guid Order, Guid Line)> Calls { get; } = [];
+
+        public Task<PurchaseRequestSalesSourceOutcomeV1> CheckSalesOrderLineAsync(Guid salesOrderId, Guid salesOrderLineId, CancellationToken cancellationToken = default)
+        {
+            Calls.Add((salesOrderId, salesOrderLineId));
+            return Task.FromResult(outcomes[Math.Min(_next++, outcomes.Length - 1)]);
+        }
+    }
+
+    private static CreatePurchaseRequestRequest SalesLine() => new(Day,
+    [
+        new PurchaseRequestLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "5",
+            new PurchaseRequestLineSourceRequest(PurchaseRequestSourceKindsV1.Sales, SalesOrder, SalesOrderLine)),
+    ]);
+
+    [Fact]
+    public async Task A_sales_sourced_line_the_owner_approves_is_recorded_with_its_source()
+    {
+        // A4b (SAT-D220): the Sales approved-line read answers Approved for that very order and line.
+        var sales = new FakeSalesSource(PurchaseRequestSalesSourceOutcomeV1.Approved);
+        var world = new World { SalesSources = sales };
+
+        var created = await world.Service().CreateRequestAsync(SalesLine(), Metadata("k-sales-ok"));
+
+        Assert.Equal([(SalesOrder, SalesOrderLine)], sales.Calls);
+        Assert.Equal(["Sales"], created.Detail.Request.SourceKinds);
+        Assert.Equal(new PurchaseRequestLineSourceView("Sales", SalesOrder, SalesOrderLine), Assert.Single(created.Detail.Lines).Source);
+    }
+
+    [Theory]
+    [InlineData(PurchaseRequestSalesSourceOutcomeV1.NotApproved, "purchasing_request_source_sales_not_approved")]
+    [InlineData(PurchaseRequestSalesSourceOutcomeV1.NotFound, "purchasing_request_source_sales_not_found")]
+    public async Task A_sales_sourced_line_the_owner_does_not_approve_is_refused_422_and_nothing_is_stored(PurchaseRequestSalesSourceOutcomeV1 outcome, string code)
+    {
+        var world = new World { SalesSources = new FakeSalesSource(outcome) };
+        world.ResetOwnerCalls();
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateRequestAsync(SalesLine(), Metadata("k-sales-no")));
+
+        Assert.Equal((422, "validation_failed"), (refusal.Status, refusal.Code));
+        Assert.Equal([new PurchasingFieldError("lines[0].source", code)], refusal.Errors);
+        Assert.Equal((0, 0), (world.Products.Calls, world.Settings.Calls));
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Fact]
+    public async Task A_sales_sourced_line_the_owner_cannot_answer_is_503_fail_closed_and_nothing_is_stored()
+    {
+        var world = new World { SalesSources = new FakeSalesSource(PurchaseRequestSalesSourceOutcomeV1.Unavailable) };
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateRequestAsync(SalesLine(), Metadata("k-sales-503")));
+
+        Assert.Equal((503, "purchasing_request_source_sales_unavailable"), (refusal.Status, refusal.Code));
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Fact]
+    public async Task Stock_production_and_manual_lines_never_call_the_sales_port()
+    {
+        var sales = new FakeSalesSource(PurchaseRequestSalesSourceOutcomeV1.Unavailable);
+        var world = new World { SalesSources = sales };
+        var request = new CreatePurchaseRequestRequest(Day,
+        [
+            new PurchaseRequestLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "6",
+                new PurchaseRequestLineSourceRequest(PurchaseRequestSourceKindsV1.Production, ProductionPlan, ProductionPlanLine)),
+            new PurchaseRequestLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "7"),
+        ]);
+
+        await world.Service().CreateRequestAsync(request, Metadata("k-no-sales"));
+
+        Assert.Empty(sales.Calls);
+    }
+
     [Fact]
     public async Task A_sales_sourced_attempt_recorded_before_A1_2b_still_replays_under_its_key()
     {
