@@ -31,7 +31,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollA, Kg(9_000m), 8, commercialContext: context)], null,
                 "ticari bağlam aynı kayıt", Metadata(run));
-            await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Actor, At, Metadata(run));
+            await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
 
@@ -77,7 +77,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollA, Kg(9_000m), 8, commercialContext: context)], null,
                 "constraint", Metadata(run));
-            await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Actor, At, Metadata(run));
+            await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
 
@@ -141,7 +141,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollA, Kg(9_000m), 8, commercialContext: snapshot)], null,
                 "downgrade refusal", Metadata(run));
-            await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Actor, At, Metadata(run));
+            await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
 

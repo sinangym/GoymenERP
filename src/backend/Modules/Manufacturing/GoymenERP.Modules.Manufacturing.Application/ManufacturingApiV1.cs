@@ -203,7 +203,9 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// which Settings had no profile of the process. Üretim U2-a (additive): <see cref="LineSpeedMetresPerMinute"/> is the
 /// plan-entered line speed (Slitting, Tube / Profile), <see cref="OrderId"/> the one order the plan opened (URT-D1),
 /// <see cref="Rejections"/> every recorded rejection (oldest first) and <see cref="Cancellation"/> the cancellation of a
-/// Cancelled plan.
+/// Cancelled plan. Üretim U2-d (additive, URT-D2): <see cref="PreparedBy"/> is the actor id of who prepared the current
+/// version (its last reviser, else who saved it) — that user cannot approve or reject it; null for a plan stored before
+/// U2-d and never revised. An id only, never a name.
 /// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
@@ -212,7 +214,7 @@ public sealed record PlanViewV1(
     CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null,
     string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
-    PlanProcessSpecViewV1? ProcessSpec = null);
+    PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -425,7 +427,9 @@ public sealed partial class ManufacturingCommandService(
     ICounterpartyManufacturingPartyAccountSourceV1? partyAccounts = null,
     IInventoryContextualParentRollReferencesV1? contextualParentRolls = null,
     ISettingsManufacturingParameterProviderV1? manufacturingParameters = null,
-    IManufacturingPlanLifecycleStore? planLifecycle = null)
+    IManufacturingPlanLifecycleStore? planLifecycle = null,
+    IManufacturingPlanAllocationPortV1? planAllocations = null,
+    IInventoryLabelDetailsV1? labelDetails = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1184,9 +1188,18 @@ public sealed partial class ManufacturingCommandService(
                 // approval. The stored state answers first: a missing, stale or non-draft plan never queries Settings.
                 PlanParameterSnapshotV1? snapshot = null;
                 IReadOnlyDictionary<Guid, bool>? labelUsable = null;
+                IReadOnlyDictionary<Guid, long> labelVersions = new Dictionary<Guid, long>();
                 var current = await plans.FindPlanAsync(planId, cancellationToken);
                 if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion)
                 {
+                    // U2-d (URT-D2): the preparer of the current version is refused before Settings or Inventory is read;
+                    // the store's domain decision refuses it again at the save.
+                    if (current.IsPreparedBy(actor))
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                            ManufacturingRuleCodes.PlanSelfApproval);
+                    }
+
                     var parameters = await ReadParameterProfileAsync(current.Process, current.WorkCenterId,
                         approval: true, cancellationToken);
                     if (parameters.Refusal is not null)
@@ -1200,13 +1213,26 @@ public sealed partial class ManufacturingCommandService(
                     }
 
                     snapshot = parameters.Snapshot;
+                    // U3-a (URT-D21, URT-D3): the plan's inputs are allocated with the approval, at the label version
+                    // Inventory holds NOW (another plan's or a sale's allocation of the same label moves it).
+                    if (planAllocations is not null)
+                    {
+                        var versions = await ReadCurrentLabelVersionsAsync(current, permission, companyId, actor,
+                            cancellationToken);
+                        if (versions.Refusal is not null)
+                        {
+                            return Refusal<PlanViewV1>(versions.Refusal);
+                        }
+
+                        labelVersions = versions.Versions!;
+                    }
 
                     // U2-a: a plan with a slitting spec reads each parent roll's CURRENT label state from Inventory
                     // (the existing parent-roll read ports) for the gate's labelState; a blocked or unusable roll refuses.
                     if (current.Spec is not null)
                     {
                         var labels = await ReadLabelUsabilityAsync(current, permission, companyId, actor,
-                            cancellationToken);
+                            cancellationToken, planAllocations is null ? null : labelVersions);
                         if (labels.Refusal is not null)
                         {
                             return Refusal<PlanViewV1>(labels.Refusal);
@@ -1214,10 +1240,16 @@ public sealed partial class ManufacturingCommandService(
 
                         labelUsable = labels.Usable;
                     }
+
                 }
 
-                var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
-                    timeProvider.GetUtcNow(), snapshot, labelUsable, metadata, cancellationToken);
+                var approvedAt = timeProvider.GetUtcNow();
+                Task<ProductionPlan> Approve(CancellationToken token) => plans.ApprovePlanAsync(planId,
+                    request.ExpectedVersion, actor, approvedAt, snapshot, labelUsable, metadata, token);
+                var approved = planAllocations is null
+                    ? await Approve(cancellationToken)
+                    : await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Approve, metadata,
+                        cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(approved), false, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
@@ -1728,8 +1760,18 @@ public sealed partial class ManufacturingCommandService(
                 var persistenceAuthority = new ManufacturingPersistenceAuthorityFenceV1(companyId, actor,
                     token => RevalidateClosePersistenceAuthorityAsync(companyId, actor, permission,
                         approval is null ? null : exceptionApprovalPermission, token));
-                await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
-                    approval, persistenceAuthority, metadata, cancellationToken);
+                async Task<bool> Close(CancellationToken token)
+                {
+                    await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
+                        approval, persistenceAuthority, metadata, token);
+                    return true;
+                }
+
+                // U3-a (URT-D21): the plan's allocation remainder is released with the order's closure.
+                _ = planAllocations is null
+                    ? await Close(cancellationToken)
+                    : await planAllocations.WriteAndReleaseAsync(current.PlanId,
+                        ManufacturingPlanAllocationReleaseReasonV1.OrderClosed, Close, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken,
             storedAnswerPermission: exceptionReason is null ? null : exceptionApprovalPermission ?? string.Empty);
@@ -2817,7 +2859,8 @@ public sealed partial class ManufacturingCommandService(
         plan.Cancellation is { } cancellation
             ? new PlanCancellationViewV1(cancellation.Reason, cancellation.CancelledByUserId, cancellation.CancelledAtUtc)
             : null,
-        ProcessSpecView(plan.ProcessSpec));
+        ProcessSpecView(plan.ProcessSpec),
+        plan.PreparedBy);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null

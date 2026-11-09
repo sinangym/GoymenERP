@@ -107,12 +107,31 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "AND [MoneyScale] IS NOT NULL AND [MoneyScale] >= 0 AND [MoneyScale] <= 28)";
 
     /// <summary>
+    /// A2a-1c (ALS-D72): the order's unit-price scale is absent, or present only beside a money snapshot and within System.Decimal's
+    /// 0..28. It is kept apart from <see cref="OrderMoneyCheck"/>, which stays as A2a-1 wrote it: a legacy priced order has no
+    /// unit-price scale and keeps the amount scale for its unit prices.
+    /// </summary>
+    internal const string OrderUnitPriceScaleCheck =
+        "[UnitPriceScale] IS NULL OR ([CurrencyId] IS NOT NULL AND [UnitPriceScale] >= 0 AND [UnitPriceScale] <= 28)";
+
+    /// <summary>
     /// A2a-1 (ALS-D5, ALS-D18): a line is unpriced (all four price columns null) or a GENERAL line with a unit price of zero or more
     /// (an explicit 0 is a price, Sinan #66 6704170096), a
     /// non-empty price unit and at most one discount — a percent in 0..100 or an amount in 0..unit price. That a priced line's
     /// order has a currency spans two tables and is the domain's rule (a CHECK cannot read the header); the price unit equal to
     /// the line's unit is the domain's too (ALS-D51: a published conversion may lift it without a migration).
     /// </summary>
+    /// <summary>
+    /// A2a-2 (ALS-D38, ALS-D75): a line carries no maturity surcharge, or exactly one — a percent in 0..100 of the discounted price or an
+    /// amount of zero or more — beside a unit price ABOVE 0 (Sinan: no surcharge on a 0 price). It is kept apart from
+    /// <see cref="OrderLinePriceCheck"/>, which stays as A2a-1 wrote it; a surcharge without a price fails here (UnitPrice NULL).
+    /// </summary>
+    internal const string OrderLineDeferralCheck =
+        "([DeferralPercent] IS NULL AND [DeferralAmount] IS NULL) "
+        + "OR ([UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND ([DeferralPercent] IS NULL OR [DeferralAmount] IS NULL) "
+        + "AND ([DeferralPercent] IS NULL OR ([DeferralPercent] >= 0 AND [DeferralPercent] <= 100)) "
+        + "AND ([DeferralAmount] IS NULL OR [DeferralAmount] >= 0))";
+
     internal const string OrderLinePriceCheck =
         "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) "
         + "OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> " + EmptyGuid + " "
@@ -244,6 +263,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseOrders_Cancellation", OrderCancellationCheck);
             // A2a-1 (TEK-01): the money snapshot is complete or absent.
             table.HasCheckConstraint("CK_PurchaseOrders_Money", OrderMoneyCheck);
+            // A2a-1c (ALS-D72): the unit-price scale only beside a money snapshot.
+            table.HasCheckConstraint("CK_PurchaseOrders_UnitPriceScale", OrderUnitPriceScaleCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -284,6 +305,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseOrderLines_Shares", OrderLineSharesCheck);
             // A2a-1 (ALS-D5, ALS-D18): unpriced, or a general line with a price ≥ 0 and at most one bounded discount.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Price", OrderLinePriceCheck);
+            // A2a-2 (ALS-D38, ALS-D75): at most one maturity surcharge, only beside a unit price above 0.
+            table.HasCheckConstraint("CK_PurchaseOrderLines_Deferral", OrderLineDeferralCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
         entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId })
@@ -304,6 +327,9 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.Property(x => x.UnitPrice).HasPrecision(24, PurchaseOrderMoney.MaximumPriceScale);
         entity.Property(x => x.DiscountAmount).HasPrecision(24, PurchaseOrderMoney.MaximumPriceScale);
         entity.Property(x => x.DiscountPercent).HasPrecision(9, PurchaseOrderLinePrice.PercentScale);
+        // A2a-2: the maturity surcharge in the same precisions as the discount (a percent decimal(9,6), an amount decimal(24,6)).
+        entity.Property(x => x.DeferralAmount).HasPrecision(24, PurchaseOrderMoney.MaximumPriceScale);
+        entity.Property(x => x.DeferralPercent).HasPrecision(9, PurchaseOrderLinePrice.PercentScale);
 
         entity.HasOne<PurchaseOrderRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.OrderId })

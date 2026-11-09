@@ -308,6 +308,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             MoneyProfileId = order.Money?.ProfileId,
             MoneyProfileVersion = order.Money?.ProfileVersion,
             MoneyScale = order.Money?.Scale,
+            // A2a-1c (ALS-D72): the owner's unit-price scale, beside the snapshot (null when none was answered).
+            UnitPriceScale = order.Money?.UnitPriceScale,
         });
         var lineNo = 0;
         foreach (var line in order.Lines)
@@ -333,6 +335,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 PriceUnitId = line.Price?.PriceUnitId,
                 DiscountPercent = line.Price?.DiscountPercent,
                 DiscountAmount = line.Price?.DiscountAmount,
+                // A2a-2 (ALS-D38): the maturity surcharge, written once with the price.
+                DeferralPercent = line.Price?.DeferralPercent,
+                DeferralAmount = line.Price?.DeferralAmount,
             });
         }
 
@@ -812,14 +817,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
     private static QuantityUnit UnitOf(bool isKilogram) => isKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
 
-    /// <summary>A2a-1: the stored money snapshot, or null when the order has none (the CHECK keeps the five facts together).</summary>
+    /// <summary>A2a-1: the stored money snapshot, or null when the order has none (the CHECK keeps the five facts together); A2a-1c: with the
+    /// stored unit-price scale, null for an order recorded before it (its unit prices keep the amount scale).</summary>
     private static PurchaseOrderMoney? MoneyOf(PurchaseOrderRow row) =>
         row.CurrencyId is { } currencyId
             ? PurchaseOrderMoney.Of(currencyId,
                 row.CurrencyCode ?? throw new InvalidOperationException("Kayıtlı para profilinin kodu yok."),
                 row.MoneyProfileId ?? throw new InvalidOperationException("Kayıtlı para profilinin kimliği yok."),
                 row.MoneyProfileVersion ?? throw new InvalidOperationException("Kayıtlı para profilinin sürümü yok."),
-                row.MoneyScale ?? throw new InvalidOperationException("Kayıtlı para profilinin ölçeği yok."))
+                row.MoneyScale ?? throw new InvalidOperationException("Kayıtlı para profilinin ölçeği yok."),
+                row.UnitPriceScale)
             : null;
 
     /// <summary>A2a-1: the stored line price, or null for an unpriced line (rebuilt through the domain, which checks it again).</summary>
@@ -827,7 +834,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         line.UnitPrice is { } unitPrice
             ? new PurchaseOrderLinePrice(unitPrice,
                 line.PriceUnitId ?? throw new InvalidOperationException("Kayıtlı fiyatın fiyat birimi yok."),
-                line.DiscountPercent, line.DiscountAmount)
+                line.DiscountPercent, line.DiscountAmount, line.DeferralPercent, line.DeferralAmount)
             : null;
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -895,7 +902,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         sourceRequestId = order.SourceRequestId,
         // A2a-1 (TEK-01): the currency snapshot and each line's price are part of the audited record.
         currency = order.Money is { } money
-            ? new { currencyId = money.CurrencyId, currencyCode = money.CurrencyCode, profileId = money.ProfileId, profileVersion = money.ProfileVersion, scale = money.Scale }
+            ? new { currencyId = money.CurrencyId, currencyCode = money.CurrencyCode, profileId = money.ProfileId, profileVersion = money.ProfileVersion, scale = money.Scale,
+                unitPriceScale = money.UnitPriceScale }
             : null,
         // A1-3 (No.161 §2): the cancellation facts and each line's cancelled remainder are part of the audited record.
         cancellation = order.Cancellation is { } cancellation
@@ -906,7 +914,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             lineId = line.Id, ordered = line.Quantity.Value, technical = line.TechnicalQuantity.Value, accepted = line.AcceptedQuantity.Value,
             cancelled = line.CancelledQuantity.Value, sourceRequestLineId = line.SourceRequestLineId,
             price = line.Price is { } price
-                ? new { unitPrice = price.UnitPrice, priceUnitId = price.PriceUnitId, discountPercent = price.DiscountPercent, discountAmount = price.DiscountAmount }
+                ? new
+                {
+                    unitPrice = price.UnitPrice, priceUnitId = price.PriceUnitId, discountPercent = price.DiscountPercent, discountAmount = price.DiscountAmount,
+                    deferralPercent = price.DeferralPercent, deferralAmount = price.DeferralAmount,
+                }
                 : null,
         }),
     }, Json);

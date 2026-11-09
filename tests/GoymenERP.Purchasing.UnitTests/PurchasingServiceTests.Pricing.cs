@@ -130,6 +130,8 @@ public sealed partial class PurchasingServiceTests
     [InlineData("not-yet", 422, "unsupported_currency")]
     [InlineData("other-company", 503, "reference_provider_invalid")]
     [InlineData("other-operation", 503, "reference_provider_invalid")]
+    // A2a-1c: a unit-price scale outside System.Decimal's 0..28 is a broken owner answer, never capped silently.
+    [InlineData("unit-scale-out-of-range", 503, "reference_provider_invalid")]
     public async Task The_currency_is_the_Settings_owners_answer_and_every_other_answer_refuses_the_order(string fault, int status, string code)
     {
         var world = new World { Money = new FakeMoney { Fault = fault } };
@@ -225,7 +227,7 @@ public sealed partial class PurchasingServiceTests
                     Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException(Fault)),
                 _ => Task.FromResult(new MoneyProfileV1(Fault == "other-company" ? Guid.NewGuid() : Company, currencyId, "TRY",
                     Fault == "other-operation" ? "sales.order-draft.v1" : operation, new ProfileVersionV1(LiraProfile, 3), 2, Fault != "inactive",
-                    Fault == "not-yet" ? Day.AddDays(1) : new DateOnly(2026, 9, 1), null)),
+                    Fault == "not-yet" ? Day.AddDays(1) : new DateOnly(2026, 9, 1), null, Fault == "unit-scale-out-of-range" ? 29 : null)),
             };
         }
 

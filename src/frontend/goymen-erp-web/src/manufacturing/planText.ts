@@ -172,7 +172,18 @@ export function lifecycleFailureText(kind: LifecycleKind, status: number, code: 
   const subject = kind === 'approve' ? 'Plan onayı' : 'Üretim emri'
   if (status === 401 || status === 403) return `${subject} yetkiniz artık geçerli değil.`
   if (status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
+  // U3-a (URT-D21, URT-D3): the approval allocates the plan's inputs in Inventory; its two common refusals are named.
+  if (status === 409 && code === 'inventory_manufacturing_allocation_insufficient_free_stock') {
+    return 'Plan girdileri için stokta yeterli serbest miktar yok; plan onaylanmadı.'
+  }
+  if (status === 409 && code === 'inventory_manufacturing_parent_label_version_conflict') {
+    return 'Girdi etiketi onay sırasında değişti; plan onaylanmadı. Yeniden deneyin.'
+  }
   if (status === 409) return `${subject} uygulanmadı (${code ?? 'conflict'}).`
+  // U2-d (URT-D2): the preparer of the current version may not approve it; another user decides.
+  if (status === 422 && code === 'manufacturing_plan_self_approval') {
+    return 'Planın bu sürümünü siz hazırladınız; onayı başka bir kullanıcı vermelidir.'
+  }
   if (status === 422) return `${subject} iş kuralı tarafından reddedildi (${code ?? 'rule_refusal'}).`
   return `${subject} uygulanmadı (${code ?? status}).`
 }

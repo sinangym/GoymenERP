@@ -39,6 +39,7 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
   pricePendingCell: 'Fiyat bekliyor',
   technicalPriceCell: 'Genel satırda',
   discountPercentValue: (percent: string) => `%${percent}`,
+  deferral: (value: string) => `vade farkı ${value}`,
   money: (amount: string, currencyCode: string) => `${amount} ${currencyCode}`,
   pricePending: 'Fiyat bekliyor: fiyatı girilmemiş satır var. Sipariş onaylanır ve mal kabulü yapılır; fiyat girilene kadar faturayla eşleşmez.',
   pricesWithheld: 'Fiyatlar bu yetkiyle gösterilmez (fiyat okuma yetkisi yok).',
