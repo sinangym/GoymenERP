@@ -88,6 +88,20 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanHasOrder,
     ];
 
+    // Üretim U2-d (URT-D2): the approval's and the rejection's 422 sets add "the preparer of the current version may not
+    // decide". Declared on those two endpoints only, so the cancellation and every other endpoint keep their contract.
+    private static readonly string[] ApprovePlanUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanSelfApproval,
+    ];
+
+    private static readonly string[] RejectPlanUnprocessableCodes =
+    [
+        .. PlanDecisionUnprocessableCodes,
+        ManufacturingRuleCodes.PlanSelfApproval,
+    ];
+
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
@@ -242,7 +256,7 @@ public static class ManufacturingEndpoints
             .WithName("RejectManufacturingPlanV1")
             .Accepts<RejectPlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
-            .WithPlanDecisionProblems();
+            .WithPlanDecisionProblems(RejectPlanUnprocessableCodes);
 
         // Üretim U2-a (API-11): the cancellation of a Draft, or of an approved plan that opened no order, with a reason,
         // under its own grant (`manufacturing.plans.cancel`, company-wide, granted to no role). The plan is kept as
@@ -550,18 +564,19 @@ public static class ManufacturingEndpoints
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(SavePlanConflictCodes)
-            .ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpUnprocessableEntity(ApprovePlanUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();
 
-    private static RouteHandlerBuilder WithPlanDecisionProblems(this RouteHandlerBuilder builder) =>
+    private static RouteHandlerBuilder WithPlanDecisionProblems(this RouteHandlerBuilder builder,
+        string[]? unprocessableCodes = null) =>
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(ConflictCodes)
-            .ProducesErpUnprocessableEntity(PlanDecisionUnprocessableCodes)
+            .ProducesErpUnprocessableEntity(unprocessableCodes ?? PlanDecisionUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();

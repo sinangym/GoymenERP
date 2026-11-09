@@ -97,6 +97,12 @@ public static class ManufacturingRuleCodes
     public const string PlanCancelled = "manufacturing_plan_cancelled";
 
     /// <summary>
+    /// Üretim U2-d (URT-D2): the user who prepared the plan's current version (saved it, or recorded its last revision)
+    /// may not approve or reject it; another user decides.
+    /// </summary>
+    public const string PlanSelfApproval = "manufacturing_plan_self_approval";
+
+    /// <summary>
     /// Üretim U2-a: the net usable width entered on the slitting spec is wider than a planned parent coil's width (the
     /// Product snapshot captured for that roll). Refused, never cut to the coil.
     /// </summary>

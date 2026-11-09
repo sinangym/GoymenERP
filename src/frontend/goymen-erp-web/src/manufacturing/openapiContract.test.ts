@@ -150,9 +150,11 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
       names('PlanViewV1').filter(
         (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH
           && name !== 'parameterSnapshot' && name !== LINE_SPEED && name !== 'orderId' && name !== 'rejections'
-          && name !== 'cancellation' && name !== PROCESS_SPEC,
+          && name !== 'cancellation' && name !== PROCESS_SPEC && name !== 'preparedBy',
       ),
     )
+    // U2-d (URT-D2): the preparer is an optional nullable actor id, never required.
+    expect(schema('PlanViewV1').properties?.preparedBy).toEqual({ type: ['null', 'string'] })
     expectOptionalCutToLength('PlanViewV1', 'CutToLengthSpecViewV1')
     expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
       names('PlannedInputViewV1').filter(
