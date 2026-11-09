@@ -139,7 +139,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        "069c2674ae7e2722fa3d5322fd54a115420df2e353e2d30472384aa90393a65d";
+        "a1562dc161cfd5fba787dbf77820476905448ebba901af6b6f85f5499cb9d4d5";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -1505,7 +1505,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
                         // A2a-1: the service factory also passes the existing Settings money port and its candidate read; counts unchanged.
                         // A2a-2: and the existing Settings line tax port (ISettingsLineTaxResolverV1, optional); counts unchanged.
-                        "1b41c57dc790910fca73c62ee0ef6443295b3869a552453b7a01bf80803d774e",
+                        "d5f40fbd4d6fb1d6ba628d929dc580778f9def9f3710bcd85617150fe3fdb22c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

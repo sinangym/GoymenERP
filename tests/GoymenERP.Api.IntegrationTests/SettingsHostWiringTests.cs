@@ -43,16 +43,16 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void S1_the_host_composes_no_linked_supply_adapter_yet_so_the_categories_stay_no_source()
+    public void S1_the_host_composes_only_the_purchasing_linked_supply_adapter_and_recorder_so_production_stays_no_source()
     {
-        // S-1 / MOD-03: Sales owns ISalesOrderLinkedSupplyReadPortV1; the Production (U5-a) and Purchasing (MOD-03) adapters are
-        // the owners' and not on main. The draft service resolves (an empty set, optional) and keeps "no source".
+        // S-1 / MOD-03: Sales owns ISalesOrderLinkedSupplyReadPortV1; the Purchasing adapter (A4 / MOD-03) is the owner's and is composed
+        // in the host together with its recorder declaration (SAT-D219); the Production adapter (U5-a) is not on main, so that kind
+        // stays "no source". One adapter per kind: a second one would make the kind Unreadable.
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
-        Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>());
-        // SAT-D219: no module declares that it records links to Sales order lines yet, so "no source" blocks nothing.
-        Assert.Empty(scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
+        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>().Select(port => port.SupplyKind));
+        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>().Select(recorder => recorder.SupplyKind));
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesDraftService>());
     }
 
