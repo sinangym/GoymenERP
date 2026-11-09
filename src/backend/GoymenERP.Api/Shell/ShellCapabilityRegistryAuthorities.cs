@@ -462,8 +462,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:v98hEbJsfBmWJ0SA0mbmxy19EvGcbOLLBPgE8wrQyHg";
+        "sha256:rbtaUiFjcSRiZBROnRdZvXGQYBcNhN1UZm7CB5Jjbko";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -474,8 +475,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:YtJ8QrU1Md33rkP5ex8lxQYUuKEclXoy_h91iUoDEOI";
+        "sha256:dW8ajI16oJT2SqHEm5MHebmZ66-R-A0m622pkkS4MjQ";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -486,8 +488,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:13eNNi5yjFHs6cs_RbYg36WdJ2lTXlphWTCj-JF5yAY";
+        "sha256:xJfWp2RG9P0sCHAy60_ecbdLk32JIhbHdRadR98jjJA";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -498,8 +501,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:iqYINaIRekeV622n1P282ElqPLVhfELZFOFyhZ5NYNs";
+        "sha256:v8-b9H6pOUZnfdxf5oRkhTecAZolSE_IVP7Ne_NNRf4";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -510,8 +514,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:3jLcBeo8tbQ-MUhbqDu_EIvIbDuih_NYL9-v22g4NI0";
+        "sha256:Drdb8DmE1OZwYxuUX7GaMglO_VqHGNTE_4luNKYvWcU";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -522,8 +527,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:LSFdDBYvG249s0wnLvwwEFpKKmZj7PsYJ0UaVoDZ2Ek";
+        "sha256:7ys6LlqkQ399fJ-v96fm-7nyTsufgCPTc1e7MqN0b6E";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by

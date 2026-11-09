@@ -26,47 +26,16 @@ public sealed partial class ShellCapabilityRegistry
 
         _registrations = BuildValidatedRegistrations(providers);
         Revision = ComputeRevision(_registrations);
-        TmpDiagDumpSubsets(providers); // TMPDIAG2 - geri alinacak
         if (_registrations.Count > 0 && !authorityCatalog.Accepts(Revision))
         {
             throw new InvalidOperationException(
-                "Shell capability provider seti kabul edilmiş owner kaynağıyla eşleşmiyor. TMPDIAG Actual: " + Revision);
+                "Shell capability provider seti kabul edilmiş owner kaynağıyla eşleşmiyor.");
         }
     }
 
     public IReadOnlyList<ShellCapabilityRegistration> Registrations => _registrations;
 
     public string Revision { get; }
-
-    // TMPDIAG2 - geri alinacak: provider alt kumelerinin revizyonlarini stderr'e basar.
-    private static void TmpDiagDumpSubsets(IEnumerable<IShellCapabilityProvider> providers)
-    {
-        var all = providers.ToArray();
-        if (all.Length < 2 || all.Length > 14)
-        {
-            return;
-        }
-
-        for (var mask = 1; mask < (1 << all.Length); mask++)
-        {
-            try
-            {
-                var subset = all.Where((_, i) => (mask & (1 << i)) != 0).ToArray();
-                var owners = string.Join("+", subset.Select(p => p.Owner).OrderBy(x => x, StringComparer.Ordinal));
-                if (!owners.Contains("IDENTITY", StringComparison.Ordinal)
-                    && !owners.Contains("PRODUCT-PRICE-LISTS", StringComparison.Ordinal)
-                    && !owners.Contains("SETTINGS", StringComparison.Ordinal)
-                    && owners.Contains("LOGISTICS", StringComparison.Ordinal)
-                    && owners.Contains("MANUFACTURING", StringComparison.Ordinal))
-                {
-                    Console.Error.WriteLine("TMPDIAG2 " + owners + " => " + ComputeCandidateRevision(subset));
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-    }
 
     internal static string ComputeCandidateRevision(
         IEnumerable<IShellCapabilityProvider> providers)
