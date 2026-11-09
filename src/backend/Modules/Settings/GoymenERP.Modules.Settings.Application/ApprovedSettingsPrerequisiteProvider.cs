@@ -37,12 +37,13 @@ namespace GoymenERP.Modules.Settings.Application;
 /// no approved profile of that company answers for (e.g. Accounting/Finance keys for GSP/GIN,
 /// SAT-D18) → <c>settings_provider_unavailable</c> (nothing approved to ask); an approved operation but no profile for the currency (USD, EUR or an empty id for GDC
 /// today) → <see cref="SettingsPrerequisiteCodesV1.MoneyProfileNotFound"/>; otherwise the exact
-/// version for the date, answered for the requested operation, with its real window.
+/// version for the date, answered for the requested operation, with its real window and — A2a-1b — the
+/// unit-price scale approved for that operation, or null when none is.
 /// </para>
 /// <para>
 /// <see cref="GetMoneyCurrencyCandidatesAsync"/> lists, from the same approved money catalog, each
 /// currency whose approved profile for the server company is unrestricted — answers every operation
-/// key the catalog knows (GDC: TRY; GSP/GIN have none, their TRY is Sales-only, SAT-D18, so they get
+/// key the catalog knows (GDC: TRY; GSP/GIN have none, their TRY answers only the Sales draft and Purchasing order keys, SAT-D18 and A2a-1b, so they get
 /// <c>settings_provider_unavailable</c> as before). The operation-aware
 /// <see cref="ISettingsMoneyCandidateReaderV2"/> read lists each currency whose profile answers the
 /// given operation (GSP/GIN for <c>sales.order-draft.v1</c>: TRY). Access first; a
@@ -253,7 +254,10 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
             entry.Scale,
             entry.IsActive,
             entry.EffectiveFrom,
-            entry.EffectiveThrough));
+            entry.EffectiveThrough,
+            entry.UnitPriceScales is { } unitPriceScales && unitPriceScales.TryGetValue(operation, out var unitPriceScale)
+                ? unitPriceScale
+                : null));
     }
 
     /// <summary>The approved money currencies of the server company (T02-b); see the class remarks.</summary>

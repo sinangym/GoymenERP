@@ -73,7 +73,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         // Approval captures every entered number with source Plan beside the Paint profile's own values.
-        var approved = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
+        var approved = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
             new ApprovePlanRequestV1(2));
         var planValues = approved.ParameterSnapshot!.Values
             .Where(value => value.Source == "Plan")

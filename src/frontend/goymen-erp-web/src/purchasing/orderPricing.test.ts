@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPurchaseOrder, fetchPurchasingCurrencyCandidates, PURCHASING_CURRENCY_CANDIDATES_PATH } from './api'
-import { decodePurchaseOrderCommandResponse, decodePurchaseOrderDetail, decodePurchasingCurrencyCandidates, type CreatePurchaseOrderRequest } from './contract'
+import { decodePurchaseOrderCommandResponse, decodePurchaseOrderDetail, decodePurchaseOrderList, decodePurchasingCurrencyCandidates, type CreatePurchaseOrderRequest } from './contract'
 
 /**
  * A2a-1 (TEK-01, API-20; ALS-D5, ALS-D18, PRS-02): the priced order body decodes only when its disclosure and its prices agree,
@@ -68,6 +68,30 @@ describe('A2a-1 priced order body', () => {
     ['a price on a body from before A2a-1', { order: readSummary, lines: [line()], acceptances: [], cancellation: null }],
   ])('refuses %s', (_, value) => {
     expect(decodePurchaseOrderDetail(value)).toBeNull()
+  })
+})
+
+describe('A2a-2 maturity surcharge and the list flag', () => {
+  it('decodes a price with a surcharge, and one sent before A2a-2 without the members', () => {
+    const surcharged = { ...price, deferralPercent: '3', deferralAmount: null, netUnitPrice: '41.4253125', lineAmount: '51802.36' }
+    expect(decodePurchaseOrderDetail(body({}, [line({ price: surcharged })]))?.lines[0].price?.deferralPercent).toBe('3')
+    expect(decodePurchaseOrderDetail(body({}, [line({ price: { ...price, deferralPercent: null, deferralAmount: null } })]))?.lines[0].price)
+      .toEqual({ ...price, deferralPercent: null, deferralAmount: null })
+  })
+
+  it.each([
+    ['two surcharges', { ...price, deferralPercent: '1', deferralAmount: '1' }],
+    ['a numeric surcharge', { ...price, deferralPercent: 3, deferralAmount: null }],
+    ['only one of the two surcharge members', { ...price, deferralPercent: '3' }],
+  ])('refuses %s', (_, value) => {
+    expect(decodePurchaseOrderDetail(body({}, [line({ price: value })]))).toBeNull()
+  })
+
+  it('decodes the list item flag only as a boolean', () => {
+    const page = (item: unknown) => decodePurchaseOrderList({ items: [item], nextCursor: null })
+    expect(page({ ...readSummary, pricePending: true })?.items[0].pricePending).toBe(true)
+    expect(page(readSummary)?.items[0].pricePending).toBeUndefined()
+    expect(page({ ...readSummary, pricePending: null })).toBeNull()
   })
 })
 

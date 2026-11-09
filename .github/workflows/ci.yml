@@ -134,12 +134,17 @@ jobs:
           --output artifacts/idempotency-migration.sql
 
   backend-test-group:
-    name: Backend test group (${{ matrix.group }})
+    name: Backend test group (${{ matrix.unit }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        group: [architecture, api, modules]
+        include:
+          - { group: architecture, unit: architecture, shard_args: "" }
+          - { group: api, unit: api-1, shard_args: "--shard 1" }
+          - { group: api, unit: api-2, shard_args: "--shard 2" }
+          - { group: api, unit: api-3, shard_args: "--shard 3" }
+          - { group: modules, unit: modules, shard_args: "" }
     steps:
       - uses: actions/checkout@v7
 
@@ -164,17 +169,17 @@ jobs:
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           python3 -I -S -B tools/verify_backend_test_groups.py \
-          --group "${{ matrix.group }}" \
-          --results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
-          --proof-output "artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json" \
+          --group "${{ matrix.group }}" ${{ matrix.shard_args }} \
+          --results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.unit }}" \
+          --proof-output "artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json" \
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)"
 
       - name: Upload exact backend group proof
         uses: actions/upload-artifact@v7
         with:
-          name: ci-backend-test-group-proof-${{ matrix.group }}
-          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          name: ci-backend-test-group-proof-${{ matrix.unit }}
+          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json
           if-no-files-found: error
           retention-days: 7
 
@@ -182,8 +187,8 @@ jobs:
         if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
         run: |
           python3 -I -S -B tools/ci/summarize_trx.py \
-          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
-          --output "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json" \
+          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.unit }}" \
+          --output "artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json" \
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
           --job backend-test-group \
@@ -193,8 +198,8 @@ jobs:
         if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
         uses: actions/upload-artifact@v7
         with:
-          name: ci-test-summary-backend-group-${{ matrix.group }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          name: ci-test-summary-backend-group-${{ matrix.unit }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json
           if-no-files-found: error
           retention-days: 7
 

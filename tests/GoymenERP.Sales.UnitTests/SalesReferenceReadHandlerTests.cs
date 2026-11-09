@@ -214,6 +214,19 @@ public sealed partial class SalesReferenceReadHandlerTests
     }
 
     [Fact]
+    public async Task Owner_unrestorable_record_is_the_owner_unavailable_not_a_server_fault()
+    {
+        // B-31: the owner throws InvalidOperationException when a stored product cannot be restored.
+        var f = new Fixture();
+        f.Products.Error = new InvalidOperationException("owner-internal-detail");
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(503, result.StatusCode);
+        Assert.Equal("product_provider_unavailable", result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Fact]
     public async Task Owner_authorization_exception_is_forbidden_without_detail()
     {
         var f = new Fixture();

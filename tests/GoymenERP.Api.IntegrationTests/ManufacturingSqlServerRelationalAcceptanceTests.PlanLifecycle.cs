@@ -26,10 +26,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var store = run.Store(CompanyA))
         {
             await store.Plans.SavePlanAsync(plan, Metadata(run));
-            await store.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Actor, At, "bir", Metadata(run));
+            await store.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "bir", Metadata(run));
             await store.Revisions.RevisePlanAsync(plan.Id, 2, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollB, Kg(4_000m), 5)], null, "düzeltildi", Metadata(run));
-            await store.Lifecycle.RejectPlanAsync(plan.Id, 3, run.Actor, At, "iki", Metadata(run));
+            await store.Lifecycle.RejectPlanAsync(plan.Id, 3, run.Approver, At, "iki", Metadata(run));
         }
 
         await using (var store = run.Store(CompanyA))
@@ -38,7 +38,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             Assert.Equal((4L, PlanStatus.Draft, 1), (stored.Version, stored.Status, stored.RevisionCount));
             Assert.Equal([(1, "bir", 2L), (2, "iki", 4L)],
                 stored.Rejections.Select(rejection => (rejection.Number, rejection.Reason, rejection.PlanVersion)));
-            var approved = await store.Plans.ApprovePlanAsync(plan.Id, 4, run.Actor, At, Metadata(run));
+            var approved = await store.Plans.ApprovePlanAsync(plan.Id, 4, run.Approver, At, Metadata(run));
             Assert.Equal(5L, approved.Version);
         }
 

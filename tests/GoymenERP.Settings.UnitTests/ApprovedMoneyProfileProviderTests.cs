@@ -25,6 +25,8 @@ public sealed class ApprovedMoneyProfileProviderTests
     private const string SalesDraft = "sales.order-draft.v1";
     // ACC-V0a: the Accounting owner's key on the same approved profile (a journal amount is a final TRY amount, Ö2).
     private const string AccountingJournalAmount = "accounting.journal-amount.v1";
+    // A2a-1b: the Purchasing owner's key (ALS-D63 narrow exception, Sinan #66 6704170096).
+    private const string PurchasingOrder = "purchasing.order.v1";
 
     [Theory]
     [InlineData(FinancePayment)]
@@ -155,8 +157,46 @@ public sealed class ApprovedMoneyProfileProviderTests
         Assert.Contains(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entries);
         Assert.Contains(ApprovedMoneyProfileCatalog.GspTurkishLiraV1, entries);
         Assert.Contains(ApprovedMoneyProfileCatalog.GinTurkishLiraV1, entries);
-        Assert.Equal([SalesDraft], ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.ToArray());
-        Assert.Equal([SalesDraft], ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.ToArray());
+        Assert.Equal(new[] { PurchasingOrder, SalesDraft }, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { PurchasingOrder, SalesDraft }, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("gdc")]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task The_purchasing_order_operation_answers_TRY_with_scale_2_and_unit_price_scale_4_in_every_seed_company(string company)
+    {
+        // A2a-1b: the amount is still the final amount (Ö2, 2 decimals); the unit price carries Sinan's 4 decimals.
+        var companyId = company switch { "gdc" => Gdc, "gsp" => Gsp, _ => Gin };
+        var entry = company switch
+        {
+            "gdc" => ApprovedMoneyProfileCatalog.GdcTurkishLiraV1,
+            "gsp" => ApprovedMoneyProfileCatalog.GspTurkishLiraV1,
+            _ => ApprovedMoneyProfileCatalog.GinTurkishLiraV1,
+        };
+
+        var profile = await Provider(companyId).GetMoneyProfileAsync(Try, PurchasingOrder, ExtraApproval);
+
+        Assert.Equal((companyId, Try, "TRY", PurchasingOrder, 2, (int?)4, true),
+            (profile.CompanyId, profile.CurrencyId, profile.CurrencyCode, profile.Operation, profile.Scale, profile.UnitPriceScale, profile.IsActive));
+        Assert.Equal(new ProfileVersionV1(entry.ProfileId, 1), profile.Profile);
+        Assert.Equal((entry.EffectiveFrom, (DateOnly?)null), (profile.EffectiveFrom, profile.EffectiveThrough));
+        Assert.Equal(new MoneyCurrencyCandidateV1(Try, "TRY", "TRY"),
+            Assert.Single(await ((ISettingsMoneyCandidateReaderV2)Provider(companyId)).GetMoneyCurrencyCandidatesAsync(PurchasingOrder)));
+    }
+
+    [Theory]
+    [InlineData(FinancePayment)]
+    [InlineData(FinanceReceipt)]
+    [InlineData(SalesDraft)]
+    [InlineData(AccountingJournalAmount)]
+    public async Task Every_other_operation_gets_no_unit_price_scale(string operation)
+    {
+        // Ö2's general "6 ondalığa kadar" is narrowed by no owner decision for these keys, so none is published.
+        var profile = await Provider(Gdc).GetMoneyProfileAsync(Try, operation, Approval);
+
+        Assert.Null(profile.UnitPriceScale);
     }
 
     [Theory]
@@ -195,7 +235,7 @@ public sealed class ApprovedMoneyProfileProviderTests
     {
         var entry = Assert.Single(ApprovedMoneyProfileCatalog.Approved.Entries, entry => entry.CompanyId == Gdc);
         Assert.Same(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entry);
-        Assert.Equal(new[] { FinancePayment, FinanceReceipt, SalesDraft, AccountingJournalAmount }.Order(StringComparer.Ordinal),
+        Assert.Equal(new[] { FinancePayment, FinanceReceipt, SalesDraft, AccountingJournalAmount, PurchasingOrder }.Order(StringComparer.Ordinal),
             entry.Operations.Order(StringComparer.Ordinal));
         Assert.Contains("5722637822", entry.Source, StringComparison.Ordinal);
     }
@@ -220,6 +260,9 @@ public sealed class ApprovedMoneyProfileProviderTests
     [InlineData("window ends before it starts")]
     [InlineData("repeated version")]
     [InlineData("overlapping versions")]
+    [InlineData("unit price scale for an unlisted operation")]
+    [InlineData("negative unit price scale")]
+    [InlineData("unit price scale above 28")]
     public void A_malformed_catalog_is_refused_whole_as_invalid(string malformation)
     {
         var good = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1;
@@ -232,6 +275,9 @@ public sealed class ApprovedMoneyProfileProviderTests
             "negative scale" => [good with { Scale = -1 }],
             "zero version" => [good with { Version = 0 }],
             "window ends before it starts" => [good with { EffectiveThrough = good.EffectiveFrom.AddDays(-1) }],
+            "unit price scale for an unlisted operation" => [good with { UnitPriceScales = new Dictionary<string, int> { ["synthetic.unlisted.v1"] = 4 } }],
+            "negative unit price scale" => [good with { UnitPriceScales = new Dictionary<string, int> { [PurchasingOrder] = -1 } }],
+            "unit price scale above 28" => [good with { UnitPriceScales = new Dictionary<string, int> { [PurchasingOrder] = 29 } }],
             "repeated version" => [good with { EffectiveThrough = good.EffectiveFrom.AddDays(1) }, good with { EffectiveFrom = good.EffectiveFrom.AddDays(2) }],
             _ => [good, good with { Version = 2, EffectiveFrom = good.EffectiveFrom.AddDays(10) }],
         };
