@@ -49,11 +49,11 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 144
+EXPECTED_MIGRATION_COUNT = 145
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "f12162856977dc37c122e805d92133ab0dea20ccc2859a7bb1c015bba8b20008"
+    "397266e24de9c901d70e9b163cf8a1763bca6c4af0cc3b2521e665b943a4b1ea"
 )
-EXPECTED_DURABLE_STORE_COUNT = 27
+EXPECTED_DURABLE_STORE_COUNT = 28
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 27
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 611
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 614
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "0181313850ad87586bc7c2f236f0940d9878fd38a0a514fba63c5f34b8462d90"
+    "8e128bfc614839abc17681ad0151708660144e636d1033ad6fec659c0e4875fa"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -184,6 +184,7 @@ EXPECTED_OUTBOX_CONTRACT_PATHS = (
 )
 EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("accounting", "Commands"),
+    ("accounting", "SourceDocumentAdmissions"),
     ("audit", "AuditEvents"),
     ("documents", "DocumentAttempts"),
     ("finance", "Commands"),
@@ -341,6 +342,10 @@ ACCOUNTING_STORE = (
     "src/backend/Modules/Accounting/"
     "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"
 )
+ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE = (
+    "src/backend/Modules/Accounting/"
+    "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceDocumentAdmissionStoreV1.cs"
+)
 DOCUMENTS_CONTEXT = (
     "src/backend/Modules/Documents/"
     "GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsDbContext.cs"
@@ -389,6 +394,14 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260918180000_InitialAccounting.cs",
         ACCOUNTING_STORE, ("dbContext.Deliveries.Add(new DeliveryRow",),
         mapping_tokens=("Consumer", "MessageId"),
+    ),
+    _store(
+        "accounting.source-document-admissions", "Accounting", "idempotency", "AccountingDbContext",
+        "AccountingSourceDocumentAdmissionRow", "accounting", "SourceDocumentAdmissions", ACCOUNTING_CONTEXT,
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261108222146_AddSourceDocumentAdmissions.cs",
+        ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE,
+        ("dbContext.SourceDocumentAdmissions.Add(row)",),
+        mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "documents.document-attempts", "Documents", "idempotency", "DocumentsDbContext",
@@ -621,6 +634,7 @@ DURABLE_STORE_SPECS = (
 WRITER_METHOD_SCOPES = {
     ("accounting.command-replay", ACCOUNTING_STORE): "AddCommand",
     ("accounting.delivery-inbox", ACCOUNTING_STORE): "AddDelivery",
+    ("accounting.source-document-admissions", ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE): "WriteAsync",
     ("documents.document-attempts", DOCUMENTS_STORE): "StoreUploadAsync",
     (
         "finance.command-replay",
@@ -733,6 +747,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "FinalizeInvoiceAsync",
     ): "2eaf24a1922b322c203825a80973b4140f737c66cf9e7e41588537329ba0f522",
     (ACCOUNTING_STORE, "AddCommand"): "db718449f8e13e277eb0aa197b20d7210130ab1c0d2091dd6011e43e781e47a1",
+    (ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE, "WriteAsync"): "c423293f58f6e35e18fa31020e002b0cb8ec68535c1a5c9c9722642d41f96d5c",
     (ACCOUNTING_STORE, "AddDelivery"): "b24889ce6551605bb62723f3bce1a2baa59c3680894167c71b3fd51ce0be1cb0",
     (DOCUMENT_MODULE_PATH, "AddDocumentsModule"): "178f03a58d3a9ef775bb91f777db991fd935e3d776d7d91112cb5179e4f9f57e",
     (DOCUMENT_MODULE_PATH, "RegisterProductionStorageAndScanner"): "bfea0db0f27c66dcdab7d411b5e5e6d2b986a25d157d0693fc70cbd3d5d0b19b",
@@ -873,6 +888,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 # The full blobs retain reachability evidence around the pinned methods (for example,
 # private writer call sites) and bind every emitted source record to reviewed bytes.
 REVIEWED_LIVE_SOURCE_SHA256 = {
+    ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE: "ec26c7c5129480f90736b4f68d2b137d017c93da1b8c7ee42d01cd573e2abf88",
     ACCOUNTING_STORE: "9b6e088b496de1fc3c9e912e2d83397ef341e9eed6f54b79dfa1eb1c6deb8041",
     DOCUMENT_MODULE_PATH: "8e6108de29ca7aae5133131abf8deb981d097bc33ea7964403652f04f0ebc610",
     DOCUMENTS_STORE: "076a0c5b55a961716d99f2d407bf0ae7f1d48c835de7b82b9cf64ce3a3c822ea",
