@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(21, declarations.Count);
+        Assert.Equal(23, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.6", provider.ContractVersion);
+        Assert.Equal("1.7", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -88,6 +88,10 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.open-items.detail", "finance.open-items.detail", "/finans/acik-kalemler/:openItemId",
                 "F-03-OPEN-ITEM-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [FinancePermissionNames.OpenItemRead]),
+            ("finance.party-ledger.accounting", "finance.party-ledger.accounting", "/muhasebe/cari-hesaplar", "M-03",
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
+            ("finance.party-ledger.cari", "finance.party-ledger.cari", "/cari/hesap-takibi", "C-04",
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -174,11 +178,11 @@ public sealed class FinanceShellCapabilityProviderTests
 
         // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
         Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
+        Assert.Equal(["C-04", "F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
-                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW"],
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

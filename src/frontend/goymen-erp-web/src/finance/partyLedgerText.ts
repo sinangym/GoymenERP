@@ -92,3 +92,15 @@ export const BALANCE_FORBIDDEN = 'Bu cari hesabın bakiyesini görme yetkiniz yo
 export const BALANCE_UNAVAILABLE = 'Cari bakiye özeti şu anda alınamadı.'
 export const BALANCE_TOO_MANY =
   'Bu cari hesapta tek bir özetin okuyabileceğinden fazla kayıt var; bakiye eksik kayıtla hesaplanmaz. Ekstreyi tarih aralığıyla açın.'
+
+// B-05 (KLN-D3): the party-ledger workspace opened from Muhasebe > Cari Hesaplar and Cari > Cari Hesap Takibi.
+export const WORKSPACE_TITLE_ACCOUNTING = 'Cari Hesaplar'
+export const WORKSPACE_TITLE_CARI = 'Cari Hesap Takibi'
+export const WORKSPACE_PICK_HINT =
+  'Bir cari hesap seçin: ekstre ve bakiye özeti Finans açık kalem alt defterinden okunur; yeni kayıt açılmaz.'
+export const WORKSPACE_PICK_LABEL = 'Cari hesabı'
+export const WORKSPACE_PICK = 'Seçiniz'
+export const WORKSPACE_ACCOUNTS_LOADING = 'Cari hesapları yükleniyor...'
+export const WORKSPACE_ACCOUNTS_INVALID = 'Cari hesapları doğrulanamadı; ekstre seçimi kapalı tutuldu.'
+export const WORKSPACE_NO_ACCOUNTS = 'Kullanılabilir aktif cari hesabı yok.'
+export const WORKSPACE_NEEDS_COMPANY = 'cari hesap ekstresi'
