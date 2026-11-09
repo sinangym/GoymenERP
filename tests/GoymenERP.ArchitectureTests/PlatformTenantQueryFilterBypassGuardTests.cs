@@ -211,8 +211,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     // Re-fingerprinted for Work desired-state admission: the mandatory-set test now pins the three
     // canonical admission/snapshot SQL cases already present in work.txt; verifier behavior is unchanged.
+    // Re-fingerprinted for B-24: the mandatory Work set now also pins the three outbox dispatch facts.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "aa467cb28fbf2a643bb79b42dc8eb134758f3d718bc5114694b92f877265613d";
+        "29a7575265503678483f2b2e0d04eb16a4d6dd7e93e66c264c21a64c7ca1753e";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.

@@ -91,7 +91,9 @@ EXPECTED_STORES = {
     ("sales", "QuoteAttempts"): ("QuoteAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "RequestAttempts"): ("RequestAttemptRow", "idempotency", "SalesDbContext"),
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
+    ("work", "OutboxDeliveries"): ("WorkOutboxDeliveryRow", "inbox", "WorkDbContext"),
     ("work", "OutboxMessages"): ("WorkOutboxRow", "outbox", "WorkDbContext"),
+    ("work", "OutboxSourceCursors"): ("WorkOutboxSourceCursorRow", "delivery", "WorkDbContext"),
 }
 
 
@@ -730,7 +732,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         self.assertTrue(expected_message.isdisjoint(expected_business))
         # SAT-D30: + sales.DraftOverDeliveryApprovals, a business table whose name matches "deliver".
         # S5 API-36: + sales.OutboxMessages (the Sales transactional outbox, a message-delivery table).
-        self.assertEqual(10, len(discovered))
+        # B-24: + work.OutboxDeliveries / work.OutboxSourceCursors (Work outbox dispatcher).
+        self.assertEqual(12, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
