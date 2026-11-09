@@ -47,7 +47,8 @@ public sealed partial class PurchasingService(
     IPurchaseGoodsReceiptReadsV1? receiptReads = null,
     ISettingsPrerequisiteProvider? moneyProfiles = null,
     ISettingsMoneyCandidateReaderV2? currencyCandidates = null,
-    ISettingsLineTaxResolverV1? lineTaxes = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    ISettingsLineTaxResolverV1? lineTaxes = null,
+    IPurchaseRequestSalesSourcePortV1? salesSources = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
 {
     private const int DefaultPageSize = 50;
@@ -75,7 +76,7 @@ public sealed partial class PurchasingService(
             return ReplayedRequest(replay);
         }
 
-        RequireOpenLineSources(request);
+        await RequireOpenLineSourcesAsync(request, cancellationToken);
         var lines = new List<(PurchaseRequestLineRequest Line, string ProductVersion, Quantity Quantity)>(request.Lines.Count);
         try
         {
@@ -107,7 +108,7 @@ public sealed partial class PurchasingService(
                 var purchaseRequest = PurchaseRequest.Create(Guid.NewGuid(), scope.CompanyId, scope.ActorId.Trim(), now);
                 foreach (var (line, _, quantity) in lines)
                 {
-                    purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now, SourceOf(line.Source));
+                    purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now, SourceOf(line.Source, salesLineVerified: true));
                 }
 
                 return purchaseRequest;
@@ -907,29 +908,49 @@ public sealed partial class PurchasingService(
     /// A1-2 (plan API-02): the wire source as the domain's (null = manual). The shape was read by <see cref="PurchasingJson"/>;
     /// a kind it did not admit is an <see cref="ArgumentException"/> (400), never a default.
     /// </summary>
-    private static PurchaseRequestLineSource? SourceOf(PurchaseRequestLineSourceRequest? source) =>
+    private static PurchaseRequestLineSource? SourceOf(PurchaseRequestLineSourceRequest? source, bool salesLineVerified = false) =>
         source is null
             ? null
             : PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
-                ? PurchaseRequestLineSource.ForNewLine(kind, source.DocumentId, source.DocumentLineId)
+                ? PurchaseRequestLineSource.ForNewLine(kind, source.DocumentId, source.DocumentLineId, salesLineVerified)
                 : throw new ArgumentException("Talep satırı kaynağı tanımlı değil.", nameof(source));
 
     /// <summary>
-    /// A1-2b (SAT-D219, SAT-D220; fail-closed): a line whose source kind is closed for new lines (Sales, until MOD-03 validates it
-    /// through the Sales order line reference port and wires the linked-supply read adaptor) is a 422 <c>validation_failed</c>
-    /// with <c>lines[i].source</c> = <see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>, before any owner read and
-    /// without recording an attempt (the same key may be retried with a corrected body). Stock, Production and manual lines pass.
+    /// A1-2b / A4b (SAT-D219, SAT-D220; fail-closed): a Sales-sourced NEW line is read through <see cref="IPurchaseRequestSalesSourcePortV1"/>
+    /// (Sales's approved-line port) before any product read and before anything is recorded. Not Approved / NotFound is a 422
+    /// <c>validation_failed</c> with <c>lines[i].source</c> = the stable refusal code; no adapter wired, or the owner could not answer, is
+    /// fail-closed (no adapter: 422 <see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>; owner failure: 503
+    /// <see cref="PurchaseRequestSalesSourceCodesV1.Unavailable"/>). A refusal records no attempt (the same key may be retried).
+    /// Stock, Production and manual lines pass untouched.
     /// </summary>
-    private static void RequireOpenLineSources(CreatePurchaseRequestRequest request)
+    private async Task RequireOpenLineSourcesAsync(CreatePurchaseRequestRequest request, CancellationToken cancellationToken)
     {
         var errors = new List<PurchasingFieldError>();
         for (var index = 0; index < request.Lines.Count; index++)
         {
-            if (request.Lines[index].Source is { } source
-                && PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
-                && !PurchaseRequestLineSource.IsOpenForNewLines(kind))
+            if (request.Lines[index].Source is not { } source
+                || !PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
+                || PurchaseRequestLineSource.IsOpenForNewLines(kind))
+            {
+                continue;
+            }
+
+            if (salesSources is null)
             {
                 errors.Add(new($"lines[{index}].source", PurchasingRuleCodes.RequestSourceSalesUnavailable));
+                continue;
+            }
+
+            var outcome = await salesSources.CheckSalesOrderLineAsync(source.DocumentId, source.DocumentLineId, cancellationToken);
+            switch (outcome)
+            {
+                case PurchaseRequestSalesSourceOutcomeV1.Approved:
+                    break;
+                case PurchaseRequestSalesSourceOutcomeV1.NotApproved or PurchaseRequestSalesSourceOutcomeV1.NotFound:
+                    errors.Add(new($"lines[{index}].source", PurchaseRequestSalesSourceCodesV1.CodeOf(outcome)!));
+                    break;
+                default:
+                    throw new PurchasingServiceException(503, PurchaseRequestSalesSourceCodesV1.Unavailable);
             }
         }
 

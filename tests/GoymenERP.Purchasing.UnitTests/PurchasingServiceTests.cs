@@ -489,12 +489,15 @@ public sealed partial class PurchasingServiceTests
 
         /// <summary>A2a-2: the Settings line tax port the service is composed with (null: not composed).</summary>
         public ISettingsLineTaxResolverV1? LineTaxes { get; set; }
+
+        /// <summary>A4b: the Sales approved-line port the service is composed with (null: not composed, Sales lines stay closed).</summary>
+        public IPurchaseRequestSalesSourcePortV1? SalesSources { get; set; }
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
-                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes);
+                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
