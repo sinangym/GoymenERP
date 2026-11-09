@@ -840,6 +840,25 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     const accessOnly = await renderShell('/', [CAPABILITY.identityAssignmentsList])
     expect(listOf(accessOnly)).toEqual(['Sistem Yönetimi', CAPABILITY_NAV_LABEL[CAPABILITY.identityAssignmentsList]])
     expect(within(accessOnly).queryByText('Ana Veriler')).toBeNull()
+    cleanup()
+    // UI-K02: the audit log follows the access list inside Sistem Yönetimi, before the opening-stock section.
+    const system = await renderShell('/', [
+      CAPABILITY.settingsTaxMaster, CAPABILITY.identityAssignmentsList, CAPABILITY.identityAuditList, OPENING,
+    ])
+    expect(listOf(system)).toEqual([
+      'Ana Veriler',
+      CAPABILITY_NAV_LABEL[CAPABILITY.settingsTaxMaster],
+      'Sistem Yönetimi',
+      CAPABILITY_NAV_LABEL[CAPABILITY.identityAssignmentsList],
+      'Denetim kaydı',
+      SUBHEADING,
+      OPENING_LABEL,
+    ])
+    expect(within(system).getByRole('link', { name: 'Denetim kaydı' }).getAttribute('href')).toBe('/ayarlar/denetim-kaydi')
+    cleanup()
+    // Holding the audit read alone still draws the section label above it: the section runs to the next label.
+    const auditOnly = await renderShell('/', [CAPABILITY.identityAuditList])
+    expect(listOf(auditOnly)).toEqual(['Sistem Yönetimi', 'Denetim kaydı'])
   })
 
   it('keeps the keyboard order: Tab goes from the previous Ayarlar entry straight to Açılış stokları', async () => {

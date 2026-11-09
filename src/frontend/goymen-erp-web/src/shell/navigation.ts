@@ -76,6 +76,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   /** UI-60 / UI-61: the two read-only Sales lists of the dispatch/invoice flow (S-07, S-08), each on its own grant. */
   'sales.dispatches.list',
   'sales.invoice-candidates.list',
+  /** UI-63: the read-only S-09 invoice list, on the invoice read plus the price read. */
+  'sales.invoices.list',
   /** UI-80: the read-only Sales reports screen, on its own grant. */
   'sales.reports.view',
   /** UI-20 S-01: the request and quote pools, each on its own grant; create and detail are reached from the list. */
@@ -137,6 +139,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * `identity.assignments.read` company-wide; the role card is reached from a row.
    */
   'identity.assignments.list',
+  /** UI-K02 (KLN-D2): the read-only audit log, drawn only where the server granted `identity.audit.read` company-wide. */
+  'identity.audit.list',
   /** SAT-D61…D70: the Settings discount limit screen, drawn only where the server granted its one name. */
   'settings.sales-discount-limits.manage',
   /** MOD-03: the Settings tax master screen, drawn only where the server granted its one name. */
@@ -182,6 +186,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'sales.drafts.detail': '',
   'sales.dispatches.list': 'Sevkiyat / İrsaliyeler',
   'sales.invoice-candidates.list': 'Faturaya Hazır',
+  'sales.invoices.list': 'Satış faturaları',
   'sales.reports.view': 'Satış raporları',
   'sales.requests.list': 'Satış talepleri',
   'sales.quotes.list': 'Satış teklifleri',
@@ -225,6 +230,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
+  'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
@@ -306,7 +312,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'sales',
     label: 'Satış',
-    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.reports.view', 'price-lists.list'],
+    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.reports.view', 'price-lists.list'],
   },
   { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
@@ -364,6 +370,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
       'identity.assignments.list',
+      // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
+      'identity.audit.list',
       'inventory.opening-stock.record',
     ],
     subheadings: {
