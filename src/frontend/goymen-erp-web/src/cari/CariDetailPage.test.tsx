@@ -235,7 +235,7 @@ describe('C-03 core summary (spec §5.1)', () => {
     installFetch({
       capabilities: [
         CAPABILITY.cariPartiesDetail,
-        CAPABILITY.financeReceiptsList,
+        CAPABILITY.financePartyLedgerCari,
       ],
     })
     const { router } = renderAt(`/cari/${PARTY}`)
@@ -244,16 +244,16 @@ describe('C-03 core summary (spec §5.1)', () => {
     const link = screen.getByRole('link', { name: 'Cari hesap ekstresini aç' })
     expect(document.querySelector('[data-section="account"]')?.contains(link)).toBe(true)
     expect(link.getAttribute('href')).toBe(
-      `/finans/tahsilatlar?ekstreCari=${PARTY}&ekstreHesap=${ACC}`,
+      `/cari/hesap-takibi?ekstreCari=${PARTY}&ekstreHesap=${ACC}`,
     )
     await userEvent.click(link)
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/finans/tahsilatlar')
+      expect(router.state.location.pathname).toBe('/cari/hesap-takibi')
       expect(router.state.location.search).toBe(`?ekstreCari=${PARTY}&ekstreHesap=${ACC}`)
     }, CHAIN)
   })
 
-  it('does not advertise the ledger without its own Finance list capability', async () => {
+  it('does not advertise the ledger without the party-ledger (Cari) capability', async () => {
     installFetch({ capabilities: [CAPABILITY.cariPartiesDetail] })
     renderAt(`/cari/${PARTY}`)
     await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
@@ -267,7 +267,7 @@ describe('C-03 core summary (spec §5.1)', () => {
     ]) {
       cleanup()
       installFetch({
-        capabilities: [CAPABILITY.cariPartiesDetail, CAPABILITY.financeReceiptsList],
+        capabilities: [CAPABILITY.cariPartiesDetail, CAPABILITY.financePartyLedgerCari],
         detail: () => json(detail({ companyAccounts })),
       })
       renderAt(`/cari/${PARTY}`)
@@ -279,7 +279,7 @@ describe('C-03 core summary (spec §5.1)', () => {
 
   it('rebinds the ledger link to the freshly read account after a company switch', async () => {
     const { calls } = installFetch({
-      capabilities: [CAPABILITY.cariPartiesDetail, CAPABILITY.financeReceiptsList],
+      capabilities: [CAPABILITY.cariPartiesDetail, CAPABILITY.financePartyLedgerCari],
       detail: (companyId) => json(detail({
         companyAccounts: [{
           id: companyId === B_ID ? B_ACC : ACC,
@@ -298,7 +298,7 @@ describe('C-03 core summary (spec §5.1)', () => {
     await waitFor(() => {
       const link = screen.getByRole('link', { name: 'Cari hesap ekstresini aç' })
       expect(link.getAttribute('href')).toBe(
-        `/finans/tahsilatlar?ekstreCari=${PARTY}&ekstreHesap=${B_ACC}`,
+        `/cari/hesap-takibi?ekstreCari=${PARTY}&ekstreHesap=${B_ACC}`,
       )
       expect(calls.some((call) => call.companyId === B_ID && call.url.includes(`/counterparties/${PARTY}`))).toBe(true)
     }, CHAIN)
