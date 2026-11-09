@@ -38,7 +38,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// API-03 precedent); no rate here is a policy. SENTETIK / NOT_ENV.
 /// </para>
 /// </summary>
-public sealed class SalesOrderTaxSqlServerRelationalAcceptanceTests
+public sealed partial class SalesOrderTaxSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
