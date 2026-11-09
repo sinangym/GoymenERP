@@ -46,7 +46,9 @@ public sealed partial class PurchasingService(
     IPurchaseGoodsReceiptTransactionV1? goodsReceipts = null,
     IPurchaseGoodsReceiptReadsV1? receiptReads = null,
     ISettingsPrerequisiteProvider? moneyProfiles = null,
-    ISettingsMoneyCandidateReaderV2? currencyCandidates = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    ISettingsMoneyCandidateReaderV2? currencyCandidates = null,
+    ISettingsLineTaxResolverV1? lineTaxes = null,
+    IPurchaseRequestSalesSourcePortV1? salesSources = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
 {
     private const int DefaultPageSize = 50;
@@ -74,6 +76,7 @@ public sealed partial class PurchasingService(
             return ReplayedRequest(replay);
         }
 
+        await RequireOpenLineSourcesAsync(request, cancellationToken);
         var lines = new List<(PurchaseRequestLineRequest Line, string ProductVersion, Quantity Quantity)>(request.Lines.Count);
         try
         {
@@ -105,7 +108,7 @@ public sealed partial class PurchasingService(
                 var purchaseRequest = PurchaseRequest.Create(Guid.NewGuid(), scope.CompanyId, scope.ActorId.Trim(), now);
                 foreach (var (line, _, quantity) in lines)
                 {
-                    purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now, SourceOf(line.Source));
+                    purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now, SourceOf(line.Source, salesLineVerified: true));
                 }
 
                 return purchaseRequest;
@@ -452,6 +455,7 @@ public sealed partial class PurchasingService(
             throw new PurchasingServiceException(400, "validation_failed");
         }
 
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
         PurchasingOrderPage page;
         try
         {
@@ -464,7 +468,13 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        return new PurchaseOrderListResponse([.. page.Items.Select(OrderSummary)], page.NextCursor);
+        // A2a-2 (plan A2a-2 "listede fiyat bekliyor"; PRS-02): each item says whether a general line has no price, only to a holder of
+        // the price read; otherwise the flag is not written.
+        var visible = string.Equals(disclosure, PurchasingPriceDisclosureV1.Visible, StringComparison.Ordinal);
+        return new PurchaseOrderListResponse([.. page.Items.Select(stored => OrderSummary(stored) with
+        {
+            PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
+        })], page.NextCursor);
     }
 
     // ---- owners ---------------------------------------------------------------------------------
@@ -898,12 +908,57 @@ public sealed partial class PurchasingService(
     /// A1-2 (plan API-02): the wire source as the domain's (null = manual). The shape was read by <see cref="PurchasingJson"/>;
     /// a kind it did not admit is an <see cref="ArgumentException"/> (400), never a default.
     /// </summary>
-    private static PurchaseRequestLineSource? SourceOf(PurchaseRequestLineSourceRequest? source) =>
+    private static PurchaseRequestLineSource? SourceOf(PurchaseRequestLineSourceRequest? source, bool salesLineVerified = false) =>
         source is null
             ? null
             : PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
-                ? PurchaseRequestLineSource.Of(kind, source.DocumentId, source.DocumentLineId)
+                ? PurchaseRequestLineSource.ForNewLine(kind, source.DocumentId, source.DocumentLineId, salesLineVerified)
                 : throw new ArgumentException("Talep satırı kaynağı tanımlı değil.", nameof(source));
+
+    /// <summary>
+    /// A1-2b / A4b (SAT-D219, SAT-D220; fail-closed): a Sales-sourced NEW line is read through <see cref="IPurchaseRequestSalesSourcePortV1"/>
+    /// (Sales's approved-line port) before any product read and before anything is recorded. Not Approved / NotFound is a 422
+    /// <c>validation_failed</c> with <c>lines[i].source</c> = the stable refusal code; no adapter wired, or the owner could not answer, is
+    /// fail-closed (no adapter: 422 <see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>; owner failure: 503
+    /// <see cref="PurchaseRequestSalesSourceCodesV1.Unavailable"/>). A refusal records no attempt (the same key may be retried).
+    /// Stock, Production and manual lines pass untouched.
+    /// </summary>
+    private async Task RequireOpenLineSourcesAsync(CreatePurchaseRequestRequest request, CancellationToken cancellationToken)
+    {
+        var errors = new List<PurchasingFieldError>();
+        for (var index = 0; index < request.Lines.Count; index++)
+        {
+            if (request.Lines[index].Source is not { } source
+                || !PurchaseRequestSourceKindsV1.TryParse(source.Kind, out var kind)
+                || PurchaseRequestLineSource.IsOpenForNewLines(kind))
+            {
+                continue;
+            }
+
+            if (salesSources is null)
+            {
+                errors.Add(new($"lines[{index}].source", PurchasingRuleCodes.RequestSourceSalesUnavailable));
+                continue;
+            }
+
+            var outcome = await salesSources.CheckSalesOrderLineAsync(source.DocumentId, source.DocumentLineId, cancellationToken);
+            switch (outcome)
+            {
+                case PurchaseRequestSalesSourceOutcomeV1.Approved:
+                    break;
+                case PurchaseRequestSalesSourceOutcomeV1.NotApproved or PurchaseRequestSalesSourceOutcomeV1.NotFound:
+                    errors.Add(new($"lines[{index}].source", PurchaseRequestSalesSourceCodesV1.CodeOf(outcome)!));
+                    break;
+                default:
+                    throw new PurchasingServiceException(503, PurchaseRequestSalesSourceCodesV1.Unavailable);
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new PurchasingServiceException(422, "validation_failed", errors);
+        }
+    }
 
     private static PurchaseRequestLineSourceView? SourceView(PurchaseRequestLineSource? source) =>
         source is null ? null : new PurchaseRequestLineSourceView(PurchaseRequestSourceKindsV1.Name(source.Kind), source.DocumentId, source.DocumentLineId);
@@ -950,7 +1005,13 @@ public sealed partial class PurchasingService(
     /// <summary>A2a-1: the rule codes a line's price is refused with (answered on <c>lines[i].price</c>).</summary>
     private static bool IsPriceRule(string code) => code is PurchasingRuleCodes.PriceCurrencyRequired or PurchasingRuleCodes.PriceNegative
         or PurchasingRuleCodes.PriceScaleExceeded or PurchasingRuleCodes.PriceUnitConversionUnavailable or PurchasingRuleCodes.DiscountKindConflict
-        or PurchasingRuleCodes.DiscountPercentOutOfRange or PurchasingRuleCodes.DiscountExceedsPrice or PurchasingRuleCodes.PriceOutOfRange;
+        or PurchasingRuleCodes.DiscountPercentOutOfRange or PurchasingRuleCodes.DiscountExceedsPrice or PurchasingRuleCodes.PriceOutOfRange
+        or PurchasingRuleCodes.DeferralKindConflict or PurchasingRuleCodes.DeferralOnZeroPrice or PurchasingRuleCodes.DeferralPercentOutOfRange
+        or PurchasingRuleCodes.DeferralAmountNegative;
+
+    /// <summary>ALS-D18: "fiyat bekliyor" — a general line has no price (a technical line is never priced).</summary>
+    private static bool HasUnpricedGeneralLine(PurchaseOrder order) =>
+        order.Lines.Any(line => line.Kind == PurchaseOrderLineKind.General && line.Price is null);
 
     private static PurchaseOrderSummaryView OrderSummary(StoredPurchaseOrder stored)
     {
@@ -977,9 +1038,7 @@ public sealed partial class PurchasingService(
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
             Currency = CurrencyView(stored.Order.Money),
-            PricePending = visible
-                ? stored.Order.Lines.Any(line => line.Kind == PurchaseOrderLineKind.General && line.Price is null)
-                : null,
+            PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation

@@ -30,6 +30,8 @@ export interface PurchasingSupplierDisplay {
 /** GET list/detail summary (`PurchaseOrderReadSummaryViewV1`): the order plus its record-bound supplier identity. */
 export interface PurchaseOrderReadSummary extends PurchaseOrderSummary {
   readonly supplierDisplay: PurchasingSupplierDisplay
+  /** A2a-2: on a list item only, for a holder of the price read — true while a general line has no price ("fiyat bekliyor"). */
+  readonly pricePending?: boolean
 }
 
 export interface PurchaseOrderLine {
@@ -63,6 +65,9 @@ export interface PurchaseOrderLinePrice {
   readonly discountAmount: string | null
   readonly netUnitPrice: string
   readonly lineAmount: string
+  /** A2a-2 (ALS-D38): the maturity surcharge (vade farkı) as given — a percent of the discounted price or an amount per unit; absent before A2a-2. */
+  readonly deferralPercent?: string | null
+  readonly deferralAmount?: string | null
 }
 
 /** A2a-1 (TEK-01): the order's currency as recorded at opening. */
@@ -423,13 +428,15 @@ export function supplierDisplayOf(order: PurchaseOrderSummary): PurchasingSuppli
  */
 function decodeReadSummary(value: unknown): PurchaseOrderReadSummary | null {
   const source = record(value)
-  if (source === null || !exact(source, [...SUMMARY_FIELDS, 'supplierDisplay'])) return null
-  const { supplierDisplay, ...legacy } = source
+  const listed = source !== null && exact(source, [...SUMMARY_FIELDS, 'supplierDisplay', 'pricePending'])
+  if (source === null || (!listed && !exact(source, [...SUMMARY_FIELDS, 'supplierDisplay']))) return null
+  if (listed && typeof source.pricePending !== 'boolean') return null
+  const { supplierDisplay, pricePending, ...legacy } = source
   const summary = decodeSummary(legacy)
   if (summary === null) return null
   const display = decodeSupplierDisplay(supplierDisplay)
   if (display === null || display.partyId.toLowerCase() !== summary.supplierPartyId.toLowerCase()) return null
-  return { ...summary, supplierDisplay: display }
+  return listed ? { ...summary, supplierDisplay: display, pricePending: pricePending as boolean } : { ...summary, supplierDisplay: display }
 }
 
 /** The legacy `PurchaseOrderSummaryView`: what create/approve command responses still carry. */
@@ -451,12 +458,19 @@ const LINE_FIELDS = [
   'productVersion', 'unitId', 'ordered', 'technical', 'committed', 'accepted', 'remaining',
 ] as const
 
+const PRICE_FIELDS = ['unitPrice', 'priceUnitId', 'discountPercent', 'discountAmount', 'netUnitPrice', 'lineAmount'] as const
+
 /** A2a-1: exactly a unit price of zero or more (an explicit 0 is a price), a price unit, at most one discount, and the server's net and line amount. */
 function decodeLinePrice(value: unknown): PurchaseOrderLinePrice | null {
   const source = record(value)
   if (
     source === null ||
-    !exact(source, ['unitPrice', 'priceUnitId', 'discountPercent', 'discountAmount', 'netUnitPrice', 'lineAmount']) ||
+    !(exact(source, PRICE_FIELDS) || exact(source, [...PRICE_FIELDS, 'deferralPercent', 'deferralAmount'])) ||
+    (source.deferralPercent !== undefined && source.deferralPercent !== null &&
+      (!text(source.deferralPercent) || !DECIMAL.test(source.deferralPercent as string))) ||
+    (source.deferralAmount !== undefined && source.deferralAmount !== null &&
+      (!text(source.deferralAmount) || !DECIMAL.test(source.deferralAmount as string))) ||
+    (source.deferralPercent != null && source.deferralAmount != null) ||
     !text(source.unitPrice) || !DECIMAL.test(source.unitPrice as string) ||
     !guid(source.priceUnitId) ||
     (source.discountPercent !== null && (!text(source.discountPercent) || !DECIMAL.test(source.discountPercent as string))) ||

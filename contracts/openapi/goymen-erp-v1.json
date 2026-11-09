@@ -62183,7 +62183,10 @@
             },
             "x-erp-problem-codes": [
               "idempotency_conflict",
+              "inventory_label_detail_read_conflict",
               "inventory_label_version_conflict",
+              "inventory_manufacturing_allocation_insufficient_free_stock",
+              "inventory_manufacturing_allocation_owner_mismatch",
               "inventory_manufacturing_input_return_exceeds_issued",
               "inventory_manufacturing_output_label_already_registered",
               "inventory_manufacturing_output_lot_or_label_conflict",
@@ -62198,6 +62201,8 @@
               "manufacturing_concurrent_change",
               "manufacturing_fact_id_conflict",
               "manufacturing_order_id_conflict",
+              "manufacturing_plan_allocation_label_identity_changed",
+              "manufacturing_plan_allocation_label_not_found",
               "manufacturing_plan_id_conflict",
               "manufacturing_version_conflict"
             ]
@@ -62252,6 +62257,7 @@
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
               "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_self_approval",
               "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
@@ -62673,6 +62679,7 @@
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
               "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_self_approval",
               "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
@@ -64933,6 +64940,8 @@
             },
             "x-erp-problem-codes": [
               "idempotency_conflict",
+              "inventory_manufacturing_allocation_exceeded",
+              "inventory_manufacturing_allocation_not_usable",
               "inventory_manufacturing_input_return_exceeds_issued",
               "inventory_manufacturing_output_label_already_registered",
               "inventory_manufacturing_output_lot_or_label_conflict",
@@ -76364,6 +76373,229 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/purchasing/orders/{id}/totals": {
+      "get": {
+        "tags": [
+          "Purchasing"
+        ],
+        "operationId": "GetPurchaseOrderTotalsV1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderTotalsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "validation_failed"
+            ]
           },
           "404": {
             "description": "Not Found",
@@ -112312,6 +112544,12 @@
                 "$ref": "#/components/schemas/PlanProcessSpecViewV1"
               }
             ]
+          },
+          "preparedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -115548,6 +115786,18 @@
               "null",
               "string"
             ]
+          },
+          "deferralPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deferralAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -115586,6 +115836,18 @@
           },
           "lineAmount": {
             "type": "string"
+          },
+          "deferralPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deferralAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -115634,6 +115896,81 @@
                 "$ref": "#/components/schemas/PurchaseOrderLinePriceRequest"
               }
             ]
+          }
+        }
+      },
+      "PurchaseOrderLineTotalView": {
+        "required": [
+          "lineId",
+          "lineNo",
+          "state",
+          "netUnitPrice",
+          "netAmount",
+          "vatState",
+          "vatReason",
+          "vatPercent",
+          "vatAmount",
+          "grossAmount",
+          "withholdingState"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "state": {
+            "type": "string"
+          },
+          "netUnitPrice": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "netAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatState": {
+            "type": "string"
+          },
+          "vatReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "grossAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingState": {
+            "type": "string"
           }
         }
       },
@@ -115867,6 +116204,12 @@
           },
           "supplierDisplay": {
             "$ref": "#/components/schemas/PurchasingSupplierDisplayV1"
+          },
+          "pricePending": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -115953,6 +116296,122 @@
               "string"
             ],
             "format": "int32"
+          },
+          "pricePending": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "PurchaseOrderTotalsView": {
+        "required": [
+          "orderId",
+          "version",
+          "priceDisclosure",
+          "currency",
+          "state",
+          "unpricedLineCount",
+          "netAmount",
+          "vatState",
+          "vatNotComputableLineCount",
+          "vatAmount",
+          "grossAmount",
+          "withholdingState",
+          "withholdingReason",
+          "withheldVatAmount",
+          "payableAmount",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "priceDisclosure": {
+            "type": "string"
+          },
+          "currency": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseOrderCurrencyView"
+              }
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "unpricedLineCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "netAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatState": {
+            "type": "string"
+          },
+          "vatNotComputableLineCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "vatAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "grossAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingState": {
+            "type": "string"
+          },
+          "withholdingReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withheldVatAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "payableAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderLineTotalView"
+            }
           }
         }
       },

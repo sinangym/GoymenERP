@@ -125,3 +125,59 @@ public sealed class ManufacturingInventoryRealizationPortException(
     public long? ExpectedVersion { get; } = expectedVersion;
     public long? CurrentVersion { get; } = currentVersion;
 }
+
+/// <summary>
+/// Üretim U3-a (URT-D21, URT-D3, URT-D22; API-20/21): Manufacturing-owned bridge to Inventory's plan-input allocation
+/// (Kalan Modüller B-01). The implementation owns one SQL transaction: it runs the Manufacturing write it is given
+/// (plan approval, plan cancellation or order closure), then stages Inventory's allocation or remainder release in the
+/// same transaction, and commits both or neither. A refusal from either module rolls both back.
+/// </summary>
+public interface IManufacturingPlanAllocationPortV1
+{
+    /// <summary>
+    /// Runs <paramref name="approve"/>, then allocates every input of the approved plan. Each input is allocated at the
+    /// label version <paramref name="labelVersions"/> names (the version read from Inventory at approval, URT-D3); the
+    /// version Inventory returns is stored by Manufacturing for the order and its input issue.
+    /// </summary>
+    Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
+        Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs <paramref name="write"/>, then releases every active allocation of <paramref name="planId"/>. A plan
+    /// without an active allocation releases nothing and succeeds.
+    /// </summary>
+    Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
+        Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Why a plan's remaining allocation is released.</summary>
+public enum ManufacturingPlanAllocationReleaseReasonV1
+{
+    PlanCancelled = 1,
+    OrderClosed = 2,
+}
+
+/// <summary>One allocation Inventory wrote for a plan input (Manufacturing's own copy of the identity).</summary>
+public sealed record ManufacturingPlanInputAllocationV1(
+    Guid ParentRollId,
+    Guid AllocationId,
+    long LabelVersionAfter,
+    Kilograms AllocatedKg);
+
+/// <summary>Üretim U3-a: the plan-input allocation's own refusal codes (Inventory's codes pass through unchanged).</summary>
+public static class ManufacturingPlanAllocationCodesV1
+{
+    /// <summary>The two module effects of one allocation did not come out of one transaction together.</summary>
+    public const string Incomplete = "manufacturing_plan_allocation_incomplete";
+
+    /// <summary>A plan input carries no label version to allocate at.</summary>
+    public const string MissingLabelVersion = "manufacturing_plan_allocation_label_version_missing";
+
+    /// <summary>Inventory no longer knows a planned parent label.</summary>
+    public const string LabelNotFound = "manufacturing_plan_allocation_label_not_found";
+
+    /// <summary>The planned parent label now carries another product than the plan's technical snapshot (URT-D3).</summary>
+    public const string LabelIdentityChanged = "manufacturing_plan_allocation_label_identity_changed";
+}
