@@ -10,14 +10,18 @@
  *
  * The other Sales approvals (price floor, discount limit, remainder change, over-delivery, invoice, expired quote,
  * request, risk exception) have no pending-queue read on main: they are listed as a labelled unavailable section.
+ *
+ * SAT-D243: the same rows are also listed in the Work inbox (`/onaylarim?kaynak=satis`) — one record, two views. That
+ * inbox links each row here as `?onay={draftId}`; the matching row, if it is on the page the server returned, is marked
+ * as the current one. The address only selects among verified rows: it never adds or reads a record.
  */
 
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { fetchApprovalPage } from '../work/approvalInboxApi'
 import { SALES_ORDER_DRAFT_KIND, type SalesApprovalItem } from '../work/approvalInboxContract'
-import { SALES_CAPABILITY, salesDetailPath, salesPriceControlPath } from './capabilities'
+import { SALES_APPROVAL_PARAM, SALES_CAPABILITY, salesDetailPath, salesPriceControlPath } from './capabilities'
 import { SALES_APPROVALS_TEXT as T } from './approvalsText'
 import { formatInstant } from './format'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -45,6 +49,8 @@ function ApprovalQueue({ namespace }: { readonly namespace: string | null }) {
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const canOpen = hasCapability(shell, SALES_CAPABILITY.draftsDetail)
   const [restart, setRestart] = useState(0)
+  const [searchParams] = useSearchParams()
+  const focused = searchParams.get(SALES_APPROVAL_PARAM)?.toLowerCase() ?? null
 
   const first = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-approvals', 'first', restart],
@@ -149,7 +155,9 @@ function ApprovalQueue({ namespace }: { readonly namespace: string | null }) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.approvalId} data-approval-id={row.approvalId}>
+                <tr key={row.approvalId} data-approval-id={row.approvalId}
+                  aria-current={row.approvalId.toLowerCase() === focused ? 'true' : undefined}
+                  className={row.approvalId.toLowerCase() === focused ? styles.rowCurrent : undefined}>
                   <th scope="row">{row.documentNo}</th>
                   <td>{row.revision}</td>
                   <td>{row.submittedBy}</td>

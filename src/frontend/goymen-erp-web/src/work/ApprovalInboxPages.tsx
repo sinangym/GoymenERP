@@ -2,7 +2,8 @@
  * D-05 "Onaylarım" — the approval inbox: the native approvals waiting for the signed-in actor in the committed company,
  * read through the Work read (#639/#644/#645), one connected source at a time, each record opening its owner's own
  * screen. Connected: Finance official-invoice-import batches (Finance's approval screen, #640 `?approvalId=`), Sales
- * order drafts awaiting internal approval (the Sales order screen, `/satis/siparisler/{draftId}`), and Inventory
+ * order drafts awaiting internal approval (the Sales order screen, `/satis/siparisler/{draftId}`, and — SAT-D243, one
+ * record in two views — the same row on S-06 `/satis/onaylar?onay={draftId}`), and Inventory
  * stock-count differences and stock scraps awaiting their decision (#667; the label's own screen, `/stok/etiket/{labelId}`,
  * where the count/scrap panel decides).
  *
@@ -77,6 +78,17 @@ function NativeLink({ source, item, className }: { readonly source: ApprovalSour
 }
 
 /**
+ * The owner module's own approval queue on this same record (SAT-D243: Sales approvals are listed both here, under the
+ * "Satış" source, and on S-06 `/satis/onaylar`). Drawn only with that queue route's own capability.
+ */
+function QueueLink({ source, item, className }: { readonly source: ApprovalSource; readonly item: ApprovalItem; readonly className?: string }) {
+  const shell = useShellState()
+  const queue = source.queue
+  if (queue === undefined || item.kind !== source.kind || !hasCapability(shell, queue.capability)) return null
+  return <Link className={className} to={queue.path(item)}>{queue.label}</Link>
+}
+
+/**
  * What a source's list must remember while another source is shown (#647 K2 P2): that it was CLOSED by a terminal
  * next-page answer, and which first-page read generation it is on. Kept here, above the per-source remount, so going to
  * the other source and back neither reopens a closed list from the query cache nor falls back to the first page read
@@ -93,8 +105,11 @@ export function ApprovalInboxPage() {
   const [searchParams] = useSearchParams()
   const [memory, setMemory] = useState<Readonly<Record<string, SourceMemory>>>({})
   const granted = grantedSources(shell)
-  const source = granted.find((one) => one.token === searchParams.get(SOURCE_PARAM)) ?? granted[0] ?? null
+  const chosen = granted.find((one) => one.token === searchParams.get(SOURCE_PARAM)) ?? null
+  const source = chosen ?? granted[0] ?? null
   if (source === null) return <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />
+  // A source the user picked among several is a filter: its empty list says "no match", not "nothing waits".
+  const filtered = chosen !== null && granted.length > 1
   const memoryKey = `${namespace ?? 'no-context'}::${source.kind}`
   const remembered = memory[memoryKey] ?? { generation: 0, closed: null }
   return <section className={styles.page} aria-labelledby="work-approvals-heading">
@@ -109,7 +124,7 @@ export function ApprovalInboxPage() {
       </nav>
       : null}
     {/* Remounted per context AND per source: rows, cursors, errors and late answers never cross either. */}
-    <SourceInbox key={memoryKey} source={source} generation={remembered.generation} closed={remembered.closed}
+    <SourceInbox key={memoryKey} source={source} filtered={filtered} generation={remembered.generation} closed={remembered.closed}
       onClosed={(state, generation) => setMemory((all) => {
         // Only a closure of the generation this source is on now: a late answer of an older read (#647 K2 delta P2)
         // can neither close a recovered list nor roll its generation back.
@@ -128,8 +143,10 @@ export function ApprovalInboxPage() {
  */
 const TRANSIENT_CONTINUATION: ReadonlySet<RemoteViewState<unknown>['kind']> = new Set(['offline', 'network-error', 'service-unavailable'])
 
-function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
+function SourceInbox({ source, filtered, generation, closed, onClosed, onRestart }: {
   readonly source: ApprovalSource
+  /** The source was picked among several (`?kaynak=`): an empty list is the filtered-empty state. */
+  readonly filtered: boolean
   /** A restart is a new read of the first page under a new key: nothing of the closed list is shown while it loads. */
   readonly generation: number
   /** Set by a terminal next-page answer; survives a source switch (see `SourceMemory`). */
@@ -225,7 +242,7 @@ function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
   const rows = [...firstPage.items, ...more]
   return <>
     {rows.length === 0
-      ? <StateBlock state={{ kind: 'empty-no-data' }} subject={source.subject} />
+      ? <StateBlock state={{ kind: filtered ? 'empty-filtered' : 'empty-no-data' }} subject={source.subject} />
       : <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={source.caption}>
         <table className={styles.table} data-testid="work-approvals-table" data-kind={source.kind}>
           <caption className={styles.caption}>{source.caption}</caption>
@@ -266,6 +283,7 @@ function RecordLinks({ source, item }: { readonly source: ApprovalSource; readon
   return <td className={styles.actions}>
     <Link to={approvalDetailRoute(source.kind, item.approvalId)}>{T.openDetail}</Link>
     <NativeLink source={source} item={item} />
+    <QueueLink source={source} item={item} />
   </td>
 }
 
@@ -460,5 +478,6 @@ function ApprovalDetail({ source, approvalId }: { readonly source: ApprovalSourc
         </>}
     </dl>
     <p><NativeLink className={styles.primaryLink} source={source} item={item} /></p>
+    {source.queue === undefined ? null : <p><QueueLink source={source} item={item} /></p>}
   </article>
 }

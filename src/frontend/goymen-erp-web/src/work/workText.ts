@@ -8,7 +8,7 @@ import {
 } from '../inventory/capabilities'
 import { inventoryLabelDetailPath } from '../inventory/labelDetailRoute'
 import { formatKg } from '../inventory/stockPositionText'
-import { SALES_CAPABILITY, salesDetailPath } from '../sales/capabilities'
+import { SALES_CAPABILITY, salesApprovalPath, salesDetailPath } from '../sales/capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import {
   FINANCE_OFFICIAL_INVOICE_IMPORT_KIND,
@@ -50,6 +50,15 @@ export interface ApprovalSource {
   readonly openNative: string
   /** The owner's own screen for this exact record: built only from the verified item the read returned. */
   readonly nativePath: (item: ApprovalItem) => string
+  /**
+   * The owner module's own approval queue showing this same record (SAT-D243: one record, two views), when the owner
+   * has one. Drawn only with that queue route's own capability; built only from the verified item.
+   */
+  readonly queue?: {
+    readonly capability: string
+    readonly label: string
+    readonly path: (item: ApprovalItem) => string
+  }
 }
 
 export const FINANCE_SOURCE: ApprovalSource = {
@@ -80,6 +89,12 @@ export const SALES_SOURCE: ApprovalSource = {
   detailHeading: 'Satış sipariş taslağı iç onayı',
   openNative: 'Satış siparişinde aç',
   nativePath: (item) => salesDetailPath(item.approvalId),
+  // SAT-D243: the same approval is also shown on S-06 `/satis/onaylar`, gated there by this same approve capability.
+  queue: {
+    capability: SALES_CAPABILITY.ordersApprove,
+    label: 'Satış Onayları\'nda aç',
+    path: (item) => salesApprovalPath(item.approvalId),
+  },
 }
 
 /**
