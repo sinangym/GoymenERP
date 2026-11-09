@@ -53,6 +53,9 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'finance.manual-bank-payments.list',
   'finance.allocations.list',
   'finance.open-items.list',
+  // B-05 (KLN-D3): the party ledger opens from Muhasebe and from Cari; both are Finance's read of one sub-ledger.
+  'finance.party-ledger.accounting',
+  'finance.party-ledger.cari',
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -200,6 +203,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.allocations.list': 'Finansal Dağıtımlar',
   'finance.open-items.list': 'Açık kalemler',
   'finance.open-items.detail': '',
+  'finance.party-ledger.accounting': 'Cari Hesaplar',
+  'finance.party-ledger.cari': 'Cari Hesap Takibi',
   'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
   'finance.bank-accounts.list': 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and
@@ -323,7 +328,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list'] },
-  { id: 'cari', label: 'Cari', entries: ['cari.parties.list', 'cari.accounts.link'] },
+  { id: 'cari', label: 'Cari', entries: ['cari.parties.list', 'cari.accounts.link', 'finance.party-ledger.cari'] },
   {
     id: 'finance',
     label: 'Finans & Hazine',
@@ -342,7 +347,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'accounting',
     label: 'Muhasebe',
-    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues'],
+    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'finance.party-ledger.accounting'],
   },
   {
     id: 'settings',

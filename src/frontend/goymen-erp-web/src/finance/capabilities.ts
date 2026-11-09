@@ -50,6 +50,10 @@ export const FINANCE_CAPABILITY = {
   openItemsList: 'finance.open-items.list',
   /** FI04 — one open item, reached from a row. Money and status stay the amount authority's (not a capability). */
   openItemsDetail: 'finance.open-items.detail',
+  /** B-05 (KLN-D3, M-03) Muhasebe > Cari Hesaplar — the party ledger and balance, under `finance.party-ledger.read`. */
+  partyLedgerAccounting: 'finance.party-ledger.accounting',
+  /** B-05 (KLN-D3, C-04) Cari > Cari Hesap Takibi — the same party-ledger read, entered from Cari. */
+  partyLedgerCari: 'finance.party-ledger.cari',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -71,6 +75,8 @@ export const FINANCE_ROUTE = {
   allocationsList: '/finans/dagitimlar',
   openItemsList: '/finans/acik-kalemler',
   openItemsDetail: '/finans/acik-kalemler/:openItemId',
+  partyLedgerAccounting: '/muhasebe/cari-hesaplar',
+  partyLedgerCari: '/cari/hesap-takibi',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`
@@ -98,9 +104,10 @@ export const portfolioInstrumentPath = (instrumentId: string) =>
   `${FINANCE_ROUTE.customerInstrumentsList}?${new URLSearchParams({ [INSTRUMENT_QUERY]: instrumentId }).toString()}`
 
 /**
- * The first-release party ledger (cari hesap ekstresi) lives on the F-02 list too (no route or capability of its own
- * until the central shell declares one): these query parameters name the party account and the date range, so the
- * range survives opening a row's source and coming back, and the same address reopens the same ledger.
+ * The party ledger (cari hesap ekstresi) is addressed by these query parameters on its routes — Muhasebe > Cari
+ * Hesaplar and Cari > Cari Hesap Takibi (B-05) — and, as before, on the F-02 list: they name the party account and the
+ * date range, so the range survives opening a row's source and coming back, and the same address reopens the same
+ * ledger.
  */
 export const LEDGER_QUERY = {
   party: 'ekstreCari',
@@ -113,11 +120,12 @@ export const partyLedgerPath = (
   partyId: string,
   companyAccountId: string,
   range?: { readonly from: string; readonly to: string },
+  base: string = FINANCE_ROUTE.receiptsList,
 ) => {
   const params = new URLSearchParams({ [LEDGER_QUERY.party]: partyId, [LEDGER_QUERY.account]: companyAccountId })
   if (range !== undefined) {
     params.set(LEDGER_QUERY.from, range.from)
     params.set(LEDGER_QUERY.to, range.to)
   }
-  return `/finans/tahsilatlar?${params.toString()}`
+  return `${base}?${params.toString()}`
 }
