@@ -51,7 +51,10 @@ GROUP_PROJECTS = {
 }
 SOLUTION_PROJECT_COUNT = 72
 TEST_PROJECT_COUNT = 21
-PROOF_SCHEMA = 4
+PROOF_SCHEMA = 5
+# The api project is the CI critical path; its classes are split over this many
+# parallel jobs. The partition is recomputed from the union of the shard proofs.
+API_SHARD_COUNT = 3
 MAX_PROOF_BYTES = 2 * 1024 * 1024
 # Release per-process memory between API batches on the bounded local runner.
 # Keep complete classes together; a large class remains one indivisible batch.
@@ -706,8 +709,7 @@ def trx_result_map(
     return results, passed, skipped
 
 
-def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
-    """Partition the complete discovery, preserving classes and theory rows."""
+def _api_classes(discovered: Counter[str]) -> dict[str, Counter[str]]:
     classes: dict[str, Counter[str]] = {}
     if not discovered:
         raise RuntimeError("API batch discovery is empty.")
@@ -718,6 +720,12 @@ def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
         # VSTest filters are case insensitive. Keep case-equivalent class names
         # together so exact method filters cannot select a different batch.
         classes.setdefault(name.rsplit(".", 1)[0].lower(), Counter())[name] = cases
+    return classes
+
+
+def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
+    """Partition the complete discovery, preserving classes and theory rows."""
+    classes = _api_classes(discovered)
     batches: list[Counter[str]] = []
     current: Counter[str] = Counter()
     for methods in classes.values():
@@ -737,13 +745,69 @@ def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
     return batches
 
 
-def expected_proof(group: str, source_head: str, tested_commit: str, root: Path) -> dict[str, object]:
+def api_shard_partition(
+    discovered: Counter[str], count: int, skipped_facts: set[str],
+) -> list[Counter[str]]:
+    """Deterministically split whole classes over `count` shards (LPT by executed cases).
+
+    Real-SQL facts are skipped in this group, so they carry no weight. The result depends
+    only on the complete discovery, so every shard job and the aggregate agree on it.
+    """
+    if type(count) is not int or count < 1:
+        raise RuntimeError("API shard count is invalid.")
+    classes = _api_classes(discovered)
+    weights = {
+        key: 1 + sum(cases for name, cases in methods.items() if name not in skipped_facts)
+        for key, methods in classes.items()
+    }
+    shards: list[Counter[str]] = [Counter() for _ in range(count)]
+    loads = [0] * count
+    for key in sorted(classes, key=lambda item: (-weights[item], item)):
+        target = min(range(count), key=lambda index: (loads[index], index))
+        shards[target].update(classes[key])
+        loads[target] += weights[key]
+    union: Counter[str] = Counter()
+    for shard in shards:
+        if not shard:
+            raise RuntimeError("API shard partition produced an empty shard.")
+        if union.keys() & shard.keys():
+            raise RuntimeError("API shards overlap.")
+        union.update(shard)
+    if union != discovered:
+        raise RuntimeError("API shards differ from complete project discovery.")
+    return shards
+
+
+def proof_units() -> list[tuple[str, int, int]]:
+    """Every (group, shard index, shard count) that must publish one proof."""
+    return [
+        (group, index, API_SHARD_COUNT if group == "api" else 1)
+        for group in GROUP_PROJECTS
+        for index in range(1, (API_SHARD_COUNT if group == "api" else 1) + 1)
+    ]
+
+
+def unit_name(group: str, index: int, count: int) -> str:
+    return group if count == 1 else f"{group}-{index}"
+
+
+def expected_proof(
+    group: str, source_head: str, tested_commit: str, root: Path,
+    shard_index: int = 1, shard_count: int | None = None,
+) -> dict[str, object]:
     if group not in catalog():
         raise RuntimeError("Unknown backend test group.")
+    if shard_count is None:
+        shard_count = API_SHARD_COUNT if group == "api" else 1
+    if (group, shard_index, shard_count) not in proof_units():
+        raise RuntimeError("Backend group shard is not part of the catalog.")
     solution_hash, catalog_hash = source_inventory(root)
     return {
         "schemaVersion": PROOF_SCHEMA,
         "group": group,
+        "shardIndex": shard_index,
+        "shardCount": shard_count,
+        "fullDiscoveryHash": "",
         "sourceHead": canonical_head(source_head, "source head"),
         "testedCommit": canonical_head(tested_commit, "tested commit"),
         "solutionHash": solution_hash,
@@ -768,7 +832,7 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str, root: P
     if not isinstance(proof, dict) or set(proof) != set(expected):
         raise RuntimeError("Backend group proof schema is incomplete or extended.")
     if any(type(proof[key]) is not type(value) or proof[key] != value
-           for key, value in expected.items() if key != "projects"):
+           for key, value in expected.items() if key not in {"projects", "fullDiscoveryHash"}):
         raise RuntimeError("Backend group proof does not match source, commit and catalog.")
     rows = proof["projects"]
     if not isinstance(rows, list) or len(rows) != len(GROUP_PROJECTS[group]):
@@ -851,6 +915,11 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str, root: P
                 or row["resultHash"] != digest(sorted((name, values["passed"], values["skipped"])
                                                     for name, values in results.items()))):
             raise RuntimeError("Backend group proof counts are inconsistent.")
+    full = proof["fullDiscoveryHash"]
+    if not isinstance(full, str) or not HASH_PATTERN.fullmatch(full):
+        raise RuntimeError("Backend group proof has an invalid full discovery hash.")
+    if proof["shardCount"] == 1 and full != digest([row["discoveryHash"] for row in rows]):
+        raise RuntimeError("Backend group proof full discovery hash differs from its projects.")
 
 
 def verify_aggregate(
@@ -865,30 +934,53 @@ def verify_aggregate(
     )
     if directory.is_symlink() or not directory.is_dir():
         raise RuntimeError("Backend group proof directory is missing or linked.")
-    expected_names = {f"ci-backend-test-group-proof-{group}" for group in GROUP_PROJECTS}
+    units = proof_units()
+    expected_names = {
+        f"ci-backend-test-group-proof-{unit_name(*unit)}" for unit in units
+    }
     if {entry.name for entry in directory.iterdir()} != expected_names:
         raise RuntimeError("Backend group artifacts are missing, duplicated or unknown.")
     covered: set[str] = set()
     total = 0
-    for group in GROUP_PROJECTS:
-        artifact = directory / f"ci-backend-test-group-proof-{group}"
+    shard_discovery: dict[int, Counter[str]] = {}
+    shard_full_hashes: set[str] = set()
+    for group, index, count in units:
+        name = unit_name(group, index, count)
+        artifact = directory / f"ci-backend-test-group-proof-{name}"
         if artifact.is_symlink() or not artifact.is_dir() or {
             entry.name for entry in artifact.iterdir()
-        } != {f"proof-{group}.json"}:
+        } != {f"proof-{name}.json"}:
             raise RuntimeError("Backend group artifact contents are missing or extra.")
-        path = artifact / f"proof-{group}.json"
+        path = artifact / f"proof-{name}.json"
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_PROOF_BYTES:
             raise RuntimeError("Backend group proof is missing or oversized.")
         try:
             proof = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exception:
             raise RuntimeError("Backend group proof is unreadable or malformed.") from exception
-        _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group, root)
+        _valid_proof(proof, expected_proof(group, source_head, tested_commit, root, index, count),
+                     group, root)
+        if count > 1:
+            shard_full_hashes.add(proof["fullDiscoveryHash"])
+            shard_discovery[index] = Counter(
+                {record[0]: record[1] for record in proof["projects"][0]["testCases"]}
+            )
         for row in proof["projects"]:
-            if row["path"] in covered:
+            if row["path"] in covered and count == 1:
                 raise RuntimeError("Backend group proof projects overlap.")
             covered.add(row["path"])
             total += row["executionCount"]
+    if API_SHARD_COUNT > 1:
+        full: Counter[str] = Counter()
+        for index in range(1, API_SHARD_COUNT + 1):
+            if full.keys() & shard_discovery[index].keys():
+                raise RuntimeError("API shard proofs overlap.")
+            full.update(shard_discovery[index])
+        if shard_full_hashes != {digest(sorted(full.items()))}:
+            raise RuntimeError("API shard proofs disagree on the complete discovery.")
+        partition = api_shard_partition(full, API_SHARD_COUNT, set(relational_cases(root)))
+        if any(shard_discovery[index + 1] != partition[index] for index in range(API_SHARD_COUNT)):
+            raise RuntimeError("API shard proofs differ from the deterministic class partition.")
     if covered != {path for projects in catalog().values() for path in projects}:
         raise RuntimeError("Backend group proofs do not cover every TestSDK project.")
     return total
@@ -913,11 +1005,13 @@ def run_bootstrap_preflight(root: Path) -> None:
 
 def run_group(
     root: Path, group: str, results_directory: Path, proof_path: Path,
-    source_head: str, tested_commit: str,
+    source_head: str, tested_commit: str, shard_index: int = 1,
 ) -> int:
     if os.environ.get("GOYMEN_ERP_TEST_SQLSERVER_CONNECTION", "").strip():
         raise RuntimeError("Backend groups cannot use the separate real-SQL acceptance connection.")
-    proof = expected_proof(group, source_head, tested_commit, root)
+    shard_count = API_SHARD_COUNT if group == "api" else 1
+    proof = expected_proof(group, source_head, tested_commit, root, shard_index, shard_count)
+    full_hashes: list[str] = []
     allowed_skips = set(relational_cases(root)) if group == "api" else set()
     if proof_path.exists() or (results_directory.exists() and any(results_directory.iterdir())):
         raise RuntimeError("Backend group requires fresh proof and TRX output paths.")
@@ -950,6 +1044,12 @@ def run_group(
         ], root))
         discovered_ids = structured_discovery(diagnostic, root, project)
         discovered = Counter({name: len(cases) for name, cases in discovered_ids.items()})
+        full_hashes.append(digest(sorted(discovered.items())))
+        if shard_count > 1:
+            discovered = api_shard_partition(
+                discovered, shard_count, allowed_skips,
+            )[shard_index - 1]
+            discovered_ids = {name: discovered_ids[name] for name in discovered}
         expected_names = {name: list(cases) for name in discovered_ids
                           if (cases := deferred_cases(root, name)) is not None}
         expected_ids = {
@@ -1022,7 +1122,11 @@ def run_group(
                 for name in sorted(discovered)
             ],
         })
-    _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group, root)
+    proof["fullDiscoveryHash"] = full_hashes[0] if shard_count > 1 else digest(
+        [row["discoveryHash"] for row in proof["projects"]]
+    )
+    _valid_proof(proof, expected_proof(group, source_head, tested_commit, root, shard_index, shard_count),
+                 group, root)
     proof_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = proof_path.with_suffix(".tmp")
     with temporary.open("x", encoding="utf-8") as output:
@@ -1037,6 +1141,7 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--group", choices=tuple(GROUP_PROJECTS))
     mode.add_argument("--aggregate", action="store_true")
+    parser.add_argument("--shard", type=int)
     parser.add_argument("--results-directory", type=Path)
     parser.add_argument("--proof-output", type=Path)
     parser.add_argument("--proof-directory", type=Path)
@@ -1058,16 +1163,20 @@ def main() -> int:
                 or args.worker_result is not None or args.relational_proof_directory is not None
                 or args.relational_worker_result is not None or args.rcsi_result is not None):
             raise RuntimeError("Backend group mode requires only its exact output inputs.")
+        if (args.shard is None) != (args.group != "api"):
+            raise RuntimeError("Backend api group requires --shard; other groups forbid it.")
+        if args.shard is not None and not 1 <= args.shard <= API_SHARD_COUNT:
+            raise RuntimeError("Backend api shard is out of range.")
         results_directory = (root / args.results_directory).resolve()
         if not results_directory.is_relative_to(root):
             raise RuntimeError("Backend group results must remain inside source.")
         proof_path = _within_repository(root, args.proof_output, ".json")
         total = run_group(root, args.group, results_directory, proof_path,
-                          args.source_head, args.tested_commit)
-        print(f"BACKEND_TEST_GROUP: PASS group={args.group} projects={len(GROUP_PROJECTS[args.group])} "
+                          args.source_head, args.tested_commit, args.shard or 1)
+        print(f"BACKEND_TEST_GROUP: PASS group={args.group} shard={args.shard or 1} projects={len(GROUP_PROJECTS[args.group])} "
               f"executions={total}")
         return 0
-    if (args.proof_directory is None or args.results_directory is not None
+    if (args.proof_directory is None or args.shard is not None or args.results_directory is not None
             or args.proof_output is not None or args.build_result is None
             or args.worker_result is None or args.relational_proof_directory is None
             or args.relational_worker_result is None or args.rcsi_result is None):

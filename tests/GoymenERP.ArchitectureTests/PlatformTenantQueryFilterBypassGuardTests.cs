@@ -487,13 +487,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "94aff226746606fa3ace79d73071ab27b66ac9f167fae6c87ac2d6bb8a5eac54";
+        "30b8186c29adf8bff97ea36b88ec378127bc403dfa00421958f27af4e16db6ed";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "ca724232706fb285d9a6d0dd057dbfd27fcad0cadd65f0f767eb869acc2ba072";
+        "9947ab71ffdd0325973206ef714005f4956c83b52186e76b1066e7e848af29f8";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76";
+        "263e6785dc43fc5889c8cdc641bb8e60ff3d062a55eb4ddd861b3d7e9fbe9e61";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -7572,9 +7572,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
             "python3 -I -S -B tools/verify_backend_test_groups.py \\",
-            "--group \"${{ matrix.group }}\" \\",
-            "--results-directory \"artifacts/ci-test-results/backend-groups/${{ matrix.group }}\" \\",
-            "--proof-output \"artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json\" \\",
+            "--group \"${{ matrix.group }}\" ${{ matrix.shard_args }} \\",
+            "--results-directory \"artifacts/ci-test-results/backend-groups/${{ matrix.unit }}\" \\",
+            "--proof-output \"artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json\" \\",
             "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
             "--tested-commit \"$(git rev-parse HEAD)\"",
         };
