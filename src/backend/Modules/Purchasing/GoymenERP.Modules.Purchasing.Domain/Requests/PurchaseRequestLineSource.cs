@@ -11,9 +11,9 @@ public enum PurchaseRequestSourceKind
     Stock = 1,
 
     /// <summary>
-    /// A sales order line's need (Sales; S-A1/MOD-03). A1-2b (SAT-D219, SAT-D220): CLOSED for new lines until MOD-03 reads
-    /// <c>ISalesOrderLineReferencePortV1</c> (refusing a line that is not Approved) and wires the Sales linked-supply read
-    /// adaptor in the same delivery; a line recorded before A1-2b keeps this value and stays readable.
+    /// A sales order line's need (Sales; S-A1/MOD-03). A1-2b (SAT-D219, SAT-D220): CLOSED for new lines unless (A4b) the Application layer has read
+    /// <c>ISalesOrderLineReferencePortV1</c> through the host adapter and got Approved (every other answer is refused); the Sales
+    /// linked-supply read adaptor is wired in the same delivery; a line recorded before A1-2b keeps this value and stays readable.
     /// </summary>
     Sales = 2,
 
@@ -63,11 +63,13 @@ public sealed record PurchaseRequestLineSource
     /// <summary>
     /// A1-2b: the source of a line being created now — <see cref="Of"/> plus <see cref="IsOpenForNewLines"/>; a defined kind
     /// that is closed is a <see cref="PurchasingRuleException"/> (<see cref="PurchasingRuleCodes.RequestSourceSalesUnavailable"/>).
-    /// The rule lives only in this factory (used by the create path); <see cref="PurchaseRequest.AddLine"/> accepts any defined
+    /// A4b (SAT-D220): the Application layer passes <paramref name="salesLineVerified"/> = true only after Sales's approved-line port
+    /// answered Approved for that very line; Sales is otherwise still closed. The rule lives only in this factory (used by the create path); <see cref="PurchaseRequest.AddLine"/> accepts any defined
     /// source, because stored lines are rebuilt through it with <see cref="Of"/>.
     /// </summary>
-    public static PurchaseRequestLineSource ForNewLine(PurchaseRequestSourceKind kind, Guid documentId, Guid documentLineId) =>
-        Enum.IsDefined(kind) && !IsOpenForNewLines(kind)
+    public static PurchaseRequestLineSource ForNewLine(PurchaseRequestSourceKind kind, Guid documentId, Guid documentLineId,
+        bool salesLineVerified = false) =>
+        Enum.IsDefined(kind) && !IsOpenForNewLines(kind) && !(kind == PurchaseRequestSourceKind.Sales && salesLineVerified)
             ? throw new PurchasingRuleException(PurchasingRuleCodes.RequestSourceSalesUnavailable,
                 "Satış kaynaklı talep satırı, Satış sipariş satırı doğrulaması ve bağlı tedarik okuma bağdaştırıcısı (MOD-03) gelene kadar kaydedilemez.")
             : Of(kind, documentId, documentLineId);
