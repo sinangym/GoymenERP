@@ -539,8 +539,9 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
-internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:TKe9Y326YF-nsG8_LZdTImUcbgif-TXV0-7Dn_YTpP8";
+    // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
+    internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
+        "sha256:PDaLozCTdSm_gIXas3M4MYAUS-uDy1mleQA6-1IkN1Q";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
