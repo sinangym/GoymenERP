@@ -79,7 +79,9 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetService<IPurchaseGoodsReceiptReadsV1>(),
         // A2a-1 (TEK-01): the existing Settings money port and its operation-aware candidate read (ALS-D58: no new Settings port).
         serviceProvider.GetService<ISettingsPrerequisiteProvider>(),
-        serviceProvider.GetService<ISettingsMoneyCandidateReaderV2>());
+        serviceProvider.GetService<ISettingsMoneyCandidateReaderV2>(),
+        // A2a-2 (API-20, ALS-D74): the existing Settings line tax port for the item type's default VAT (no new Settings port).
+        serviceProvider.GetService<ISettingsLineTaxResolverV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

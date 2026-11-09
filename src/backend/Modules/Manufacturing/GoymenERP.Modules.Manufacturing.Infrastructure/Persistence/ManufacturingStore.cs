@@ -58,6 +58,15 @@ public sealed class ManufacturingStore(
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
+    /// <summary>Üretim U2-d: the preparer is the server actor id; one longer than its column is refused, never cut.</summary>
+    private static void RequirePreparerFits(string preparedBy)
+    {
+        if (preparedBy.Length > ProductionPlan.PreparedByMaximumLength)
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Planı hazırlayan kimliği kayıt alanına sığmıyor.");
+        }
+    }
+
     public async Task<ManufacturingWriteOutcome> SavePlanAsync(ProductionPlan plan, ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
@@ -96,11 +105,24 @@ public sealed class ManufacturingStore(
         var existing = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == plan.Id, cancellationToken);
         if (existing is not null)
         {
-            return string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal)
-                ? ManufacturingWriteOutcome.Replayed
-                : throw Refused(ManufacturingStoreCodes.PlanIdConflict, "Aynı plan kimliği farklı içerikle verildi.");
+            if (!string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal))
+            {
+                throw Refused(ManufacturingStoreCodes.PlanIdConflict, "Aynı plan kimliği farklı içerikle verildi.");
+            }
+
+            // U2-d: a replay keeps the first save's preparer (a plan stored before U2-d has none).
+            if (existing.CreatedBy is { } storedPreparer)
+            {
+                plan.RecordPreparer(storedPreparer);
+            }
+
+            return ManufacturingWriteOutcome.Replayed;
         }
 
+        // U2-d (URT-D2): the actor who saves the plan prepared its first version.
+        var preparedBy = metadata.ActorId.Trim();
+        RequirePreparerFits(preparedBy);
+        plan.RecordPreparer(preparedBy);
         var now = timeProvider.GetUtcNow();
         dbContext.Plans.Add(WithProcessSpec(new PlanRow
         {
@@ -116,6 +138,7 @@ public sealed class ManufacturingStore(
             LineSpeedMetresPerMinute = plan.LineSpeedMetresPerMinute,
             Version = plan.Version,
             PayloadHash = payloadHash,
+            CreatedBy = preparedBy,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         }, plan.ProcessSpec));
@@ -449,6 +472,8 @@ public sealed class ManufacturingStore(
 
         RequireLineSpeedFits(lineSpeedMetresPerMinute);
         RequireProcessSpecFits(processSpec);
+        var revisedBy = metadata.ActorId.Trim();
+        RequirePreparerFits(revisedBy);
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var plan = await RestorePlanAsync(row, cancellationToken);
@@ -458,6 +483,8 @@ public sealed class ManufacturingStore(
         // The domain decides: the version fence first, then "only a draft", the spec, the process, the inputs.
         plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec,
             lineSpeedMetresPerMinute, processSpec);
+        // U2-d (URT-D2): the reviser prepared the plan's new version; the approval and the rejection refuse that user.
+        plan.RecordPreparer(revisedBy);
 
         if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
         {
@@ -478,7 +505,7 @@ public sealed class ManufacturingStore(
             LineSpeedMetresPerMinute = plan.LineSpeedMetresPerMinute,
             Reason = trimmedReason,
             PlanVersion = plan.Version,
-            RevisedBy = metadata.ActorId.Trim(),
+            RevisedBy = revisedBy,
             RevisedAtUtc = now,
             CorrelationId = metadata.CorrelationId.Trim(),
         }, plan.ProcessSpec));
@@ -667,6 +694,24 @@ public sealed class ManufacturingStore(
         // rebuilt plan carries the order it already opened. Racing writers meet the unique (company, plan) index.
         var order = ProductionOrder.FromApprovedPlan(orderId, plan);
 
+        // U3-a (URT-D21, B-01): an input allocated at the plan's approval enters the order at the label version Inventory
+        // returned with the allocation, so the order's first input issue revalidates the label Inventory last moved.
+        var allocatedVersions = await dbContext.PlanInputAllocations.AsNoTracking()
+            .Where(allocation => allocation.PlanId == planId)
+            .ToDictionaryAsync(allocation => allocation.ParentRollId, allocation => allocation.LabelVersionAfter,
+                cancellationToken);
+        if (allocatedVersions.Count > 0)
+        {
+            order = ProductionOrder.Restore(order.Id, order.PlanId, order.CompanyId, order.WorkCenterId, order.Process,
+                order.Target,
+                order.PlannedInputs.Select(input => new PlannedInput(input.ParentRollId, input.PlannedMass,
+                    allocatedVersions.TryGetValue(input.ParentRollId, out var allocated)
+                        ? allocated
+                        : input.ExpectedLabelVersion,
+                    input.TechnicalSnapshot, input.CommercialContext)),
+                [], [], [], [], null, null, order.Version, null, null);
+        }
+
         var now = timeProvider.GetUtcNow();
         planRow.UpdatedAtUtc = now;
         dbContext.Orders.Add(new OrderRow
@@ -719,6 +764,57 @@ public sealed class ManufacturingStore(
         Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
+    }
+
+    /// <summary>
+    /// Üretim U3-a (URT-D21, B-01): records the allocations Inventory wrote for the plan's inputs. It is called by the
+    /// allocation host inside the plan approval's transaction, after the approval's own save; the rows are append-only.
+    /// </summary>
+    public async Task RecordPlanInputAllocationsAsync(Guid planId, long planVersion,
+        IReadOnlyList<ManufacturingPlanInputAllocationV1> allocations, DateTimeOffset allocatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(allocations);
+        var companyId = RequireResolvedCompany();
+        if (planId == Guid.Empty || planVersion < 2 || allocations.Count == 0
+            || allocations.Any(allocation => allocation is null || allocation.ParentRollId == Guid.Empty
+                || allocation.AllocationId == Guid.Empty || allocation.LabelVersionAfter < 1
+                || allocation.AllocatedKg.Value <= 0m)
+            || allocations.Select(allocation => allocation.ParentRollId).Distinct().Count() != allocations.Count
+            || allocations.Select(allocation => allocation.AllocationId).Distinct().Count() != allocations.Count)
+        {
+            throw new ArgumentException("Plan girdi tahsisleri eksik ya da tekrarlı.", nameof(allocations));
+        }
+
+        foreach (var allocation in allocations)
+        {
+            dbContext.PlanInputAllocations.Add(new PlanInputAllocationRow
+            {
+                CompanyId = companyId,
+                PlanId = planId,
+                ParentRollId = allocation.ParentRollId,
+                AllocationId = allocation.AllocationId,
+                LabelVersionAfter = allocation.LabelVersionAfter,
+                AllocatedKg = allocation.AllocatedKg.Value,
+                PlanVersion = planVersion,
+                AllocatedAtUtc = allocatedAt.ToUniversalTime(),
+            });
+        }
+
+        await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Üretim U3-a: the allocation Manufacturing recorded for one plan input, or null when none was written.</summary>
+    public async Task<ManufacturingPlanInputAllocationV1?> FindPlanInputAllocationAsync(Guid planId, Guid parentRollId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.PlanInputAllocations.AsNoTracking().SingleOrDefaultAsync(
+            allocation => allocation.PlanId == planId && allocation.ParentRollId == parentRollId, cancellationToken);
+        return row is null
+            ? null
+            : new ManufacturingPlanInputAllocationV1(row.ParentRollId, row.AllocationId, row.LabelVersionAfter,
+                new Kilograms(row.AllocatedKg));
     }
 
     public Task<ManufacturingWriteOutcome> IssueInputAsync(Guid orderId, long expectedVersion, Guid issueId,
@@ -1185,7 +1281,9 @@ public sealed class ManufacturingStore(
                 rejection.RejectedByUserId, rejection.RejectedAtUtc, rejection.PlanVersion)),
             cancellation,
             orderIds.Count == 1 ? orderIds[0] : null,
-            RestoreProcessSpec(row));
+            RestoreProcessSpec(row),
+            // U2-d (URT-D2): the current version's preparer is its last reviser, else the actor who saved the plan.
+            headers.Count > 0 ? headers.MaxBy(header => header.RevisionNo)!.RevisedBy : row.CreatedBy);
         if ((PlanStatus)row.Status != plan.Status)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,

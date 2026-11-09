@@ -8,6 +8,9 @@ public enum FinanceOpenItemStatusV1
 {
     Open = 1,
     Closed = 2,
+
+    /// <summary>F2b (SAT-D96): closed by its invoice's cancellation; outstanding zero, reversed by its own fact.</summary>
+    Cancelled = 3,
 }
 
 /// <summary>

@@ -507,6 +507,17 @@ describe('decodePlan', () => {
     }
   })
 
+  it('reads the U2-d preparer as an actor id and refuses any other shape', () => {
+    const preparer = '40000000-0000-0000-0000-00000000d001'
+    expect(decodePlan(plan({ preparedBy: preparer }))?.preparedBy).toBe(preparer)
+    // The legacy omission and the server's null (a plan stored before U2-d) are none.
+    expect(decodePlan(plan())?.preparedBy).toBeNull()
+    expect(decodePlan(plan({ preparedBy: null }))?.preparedBy).toBeNull()
+    for (const broken of ['', ' padded ', 'a\tb', 'x'.repeat(129), 42, {}]) {
+      expect(decodePlan(plan({ preparedBy: broken }))).toBeNull()
+    }
+  })
+
   it.each([
     ['an empty line list', { lines: [], windingTargetKg: null }],
     ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],

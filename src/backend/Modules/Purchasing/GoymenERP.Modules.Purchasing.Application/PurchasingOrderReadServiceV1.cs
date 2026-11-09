@@ -231,7 +231,11 @@ public sealed class PurchasingOrderReadServiceV1(
             order.CreatedAtUtc,
             order.UpdatedAtUtc,
             order.LineCount,
-            supplierDisplay);
+            supplierDisplay)
+        {
+            // A2a-2: the owner's list "fiyat bekliyor" (null on a detail or when withheld) is carried as answered.
+            PricePending = order.PricePending,
+        };
 
     private static PurchasingServiceException Unavailable() =>
         new(503, PurchasingProblemCodesV1.CounterpartyProviderUnavailable);

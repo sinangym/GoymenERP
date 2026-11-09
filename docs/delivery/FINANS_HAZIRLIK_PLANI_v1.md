@@ -609,7 +609,7 @@ Durum: ✅ main'de implementasyon + DI + gerçek-SQL/contract testi · 🟡 kıs
 |---|---|---|---|---|
 | Satış faturası → alacak kalemi | Satış → Finans | `IFinanceInvoiceOpenItemAdmissionPortV1` (Producer=Sales); dispatcher sonrası `sales.invoice.finalized.v1` | ❌ — Finans portu F2a'da yazıldı, PR bekliyor, main'de yok (host kaydı da yok); Satış üreticisi fatura dalgasında | F2a + Satış API-32…37 |
 | Gelen fatura → borç kalemi | Alış → Finans | aynı port (Producer=Purchasing); sonra `purchasing.invoice.finalized.v1` | ❌ — F1 (#902) yönü, F2a portu; Alış A5 | F2a + Alış A5 |
-| Fatura iptali/iadesi → ters kalem | Satış/Alış → Finans | iptal portu / olayı (SAT-D96) | ❌ | F2b |
+| Fatura iptali/iadesi → ters kalem | Satış/Alış → Finans | iptal portu / olayı (SAT-D96) | 🟡 port hazır (F2b), üretici bağlantısı bekliyor; iade (kısmi) ayrı | F2b |
 | Satış risk okuması | Finans → Satış | `ISalesPartyRiskReadPortV1` (`FinanceSalesPartyRiskReadPortV1`) | 🟡 port main'de (DI + SQL testli); yalnız-alacak filtresi #902'de (taslak); limit/teminat NoSource (OPEN-010) | API-06, API-85 (F6) |
 | Tedarikçi ödemesi → borç kalemi | Finans içi; Alış okur | elle banka ödemesi + dağıtım | 🟡 ödeme var, borç kalemine dağıtım yok; TEK-02 | F3 (API-20) |
 | Ödendi/kısmi ödendi, avans | Finans → Satış/Alış | `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | ❌ — Finans'ta outbox yok | F2-OB (ERP-000F sonrası) |

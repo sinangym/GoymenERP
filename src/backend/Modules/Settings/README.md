@@ -208,8 +208,9 @@ The approved profiles: `ApprovedMoneyProfileCatalog.GdcTurkishLiraV1`, and since
 |---|---|---|
 | Company | GDC `10000000-0000-0000-0000-000000000001` | Ö2 "ilk kabul profili GDC/TRY" |
 | Currency | TRY `9e60dcf0-f4bd-5bca-b464-f9a2db98e31a` (`SettingsCurrencyIdentitiesV1.TurkishLira`) | Ö2; id is technical |
-| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2") |
+| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`, `purchasing.order.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2"); the Purchasing owner's key since A2a-1b (ALS-D69, EK11, within ALS-D63's narrow exception; Sinan #66 6704170096) |
 | Scale | 2 (final amount) | Ö2 "nihai tutar 2" |
+| Unit-price scale | 4, for `purchasing.order.v1` only; none (null) for every other operation | ALS-D72 (EK11): purchasing unit price "4 ondalık" |
 | Profile | `7f836492-a54f-512f-a8f4-5f556b3f0f9d`, version 1 | technical (Ö2) |
 | Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 |
 
@@ -219,17 +220,23 @@ names `currency:TRY` and `money-profile:<company id>:TRY:v1`; assigned once, nev
 reused. The data source is versioned source code, as for units, for the same reasons.
 
 **GSP and GIN (SAT-D18).** Each has its own TRY profile, version 1, scale 2 (final amount,
-Ö2), effective from 2026-10-26 with no end, answering **only** `sales.order-draft.v1`. SAT-D18
+Ö2), effective from 2026-10-26 with no end, answering **only** `sales.order-draft.v1` and, since A2a-1b, `purchasing.order.v1`. SAT-D18
 leaves the Accounting (`accounting.journal-amount.v1`) and Finance
 (`finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`) operations for GSP/GIN to a
 separate decision, so those keys answer `settings_provider_unavailable` there: the operation
 check is per company. GIN stays invoice-closed (DEC-ORG-005).
 
+**Purchasing on GSP and GIN (ALS-D69).** ALS-D69 approves the purchasing order key "GDC: TRY; GSP/GIN
+ayrı, Satış'taki gibi". It is read through SAT-D18's approved per-company GSP/GIN TRY profiles: those
+profiles (same ids, versions, scale and windows) also answer `purchasing.order.v1`, with the unit-price
+scale 4 of ALS-D72. No new profile or company-wide default is created, and the Accounting/Finance keys
+stay unavailable for GSP/GIN.
+
 | Company | Profile | Operations | Effective from |
 |---|---|---|---|
-| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft | 2026-09-18 |
-| GSP | `5b863ed2-e21a-5c43-b219-fa113dcc50b3` | `sales.order-draft.v1` only | 2026-10-26 |
-| GIN | `d78eee0d-4940-52e3-bd80-3b5ebdb6d760` | `sales.order-draft.v1` only | 2026-10-26 |
+| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft, `purchasing.order.v1` (A2a-1b) | 2026-09-18 |
+| GSP | `5b863ed2-e21a-5c43-b219-fa113dcc50b3` | `sales.order-draft.v1`, `purchasing.order.v1` (A2a-1b) | 2026-10-26 |
+| GIN | `d78eee0d-4940-52e3-bd80-3b5ebdb6d760` | `sales.order-draft.v1`, `purchasing.order.v1` (A2a-1b) | 2026-10-26 |
 
 **Operations belong to their owners.** A profile answers only for the operation keys
 listed on it. Settings references neither Finance nor Sales; the API integration test
@@ -238,9 +245,15 @@ literals to `FinanceMoneyOperations.ManualBankReceiptV1` and
 `SalesMoneyOperations.OrderDraftV1`. The profile answers for the operation asked, so
 consumers' exact-operation check holds.
 
+**Unit-price scale (A2a-1b; ALS-D72, EK11).** `MoneyProfileV1.UnitPriceScale` (optional, additive; null by
+default) carries the unit-price decimals approved for the operation asked, from the entry's
+per-operation `UnitPriceScales`. Only `purchasing.order.v1` has one (4, on GDC, GSP and GIN);
+every other operation answers null, because Ö2's general "birim fiyat gerektiğinde 6 ondalığa
+kadar" is not narrowed by any owner decision for them. A key that the entry does not list, or a
+value outside 0..28, makes the catalog `settings_profile_invalid`.
+
 Not published, because `MoneyProfileV1` has no field for them and nothing is guessed:
-Ö2's unit-price scale ("gerektiğinde 6 ondalığa kadar": a priced write needs its own
-contract field), a rounding method, exchange rates, tax, and USD/EUR profiles (Ö2
+a rounding method, exchange rates, tax, and USD/EUR profiles (Ö2
 names their final-amount scale, but approves only GDC/TRY as a profile).
 
 Outcomes of `GetMoneyProfileAsync`, in order:
@@ -266,7 +279,7 @@ one). Access first (`settings_access_denied`); every list passes
 - `ISettingsMoneyCandidateReader.GetMoneyCurrencyCandidatesAsync()` (operation-less, used by
   Finance FS0 #312 to check a bank account's currency) lists a currency only when its profile is
   **unrestricted** — it answers every operation key the catalog knows — because the caller cannot
-  be told a restriction. GDC: `(TRY id, "TRY", "TRY")`. GSP/GIN's TRY is Sales-only (SAT-D18), so
+  be told a restriction. GDC: `(TRY id, "TRY", "TRY")`. GSP/GIN's TRY answers only the Sales draft and Purchasing order keys (SAT-D18, A2a-1b), so
   they have no unrestricted profile and keep the answer they had before any profile:
   `settings_provider_unavailable`. A GSP/GIN TRY bank account therefore stays refused, as SAT-D18
   requires.

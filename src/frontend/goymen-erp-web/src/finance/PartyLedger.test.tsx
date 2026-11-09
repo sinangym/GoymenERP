@@ -109,6 +109,59 @@ describe('party ledger decoder', () => {
   })
 })
 
+describe('party ledger invoice cancellation rows (F2b)', () => {
+  /** The USD block's receipt turned into the reversal of a cancelled invoice's open item. */
+  const cancelled = (kind: string, side: 'Debit' | 'Credit') => {
+    const body = ledger({ withUsd: true })
+    const usd = currencies(body)[1].entries as Record<string, unknown>[]
+    const item = usd[0].entryId
+    Object.assign(usd[0], { kind, side, sourceId: item, reversesSourceId: item, documentId: IDS.document })
+    if (side === 'Debit') {
+      Object.assign(currencies(body)[1], {
+        debitTotal: { disclosure: 'Visible', money: { amount: '75.50', currencyId: currencies(body)[1].currencyId } },
+        creditTotal: { disclosure: 'Visible', money: { amount: '0.00', currencyId: currencies(body)[1].currencyId } },
+      })
+    }
+    return { body, usd }
+  }
+
+  it('accepts a sales cancellation as credit and a purchase cancellation as debit, each naming the reversed item', () => {
+    expect(decodePartyLedgerAnswer(cancelled('OpenItemCancellation', 'Credit').body, COMPANY_A).ok).toBe(true)
+    const payable = cancelled('PayableOpenItemCancellation', 'Debit')
+    payable.usd[0].runningBalance = { side: 'Debit', amount: payable.usd[0].amount }
+    currencies(payable.body)[1].closingBalance = payable.usd[0].runningBalance
+    expect(decodePartyLedgerAnswer(payable.body, COMPANY_A).ok).toBe(true)
+  })
+
+  it('refuses a crossed column, a missing invoice, a due date or a reversal of another item', () => {
+    const crossed = cancelled('OpenItemCancellation', 'Credit')
+    crossed.usd[0].side = 'Debit'
+    expect(decodePartyLedgerAnswer(crossed.body, COMPANY_A).ok).toBe(false)
+    const noDocument = cancelled('OpenItemCancellation', 'Credit')
+    noDocument.usd[0].documentId = null
+    expect(decodePartyLedgerAnswer(noDocument.body, COMPANY_A).ok).toBe(false)
+    const due = cancelled('OpenItemCancellation', 'Credit')
+    due.usd[0].dueOn = '2026-10-01'
+    expect(decodePartyLedgerAnswer(due.body, COMPANY_A).ok).toBe(false)
+    const other = cancelled('OpenItemCancellation', 'Credit')
+    other.usd[0].reversesSourceId = IDS.openItem
+    expect(decodePartyLedgerAnswer(other.body, COMPANY_A).ok).toBe(false)
+    const unlinked = cancelled('OpenItemCancellation', 'Credit')
+    unlinked.usd[0].reversesSourceId = null
+    expect(decodePartyLedgerAnswer(unlinked.body, COMPANY_A).ok).toBe(false)
+  })
+
+  it('shows the reversal as its own row with the cancelled invoice reference', async () => {
+    const { body } = cancelled('OpenItemCancellation', 'Credit')
+    const { container } = renderLedger(found(body))
+    await waitFor(() => expect(container.querySelectorAll('table[data-ledger-currency]')).toHaveLength(2))
+    const reversal = row(container, 'OpenItemCancellation')
+    expect(within(reversal).getByRole('rowheader').textContent).toBe('Satış faturası iptali (ters kayıt)')
+    expect(reversal.textContent).toContain('…000000d1')
+    expect(within(reversal).queryAllByRole('link')).toEqual([])
+  })
+})
+
 function renderLedger(reply: ReturnType<typeof found>, onRange = vi.fn()) {
   const { port, reads } = recordingPort(() => reply)
   const view = renderFinance(

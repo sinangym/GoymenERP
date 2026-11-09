@@ -35,6 +35,15 @@ public enum PartyLedgerEntryKind
     /// An admitted PAYABLE open item (a supplier invoice installment, MOD-15): the company's debt to the party — credit.
     /// </summary>
     PayableOpenItem = 6,
+
+    /// <summary>
+    /// F2b (SAT-D96): the reversal of a RECEIVABLE open item whose sales invoice was cancelled — its own row on the
+    /// cancellation's UTC day, the original amount on the reverse side (credit); the open item's row stays as recorded.
+    /// </summary>
+    OpenItemCancellation = 7,
+
+    /// <summary>F2b: the reversal of a PAYABLE open item whose purchase invoice was cancelled — debit.</summary>
+    PayableOpenItemCancellation = 8,
 }
 
 /// <summary>The column a row is written in, from the company's view of the party's account: borç / alacak.</summary>
@@ -79,7 +88,10 @@ public sealed record PartyLedgerBalanceView(PartyLedgerBalanceSide? Side, Amount
 /// or the open item. <paramref name="ReversesSourceId"/> names the original of a reversal row; <paramref name="InstrumentId"/>
 /// the collected cheque / note; <paramref name="DocumentId"/> and <paramref name="DueOn"/> the open item's official
 /// document and installment due date. An open item's <paramref name="OccurredOn"/> is the UTC day Finance admitted it
-/// (the source contract carries no document date yet — see the module README).
+/// (the source contract carries no document date yet — see the module README). F2b: a cancellation row's
+/// <paramref name="EntryId"/>, <paramref name="SourceId"/> and <paramref name="ReversesSourceId"/> are the reversed open
+/// item (one open item is reversed at most once, so kind and id name the row), its <paramref name="DocumentId"/> the
+/// cancelled invoice, its <paramref name="DueOn"/> null, its <paramref name="OccurredOn"/> the UTC day of the cancellation.
 /// </summary>
 public sealed record PartyLedgerEntry(
     PartyLedgerEntryKind Kind,
