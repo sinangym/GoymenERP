@@ -23,6 +23,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <item><c>manufacturing.plans.edit</c> (MFG-PLAN-EDIT, contract 1.4): a control on the plan detail route adding
 /// the plan save's own <see cref="ErpPermissions.ManufacturingPlansWrite"/> — the Draft edit and its history. No new
 /// permission.</item>
+/// <item><c>manufacturing.plans.cancel</c> (TAKIP-URT-02, contract 1.6): a control on the plan detail route adding the
+/// existing <see cref="ErpPermissions.ManufacturingPlansCancel"/> (API-11) — the plan cancellation. No new permission,
+/// and nothing is granted by publishing it.</item>
 /// <item><c>manufacturing.plans.list</c> → <c>/uretim/planlar</c> on
 /// <see cref="ErpPermissions.ManufacturingPlansRead"/> (MFG-PLAN-LIST, contract 1.3): the company's saved plans,
 /// so a plan whose screen was closed is found and reopened. The plan read's own grant; no new permission.</item>
@@ -39,8 +42,8 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string OwnerId = "MANUFACTURING";
     // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
-    // in the central writer's round.
-    public const string OwnerContractVersion = "1.5";
+    // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control.
+    public const string OwnerContractVersion = "1.6";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
@@ -64,6 +67,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanApproveCapabilityId = "manufacturing.plans.approve";
     public const string PlanOrderCreateCapabilityId = "manufacturing.plans.order-create";
     public const string PlanEditCapabilityId = "manufacturing.plans.edit";
+    public const string PlanCancelCapabilityId = "manufacturing.plans.cancel";
     public const string PlanListCapabilityId = "manufacturing.plans.list";
     public const string PlanListRouteId = "manufacturing.plan-list";
     public const string PlanListRoutePath = "/uretim/planlar";
@@ -181,6 +185,13 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 CapabilityId = PlanEditCapabilityId,
                 ParentCapabilityId = PlanDetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansWrite],
+            },
+            // TAKIP-URT-02: the plan cancellation is a control of the plan detail, on its own API-11 permission.
+            planDetail with
+            {
+                CapabilityId = PlanCancelCapabilityId,
+                ParentCapabilityId = PlanDetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansCancel],
             },
             planList,
         ];
