@@ -57,7 +57,7 @@ permission/rol K3 kapsamı ve insan kapısıdır; sütun ayrıca işlemin para/s
 | `sales.orders.close` | "Kapanmaya hazır" siparişi kullanıcı işlemiyle kapatır; gerekçe zorunlu değil | Critical değil; stok/para hareketi yazmaz, siparişin yaşam döngüsünü bitirir | **Ver** | **Ver** | **Ver** | KARARLI | SAT-D168 (Satış Uzmanı, Müdür, Admin) + SAT-D188 (Müdür → Satış Müdürü) + SAT-D190 (Genel Müdür); SAT-D32, SAT-D215. SAT-D221 gereği sahibi olmayan eksenler gelene kadar komut zaten 409 ile kapalıdır. |
 | `sales.orders.over-delivery.approve` | Toleransı aşıp onay bandına giren fazla teslimi onaylar | Critical değil; **stok ve fatura edilebilir miktarı etkiler** (onaylanan fazlalık faturalanabilir hale gelir) | **Ver** | **Ver** | **Koşullu** | KARARLI | SAT-D168/SAT-D30 kümesi aynı üç rol. Koşul: Satış Uzmanı **kendi sevki veya kendi açtığı talep için onay veremez** (SAT-D216, komutta zorlanır); sevkiyatçı doğrulanamıyorsa kimse onaylayamaz (SAT-D222). Sevkiyatçı personası verilmez (kartta `—`). |
 | `sales.invoices.write` | Onaylı sevk paylarından satış faturası taslağı hazırlar (API-32) | Critical değil; taslak para hareketi yazmaz, ama faturalamanın ilk adımıdır | **Ver** | **Verme** | **Verme** | KARARLI | SAT-D202: faturayı Muhasebe hazırlar/keser; Muhasebe Müdürü, Genel Müdür, Admin de keser; **Satış (Satış Uzmanı, Satış Müdürü) görür ama kesemez**. Satış tarafının görmesi `sales.invoices.read` ve ayrı fatura okumasıyla karşılanır. |
-| `sales.invoices.finalize` | Eşleştirilmiş faturayı kesinleştirir ve Finans'a devrini (`sales.invoice.finalized.v1`) yeniden tetikler (API-36) | Critical olarak **işaretlenmemiş** (Critical sınıfı insan kapısıdır); **para etkili**: Finans'ta alacak açık kalemi ve Muhasebe'de 120 taslak fişi doğurur (SAT-D208, KLN-D10) | **Ver** | **Verme** | **Verme** | ÖNERİ | Kararlarda API-36 için ayrı persona kümesi yok. En yakın dayanak SAT-D202'nin "kesme" kümesidir (Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin; Satış kesemez); öneri bu kümeyi uygular. Kesinleştiren kişi kendi 120 fişini onaylayamaz (KLN-D17). Kesinleştirmenin hazırlayan/onaylayandan ayrı kişi olması **seçilmedi** (bkz. Sinan'ın seçeceği noktalar). |
+| `sales.invoices.finalize` | Eşleştirilmiş faturayı kesinleştirir ve Finans'a devrini (`sales.invoice.finalized.v1`) yeniden tetikler (API-36) | **Critical değil, normal yetki** (SAT-D249, `SINAN_KARARLARI_2026-11-09_SATIS_EK49.md`; EK46 SAT-D235 (1)'deki "Critical" cevabının yerine geçer); grant yine permission/rol K3 kapsamı ve insan kapısıdır; **para etkili**: Finans'ta alacak açık kalemi ve Muhasebe'de 120 taslak fişi doğurur (SAT-D208, KLN-D10) | **Ver** | **Verme** | **Verme** | ÖNERİ | Kararlarda API-36 için ayrı persona kümesi yok. En yakın dayanak SAT-D202'nin "kesme" kümesidir (Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin; Satış kesemez); öneri bu kümeyi uygular. Kesinleştiren kişi kendi 120 fişini onaylayamaz (KLN-D17). Kesinleştirmenin hazırlayan/onaylayandan ayrı kişi olması **seçilmedi** (bkz. Sinan'ın seçeceği noktalar). |
 
 ### İlgili diğer Satış yazma/onay izinleri
 
@@ -80,6 +80,11 @@ yazma ve revizyon izinleri (`sales.drafts.create`, `sales.quotes.write`, `sales.
 `sales.requests.approve`, `sales.quotes.expired-conversion.approve`) kartta ayrıca izlenir; bu belge
 istenen dört izin ve onların görev ayrılığı komşularıyla sınırlıdır.
 
+S-05 satış marjı görünürlüğü bu tabloya satır olarak alınmaz: SAT-D250
+(`SINAN_KARARLARI_2026-11-09_SATIS_EK49.md`) marjı **yalnız Genel Müdür ve Admin**'e gösterir (Satış Müdürü, öteki
+müdürler, Muhasebe ve Satış Uzmanı görmez); görünürlük backend'de uygulanır. Gerekirse açılacak izin adı henüz
+kayıtlı değildir ve Codex şeridinde belirlenir; bu belge ad önermez. Grant/rol ataması insan kapısıdır.
+
 ## Sinan'ın seçeceği noktalar
 
 1. **Rol eşlemesi:** "Yönetici" = Genel Müdür + Admin, "Satış Personeli" = Satış Uzmanı eşlemesi doğru mu?
@@ -88,8 +93,11 @@ istenen dört izin ve onların görev ayrılığı komşularıyla sınırlıdır
    Genel Müdür, Admin); Satış Müdürü ve Satış Uzmanı verilmez. Onaylanırsa kart satırı bu ada eşlenir.
 3. **Kesinleştirmede görev ayrılığı:** Faturayı hazırlayan veya onaylayan kişi aynı faturayı kesinleştirebilsin
    mi? Kararlarda seçilmedi; bugün yalnız KLN-D17 (kendi 120 fişini onaylayamaz) var.
-4. **`sales.invoices.finalize` Critical olsun mu?** Para etkili ilk adım olduğu için grant'ın iki kişiyle
-   verilmesi (Critical) istenirse bu Sinan'ın kararıdır; kod bugün Critical işaretlemez.
+4. **`sales.invoices.finalize` Critical olsun mu?** **Kararlaştırıldı — SAT-D249**
+   (`SINAN_KARARLARI_2026-11-09_SATIS_EK49.md`): izin **Critical değildir, normal yetki** olarak kalır (gerekçe
+   Sinan'ın sözü: küçük bir işletme olunduğu için normal yetki yeterlidir). SAT-D249, EK46 SAT-D235 (1)'deki
+   "Critical" cevabının yerine geçer; SAT-D235 (2) (kesinleştirmede görev ayrılığı yok) ve KLN-D17 aynen geçerlidir.
+   Kod bugün de Critical işaretlemez; bu kayıt korunur. Rol/grant ataması **insan kapısıdır**; bu belge grant açmaz.
 5. **`sales.orders.force-close` kimde olsun?** Öneri: Satış Müdürü + Genel Müdür + Admin; Satış Uzmanı verilmez.
 6. **`sales.orders.cancel` Satış Uzmanı hücresi:** kartta `?`; öneri **Verme**.
 7. **`sales.invoices.match` kimde olsun?** Öneri: Muhasebe tarafı + Genel Müdür + Admin; Satış verilmez.
