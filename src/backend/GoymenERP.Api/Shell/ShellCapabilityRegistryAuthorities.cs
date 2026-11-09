@@ -520,7 +520,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:hCItXXjs83iut2lif36wAaeLhwidCYRD71YBZPBzNpY";
+        "sha256:rTqBOOS5Ua6CljXNKhlWN6AV9kRunmr3FrKJFIpVO64";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -536,7 +536,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:hmeFTbQzwNWvoUm2flmkfgb36eCs05qk4hjB3yqFhB4";
+        "sha256:2hndXTU_brKuNV0oKhIT0MPPh_V7s52xSmJleo5WN0o";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -557,7 +557,7 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:6IQxhvECPaMmvPIfQO_mVlqqNUe87CvFKqs9Fi18a4U";
+        "sha256:4o5GqftZqgx4cndjm4mywtgu6pp53mw74CUGzELXbnQ";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

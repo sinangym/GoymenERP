@@ -26,7 +26,6 @@ public sealed partial class ShellCapabilityRegistry
 
         _registrations = BuildValidatedRegistrations(providers);
         Revision = ComputeRevision(_registrations);
-        TmpDiagDumpSubsets(providers); // TMPDIAG4 - geri alinacak
         if (_registrations.Count > 0 && !authorityCatalog.Accepts(Revision))
         {
             throw new InvalidOperationException(
@@ -37,35 +36,6 @@ public sealed partial class ShellCapabilityRegistry
     public IReadOnlyList<ShellCapabilityRegistration> Registrations => _registrations;
 
     public string Revision { get; }
-
-    // TMPDIAG4 - geri alinacak: yalniz Manufacturing iceren, gec provider'siz alt kumeler.
-    private static void TmpDiagDumpSubsets(IEnumerable<IShellCapabilityProvider> providers)
-    {
-        var all = providers.ToArray();
-        if (all.Length < 2 || all.Length > 14)
-        {
-            return;
-        }
-
-        string[] late = ["LOGISTICS", "PURCHASING", "ACCOUNTING", "INVENTORY", "IDENTITY", "SETTINGS", "PRODUCT-PRICE-LISTS"];
-        for (var mask = 1; mask < (1 << all.Length); mask++)
-        {
-            try
-            {
-                var subset = all.Where((_, i) => (mask & (1 << i)) != 0).ToArray();
-                var names = subset.Select(p => p.Owner).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-                if (!names.Contains("IDENTITY") || !names.Contains("MANUFACTURING"))
-                {
-                    continue;
-                }
-
-                Console.Error.WriteLine("TMPDIAG5 " + string.Join("+", names) + " => " + ComputeCandidateRevision(subset));
-            }
-            catch (Exception)
-            {
-            }
-        }
-    }
 
     internal static string ComputeCandidateRevision(
         IEnumerable<IShellCapabilityProvider> providers)
