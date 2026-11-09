@@ -97,6 +97,26 @@ describe('decodeOrderStatus', () => {
     expect(decodeOrderStatus(awaiting, detail)?.realization.state).toBe('AwaitingApproval')
   })
 
+  it('reads a user-closed approval-band shortfall as Completed without the over-delivery mark (SAT-D17)', () => {
+    const body = status()
+    Object.assign(body.realization.lines[0], {
+      shipped: '980', delivered: '980', direction: 'Under', deviation: '20', band: 'Approval', warning: false,
+      approvedOverDelivery: false, closedRemainder: '20',
+    })
+    body.realization.warning = false
+    expect(decodeOrderStatus(body, detail)?.realization.lines[0]).toMatchObject({
+      state: 'Completed', direction: 'Under', band: 'Approval', approvedOverDelivery: false, closedRemainder: '20',
+    })
+  })
+
+  it('reads a user-closed warn-band shortfall as Completed with the warning on an Active order (SAT-D17)', () => {
+    const body = status()
+    Object.assign(body.realization.lines[0], { shipped: '990', delivered: '990', direction: 'Under', deviation: '10', closedRemainder: '10' })
+    expect(decodeOrderStatus(body, detail)?.realization.lines[0]).toMatchObject({
+      state: 'Completed', band: 'Warn', warning: true, closedRemainder: '10',
+    })
+  })
+
   it('reads a force-closed warn-band shortfall as Completed with the warning (SAT-D31) on a Closed order', () => {
     const closed = decodeDetail(detailBody({ state: 'Closed' }))
     const body = status()
@@ -302,6 +322,10 @@ describe('decodeOrderStatus', () => {
     }],
     ['a Completed approval-band over-delivery not marked approved (SAT-D30: it awaits approval)', (b) => {
       Object.assign(b.realization.lines[0], { shipped: '1025', deviation: '25', band: 'Approval', warning: false, approvedOverDelivery: false })
+      b.realization.warning = false
+    }],
+    ['a Completed approval-band shortfall without its closed remainder (SAT-D17)', (b) => {
+      Object.assign(b.realization.lines[0], { shipped: '980', delivered: '980', direction: 'Under', deviation: '20', band: 'Approval', warning: false })
       b.realization.warning = false
     }],
     ['lifecycle Draft beside an approved order (SAT-D32: it is Active)', (b) => { b.lifecycle.state = 'Draft' }],

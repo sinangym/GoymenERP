@@ -61,6 +61,8 @@ public sealed record FinanceInvoiceOpenItemAdmissionV1(
 /// <item>An invoice already admitted with the same rows answers as a reuse (no second open item); with other rows or another
 /// version it is refused with <c>finance_invoice_already_admitted</c> — a changed invoice is cancelled and re-issued by its
 /// owner (SAT-D96, F2b), never silently replaced.</item>
+/// <item>A new admission of an invoice whose open items were cancelled (F2b) is refused with
+/// <c>finance_invoice_already_cancelled</c>; the re-issued invoice is admitted under its own id.</item>
 /// </list>
 /// </summary>
 public interface IFinanceInvoiceOpenItemAdmissionPortV1

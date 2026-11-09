@@ -18,6 +18,7 @@
  */
 
 import { LIMITS, type PriceDisclosure } from './contract'
+import { decodeDueTerms, type DueTerms } from './headerRevision'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
 /* ── Paths ────────────────────────────────────────────────────────────────── */
@@ -128,6 +129,8 @@ export interface SalesQuoteRevisionBody {
   readonly validUntil: string | null
   readonly requestedDeliveryDate: string | null
   readonly note: string | null
+  /** SAT-D132: the revision replaces the terms as a whole; the form carries the shown due terms (omitted = none). */
+  readonly dueTerms?: DueTerms
 }
 
 /**
@@ -298,6 +301,9 @@ export interface SalesQuoteDetail {
   readonly revisions: readonly SalesQuoteRevisionRecord[]
   readonly expiryApprovals: readonly SalesQuoteExpiryApproval[]
   readonly expiry: SalesQuoteExpiry
+  /** SAT-D132: the due terms are disclosed only with the price read (`Withheld` + null otherwise); shown by a later slice. */
+  readonly dueTermsDisclosure: 'Visible' | 'Withheld'
+  readonly dueTerms: DueTerms | null
 }
 
 /** SAT-D25: one selectable loss reason (an active entry of the list in force). */
@@ -734,9 +740,14 @@ function decodeRequestIds(value: unknown): readonly string[] | null {
 export function decodeQuoteDetail(value: unknown, expectedId: string | null): SalesQuoteDetail | null {
   const o = exact(value, [
     'quote', 'requestIds', 'requestedDeliveryDate', 'note', 'lines', 'loss', 'conversion', 'createdBy', 'revisions', 'expiryApprovals',
-    'expiry',
+    'expiry', 'dueTermsDisclosure', 'dueTerms',
   ])
   if (o === null) return null
+  const disclosure = o.dueTermsDisclosure
+  if (disclosure !== 'Visible' && disclosure !== 'Withheld') return null
+  // The same strict decoder as the order header: a malformed shape, or a withheld answer carrying terms, is malformed.
+  const dueTerms = decodeDueTerms(o.dueTerms)
+  if (dueTerms === undefined || (disclosure === 'Withheld' && dueTerms !== null)) return null
   const quote = decodeQuoteSummary(o.quote)
   if (quote === null || (expectedId !== null && quote.id !== expectedId)) return null
   const requestIds = decodeRequestIds(o.requestIds)
@@ -775,6 +786,8 @@ export function decodeQuoteDetail(value: unknown, expectedId: string | null): Sa
     revisions,
     expiryApprovals,
     expiry,
+    dueTermsDisclosure: disclosure,
+    dueTerms,
   }
 }
 

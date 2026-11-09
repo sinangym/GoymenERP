@@ -169,6 +169,21 @@ public static class SalesRuleCodes
     /// </summary>
     public const string HeaderRevisionQuoteCustomer = "sales_header_revision_quote_customer";
 
+    /// <summary>SAT-D30: an over-delivery approval names a line that is not on the order.</summary>
+    public const string OverDeliveryLineUnknown = "sales_over_delivery_line_unknown";
+
+    /// <summary>
+    /// SAT-D216 (EK37): the person the delivery owner names as having made a shipment of the line does not approve the line's
+    /// over-delivery ("sevki yapan kişi kendi işlemini onaylayamaz; başkası onaylar").
+    /// </summary>
+    public const string OverDeliverySelfApproval = "sales_over_delivery_self_approval";
+
+    /// <summary>SAT-D17: a line closure names a line that is not on the order.</summary>
+    public const string LineClosureLineUnknown = "sales_line_closure_line_unknown";
+
+    /// <summary>SAT-D216 (EK37): the person who made a shipment of the line does not close it ("başkası kapatır").</summary>
+    public const string LineClosureSelfClosure = "sales_line_closure_self_closure";
+
     /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
     public const string DueTermsRequired = "sales_due_terms_required";
 
@@ -329,6 +344,27 @@ public static class SalesRuleCodes
     /// </summary>
     public const string SubcontractPriceListNotUsed = "sales_subcontract_price_list_not_used";
 
+    /// <summary>
+    /// SAT-D167 (EK24): a line with any shipment — a dispatch note, a loading instruction or a stock allocation (or a recorded
+    /// remainder change) — is neither removed nor given another product.
+    /// </summary>
+    public const string LineRevisionLineShipped = "sales_line_revision_line_shipped";
+
+    /// <summary>SAT-D167: a product change names a line added in the same revision, and each added line replaces at most one line.</summary>
+    public const string LineReplacementInvalid = "sales_line_replacement_invalid";
+
+    /// <summary>SAT-D219 (EK38): a line with an open linked purchase order or production order is neither removed nor given another product.</summary>
+    public const string LineRevisionLineLinked = "sales_line_revision_line_linked";
+
+    /// <summary>SAT-D211: a quantity, price or header revision waits while the customer-rejected revision's removed lines are to be reinstated.</summary>
+    public const string RevisionReinstatementPending = "sales_revision_reinstatement_pending";
+
+    /// <summary>SAT-D167: a product change must name another product (the same product's quantity or price has its own revision).</summary>
+    public const string LineReplacementSameProduct = "sales_line_replacement_same_product";
+
+    /// <summary>SAT-D167: a line revision keeps at least one active line on the order (a wrong order is cancelled, DEC-SAL-005).</summary>
+    public const string LineRevisionNoLinesLeft = "sales_line_revision_no_lines_left";
+
     /// <summary>SAT-D201 (EK31): a subcontract service order is not submitted while a service line has no per-kg price entered.</summary>
     public const string SubcontractPriceRequired = "sales_subcontract_price_required";
 
@@ -343,6 +379,48 @@ public static class SalesRuleCodes
 
     /// <summary>A line's tax snapshot names another product than the line (a stale or crossed resolution; internal).</summary>
     public const string TaxSnapshotMismatch = "sales_tax_snapshot_mismatch";
+
+    /// <summary>API-32: an invoice draft needs at least one shipment share.</summary>
+    public const string InvoiceWithoutLines = "sales_invoice_without_lines";
+
+    /// <summary>API-32 (AT-055, SAT-D94): one shipment share is on an invoice at most once.</summary>
+    public const string InvoiceShareDuplicated = "sales_invoice_share_duplicated";
+
+    /// <summary>API-32 (SAT-D101, SAT-D129): every instalment of the invoice needs its due date ("vade eksik" waits).</summary>
+    public const string InvoiceDueDateMissing = "sales_invoice_due_date_missing";
+
+    /// <summary>API-32 (SAT-D135/D147/D148): a line's tax has no usable source — the invoice waits, nothing is 0.</summary>
+    public const string InvoiceTaxUnavailable = "sales_invoice_tax_unavailable";
+
+    /// <summary>API-32 (SAT-D11): a line has no price or is priced in another unit than its order unit.</summary>
+    public const string InvoiceLineUnpriced = "sales_invoice_line_unpriced";
+
+    /// <summary>API-32: an exact invoice amount cannot be held (never a rounded amount).</summary>
+    public const string InvoiceAmountOutOfRange = "sales_invoice_amount_out_of_range";
+
+    /// <summary>API-33 (SAT-D88/D204): the person who prepared or submitted an invoice does not approve or reject it.</summary>
+    public const string InvoiceSelfApproval = "sales_invoice_self_approval";
+
+    /// <summary>API-35 (SAT-D89): the official document's customer or currency is not the approved invoice's.</summary>
+    public const string InvoiceMatchMismatch = "sales_invoice_match_mismatch";
+
+    /// <summary>API-35 (SAT-D106/D229): the TL difference exceeds the tolerance and no explicit approval was given.</summary>
+    public const string InvoiceMatchDifferenceNotApproved = "sales_invoice_match_difference_not_approved";
+
+    /// <summary>API-35 (SAT-D106): an approved difference carries a reason.</summary>
+    public const string InvoiceMatchDifferenceReasonRequired = "sales_invoice_match_difference_reason_required";
+
+    /// <summary>API-35: an approval was asked although the difference is within the tolerance.</summary>
+    public const string InvoiceMatchDifferenceNotApplicable = "sales_invoice_match_difference_not_applicable";
+
+    /// <summary>API-36: an invoice is finalised only after its official document match is recorded (SAT-D89/D229).</summary>
+    public const string InvoiceMatchRequired = "sales_invoice_match_required";
+
+    /// <summary>API-36 (SAT-D229): the recorded match carries a difference; which amount Finance opens is undecided, so it fails closed.</summary>
+    public const string InvoiceMatchDifferenceOpen = "sales_invoice_match_difference_open";
+
+    /// <summary>API-36 (SAT-D227): the TL split of the instalments does not add up to the TL payable total.</summary>
+    public const string InvoiceInstalmentFunctionalInvalid = "sales_invoice_instalment_functional_invalid";
 
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The

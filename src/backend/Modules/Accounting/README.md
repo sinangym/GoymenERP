@@ -254,6 +254,100 @@ migration and `AccountingStore`.
 - the integration-test project reference;
 - the SQL verifier's broad counts.
 
+## B-04a: posting account mapping catalog (backend only)
+
+Sinan #66 6707619685: invoice finalization makes a DRAFT voucher whose accounts are mapped in Settings
+("Ayarlar") per product type, never hard-coded. This slice stores that mapping in Accounting; the Ayarlar
+screen and the voucher draft (B-04b) come later. #66 6707864938 says how a company fills it (150/153 by the
+purchase line purpose, service purchase → `expense`, scrap sale → `revenue` with `ItemType=Scrap`, 601 by
+`IsExport`, 391/191 optionally per `VatRateCode`). Those are data rows of a version, not code.
+
+- **Version**: (CompanyId, MappingVersion), `EffectiveFrom` (business date), Prepared (1) → Active (2) →
+  Superseded (3). Rows are immutable. Each row has a purpose (`sales-invoice` | `purchase-invoice`) and a key
+  (`receivable`, `revenue`, `vat-output`, `withholding-receivable` — its account is open, NEEDS-SINAN #66 6707860683 | `payable`, `inventory`, `vat-input`, `withholding-payable`,
+  `expense`). It may also name optional selectors (`ItemType`, `LinePurpose`, `IsExport`, `VatRateCode`, the
+  last only on a VAT key) and an `AccountId` that must be in the ACTIVE approved account plan (its code is
+  frozen on the row).
+- **Resolution** (`IAccountingPostingAccountMappingResolverV1`, active version only): the matching row with
+  the most named selectors wins. Equally specific matches are `Ambiguous` and no match is `Unmapped`; neither
+  falls back to an account. A date before `EffectiveFrom`, a missing active version or plan, or an account
+  no longer in the active plan is `Unavailable`.
+- **Commands**: `POST /api/v1/accounting/posting-account-mappings` (prepare, `expectedLatestMappingVersion`),
+  `POST …/{mappingVersion}/activation` (`expectedVersion`, `expectedActiveMappingVersion`; the preparer is
+  refused, 403 `accounting_posting_mapping_self_activation`, recorded), `GET …/active`,
+  `GET …/{mappingVersion}`. Permissions `accounting.posting-mappings.read|prepare|activate` are registered,
+  not granted.
+- **Database**: `PostingAccountMappingVersions` (filtered unique `UX_PostingAccountMappingVersions_Active`
+  = one active version per company; `CK_…_MakerChecker`) and `PostingAccountMappingRows` (unfiltered unique
+  selector index: NULL selectors compare equal; key-per-purpose and VAT-rate checks).
+- **Migration** `20261107140038_AddPostingAccountMappings`: Down refuses with **THROW 51212** while any mapping
+  version exists (forward fix); an empty store rolls back freely.
+
+### Not decided yet (B-04a, `OPEN-*` — behaviour is NOT chosen here)
+
+- **`EffectiveFrom` semantics (OPEN-*)**: a future-dated `EffectiveFrom` makes every date `Unavailable` as soon as it
+  supersedes the previous version (there is no per-date version history); a past-dated `EffectiveFrom` silently
+  re-resolves past invoices against the new version. No fallback to the superseded version and no date-range
+  history exists; the business rule is open and nothing here picks it.
+- **Resolver granularity (B-04b)**: the resolver port answers one question per call and loads the account plan on
+  every call. Lines of the same voucher draft can resolve from different versions if a version is activated in the
+  middle. Batch / version-pinned resolution is B-04b's job, not part of this slice.
+- **Known, not a defect here**: an export scrap sale resolves
+  `Ambiguous` until a business rule names the winner; the resolver never guesses.
+
+## B-04b: source document acceptance port (backend only, no HTTP)
+
+Sinan #66 6707619685 and the 7 Kasım kararı (KLN-D6…D19, SAT-D208/D223/D226): a FINALISED sales invoice becomes ONE
+DRAFT voucher in Accounting's own tables. The port is `IAccountingSourceDocumentAdmissionPortV1`
+(`Application/Contracts`); Accounting writes only `SourceDocumentAdmissions`, `SourceDocumentVoucherDrafts` and
+`SourceDocumentVoucherDraftLines`, never the producer's tables. No permission is registered and no grant is made.
+
+- **Call (Sales host adapter, AFTER the finalisation commit)**:
+
+  ```csharp
+  var answer = await port.AdmitAsync(new AccountingSourceDocumentAdmissionRequestV1(
+      CompanyId: companyId, ActorId: actorId, CorrelationId: correlationId, CausationId: null,
+      IdempotencyKey: AccountingSourceDocumentKindsV1.SalesInvoiceKey(invoiceId, finalizedVersion),
+      DocumentKind: AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId: sourceDocumentId,
+      InvoiceId: invoiceId, FinalizedVersion: finalizedVersion, SourceActorId: finalizedByUserId,
+      PartyId: partyId, CurrencyId: currencyId, ExchangeRate: null /* TL; else the single fixed rate text */,
+      DocumentDate: invoiceDate, DueDate: dueDate,
+      DocumentTotals: new("1200", "240", "0", "1440"), FunctionalTotals: new("1200", "240", "0", "1440"),
+      Lines: lines /* functional-currency net/VAT/withholding per line, VatRateCode per group */), ct);
+  ```
+
+  Key: `sales-invoice-accounting:{invoiceId:D}:{finalizedVersion}`. The same key with other content is refused
+  (`idempotency_conflict`), never replayed.
+- **Answers**: `Admitted` (voucher draft id; a replay says `IsReplay`) · `Refused` + reason ≤ 64 chars +
+  `Retryable` · `Unavailable` (no authority measurement, failed read, lost race: nothing is known; re-drive the same
+  key). A missing producer port or `Unavailable` leaves the invoice "waiting for Accounting", re-drivable.
+- **Fail-closed mapping ("eşleme bekliyor")**: a missing, inactive, not-yet-effective or ambiguous account mapping
+  is a retryable `Refused` (`mapping_pending` | `mapping_ambiguous`), recorded as a `Waiting` row (the attempt is
+  counted); the same key is admitted once Accounting has configured the mapping. No account is guessed.
+- **Content refusals** (`totals_mismatch`, `withholding_exceeds_vat`, `amount_invalid`, `exchange_rate_invalid`,
+  `line_invalid`, `document_invalid`, `voucher_unbalanced`, `mapping_query_invalid`) are recorded terminal refusals
+  and replay for the key. Malformed identity (`request_invalid`, `document_kind_unsupported`,
+  `idempotency_key_invalid`) is refused unrecorded.
+- **Voucher** (no recomputation, no threshold; Accounting uses the producer's amounts): debit `receivable` =
+  net + VAT − withholding; credit `revenue` per invoice line = net; credit `vat-output` per `VatRateCode` group =
+  Σ(VAT − withholding). Zero lines are skipped and the voucher must balance. The 12.000 TL tevkifat threshold is
+  the producer's configuration. `PeriodId` is stamped only if an Open period covers the date, else null
+  ("dönem bekliyor"); the draft is never refused for a closed or missing period (KLN-D15).
+- **Authority** is host-injected (`IAccountingSourceDocumentAdmissionAuthorityV1`, the Finance pattern); the default is
+  `UnavailableAccountingSourceDocumentAdmissionAuthorityV1`, so an unwired host answers `Unavailable`.
+- **Database**: the admission row is the attempt record and the terminal refusal record
+  (`UX_SourceDocumentAdmissions_Key` / `_Document` unique per company; draft and lines immutable).
+- **Migration** `20261108222146_AddSourceDocumentAdmissions`: Down refuses with **THROW 51240** while any admission
+  or draft exists (forward fix). 51234 is taken by an open PR.
+
+### Not decided yet (B-04b)
+
+- NEEDS-SINAN: the sales-side withholding counter-account (#66 6707860683): no withholding line is written.
+- NEEDS-SINAN: the reversing voucher's period and the FX-difference accounting; cancel/return
+  (`sales-invoice-cancel:…`, KLN-D16) and the purchase kind are not in V1 (`document_kind_unsupported`).
+- NEEDS-SINAN: which permission measures this port, and the host adapter (Sales/host lane).
+- NEEDS-SINAN: "dönem bekliyor" is a null `PeriodId` in V1; whether it should be a stored queue flag is open.
+
 ## Rule codes and read-only views (ACC-2)
 
 - Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and

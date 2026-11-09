@@ -31,6 +31,12 @@ public static class PurchasingRuleCodes
     public const string RequestNotSubmitted = "purchasing_request_not_submitted";
     public const string RequestWithoutLines = "purchasing_request_without_lines";
 
+    /// <summary>
+    /// A1-2b (SAT-D219, SAT-D220; fail-closed): a new request line cannot record a Sales source until MOD-03 validates it through
+    /// the Sales order line reference port and wires the linked-supply read adaptor in the same delivery.
+    /// </summary>
+    public const string RequestSourceSalesUnavailable = "purchasing_request_source_sales_unavailable";
+
     /// <summary>A1-1 (ALS-D2, ALS-D16): an order is opened only for an APPROVED request.</summary>
     public const string RequestNotApproved = "purchasing_request_not_approved";
 
@@ -126,6 +132,18 @@ public static class PurchasingRuleCodes
 
     /// <summary>A2a-1: a discount amount is never negative and never above the unit price (the net never goes below zero).</summary>
     public const string DiscountExceedsPrice = "purchasing_discount_exceeds_price";
+
+    /// <summary>A2a-2 (ALS-D38): a maturity surcharge (vade farkı) is a percent OR an amount, never both.</summary>
+    public const string DeferralKindConflict = "purchasing_deferral_kind_conflict";
+
+    /// <summary>A2a-2 (ALS-D75): a maturity surcharge is never entered on a 0 price (Sinan, EK13).</summary>
+    public const string DeferralOnZeroPrice = "purchasing_deferral_on_zero_price";
+
+    /// <summary>A2a-2: a maturity surcharge percent is 0..100 with at most <see cref="Orders.PurchaseOrderLinePrice.PercentScale"/> decimals (the Sales bound).</summary>
+    public const string DeferralPercentOutOfRange = "purchasing_deferral_percent_out_of_range";
+
+    /// <summary>A2a-2: a maturity surcharge amount is never negative.</summary>
+    public const string DeferralAmountNegative = "purchasing_deferral_amount_negative";
 
     /// <summary>A2a-1: the price, quantity and discount cannot be computed exactly within System.Decimal or the stored columns.</summary>
     public const string PriceOutOfRange = "purchasing_price_out_of_range";

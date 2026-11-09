@@ -195,9 +195,11 @@ public sealed class PosCollectionServiceTests
             Assert.Equal((AmountDisclosure.Redacted, AmountDisclosure.Redacted),
                 (resource.Pos!.Commission.Disclosure, resource.Pos.BankNet.Disclosure));
             var json = System.Text.Json.JsonSerializer.Serialize(answer, FinanceJson.CreateOptions());
-            Assert.DoesNotContain("1000", json, StringComparison.Ordinal);
-            Assert.DoesNotContain("25.50", json, StringComparison.Ordinal);
-            Assert.DoesNotContain("974.50", json, StringComparison.Ordinal);
+            // Random ids are hex: a bare substring such as "1000" can occur inside one, so the amount
+            // is looked for as a whole token (never flanked by a hex digit or hyphen).
+            Assert.DoesNotMatch(@"(?<![0-9A-Fa-f-])1000(\.\d+)?(?![0-9A-Fa-f-])", json);
+            Assert.DoesNotMatch(@"(?<![0-9A-Fa-f-])25\.50(?![0-9A-Fa-f-])", json);
+            Assert.DoesNotMatch(@"(?<![0-9A-Fa-f-])974\.50(?![0-9A-Fa-f-])", json);
         }
 
         await using var db = run.Context(Company);

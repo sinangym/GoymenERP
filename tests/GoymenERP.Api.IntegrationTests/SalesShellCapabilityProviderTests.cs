@@ -46,6 +46,9 @@ public sealed class SalesShellCapabilityProviderTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
                 ("sales.orders.cancel", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}", "sales.drafts.detail"),
+                // SAT-D32: the user-closure CONTROL of the detail (read + its own name, never the force-close name).
+                ("sales.orders.close", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersClose}", "sales.drafts.detail"),
                 ("sales.orders.customer-acceptance.record", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}", "sales.drafts.detail"),
                 ("sales.orders.delivery-schedule.write", "/satis/siparisler/:draftId",
@@ -56,6 +59,12 @@ public sealed class SalesShellCapabilityProviderTests
                 // API-04: the header-revision CONTROL of the detail (read + its own name).
                 ("sales.orders.header.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersHeaderWrite}", "sales.drafts.detail"),
+                // SAT-D17 / SAT-D168: the line-closure CONTROL of the detail (read + its own name).
+                ("sales.orders.lines.close", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersLineClose}", "sales.drafts.detail"),
+                // SAT-D30: the over-delivery approval CONTROL of the detail (read + its own name).
+                ("sales.orders.over-delivery.approve", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersOverDeliveryApprove}", "sales.drafts.detail"),
                 ("sales.orders.price-floor-exception.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove}", "sales.drafts.detail"),
                 ("sales.orders.price.write", "/satis/siparisler/:draftId",

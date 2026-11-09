@@ -70,7 +70,10 @@ public sealed partial class SalesDraftService(
     ISettingsTaxRateListReaderV1? rateLists = null,
     ISettingsExchangeRateResolverV1? exchangeRates = null,
     IProductItemTypeReaderV1? itemTypes = null,
-    ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null,
+    ISalesOrderOwnerAxesSourceV1? ownerAxes = null,
+    IEnumerable<ISalesOrderLinkedSupplyReadPortV1>? linkedSupplies = null,
+    IEnumerable<ISalesOrderLinkedSupplyRecorderV1>? linkedSupplyRecorders = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -1519,6 +1522,17 @@ public sealed partial class SalesDraftService(
                 _ => new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable),
             };
         }
+        catch (SettingsPrerequisiteException exception)
+        {
+            // B-31: the eligibility reads the line's unit profiles from the Settings owner and lets its refusal through;
+            // the same answers the order unit's own profile read below gives, never an unmapped 500.
+            throw Settings(exception, unitField, SettingsPrerequisiteCodesV1.UnitProfileNotFound, "unsupported_unit");
+        }
+        catch (InvalidOperationException)
+        {
+            // B-31: a product record the owner cannot restore is the owner being unavailable, not a server fault of Sales.
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable);
+        }
 
         if (eligibility.Snapshot is not { } snapshot)
         {
@@ -1787,7 +1801,8 @@ public sealed partial class SalesDraftService(
                     ? null
                     : [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftDeliverySliceV1(slice.SliceId, line.OrderUnit.UnitId,
                         slice.QuantityText, slice.RequestedDeliveryDate))],
-                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode))],
+                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode,
+                line.AddedInRevision is { } added ? SalesDraftApiV1.RevisionText(added) : null))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
@@ -1797,7 +1812,10 @@ public sealed partial class SalesDraftService(
                 draft.CustomerAcceptance?.AcceptedBy, draft.CustomerAcceptance?.AcceptedAtUtc, draft.IsCustomerAccepted,
                 [.. draft.CustomerRejections.Select(rejection => new SalesDraftCustomerRejectionV1(
                     SalesDraftApiV1.RevisionText(rejection.Revision), rejection.RejectedBy, rejection.RejectedAtUtc, rejection.Reason))]),
-            isOwnDraft, isOwnDecisionRestricted);
+            isOwnDraft, isOwnDecisionRestricted,
+            draft.RemovedLines.Count == 0 ? null : [.. draft.RemovedLines.Select(line => new SalesOrderDraftRemovedLineV1(line.Id, line.LineNo,
+                line.Product.ProductId, line.Product.Code, line.Product.Name, line.QuantityText, line.OrderUnit.UnitCode,
+                SalesDraftApiV1.RevisionText(line.RemovedInRevision!.Value), line.ReplacedByLineId))]);
 
     private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>
         new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,

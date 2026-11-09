@@ -487,6 +487,33 @@ public static class ErpPermissions
     public const string SalesOrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D32 / SAT-D168 (EK24) / SAT-D215 (EK37): close a "kapanmaya hazır" order on the user's action (Sales owner name
+    /// SalesPermissionManifestV1.OrdersClose; no reason). Its own name: create, approve, cancel and force-close names do not
+    /// confer it, and it confers none of them. Registration grants nothing: no seeded role and no real user receives it
+    /// (SAT-D168/D188/D190 name the personas; the grant is a human gate). Company-wide only, like the other Sales names. Not
+    /// Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersClose = "sales.orders.close";
+
+    /// <summary>
+    /// SAT-D30 / SAT-D168 (EK24), SAT-D187–D190 (EK28): approve an over-delivery in the tolerance approval band (Sales owner
+    /// name SalesPermissionManifestV1.OrdersOverDeliveryApprove). Its own name: no other Sales name confers it and it confers
+    /// none. Registration grants nothing: no seeded role and no real user receives it; the persona mapping (Satış Uzmanı, Satış
+    /// Müdürü, Genel Müdür, Admin) stays a human gate. Company-wide only, like the other Sales names. Not Critical: no approved
+    /// source adds grant-time dual control. SAT-D216 (the shipper does not approve) is enforced by the Sales command.
+    /// </summary>
+    public const string SalesOrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168 (EK24), SAT-D214 / SAT-D215 / SAT-D216 (EK37): close one order line with a shortfall (Sales owner name
+    /// SalesPermissionManifestV1.OrdersLineClose). Its own name: no other Sales name (the order close, force-close and over-delivery
+    /// names included) confers it and it confers none. Registration grants nothing: no seeded role and no real user receives it;
+    /// the persona mapping stays a human gate. Company-wide only. Not Critical: no approved source adds grant-time dual control.
+    /// SAT-D216 (the shipper does not close their own line) is enforced by the Sales command.
+    /// </summary>
+    public const string SalesOrdersLineClose = "sales.orders.lines.close";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -528,6 +555,44 @@ public static class ErpPermissions
     /// is a human gate. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
     /// </summary>
     public const string SalesInvoicesRead = "sales.invoices.read";
+
+    /// <summary>
+    /// S5 API-32 (Fatura çekirdeği 1; SAT-D7, SAT-D202): prepare a sales invoice draft from approved shipment shares (Sales owner
+    /// name SalesPermissionManifestV1.InvoicesWrite, same string). SAT-D202 names who prepares (Muhasebe, Muhasebe Müdürü, Genel
+    /// Müdür, Admin; Satış sees but does not prepare); the mapping to real users is a grant and a human gate. Its own name: no
+    /// order, price or invoice-read name confers it and it confers none of them (the draft's amounts additionally need
+    /// sales.orders.price.read). Registered, not granted: no seeded role and no real user receives it. Company-wide only, like
+    /// the other Sales names. Not Critical: a draft moves no money; approval (API-33) and finalisation (API-36) are their own names.
+    /// </summary>
+    public const string SalesInvoicesWrite = "sales.invoices.write";
+
+    /// <summary>
+    /// S5 API-33 (Fatura çekirdeği 2; SAT-D88, SAT-D204): approve or reject a submitted sales invoice (Sales owner name
+    /// SalesPermissionManifestV1.InvoicesApprove, same string). Its own name: the invoice write, read and order names do not
+    /// confer it and it confers none of them. Registered, not granted: no seeded role and no real user receives it (who approves
+    /// is a grant and a human gate). Company-wide only. Not Critical: the approval moves no money; the finalisation (API-36) is its
+    /// own name. "Hazırlayan onaylayan olamaz" is a service/domain rule (the preparer and the submitter never decide), not a
+    /// property of this name.
+    /// </summary>
+    public const string SalesInvoicesApprove = "sales.invoices.approve";
+
+    /// <summary>
+    /// S5 API-35 (Fatura çekirdeği 3; SAT-D89, SAT-D106, SAT-D229): match an approved sales invoice with the official document
+    /// (Sales owner name SalesPermissionManifestV1.InvoicesMatch, same string). Its own name: the invoice write, read and approve
+    /// names and the order names do not confer it and it confers none of them. Registered, not granted: no seeded role and no
+    /// real user receives it (who matches is a grant and a human gate). Company-wide only. Not Critical: the match writes no
+    /// money, stock or Finance data (EK20); the finalisation (API-36) is its own name. Approving a difference above the tolerance
+    /// additionally needs sales.invoices.approve and is never the preparer's (a service/domain rule, not a property of this name).
+    /// </summary>
+    public const string SalesInvoicesMatch = "sales.invoices.match";
+
+    /// <summary>
+    /// S5 API-36 (Fatura çekirdeği 4; SAT-D208, Sinan S6): finalise a matched sales invoice and re-drive its Finance hand-off (Sales owner
+    /// name SalesPermissionManifestV1.InvoicesFinalize, same string). Its own name: the invoice write, read, approve and match names and
+    /// the order names do not confer it and it confers none of them. Registered, not granted: no seeded role and no real user receives
+    /// it (who finalises is a grant and a human gate). Company-wide only. Not marked Critical here: the Critical class is a human gate.
+    /// </summary>
+    public const string SalesInvoicesFinalize = "sales.invoices.finalize";
 
     /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80; KPI No 124, No 25, SAT-D25): read the Sales reports — open order quantities, lost
@@ -757,6 +822,20 @@ public static class ErpPermissions
     public const string AccountingApprovedSourceCatalogActivate = "accounting.approved-source-catalog.activate";
 
     /// <summary>
+    /// B-04a (Sinan, #66 6707619685): the Accounting owner's posting account mapping catalog names (read, prepare,
+    /// activate). Registered, not granted: which persona reads, prepares or activates the mapping is a human grant
+    /// decision. Company-wide only; not Critical. Maker-checker (the activator is not the preparer) is enforced by
+    /// the Accounting lifecycle and a database check, not by this catalogue.
+    /// </summary>
+    public const string AccountingPostingMappingsRead = "accounting.posting-mappings.read";
+
+    /// <inheritdoc cref="AccountingPostingMappingsRead"/>
+    public const string AccountingPostingMappingsPrepare = "accounting.posting-mappings.prepare";
+
+    /// <inheritdoc cref="AccountingPostingMappingsRead"/>
+    public const string AccountingPostingMappingsActivate = "accounting.posting-mappings.activate";
+
+    /// <summary>
     /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
     /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
     /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
@@ -888,6 +967,9 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersClose,
+            SalesOrdersOverDeliveryApprove,
+            SalesOrdersLineClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -898,6 +980,10 @@ public static class ErpPermissions
             SalesQuotesRead,
             SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
+            SalesInvoicesWrite,
+            SalesInvoicesApprove,
+            SalesInvoicesMatch,
+            SalesInvoicesFinalize,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -952,6 +1038,9 @@ public static class ErpPermissions
             AccountingJournalReverseApprove,
             AccountingApprovedSourceCatalogPrepare,
             AccountingApprovedSourceCatalogActivate,
+            AccountingPostingMappingsRead,
+            AccountingPostingMappingsPrepare,
+            AccountingPostingMappingsActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -1043,6 +1132,9 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
+            SalesOrdersClose,
+            SalesOrdersOverDeliveryApprove,
+            SalesOrdersLineClose,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1053,6 +1145,10 @@ public static class ErpPermissions
             SalesQuotesRead,
             SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
+            SalesInvoicesWrite,
+            SalesInvoicesApprove,
+            SalesInvoicesMatch,
+            SalesInvoicesFinalize,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -1107,6 +1203,9 @@ public static class ErpPermissions
             AccountingJournalReverseApprove,
             AccountingApprovedSourceCatalogPrepare,
             AccountingApprovedSourceCatalogActivate,
+            AccountingPostingMappingsRead,
+            AccountingPostingMappingsPrepare,
+            AccountingPostingMappingsActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

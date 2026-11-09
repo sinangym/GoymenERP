@@ -12,8 +12,9 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write.
-    public const int Version = 18;
+    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write; v19 (SAT-D32 /
+    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match; v24 (SAT-D17 / SAT-D168): sales.orders.lines.close; v25 (S5 API-36, Fatura çekirdeği 4): sales.invoices.finalize.
+    public const int Version = 25;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -115,6 +116,34 @@ public static class SalesPermissionManifestV1
     public const string OrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// SAT-D32 / SAT-D168 (EK24) / SAT-D215 (EK37): closing a "kapanmaya hazır" order on the user's action — POST …/{id}/close
+    /// (no reason). Its own name: the create, approve, cancel and force-close names do NOT confer it and it confers none of them
+    /// (a force-close is a different act on an order that is NOT ready). Company-wide; not Critical (no approved source adds
+    /// grant-time dual control); registered, granted to no role — SAT-D168/D188/D190 name the personas (Satış Uzmanı, Satış
+    /// Müdürü, Genel Müdür, Admin), the grant itself is a human gate.
+    /// </summary>
+    public const string OrdersClose = "sales.orders.close";
+
+    /// <summary>
+    /// SAT-D30 / SAT-D168 (EK24), SAT-D187–D190 (EK28): approving an over-delivery in the tolerance APPROVAL band — POST
+    /// …/{id}/over-delivery-approval. The decision names Satış Uzmanı, Satış Müdürü, Genel Müdür and Admin; which persona holds
+    /// it is a human gate (registered, granted to no role). Its own name: the create, approve, price, schedule, quantity, cancel
+    /// and force-close names do NOT confer it and it confers none of them. SAT-D216 (the shipper does not approve their own
+    /// over-delivery) is a rule of the command, not of the catalogue. Company-wide; not Critical (no approved source adds
+    /// grant-time dual control).
+    /// </summary>
+    public const string OrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168 (EK24), SAT-D214–D216 (EK37): closing one order line with a shortfall — POST …/{id}/line-closure. The
+    /// decision names Satış Uzmanı, Satış Müdürü, Genel Müdür and Admin; which persona holds it is a human gate (registered,
+    /// granted to no role). Its own name: the order close, force-close, cancel and over-delivery names do NOT confer it and it
+    /// confers none of them. SAT-D216 (the shipper does not close their own line) is a rule of the command. Company-wide; not
+    /// Critical.
+    /// </summary>
+    public const string OrdersLineClose = "sales.orders.lines.close";
+
+    /// <summary>
     /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
     /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
     /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
@@ -160,6 +189,38 @@ public static class SalesPermissionManifestV1
     public const string InvoicesRead = "sales.invoices.read";
 
     /// <summary>
+    /// S5 API-32 (Fatura çekirdeği 1; SAT-D7, SAT-D202): POST /api/v1/sales/invoices — prepare an invoice draft from approved
+    /// shipment shares. Its own name: the invoice read, the order and price names do NOT confer it, and it confers none of them
+    /// (the draft's amounts additionally need <see cref="OrdersPriceRead"/>). SAT-D202 names Muhasebe, Muhasebe Müdürü, Genel
+    /// Müdür and Admin; company-wide; not Critical; registered, granted to no role (the grant is a human gate).
+    /// </summary>
+    public const string InvoicesWrite = "sales.invoices.write";
+
+    /// <summary>
+    /// S5 API-33 (Fatura çekirdeği 2; SAT-D88, SAT-D204): POST /api/v1/sales/invoices/{id}/approval and …/rejection. Its own name:
+    /// the invoice write and read names and the order names do NOT confer it, and it confers none of them. Company-wide; not
+    /// Critical; registered, granted to no role (the grant is a human gate). The preparer and the submitter never decide the same
+    /// invoice — a domain rule, not a property of the name. Submitting and cancelling a draft need <see cref="InvoicesWrite"/>.
+    /// </summary>
+    public const string InvoicesApprove = "sales.invoices.approve";
+
+    /// <summary>
+    /// S5 API-35 (Fatura çekirdeği 3; SAT-D89, SAT-D106, SAT-D229): POST /api/v1/sales/invoices/{id}/external-match. Its own name:
+    /// the invoice write, read and approve names and the order names do NOT confer it, and it confers none of them. Company-wide;
+    /// not Critical; registered, granted to no role (the grant is a human gate). Approving a TL difference above the tolerance
+    /// additionally needs <see cref="InvoicesApprove"/> and is never the preparer's — domain rules, not properties of the name.
+    /// </summary>
+    public const string InvoicesMatch = "sales.invoices.match";
+
+    /// <summary>
+    /// S5 API-36 (Fatura çekirdeği 4; SAT-D208, Sinan S6): POST /api/v1/sales/invoices/{id}/finalization and …/finance-admission (the
+    /// re-drive of the Finance hand-off). Its own SEPARATE name: the invoice write, read, approve and match names and the order names do
+    /// NOT confer it, and it confers none of them. Company-wide; registered, granted to no role (the grant is a human gate). It is also
+    /// the authority the host measures when Finance admits the open items on Sales' behalf.
+    /// </summary>
+    public const string InvoicesFinalize = "sales.invoices.finalize";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80): GET /api/v1/sales/reports/open-orders (KPI No 124, the open order quantity), …/lost-
     /// opportunities (SAT-D25 lost quotes) and …/price-variance (No 25). Its own name: the order, quote, invoice and price names do
     /// NOT confer it, and it confers none of them — a report's amount additionally needs <see cref="OrdersPriceRead"/> (withheld
@@ -171,7 +232,7 @@ public static class SalesPermissionManifestV1
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
-            QuotesExpiredConversionApprove, InvoicesRead, ReportsRead }
+            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, OrdersLineClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, InvoicesApprove, InvoicesMatch, InvoicesFinalize, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

@@ -49,6 +49,41 @@ public sealed class PurchaseRequestLineSourceTests
     }
 
     [Fact]
+    public void A_new_line_cannot_record_a_sales_source_until_MOD_03_but_a_stored_one_stays_readable()
+    {
+        // A1-2b (SAT-D219, SAT-D220; fail-closed): Sales is closed for new lines until MOD-03 validates the sales order line
+        // through its reference port and wires the linked-supply read adaptor in the same delivery.
+        Assert.False(PurchaseRequestLineSource.IsOpenForNewLines(PurchaseRequestSourceKind.Sales));
+        var refusal = Assert.Throws<PurchasingRuleException>(() =>
+            PurchaseRequestLineSource.ForNewLine(PurchaseRequestSourceKind.Sales, Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Equal(PurchasingRuleCodes.RequestSourceSalesUnavailable, refusal.Code);
+        Assert.Equal("purchasing_request_source_sales_unavailable", PurchasingRuleCodes.RequestSourceSalesUnavailable);
+
+        // A line recorded before A1-2b is rebuilt through Of, which this never narrows.
+        var stored = PurchaseRequestLineSource.Of(PurchaseRequestSourceKind.Sales, Guid.NewGuid(), Guid.NewGuid());
+        Assert.Equal(PurchaseRequestSourceKind.Sales, stored.Kind);
+    }
+
+    [Theory]
+    [InlineData(PurchaseRequestSourceKind.Stock)]
+    [InlineData(PurchaseRequestSourceKind.Production)]
+    public void Stock_and_production_stay_open_for_new_lines(PurchaseRequestSourceKind kind)
+    {
+        var document = Guid.NewGuid();
+        var documentLine = Guid.NewGuid();
+        Assert.True(PurchaseRequestLineSource.IsOpenForNewLines(kind));
+        Assert.Equal(PurchaseRequestLineSource.Of(kind, document, documentLine), PurchaseRequestLineSource.ForNewLine(kind, document, documentLine));
+    }
+
+    [Fact]
+    public void A_new_line_with_an_undefined_kind_or_an_empty_identity_is_still_refused_as_before()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseRequestLineSource.ForNewLine((PurchaseRequestSourceKind)0, Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseRequestLineSource.ForNewLine((PurchaseRequestSourceKind)4, Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Throws<ArgumentException>(() => PurchaseRequestLineSource.ForNewLine(PurchaseRequestSourceKind.Stock, Guid.Empty, Guid.NewGuid()));
+    }
+
+    [Fact]
     public void The_stored_kind_numbers_never_change_meaning()
     {
         Assert.Equal((1, 2, 3), ((int)PurchaseRequestSourceKind.Stock, (int)PurchaseRequestSourceKind.Sales, (int)PurchaseRequestSourceKind.Production));

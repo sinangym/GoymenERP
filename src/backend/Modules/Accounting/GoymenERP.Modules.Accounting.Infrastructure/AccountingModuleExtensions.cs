@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -79,6 +80,19 @@ public static class AccountingModuleExtensions
             serviceProvider.GetRequiredService<AccountingJournalReversalServiceV1>());
         services.AddScoped<AccountingJournalReversalPublicServiceV1>();
         services.AddScoped<ApprovedAccountingSourceCatalogServiceV1>();
+        // B-04a: the posting account mapping catalog and its read port for the invoice voucher draft.
+        services.AddScoped<AccountingPostingAccountMappingStoreV1>();
+        services.AddScoped<IAccountingPostingAccountMappingStoreV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<AccountingPostingAccountMappingStoreV1>());
+        services.AddScoped<IAccountingPostingAccountMappingResolverV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<AccountingPostingAccountMappingStoreV1>());
+        services.AddScoped<AccountingPostingAccountMappingServiceV1>();
+        // B-04b: the source document acceptance port. The authority measurement is host-provided (never registered here:
+        // with none composed the port answers Unavailable); no permission and no grant are added.
+        services.TryAddScoped<IAccountingSourceDocumentAdmissionAuthorityV1,
+            UnavailableAccountingSourceDocumentAdmissionAuthorityV1>();
+        services.AddScoped<IAccountingSourceDocumentAdmissionStoreV1, AccountingSourceDocumentAdmissionStoreV1>();
+        services.AddScoped<IAccountingSourceDocumentAdmissionPortV1, AccountingSourceDocumentAdmissionServiceV1>();
         services.AddScoped<AccountingApiService>();
         return services;
     }

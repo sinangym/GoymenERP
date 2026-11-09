@@ -180,6 +180,7 @@ builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatus
 builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
+builder.Services.AddSalesFinanceAdmissionHost();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, FinanceInvoiceImportPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockCountPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockScrapPendingApprovalAdapterV1>();
@@ -310,6 +311,9 @@ builder.Services.AddManufacturingModule(
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
 builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1, ManufacturingInventoryReturnOutputHost>();
+// Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure commit with Inventory's
+// plan-input allocation or its release in one transaction.
+builder.Services.AddScoped<IManufacturingPlanAllocationPortV1, ManufacturingPlanAllocationHost>();
 builder.Services.AddScoped<IManufacturingOutputSelectionV1, ManufacturingOutputSelectionReader>();
 builder.Services.AddSalesModule(
     builder.Configuration,
@@ -353,6 +357,11 @@ builder.Services.AddLogisticsModule(
 // 503 product_eligibility_unavailable, fail-closed.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
 builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
+// A4 / MOD-03 (SAT-D219/D220): Purchasing's Sales-facing adapters live in the host (Purchasing does not reference Sales): the
+// linked-supply read (SupplyKind Purchasing) with its recorder declaration, and the Sales-sourced request line reader.
+builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, PurchasingSalesOrderLinkedSupplyReadPort>();
+builder.Services.AddSingleton<ISalesOrderLinkedSupplyRecorderV1, PurchasingSalesOrderLinkedSupplyRecorder>();
+builder.Services.AddScoped<IPurchaseRequestSalesSourcePortV1, PurchasingRequestSalesSourcePort>();
 builder.Services.AddSingleton(new PurchasingServiceBindings(
     GoodsReceiptPermission: ErpPermissions.PurchasingGoodsReceiptsRecord));
 builder.Services.AddScoped<PurchaseGoodsReceiptHost>();

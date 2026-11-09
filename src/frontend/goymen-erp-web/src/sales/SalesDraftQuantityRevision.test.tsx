@@ -13,7 +13,7 @@ import revisionsRaw from './examples/revisions-response.json?raw'
 import { SALES_QUANTITY_WRITE_CAPABILITY } from './capabilities'
 import { buildQuantityRevisionRequest, sameQuantity } from './quantityRevision'
 import { resetPendingQuantityRevisions } from './pendingQuantityRevisions'
-import { ORDER_DETAIL_TEXT, REVISION_HISTORY_TEXT } from './salesText'
+import { ORDER_DETAIL_TEXT, REINSTATEMENT_PENDING_TEXT, REVISION_HISTORY_TEXT } from './salesText'
 import { ALL_SALES, COMPANY_A, installFetch, json, renderSalesApp } from './testHarness'
 
 const T = ORDER_DETAIL_TEXT.quantityRevision
@@ -163,6 +163,28 @@ describe('S-04 quantity revision (DEC-SAL-002, AT-023)', () => {
     const alert = await within(form).findByRole('alert')
     expect(alert.textContent).toContain(T.belowShipped(1))
     expect(alert.textContent).not.toContain(T.belowLoaded(1))
+    expect(revisionPosts(harness.calls)).toHaveLength(1)
+    expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
+  })
+
+  it('SAT-D211: says the line revision must open the next revision first when a customer-rejected removal waits to be reinstated', async () => {
+    const harness = installFetch({
+      capabilities: WITH_QUANTITY,
+      onDetail: () => json(detail()),
+      onQuantityRevision: () => json({
+        status: 422, title: 'Unprocessable', code: 'validation_failed', correlationId: 'c-pending',
+        errors: [{ field: 'lines', code: 'sales_revision_reinstatement_pending' }],
+      }, 422),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    fireEvent.click(within(await screen.findByTestId('sales-quantity-revision')).getByRole('button', { name: T.open }))
+    const form = await screen.findByTestId('sales-quantity-revision-form')
+    fireEvent.change(within(form).getByLabelText(T.quantity('44444444-4444-4444-4444-444444444444')), { target: { value: '1200' } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'neden' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+
+    const alert = await within(form).findByRole('alert')
+    expect(alert.textContent).toContain(REINSTATEMENT_PENDING_TEXT)
     expect(revisionPosts(harness.calls)).toHaveLength(1)
     expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
   })

@@ -454,7 +454,8 @@ function RevisionForm({
 
   function submit() {
     // The version this form was opened on: a quote that moved since answers 409 and is re-read (the typed rows stay).
-    const result = validateQuoteRevision(values, detail.quote.version)
+    // SAT-D132: the revision replaces the terms as a whole; the shown due terms ride along so a revise never drops them.
+    const result = validateQuoteRevision(values, detail.quote.version, detail.dueTerms)
     if (!result.ok) {
       setErrors(result.errors)
       return

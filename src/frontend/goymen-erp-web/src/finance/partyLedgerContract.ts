@@ -3,7 +3,8 @@
  * strictly: exact keys, the context company, one currency per block, every amount as the server disclosed it.
  *
  * What the ledger is: one party account's RECORDED Finance facts in an inclusive date range — admitted open items,
- * recorded receipts, their reversals (their own rows), cheque / note collections and recorded payments — per currency,
+ * recorded receipts, their reversals (their own rows), cheque / note collections, recorded payments and invoice
+ * cancellations' open-item reversals (F2b, their own rows) — per currency,
  * with a running balance that starts at ZERO on the first day (OPEN-018: no carry-forward / devir). Currencies are
  * never converted or added (OPEN-012). The client computes nothing: sides, balances and totals are the server's.
  *
@@ -23,6 +24,8 @@ export const PARTY_LEDGER_ENTRY_KINDS = [
   'CustomerInstrumentCollection',
   'ManualBankPayment',
   'PayableOpenItem',
+  'OpenItemCancellation',
+  'PayableOpenItemCancellation',
 ] as const
 export type PartyLedgerEntryKind = (typeof PARTY_LEDGER_ENTRY_KINDS)[number]
 export type PartyLedgerSide = 'Debit' | 'Credit'
@@ -148,10 +151,18 @@ const SIDE_OF: Readonly<Record<PartyLedgerEntryKind, PartyLedgerSide>> = {
   CustomerInstrumentCollection: 'Credit',
   ManualBankPayment: 'Debit',
   PayableOpenItem: 'Credit',
+  OpenItemCancellation: 'Credit',
+  PayableOpenItemCancellation: 'Debit',
 }
 
 /** A receivable or a payable open item (MOD-15): the two kinds that carry the invoice document and due date. */
 const isOpenItemKind = (kind: PartyLedgerEntryKind) => kind === 'OpenItem' || kind === 'PayableOpenItem'
+
+/** F2b: an invoice cancellation's reversal of one open item — the item is its entry, source and reversed id. */
+const isCancellationKind = (kind: PartyLedgerEntryKind) =>
+  kind === 'OpenItemCancellation' || kind === 'PayableOpenItemCancellation'
+
+const isReversalKind = (kind: PartyLedgerEntryKind) => kind === 'ManualReceiptReversal' || isCancellationKind(kind)
 
 function decodeEntry(value: unknown, currencyId: string, from: string, to: string): PartyLedgerEntry | null {
   if (!isRecord(value) || !hasExactKeys(value, ENTRY_KEYS)) return null
@@ -164,10 +175,12 @@ function decodeEntry(value: unknown, currencyId: string, from: string, to: strin
     return null
   }
   // Each link belongs to its kind only.
-  if ((value.reversesSourceId === null) !== (kind !== 'ManualReceiptReversal')) return null
+  if ((value.reversesSourceId === null) === isReversalKind(kind)) return null
   if (value.instrumentId !== null && kind !== 'CustomerInstrumentCollection') return null
-  if (!isOpenItemKind(kind) && (value.documentId !== null || value.dueOn !== null)) return null
-  if (isOpenItemKind(kind) && value.documentId === null) return null
+  if (!isOpenItemKind(kind) && value.dueOn !== null) return null
+  if (!isOpenItemKind(kind) && !isCancellationKind(kind) && value.documentId !== null) return null
+  if ((isOpenItemKind(kind) || isCancellationKind(kind)) && value.documentId === null) return null
+  if (isCancellationKind(kind) && (value.sourceId !== value.entryId || value.reversesSourceId !== value.entryId)) return null
   const amount = decodeAmount(value.amount, currencyId, false)
   const runningBalance = decodeBalance(value.runningBalance, currencyId)
   if (amount === null || runningBalance === null || amount.disclosure !== runningBalance.amount.disclosure) return null
