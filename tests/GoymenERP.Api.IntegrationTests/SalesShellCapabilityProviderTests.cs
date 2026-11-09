@@ -42,6 +42,9 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
                 // UI-61 (Sales 1.9): the S-08 invoice candidates on their own name.
                 ("sales.invoice-candidates.list", "/satis/faturaya-hazir", SalesPermissionManifestV1.InvoicesRead, null),
+                // UI-63 (Sales 1.19): the S-09 invoice list on the invoice read plus the price read its list read measures.
+                ("sales.invoices.list", "/satis/faturalar",
+                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}", null),
                 ("sales.orders.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
                 ("sales.orders.cancel", "/satis/siparisler/:draftId",

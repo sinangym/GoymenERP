@@ -78,6 +78,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.InvoicesApprove, ErpPermissions.SalesInvoicesApprove)]
     // S5 API-35 (Fatura çekirdeği 3; SAT-D89/D106): the official match's own name, company-wide, not Critical, granted to no role.
     [InlineData(SalesPermissionManifestV1.InvoicesMatch, ErpPermissions.SalesInvoicesMatch)]
+    // S5 API-36 (SAT-D208): the finalisation name; not Critical by SAT-D249 (replaces SAT-D235 (1)).
     [InlineData(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize)]
     // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
     // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
@@ -90,6 +91,20 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         Assert.Single(ErpPermissions.All, known => known == ownerName);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(ownerName));
         Assert.False(ErpPermissions.IsCritical(ownerName));
+    }
+
+    [Fact]
+    public void The_finalize_name_is_registered_company_wide_and_no_sales_name_is_critical_under_sat_d249()
+    {
+        // SAT-D249 (SINAN_KARARLARI_2026-11-09_SATIS_EK49.md, replaces SAT-D235 (1)): sales.invoices.finalize is NOT Critical; it
+        // stays a normal, company-wide permission with no grant here. No Sales name is in the Critical class.
+        Assert.Equal(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize);
+        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.Single(ErpPermissions.All, known => known == SalesPermissionManifestV1.InvoicesFinalize);
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.False(ErpPermissions.IsCritical(SalesPermissionManifestV1.InvoicesFinalize));
+        Assert.DoesNotContain(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.Critical);
+        Assert.DoesNotContain(SalesPermissionManifestV1.Names, ErpPermissions.IsCritical);
     }
 
     [Fact]
@@ -142,8 +157,11 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // (UI-60 / UI-61) the S-07 dispatch list and the S-08 invoice candidates; Sales 1.10 (SAT-D24 / SAT-D44) the expired-quote
         // approval control; Sales 1.11 (UI-80) the reports screen; Sales 1.12 (API-04) the header-revision control; Sales 1.13
         // (SAT-D32) the user-closure control.
-        // (SAT-D30) the over-delivery approval control; Sales 1.17 (SAT-D17) the line-closure control.
-        Assert.Equal(28, sales.Length);
+        // (SAT-D30) the over-delivery approval control; Sales 1.17 (SAT-D17) the line-closure control; Sales 1.19 (UI-63) the
+        // S-09 invoice list screen.
+        Assert.Equal(29, sales.Length);
+        Assert.Null(Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.InvoiceListCapabilityId)
+            .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.RequestDetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.RequestApproveCapabilityId)
                 .Declaration.ParentCapabilityId);

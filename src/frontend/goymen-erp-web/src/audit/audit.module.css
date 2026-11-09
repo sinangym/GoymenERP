@@ -1,0 +1,183 @@
+/*
+ * "Denetim kaydı" styling — the Identity view's token set: colour is never the only carrier of meaning, focus is always
+ * visible, and nothing forces the page body to scroll sideways at 400px (the table and the payloads scroll in their
+ * own containers instead).
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  color: #0f172a;
+}
+
+.page h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+  color: #0f172a;
+}
+
+.lead,
+.note,
+.muted {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  max-width: 80ch;
+}
+
+.note {
+  color: #334155;
+  border-left: 3px solid #0b6fe8;
+  padding-left: 10px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.filters input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.filters input:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 1px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 0 0 8px;
+  color: #0f172a;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.table th {
+  color: #475569;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.eventRow td {
+  border-bottom: none;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.secondary {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.details summary {
+  cursor: pointer;
+  color: #0b6fe8;
+}
+
+.details summary:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+.payloads {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.payloads h3 {
+  font-size: 0.85rem;
+  margin: 0 0 4px;
+  color: #334155;
+}
+
+.payload {
+  margin: 0;
+  padding: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.footer p {
+  margin: 0;
+}
+
+.notice {
+  border: 1px solid #fdba74;
+  background: #fff7ed;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.notice p {
+  margin: 0;
+}

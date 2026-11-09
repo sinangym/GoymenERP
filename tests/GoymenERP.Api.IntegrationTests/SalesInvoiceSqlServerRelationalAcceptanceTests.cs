@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -340,6 +341,47 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             + "Tolerance, MatchedBy, MatchedAtUtc, CorrelationId FROM sales.InvoiceMatches WHERE InvoiceId = @first",
             ("@second", second.Id), ("@first", approved.Id)));
         Assert.Contains(duplicate.Number, new[] { 2601, 2627 });
+    }
+
+    [SqlServerFact]
+    public async Task A_foreign_currency_tl_difference_of_six_kurus_writes_nothing_without_approval_and_is_stored_approved_on_real_sql()
+    {
+        // SAT-D232: the USD invoice is measured on its TL equivalent; 0,06 TL is above the 0,05 TL tolerance, so an unapproved match
+        // writes no row, attempt or audit event, and the approved one stores the approver and the reason (CK_InvoiceMatches_Amounts).
+        await using var run = await Run.StartAsync();
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var approved = await ApprovedAsync(run, "m6", approver);
+        Assert.Equal(Usd, approved.Header.CurrencyId);
+        var tolerance = new SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000006", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+            approved.Totals.Payable.Amount, approved.PayableFunctionalAmount + 0.06m);
+        var envelope = run.Envelope("m6-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<SalesRuleException>(() => scope.Invoices.MatchInvoiceAsync(envelope, Hash('a'), approved.Id,
+                (invoice, now) => invoice.RecordMatch(3, matcher, official, tolerance, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK")));
+            Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'", ("@id", approved.Id)));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var matched = await scope.Invoices.MatchInvoiceAsync(envelope, Hash('b'), approved.Id,
+                (invoice, now) => invoice.RecordMatch(3, matcher, official, tolerance, true, "SENTETIK kur yuvarlama farkı", now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+            Assert.Equal((SalesDraftWriteOutcome.Recorded, 0.06m), (matched!.Outcome, matched.Invoice.Match!.Difference));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id AND Difference = 0.06 AND Tolerance = 0.05 "
+            + "AND DifferenceApprovedBy = @m AND DifferenceReason IS NOT NULL AND OfficialAmount = @official",
+            ("@id", approved.Id), ("@m", matcher), ("@official", approved.PayableFunctionalAmount + 0.06m)));
     }
 
     [SqlServerFact]

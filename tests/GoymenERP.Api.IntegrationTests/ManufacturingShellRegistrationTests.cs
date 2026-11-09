@@ -57,13 +57,14 @@ public sealed class ManufacturingShellRegistrationTests
         // list, published, and (MFG-PLAN-LIST, 1.3) the saved-plan list. A declaration still grants nothing: each
         // route's service measures its own Manufacturing permission afresh, and the close measures its own name on
         // top of the read. MFG-PLAN-EDIT (1.4) adds the plan-detail edit control (plans.read + plans.write).
-        Assert.Equal(11, manufacturing.Length);
+        // TAKIP-URT-02 (1.6) adds the plan-detail cancel control (plans.read + plans.cancel).
+        Assert.Equal(12, manufacturing.Length);
         string[] expected =
         [
             "manufacturing.orders.close", "manufacturing.orders.close-exception-approve",
             "manufacturing.orders.detail", "manufacturing.orders.facts",
             "manufacturing.orders.list",
-            "manufacturing.plans.approve", "manufacturing.plans.create", "manufacturing.plans.detail",
+            "manufacturing.plans.approve", "manufacturing.plans.cancel", "manufacturing.plans.create", "manufacturing.plans.detail",
             "manufacturing.plans.edit", "manufacturing.plans.list", "manufacturing.plans.order-create",
         ];
         Assert.Equal(expected,
