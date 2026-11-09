@@ -6,8 +6,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// translates it to Sales's <c>ISalesOrderLinkedSupplyReadPortV1</c>. It answers the OPEN purchase order lines that serve a Sales
 /// order through the request line source (<c>SourceKind = Sales</c>, <c>SourceDocumentId = orderId</c>, index
 /// <c>IX_PurchaseRequestLines_Source</c>): an APPROVED order (a Draft reserves nothing, a Cancelled one is not future supply) whose
-/// line still has a remainder above zero. The source id is OPAQUE (Purchasing never validated it against Sales), so an unknown
-/// order is simply an empty answer. It carries no authority and creates nothing. The company must be the caller's server-resolved
+/// line still has a remainder above zero. Since A4b a Sales-sourced line is recorded only after Sales's approved-line port verified it, but this read still
+/// does not call Sales: an unknown order is simply an empty answer. It carries no authority and creates nothing. The company must be the caller's server-resolved
 /// company; a different one is refused (never read unscoped).
 /// </summary>
 public interface IPurchaseSalesLinkedSupplyReadPortV1

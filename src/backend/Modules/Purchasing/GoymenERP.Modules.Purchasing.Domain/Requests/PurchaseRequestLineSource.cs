@@ -71,6 +71,6 @@ public sealed record PurchaseRequestLineSource
         bool salesLineVerified = false) =>
         Enum.IsDefined(kind) && !IsOpenForNewLines(kind) && !(kind == PurchaseRequestSourceKind.Sales && salesLineVerified)
             ? throw new PurchasingRuleException(PurchasingRuleCodes.RequestSourceSalesUnavailable,
-                "Satış kaynaklı talep satırı, Satış sipariş satırı doğrulaması ve bağlı tedarik okuma bağdaştırıcısı (MOD-03) gelene kadar kaydedilemez.")
+                "Satış kaynaklı talep satırı, Satış sipariş satırı Satış tarafından onaylı olarak doğrulanmadan kaydedilemez.")
             : Of(kind, documentId, documentLineId);
 }
