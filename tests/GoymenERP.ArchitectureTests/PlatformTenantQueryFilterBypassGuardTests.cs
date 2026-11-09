@@ -1688,8 +1688,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // API-36 (Fatura kesinlestirme): the invoice store also feeds the finalize path and the optional finance admission port (DI-only,
                     // fail-closed 503 when unregistered); provider branch and token counts unchanged (e6274962... -> a3fdee0a...).
                     // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 846faead...; with API-36 also feeding the finalize path).
+                    // Re-fingerprinted after #998: comments only (Purchasing's linked-supply adapter and recorder are now registered
+                    // by the host; Production's are not); provider branch and token counts unchanged (7fc85621... -> b7241b6f...).
                     new(
-                        "7fc856210e3d20e487e046b9d24bd96ea6f9880cd95fbb586f457e1ca8db5d9d",
+                        "b7241b6f0fec2274bc8924f1af17406cc447336eb00178a49db43e81f30619c5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
