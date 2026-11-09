@@ -52,7 +52,9 @@ public interface ISalesOfficialInvoiceReadPortV1
 /// <summary>
 /// SAT-D229 (Sinan S1): the amount tolerance of the official match, measured on the TL equivalent, inclusive. 0.05 TL is the
 /// decided default of Satış's own configuration surface; the Ayarlar link is deferred (SAT-D209), so the value is a configured
-/// option, never a literal in the comparison. The tolerance in force is stored on every match.
+/// option, never a literal in the comparison. The tolerance in force is stored on every match. SAT-D232 (9 Nov 2026) confirms the
+/// same 0,05 TL for a foreign-currency invoice, measured on the TL equivalent at the invoice's own locked rate; there is no separate
+/// invoice-currency tolerance.
 /// </summary>
 public sealed class SalesInvoiceMatchTolerancePolicy
 {
