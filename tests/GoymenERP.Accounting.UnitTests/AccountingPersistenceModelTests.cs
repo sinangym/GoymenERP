@@ -25,6 +25,8 @@ public sealed class AccountingPersistenceModelTests
         typeof(PostingExceptionRow), typeof(PendingValuationRow), typeof(AccountingCommandRow),
         typeof(NormalJournalDraftRow), typeof(NormalJournalDraftLineRow),
         typeof(AccountingPostingAccountMappingVersionRow), typeof(AccountingPostingAccountMappingEntryRow),
+        typeof(AccountingSourceDocumentAdmissionRow), typeof(AccountingSourceDocumentVoucherDraftRow),
+        typeof(AccountingSourceDocumentVoucherDraftLineRow),
     ];
 
     [Fact]
@@ -129,8 +131,9 @@ public sealed class AccountingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliveryRequestHash", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddPeriodApproval", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddNormalJournalDrafts", StringComparison.Ordinal));
-        Assert.Equal(["20261002063616_AddApprovedAccountingSourceCatalog", "20261107140038_AddPostingAccountMappings"],
-            context.Database.GetMigrations().TakeLast(2));
+        Assert.Equal(["20261002063616_AddApprovedAccountingSourceCatalog", "20261107140038_AddPostingAccountMappings",
+                "20261108222146_AddSourceDocumentAdmissions"],
+            context.Database.GetMigrations().TakeLast(3));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -172,6 +175,35 @@ public sealed class AccountingPersistenceModelTests
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51212", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void Source_document_admissions_keep_one_row_per_key_and_document_and_a_forward_fix_down()
+    {
+        using var context = Context();
+        var designModel = context.GetService<IDesignTimeModel>().Model;
+        var admissions = context.Model.FindEntityType(typeof(AccountingSourceDocumentAdmissionRow))!;
+        Assert.Equal(["CompanyId", "SourceDocumentId"], admissions.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        foreach (var name in new[] { "UX_SourceDocumentAdmissions_Key", "UX_SourceDocumentAdmissions_Document" })
+        {
+            Assert.True(Assert.Single(admissions.GetIndexes(), index => index.GetDatabaseName() == name).IsUnique);
+        }
+
+        Assert.True(admissions.FindProperty(nameof(AccountingSourceDocumentAdmissionRow.Version))!.IsConcurrencyToken);
+        var checks = designModel.FindEntityType(typeof(AccountingSourceDocumentAdmissionRow))!.GetCheckConstraints()
+            .ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Contains(AccountingDbContext.SourceDocumentAdmissionStatusCheck, checks.Values);
+
+        var drafts = context.Model.FindEntityType(typeof(AccountingSourceDocumentVoucherDraftRow))!;
+        Assert.Equal(["CompanyId", "Id"], drafts.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var lines = context.Model.FindEntityType(typeof(AccountingSourceDocumentVoucherDraftLineRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "LineNumber"], lines.FindPrimaryKey()!.Properties.Select(property => property.Name));
+
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddSourceDocumentAdmissions();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51240", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
     }
 

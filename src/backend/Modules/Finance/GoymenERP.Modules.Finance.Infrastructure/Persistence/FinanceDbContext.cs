@@ -58,6 +58,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceAllocationRow> Allocations => Set<FinanceAllocationRow>();
 
+    /// <summary>F3a / API-20: a recorded payment's distribution to payable items, and its per-payment balance.</summary>
+    internal DbSet<FinancePaymentAllocationRow> PaymentAllocations => Set<FinancePaymentAllocationRow>();
+
+    internal DbSet<FinancePaymentAllocationStateRow> PaymentAllocationStates => Set<FinancePaymentAllocationStateRow>();
+
     internal DbSet<ReversalProposalRow> ReversalProposals => Set<ReversalProposalRow>();
 
     internal DbSet<ManualBankPaymentRow> ManualBankPayments => Set<ManualBankPaymentRow>();
@@ -91,6 +96,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureOutgoingMoneyEvents(modelBuilder);
         ConfigureCustomerInstruments(modelBuilder);
         ConfigureCustomerInstrumentMovements(modelBuilder);
+        ConfigurePaymentAllocations(modelBuilder);
+        ConfigurePaymentAllocationStates(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -630,6 +637,79 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// F3a / API-20 (DEC-FIN-006): a recorded manual bank payment applied to an open payable item. Its own table, so the
+    /// receipt allocation's keys and foreign keys keep their meaning; the status rule is the receipt allocation's.
+    /// </summary>
+    private void ConfigurePaymentAllocations(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FinancePaymentAllocationRow>();
+        entity.ToTable("PaymentAllocations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PaymentAllocations_Identity", PaymentAllocationIdentityCheck);
+            table.HasCheckConstraint("CK_PaymentAllocations_Text",
+                "LEN([AmountText]) > 0 AND LEN([Reason]) > 0 AND LEN([CreatedBy]) > 0");
+            table.HasCheckConstraint("CK_PaymentAllocations_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_PaymentAllocations_Status", AllocationStatusCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.CreatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ReleasedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.ReleaseReason).HasMaxLength(1000);
+        entity.HasIndex(x => new { x.CompanyId, x.PaymentId, x.Status });
+        entity.HasIndex(x => new { x.CompanyId, x.OpenItemId, x.Status });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ManualBankPaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<FinanceOpenItemRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpenItemId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigurePaymentAllocationStates(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FinancePaymentAllocationStateRow>();
+        entity.ToTable("PaymentAllocationStates", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PaymentAllocationStates_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[PaymentId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PaymentAllocationStates_Text",
+                "LEN([OriginalAmountText]) > 0 AND LEN([UnallocatedAmountText]) > 0 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_PaymentAllocationStates_Version", "[Version] >= 1");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.PaymentId });
+        entity.Property(x => x.OriginalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.UnallocatedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ManualBankPaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    internal const string PaymentAllocationIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+        + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+        + "[PaymentId] <> '00000000-0000-0000-0000-000000000000' AND "
+        + "[OpenItemId] <> '00000000-0000-0000-0000-000000000000' AND "
+        + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'";
+
     internal const string AllocationStatusCheck =
         "([Status] = 1 AND [ReleasedBy] IS NULL AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL) OR "
         + "([Status] = 2 AND [ReleasedBy] IS NOT NULL AND LEN([ReleasedBy]) > 0 "
@@ -971,6 +1051,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Finans dağıtımı yalnız aktif durumdan sürümlü serbest bırakma ile değişir.");
                 }
 
+                if (entry.Entity is FinancePaymentAllocationRow paymentAllocation
+                    && !IsAllowedPaymentAllocationRelease(entry, paymentAllocation))
+                {
+                    throw new InvalidOperationException(
+                        "Ödeme dağıtımı yalnız aktif durumdan sürümlü serbest bırakma ile değişir.");
+                }
+
                 if (entry.Entity is CustomerInstrumentRow instrument
                     && !IsAllowedCustomerInstrumentChange(entry, instrument))
                 {
@@ -1028,6 +1115,18 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                     [
                         nameof(FinanceAllocationRow.Status), nameof(FinanceAllocationRow.ReleasedBy),
                         nameof(FinanceAllocationRow.ReleasedAtUtc), nameof(FinanceAllocationRow.ReleaseReason),
+                    ],
+                    FinancePaymentAllocationRow =>
+                    [
+                        nameof(FinancePaymentAllocationRow.Status), nameof(FinancePaymentAllocationRow.ReleasedBy),
+                        nameof(FinancePaymentAllocationRow.ReleasedAtUtc),
+                        nameof(FinancePaymentAllocationRow.ReleaseReason),
+                    ],
+                    FinancePaymentAllocationStateRow =>
+                    [
+                        nameof(FinancePaymentAllocationStateRow.UnallocatedAmountText),
+                        nameof(FinancePaymentAllocationStateRow.UpdatedBy),
+                        nameof(FinancePaymentAllocationStateRow.UpdatedAtUtc),
                     ],
                     FinanceOpenItemRow =>
                     [
@@ -1137,6 +1236,23 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && entry.OriginalValues[nameof(FinanceAllocationRow.ReleasedBy)] is null
             && entry.OriginalValues[nameof(FinanceAllocationRow.ReleasedAtUtc)] is null
             && entry.OriginalValues[nameof(FinanceAllocationRow.ReleaseReason)] is null
+            && !string.IsNullOrWhiteSpace(current.ReleasedBy)
+            && current.ReleasedAtUtc is not null
+            && !string.IsNullOrWhiteSpace(current.ReleaseReason);
+    }
+
+    private static bool IsAllowedPaymentAllocationRelease(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        FinancePaymentAllocationRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(FinancePaymentAllocationRow.Status)]!;
+        var originalVersion = (long)entry.OriginalValues[nameof(FinancePaymentAllocationRow.Version)]!;
+        return originalStatus == FinanceAllocationStatuses.Active
+            && current.Status == FinanceAllocationStatuses.Released
+            && current.Version == checked(originalVersion + 1)
+            && entry.OriginalValues[nameof(FinancePaymentAllocationRow.ReleasedBy)] is null
+            && entry.OriginalValues[nameof(FinancePaymentAllocationRow.ReleasedAtUtc)] is null
+            && entry.OriginalValues[nameof(FinancePaymentAllocationRow.ReleaseReason)] is null
             && !string.IsNullOrWhiteSpace(current.ReleasedBy)
             && current.ReleasedAtUtc is not null
             && !string.IsNullOrWhiteSpace(current.ReleaseReason);

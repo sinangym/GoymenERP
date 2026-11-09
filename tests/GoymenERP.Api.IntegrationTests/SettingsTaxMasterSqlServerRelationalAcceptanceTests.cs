@@ -617,8 +617,15 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.Equal(code, body.GetProperty("code").GetString());
     }
 
-    private static DateOnly IstanbulToday() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow,
+    private static DateOnly IstanbulToday() => IstanbulToday(TimeProvider.System);
+
+    private static DateOnly IstanbulToday(TimeProvider clock) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(),
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul")).DateTime);
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 
     private static async Task DropDatabaseAsync(string baseConnectionString, string databaseName)
     {
@@ -686,20 +693,31 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
     {
         private readonly string baseConnectionString;
 
-        private HostRun(string baseConnectionString, SqlServerRelationalApiFactory factory)
+        private HostRun(string baseConnectionString, SqlServerRelationalApiFactory factory, TimeProvider clock)
         {
             this.baseConnectionString = baseConnectionString;
             Factory = factory;
+            Today = IstanbulToday(clock);
         }
 
         public SqlServerRelationalApiFactory Factory { get; }
 
-        public DateOnly Today { get; } = IstanbulToday();
+        /// <summary>
+        /// The business date (Europe/Istanbul) of the tax master administration's server clock, which is fixed at the start
+        /// of the run: the server's "today" stays this date even when the run crosses Istanbul midnight (21:00 UTC).
+        /// </summary>
+        public DateOnly Today { get; }
 
         public static async Task<HostRun> StartAsync()
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var run = new HostRun(baseConnectionString, new SqlServerRelationalApiFactory(baseConnectionString));
+            // Only the tax master administration (the one server reader of the business date here) takes the fixed
+            // clock; Identity and the other modules keep the system clock, so the synthetic grants stay in force.
+            TimeProvider clock = new FixedClock(DateTimeOffset.UtcNow);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
+                services.Replace(ServiceDescriptor.Scoped<ISettingsTaxMasterAdministrationV1>(provider =>
+                    ActivatorUtilities.CreateInstance<SettingsTaxMasterAdministration>(provider, clock))));
+            var run = new HostRun(baseConnectionString, factory, clock);
             using var client = run.Factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
             health.EnsureSuccessStatusCode();

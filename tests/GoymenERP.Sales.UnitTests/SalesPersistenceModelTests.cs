@@ -130,7 +130,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceOfficialMatch", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesInvoiceFinalization", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddQuoteDueTerms", StringComparison.Ordinal));
-        Assert.Equal("20261108143000_AddSalesInvoiceFinalization", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftLineIdentityForeignKeys", StringComparison.Ordinal));
+        Assert.Equal("20261108194345_AddDraftLineIdentityForeignKeys", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -818,7 +819,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(["CompanyId", "DraftId", "LineId", "ApprovalNo"], approvals.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Equal(("sales", "DraftOverDeliveryApprovals"), (approvals.GetSchema(), approvals.GetTableName()));
         Assert.True(UniqueIndex(approvals, "UX_DraftOverDeliveryApprovals_DraftVersion"));
-        Assert.Equal([typeof(DraftLineRow), typeof(DraftRow)],
+        // The position-only line key and the line-identity key (AddDraftLineIdentityForeignKeys) both point at the line.
+        Assert.Equal([typeof(DraftLineRow), typeof(DraftLineRow), typeof(DraftRow)],
             approvals.GetForeignKeys().Select(key => key.PrincipalEntityType.ClrType).OrderBy(type => type.Name, StringComparer.Ordinal));
         Assert.All(approvals.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
         Assert.Equal(SalesOrderDraft.MaximumActorLength, approvals.FindProperty(nameof(DraftOverDeliveryApprovalRow.ApprovedBy))!.GetMaxLength());
@@ -850,7 +852,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(["CompanyId", "DraftId", "LineId"], closures.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Equal(("sales", "DraftLineClosures"), (closures.GetSchema(), closures.GetTableName()));
         Assert.True(UniqueIndex(closures, "UX_DraftLineClosures_DraftVersion"));
-        Assert.Equal([typeof(DraftLineRow), typeof(DraftRow)],
+        // The position-only line key and the line-identity key (AddDraftLineIdentityForeignKeys) both point at the line.
+        Assert.Equal([typeof(DraftLineRow), typeof(DraftLineRow), typeof(DraftRow)],
             closures.GetForeignKeys().Select(key => key.PrincipalEntityType.ClrType).OrderBy(type => type.Name, StringComparer.Ordinal));
         Assert.All(closures.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
         Assert.Equal(SalesOrderDraft.MaximumActorLength, closures.FindProperty(nameof(DraftLineClosureRow.ClosedBy))!.GetMaxLength());
@@ -883,6 +886,80 @@ public sealed class SalesPersistenceModelTests
         var table = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>(),
             operation => operation.Name == "DraftLineClosures");
         Assert.Equal(SalesDbContext.LineClosureIdentityConstraint, Assert.Single(table.CheckConstraints).Sql);
+    }
+
+    /// <summary>
+    /// Review finding: the three line-bound history tables that store a LineId bind (CompanyId, DraftId, LineNo, LineId) to the
+    /// draft line's alternate key, so the stored identity is always the line at that position; the delete behaviour stays
+    /// Restrict and the position-only key stays in place. The two line-bound tables without a LineId keep their single line key.
+    /// </summary>
+    [Fact]
+    public void The_line_bound_history_rows_bind_their_line_identity_to_the_line_at_their_position()
+    {
+        using var context = Context();
+        var lines = context.Model.FindEntityType(typeof(DraftLineRow))!;
+        string[] identity = ["CompanyId", "DraftId", "LineNo", "LineId"];
+        var key = Assert.Single(lines.GetKeys(), candidate => !candidate.IsPrimaryKey());
+        Assert.Equal(identity, key.Properties.Select(property => property.Name));
+        Assert.Equal(SalesDbContext.DraftLineIdentityKey, key.GetName());
+
+        foreach (var type in new[] { typeof(DraftOverDeliveryApprovalRow), typeof(DraftLineClosureRow), typeof(DraftRemainderChangeRow) })
+        {
+            var toLine = context.Model.FindEntityType(type)!.GetForeignKeys()
+                .Where(foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(DraftLineRow)).ToArray();
+            Assert.Equal(2, toLine.Length);
+            var position = Assert.Single(toLine, foreignKey => foreignKey.Properties.Count == 3);
+            Assert.Equal(["CompanyId", "DraftId", "LineNo"], position.Properties.Select(property => property.Name));
+            Assert.True(position.PrincipalKey.IsPrimaryKey());
+            var bound = Assert.Single(toLine, foreignKey => foreignKey.Properties.Count == 4);
+            Assert.Equal(identity, bound.Properties.Select(property => property.Name));
+            Assert.Same(key, bound.PrincipalKey);
+            Assert.All(toLine, foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
+        }
+
+        foreach (var type in new[] { typeof(DraftDeliverySliceRow), typeof(DraftDeliveryScheduleDateRow) })
+        {
+            var entity = context.Model.FindEntityType(type)!;
+            Assert.Null(entity.FindProperty("LineId"));
+            Assert.True(Assert.Single(entity.GetForeignKeys(), foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(DraftLineRow))
+                .PrincipalKey.IsPrimaryKey());
+        }
+    }
+
+    /// <summary>
+    /// Review finding: Up refuses with 51234 (its own number) BEFORE any DDL while an existing row names another line's identity,
+    /// and repairs nothing; Down is pure DDL (constraints and indexes only, no row loses meaning) and needs no guard.
+    /// </summary>
+    [Fact]
+    public void The_line_identity_migration_guards_its_up_with_51234_first_and_its_down_is_pure_ddl()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftLineIdentityForeignKeys();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.UpOperations[0]);
+        Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("THROW 51234,", guard.Sql, StringComparison.Ordinal);
+        foreach (var table in new[] { "DraftOverDeliveryApprovals", "DraftLineClosures", "DraftRemainderChanges" })
+        {
+            Assert.Contains($"FROM [sales].[{table}] AS [c] WHERE NOT EXISTS", guard.Sql, StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain("UPDATE", guard.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE", guard.Sql, StringComparison.OrdinalIgnoreCase);
+        var unique = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddUniqueConstraintOperation>());
+        Assert.Equal((SalesDbContext.DraftLineIdentityKey, "DraftLines"), (unique.Name, unique.Table));
+        var added = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddForeignKeyOperation>().ToArray();
+        Assert.Equal(3, added.Length);
+        Assert.All(added, foreignKey =>
+        {
+            Assert.Equal(["CompanyId", "DraftId", "LineNo", "LineId"], foreignKey.Columns);
+            Assert.Equal(["CompanyId", "DraftId", "LineNo", "LineId"], foreignKey.PrincipalColumns ?? []);
+            Assert.Equal("DraftLines", foreignKey.PrincipalTable);
+            Assert.Equal(Microsoft.EntityFrameworkCore.Migrations.ReferentialAction.Restrict, foreignKey.OnDelete);
+        });
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.DropForeignKeyOperation);
+
+        Assert.DoesNotContain(migration.DownOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        Assert.Equal(3, migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropForeignKeyOperation>().Count());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropUniqueConstraintOperation>());
     }
 
     private static DraftLineClosureRow LineClosure() => new()
