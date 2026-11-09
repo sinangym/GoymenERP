@@ -138,7 +138,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
-        "f4d42b16f2f1b9facc14f4c3994516ed3252e6b69a2ca45d5afb5c49a322afa3";
+        // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
+        "069c2674ae7e2722fa3d5322fd54a115420df2e353e2d30472384aa90393a65d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -325,7 +326,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…). U2-d review: the migration fact
                 // renamed (Down refusal 51190) and +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the
                 // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
-                "0df4c0f37a425273955ed12bab380ff896ae0c0a6b0dba076abdf5b64404814b",
+                "b30fa7d7fcd05703bfd6f2a0634f6fb095494eb71d81ecc72d6f89ea175dcb5d",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -657,7 +658,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // table, filter, key or bypass).
                 // Üretim U2-d: the plan row gains the nullable preparer column (CreatedBy) and its check (no new table,
                 // filter, key or bypass).
-                "d2b57cd8ea08cf15f8bdb681981fa1b52dd1c05f6100deb24c4a37e0c14ed818",
+                "aa5ad9b2b3965da0abd0148155d176032f264f8e768397a734704a865649d210",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -778,6 +779,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "Persistence/ApprovedAccountingSourceCatalogStoreV1.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingPlanAllocationHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingPlanAllocationHost.cs";
     private const string ReviewedManufacturingInventoryReturnOutputHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
     private const string ReviewedProductRuntimeExtensionsPath =
@@ -1055,10 +1058,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "a475668fb5a8e99dfe771a2b453c454b3c919cc9263720669af3cb9a92b14201",
+                        "33399d74a08dc682c165e8b619809be89145c9c54d79cfc3ee8d8b7a58ecdab1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 1
+                        }),
+                // Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure open one Manufacturing
+                // transaction and enlist Inventory's plan-allocation participant on its connection; no context is built.
+                [ReviewedManufacturingPlanAllocationHostPath] =
+                    new(
+                        "b8fe85c23662407e67b052418e396d7df84ef3a32154ee9256c21c8d366a35f0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
                             ["GetDbConnection"] = 1
                         }),
                 // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
@@ -1364,7 +1377,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "24e0a120a21a5172f8118682b1ca14e20c7679e9404de05b0119e6c5420a3763",
+                        "9ef41f9be8251dea708100eb2cffb4bca57a06a3fa64c410e1bc73a526a434cc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2029,6 +2042,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261107082508_AddManufacturingPlanPreparer.cs"] =
                     new(
                         "4f89517e3f10cf2736d650fd3c91b93445f4625a9201554ad77a73f14b8fbb37",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Üretim U3-a (URT-D21, B-01): Down's only raw SQL refuses (51191) while any plan input allocation row
+                // exists (Inventory still holds the allocation it names), before the table is dropped (forward fix).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261107145415_AddManufacturingPlanInputAllocations.cs"] =
+                    new(
+                        "5c407961e8bc61ce4a00098cad0963f479e0c15e4cbbf86aeac087c773bfa1ac",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

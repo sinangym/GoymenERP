@@ -79,6 +79,27 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanNetWidthExceedsParent,
     ];
 
+    // Üretim U3-a (URT-D21, URT-D3, B-01): the approval allocates the plan's inputs in Inventory with the approval, at the
+    // label version read from Inventory's label detail; Inventory's allocation refusals and the label read's join its 409
+    // set. Declared on the approval only.
+    private static readonly string[] ApprovePlanConflictCodes =
+    [
+        .. SavePlanConflictCodes,
+        InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock,
+        InventoryManufacturingRealizationCodesV1.AllocationOwnerMismatch,
+        InventoryLabelDetailCodesV1.ReadConflict,
+        ManufacturingPlanAllocationCodesV1.LabelNotFound,
+        ManufacturingPlanAllocationCodesV1.LabelIdentityChanged,
+    ];
+
+    // Üretim U3-a (API-21): an input issue from its plan allocation may meet the allocation's own refusals.
+    private static readonly string[] IssueInputConflictCodes =
+    [
+        .. ConflictCodes,
+        InventoryManufacturingRealizationCodesV1.AllocationNotUsable,
+        InventoryManufacturingRealizationCodesV1.AllocationExceeded,
+    ];
+
     // Üretim U2-a (URT-D2, API-10/11): the rejection's and the cancellation's own 422 set — the write set plus the two
     // lifecycle rules. Declared on those endpoints only, so no existing endpoint's contract moves.
     private static readonly string[] PlanDecisionUnprocessableCodes =
@@ -396,7 +417,7 @@ public static class ManufacturingEndpoints
             .WithName("IssueManufacturingInputV1")
             .Accepts<IssueInventoryInputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithWriteProblems(notFound: true, IssueInputConflictCodes);
 
         group.MapPost("/orders/{orderId:guid}/input-returns", async (
                 Guid orderId,
@@ -543,13 +564,14 @@ public static class ManufacturingEndpoints
             .WithWriteProblems(notFound: true);
     }
 
-    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound)
+    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
+        string[]? conflictCodes = null)
     {
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpConflict(conflictCodes ?? ConflictCodes)
             .ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
@@ -563,7 +585,7 @@ public static class ManufacturingEndpoints
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(SavePlanConflictCodes)
+            .ProducesErpConflict(ApprovePlanConflictCodes)
             .ProducesErpUnprocessableEntity(ApprovePlanUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
