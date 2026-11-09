@@ -78,7 +78,8 @@ public sealed partial class SalesStore
         var before = HeaderPicture(draft, reason: null, supersededReason: null);
         var versionBefore = draft.Version;
         var revisionBefore = draft.Revision;
-        var linesBefore = draft.Lines.Select(line => (line.QuantityText, line.Commercial)).ToArray();
+        var revisionStatesBefore = LineRevisionStates(draft);
+        var linesBefore = draft.AllLines.ToDictionary(line => line.Id, line => (line.QuantityText, line.Commercial));
         var now = timeProvider.GetUtcNow();
         var archived = mutate(draft, input, now);
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
@@ -87,7 +88,8 @@ public sealed partial class SalesStore
         }
 
         // The header revision moves the header only: never a line's quantity or commercial value.
-        if (!draft.Lines.Select(line => (line.QuantityText, line.Commercial)).SequenceEqual(linesBefore)
+        if (draft.AllLines.Count != linesBefore.Count
+            || draft.AllLines.Any(line => !linesBefore.TryGetValue(line.Id, out var was) || was != (line.QuantityText, line.Commercial))
             || (archived is null) != (draft.Revision == revisionBefore))
         {
             throw new InvalidOperationException("Başlık revizyonu yalnız başlığı değiştirir.");
@@ -126,12 +128,17 @@ public sealed partial class SalesStore
 
         foreach (var lineRow in lineRows)
         {
-            var line = draft.Lines.Single(candidate => candidate.LineNo == lineRow.LineNo);
+            // SAT-D167: a removed (passive) line's row stays as it is (its tax is history, not re-resolved).
+            var line = draft.AllLines.Single(candidate => candidate.LineNo == lineRow.LineNo);
             if (!Equals(SalesTaxJson.RestoreLine(lineRow.TaxJson), line.Tax))
             {
                 lineRow.TaxJson = SalesTaxJson.SerializeLine(line.Tax);
             }
         }
+
+        // SAT-D211: a header revision opening the next revision of a customer-rejected one reverts its removals (after the archive).
+        RequireLineRevisionChanges(draft, revisionStatesBefore, lineRevision: null, revertedRevision: draft.Revision != revisionBefore ? revisionBefore : null);
+        WriteLineRevisionColumns(draft, lineRows);
 
         Assign(row.MoneyOperation, money.Operation, value => row.MoneyOperation = value);
         Assign(row.MoneyProfileId, money.ProfileId, value => row.MoneyProfileId = value);

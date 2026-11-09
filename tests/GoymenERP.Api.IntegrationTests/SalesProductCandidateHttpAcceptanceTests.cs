@@ -5,6 +5,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +85,7 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
     [Theory]
     [InlineData("validation", 400, "validation_failed")]
     [InlineData("unavailable", 503, "service_unavailable")]
+    [InlineData("settings-unavailable", 503, "service_unavailable")]
     public async Task Owner_failures_are_mapped_to_the_public_sales_boundary(string failure, int status, string code)
     {
         var authority = new ControlledAuthority();
@@ -99,6 +101,22 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
         using var document = JsonDocument.Parse(body);
         Assert.Equal(code, document.RootElement.GetProperty("code").GetString());
         Assert.DoesNotContain("private_owner_detail", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Owner_settings_access_refusal_is_forbidden_without_detail()
+    {
+        // B-31: a Settings unit-profile refusal let through by the owner's eligibility is 403, never an unmapped 500.
+        var authority = new ControlledAuthority();
+        var owner = new StubCandidates(new([], false)) { Failure = "settings-denied" };
+        using var host = CreateHost(authority, owner);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(SalesProductCandidateEndpoints.Path + "?effectiveOn=2026-09-22");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        AssertPrivateNoStore(response);
+        Assert.DoesNotContain("settings_access_denied", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -190,6 +208,11 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
                     new ProductValidationException([new("q", "private_owner_detail")])),
                 "unavailable" => Task.FromException<ProductSalesCandidatesV1>(
                     new ProductOperationException("private_owner_detail", 503)),
+                // B-31: the owner's eligibility lets the Settings unit-profile refusal through as is.
+                "settings-unavailable" => Task.FromException<ProductSalesCandidatesV1>(
+                    new SettingsPrerequisiteException("private_owner_detail")),
+                "settings-denied" => Task.FromException<ProductSalesCandidatesV1>(
+                    new SettingsPrerequisiteException("settings_access_denied")),
                 _ => Task.FromResult(result)
             };
         }

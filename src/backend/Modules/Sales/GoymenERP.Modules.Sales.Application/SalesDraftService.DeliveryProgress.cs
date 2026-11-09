@@ -87,7 +87,9 @@ public sealed partial class SalesDraftService
             throw DeliveryAnswerInvalid();
         }
 
-        var lines = draft.Lines.ToDictionary(line => line.Id);
+        // SAT-D167 / SAT-D211 (K3 review A P1-2): an owner may answer a passive line of the order (it shipped under the accepted
+        // revision, or was answered empty); it is the order's line, never a malformed answer. Only the active lines are reported.
+        var lines = draft.AllLines.ToDictionary(line => line.Id);
         var recorded = new Dictionary<Guid, (decimal Shipped, decimal Delivered)>();
         foreach (var entry in answer.Lines)
         {

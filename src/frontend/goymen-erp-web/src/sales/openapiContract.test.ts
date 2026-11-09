@@ -37,6 +37,7 @@ import {
   salesDraftDeliverySchedulePath,
   salesDraftDeliverySchedulesPath,
   salesDraftDetailPath,
+  salesDraftLineClosurePath,
   salesDraftLoadingProgressPath,
   salesDraftPriceFloorExceptionApprovalPath,
   salesDraftQuantityRevisionPath,
@@ -164,6 +165,7 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       salesDraftHeaderRevisionPath('ID'),
       salesDraftDeliverySchedulePath('ID'),
       salesDraftCancellationPath('ID'),
+      salesDraftLineClosurePath('ID'),
       remainderChangesPath('ID'),
       remainderDecisionPath('ID', 7, 'approval'),
       remainderDecisionPath('ID', 7, 'rejection'),
@@ -191,6 +193,9 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expect(requestSchema(salesDraftCommercialRevisionPath('ID'))).toBe('SalesDraftCommercialRevisionRequest')
     expect(requestSchema(salesDraftPriceFloorExceptionApprovalPath('ID'))).toBe('SalesDraftPriceFloorExceptionApprovalRequest')
     expectFits({ expectedVersion: '3', lines: [] }, 'SalesDraftPriceFloorExceptionApprovalRequest')
+    // SAT-D17: the line closure's strict body — no reason member (SAT-D215).
+    expect(requestSchema(salesDraftLineClosurePath('ID'))).toBe('SalesDraftLineClosureRequest')
+    expectFits({ expectedVersion: '4', lineId: '66666666-6666-6666-6666-666666666666', shipped: '980' }, 'SalesDraftLineClosureRequest')
     expect(requestSchema(remainderChangesPath('ID'))).toBe('SalesDraftRemainderChangeRequest')
     expect(requestSchema(remainderDecisionPath('ID', 7, 'approval'))).toBe('SalesDraftRemainderDecisionRequest')
     expect(requestSchema(remainderDecisionPath('ID', 7, 'rejection'))).toBe('SalesDraftRemainderDecisionRequest')

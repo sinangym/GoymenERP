@@ -371,7 +371,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             new ProductionTarget(TargetBasis.InputMass, new Kilograms(quantity)));
         var orderId = Guid.NewGuid();
         await store.SavePlanAsync(plan, ManufacturingHostMetadata(run, "seed-plan"));
-        await store.ApprovePlanAsync(plan.Id, plan.Version, run.Actor, At,
+        // U2-d (URT-D2): another user approves than the actor who saved the plan.
+        await store.ApprovePlanAsync(plan.Id, plan.Version, Guid.NewGuid(), At,
             ManufacturingHostMetadata(run, "seed-approval"));
         await store.CreateOrderAsync(orderId, plan.Id, ManufacturingHostMetadata(run, "seed-order"));
         return new ManufacturingInventoryInputIssueCommand(orderId, 1, Guid.NewGuid(), parentLabelId,

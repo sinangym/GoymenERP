@@ -162,6 +162,27 @@ describe('S-04 commands', () => {
     expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
   })
 
+  it.each([
+    ['sales_line_revision_line_linked', 'lineLinked'],
+    ['sales_line_revision_line_shipped', 'lineShipped'],
+  ] as const)('SAT-D219: a revision whose removed line got a link before the decision (%s) is refused and says so', async (code, text) => {
+    installFetch({
+      capabilities: ALL_SALES,
+      onDetail: () => json(detail('Preparing')),
+      onCommand: () => json({
+        status: 409, title: 'Conflict', code: 'sales_revision_blocked', correlationId: 'c-linked',
+        errors: [{ field: 'removedLines[0].lineId', code }],
+      }, 409),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    await userEvent.click(screen.getByRole('button', { name: T.approval.submit }))
+
+    const alert = await screen.findByText((content) => content.includes(T.approval[text]))
+    expect(alert.textContent).toContain(T.approval.conflict)
+    expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
+  })
+
   it('SAT-D201: a fason submission refused for a service line without a per-kg price says so and changes nothing', async () => {
     installFetch({
       capabilities: ALL_SALES,

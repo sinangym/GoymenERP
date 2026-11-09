@@ -171,6 +171,8 @@ export function plan(overrides: Record<string, unknown> = {}) {
     cancellation: null,
     // U2-b1: the plan-entered process values (Tube / Profile, Paint, Cold Rolling); the server always emits the member.
     processSpec: null,
+    // U2-d (URT-D2): the actor id of who prepared the current version; null for a plan stored before U2-d.
+    preparedBy: null,
     ...overrides,
   }
 }

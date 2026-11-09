@@ -219,8 +219,9 @@ public sealed partial class SalesStore : ISalesReportReadStore
             measured = measured.Where(row => row.CompanyAccountId == account);
         }
 
+        // SAT-D167 (EK24): a removed (passive) line is no longer part of the order.
         return dbContext.DraftLines.AsNoTracking()
-            .Where(line => line.CompanyId == companyId)
+            .Where(line => line.CompanyId == companyId && line.RemovedInRevision == null)
             .Join(measured, line => line.DraftId, draft => draft.Id, (line, draft) => new OpenLineRow
             {
                 DraftId = draft.Id,

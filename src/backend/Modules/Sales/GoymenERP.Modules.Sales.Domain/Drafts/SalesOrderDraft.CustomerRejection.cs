@@ -66,7 +66,9 @@ public sealed partial class SalesOrderDraft
     /// SAT-D115: records the customer's rejection of the current internally approved revision that awaits the customer's
     /// acceptance, with a required reason. Nothing is deleted or reverted: the lines keep the rejected revision's values, the
     /// rejected revision stays recorded as rejected, and every downstream reader continues on the last revision the customer
-    /// accepted (<see cref="CustomerAcceptedFallback"/>). A new revision (price, quantity or header) archives the rejected one
+    /// accepted (<see cref="CustomerAcceptedFallback"/>). A line closed with a shortfall does not block the rejection: it closes only
+    /// over a customer-accepted revision (ASSUMPTION-LC-3) and its quantity never changes, so the fallback carries the closure's
+    /// quantity (a defence-in-depth check refuses the rejection otherwise). A new revision (price, quantity or header) archives the rejected one
     /// as usual. Refused (<see cref="SalesRuleCodes.StateConflict"/>): a cancelled or closed order, a revision not internally
     /// approved, an order without the acceptance gate (pre-Q9), a revision already accepted or already rejected, and an order the
     /// customer never accepted (Rev.0's behaviour is unchanged, SAT-D113; there is no earlier revision to continue on).
@@ -85,6 +87,8 @@ public sealed partial class SalesOrderDraft
         {
             throw StateConflict("Bu geçiş öncesi sipariş için müşteri kabulü ya da reddi aranmaz.");
         }
+
+        RequireFallbackKeepsClosedLines();
 
         if (IsCustomerAccepted)
         {
@@ -116,6 +120,29 @@ public sealed partial class SalesOrderDraft
 
         customerRejections.Add(new CustomerRejectionFacts(Revision, actor, now.ToUniversalTime(), trimmedReason));
         Touch(now);
+    }
+
+    /// <summary>
+    /// Defence in depth only: a line closes solely over a customer-accepted revision (ASSUMPTION-LC-3) and a closed line's quantity
+    /// never changes (SAT-D217), so the revision a rejection falls back to always carries each closed line at the closure's own
+    /// quantity and this is unreachable by the commands. It refuses the rejection if that ever stops being true.
+    /// </summary>
+    private void RequireFallbackKeepsClosedLines()
+    {
+        if (lineClosures.Count == 0 || CustomerAcceptance is not { } accepted)
+        {
+            return;
+        }
+
+        var fallback = archivedRevisions.FirstOrDefault(archived => archived.Revision == accepted.Revision);
+        foreach (var closure in lineClosures)
+        {
+            var fallbackLine = fallback?.Lines.FirstOrDefault(candidate => candidate.LineId == closure.LineId);
+            if (fallback is not null && !string.Equals(fallbackLine?.QuantityText, closure.Ordered, StringComparison.Ordinal))
+            {
+                throw StateConflict("Müşterinin kabul ettiği revizyonda eksikle kapatılan satırın miktarı farklı; müşteri reddi kaydedilmez.");
+            }
+        }
     }
 
     /// <summary>
