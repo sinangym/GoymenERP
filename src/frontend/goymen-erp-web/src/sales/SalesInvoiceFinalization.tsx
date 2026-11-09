@@ -36,6 +36,8 @@ import {
 import { useInvoiceDraftCommand } from './invoiceDraft'
 import { InvoiceDecisionFacts, InvoiceDraftAttemptNotice, SalesInvoiceDraftActions } from './SalesInvoiceDraftActions'
 import { isOutcomeStillUnknown } from './orderAttempt'
+import { SalesInvoiceMatchPanel } from './SalesInvoiceMatchPanel'
+import { INVOICE_MATCH_TEXT as M } from './invoiceMatchText'
 import { formatBusinessDate, formatInstant } from './format'
 import {
   FINANCE_STAGE_TEXT,
@@ -175,6 +177,8 @@ export function SalesInvoiceFinalizationPanel({
   canControl,
   canWrite = false,
   canApprove = false,
+  canMatch = false,
+  canApproveDifference = false,
   onRecorded,
 }: {
   readonly invoiceId: string
@@ -187,6 +191,10 @@ export function SalesInvoiceFinalizationPanel({
   readonly canWrite?: boolean
   /** UI-64: the caller holds the draft approve / reject control (`sales.invoices.approve`); the server decides who may approve. */
   readonly canApprove?: boolean
+  /** UI-64b: the caller may use the official e-invoice match form (a shell capability; none is published yet). */
+  readonly canMatch?: boolean
+  /** UI-64b: the caller may approve a match difference above tolerance (a shell capability; none is published yet). */
+  readonly canApproveDifference?: boolean
   /** Called after a recorded command or a conflict, so the list is read again too. */
   readonly onRecorded?: () => void
 }) {
@@ -204,24 +212,12 @@ export function SalesInvoiceFinalizationPanel({
       return signal.aborted ? { type: 'fence-stale' } : outcome
     },
   })
-  const controller = useInvoiceFinalization({
-    shell,
-    invoiceId,
-    companyId,
-    onRecorded: () => {
-      void queryClient.invalidateQueries({ queryKey })
-      onRecorded?.()
-    },
-  })
-  const draftController = useInvoiceDraftCommand({
-    shell,
-    invoiceId,
-    companyId,
-    onRecorded: () => {
-      void queryClient.invalidateQueries({ queryKey })
-      onRecorded?.()
-    },
-  })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey })
+    onRecorded?.()
+  }
+  const controller = useInvoiceFinalization({ shell, invoiceId, companyId, onRecorded: refresh })
+  const draftController = useInvoiceDraftCommand({ shell, invoiceId, companyId, onRecorded: refresh })
   const headingId = useId()
   const outcome = query.data
   if (outcome?.type !== 'ok-single') {
@@ -256,6 +252,13 @@ export function SalesInvoiceFinalizationPanel({
       <InvoiceDraftAttemptNotice controller={draftController} />
       <SalesInvoiceDraftActions detail={detail} canWrite={canWrite} canApprove={canApprove} controller={draftController} />
       <MatchFacts detail={detail} />
+      <SalesInvoiceMatchPanel
+        detail={detail}
+        companyId={companyId}
+        canMatch={canMatch}
+        canApproveDifference={canApproveDifference}
+        onRecorded={refresh}
+      />
       <FinalizationFacts finalization={detail.finalization} />
       <InstalmentTable detail={detail} />
       <AttemptNotice controller={controller} />
@@ -281,6 +284,13 @@ function MatchFacts({ detail }: { readonly detail: SalesInvoiceDetail }) {
           <div><dt>{T.tolerance}</dt><dd className={styles.numericValue}>{match.tolerance}</dd></div>
           <div><dt>{T.matchedBy}</dt><dd>{match.matchedBy}</dd></div>
           <div><dt>{T.matchedAt}</dt><dd>{formatInstant(match.matchedAtUtc)}</dd></div>
+          <div>
+            <dt>{M.differenceApprovedBy}</dt>
+            <dd data-testid="sales-invoice-match-approved-by">{match.differenceApprovedBy ?? M.noDifferenceApproval}</dd>
+          </div>
+          {match.differenceReason === null ? null : (
+            <div><dt>{M.differenceReasonFact}</dt><dd data-testid="sales-invoice-match-reason-fact">{match.differenceReason}</dd></div>
+          )}
         </dl>
       )}
     </>

@@ -123,6 +123,11 @@ export const SALES_ROUTE = {
   invoiceCandidates: '/satis/faturaya-hazir',
   /** UI-80: static, never a draft id. */
   reports: '/satis/raporlar',
+  /**
+   * UI-65 Kontrol Merkezi (API-37, `sales.invoices.read`): static, never a draft id. The backend publishes no own id for it yet;
+   * the route stands on the S-08 id, published beside the same `sales.invoices.read` (./salesRoutes.tsx).
+   */
+  controlCenter: '/satis/kontrol-merkezi',
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
