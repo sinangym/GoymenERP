@@ -84,12 +84,17 @@ public sealed record PurchaseOrderLineRequest(Guid LineId, Guid ProductId, strin
 /// (zero or more — an explicit 0 is a price, apart from no price —, at most the money profile's decimals, never rounded), the <paramref name="PriceUnitId"/> it applies to (absent: the
 /// line's entry unit; any other unit is refused until a unit conversion is published, ALS-D58) and at most one discount: a percent
 /// of the unit price (0..100) or an amount (0..unit price). Absent fields are never written, so the hash is that of what was sent.
+/// A2a-2 (ALS-D38, ALS-D75): at most one maturity surcharge (vade farkı) — <paramref name="DeferralPercent"/> of the discounted unit
+/// price (0..100) or <paramref name="DeferralAmount"/> per unit — never on a 0 price; a deferred price typed directly as the unit
+/// price is a plain price with neither (ALS-D76). Absent, they are never written: the hash of an earlier request is unchanged.
 /// </summary>
 public sealed record PurchaseOrderLinePriceRequest(
     string UnitPrice,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? PriceUnitId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DiscountPercent = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DiscountAmount = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DiscountAmount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeferralPercent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeferralAmount = null);
 
 /// <summary>POST …/orders/{id}/approval: Draft → Approved at the expected version; the Σ-shares rule is measured in the same save.</summary>
 public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
@@ -155,7 +160,15 @@ public sealed record PurchaseRequestListQuery(int PageSize = 50, string? Cursor 
 
 public sealed record PurchaseOrderSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId,
-    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount);
+    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount)
+{
+    /// <summary>
+    /// A2a-2 (ALS-D18, plan A2a-2 "listede fiyat bekliyor"): on a LIST item only, true while a general line has no price; never
+    /// written when null — on a detail or a command answer, or when the caller lacks <c>purchasing.orders.price.read</c> (PRS-02).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PricePending { get; init; }
+}
 
 /// <summary>
 /// Authorized list/detail projection. Unlike command responses, every returned order has an exact,
@@ -164,7 +177,12 @@ public sealed record PurchaseOrderSummaryView(
 public sealed record PurchaseOrderReadSummaryViewV1(
     Guid Id, Guid CompanyId, string Status, string Version, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId,
     DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount,
-    PurchasingSupplierDisplayV1 SupplierDisplay);
+    PurchasingSupplierDisplayV1 SupplierDisplay)
+{
+    /// <summary>A2a-2: "fiyat bekliyor" on a list item (see <see cref="PurchaseOrderSummaryView.PricePending"/>); never written when null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PricePending { get; init; }
+}
 
 /// <summary>
 /// The line's shares as exact text (§7.2, §13): ordered, moved into technical lines, committed (= ordered − technical), accepted,
@@ -192,7 +210,82 @@ public sealed record PurchaseOrderLineView(
 /// calculator; the screen never recomputes them.
 /// </summary>
 public sealed record PurchaseOrderLinePriceView(
-    string UnitPrice, Guid PriceUnitId, string? DiscountPercent, string? DiscountAmount, string NetUnitPrice, string LineAmount);
+    string UnitPrice, Guid PriceUnitId, string? DiscountPercent, string? DiscountAmount, string NetUnitPrice, string LineAmount)
+{
+    /// <summary>A2a-2 (ALS-D38): the maturity surcharge percent of the discounted unit price as given, or null.</summary>
+    public string? DeferralPercent { get; init; }
+
+    /// <summary>A2a-2 (ALS-D38): the maturity surcharge amount per unit as given, or null.</summary>
+    public string? DeferralAmount { get; init; }
+}
+
+/// <summary>A2a-2 (API-20): the states of the order totals (see <see cref="PurchaseOrderTotalsView"/>).</summary>
+public static class PurchaseOrderTotalsStatesV1
+{
+    /// <summary>The value is computed.</summary>
+    public const string Computed = "Computed";
+
+    /// <summary>The document: a general line has no price ("fiyat bekliyor") or no amount, so no sum is shown.</summary>
+    public const string Incomplete = "Incomplete";
+
+    /// <summary>A line or a sum cannot be held exactly; nothing of it is shown (fail-closed).</summary>
+    public const string AmountOutOfRange = "AmountOutOfRange";
+
+    /// <summary>A line without a price.</summary>
+    public const string Unpriced = "Unpriced";
+
+    /// <summary>"hesaplanamıyor": no source answers (see the reason); never 0.</summary>
+    public const string NotComputable = "NotComputable";
+
+    /// <summary>No withholding applies (reserved: purchase withholding is never computed before N-20).</summary>
+    public const string NotApplied = "NotApplied";
+
+    /// <summary>The base is missing (the line or a line of the document has no amount, or its VAT is not computed).</summary>
+    public const string NotComputed = "NotComputed";
+
+    /// <summary>PRS-02: the caller lacks <c>purchasing.orders.price.read</c>; every amount is null.</summary>
+    public const string Withheld = "Withheld";
+}
+
+/// <summary>A2a-2: why a line's VAT or the order's withholding is <see cref="PurchaseOrderTotalsStatesV1.NotComputable"/>.</summary>
+public static class PurchaseOrderTaxReasonsV1
+{
+    /// <summary>Plan §8 N-20: purchase withholding (tevkifat) waits for the mali müşavir; it is never computed until then.</summary>
+    public const string WithholdingUnconfirmed = "withholding_unconfirmed";
+
+    /// <summary>The Settings line tax port is not composed or did not answer.</summary>
+    public const string TaxSourceUnavailable = "settings_provider_unavailable";
+
+    /// <summary>The Settings answer was not a usable VAT state.</summary>
+    public const string TaxSourceInvalid = "tax_source_invalid";
+}
+
+/// <summary>
+/// A2a-2 (API-20): one general line's totals as exact text in the order's currency. <c>State</c>: <c>Computed</c> | <c>Unpriced</c> |
+/// <c>AmountOutOfRange</c>. <c>VatState</c>: <c>Computed</c> (with the percent, the VAT and the gross amount) | <c>NotComputable</c>
+/// (with <c>VatReason</c>: a Settings reason such as a missing item type, or <see cref="PurchaseOrderTaxReasonsV1"/>) |
+/// <c>NotComputed</c>. <c>WithholdingState</c> is <c>NotComputable</c> (N-20) whenever the VAT is computed, otherwise <c>NotComputed</c>.
+/// </summary>
+public sealed record PurchaseOrderLineTotalView(
+    Guid LineId, int LineNo, string State, string? NetUnitPrice, string? NetAmount,
+    string VatState, string? VatReason, string? VatPercent, string? VatAmount, string? GrossAmount, string WithholdingState);
+
+/// <summary>
+/// A2a-2 (API-20, plan TEK-01; ALS-D74, ALS-D77): the order's totals — the sum of the general lines' amounts (SAT-D11 "toplamlar
+/// satırlardan"; a line's amount includes its maturity surcharge, and so does its VAT base — ALS-D77 "Vade farkı dahil hesaplansın"),
+/// the VAT per line from the item type's default (Settings <c>ISettingsLineTaxResolverV1</c>, buyer situation
+/// <c>Normal</c>, on the order's business date) through the shared <c>CommercialTaxTotalsCalculator</c>, and the gross amount.
+/// Purchase withholding is <c>NotComputable</c> (<see cref="PurchaseOrderTaxReasonsV1.WithholdingUnconfirmed"/>) until N-20, so the
+/// withheld VAT and the payable amount are always null. A document with an unpriced line is <c>Incomplete</c> (no sum); a line whose VAT
+/// cannot be computed makes the document VAT <c>NotComputable</c> with the count. PRS-02: without <c>purchasing.orders.price.read</c>
+/// every state is <c>Withheld</c>, every amount null and the lines empty.
+/// </summary>
+public sealed record PurchaseOrderTotalsView(
+    Guid OrderId, string Version, string PriceDisclosure, PurchaseOrderCurrencyView? Currency,
+    string State, int UnpricedLineCount, string? NetAmount,
+    string VatState, int VatNotComputableLineCount, string? VatAmount, string? GrossAmount,
+    string WithholdingState, string? WithholdingReason, string? WithheldVatAmount, string? PayableAmount,
+    IReadOnlyList<PurchaseOrderLineTotalView> Lines);
 
 /// <summary>A2a-1: the order's currency as recorded at opening (the Settings money profile's currency, code and scale).</summary>
 public sealed record PurchaseOrderCurrencyView(Guid CurrencyId, string CurrencyCode, int Scale);
@@ -506,6 +599,7 @@ public static class PurchasingApiV1
     public const string OrderDetailPath = "/api/v1/purchasing/orders/{id}";
     public const string OrderApprovalPath = "/api/v1/purchasing/orders/{id}/approval";
     public const string OrderCancelImpactPath = "/api/v1/purchasing/orders/{id}/cancel-impact";
+    public const string OrderTotalsPath = "/api/v1/purchasing/orders/{id}/totals";
     public const string OrderCancellationPath = "/api/v1/purchasing/orders/{id}/cancellation";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string CurrencyCandidatesPath = "/api/v1/purchasing/references/currencies";
@@ -656,6 +750,17 @@ public static class PurchasingJson
                 if (price.DiscountAmount is not null)
                 {
                     RequireAmountShape(price.DiscountAmount);
+                }
+
+                // A2a-2: the maturity surcharge's shape only; its kind, bounds and the 0-price rule are the domain's 422.
+                if (price.DeferralPercent is not null)
+                {
+                    RequireAmountShape(price.DeferralPercent);
+                }
+
+                if (price.DeferralAmount is not null)
+                {
+                    RequireAmountShape(price.DeferralAmount);
                 }
             }
         }

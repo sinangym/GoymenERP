@@ -22,6 +22,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -392,8 +393,7 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     {
         // A SYNTHETIC Purchasing adapter of the Sales-declared linked-supply port, registered in the real host.
         var owner = new LinkedSupplyOwner();
-        await using var run = await Run.StartAsync(services =>
-            services.AddSingleton<ISalesOrderLinkedSupplyReadPortV1>(owner));
+        await using var run = await Run.StartAsync(services => SyntheticPurchasingOwner(services, owner));
         var draft = await run.ApprovedDraftAsync(CompanyA, "s");
         var first = draft.Lines[0];
         owner.Line = first.Id;
@@ -440,7 +440,7 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     {
         // K3 review B P2-2: the re-read at the decision (409 sales_revision_blocked, 503 unreadable) on real routes and real SQL.
         var owner = new LinkedSupplyOwner();
-        await using var run = await Run.StartAsync(services => services.AddSingleton<ISalesOrderLinkedSupplyReadPortV1>(owner));
+        await using var run = await Run.StartAsync(services => SyntheticPurchasingOwner(services, owner));
         var draft = await run.ApprovedDraftAsync(CompanyA, "w");
         var first = draft.Lines[0];
         owner.Line = first.Id;
@@ -501,6 +501,17 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     }
 
     // ---- helpers --------------------------------------------------------------------------------
+
+    /// <summary>The real host composes the Purchasing adapter (A4 / MOD-03); one adapter per kind, so the synthetic owner REPLACES it.</summary>
+    private static void SyntheticPurchasingOwner(IServiceCollection services, ISalesOrderLinkedSupplyReadPortV1 owner)
+    {
+        foreach (var descriptor in services
+                     .Where(d => d.ServiceType == typeof(ISalesOrderLinkedSupplyReadPortV1)
+                                 && d.ImplementationType == typeof(PurchasingSalesOrderLinkedSupplyReadPort))
+                     .ToList())
+            services.Remove(descriptor);
+        services.AddSingleton(owner);
+    }
 
     /// <summary>A SYNTHETIC Purchasing owner adapter: open on the line, unreadable, or no link — as the case sets it.</summary>
     private sealed class LinkedSupplyOwner : ISalesOrderLinkedSupplyReadPortV1

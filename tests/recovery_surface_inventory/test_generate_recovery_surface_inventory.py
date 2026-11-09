@@ -38,6 +38,8 @@ MODULE_SPEC.loader.exec_module(generator)
 
 EXPECTED_STORES = {
     ("accounting", "Commands"): ("AccountingCommandRow", "idempotency", "AccountingDbContext"),
+    ("accounting", "SourceDocumentAdmissions"): (
+        "AccountingSourceDocumentAdmissionRow", "idempotency", "AccountingDbContext"),
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
@@ -89,9 +91,7 @@ EXPECTED_STORES = {
     ("sales", "QuoteAttempts"): ("QuoteAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "RequestAttempts"): ("RequestAttemptRow", "idempotency", "SalesDbContext"),
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
-    ("work", "OutboxDeliveries"): ("WorkOutboxDeliveryRow", "inbox", "WorkDbContext"),
     ("work", "OutboxMessages"): ("WorkOutboxRow", "outbox", "WorkDbContext"),
-    ("work", "OutboxSourceCursors"): ("WorkOutboxSourceCursorRow", "delivery", "WorkDbContext"),
 }
 
 
@@ -442,7 +442,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 141, "durableStores": 29},
+            {"dbContexts": 18, "migrations": 146, "durableStores": 30},
             self.inventory["counts"],
         )
         actual = {
@@ -452,13 +452,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(29, len(actual))
+        self.assertEqual(30, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(29, len(specs_by_id))
+        self.assertEqual(30, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -509,14 +509,14 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
     def test_snapshot_discovery_is_exact_and_excludes_only_audit_metadata(self) -> None:
         discovered = generator._discover_idempotency_key_tables(self.snapshot)
         self.assertEqual(generator.EXPECTED_IDEMPOTENCY_KEY_TABLES, discovered)
-        self.assertEqual(22, len(discovered))
+        self.assertEqual(23, len(discovered))
         replay_tables = set(generator._discover_replay_enforcement_tables(self.snapshot))
         specified = {
             (spec.schema, spec.table)
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(21, len(replay_tables))
+        self.assertEqual(22, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
@@ -730,9 +730,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         self.assertTrue(expected_message.isdisjoint(expected_business))
         # SAT-D30: + sales.DraftOverDeliveryApprovals, a business table whose name matches "deliver".
         # S5 API-36: + sales.OutboxMessages (the Sales transactional outbox, a message-delivery table).
-        # B-24: + work.OutboxDeliveries (the Work dispatcher inbox/dedup delivery record)
-        # and work.OutboxSourceCursors (the dispatcher's per-source read position).
-        self.assertEqual(12, len(discovered))
+        self.assertEqual(10, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
@@ -1931,7 +1929,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(141, len(migrations))
+        self.assertEqual(146, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
