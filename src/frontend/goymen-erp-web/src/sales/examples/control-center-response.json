@@ -1,0 +1,84 @@
+{
+  "businessDate": "2026-11-09",
+  "uninvoicedDispatchGraceDays": 7,
+  "checks": [
+    { "kind": "UninvoicedDispatchOverdue", "state": "Measured", "truncated": false },
+    { "kind": "InvoiceNeedsReview", "state": "Measured", "truncated": false },
+    { "kind": "InvoiceAwaitingOfficialMatch", "state": "Measured", "truncated": false },
+    { "kind": "OfficialDocumentDeviation", "state": "Measured", "truncated": false },
+    { "kind": "InvoiceFinalizationBlocked", "state": "Measured", "truncated": false },
+    { "kind": "InvoiceFinanceAdmissionWaiting", "state": "Measured", "truncated": false }
+  ],
+  "items": [
+    {
+      "kind": "UninvoicedDispatchOverdue",
+      "severity": "Critical",
+      "partyId": "33333333-3333-4333-8333-333333333333",
+      "companyAccountId": "44444444-4444-4444-8444-444444444444",
+      "reference": "IRS-SENTETIK-000011",
+      "referenceDate": "2026-10-29",
+      "ageDays": 11,
+      "count": 1,
+      "invoiceId": null,
+      "dispatchNoteId": "a7a7a7a7-0000-4000-8000-000000000011",
+      "shipmentId": "a8a8a8a8-0000-4000-8000-000000000011",
+      "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000007"
+    },
+    {
+      "kind": "InvoiceFinanceAdmissionWaiting",
+      "severity": "Critical",
+      "partyId": "33333333-3333-4333-8333-333333333333",
+      "companyAccountId": "44444444-4444-4444-8444-444444444444",
+      "reference": "FTR-SENTETIK-000004",
+      "referenceDate": "2026-11-02",
+      "ageDays": 7,
+      "count": 2,
+      "invoiceId": "f1f1f1f1-0000-4000-8000-000000000004",
+      "dispatchNoteId": null,
+      "shipmentId": null,
+      "salesOrderId": null
+    },
+    {
+      "kind": "InvoiceNeedsReview",
+      "severity": "ApprovalRequired",
+      "partyId": "33333333-3333-4333-8333-333333333334",
+      "companyAccountId": "44444444-4444-4444-8444-444444444445",
+      "reference": "FTR-SENTETIK-000006",
+      "referenceDate": "2026-11-06",
+      "ageDays": 3,
+      "count": 1,
+      "invoiceId": "f1f1f1f1-0000-4000-8000-000000000006",
+      "dispatchNoteId": null,
+      "shipmentId": null,
+      "salesOrderId": null
+    },
+    {
+      "kind": "OfficialDocumentDeviation",
+      "severity": "WithinTolerance",
+      "partyId": "33333333-3333-4333-8333-333333333334",
+      "companyAccountId": "44444444-4444-4444-8444-444444444445",
+      "reference": "FTR-SENTETIK-000005",
+      "referenceDate": "2026-11-05",
+      "ageDays": 4,
+      "count": 3,
+      "invoiceId": "f1f1f1f1-0000-4000-8000-000000000005",
+      "dispatchNoteId": null,
+      "shipmentId": null,
+      "salesOrderId": null
+    },
+    {
+      "kind": "InvoiceAwaitingOfficialMatch",
+      "severity": "Info",
+      "partyId": "33333333-3333-4333-8333-333333333333",
+      "companyAccountId": "44444444-4444-4444-8444-444444444444",
+      "reference": "FTR-SENTETIK-000007",
+      "referenceDate": "2026-11-08",
+      "ageDays": 1,
+      "count": 1,
+      "invoiceId": "f1f1f1f1-0000-4000-8000-000000000007",
+      "dispatchNoteId": null,
+      "shipmentId": null,
+      "salesOrderId": null
+    }
+  ]
+}

@@ -28,6 +28,7 @@ import { SalesInvoiceCandidatesPage } from './SalesInvoiceCandidatesPage'
 import { SalesReportsPage } from './SalesReportsPage'
 import { SalesPriceControlPage } from './SalesPriceControlPage'
 import { SalesApprovalsPage } from './SalesApprovalsPage'
+import { SalesControlCenterPage } from './SalesControlCenterPage'
 
 /** The shell's `CapabilityId` union carries the three Sales route ids, so no cast is needed. */
 function gate(capability: CapabilityId, children: ReactNode) {
@@ -62,4 +63,7 @@ export const salesRoutes: RouteObject[] = [
   // UI-51 S-06: the Sales approval queue, under the existing approve control's id (no new capability, no nav entry). The
   // control id is no registry route id, so it is passed as the one-entry list form the D-05 inbox uses.
   { path: SALES_ROUTE.approvals.slice(1), element: <CapabilityRoute capability={APPROVALS_GATE}><SalesApprovalsPage /></CapabilityRoute> },
+  // UI-65 Kontrol Merkezi (API-37): no own published id yet, so it stands on the S-08 id, which the shell publishes only beside the
+  // same `sales.invoices.read` API-37 measures. No new capability or permission; the API re-measures every call.
+  { path: SALES_ROUTE.controlCenter.slice(1), element: gate(SALES_CAPABILITY.invoiceCandidatesList, <SalesControlCenterPage />) },
 ]

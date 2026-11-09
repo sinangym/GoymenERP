@@ -115,6 +115,11 @@ export const SALES_ROUTE = {
   priceControl: '/satis/siparisler/:draftId/kontrol',
   /** UI-51 S-06 Satış Onayları: static, never a draft id; under the existing approve control's id (no new capability). */
   approvals: '/satis/onaylar',
+  /**
+   * UI-65 Kontrol Merkezi (API-37, `sales.invoices.read`): static, never a draft id. The backend publishes no own id for it yet;
+   * the route stands on the S-08 id, published beside the same `sales.invoices.read` (./salesRoutes.tsx).
+   */
+  controlCenter: '/satis/kontrol-merkezi',
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
