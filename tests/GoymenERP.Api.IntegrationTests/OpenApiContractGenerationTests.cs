@@ -5684,7 +5684,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("tradeName", "type:null|string")),
                 ["SalesDispatchNoteStateView"] = ScalarSchema("enum:Draft|Approved|Cancelled"),
                 ["SalesInvoicedStateView"] = ScalarSchema("enum:NoSource"),
-                ["SalesControlCenterCheckKindView"] = ScalarSchema("enum:UninvoicedDispatchOverdue|InvoiceNeedsReview|InvoiceAwaitingOfficialMatch|OfficialDocumentDeviation"),
+                ["SalesControlCenterCheckKindView"] = ScalarSchema("enum:UninvoicedDispatchOverdue|InvoiceNeedsReview|InvoiceAwaitingOfficialMatch|OfficialDocumentDeviation|InvoiceFinalizationBlocked|InvoiceFinanceAdmissionWaiting"),
                 ["SalesControlCenterCheckStateView"] = ScalarSchema("enum:Measured|NoSource|Unavailable"),
                 ["SalesControlCenterSeverityView"] = ScalarSchema("enum:Critical|ApprovalRequired|WithinTolerance|Info"),
                 ["SalesInvoiceGroupKeyPart"] = ScalarSchema("enum:ExchangeRate|InvoiceType"),
