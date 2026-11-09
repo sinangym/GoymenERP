@@ -38,6 +38,9 @@ public sealed partial class SalesDraftService
         var store = QuoteStore();
         // A quote price written by an actor who cannot see quote prices is refused before anything is read or recorded.
         var priced = QuotePriceFields(request.Lines);
+        // SAT-D132: the due terms are commercial terms disclosed only with the price read, so a create that carries them needs it too.
+        if (request.DueTerms is not null) priced.Add(new("dueTerms", SalesQuoteProblemCodesV1.PriceReadRequired));
+        var dueTerms = QuoteDueTerms(request.DueTerms);
         if (priced.Count > 0)
         {
             await RequirePriceReadAsync(scope, priced, cancellationToken);
@@ -75,7 +78,7 @@ public sealed partial class SalesDraftService
         }
 
         var header = new SalesQuoteHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate);
-        var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note);
+        var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note, dueTerms);
         var now = timeProvider.GetUtcNow();
         SalesQuoteStoreResult stored;
         try
@@ -187,6 +190,7 @@ public sealed partial class SalesDraftService
         // or recorded (SAT-D26: this refusal stays; writing a quote price needs no more than sales.quotes.write).
         await RequirePriceReadAsync(scope, [new("lines", SalesQuoteProblemCodesV1.PriceReadRequired)], cancellationToken);
         var expectedVersion = ExpectedVersion(request.ExpectedVersion);
+        var dueTerms = QuoteDueTerms(request.DueTerms);
         var requestHash = SalesQuoteHash.Compute(quoteId, request);
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindQuoteReplayAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.ReviseV1, cancellationToken);
@@ -211,7 +215,7 @@ public sealed partial class SalesDraftService
 
         // The price visibility is measured again after the owner reads, right before the save.
         await RequirePriceReadAsync(scope, [new("lines", SalesQuoteProblemCodesV1.PriceReadRequired)], cancellationToken);
-        var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note);
+        var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note, dueTerms);
         return await UpdateQuoteAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.ReviseV1, quoteId,
             (quote, now) => quote.Revise(expectedVersion, scope.ActorId, terms, lines, now),
             new SalesDraftStateAudit("sales.quote.revised.v1", "Revise", "Satış teklifi revize edildi"), request.Lines, cancellationToken);
@@ -283,7 +287,9 @@ public sealed partial class SalesDraftService
             [.. quote.Lines.Select(line => new SalesOrderDraftLineRequest(line.Id, line.Product.ProductId, line.Product.ProductVersion,
                 line.OrderUnit.UnitId, line.QuantityText, line.UnitPrice, line.PriceUnitId, line.RequestedDeliveryDate, line.Note, null,
                 line.DiscountPercent))],
-            quote.Terms.RequestedDeliveryDate, quote.Terms.Note);
+            quote.Terms.RequestedDeliveryDate, quote.Terms.Note,
+            // SAT-D132: the quote's due terms carry to the order; the seller may change them there (header revision).
+            DueTerms: SalesDraftHeaderApiV1.ToWire(quote.Terms.DueTerms));
         var priced = CommercialFields(draftRequest);
         if (priced.Count > 0)
         {
@@ -474,6 +480,19 @@ public sealed partial class SalesDraftService
         }
     }
 
+    /// <summary>SAT-D123..D129 / D138: the domain's due terms from the wire (shape already checked); a rule refusal is a 422 naming the field.</summary>
+    private static SalesDueTerms? QuoteDueTerms(SalesDueTermsV1? terms)
+    {
+        try
+        {
+            return SalesDraftHeaderApiV1.ToDomain(terms);
+        }
+        catch (SalesDueTermsException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new(DueTermsField(exception), exception.Code)]);
+        }
+    }
+
     /// <summary>Every quote line price field the request carries, as the field errors a price-visibility refusal names.</summary>
     private static List<SalesDraftFieldError> QuotePriceFields(IReadOnlyList<SalesQuoteLineRequest>? lines)
     {
@@ -634,5 +653,6 @@ public sealed partial class SalesDraftService
             record.RevisedBy, record.RevisedAtUtc))],
         [.. quote.ExpiryApprovals.Select(approval => new SalesQuoteExpiryApprovalV1(SalesDraftApiV1.RevisionText(approval.Revision),
             approval.ValidUntil, approval.BusinessDay, approval.ApprovedBy, approval.ApprovedAtUtc, approval.Note))],
-        new SalesQuoteExpiryV1(businessDay, quote.IsExpiredOn(businessDay), quote.CurrentExpiryApproval is not null));
+        new SalesQuoteExpiryV1(businessDay, quote.IsExpiredOn(businessDay), quote.CurrentExpiryApproval is not null),
+        disclosure.ToString(), disclosure == SalesPriceDisclosure.Visible ? SalesDraftHeaderApiV1.ToWire(quote.Terms.DueTerms) : null);
 }

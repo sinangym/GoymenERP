@@ -658,6 +658,49 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             ForceClosure(draftId);
 
+        public Func<Guid, SalesDraftCloseRequest, Task<SalesOrderDraftResponse>> Close { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.OrderNotReadyToClose);
+
+        public Func<Guid, Task<SalesOrderDraftUserClosureResponse>> UserClosure { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftUserClosureResponse(null));
+
+        public List<(Guid DraftId, SalesDraftCloseRequest Request, string Key)> CloseCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> CloseDraftAsync(Guid draftId, SalesDraftCloseRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            CloseCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Close(draftId, request);
+        }
+
+        public Task<SalesOrderDraftUserClosureResponse> GetDraftUserClosureAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            UserClosure(draftId);
+
+        // SAT-D30: the over-delivery approval command, recorded like the force-close's.
+        public Func<Guid, SalesDraftOverDeliveryApprovalRequest, Task<SalesOrderDraftResponse>> OverDeliveryApproval { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftOverDeliveryApprovalRequest Request, string Key)> OverDeliveryApprovalCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ApproveOverDeliveryAsync(Guid draftId, SalesDraftOverDeliveryApprovalRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            OverDeliveryApprovalCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return OverDeliveryApproval(draftId, request);
+        }
+
+        public List<(Guid DraftId, SalesDraftLineClosureRequest Request, string Key)> LineClosureCalls { get; } = [];
+
+        public Func<Guid, SalesDraftLineClosureRequest, Task<SalesOrderDraftResponse>> LineClosure { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Task<SalesOrderDraftResponse> CloseLineAsync(Guid draftId, SalesDraftLineClosureRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            LineClosureCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return LineClosure(draftId, request);
+        }
+
         public Func<Guid, SalesDraftRemainderChangeRequest, Task<SalesOrderDraftResponse>> RemainderRequest { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
 
@@ -2045,6 +2088,303 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using (var missing = await client.GetAsync(path))
         {
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D32 / SAT-D215: the user closure needs one canonical key and the strict body {expectedVersion} (no reason, no token)
+    /// before the service is reached, answers 200 with the detail after the change and carries the replay headers on a replayed
+    /// result and a replayed not-ready refusal; the record is a private read whose 404 stays code-less.
+    /// </summary>
+    [Fact]
+    public async Task User_close_command_and_record_use_the_strict_owner_contract_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/close";
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent("{\"expectedVersion\":\"5\"}", Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var notJson = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent("expectedVersion=5", Encoding.UTF8, "text/plain") })
+        {
+            notJson.Headers.Add("Idempotency-Key", "SENTETIK-not-json");
+            using var response = await client.SendAsync(notJson);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     "{\"expectedVersion\":5}",
+                     "{\"expectedVersion\":\"05\"}",
+                     "{\"expectedVersion\":\"5\",\"reason\":\"x\"}",
+                     "{\"expectedVersion\":\"5\",\"readyToClose\":true}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, "close", "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.CloseCalls);
+
+        var valid = "{\"expectedVersion\":\"5\"}";
+        using (var notReady = await client.SendAsync(StateCommand(draftId, "close", "SENTETIK-not-ready", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, notReady.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.OrderNotReadyToClose,
+                (await notReady.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.Close = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.OrderNotReadyToClose,
+            [new("readyToClose", SalesDraftProblemCodesV1.OrderNotReadyToClose)], true, "SENTETIK-not-ready-first");
+        using (var replayedRefusal = await client.SendAsync(StateCommand(draftId, "close", "SENTETIK-not-ready", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, replayedRefusal.StatusCode);
+            Assert.Equal("true", Assert.Single(replayedRefusal.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-not-ready-first", Assert.Single(replayedRefusal.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.Close = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"), request.ExpectedVersion == "6", "SENTETIK-close-first"));
+        using (var closed = await client.SendAsync(StateCommand(draftId, "close", "SENTETIK-close", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
+            Assert.False(closed.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "5", "SENTETIK-close"), (service.CloseCalls[^1].DraftId, service.CloseCalls[^1].Request.ExpectedVersion,
+            service.CloseCalls[^1].Key));
+        Assert.Empty(service.ForceCloseCalls);
+        using (var replayed = await client.SendAsync(StateCommand(draftId, "close", "SENTETIK-close-2", "{\"expectedVersion\":\"6\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-close-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        using (var none = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, none.StatusCode);
+            Assert.True(none.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.Equal(JsonValueKind.Null, (await none.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("userClosure").ValueKind);
+        }
+
+        service.UserClosure = _ => Task.FromResult(new SalesOrderDraftUserClosureResponse(new SalesDraftUserClosureV1("Rev.0", "SENTETIK-closer",
+            new DateTimeOffset(2026, 11, 3, 12, 0, 0, TimeSpan.Zero))));
+        using (var record = await client.GetAsync(path))
+        {
+            var body = await record.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["userClosure"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["revision", "closedBy", "closedAtUtc"], body.GetProperty("userClosure").EnumerateObject().Select(member => member.Name));
+        }
+
+        service.UserClosure = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D30 / SAT-D213 / SAT-D216: the over-delivery approval needs one canonical key and the strict body {expectedVersion, lineId,
+    /// shipped} before the service is reached; it answers 200 with the detail, carries the replay headers on a replayed result and
+    /// on a replayed terminal refusal, keeps 503 code-less and answers the block band as 422 with its stable code.
+    /// </summary>
+    [Fact]
+    public async Task Over_delivery_approval_uses_the_strict_envelope_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        const string segment = "over-delivery-approval";
+        var valid = JsonSerializer.Serialize(new SalesDraftOverDeliveryApprovalRequest("4", lineId, "102.5"), SalesDraftJson.Options);
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}")
+               {
+                   Content = new StringContent(valid, Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":4,\"lineId\":\"{lineId:D}\",\"shipped\":\"102.5\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{Guid.Empty:D}\",\"shipped\":\"102.5\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"0\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"-1\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":102.5}}",
+                     $"{{\"expectedVersion\":\"04\",\"lineId\":\"{lineId:D}\",\"shipped\":\"102.5\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"102.5\",\"reason\":\"x\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, segment, "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.OverDeliveryApprovalCalls);
+
+        service.OverDeliveryApproval = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"),
+            request.Shipped == "103", "SENTETIK-approve-first"));
+        using (var approved = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-approve", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            Assert.False(approved.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "4", lineId, "102.5", "SENTETIK-approve"),
+            (service.OverDeliveryApprovalCalls[0].DraftId, service.OverDeliveryApprovalCalls[0].Request.ExpectedVersion,
+                service.OverDeliveryApprovalCalls[0].Request.LineId, service.OverDeliveryApprovalCalls[0].Request.Shipped,
+                service.OverDeliveryApprovalCalls[0].Key));
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-approve-2",
+                   JsonSerializer.Serialize(new SalesDraftOverDeliveryApprovalRequest("4", lineId, "103"), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-approve-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.OverDeliveryApproval = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.OverDeliveryShipperUnverified,
+            [new("shippedBy", SalesDraftProblemCodesV1.OverDeliveryShipperUnverified)], true, "SENTETIK-unverified-first");
+        using (var refused = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-unverified", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal("true", Assert.Single(refused.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(SalesDraftProblemCodesV1.OverDeliveryShipperUnverified,
+                (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.OverDeliveryApproval = (_, _) => throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.OverDeliveryBlocked,
+            [new("lineId", SalesDraftProblemCodesV1.OverDeliveryBlocked)]);
+        using (var blocked = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-blocked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, blocked.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.OverDeliveryBlocked,
+                (await blocked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.OverDeliveryApproval = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.OverDeliveryPolicyUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.OverDeliveryPolicyUnavailable, await unavailable.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D17 / SAT-D168 / SAT-D216: the line closure needs one canonical key and the strict body {expectedVersion, lineId,
+    /// shipped} before the service is reached; it answers 200 with the detail, carries the replay headers on a replayed result and
+    /// on a replayed terminal refusal, keeps 503 code-less and answers the block band as 422 with its stable code.
+    /// </summary>
+    [Fact]
+    public async Task Line_closure_uses_the_strict_envelope_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        const string segment = "line-closure";
+        var valid = JsonSerializer.Serialize(new SalesDraftLineClosureRequest("4", lineId, "90"), SalesDraftJson.Options);
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}")
+               {
+                   Content = new StringContent(valid, Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":4,\"lineId\":\"{lineId:D}\",\"shipped\":\"90\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{Guid.Empty:D}\",\"shipped\":\"90\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"0\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"-1\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":90}}",
+                     $"{{\"expectedVersion\":\"04\",\"lineId\":\"{lineId:D}\",\"shipped\":\"90\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"lineId\":\"{lineId:D}\",\"shipped\":\"90\",\"reason\":\"x\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, segment, "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.LineClosureCalls);
+
+        service.LineClosure = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"),
+            request.Shipped == "91", "SENTETIK-close-first"));
+        using (var closed = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-close", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
+            Assert.False(closed.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "4", lineId, "90", "SENTETIK-close"),
+            (service.LineClosureCalls[0].DraftId, service.LineClosureCalls[0].Request.ExpectedVersion,
+                service.LineClosureCalls[0].Request.LineId, service.LineClosureCalls[0].Request.Shipped,
+                service.LineClosureCalls[0].Key));
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-close-2",
+                   JsonSerializer.Serialize(new SalesDraftLineClosureRequest("4", lineId, "91"), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-close-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.LineClosure = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.LineClosureShipperUnverified,
+            [new("shippedBy", SalesDraftProblemCodesV1.LineClosureShipperUnverified)], true, "SENTETIK-unverified-first");
+        using (var refused = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-unverified", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal("true", Assert.Single(refused.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(SalesDraftProblemCodesV1.LineClosureShipperUnverified,
+                (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.LineClosure = (_, _) => throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.LineClosureBlocked,
+            [new("lineId", SalesDraftProblemCodesV1.LineClosureBlocked)]);
+        using (var blocked = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-blocked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, blocked.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.LineClosureBlocked,
+                (await blocked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.LineClosure = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.LineClosurePolicyUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.LineClosurePolicyUnavailable, await unavailable.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
         }
     }
 

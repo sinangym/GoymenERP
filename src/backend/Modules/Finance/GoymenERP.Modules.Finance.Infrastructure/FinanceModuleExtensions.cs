@@ -84,6 +84,9 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ReversalProposalService>());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         services.AddScoped<IFinanceAllocationReadService, FinanceAllocationReadService>();
+        // F3a / API-20: a recorded payment applied to payable items, behind the same allocation permissions.
+        services.AddScoped<IFinancePaymentAllocationService>(CreatePaymentAllocationService);
+        services.AddScoped<IFinancePaymentAllocationReadService, FinancePaymentAllocationReadService>();
         services.AddScoped<IFinanceOpenItemReadServiceV1, FinanceOpenItemReadService>();
         // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items (credit limit and
         // collateral have no master yet: NoSource). It carries no authority; the Sales risk read measures its own.
@@ -188,6 +191,19 @@ public static class FinanceModuleExtensions
     {
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
         return new FinanceAllocationService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IAuditEventCollector>(),
+            Envelope(provider, FinancePermissionNames.AllocationWrite, permissions, FinanceAction.WriteAllocation),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinancePaymentAllocationService CreatePaymentAllocationService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinancePaymentAllocationService(
             provider.GetRequiredService<FinanceDbContext>(),
             provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<ICurrentUser>(),

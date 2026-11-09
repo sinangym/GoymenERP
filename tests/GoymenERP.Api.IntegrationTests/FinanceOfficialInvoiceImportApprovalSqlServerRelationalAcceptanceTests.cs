@@ -166,9 +166,10 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         await context.Database.MigrateAsync();
         Assert.Equal(4, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
-        // The rollback above also ran MOD-15's AddOpenItemDirection and MOD-04's AddOpenItemInvoiceExchange Downs on an
-        // empty store; the reapply ends with the newest one.
-        Assert.EndsWith("_AddOpenItemInvoiceExchange",
+        // The rollback above also ran MOD-15's AddOpenItemDirection, MOD-04's AddOpenItemInvoiceExchange, F2b's
+        // AddInvoiceCancellations and F3a's AddPaymentAllocations Downs on an empty store; the reapply ends with the
+        // newest one.
+        Assert.EndsWith("_AddPaymentAllocations",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
     }
 

@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Sales.Infrastructure;
 
@@ -86,8 +87,47 @@ public static class SalesModuleExtensions
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
+        // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
+        services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
+        // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
+        // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
+        services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
+        services.TryAddSingleton<ISalesInvoiceDiagnosticsV1>(serviceProvider => new SalesInvoiceDiagnostics(
+            serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<SalesInvoiceDiagnostics>()));
+        // API-37 (Kontrol Merkezi): the read-only follow-up list over the invoice store and the Logistics shares.
+        services.TryAddSingleton(new SalesControlCenterPolicy());
+        services.AddScoped<ISalesControlCenterService>(CreateControlCenterService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing Logistics port stays null: the overdue check answers Unavailable, never a silent zero.
+    private static SalesControlCenterService CreateControlCenterService(IServiceProvider serviceProvider) => new SalesControlCenterService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ISalesInvoiceStore>(),
+        serviceProvider.GetRequiredService<SalesControlCenterPolicy>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>());
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    private static SalesInvoiceService CreateInvoiceService(IServiceProvider serviceProvider) => new SalesInvoiceService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ICorrelationContext>(),
+        serviceProvider.GetRequiredService<ISalesInvoiceStore>(),
+        serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
+        serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
+        serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>(),
+        serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
+        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
@@ -174,7 +214,16 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<IProductItemTypeReaderV1>(),
         // SAT-D175 (EK25): the Production / customer-goods binding of a subcontract service order (host adapter, the Production
         // lane's); until it is composed, the customer of such an order does not change (503, fail-closed).
-        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>());
+        serviceProvider.GetService<ISalesSubcontractOrderBindingReadPortV1>(),
+        // SAT-D32: the source (MOD-05), invoicing (S5) and financial-closure (MOD-04) axes; nothing registers it on main, so they
+        // stay "NoSource" and "kapanmaya hazır" stays false (the user closure is 409), never an assumed complete axis.
+        serviceProvider.GetService<ISalesOrderOwnerAxesSourceV1>(),
+        // S-1 / MOD-03 (DEC-SAL-005, No 30 / SAT-D12): the supply owners' linked-supply adapters (Production U5-a, Purchasing
+        // MOD-03), one per supply kind; the host registers Purchasing's (#998), Production's is not on main yet ("no source").
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>(),
+        // SAT-D219 (EK38): the declarations of the supply owners that RECORD links to Sales order lines (Purchasing, #998): a recorded kind
+        // without an adapter is Unreadable, and only a kind nobody records is "no source".
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

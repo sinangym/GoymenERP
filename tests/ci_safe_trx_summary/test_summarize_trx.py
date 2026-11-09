@@ -24,13 +24,13 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76"
+    "525876972bb40735b565aa237b16b29155a7f73ea6a9fef99a0c412da4b77447"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
-    "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
+    "d04b7794ab2a9a180539258568d3d810ec2437ee468657e27574a50db4c04459"
 )
 REVIEWED_RELEASE_MANIFEST_JOB_FINGERPRINT = (
-    "d20f56609a1f034815a34502584a5258c711d1f3ec65195c5c5f5d467e2b1138"
+    "7c3609e2522192735d9d7b8409f0de7aab607187c263b55a60e46231cbdfca9e"
 )
 
 
@@ -813,6 +813,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "backend-test-group",
             "backend",
             "frontend",
+            "frontend-static",
+            "frontend-test",
             "relational-shard",
             "relational-rcsi",
             "relational",
@@ -841,10 +843,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "backend-test-group": (
                 "Produce secret-free backend group summary",
                 "Upload secret-free backend group summary",
-                '"artifacts/ci-test-results/backend-groups/${{ matrix.group }}"',
-                '"artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json"',
-                "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
-                "ci-test-summary-backend-group-${{ matrix.group }}-" + head_ref,
+                '"artifacts/ci-test-results/backend-groups/${{ matrix.unit }}"',
+                '"artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json"',
+                "artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json",
+                "ci-test-summary-backend-group-${{ matrix.unit }}-" + head_ref,
                 "artifacts/ci-test-results/backend-groups/*/*.trx",
                 "test-suite",
             ),
@@ -930,14 +932,14 @@ class SafeTrxSummaryTests(unittest.TestCase):
             [
                 "uses: actions/upload-artifact@v7",
                 "with:",
-                "name: ci-backend-test-group-proof-${{ matrix.group }}",
-                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "name: ci-backend-test-group-proof-${{ matrix.unit }}",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json",
                 "if-no-files-found: error",
                 "retention-days: 7",
             ],
         )
         self.assertIn(
-            '--results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \\',
+            '--results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.unit }}" \\',
             self._workflow_step_lines(backend_worker, "Run exact backend test group"),
         )
         shard = jobs["relational-shard"]
@@ -1004,9 +1006,22 @@ class SafeTrxSummaryTests(unittest.TestCase):
         for job_name, body in jobs.items():
             if job_name not in summaries:
                 self.assertNotIn("tools/ci/summarize_trx.py", body)
-                self.assertNotIn("actions/upload-artifact@v7", body)
+                if job_name == "frontend-test":
+                    # The only non-summary upload: a one-day, secret-free
+                    # per-shard test-file count (a single text file).
+                    self.assertEqual(body.count("actions/upload-artifact@v7"), 1)
+                    self.assertIn(
+                        "name: frontend-shard-count-${{ matrix.shard }}", body
+                    )
+                    self.assertIn(
+                        "path: src/frontend/goymen-erp-web/shard-count.txt", body
+                    )
+                    self.assertIn("retention-days: 1", body)
+                    self.assertIn("if-no-files-found: error", body)
+                else:
+                    self.assertNotIn("actions/upload-artifact@v7", body)
         self.assertEqual(workflow.count("tools/ci/summarize_trx.py"), 4)
-        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 6)
+        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 7)
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*ci-test-results")
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*\.trx\b")
         self.assertIn("permissions:\n  contents: read", workflow)
@@ -1136,18 +1151,18 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "target suite command",
-                "python3 -I -S -B -m unittest discover \\",
-                "python3 -I -S -B -m unittest \\",
+                "python3 -I -S -B tools/run_unittest_shards.py \\",
+                "python3 -I -S -B tools/other_runner.py \\",
             ),
             (
                 "target suite path",
-                "-s tests/recovery_surface_inventory \\",
-                "-s tests \\",
+                "--start-dir tests/recovery_surface_inventory \\",
+                "--start-dir tests \\",
             ),
             (
                 "target suite pattern",
-                '-p "test_*.py" \\',
-                '-p "other_*.py" \\',
+                '--pattern "test_*.py" \\',
+                '--pattern "other_*.py" \\',
             ),
             (
                 "immutable generator extraction",
@@ -1215,9 +1230,9 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "python executable overridden",
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
                 "          python3() { :; }\n"
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
             ),
             (
                 "successful early exit",
@@ -1453,18 +1468,18 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "target suite command",
-                "python3 -I -S -B -m unittest discover \\",
-                "python3 -I -S -B -m unittest \\",
+                "python3 -I -S -B tools/run_unittest_shards.py \\",
+                "python3 -I -S -B tools/other_runner.py \\",
             ),
             (
                 "target suite path",
-                "-s tests/release_manifest \\",
-                "-s tests \\",
+                "--start-dir tests/release_manifest \\",
+                "--start-dir tests \\",
             ),
             (
                 "target suite pattern",
-                '-p "test_*.py" \\',
-                '-p "other_*.py" \\',
+                '--pattern "test_*.py" \\',
+                '--pattern "other_*.py" \\',
             ),
             (
                 "first generator execution",
@@ -1535,9 +1550,9 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "python executable overridden",
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
                 "          python3() { :; }\n"
-                "          python3 -I -S -B -m unittest discover ",
+                "          python3 -I -S -B tools/run_unittest_shards.py ",
             ),
             (
                 "successful early exit",
@@ -1665,8 +1680,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "backend proof passed as summary",
-                "path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
-                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "path: artifacts/ci-safe-test-summary/backend-${{ matrix.unit }}.json",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.unit }}.json",
             ),
             (
                 "wrong producer identity",
@@ -1751,10 +1766,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             'generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"',
             'generator_temp="$(mktemp --suffix=.py)"',
             'inventory_temp="$(mktemp --suffix=.json)"',
-            "python3 -I -S -B -m unittest discover \\",
-            "-s tests/recovery_surface_inventory \\",
-            '-p "test_*.py" \\',
-            "-v",
+            "python3 -I -S -B tools/run_unittest_shards.py \\",
+            "--start-dir tests/recovery_surface_inventory \\",
+            '--pattern "test_*.py" \\',
+            "--shards 4",
             'git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"',
             'test "$(git hash-object "$generator_temp")" = "$generator_blob"',
             'python3 -I -S -B "$generator_temp" \\',
@@ -1851,10 +1866,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "}",
             "trap cleanup EXIT",
             'test "$(git hash-object "$generator_path")" = "$generator_blob"',
-            "python3 -I -S -B -m unittest discover \\",
-            "-s tests/release_manifest \\",
-            '-p "test_*.py" \\',
-            "-v",
+            "python3 -I -S -B tools/run_unittest_shards.py \\",
+            "--start-dir tests/release_manifest \\",
+            '--pattern "test_*.py" \\',
+            "--shards 4",
             'python3 -I -S -B "$generator_path" \\',
             '--repository-root "$GITHUB_WORKSPACE" \\',
             '--source-commit "$SOURCE_COMMIT" \\',

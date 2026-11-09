@@ -17,6 +17,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -488,27 +489,44 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         public ValueTask DisposeAsync() => owner.DisposeAsync();
     }
 
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
     /// <summary>The REAL host over a fresh database, with Identity grants for the HTTP routes.</summary>
     private sealed class HostRun : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
-        private HostRun(string baseConnectionString, SqlServerRelationalApiFactory factory)
+        private HostRun(string baseConnectionString, SqlServerRelationalApiFactory factory, TimeProvider clock)
         {
             this.baseConnectionString = baseConnectionString;
             Factory = factory;
+            Today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(),
+                TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul")).DateTime);
         }
 
         public SqlServerRelationalApiFactory Factory { get; }
 
-        public DateOnly Today { get; } = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow,
-            TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul")).DateTime);
+        /// <summary>
+        /// The business date (Europe/Istanbul) of the profile administration's server clock, which is fixed at the start
+        /// of the run: the server's "today" stays this date even when the run crosses Istanbul midnight (21:00 UTC).
+        /// </summary>
+        public DateOnly Today { get; }
 
         public static async Task<HostRun> StartAsync()
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var run = new HostRun(baseConnectionString, new SqlServerRelationalApiFactory(baseConnectionString));
+            // Only the profile administration (the one server reader of the business date here; both profile lifecycle
+            // interfaces resolve this one registration) takes the fixed clock; Identity and the other modules keep the
+            // system clock, so the synthetic grants stay in force.
+            TimeProvider clock = new FixedClock(DateTimeOffset.UtcNow);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
+                services.Replace(ServiceDescriptor.Scoped(provider =>
+                    ActivatorUtilities.CreateInstance<SettingsManufacturingProfileAdministration>(provider, clock))));
+            var run = new HostRun(baseConnectionString, factory, clock);
             using var client = run.Factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
             health.EnsureSuccessStatusCode();

@@ -161,6 +161,21 @@ internal sealed class DraftLineRow : ISalesTenantRow
 
     /// <summary>SAT-D176 (EK25): the Product owner's item type confirmed for a subcontract service order's line ("Service"); null otherwise.</summary>
     public string? ItemType { get; set; }
+
+    /// <summary>SAT-D167 (EK24): the revision a line revision added this line in; null = the line came with the create. Written once.</summary>
+    public int? AddedInRevision { get; set; }
+
+    /// <summary>SAT-D167: the revision a line revision removed (passivated) this line in; null while active. Null → value once.</summary>
+    public int? RemovedInRevision { get; set; }
+
+    /// <summary>SAT-D167: for a line removed by a product change, the replacing line's id; set together with the removal only.</summary>
+    public Guid? ReplacedByLineId { get; set; }
+
+    /// <summary>
+    /// SAT-D211 (EK36): the revision whose rejection reverted this line's removal (the line is active again); set only together
+    /// with that reinstatement (RemovedInRevision R → null, ReinstatedInRevision → R).
+    /// </summary>
+    public int? ReinstatedInRevision { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>
@@ -396,6 +411,52 @@ internal sealed class DraftCustomerRejectionRow : ISalesTenantRow
 }
 
 /// <summary>
+/// SAT-D30 / SAT-D213 (EK37): one recorded over-delivery approval of one order line (append-only; numbered per line): the line
+/// (identity and position), its approval number, the realization basis revision and its measured quantity text, the shipped total
+/// the approval covers (exact text of the line's order unit), who approved it, when, the draft version it produced and the
+/// correlation. Never modified, never deleted; a larger shipped total needs the next approval (SAT-D213).
+/// </summary>
+internal sealed class DraftOverDeliveryApprovalRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public Guid LineId { get; set; }
+    public int LineNo { get; set; }
+    public int ApprovalNo { get; set; }
+    public int BasisRevision { get; set; }
+    public string Ordered { get; set; } = string.Empty;
+    public string ApprovedShipped { get; set; } = string.Empty;
+    public string ApprovedBy { get; set; } = string.Empty;
+    public DateTimeOffset ApprovedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// SAT-D17 / SAT-D168 (EK24, EK37): one recorded closure of one order line with a shortfall (append-only; at most one per line):
+/// the line (identity and position), the realization basis revision and its measured quantity text, the shipped total at the
+/// closure and the remainder counted as cancelled (exact text of the line's order unit), the SAT-D15 band of the shortfall
+/// (<see cref="GoymenERP.Modules.Sales.Domain.Drafts.DeliveryToleranceBand"/> as its number), who closed it, when, the draft
+/// version it produced and the correlation. Never modified, never deleted; a closed line cannot ship again (SAT-D215).
+/// </summary>
+internal sealed class DraftLineClosureRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public Guid LineId { get; set; }
+    public int LineNo { get; set; }
+    public int BasisRevision { get; set; }
+    public string Ordered { get; set; } = string.Empty;
+    public string ShippedAtClosure { get; set; } = string.Empty;
+    public string CancelledRemainder { get; set; } = string.Empty;
+    public int Band { get; set; }
+    public string ClosedBy { get; set; } = string.Empty;
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// No 30 / SAT-D12: the recorded force-closure of an approved order (append-only, at most one per draft): the revision closed,
 /// who, when, why, the draft version it produced, the impact preview the user confirmed (its token and each category's status
 /// and blocking flag, as JSON) and every line's closed remainder (ordered, shipped, closed remainder as exact text, as JSON).
@@ -413,5 +474,21 @@ internal sealed class DraftForceClosureRow : ISalesTenantRow
     public string ImpactToken { get; set; } = string.Empty;
     public string ImpactJson { get; set; } = string.Empty;
     public string LinesJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// SAT-D32: the recorded USER closure of a "kapanmaya hazır" order (append-only, at most one per draft): the revision closed,
+/// who, when and the draft version it produced. No reason (SAT-D215) and no remainder. Never modified, never deleted; the
+/// draft's other rows stay as they were. A draft carries this row OR a force-closure row, never both (the store's restore).
+/// </summary>
+internal sealed class DraftUserClosureRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string ClosedBy { get; set; } = string.Empty;
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }

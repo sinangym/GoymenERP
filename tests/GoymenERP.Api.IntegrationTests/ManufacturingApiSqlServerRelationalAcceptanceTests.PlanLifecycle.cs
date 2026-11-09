@@ -53,18 +53,18 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             ("@c", CompanyA), ("@p", planId)));
 
         // URT-D2: the approver's rejection keeps the Draft with its reason; the same key replays it.
-        using (var noReason = await client.PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
+        using (var noReason = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
                    new RejectPlanRequestV1(1, "  ")))
         {
             Assert.Equal((HttpStatusCode.BadRequest, "reason"), (noReason.StatusCode, await FieldAsync(noReason)));
         }
 
-        var rejected = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{planId}/rejection",
+        var rejected = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/rejection",
             new RejectPlanRequestV1(1, " Hat hızı yüksek "), "u2a-reject");
         Assert.Equal(("Draft", 2L), (rejected.Status, rejected.Version));
         var rejection = Assert.Single(rejected.Rejections!);
         Assert.Equal((1, "Hat hızı yüksek", 2L), (rejection.Number, rejection.Reason, rejection.PlanVersion));
-        using (var replay = await client.PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
+        using (var replay = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
                    new RejectPlanRequestV1(1, " Hat hızı yüksek "), "u2a-reject"))
         {
             Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
@@ -88,10 +88,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal((3L, "25", 1), (reopened.Version, reopened.LineSpeedMetresPerMinute, reopened.Rejections!.Count));
 
         // URT-D1: one approved plan opens exactly one order.
-        var approved = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
+        var approved = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
             new ApprovePlanRequestV1(3));
         Assert.Equal(("Approved", 4L), (approved.Status, approved.Version));
-        using (var rejectApproved = await client.PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
+        using (var rejectApproved = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
                    new RejectPlanRequestV1(4, "geç")))
         {
             Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingRuleCodes.PlanNotDraft),
@@ -141,6 +141,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         // A Draft and an approved plan without an order are cancelled and kept; the active list leaves them out.
+        // U3-a: the first plan's approval allocated its roll's kilograms, so these plans plan another roll.
+        var other = await run.StockedLabelAsync($"SYN-MFG-U2A-B-{Guid.NewGuid():N}");
+        inputs = [new PlannedInputRequestV1(other.Id, "1000", other.Version)];
         var draftId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans", new SavePlanRequestV1(draftId, tube, inputs, null));
         var cancelledDraft = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{draftId}/cancellation",
@@ -154,7 +157,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 (again.StatusCode, (await Problem(again)).Code));
         }
 
-        using (var approveCancelled = await client.PostWithKeyAsync($"{Base}/plans/{draftId}/approval",
+        using (var approveCancelled = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{draftId}/approval",
                    new ApprovePlanRequestV1(2)))
         {
             Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingRuleCodes.PlanNotDraft),
@@ -170,7 +173,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         var approvedId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans", new SavePlanRequestV1(approvedId, tube, inputs, null));
-        await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{approvedId}/approval", new ApprovePlanRequestV1(1));
+        await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{approvedId}/approval", new ApprovePlanRequestV1(1));
         var cancelledApproved = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{approvedId}/cancellation",
             new CancelPlanRequestV1(2, "Hat arızası"));
         Assert.Equal(("Cancelled", 3L), (cancelledApproved.Status, cancelledApproved.Version));
@@ -210,7 +213,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var slitting = await run.WorkCenterOfKindAsync(CompanyA, "Slitting");
         // The synthetic Product snapshot captures 1 mm × 1000 mm coils; the label holds 1000.125 kg of free stock.
         var roll = await run.StockedLabelAsync($"SYN-MFG-U2A-SLT-{Guid.NewGuid():N}");
-        PlannedInputRequestV1[] Inputs(string kg) => [new PlannedInputRequestV1(roll.Id, kg, roll.Version)];
+        var rollVersion = roll.Version;
+        PlannedInputRequestV1[] Inputs(string kg) => [new PlannedInputRequestV1(roll.Id, kg, rollVersion)];
         SlittingSpecRequestV1 Spec(string netWidth) => new([new SlitLineRequestV1("490", 2)], null, netWidth);
 
         using (var tooWide = await client.PostWithKeyAsync($"{Base}/plans",
@@ -232,7 +236,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             new SavePlanRequestV1(planId, slitting, Inputs("1000"), null, Spec("980.000"), null, "50"));
         Assert.Equal(("980", "50"), (created.SlittingSpec!.NetUsableWidthMm, created.LineSpeedMetresPerMinute));
 
-        var approved = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
+        var approved = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
             new ApprovePlanRequestV1(1));
         Assert.Equal("Approved", approved.Status);
         var speed = approved.ParameterSnapshot!.Values.Single(value => value.Key == "lineSpeedMetresPerMinute");
@@ -245,10 +249,12 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             ("@c", CompanyA), ("@p", planId)));
 
         // A roll whose free stock does not cover the planned kg is not usable: the approval is refused, nothing changes.
+        // U3-a: the approval above allocated the roll and moved its label version; the next plan names the current one.
+        rollVersion = await run.CurrentLabelVersionAsync(roll.Id);
         var shortId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans",
             new SavePlanRequestV1(shortId, slitting, Inputs("1500"), null, Spec("980"), null, "50"));
-        using (var refused = await client.PostWithKeyAsync($"{Base}/plans/{shortId}/approval", new ApprovePlanRequestV1(1)))
+        using (var refused = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{shortId}/approval", new ApprovePlanRequestV1(1)))
         {
             Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingRuleCodes.PlanLabelNotUsable),
                 (refused.StatusCode, (await Problem(refused)).Code));

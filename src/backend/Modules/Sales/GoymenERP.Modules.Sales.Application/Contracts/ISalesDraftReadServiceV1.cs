@@ -43,7 +43,10 @@ public sealed record SalesOrderDraftReadDetailViewV1(
     bool IsOwnDraft,
     bool IsOwnDecisionRestricted,
     SalesPartyDisplayV1 PartyDisplay,
-    IReadOnlyList<SalesUserDisplayV1> UserDisplays);
+    IReadOnlyList<SalesUserDisplayV1> UserDisplays,
+    // SAT-D167 (EK24): the lines a line revision removed (passive, history); omitted when there is none.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<SalesOrderDraftRemovedLineV1>? RemovedLines = null);
 
 public sealed record SalesOrderDraftReadListResponseV1(
     IReadOnlyList<SalesOrderDraftReadSummaryViewV1> Items,

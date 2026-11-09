@@ -15,16 +15,14 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <item>golden parity — the shared <see cref="CommercialLinePriceCalculator"/> Purchasing uses answers exactly what the Sales line
 /// calculator answers for the same price, discount and quantity (TEK-03: one rule, written twice until Sales moves; Sales types are
 /// only read here);</item>
-/// <item>the real approved Settings provider answers <c>settings_provider_unavailable</c> for the purchasing order money operation
-/// today, so a priced purchase order is fail-closed. This test flips deliberately in A2a-1b, when the Settings catalog approves
-/// <c>purchasing.order.v1</c> (Sinan #66 6704170096, narrow exception).</item>
+/// <item>the real approved Settings provider answers the purchasing order money operation <c>purchasing.order.v1</c> with each seed
+/// company's TRY profile — scale 2 (the final amount, Ö2) and unit-price scale 4 — since A2a-1b flipped the earlier "not in the
+/// catalog" pin (ALS-D63 narrow exception, Sinan #66 6704170096); the key is the Purchasing owner's own constant.</item>
 /// </list>
 /// SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class PurchasingPricingGuardTests
 {
-    private static readonly Guid Gdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
-
     [Theory]
     [InlineData("100", null, null, "1", 2)]
     [InlineData("41.25", "2.5", null, "1250.5", 2)]
@@ -49,31 +47,96 @@ public sealed class PurchasingPricingGuardTests
         Assert.Equal(SalesLinePriceCalculator.Format(net), CommercialLinePriceCalculator.Format(net));
     }
 
-    [Fact]
-    public async Task The_approved_Settings_provider_has_no_money_profile_for_the_purchasing_order_operation_yet()
+    [Theory]
+    [InlineData("10000000-0000-0000-0000-000000000001")]
+    [InlineData("10000000-0000-0000-0000-000000000002")]
+    [InlineData("10000000-0000-0000-0000-000000000003")]
+    public async Task The_approved_Settings_provider_answers_the_purchasing_order_operation_with_the_TRY_profile(string seedCompany)
     {
+        var companyId = Guid.Parse(seedCompany);
         var company = new CompanyContext();
-        company.Set(Gdc);
-        var provider = new ApprovedSettingsPrerequisiteProvider(company, new SyntheticUser());
+        company.Set(companyId);
+        var provider = new ApprovedSettingsPrerequisiteProvider(company, new SyntheticUser(companyId));
 
-        // The owner's TRY profile exists for its own operations; only the purchasing key is not approved (A2a-1b flips this).
+        // A2a-1b flipped this pin: the owner's TRY profile now answers the Purchasing owner's key too.
+        var profile = await provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, PurchasingMoneyOperationsV1.OrderV1, new DateOnly(2026, 11, 7));
+        Assert.Equal((companyId, SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", PurchasingMoneyOperationsV1.OrderV1, 2, (int?)4, true),
+            (profile.CompanyId, profile.CurrencyId, profile.CurrencyCode, profile.Operation, profile.Scale, profile.UnitPriceScale, profile.IsActive));
+        Assert.Equal(1, profile.Profile.Version);
+        Assert.Contains(ApprovedMoneyProfileCatalog.Approved.Entries, entry => entry.CompanyId == companyId && entry.ProfileId == profile.Profile.ProfileId);
+        var candidates = await ((ISettingsMoneyCandidateReaderV2)provider).GetMoneyCurrencyCandidatesAsync(PurchasingMoneyOperationsV1.OrderV1);
+        Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "TRY"), Assert.Single(candidates));
+
+        // The Sales owner's answer is unchanged and carries no unit-price scale (none is decided for it).
         var sales = await provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, "sales.order-draft.v1", new DateOnly(2026, 11, 7));
-        Assert.Equal("TRY", sales.CurrencyCode);
-        var refused = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => provider.GetMoneyProfileAsync(
-            SettingsCurrencyIdentitiesV1.TurkishLira, PurchasingMoneyOperationsV1.OrderV1, new DateOnly(2026, 11, 7)));
-        Assert.Equal("settings_provider_unavailable", refused.Code);
-        var candidates = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
-            ((ISettingsMoneyCandidateReaderV2)provider).GetMoneyCurrencyCandidatesAsync(PurchasingMoneyOperationsV1.OrderV1));
-        Assert.Equal("settings_provider_unavailable", candidates.Code);
+        Assert.Equal(("TRY", 2, (int?)null), (sales.CurrencyCode, sales.Scale, sales.UnitPriceScale));
+    }
+
+    // A2a-2 (ALS-D74, ALS-D75): golden parity of the shared totals calculator with the Sales one — line amounts with a discount and a
+    // maturity surcharge, VAT per line, withholding from the rounded VAT (SAT-D75), gross and payable, and the document sums.
+    [Theory]
+    [InlineData("41.25", "2.5", null, "3", null, "1250.5", "20", "0.5", 2)]
+    [InlineData("10.01", null, "0.01", null, "0.25", "0.5", "10", null, 2)]
+    [InlineData("33.33", "33.333333", null, null, null, "7.125", "1", "0.2", 2)]
+    [InlineData("0", "10", null, null, null, "4", "20", null, 2)]
+    [InlineData("1.5", null, "1.5", null, "0.000001", "7", "18", "0.9", 6)]
+    [InlineData("99.99", null, null, "100", null, "3", "0", null, 0)]
+    public void The_shared_totals_calculator_answers_exactly_what_the_Sales_totals_calculator_answers(string price, string? discountPercent,
+        string? discountAmount, string? surchargePercent, string? surchargeAmount, string quantity, string vat, string? share, int scale)
+    {
+        var unit = Guid.NewGuid();
+        var currency = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var rate = SalesLineTaxRate.Of(Parse(vat)!.Value, Parse(share));
+        var commercial = new CommercialDraftFields(price, unit, discountPercent, DiscountAmount: discountAmount, SurchargePercent: surchargePercent,
+            SurchargeAmount: surchargeAmount);
+        var sales = SalesOrderTotalsCalculator.Calculate(
+            [
+                new SalesTotalsLineInput(first, 1, unit, Parse(quantity)!.Value, commercial),
+                new SalesTotalsLineInput(second, 2, unit, 2m, new CommercialDraftFields("12.5", unit, null)),
+            ], currency, scale, _ => rate);
+        var priceInput = new CommercialLinePriceInput(Parse(price)!.Value, Parse(discountPercent), Parse(discountAmount), Parse(surchargePercent),
+            Parse(surchargeAmount));
+        var tax = CommercialLineTaxInput.Vat(rate.VatPercent, rate.WithholdingShare);
+        var shared = CommercialTaxTotalsCalculator.Calculate(
+            [
+                new CommercialTotalsLineInput(first, Parse(quantity)!.Value, priceInput, tax),
+                new CommercialTotalsLineInput(second, 2m, new CommercialLinePriceInput(12.5m), tax),
+            ], scale);
+
+        for (var index = 0; index < 2; index++)
+        {
+            var (expected, actual) = (sales.Lines[index], shared.Lines[index]);
+            Assert.Equal((expected.NetUnitPrice, expected.NetAmount?.Amount, expected.VatAmount?.Amount, expected.WithheldVatAmount?.Amount,
+                    expected.GrossAmount?.Amount, expected.PayableAmount?.Amount),
+                (actual.NetUnitPrice, actual.NetAmount, actual.VatAmount, actual.WithheldVatAmount, actual.GrossAmount, actual.PayableAmount));
+        }
+
+        Assert.Equal((sales.Document.NetAmount?.Amount, sales.Document.VatAmount?.Amount, sales.Document.WithheldVatAmount?.Amount,
+                sales.Document.GrossAmount?.Amount, sales.Document.PayableAmount?.Amount),
+            (shared.Document.NetAmount, shared.Document.VatAmount, shared.Document.WithheldVatAmount, shared.Document.GrossAmount,
+                shared.Document.PayableAmount));
+
+        // An unpriced line leaves both documents without a sum; a line without a rate leaves both without the VAT sums.
+        var salesUnpriced = SalesOrderTotalsCalculator.Calculate([new SalesTotalsLineInput(first, 1, unit, 1m, CommercialDraftFields.None)], currency,
+            scale, _ => rate);
+        var sharedUnpriced = CommercialTaxTotalsCalculator.Calculate([new CommercialTotalsLineInput(first, 1m, null, tax)], scale);
+        Assert.Equal((salesUnpriced.Document.NetAmount?.Amount, 1), (sharedUnpriced.Document.NetAmount, sharedUnpriced.Document.UnpricedLineCount));
+        var salesNoRate = SalesOrderTotalsCalculator.Calculate([new SalesTotalsLineInput(first, 1, unit, 1m, commercial)], currency, scale, _ => null);
+        var sharedNoRate = CommercialTaxTotalsCalculator.Calculate(
+            [new CommercialTotalsLineInput(first, 1m, priceInput, CommercialLineTaxInput.VatNotComputable("synthetic"))], scale);
+        Assert.Equal((salesNoRate.Document.NetAmount?.Amount, salesNoRate.Document.VatAmount?.Amount),
+            (sharedNoRate.Document.NetAmount, sharedNoRate.Document.VatAmount));
     }
 
     private static decimal? Parse(string? text) => text is null ? null : decimal.Parse(text, CultureInfo.InvariantCulture);
 
-    private sealed class SyntheticUser : ICurrentUser
+    private sealed class SyntheticUser(Guid company) : ICurrentUser
     {
         public bool IsAuthenticated => true;
         public string? UserId => "SENTETIK-purchasing-pricing";
-        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Gdc };
-        public bool CanAccessCompany(Guid companyId) => companyId == Gdc;
+        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { company };
+        public bool CanAccessCompany(Guid companyId) => companyId == company;
     }
 }

@@ -55,6 +55,53 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
     internal DbSet<ApprovedAccountingSourceCatalogRow> ApprovedSourceCatalogs =>
         Set<ApprovedAccountingSourceCatalogRow>();
 
+    internal DbSet<AccountingPostingAccountMappingVersionRow> PostingAccountMappingVersions =>
+        Set<AccountingPostingAccountMappingVersionRow>();
+
+    internal DbSet<AccountingPostingAccountMappingEntryRow> PostingAccountMappingRows =>
+        Set<AccountingPostingAccountMappingEntryRow>();
+
+    internal DbSet<AccountingSourceDocumentAdmissionRow> SourceDocumentAdmissions =>
+        Set<AccountingSourceDocumentAdmissionRow>();
+
+    internal DbSet<AccountingSourceDocumentVoucherDraftRow> SourceDocumentVoucherDrafts =>
+        Set<AccountingSourceDocumentVoucherDraftRow>();
+
+    internal DbSet<AccountingSourceDocumentVoucherDraftLineRow> SourceDocumentVoucherDraftLines =>
+        Set<AccountingSourceDocumentVoucherDraftLineRow>();
+
+    /// <summary>
+    /// B-04b: the facts follow the status. Waiting (1) and refused (3) carry a reason and no draft; admitted (2) carries
+    /// the draft and the reason "admitted".
+    /// </summary>
+    internal const string SourceDocumentAdmissionStatusCheck =
+        "([Status] = 1 AND [VoucherDraftId] IS NULL AND LEN([ReasonCode]) > 0) "
+        + "OR ([Status] = 2 AND [VoucherDraftId] IS NOT NULL AND [ReasonCode] = 'admitted') "
+        + "OR ([Status] = 3 AND [VoucherDraftId] IS NULL AND LEN([ReasonCode]) > 0 AND [ReasonCode] <> 'admitted')";
+
+    /// <summary>
+    /// B-04a: the facts follow the status. Prepared (1) has no activation; Active (2) and Superseded (3) carry
+    /// the activator and instant.
+    /// </summary>
+    internal const string PostingAccountMappingVersionStatusCheck =
+        "([Status] = 1 AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR "
+        + "([Status] IN (2, 3) AND [ActivatedByUserId] IS NOT NULL "
+        + "AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)";
+
+    /// <summary>B-04a maker-checker: the activator is never the preparer.</summary>
+    internal const string PostingAccountMappingVersionMakerCheckerCheck =
+        "[ActivatedByUserId] IS NULL OR [ActivatedByUserId] <> [PreparedByUserId]";
+
+    /// <summary>B-04a (Sinan #66 6707864938): only a VAT key may name an optional VAT rate sub-account selector.</summary>
+    internal const string PostingAccountMappingRowVatRateCheck =
+        "[VatRateCode] IS NULL OR (LEN([VatRateCode]) > 0 AND [MappingKey] IN (N'vat-output', N'vat-input'))";
+
+    /// <summary>B-04a: the purposes and the mapping keys each purpose may carry (no account number).</summary>
+    internal const string PostingAccountMappingRowKeyCheck =
+        "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output', N'withholding-receivable')) OR "
+        + "([Purpose] = N'purchase-invoice' AND [MappingKey] IN "
+        + "(N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense'))";
+
     /// <summary>
     /// ACC-V0 (Ö4): the facts follow the status exactly. Proposed (3): the preparer only; Open (1): the
     /// preparer and an approval by SOMEONE ELSE; Closed (2): both plus the close.
@@ -87,6 +134,11 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         ConfigureNormalJournalDraftLines(modelBuilder);
         ConfigureJournalReversalProposals(modelBuilder);
         ConfigureApprovedSourceCatalogs(modelBuilder);
+        ConfigurePostingAccountMappingVersions(modelBuilder);
+        ConfigurePostingAccountMappingRows(modelBuilder);
+        ConfigureSourceDocumentAdmissions(modelBuilder);
+        ConfigureSourceDocumentVoucherDrafts(modelBuilder);
+        ConfigureSourceDocumentVoucherDraftLines(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -470,6 +522,177 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigurePostingAccountMappingVersions(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingPostingAccountMappingVersionRow>();
+        entity.ToTable("PostingAccountMappingVersions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PostingAccountMappingVersions_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MappingVersion] >= 1 "
+                + "AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PostingAccountMappingVersions_Status", PostingAccountMappingVersionStatusCheck);
+            table.HasCheckConstraint("CK_PostingAccountMappingVersions_MakerChecker",
+                PostingAccountMappingVersionMakerCheckerCheck);
+            table.HasCheckConstraint("CK_PostingAccountMappingVersions_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_PostingAccountMappingVersions_Plan",
+                "LEN([AccountPlanSourceVersion]) > 0 AND LEN([AccountPlanSourceSha256]) = 64");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.MappingVersion });
+        entity.Property(x => x.MappingVersion).ValueGeneratedNever();
+        entity.Property(x => x.EffectiveFrom).HasColumnType("date");
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.AccountPlanSourceVersion).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.AccountPlanSourceSha256).HasMaxLength(64).IsUnicode(false).IsRequired();
+        // One active version per company, under any race.
+        entity.HasIndex(x => x.CompanyId)
+            .IsUnique()
+            .HasFilter("[Status] = 2")
+            .HasDatabaseName("UX_PostingAccountMappingVersions_Active");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigurePostingAccountMappingRows(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingPostingAccountMappingEntryRow>();
+        entity.ToTable("PostingAccountMappingRows", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PostingAccountMappingRows_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MappingVersion] >= 1 AND [LineNumber] >= 1 "
+                + "AND [AccountId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PostingAccountMappingRows_Key", PostingAccountMappingRowKeyCheck);
+            table.HasCheckConstraint("CK_PostingAccountMappingRows_Text",
+                "LEN([AccountCode]) > 0 AND ([ItemType] IS NULL OR LEN([ItemType]) > 0) "
+                + "AND ([LinePurpose] IS NULL OR LEN([LinePurpose]) > 0)");
+            table.HasCheckConstraint("CK_PostingAccountMappingRows_VatRate", PostingAccountMappingRowVatRateCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.MappingVersion, x.LineNumber });
+        entity.Property(x => x.Purpose).HasMaxLength(32).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.MappingKey).HasMaxLength(32).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ItemType).HasMaxLength(64).UseCollation(IdentityCollation);
+        entity.Property(x => x.LinePurpose).HasMaxLength(64).UseCollation(IdentityCollation);
+        entity.Property(x => x.AccountCode).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.VatRateCode).HasMaxLength(64).UseCollation(IdentityCollation);
+        // Deliberately unfiltered: NULL selectors compare equal in a SQL Server unique index, so each
+        // combination of named and unnamed selectors exists at most once per version.
+        entity.HasIndex(x => new
+            {
+                x.CompanyId, x.MappingVersion, x.Purpose, x.MappingKey, x.ItemType, x.LinePurpose, x.IsExport, x.VatRateCode,
+            })
+            .IsUnique()
+            .HasFilter(null)
+            .HasDatabaseName("UX_PostingAccountMappingRows_Selector");
+        entity.HasOne<AccountingPostingAccountMappingVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MappingVersion })
+            .HasPrincipalKey(x => new { x.CompanyId, x.MappingVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureSourceDocumentAdmissions(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingSourceDocumentAdmissionRow>();
+        entity.ToTable("SourceDocumentAdmissions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SourceDocumentAdmissions_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceActorId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [FinalizedVersion] >= 1 AND LEN([DocumentKind]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_SourceDocumentAdmissions_Status", SourceDocumentAdmissionStatusCheck);
+            table.HasCheckConstraint("CK_SourceDocumentAdmissions_Attempts", "[AttemptCount] >= 1 AND [Version] >= 1");
+            table.HasCheckConstraint("CK_SourceDocumentAdmissions_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.SourceDocumentId });
+        entity.Property(x => x.SourceDocumentId).ValueGeneratedNever();
+        entity.Property(x => x.DocumentKind).HasMaxLength(32).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ReasonCode).HasMaxLength(64).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).IsUnique()
+            .HasDatabaseName("UX_SourceDocumentAdmissions_Key");
+        entity.HasIndex(x => new { x.CompanyId, x.DocumentKind, x.InvoiceId, x.FinalizedVersion }).IsUnique()
+            .HasDatabaseName("UX_SourceDocumentAdmissions_Document");
+        entity.HasIndex(x => new { x.CompanyId, x.VoucherDraftId }).IsUnique()
+            .HasFilter("[VoucherDraftId] IS NOT NULL")
+            .HasDatabaseName("UX_SourceDocumentAdmissions_Draft");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<AccountingSourceDocumentVoucherDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.VoucherDraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureSourceDocumentVoucherDrafts(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingSourceDocumentVoucherDraftRow>();
+        entity.ToTable("SourceDocumentVoucherDrafts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceActorId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 1 AND [MappingVersion] >= 1");
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Status", "[Status] = 1");
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Amounts",
+                "[DocumentNet] >= 0 AND [DocumentVat] >= 0 AND [DocumentWithholding] >= 0 AND [DocumentPayable] >= 0 "
+                + "AND [FunctionalNet] >= 0 AND [FunctionalVat] >= 0 AND [FunctionalWithholding] >= 0 AND [FunctionalPayable] >= 0 "
+                + "AND [FunctionalWithholding] <= [FunctionalVat] AND [FunctionalPayable] = [FunctionalNet] + [FunctionalVat] - [FunctionalWithholding]");
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Version", "[Version] >= 1");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.DocumentKind).HasMaxLength(32).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ExchangeRate).HasMaxLength(40).IsUnicode(false);
+        entity.Property(x => x.DocumentDate).HasColumnType("date");
+        entity.Property(x => x.DueDate).HasColumnType("date");
+        entity.Property(x => x.DocumentNet).HasPrecision(38, 18);
+        entity.Property(x => x.DocumentVat).HasPrecision(38, 18);
+        entity.Property(x => x.DocumentWithholding).HasPrecision(38, 18);
+        entity.Property(x => x.DocumentPayable).HasPrecision(38, 18);
+        entity.Property(x => x.FunctionalNet).HasPrecision(38, 18);
+        entity.Property(x => x.FunctionalVat).HasPrecision(38, 18);
+        entity.Property(x => x.FunctionalWithholding).HasPrecision(38, 18);
+        entity.Property(x => x.FunctionalPayable).HasPrecision(38, 18);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.SourceDocumentId }).IsUnique()
+            .HasDatabaseName("UX_SourceDocumentVoucherDrafts_Source");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureSourceDocumentVoucherDraftLines(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingSourceDocumentVoucherDraftLineRow>();
+        entity.ToTable("SourceDocumentVoucherDraftLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDraftLines_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AccountId] <> '00000000-0000-0000-0000-000000000000' AND [LineNumber] >= 1 "
+                + "AND ([SourceLineNumber] IS NULL OR [SourceLineNumber] >= 1) AND LEN([MappingKey]) > 0");
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDraftLines_Side", "[Side] IN (1, 2)");
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDraftLines_Amount", "[Amount] > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.DraftId, x.LineNumber });
+        entity.Property(x => x.MappingKey).HasMaxLength(32).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.VatRateCode).HasMaxLength(64).UseCollation(IdentityCollation);
+        entity.Property(x => x.Amount).HasPrecision(38, 18);
+        entity.HasOne<AccountingSourceDocumentVoucherDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         AccountingAuditEventTenantGuard.Validate(this, companyContext);
@@ -523,6 +746,19 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
                         nameof(ApprovedAccountingSourceCatalogRow.ActivatedByUserId),
                         nameof(ApprovedAccountingSourceCatalogRow.ActivatedAtUtc),
                         nameof(ApprovedAccountingSourceCatalogRow.UpdatedAtUtc)],
+                    // B-04a: a mapping version changes only by its activation or supersession; its rows never.
+                    AccountingPostingAccountMappingVersionRow => [nameof(AccountingPostingAccountMappingVersionRow.Status),
+                        nameof(AccountingPostingAccountMappingVersionRow.ActivatedByUserId),
+                        nameof(AccountingPostingAccountMappingVersionRow.ActivatedAtUtc),
+                        nameof(AccountingPostingAccountMappingVersionRow.UpdatedAtUtc)],
+                    // B-04b: an admission changes only by its attempt facts and its final answer; the draft and its lines never.
+                    AccountingSourceDocumentAdmissionRow => [nameof(AccountingSourceDocumentAdmissionRow.Status),
+                        nameof(AccountingSourceDocumentAdmissionRow.ReasonCode),
+                        nameof(AccountingSourceDocumentAdmissionRow.VoucherDraftId),
+                        nameof(AccountingSourceDocumentAdmissionRow.AttemptCount),
+                        nameof(AccountingSourceDocumentAdmissionRow.LastAttemptedAtUtc),
+                        nameof(AccountingSourceDocumentAdmissionRow.CorrelationId),
+                        nameof(AccountingSourceDocumentAdmissionRow.UpdatedAtUtc)],
                     _ => [],
                 };
                 var changed = entry.Properties

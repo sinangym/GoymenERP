@@ -174,6 +174,10 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         make_repository(self.root)
+        # These legacy cases exercise one unsharded api proof; sharding has its own class below.
+        patcher = mock.patch.object(VERIFIER, "API_SHARD_COUNT", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.sql_directory = self.root / "sql-proofs"
         sql = VERIFIER.relational_verifier(self.root)
         for shard in sql.SHARD_MODULES:
@@ -193,11 +197,12 @@ class BackendGroupVerifierTests(unittest.TestCase):
 
     def produce_group(
         self, group: str, directory: Path, project: str, discovered_names: list[str],
-        executed_names: list[str], *, skipped: bool = False,
+        executed_names: list[str], *, skipped: bool = False, shard: int = 1,
     ) -> Path:
         """Exercise the real producer and its serialized proof, faking only TestSDK commands."""
-        results = self.root / "producer-results" / f"{directory.name}-{group}"
-        proof = directory / f"ci-backend-test-group-proof-{group}" / f"proof-{group}.json"
+        results = self.root / "producer-results" / f"{directory.name}-{group}-{shard}"
+        unit = VERIFIER.unit_name(group, shard, VERIFIER.API_SHARD_COUNT if group == "api" else 1)
+        proof = directory / f"ci-backend-test-group-proof-{unit}" / f"proof-{unit}.json"
 
         def command(arguments: list[str], root: Path) -> str:
             if len(arguments) < 3 or arguments[0] != "dotnet":
@@ -228,7 +233,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         with mock.patch.object(VERIFIER, "run_checked", side_effect=command), mock.patch.dict(
             os.environ, {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": ""}, clear=False
         ):
-            VERIFIER.run_group(self.root, group, results, proof, HEAD, COMMIT)
+            VERIFIER.run_group(self.root, group, results, proof, HEAD, COMMIT, shard)
         return proof
 
     @staticmethod
@@ -385,6 +390,9 @@ class BackendGroupVerifierTests(unittest.TestCase):
             artifact.mkdir(parents=True, exist_ok=True)
             proof = VERIFIER.expected_proof(group, HEAD, COMMIT, self.root)
             proof["projects"] = [project_row(path) for path in paths]
+            proof["fullDiscoveryHash"] = VERIFIER.digest(
+                [row["discoveryHash"] for row in proof["projects"]]
+            )
             (artifact / f"proof-{group}.json").write_text(json.dumps(proof), encoding="utf-8")
         return directory
 
@@ -413,8 +421,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
             original.replace('"projectCount": 1', '"projectCount": 2', 1),
             original.replace('"projectCount": 1', '"projectCount": true', 1),
             original.replace('"projectCount": 1', '"projectCount": 1.0', 1),
-            original.replace('"schemaVersion": 4', '"schemaVersion": 3', 1),
-            original.replace('"schemaVersion": 4', '"schemaVersion": 4.0', 1),
+            original.replace('"schemaVersion": 5', '"schemaVersion": 3', 1),
+            original.replace('"schemaVersion": 5', '"schemaVersion": 5.0', 1),
             original.replace('"group": "api"', '"group": "modules"', 1),
             original.replace('"group": "api"', '"group": "api", "group": "api"', 1),
         ):
@@ -431,6 +439,75 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path.unlink()
         with self.assertRaisesRegex(RuntimeError, "contents are missing"):
             self.aggregate(directory)
+
+    def sharded_directory(self) -> tuple[Path, str, list[str]]:
+        project = VERIFIER.GROUP_PROJECTS["api"][0]
+        names = [Path(project).stem + f".Class{index}Tests.Runs" for index in range(6)]
+        directory = self.root / "artifacts" / "sharded"
+        for group in ("architecture", "modules"):
+            artifact = directory / f"ci-backend-test-group-proof-{group}"
+            artifact.mkdir(parents=True)
+            proof = VERIFIER.expected_proof(group, HEAD, COMMIT, self.root)
+            proof["projects"] = [project_row(path) for path in VERIFIER.GROUP_PROJECTS[group]]
+            proof["fullDiscoveryHash"] = VERIFIER.digest(
+                [row["discoveryHash"] for row in proof["projects"]]
+            )
+            (artifact / f"proof-{group}.json").write_text(json.dumps(proof), encoding="utf-8")
+        return directory, project, names
+
+    def test_api_shard_partition_is_deterministic_disjoint_and_class_preserving(self) -> None:
+        discovered = Counter({f"GoymenERP.A.C{index % 5}.M{index}": 1 + index % 3 for index in range(23)})
+        first = VERIFIER.api_shard_partition(discovered, 3, set())
+        second = VERIFIER.api_shard_partition(Counter(dict(reversed(list(discovered.items())))), 3, set())
+        self.assertEqual(first, second)
+        self.assertEqual(sum(first, Counter()), discovered)
+        for shard in first:
+            classes = {name.rsplit(".", 1)[0] for name in shard}
+            for other in first:
+                if other is not shard:
+                    self.assertFalse(classes & {name.rsplit(".", 1)[0] for name in other})
+        with self.assertRaisesRegex(RuntimeError, "empty shard"):
+            VERIFIER.api_shard_partition(Counter({"GoymenERP.A.C.M": 1}), 3, set())
+        with self.assertRaisesRegex(RuntimeError, "invalid"):
+            VERIFIER.api_shard_partition(discovered, 0, set())
+
+    def test_sharded_api_producers_and_aggregate_require_every_exact_shard(self) -> None:
+        with mock.patch.object(VERIFIER, "API_SHARD_COUNT", 3):
+            directory, project, names = self.sharded_directory()
+            paths = [self.produce_group("api", directory, project, names, names, shard=shard)
+                     for shard in (1, 2, 3)]
+            selected = [
+                {record[0] for record in json.loads(path.read_text(encoding="utf-8"))
+                 ["projects"][0]["testCases"]} for path in paths
+            ]
+            self.assertEqual(sorted(name for group in selected for name in group), sorted(names))
+            self.assertTrue(all(len(group) == 2 for group in selected))
+            self.assertGreater(self.aggregate(directory), 0)
+            # A shard that drops a class (or swaps classes) differs from the recomputed partition.
+            shard_two = json.loads(paths[1].read_text(encoding="utf-8"))
+            shard_one = json.loads(paths[0].read_text(encoding="utf-8"))
+            swapped = json.loads(json.dumps(shard_two))
+            swapped["projects"][0]["testCases"] = (
+                shard_one["projects"][0]["testCases"][:1] + shard_two["projects"][0]["testCases"][1:]
+            )
+            self.recount(swapped["projects"][0])
+            original = paths[1].read_text(encoding="utf-8")
+            paths[1].write_text(json.dumps(swapped), encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                self.aggregate(directory)
+            paths[1].write_text(original, encoding="utf-8")
+            # A missing shard artifact is refused.
+            artifact = paths[2].parent
+            moved = artifact.rename(artifact.with_name("moved-away"))
+            with self.assertRaisesRegex(RuntimeError, "missing, duplicated or unknown"):
+                self.aggregate(directory)
+            moved.rename(artifact)
+            # Shards that disagree on the complete discovery hash are refused.
+            forged = json.loads(paths[0].read_text(encoding="utf-8"))
+            forged["fullDiscoveryHash"] = "0" * 64
+            paths[0].write_text(json.dumps(forged), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "disagree"):
+                self.aggregate(directory)
 
     def test_aggregate_rejects_missing_extra_or_invalid_stage_timings(self) -> None:
         directory = self.proof_directory()

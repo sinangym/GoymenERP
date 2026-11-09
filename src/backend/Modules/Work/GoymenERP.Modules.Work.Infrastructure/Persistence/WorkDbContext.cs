@@ -21,6 +21,8 @@ public sealed class WorkDbContext(
     internal DbSet<WorkDesiredStateSnapshotRow> DesiredStateSnapshots => Set<WorkDesiredStateSnapshotRow>();
     internal DbSet<WorkObservationInboxRow> ObservationInbox => Set<WorkObservationInboxRow>();
     internal DbSet<WorkOutboxRow> OutboxMessages => Set<WorkOutboxRow>();
+    internal DbSet<WorkOutboxSourceCursorRow> OutboxSourceCursors => Set<WorkOutboxSourceCursorRow>();
+    internal DbSet<WorkOutboxDeliveryRow> OutboxDeliveries => Set<WorkOutboxDeliveryRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +33,7 @@ public sealed class WorkDbContext(
         ConfigureSnapshots(modelBuilder);
         ConfigureInbox(modelBuilder);
         ConfigureOutbox(modelBuilder);
+        ConfigureOutboxDispatch(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -149,6 +152,52 @@ public sealed class WorkDbContext(
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    internal const string OutboxCollation = "Latin1_General_100_BIN2";
+    internal const string OutboxDeliveryStateCheck =
+        "[Status] IN (1,2,3) AND [AttemptCount] >= 1 AND [SchemaVersion] >= 1 AND LEN([EventType]) > 0 "
+        + "AND [MessageId] <> '00000000-0000-0000-0000-000000000000' AND [LastAttemptAtUtc] >= [FirstAttemptAtUtc] "
+        + "AND DATALENGTH([PayloadSha256]) = 64 AND [PayloadSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' "
+        + "AND (([Status] = 1 AND [DeliveredAtUtc] IS NOT NULL AND [NextAttemptAtUtc] IS NULL) "
+        + "OR ([Status] = 2 AND [DeliveredAtUtc] IS NULL AND [NextAttemptAtUtc] IS NOT NULL AND [LastErrorCode] IS NOT NULL) "
+        + "OR ([Status] = 3 AND [DeliveredAtUtc] IS NULL AND [NextAttemptAtUtc] IS NULL AND [LastErrorCode] IS NOT NULL))";
+
+    private void ConfigureOutboxDispatch(ModelBuilder modelBuilder)
+    {
+        var cursor = modelBuilder.Entity<WorkOutboxSourceCursorRow>();
+        cursor.ToTable("OutboxSourceCursors", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_WorkOutboxCursors_State",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([SourceName]) > 0 AND LEN([Position]) > 0");
+        });
+        cursor.HasKey(x => new { x.CompanyId, x.SourceName });
+        cursor.Property(x => x.SourceName).HasMaxLength(128).IsUnicode(false).UseCollation(OutboxCollation).IsRequired();
+        cursor.Property(x => x.Position).HasMaxLength(256).IsUnicode(false).UseCollation(OutboxCollation).IsRequired();
+        cursor.Property(x => x.RowVersion).IsRowVersion();
+        cursor.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        cursor.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var delivery = modelBuilder.Entity<WorkOutboxDeliveryRow>();
+        delivery.ToTable("OutboxDeliveries", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_WorkOutboxDeliveries_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_WorkOutboxDeliveries_State", OutboxDeliveryStateCheck);
+        });
+        delivery.HasKey(x => new { x.CompanyId, x.SourceName, x.ConsumerName, x.MessageId });
+        delivery.Property(x => x.SourceName).HasMaxLength(128).IsUnicode(false).UseCollation(OutboxCollation).IsRequired();
+        delivery.Property(x => x.ConsumerName).HasMaxLength(128).IsUnicode(false).UseCollation(OutboxCollation).IsRequired();
+        delivery.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        delivery.Property(x => x.PayloadSha256).HasColumnType("char(64)").IsUnicode(false).IsFixedLength().IsRequired();
+        delivery.Property(x => x.LastErrorCode).HasMaxLength(64).IsUnicode(false);
+        delivery.Property(x => x.RowVersion).IsRowVersion();
+        delivery.HasIndex(x => new { x.CompanyId, x.Status, x.LastAttemptAtUtc })
+            .HasFilter("[Status] <> 1")
+            .HasDatabaseName("IX_WorkOutboxDeliveries_Open");
+        delivery.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        delivery.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private static void ConfigureKey(
         Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<byte[]> property,
         string columnType) => property.HasColumnType(columnType).IsRequired();
@@ -177,6 +226,23 @@ public sealed class WorkDbContext(
                 && entry.State != EntityState.Added)
             {
                 throw new InvalidOperationException("Work inbox and outbox records are append-only.");
+            }
+
+            if (entry.Entity is WorkOutboxDeliveryRow outboxDelivery
+                && entry.State == EntityState.Modified)
+            {
+                var originalStatus = entry.Property(nameof(outboxDelivery.Status)).OriginalValue;
+                var originalAttempts = entry.Property(nameof(outboxDelivery.AttemptCount)).OriginalValue;
+                var originalDigest = entry.Property(nameof(outboxDelivery.PayloadSha256)).OriginalValue;
+                if (originalStatus is not int status
+                    || status != (int)WorkOutboxDeliveryStatus.Failing
+                    || originalAttempts is not int attempts
+                    || outboxDelivery.AttemptCount <= attempts
+                    || originalDigest is not string digest
+                    || digest != outboxDelivery.PayloadSha256)
+                {
+                    throw new InvalidOperationException("Work outbox delivery is terminal once delivered or poisoned and attempts only grow.");
+                }
             }
 
             if (entry.Entity is WorkDesiredStateSnapshotRow snapshot
