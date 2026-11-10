@@ -499,7 +499,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D252..SAT-D255 (API-11 source plan, merged after SAT-D241): +8 SalesDraftSourcePlan facts (one save with attempt and
                 // audit, the CK and FKs, company isolation, the partial-delivery remainder, terminal refusals, unreadable owners, the
                 // permission, the 51241 rollback refusal), kept ordinal-sorted; recomputed on the merged inventory (e49ab090... -> 320e578b...).
-                "320e578b1ccced070113dbc0b973df4e4ba8f383553379db83b10eabac0e637c",
+                // S5 API-34 (SAT-D244, merged after API-11): +1 SalesInvoice fact (the export reads only finalised invoices of the range
+                // with every order number and company isolation), kept ordinal-sorted; recomputed on the merged inventory (320e578b... -> 17f70832...).
+                "17f7083232f0b10ab9179f8a13fb553f675d1852539fac75d83f61ffb0613f6f",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
