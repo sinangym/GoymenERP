@@ -369,9 +369,11 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
         }
 
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE CompanyId = @company AND InvoiceId = @id",
+            ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'", ("@id", approved.Id)));
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE CompanyId = @company AND InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'",
+            ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
             + "AND EventType = N'sales.invoice.matched.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
@@ -385,9 +387,13 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id AND Difference = 0.06 AND Tolerance = 0.05 "
+            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE CompanyId = @company AND InvoiceId = @id AND Difference = 0.06 AND Tolerance = 0.05 "
             + "AND DifferenceApprovedBy = @m AND DifferenceReason IS NOT NULL AND OfficialAmount = @official",
-            ("@id", approved.Id), ("@m", matcher), ("@official", approved.PayableFunctionalAmount + 0.06m)));
+            ("@company", CompanyA), ("@id", approved.Id), ("@m", matcher), ("@official", approved.PayableFunctionalAmount + 0.06m)));
+        // The same audit filter that counted 0 above now counts the approved match once, so the earlier 0 is a meaningful proof.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
+            + "AND EventType = N'sales.invoice.matched.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
     }
 
     [SqlServerFact]
@@ -540,13 +546,16 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
         }
 
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id AND State = 3 AND Version = 3",
-            ("@id", approved.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId = @id", ("@id", approved.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE AggregateId = @id", ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Invoices WHERE CompanyId = @company AND Id = @id AND State = 3 AND Version = 3",
+            ("@company", CompanyA), ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE CompanyId = @company AND InvoiceId = @id",
+            ("@company", CompanyA), ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE CompanyId = @company AND AggregateId = @id",
+            ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'" + SalesInvoiceCommands.FinalizeV1 + "'",
-            ("@id", approved.Id)));
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE CompanyId = @company AND InvoiceId = @id AND CommandName = N'"
+            + SalesInvoiceCommands.FinalizeV1 + "'", ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
             + "AND EventType = N'sales.invoice.finalized.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
