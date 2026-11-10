@@ -269,6 +269,24 @@ Rol atama açıldığında hangi role hangi iznin verileceği için hazır öner
 
 Her atama yine Sinan'ın somut kararıdır (insan kapısı).
 
+#### Satış izinleri kurulum kontrol listesi
+
+Sinan aşağıdaki üç izin için somut rol kararını verdi (SAT-D282 —
+`docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK55.md`). İş rolleri ve satış izinleri için
+kodda rol tanımı/seed/grant yoktur. Ayrı rol tanımı adımı **Ayarlar ekranıdır** (Sinan cevabı
+2026-11-10, #66 6772460073; 6771735647'nin yerine geçer): EK54 SAT-D276 (3) gereği kurulum
+operatörü bu atamaları Ayarlar rol ekranından yapar. Ekran gelene kadar (E4) bu liste
+bekler; ilk rol dağılımının başka bir yolla verilmesi ayrıca Sinan kararıdır.
+
+- [ ] `sales.invoices.export` (satış faturalarını Excel'e aktarma, API-34): **Muhasebe,
+  Muhasebe Müdürü, Genel Müdür, Admin**. Satış Müdürü ve Satış Uzmanı **almaz** (SAT-D276).
+- [ ] `sales.orders.margin.read` (siparişte marjı görme, S-05): **Genel Müdür, Admin**;
+  başka rol almaz (SAT-D250, SAT-D276).
+- [ ] `sales.orders.source-plan.write` (sipariş satırının kaynak planını belirleme, API-11):
+  **Satış Destek, Satış Uzmanı, Satış Müdürü, Genel Müdür, Admin** (SAT-D179; "Müdür"
+  SAT-D188 ile Satış Müdürü ve Genel Müdür'dür). Sevkiyatçı, Muhasebe ve Muhasebe Müdürü
+  almaz.
+
 ---
 
 ## 5. Yedekleme ve geri yükleme

@@ -10,9 +10,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// of the detail (API-04), since 1.13 the user-closure control of the detail (SAT-D32) and since 1.14 the over-delivery approval
 /// control of the detail (SAT-D30), since 1.19 the UI-63 / S-09 sales invoice list (since 1.20 on the invoice read alone, SAT-D238)
 /// and since 1.22 the source-plan control of the detail (S-2 API-11, SAT-D179 / SAT-D251–D255) — to the
-/// shell. Since 1.23 (S5 API-34, SAT-D236/D244/D248; merged after the S-2 API-11 1.22) the catalogue also carries
-/// <c>sales.invoices.export</c> (manifest v28); no screen control is declared for it yet (frontend lane, later) — published to the
-/// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
+/// shell. PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
 /// Sales documents carry no activation envelope rule). A declaration grants nothing: the screens open
@@ -29,6 +27,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// (manifest v26) — a disclosure name read by the line-pricing endpoint; no new screen, route or control.</para>
 /// <para>1.22 (S-2 API-11, SAT-D179 / SAT-D251–D255; merged after the SAT-D250 1.21): adds the source-plan control of the detail
 /// (<see cref="SourcePlanWriteCapabilityId"/>) and registers <see cref="SalesPermissionManifestV1.OrdersSourcePlanWrite"/> (manifest v27).</para>
+/// <para>1.23 (S5 API-34, SAT-D236 / SAT-D244 / SAT-D248; merged after the S-2 API-11 1.22): registers
+/// <see cref="SalesPermissionManifestV1.InvoicesExport"/> (manifest v28) — read by the invoice export endpoint; no new screen, route or
+/// control (a screen control is the frontend lane's later slice).</para>
 /// <para>1.24 (API-07, SAT-D153–SAT-D162 / EK21; merged after the S5 API-34 1.23): adds the two risk exception controls of the
 /// detail (<see cref="RiskExceptionRequestCapabilityId"/>, <see cref="RiskExceptionApproveCapabilityId"/>) and registers
 /// <see cref="SalesPermissionManifestV1.OrdersRiskExceptionRequest"/> and <see cref="SalesPermissionManifestV1.OrdersRiskExceptionApprove"/>

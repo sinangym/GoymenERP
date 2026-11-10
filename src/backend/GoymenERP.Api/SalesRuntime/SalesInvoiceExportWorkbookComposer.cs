@@ -12,7 +12,9 @@ namespace GoymenERP.Api.SalesRuntime;
 /// lane. It writes the service's answer verbatim and computes nothing: amounts, VAT, withholding and the instalment plan are
 /// the invoice's own recorded figures. One row per invoice line; the invoice's fields repeat on each of its lines, its
 /// orders are named together in one cell (every order of a multi-order invoice, SAT-D248) and each line also names its own
-/// order. The column set is the SAT-D248 wide set; its names, order and layout are not decided and stay in
+/// order. Beside the computed TL VAT and withheld VAT the official document's own VAT and withholding TL amounts, as the
+/// API-35 match recorded them (SAT-D241), have their own columns (SAT-D279 (EK55)); they are
+/// empty when no official amounts are recorded. The column set is the SAT-D248 wide set; its names, order and layout are not decided and stay in
 /// <c>Resources/SalesRuntime.SalesInvoiceExportWorkbookComposer.resx</c> (a missing text is a server fault, never a key in
 /// its place). Built with the BCL only (no spreadsheet package): every text is an inline string (never a formula), an amount
 /// is a numeric cell only when Excel's double can hold every digit (otherwise the exact text), dates are ISO text, and the
@@ -34,8 +36,8 @@ public sealed class SalesInvoiceExportWorkbookComposer(IStringLocalizer<SalesInv
         "ColumnDocumentNo", "ColumnOfficialNo", "ColumnEttn", "ColumnFinalizedOn", "ColumnBusinessDate", "ColumnPartyId",
         "ColumnCompanyAccountId", "ColumnCurrencyId", "ColumnRate", "ColumnRateDay",
         "ColumnInvoiceNet", "ColumnInvoiceVat", "ColumnInvoiceWithheld", "ColumnInvoiceGross", "ColumnInvoicePayable",
-        "ColumnInvoiceNetFunctional", "ColumnInvoiceVatFunctional", "ColumnInvoiceWithheldFunctional",
-        "ColumnInvoiceGrossFunctional", "ColumnInvoicePayableFunctional",
+        "ColumnInvoiceNetFunctional", "ColumnInvoiceVatFunctional", "ColumnOfficialVatFunctional", "ColumnInvoiceWithheldFunctional",
+        "ColumnOfficialWithheldFunctional", "ColumnInvoiceGrossFunctional", "ColumnInvoicePayableFunctional",
         "ColumnInstalments", "ColumnSalesOrderNos",
         "ColumnLineNo", "ColumnDispatchNoteNumber", "ColumnNoteLineNo", "ColumnShipmentDate", "ColumnLineSalesOrderNo",
         "ColumnProductId", "ColumnUnitId", "ColumnQuantity", "ColumnNetUnitPrice", "ColumnDiscountPercent",
@@ -87,7 +89,16 @@ public sealed class SalesInvoiceExportWorkbookComposer(IStringLocalizer<SalesInv
             invoice.Rate is { } rate ? Cell.Date(rate.RateDay) : Cell.Empty,
         };
         AddAmounts(cells, invoice.Totals);
-        AddAmounts(cells, invoice.FunctionalTotals);
+        // SAT-D279 (EK55): the official document's VAT and withholding (TL, SAT-D241) sit beside the
+        // computed TL VAT and withheld VAT as their own columns; empty when the service answers none.
+        var functional = invoice.FunctionalTotals;
+        cells.Add(Cell.Number(functional?.NetAmount));
+        cells.Add(Cell.Number(functional?.VatAmount));
+        cells.Add(Cell.Number(invoice.OfficialVatFunctionalAmount));
+        cells.Add(Cell.Number(functional?.WithheldVatAmount));
+        cells.Add(Cell.Number(invoice.OfficialWithholdingFunctionalAmount));
+        cells.Add(Cell.Number(functional?.GrossAmount));
+        cells.Add(Cell.Number(functional?.PayableAmount));
         cells.Add(Cell.Text(string.Join(T("ListSeparator"), invoice.Instalments.OrderBy(item => item.SequenceNo).Select(Instalment))));
         cells.Add(Cell.Text(string.Join(T("OrderSeparator"), invoice.SalesOrderNos)));
         return cells;
