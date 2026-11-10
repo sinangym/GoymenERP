@@ -55,7 +55,7 @@ export const PRICE_CONTROL_TEXT = {
     hide: 'Marjı gizle',
     costBasis: 'Yalnız alış maliyeti',
     kind: 'Tahmini / önizleme',
-    note: 'Marj, KDV hariç net satıştan yalnız alış maliyeti düşülerek sunucuda hesaplanır; navlun, genel gider ve finansman dahil değildir. Kesinleşmiş sonuç değildir. Bu ekran marj hesaplamaz ve tahmin etmez.',
+    note: 'Marj, KDV ve vade farkı hariç net satıştan yalnız alış maliyeti düşülerek sunucuda hesaplanır; navlun, genel gider ve finansman dahil değildir. Kesinleşmiş sonuç değildir. Bu ekran marj hesaplamaz ve tahmin etmez.',
     caption: 'Satır bazında sunucunun marj önizlemesi',
     line: 'Satır',
     amount: 'Marj tutarı (TL)',

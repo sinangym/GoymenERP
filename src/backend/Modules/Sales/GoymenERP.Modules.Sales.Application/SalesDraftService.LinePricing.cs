@@ -71,7 +71,8 @@ public sealed partial class SalesDraftService
     /// that port is another lane's) and the formula is not activated before its golden is in main, so the line-pricing read hands every line the <c>Unavailable</c> / <c>CostSourceMissing</c>
     /// result directly — the calculator is not called (it would also need the functional currency, which Sales does not read
     /// yet). The cost read, the functional currency and the one <see cref="SalesLineMarginCalculator"/> are wired here once the
-    /// cost port's contract is accepted; this mapping is already the calculator result's wire form.
+    /// cost port's contract is accepted, with the line's <see cref="SalesLineTotal.NetAmountBeforeSurcharge"/> (after discount,
+    /// before the vade farkı — SAT-D275) as the net sale; this mapping is already the calculator result's wire form.
     /// The order-side cost snapshot is a separate later slice and is NOT written here (SAT-D268…SAT-D274: pinned at internal
     /// approval; a revision re-pins only new lines and lines whose product or quantity changed — a price, discount or commercial
     /// term change alone keeps the pinned cost and only the margin is recomputed; lines approved before the port existed stay

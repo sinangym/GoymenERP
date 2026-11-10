@@ -200,7 +200,8 @@ public enum SalesMarginDisclosure { Visible, Withheld }
 /// <summary>
 /// SAT-D247 / SAT-D259 / SAT-D262…D267 (S-05): the line margins of the draft. <c>Withheld</c> ⇒ <c>costBasis</c>, <c>kind</c>
 /// and <c>lines</c> are null. <c>Visible</c> ⇒ <c>costBasis</c> = <c>PurchaseCostOnly</c> (the margin is the KDV hariç net sale
-/// minus the purchase cost only — no freight, overhead or financing; the unit cost is the company-wide, all-warehouse weighted
+/// after discount and before the maturity surcharge — the vade farkı is left out, SAT-D275 — minus the purchase cost only — no
+/// freight, overhead or financing; the unit cost is the company-wide, all-warehouse weighted
 /// moving-average purchase cost that Stok supplies through its versioned read port, never a manual entry — SAT-D272, orders
 /// carry no warehouse), <c>kind</c> = <c>Preview</c> (an estimate on the draft,
 /// not a booked result) and one entry per line. Until the Inventory cost source exists every line is <c>Unavailable</c> with

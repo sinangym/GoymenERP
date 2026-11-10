@@ -134,8 +134,11 @@ public sealed record SalesLineMarginCost
 /// One line's input to <see cref="SalesLineMarginCalculator"/>.
 /// </summary>
 /// <param name="NetSale">
-/// The line's KDV hariç net sale (SAT-D259 (2)): <see cref="SalesLineTotal.NetAmount"/> from <see cref="SalesOrderTotalsCalculator"/>
-/// — quantity × net unit price after discount and maturity surcharge, rounded once (SAT-D11); null when the line has none.
+/// The line's KDV hariç net sale (SAT-D259 (2)) WITHOUT the maturity surcharge (SAT-D275, Sinan 2026-11-10: the margin is computed
+/// from the goods' sale price only; the customer-billed vade farkı is financing income and does not raise product profitability):
+/// <see cref="SalesLineTotal.NetAmountBeforeSurcharge"/> from <see cref="SalesOrderTotalsCalculator"/> — quantity × the unit price
+/// after discount and BEFORE the vade farkı, rounded once (SAT-D11); never <see cref="SalesLineTotal.NetAmount"/>, which includes
+/// the vade farkı. Null when the line has none.
 /// </param>
 /// <param name="OrderUnitId">The line's order unit; the quantity is in it.</param>
 /// <param name="Quantity">The line quantity in the order unit (positive).</param>
@@ -169,7 +172,9 @@ public sealed record SalesLineMargin(
 /// <item><b>Cost</b> = unit cost × quantity, exact. The unit cost is the purchase-only cost (SAT-D263 (1)) — the company-wide
 /// (all warehouses) weighted moving-average purchase cost Stok supplies through its versioned read port (SAT-D272; no manual cost entry) — with
 /// an internal precision of 4 decimals (SAT-D265 (2)); a finer or negative cost is refused (<c>CostInvalid</c>), never rounded.</item>
-/// <item><b>Margin amount</b> = KDV hariç net sale − cost (SAT-D259 (2)), exact (no intermediate rounding, SAT-D265 (1)).</item>
+/// <item><b>Margin amount</b> = KDV hariç net sale − cost (SAT-D259 (2)), exact (no intermediate rounding, SAT-D265 (1)). The net
+/// sale is after discount and BEFORE the maturity surcharge (SAT-D275): the vade farkı is not part of the margin's sale side;
+/// whether it ever enters the margin as a separate cost type stays the later decision of SAT-D263 (3).</item>
 /// <item><b>Margin percent</b> = exact margin amount × 100 / net sale (SAT-D259 (3)) — from the UNROUNDED amount (SAT-D265 (1));
 /// a zero or negative net sale has no percent (<c>NetSaleNotPositive</c>, SAT-D259 detail).</item>
 /// <item><b>Display</b>: the amount to 0,01 TL and the percent to 0,01 (SAT-D261 (1), SAT-D265 (3)), half away from zero — the
