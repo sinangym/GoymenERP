@@ -767,15 +767,27 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         return finalized!.Invoice;
     }
 
-    /// <summary>A stored order draft (no lines) of the company: the export only needs its number.</summary>
+    /// <summary>
+    /// A stored one-line order draft of the company (a draft is stored only with a line, #257): the export only needs its number.
+    /// </summary>
     private static async Task<SalesOrderDraft> OrderDraftAsync(Run run, Guid company, string key)
     {
         var money = new MoneyProfileSnapshot(company, Usd, SalesOrderDraft.MoneyOperation, Guid.NewGuid(), "3", Day, true, Day.AddDays(-30),
             null, 2);
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Usd, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
+        var unitProfile = Guid.NewGuid();
+        var unit = new UnitProfileSnapshot(company, Kg, "kg", "weight", unitProfile, "4", true, 3, 3, true, Day.AddDays(-30), null);
+        var binding = new UnitBindingSnapshot(company, Kg, unitProfile, "4");
+        var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
         await using var scope = run.Store(company);
         return (await scope.Drafts.StoreDraftAsync(run.Envelope(key, permission: SalesPermissionManifestV1.DraftsCreate), Hash('d'),
-            documentNo => SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, DateTimeOffset.UtcNow))).Draft;
+            documentNo =>
+            {
+                var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, DateTimeOffset.UtcNow);
+                draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "10", 10m, Day.AddDays(3)),
+                    DateTimeOffset.UtcNow);
+                return draft;
+            })).Draft;
     }
 
     private static string Hash(char fill) => new(fill, 64);
