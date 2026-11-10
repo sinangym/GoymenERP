@@ -501,7 +501,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // permission, the 51241 rollback refusal), kept ordinal-sorted; recomputed on the merged inventory (e49ab090... -> 320e578b...).
                 // S5 API-34 (SAT-D244, merged after API-11): +1 SalesInvoice fact (the export reads only finalised invoices of the range
                 // with every order number and company isolation), kept ordinal-sorted; recomputed on the merged inventory (320e578b... -> 17f70832...).
-                "17f7083232f0b10ab9179f8a13fb553f675d1852539fac75d83f61ffb0613f6f",
+                // API-07 (SAT-D153..SAT-D162): +4 SalesShipmentRiskException facts (one save with attempt and audit, the maker-checker CK and
+                // decision guard, company isolation, the 51251 rollback refusal), kept ordinal-sorted (17f70832... -> e083b70f...).
+                "e083b70f534613fd0e7116c98ef4682324937e33a57474fa22cfddcae530c152",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -642,7 +644,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D252..SAT-D255 (merged after SAT-D241): DraftSourcePlanLines (keyed per draft version and line, FKs to the draft and
                 // its line identity, CK_DraftSourcePlanLines_Identity), append-only in the write guard, on the same company-filtered
                 // context; no query-filter bypass or direct database surface; recomputed on the merged context (48ee7004... -> c40fbf07...).
-                "c40fbf075cd16d7835f47619d367902e74cea6d3560952d7ffc5c83c5033f4ae",
+                // API-07 (SAT-D153..SAT-D162): ShipmentRiskExceptions and ShipmentRiskExceptionAttempts on the same company-filtered context
+                // (CK_ShipmentRiskExceptions_MakerChecker); no query-filter bypass or direct database surface (c40fbf07... -> b7efaf4b...).
+                "b7efaf4b70260e1e75b702d655fc5f25f854e440b4d6dbad8b0ca687f340f933",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1724,8 +1728,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // API-37 (Kontrol Merkezi): the read-only control-center service factory and its policy singleton are registered; provider branch and token counts unchanged (e627496e... -> 846faead...; with API-36 also feeding the finalize path).
                     // Re-fingerprinted after #998: comments only (Purchasing's linked-supply adapter and recorder are now registered
                     // by the host; Production's are not); provider branch and token counts unchanged (7fc85621... -> b7241b6f...).
+                    // API-07 (SAT-D153..SAT-D162): registers the risk exception service, its store and the versioned read port
+                    // ISalesShipmentRiskExceptionReadPortV1; provider branch and token counts unchanged (b7241b6f... -> 4ad1aeaf...).
                     new(
-                        "b7241b6f0fec2274bc8924f1af17406cc447336eb00178a49db43e81f30619c5",
+                        "4ad1aeafc786b20d5d07ede168727a7b3aadeafa88072de1a2e4fedd4afbf871",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2626,6 +2632,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("b4961b6aae644bb81eb7bd9b82d84013862f6b0e951f6e89e5f2abb03e47424d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // API-07 (SAT-D153..SAT-D162): Up's two guard triggers (51252 keeps the request facts and allows one decision, 51253 keeps
+                // the attempts append-only); the Down's forward-fix refusal (51251, used by no other migration) while any exception exists.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110155556_AddShipmentRiskExceptions.cs"] =
+                    new("40e4e1ca6cf28d81513a567ecc74980ba168ace81c7d4eff2de38b41879b4048",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 3 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

@@ -97,6 +97,18 @@ export const SALES_LINE_CLOSE_CAPABILITY = 'sales.orders.lines.close' as const
  */
 export const SALES_SOURCE_PLAN_WRITE_CAPABILITY = 'sales.orders.source-plan.write' as const
 
+/**
+ * API-07 / SAT-D159: the risk exception request CONTROL on S-04 ("Risk istisnası iste"). The shell publishes it only to an actor
+ * holding `sales.orders.risk-exception.request` beside the read; the request API itself does not need the read (SAT-D162).
+ */
+export const SALES_RISK_EXCEPTION_REQUEST_CAPABILITY = 'sales.orders.risk-exception.request' as const
+
+/**
+ * API-07 / SAT-D153: the risk exception decision CONTROL on S-04 ("Onayla" / "Reddet"). The shell publishes it only to an actor
+ * holding `sales.orders.risk-exception.approve` beside the read; the requester never decides their own request (server rule).
+ */
+export const SALES_RISK_EXCEPTION_APPROVE_CAPABILITY = 'sales.orders.risk-exception.approve' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -108,6 +120,8 @@ export type SalesCapabilityId =
   | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
   | typeof SALES_LINE_CLOSE_CAPABILITY
   | typeof SALES_SOURCE_PLAN_WRITE_CAPABILITY
+  | typeof SALES_RISK_EXCEPTION_REQUEST_CAPABILITY
+  | typeof SALES_RISK_EXCEPTION_APPROVE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY

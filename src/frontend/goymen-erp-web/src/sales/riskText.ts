@@ -4,6 +4,7 @@
  */
 
 import type { RiskFigureKind, RiskFigureState, RiskReasonComponent, RiskResult, RiskTaxBasis } from './riskCheck'
+import type { RiskExceptionState } from './riskException'
 
 export const RISK_CHECK_TEXT = {
   heading: 'Müşteri riski',
@@ -113,3 +114,63 @@ export const RISK_CHECK_TEXT = {
 export function riskReasonText(code: string): string {
   return RISK_CHECK_TEXT.reasonCode[code] ?? RISK_CHECK_TEXT.unknownReason(code)
 }
+
+/**
+ * API-07 (EK21 SAT-D153…D162): the single-shipment risk exception section's user texts. An exception releases ONE shipment for
+ * the approval's Türkiye business day only; it opens no revision and never shows an amount (SAT-D162).
+ */
+export const RISK_EXCEPTION_TEXT = {
+  heading: 'Tek sevk risk istisnası',
+  note:
+    'Risk limiti aşıldığında tek bir sevkiyat için istisna istenebilir. Onay, onaylandığı iş gününün (Türkiye saati) sonuna kadar ' +
+    'geçerlidir; sevkiyat iptal edilirse istisna düşer. İsteyen kişi kendi talebini onaylayamaz. İstisna sipariş revizyonu açmaz.',
+  subject: 'Risk istisnaları',
+  empty: 'Bu sipariş için risk istisnası yok.',
+  forbidden: 'Risk istisnalarını görme yetkiniz yok.',
+  unreadable: 'Risk istisnaları okunamadı; bir istisnanın geçerli olduğu varsayılmaz.',
+  serviceUnavailable: 'Risk istisnası servisi şu an kullanılamıyor; bir istisnanın geçerli olduğu varsayılmaz.',
+  requestHeading: 'İstisna iste',
+  shipment: 'Yükleme talimatı kimliği',
+  shipmentHint: 'Lojistik ekranındaki yükleme talimatının kimliği (yalnız bir sevkiyat).',
+  reason: 'Gerekçe',
+  request: 'Risk istisnası iste',
+  approve: 'Onayla',
+  reject: 'Reddet',
+  rejectionReason: 'Ret gerekçesi',
+  retry: 'Aynı isteği yeniden gönder',
+  invalidShipment: 'Geçerli bir yükleme talimatı kimliği girin.',
+  invalidReason: 'Gerekçe zorunludur.',
+  reasonTooLong: (max: number) => `Gerekçe en fazla ${max} karakter olabilir.`,
+  invalidRejection: 'Ret için gerekçe zorunludur.',
+  submitting: 'Gönderiliyor…',
+  requested: 'İstisna talebi kaydedildi; onay bekliyor.',
+  approved: 'İstisna onaylandı.',
+  rejected: 'İstisna reddedildi.',
+  replayed: ' (Aynı istek daha önce kaydedilmişti; kayıtlı sonuç gösteriliyor.)',
+  unknown: 'Sonuç bilinmiyor: istek kaydedilmiş olabilir. Aynı isteği yeniden gönderin; yeni bir istek açılmaz.',
+  unauthenticated: 'Oturumunuz sona erdi; yeniden giriş yapın.',
+  noAuthority: 'Bu işlem için yetkiniz yok.',
+  notFound: 'Sipariş ya da istisna bulunamadı.',
+  conflict: 'İşlem güncel kayıtla çakıştı; liste yenilendi.',
+  failed: 'İşlem tamamlanamadı.',
+  failedWithCode: (code: string) => `İşlem tamamlanamadı (${code}).`,
+  problem: {
+    sales_risk_exception_duplicate: 'Bu sevkiyat için onay bekleyen ya da bugün geçerli bir istisna zaten var.',
+    sales_risk_exception_order_not_eligible: 'Sipariş onaylı ve açık değil; istisna istenemez ya da karara bağlanamaz.',
+    sales_risk_exception_self_decision: 'İstisnayı isteyen kişi kendi talebini onaylayamaz ya da reddedemez.',
+    sales_risk_exception_reason_too_long: 'Gerekçe izin verilen uzunluğu aşıyor; kısaltılmadan kaydedilmez.',
+    version_conflict: 'İstisna bu arada değişti; liste yenilendi.',
+    sales_state_conflict: 'İstisna zaten karara bağlanmış; liste yenilendi.',
+    concurrent_change: 'Kayıt aynı anda değişti; liste yenilendi.',
+    same_key_payload_mismatch: 'Aynı istek anahtarı farklı içerikle kullanılmış; yeni bir istek başlatın.',
+    validation_failed: 'İstek geçersiz.',
+  } as Readonly<Record<string, string>>,
+  exceptionHeading: (no: number) => `İstisna #${no}`,
+  state: { Requested: 'Onay bekliyor', Approved: 'Onaylandı', Rejected: 'Reddedildi' } as Readonly<Record<RiskExceptionState, string>>,
+  shipmentFact: (id: string) => `Yükleme talimatı: ${id}`,
+  requestedBy: (who: string, at: string) => `İsteyen: ${who} · ${at}`,
+  decidedBy: (who: string, at: string) => `Karar veren: ${who} · ${at}`,
+  validToday: (day: string) => `Bugün geçerli (iş günü ${day}).`,
+  lapsed: (day: string) => `Süresi doldu (iş günü ${day} sona erdi).`,
+  supportCode: (id: string) => `Destek kodu: ${id}`,
+} as const

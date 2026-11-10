@@ -126,6 +126,17 @@ import {
   type RemainderDecisionRequest,
 } from './remainderChange'
 import { decodeSourcePlan, type SourcePlan, type SourcePlanRequest } from './sourcePlan'
+import {
+  decodeRiskException,
+  decodeRiskExceptionList,
+  RISK_EXCEPTION_STATE,
+  riskExceptionDecisionPath,
+  riskExceptionsPath,
+  type RiskException,
+  type RiskExceptionDecision,
+  type RiskExceptionDecisionRequest,
+  type RiskExceptionRequest,
+} from './riskException'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -1421,3 +1432,69 @@ export async function sendDraftSourcePlan(
   }
   return { type: 'succeeded', data: mutation }
 }
+
+/* ── API-07: single-shipment risk exception (EK21 SAT-D153…D162) ─────────── */
+
+/** The order's risk exceptions, newest first, under the draft read; data only when every item describes this order. */
+export async function fetchDraftRiskExceptions(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<readonly RiskException[]>> {
+  const raw = await request(riskExceptionsPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const items = decodeRiskExceptionList(raw.body, detail.draft.id)
+  return items === null ? { type: 'malformed' } : { type: 'ok-single', data: items }
+}
+
+/** What a risk exception command answered: the exception, and whether the server replayed an earlier result of the key. */
+export interface RiskExceptionMutation {
+  readonly exception: RiskException
+  readonly isReplay: boolean
+}
+
+async function sendRiskExceptionCommand(
+  path: string,
+  successStatus: number,
+  payload: RiskExceptionRequest | RiskExceptionDecisionRequest,
+  context: CommandContext,
+  describes: (exception: RiskException) => boolean,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<RiskExceptionMutation>> {
+  const raw = await request(path, {
+    method: 'POST',
+    headers: { ...headers(context.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': context.idempotencyKey },
+    body: JSON.stringify(payload),
+  }, signal)
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== successStatus) {
+    // Any other 2xx is outside the contract: the command may be recorded, so the outcome is unknown and the key is kept.
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const exception = decodeRiskException(raw.body, context.draftId)
+  if (exception === null || !describes(exception)) return { type: 'malformed' }
+  return { type: 'succeeded', data: { exception, isReplay: raw.replayed } }
+}
+
+/** SAT-D159: the request; 201 with the pending exception of exactly the requested shipment and reason. */
+export const sendRiskExceptionRequest = (payload: RiskExceptionRequest, context: CommandContext, signal?: AbortSignal) =>
+  sendRiskExceptionCommand(riskExceptionsPath(context.draftId), CREATED_STATUS, payload, context,
+    (exception) => exception.loadingInstructionId.toLowerCase() === payload.loadingInstructionId.toLowerCase()
+      && exception.reason === payload.reason.trim(), signal)
+
+/** SAT-D153: the decision; 200 with exactly this exception in the state the decision moves it to. */
+export const sendRiskExceptionDecision = (
+  exceptionNo: number,
+  decision: RiskExceptionDecision,
+  payload: RiskExceptionDecisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+) => sendRiskExceptionCommand(riskExceptionDecisionPath(context.draftId, exceptionNo, decision), STATE_COMMAND_STATUS, payload,
+  context, (exception) => exception.exceptionNo === exceptionNo
+    && exception.state === (decision === 'approval' ? RISK_EXCEPTION_STATE.approved : RISK_EXCEPTION_STATE.rejected), signal)

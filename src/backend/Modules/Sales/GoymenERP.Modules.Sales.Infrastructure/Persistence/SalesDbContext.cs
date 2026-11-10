@@ -6,6 +6,7 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
+using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -277,6 +278,40 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-36: the Sales transactional outbox (append-only).</summary>
     internal DbSet<SalesOutboxRow> OutboxMessages => Set<SalesOutboxRow>();
 
+    /// <summary>API-07 (SAT-D153…D162): the single-shipment risk exceptions (the decision is the only change).</summary>
+    internal DbSet<ShipmentRiskExceptionRow> ShipmentRiskExceptions => Set<ShipmentRiskExceptionRow>();
+
+    /// <summary>API-07 (ADR-011 §2): the risk exception commands' own attempt records (append-only).</summary>
+    internal DbSet<ShipmentRiskExceptionAttemptRow> ShipmentRiskExceptionAttempts => Set<ShipmentRiskExceptionAttemptRow>();
+
+    /// <summary>
+    /// CK_ShipmentRiskExceptions_Decision (SAT-D153/D160): Requested (1) carries no decision and no validity date; Approved (2) a
+    /// decision without a reason and with its business date; Rejected (3) a decision with a non-blank reason and no validity date.
+    /// </summary>
+    internal const string ShipmentRiskExceptionDecisionConstraint =
+        "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL AND [Version] >= 1) "
+        + "OR ([State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL "
+        + "AND [ValidOn] IS NOT NULL AND [Version] >= 2) "
+        + "OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL "
+        + "AND LEN([RejectionReason]) > 0 AND [ValidOn] IS NULL AND [Version] >= 2)";
+
+    /// <summary>CK_ShipmentRiskExceptions_MakerChecker (SAT-D153/D159): the decider is never the requester, compared ordinally.</summary>
+    internal const string ShipmentRiskExceptionMakerCheckerConstraint =
+        "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2";
+
+    /// <summary>UX_ShipmentRiskExceptions_PendingShipment (SAT-D154): at most one pending exception per shipment of an order.</summary>
+    internal const string PendingShipmentRiskExceptionFilter = "[State] = 1";
+
+    /// <summary>CK_ShipmentRiskExceptionAttempts_Command: only the risk exception's own versioned commands record here.</summary>
+    internal const string ShipmentRiskExceptionAttemptCommandConstraint =
+        "[CommandName] IN (N'" + SalesRiskExceptionCommands.RequestV1 + "', N'" + SalesRiskExceptionCommands.ApproveV1 + "', N'"
+        + SalesRiskExceptionCommands.RejectV1 + "')";
+
+    /// <summary>CK_ShipmentRiskExceptionAttempts_Outcome: a recorded attempt names its exception; a refusal carries its JSON.</summary>
+    internal const string ShipmentRiskExceptionAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [ExceptionId] IS NOT NULL AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND [ExceptionId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
     /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
     internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
 
@@ -502,6 +537,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureQuotes(modelBuilder);
         ConfigureInvoices(modelBuilder);
         ConfigureInvoiceFinalizations(modelBuilder);
+        ConfigureShipmentRiskExceptions(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1616,6 +1652,77 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         "([SalesOwnerUserId] IS NULL OR [SalesOwnerUserId] <> '00000000-0000-0000-0000-000000000000') "
         + "AND ([DueTermsJson] IS NULL OR ISJSON([DueTermsJson]) = 1)";
 
+    // API-07 (SAT-D153…D162): the single-shipment risk exceptions and their attempts.
+    private void ConfigureShipmentRiskExceptions(ModelBuilder modelBuilder)
+    {
+        var exception = modelBuilder.Entity<ShipmentRiskExceptionRow>();
+        exception.ToTable("ShipmentRiskExceptions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ShipmentRiskExceptions_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ExceptionNo] >= 1");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptions_State", "[State] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptions_Decision", ShipmentRiskExceptionDecisionConstraint);
+            table.HasCheckConstraint("CK_ShipmentRiskExceptions_MakerChecker", ShipmentRiskExceptionMakerCheckerConstraint);
+            table.HasCheckConstraint("CK_ShipmentRiskExceptions_Text",
+                "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        exception.HasKey(x => x.Id);
+        exception.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        exception.Property(x => x.Id).ValueGeneratedNever();
+        exception.Property(x => x.Reason).HasMaxLength(SalesShipmentRiskException.MaximumReasonLength).IsRequired();
+        exception.Property(x => x.RequestedBy).HasMaxLength(SalesShipmentRiskException.MaximumActorLength).IsRequired();
+        exception.Property(x => x.DecidedBy).HasMaxLength(SalesShipmentRiskException.MaximumActorLength);
+        exception.Property(x => x.RejectionReason).HasMaxLength(SalesShipmentRiskException.MaximumReasonLength);
+        exception.Property(x => x.ValidOn).HasColumnType("date");
+        exception.Property(x => x.Version).IsConcurrencyToken();
+        exception.Property(x => x.RowVersion).IsRowVersion();
+        exception.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        exception.HasIndex(x => new { x.CompanyId, x.OrderId, x.ExceptionNo }).IsUnique().HasDatabaseName("UX_ShipmentRiskExceptions_No");
+        exception.HasIndex(x => new { x.CompanyId, x.OrderId, x.LoadingInstructionId }).IsUnique()
+            .HasFilter(PendingShipmentRiskExceptionFilter).HasDatabaseName("UX_ShipmentRiskExceptions_PendingShipment");
+        exception.HasIndex(x => new { x.CompanyId, x.OrderId, x.LoadingInstructionId, x.ExceptionNo })
+            .HasDatabaseName("IX_ShipmentRiskExceptions_Shipment");
+        exception.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        exception.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        exception.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<ShipmentRiskExceptionAttemptRow>();
+        attempt.ToTable("ShipmentRiskExceptionAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Command", ShipmentRiskExceptionAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Outcome", ShipmentRiskExceptionAttemptOutcomeConstraint);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<ShipmentRiskExceptionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ExceptionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         SalesAuditEventTenantGuard.Validate(this, companyContext);
@@ -1764,6 +1871,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     ],
                     // API-36: the outbox is APPEND-ONLY (TR_OutboxMessages_Guard refuses the same).
                     SalesOutboxRow => [],
+                    // API-07 (SAT-D153/D160): a risk exception moves only along its one decision (checked below); the request facts
+                    // never change; its attempts are APPEND-ONLY.
+                    ShipmentRiskExceptionRow =>
+                    [
+                        nameof(ShipmentRiskExceptionRow.State), nameof(ShipmentRiskExceptionRow.DecidedBy),
+                        nameof(ShipmentRiskExceptionRow.DecidedAtUtc), nameof(ShipmentRiskExceptionRow.RejectionReason),
+                        nameof(ShipmentRiskExceptionRow.ValidOn), nameof(ShipmentRiskExceptionRow.UpdatedAtUtc),
+                    ],
+                    ShipmentRiskExceptionAttemptRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftLineRow)
@@ -1798,6 +1914,19 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                             && (int)requestState.CurrentValue! == (int)SalesRequestState.Rejected))
                     {
                         throw new InvalidOperationException("Satış talebinin durumu yalnız Onay bekliyor → Onaylı/Reddedildi ya da Onaylı → Reddedildi yönünde değişir.");
+                    }
+                }
+
+                if (entry.Entity is ShipmentRiskExceptionRow)
+                {
+                    // API-07: a decision is taken once — Requested → Approved | Rejected; nothing else.
+                    var exceptionState = entry.Property(nameof(ShipmentRiskExceptionRow.State));
+                    if (!(exceptionState.IsModified
+                            && (int)exceptionState.OriginalValue! == (int)SalesShipmentRiskExceptionState.Requested
+                            && (int)exceptionState.CurrentValue! is (int)SalesShipmentRiskExceptionState.Approved
+                                or (int)SalesShipmentRiskExceptionState.Rejected))
+                    {
+                        throw new InvalidOperationException("Risk istisnasının durumu yalnız bir kez, Onay bekliyor → Onaylı/Reddedildi yönünde değişir.");
                     }
                 }
 

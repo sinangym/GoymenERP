@@ -74,6 +74,11 @@ public sealed class SalesShellCapabilityProviderTests
                 // DEC-SAL-002: the quantity-revision CONTROL of the detail.
                 ("sales.orders.quantity.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}", "sales.drafts.detail"),
+                // API-07 (Sales 1.24): the risk exception decision and request CONTROLS of the detail (read + each one's own name).
+                ("sales.orders.risk-exception.approve", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersRiskExceptionApprove}", "sales.drafts.detail"),
+                ("sales.orders.risk-exception.request", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersRiskExceptionRequest}", "sales.drafts.detail"),
                 // S-2 API-11 (Sales 1.22): the source-plan CONTROL of the detail (read + its own name).
                 ("sales.orders.source-plan.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}", "sales.drafts.detail"),

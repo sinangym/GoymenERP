@@ -126,6 +126,7 @@ import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesOrderTaxCard } from './SalesOrderTaxCard'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
+import { SalesOrderRiskExceptions } from './SalesOrderRiskExceptions'
 import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
@@ -301,10 +302,16 @@ export function SalesDraftDetailPage() {
       }
       risk={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
-          <SalesOrderRiskCard
-            key={`risk:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
-            detail={outcome.data}
-          />
+          <>
+            <SalesOrderRiskCard
+              key={`risk:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+              detail={outcome.data}
+            />
+            <SalesOrderRiskExceptions
+              key={`risk-exceptions:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+              detail={outcome.data}
+            />
+          </>
         ) : null
       }
       headerSummary={

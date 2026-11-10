@@ -886,3 +886,33 @@ nothing, opens no document and writes no other module's record.
 | Migration | `AddDraftSourcePlanLines`; its Down refuses with 51241 while any plan exists (forward fix); an empty table rolls back freely. |
 | Shell | Control `sales.orders.source-plan.write` (parent S-04 detail), Sales shell contract 1.22. Frontend: the "Kaynak planı" panel on the order detail (`SalesDraftSourcePlan.tsx`). |
 | Evidence | Unit: `SalesOrderDraftSourcePlanTests`, `SalesDraftServiceTests.SourcePlan`, `SalesPersistenceModelTests`. Real SQL: `SalesDraftSourcePlanSqlServerRelationalAcceptanceTests` (eight inventoried facts). Frontend: `sourcePlan.test.ts`, `SalesDraftSourcePlan.test.tsx`. |
+
+## Single-shipment risk exception (API-07; SAT-D153…D162, EK21; Sinan 2026-11-10, EK55 pending)
+
+- **Routes** (under the drafts group, Sales-owned): `GET /api/v1/sales/drafts/{id}/risk-exceptions` (the order's exceptions,
+  newest first, under `sales.drafts.read`), `POST …/risk-exceptions` (request, `sales.orders.risk-exception.request`, 201),
+  `POST …/risk-exceptions/{no}/approval` and `…/{no}/rejection` (decision, `sales.orders.risk-exception.approve`, 200). There is no
+  date-range (customer) variant. Requesting does not need `sales.drafts.read` (SAT-D159); no answer carries an amount (SAT-D162).
+- **Permissions:** both names are registered in `ErpPermissions`, `SalesPermissionManifestV1` and the shell provider (1.24) as
+  controls of the S-04 detail, company-wide, not Critical, and **granted to nobody**. The decisions name the requesters
+  (Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür, Admin) and the approvers (Satış Uzmanı, Müdür, Admin); the persona → grant row is
+  a human gate.
+- **Rules:** the request needs one loading instruction (`LoadingInstructionId`, opaque, fail-closed) and a reason (≤ 4000, never
+  cut). One pending exception per shipment (filtered unique index); a pending or today-valid exception of the same shipment and an
+  order that is not approved/open answer 409 and are **not** recorded under the key (they can change). The decision moves once,
+  at the exception's version (`1` → `2`), by a decider who is not the requester (ordinal after trim; SAT-D153); a stale version,
+  a decided exception and a self-decision are the key's recorded 409. An approval is valid on its Europe/Istanbul business date only
+  (SAT-D160), never measured in UTC. The exception is a separate approval record: it opens no revision and changes no order version.
+- **K3 skeleton:** permission fence first, idempotency replay (`Idempotency-Replayed`), correlation/causation, one save that writes
+  the exception, its attempt and the audit (requester, approver, shipment, reason, time), `CompanyId` on every row. Migration
+  `20261110155556_AddShipmentRiskExceptions` adds `sales.ShipmentRiskExceptions` and its append-only
+  `sales.ShipmentRiskExceptionAttempts`: a trigger keeps the request facts and lets a row take one decision only (51252), another
+  refuses any attempt change (51253) and a check constraint refuses a self-decision; the forward-fix `Down` refuses with 51251 while an exception or an attempt exists.
+- **Read port:** `ISalesShipmentRiskExceptionReadPortV1.GetAsync(orderId, loadingInstructionId)` answers None / Pending / Valid /
+  Lapsed / Rejected (a today-valid one wins, then a pending one, then the newest) under the caller's company; without a company or
+  the Istanbul time zone it throws, so the gate fails closed. Logistics does not consume it yet: no Logistics connection or port is
+  opened here (SAT-D209). Consumption on a definite shipment and the lapse on a cancelled shipment are the gate's contract
+  (NEEDS-SINAN).
+- **UI:** the S-04 panel `SalesOrderRiskExceptions` lists the exceptions (detail capability), shows the request form only with the
+  request capability and approve / reject only on a pending exception with the approve capability; an unknown outcome is retried
+  with the same key. The shipment is typed as its loading instruction id until a Logistics screen offers the entry (NEEDS-SINAN).

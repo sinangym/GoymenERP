@@ -108,8 +108,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:W46xhCfnhgPEyUOJpSNDe4fIqzTs4jUtQD_YYc82dLc";
+        "sha256:J7l8PTsdfqq9p5LgXwkXNwT_5nuqc_53C9KuZ3PZ21Y";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -169,8 +170,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:6wQkZwjXOUjg9BgQYap8iSM-gjQyKRpp_GME2xiwsRw";
+        "sha256:baZLvFU5lSblK_h-oz7RV2347xUk17YTvOQvwu3V7fc";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -217,8 +219,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:0_w2jq6eU9Jbjk8x1tFb6w-e0KG-h7_zqMsGzop0JXU";
+        "sha256:71UGG24cVuQW4LXX-Pp7kZjv-FNKfYtW8MVypMArRkA";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -486,8 +489,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:kIXTXUfn5qOrfimb59e9XmqjAETCWNESZ3MJrNzY9VM";
+        "sha256:1SvroMzsLCoBRQFyE0ZLt19CiI1vw5lhJgHan4Qpy5A";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -502,8 +506,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:Ufx9aF2Mc6dnVLxx3Z9XVz74quD0uWS_BU-AOLc4zdA";
+        "sha256:Qi3QPmE_nwlWj5TpFeysLx08Wtr81GnswmGzaaVL5-I";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -518,8 +523,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:wCZz9qG-SKEXQEz6JdvDB6D9k_1IROEN4O9h-u2YZ2Y";
+        "sha256:wRamWMTF0Qjf7DzzpqhRHlgqMVysv97QyndlzzlI3Wo";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -534,8 +540,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:67niOlzLsruCxwVI4oFJSU9_7icblm4kHvSxqm6dOdc";
+        "sha256:h4QH9fPgjyDbVsXWM26wzEUXo829jMZciiS0EmWS9Fs";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -553,8 +560,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:KjMgZsnKCWnCOy4qqznIvYBYM_QXpZSXzdtR68YJye8";
+        "sha256:8SmDTh64HBtAwysUtKpsCxi_yEObQju0o4DWu3_6GP0";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -572,8 +580,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:zkhZHeG-DljmD3bWzSEG_7yIColIi44V72m0Ha2P5Nc";
+        "sha256:4Jy7XROmwGlx-cLmLW97IjakQC6Y1PLFoTpS9aMVyUg";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -596,8 +605,9 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // S5 API-34 (merged after S-2 API-11 1.22): Sales 1.23 (sales.invoices.export registered, ungranted, no screen control; manifest v28) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // API-07 (SAT-D153–SAT-D162, merged after S5 API-34 1.23): Sales 1.24 (the risk exception request and decision controls of the S-04 detail; sales.orders.risk-exception.request / .approve registered, ungranted; manifest v29) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:mPooVYoRtQX07WAoYDaMGX_ouEZamWgv6V_NmxwoTBs";
+        "sha256:Vq2CcKevJ0wSrCt6jlptzqUr9jIdie-ZLRJBGb3vePM";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

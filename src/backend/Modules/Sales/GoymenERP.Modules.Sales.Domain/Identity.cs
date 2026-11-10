@@ -434,6 +434,21 @@ public static class SalesRuleCodes
     /// <summary>API-36 (SAT-D227, SAT-D233): the TL split of the instalments leaves the last instalment negative or zero, or has no TL total.</summary>
     public const string InvoiceInstalmentFunctionalInvalid = "sales_invoice_instalment_functional_invalid";
 
+    /// <summary>API-07 (SAT-D153/D159): the person who requested a single-shipment risk exception does not approve or reject it.</summary>
+    public const string RiskExceptionSelfDecision = "sales_risk_exception_self_decision";
+
+    /// <summary>API-07 (SAT-D154, DEC-FIN-009): a risk exception request, and its rejection, carry a reason (the audit names it).</summary>
+    public const string RiskExceptionReasonRequired = "sales_risk_exception_reason_required";
+
+    /// <summary>API-07: a risk exception reason longer than the bound is refused, never cut.</summary>
+    public const string RiskExceptionReasonTooLong = "sales_risk_exception_reason_too_long";
+
+    /// <summary>API-07 (SAT-D154/D161): an exception is requested only for an approved, open (not cancelled or closed) order.</summary>
+    public const string RiskExceptionOrderNotEligible = "sales_risk_exception_order_not_eligible";
+
+    /// <summary>API-07 (SAT-D154): the same shipment already has a pending, or a today-valid, exception.</summary>
+    public const string RiskExceptionDuplicate = "sales_risk_exception_duplicate";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

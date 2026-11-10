@@ -13,8 +13,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 public static class SalesPermissionManifestV1
 {
     // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write; v19 (SAT-D32 /
-    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match; v24 (SAT-D17 / SAT-D168): sales.orders.lines.close; v25 (S5 API-36, Fatura çekirdeği 4): sales.invoices.finalize; v26 (SAT-D250 / SAT-D266 / SAT-D267, S-05 marj): sales.orders.margin.read; v27 (S-2 API-11, SAT-D179 / SAT-D251–D255, merged after v26): sales.orders.source-plan.write; v28 (S5 API-34, SAT-D236/D244/D248, EK47/EK54; merged after v27): sales.invoices.export.
-    public const int Version = 28;
+    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match; v24 (SAT-D17 / SAT-D168): sales.orders.lines.close; v25 (S5 API-36, Fatura çekirdeği 4): sales.invoices.finalize; v26 (SAT-D250 / SAT-D266 / SAT-D267, S-05 marj): sales.orders.margin.read; v27 (S-2 API-11, SAT-D179 / SAT-D251–D255, merged after v26): sales.orders.source-plan.write; v28 (S5 API-34, SAT-D236/D244/D248, EK47/EK54; merged after v27): sales.invoices.export; v29 (API-07, SAT-D153–D162, EK21; merged after v28): sales.orders.risk-exception.request, sales.orders.risk-exception.approve.
+    public const int Version = 29;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -144,6 +144,23 @@ public static class SalesPermissionManifestV1
     public const string OrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
 
     /// <summary>
+    /// API-07 / SAT-D153–SAT-D162 (EK21), Issue #66 comment 6771235622 / EK55 (pending): requesting a single-shipment risk
+    /// exception — POST drafts/{id}/risk-exceptions. The decision names Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür and Admin;
+    /// which persona holds it is a human gate (registered, granted to no role). Requesting does NOT need <see cref="DraftsRead"/>
+    /// and the request answer carries no amount. Its own name: no other Sales name confers it and it confers none.
+    /// Company-wide; not Critical.
+    /// </summary>
+    public const string OrdersRiskExceptionRequest = "sales.orders.risk-exception.request";
+
+    /// <summary>
+    /// API-07 / SAT-D153–SAT-D162 (EK21), Issue #66 comment 6771235622 / EK55 (pending): approving or rejecting a single-shipment
+    /// risk exception — POST …/risk-exceptions/{no}/approval|rejection. The decision names Satış Uzmanı, Müdür and Admin; which
+    /// persona holds it is a human gate (registered, granted to no role). The requester does not decide their own request (a rule
+    /// of the command). Its own name: the request name does NOT confer it and it confers none. Company-wide; not Critical.
+    /// </summary>
+    public const string OrdersRiskExceptionApprove = "sales.orders.risk-exception.approve";
+
+    /// <summary>
     /// SAT-D17 / SAT-D168 (EK24), SAT-D214–D216 (EK37): closing one order line with a shortfall — POST …/{id}/line-closure. The
     /// decision names Satış Uzmanı, Satış Müdürü, Genel Müdür and Admin; which persona holds it is a human gate (registered,
     /// granted to no role). Its own name: the order close, force-close, cancel and over-delivery names do NOT confer it and it
@@ -261,7 +278,7 @@ public static class SalesPermissionManifestV1
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersMarginRead, OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, OrdersLineClose, OrdersSourcePlanWrite, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, OrdersRiskExceptionRequest, OrdersRiskExceptionApprove, OrdersLineClose, OrdersSourcePlanWrite, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, InvoicesApprove, InvoicesMatch, InvoicesFinalize, InvoicesExport, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }
