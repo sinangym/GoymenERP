@@ -755,6 +755,10 @@ WRITER_METHOD_SCOPES = {
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
     ): "RecordRequestRefusalAsync",
     (
+        "sales.shipment-risk-exception-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs",
+    ): "RecordRiskExceptionRefusalAsync",
+    (
         "work.observation-inbox",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
     ): "ReconcileAsync",
@@ -915,6 +919,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "RecordRequestRefusalAsync",
     ): "81c17b68bf692f4cbecb7bf7220776ff1f623add0d868829cca4484fbc0a0bb0",
     (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs",
+        "RecordRiskExceptionRefusalAsync",
+    ): "ade77a294e3c768b7f939b445fca42e6ade3f12060ebc87f8830c2f436743328",
+    (
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
         "ReconcileAsync",
     ): "0c760ebfe36fce642faa069b72637e699f16e1d14a04f0d154f43357be542657",
@@ -954,6 +962,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs": "754fde914ab573515fd34db5c2d0af03144f24bee9334568ceeae2eebd9f2f2e",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs": "8cfa2b15c0c0059f59c4659d62e97b9292cb8cbde9419e032f9bb4474fc472d8",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
 
