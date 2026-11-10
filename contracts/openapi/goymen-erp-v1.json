@@ -120120,7 +120120,7 @@
           "invoiceId",
           "dispatchNoteId",
           "shipmentId",
-          "salesOrderId"
+          "salesOrderIds"
         ],
         "type": "object",
         "properties": {
@@ -120182,12 +120182,12 @@
             ],
             "format": "uuid"
           },
-          "salesOrderId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
+          "salesOrderIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },

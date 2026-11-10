@@ -5950,7 +5950,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("truncated", "type:boolean")),
                 ["SalesControlCenterItemView"] = ObjectSchema(
                     ["kind", "severity", "partyId", "companyAccountId", "reference", "referenceDate", "ageDays", "count", "invoiceId", "dispatchNoteId",
-                        "shipmentId", "salesOrderId"],
+                        "shipmentId", "salesOrderIds"],
                     ("kind", "ref:SalesControlCenterCheckKindView"),
                     ("severity", "ref:SalesControlCenterSeverityView"),
                     ("partyId", "type:string;format:uuid"),
@@ -5962,7 +5962,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("invoiceId", "type:null|string;format:uuid"),
                     ("dispatchNoteId", "type:null|string;format:uuid"),
                     ("shipmentId", "type:null|string;format:uuid"),
-                    ("salesOrderId", "type:null|string;format:uuid")),
+                    ("salesOrderIds", "type:array;items:type:string;format:uuid")),
                 ["SalesInvoiceCandidatesResponse"] = ObjectSchema(
                     ["groups", "truncated", "invoicedState"],
                     ("groups", "type:array;items:ref:SalesInvoiceCandidateGroupView"),
