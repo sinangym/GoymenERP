@@ -154,7 +154,7 @@ export const CAPABILITY = {
   salesDispatchesList: 'sales.dispatches.list',
   /** UI-61 S-08 Faturaya Hazır (API-31). Route `/satis/faturaya-hazir`. Granted on its own `sales.invoices.read`. */
   salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
-  /** UI-63 S-09 Satış faturaları (API-32 list). Route `/satis/faturalar`. Granted on `sales.invoices.read` + `sales.orders.price.read`. */
+  /** UI-63 S-09 Satış faturaları (API-32 list). Route `/satis/faturalar`. Granted on `sales.invoices.read` (SAT-D238: amounts withheld without `sales.orders.price.read`; Sales shell 1.20). */
   salesInvoicesList: 'sales.invoices.list',
   /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
   salesReportsView: 'sales.reports.view',

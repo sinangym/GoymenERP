@@ -493,7 +493,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // and writes nothing), kept ordinal-sorted (21fade35... -> 834500af...).
                 // SAT-D246 (EK49): +1 SalesInvoice fact (the control center lists every order of a two-order invoice in line order and
                 // another company sees none), kept ordinal-sorted (834500af... -> d9d2c108...).
-                "d9d2c10852f5eb8a9d6517aa98413295ee5c8ae0be07751db475c1053758b5c9",
+                // SAT-D241 (EK48): +2 SalesInvoice facts (a VAT or withholding TL difference above the tolerance writes nothing unapproved and
+                // is stored approved; the tax-comparison migration's Down passes with a legacy match and refuses with 51242 while a compared
+                // match exists), kept ordinal-sorted (d9d2c108... -> e49ab090...).
+                "e49ab0909f2268082dc2ec262d7e8beb2f64ccdfbb24aa10b5e705244867f359",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -628,7 +631,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D17: DraftLineClosures (keyed per line, FK to draft and line, CK) on the same company-filtered context; no query-filter bypass or direct database surface (da465c59... -> af489a5a...).
                 // Line identity FKs (review finding): alternate key AK_DraftLines_LineIdentity (CompanyId, DraftId, LineNo, LineId) and a 4-column
                 // Restrict FK to it from DraftOverDeliveryApprovals, DraftLineClosures and DraftRemainderChanges; no query-filter bypass or direct database surface (17c1be19... -> 1d567f05...).
-                "1d567f05ec040972ea65978fac493551da5f03309e9094846c02595ff0b2bbc3",
+                // SAT-D241 (EK48): six nullable VAT/withholding columns on the same company-filtered, append-only InvoiceMatches row,
+                // CK_InvoiceMatches_TaxAmounts and the widened CK_InvoiceMatches_Amounts; no query-filter bypass or direct database surface (1d567f05... -> 22f3ea3d...).
+                // The tax check's second branch names every column IS NOT NULL (a CHECK accepts UNKNOWN) (22f3ea3d... -> 48ee7004...).
+                "48ee7004135ac121f6c9714ab779d409d3d8d29e4383c76483a3108f381324fd",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -2595,6 +2601,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the Down is pure DDL (dropping the FKs, indexes and alternate key loses no data).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261108194345_AddDraftLineIdentityForeignKeys.cs"] =
                     new("35b2d66e710fe11d6710eabf69a0d56ab5a259c55986a1e75b523d9700c97989",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D241 (EK48): the Up is pure DDL (six nullable columns, two checks); the Down's only raw SQL is the forward-fix refusal
+                // (51242, used by no other migration) while any match carries the VAT/withholding comparison, before any DDL.
+                // The tax check names every column IS NOT NULL in its second branch (2e4c2ae6... -> 3bb21c0b...).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110065844_AddInvoiceMatchTaxComparison.cs"] =
+                    new("3bb21c0bd25f4a6df6c0284d387e989094ec66c453d6bff9cdc19c6a7fa21a37",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

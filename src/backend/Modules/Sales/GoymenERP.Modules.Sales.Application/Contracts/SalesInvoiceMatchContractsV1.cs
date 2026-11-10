@@ -8,15 +8,22 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // own work: no open item, no Finance write).
 
 /// <summary>
-/// API-35 body. <paramref name="ApproveDifference"/> is the explicit approval of a TL difference above the tolerance
+/// API-35 body. <paramref name="ApproveDifference"/> is the explicit approval of a TL difference (payable, VAT or withholding — SAT-D241)
+/// above the tolerance
 /// (<paramref name="DifferenceReason"/> is then required); it is refused when the difference is within the tolerance.
 /// </summary>
 public sealed record MatchSalesInvoiceRequest(string ExpectedVersion, string OfficialInvoiceNo, string Ettn, bool ApproveDifference = false,
     string? DifferenceReason = null);
 
-/// <summary>The recorded match. Amounts are exact invariant text, all TL equivalents (Sinan S1).</summary>
+/// <summary>
+/// The recorded match. Amounts are exact invariant text, all TL equivalents (Sinan S1). SAT-D241 (EK48): the VAT and the withholding of
+/// the invoice and the official document and their differences, compared separately with the same tolerance — all six present on every
+/// match recorded since, all six null on a match recorded before (never a zero in place of an amount that was not compared).
+/// </summary>
 public sealed record SalesInvoiceMatchView(string OfficialInvoiceNo, string Ettn, string InvoiceAmount, string OfficialAmount,
-    string Difference, string Tolerance, string MatchedBy, DateTimeOffset MatchedAtUtc, string? DifferenceApprovedBy, string? DifferenceReason);
+    string Difference, string Tolerance, string MatchedBy, DateTimeOffset MatchedAtUtc, string? DifferenceApprovedBy, string? DifferenceReason,
+    string? InvoiceVatAmount, string? OfficialVatAmount, string? VatDifference, string? InvoiceWithholdingAmount,
+    string? OfficialWithholdingAmount, string? WithholdingDifference);
 
 /// <summary>How the official-invoice provider answered one lookup; anything but <see cref="Found"/> is read fail-closed.</summary>
 public enum SalesOfficialInvoiceOutcomeV1
@@ -39,7 +46,8 @@ public sealed record SalesOfficialInvoiceAnswerV1(SalesOfficialInvoiceOutcomeV1 
 
 /// <summary>
 /// API-35 (SAT-D89): the Sales-declared read port the owner of the official-invoice import answers with the company's official
-/// document (number, ETTN, customer, currency, payable amount and its TL equivalent). The owner implements it over its own
+/// document (number, ETTN, customer, currency, payable amount and its TL equivalent, and — SAT-D241 — the TL equivalents of its VAT and
+/// withholding totals). The owner implements it over its own
 /// company-filtered data and registers it in its own module; Sales never reads those tables. The port carries NO authority — the
 /// match command measures its own names — and CREATES NOTHING. Until an owner registers it the default adapter answers
 /// <see cref="SalesOfficialInvoiceOutcomeV1.Unavailable"/> and the match fails closed (503).

@@ -263,11 +263,42 @@ export interface InvoiceMatch {
   readonly matchedAtUtc: string
   readonly differenceApprovedBy: string | null
   readonly differenceReason: string | null
+  /**
+   * SAT-D241 (EK48): the VAT and the withholding (TL equivalents) compared separately with the same tolerance. Null for a match
+   * recorded before SAT-D241 — never a zero in place of an amount that was not compared.
+   */
+  readonly taxes: InvoiceMatchTaxes | null
 }
+export interface InvoiceMatchTaxes {
+  readonly invoiceVatAmount: string
+  readonly officialVatAmount: string
+  readonly vatDifference: string
+  readonly invoiceWithholdingAmount: string
+  readonly officialWithholdingAmount: string
+  readonly withholdingDifference: string
+}
+const MATCH_TAX_FIELDS = [
+  'invoiceVatAmount', 'officialVatAmount', 'vatDifference', 'invoiceWithholdingAmount', 'officialWithholdingAmount',
+  'withholdingDifference',
+] as const
 const MATCH_FIELDS = [
   'officialInvoiceNo', 'ettn', 'invoiceAmount', 'officialAmount', 'difference', 'tolerance', 'matchedBy', 'matchedAtUtc',
-  'differenceApprovedBy', 'differenceReason',
+  'differenceApprovedBy', 'differenceReason', ...MATCH_TAX_FIELDS,
 ] as const
+
+/** All six present (non-negative; the differences are the server's absolute differences) or all six null; a mix is not this contract (`undefined`). */
+function decodeMatchTaxes(o: Obj): InvoiceMatchTaxes | null | undefined {
+  if (MATCH_TAX_FIELDS.every((field) => o[field] === null)) return null
+  if (
+    !isAmount(o.invoiceVatAmount) || !isAmount(o.officialVatAmount) || !isAmount(o.vatDifference)
+    || !isAmount(o.invoiceWithholdingAmount) || !isAmount(o.officialWithholdingAmount) || !isAmount(o.withholdingDifference)
+  ) return undefined
+  return {
+    invoiceVatAmount: o.invoiceVatAmount, officialVatAmount: o.officialVatAmount, vatDifference: o.vatDifference,
+    invoiceWithholdingAmount: o.invoiceWithholdingAmount, officialWithholdingAmount: o.officialWithholdingAmount,
+    withholdingDifference: o.withholdingDifference,
+  }
+}
 
 function decodeMatch(value: unknown): InvoiceMatch | null {
   const o = exact(value, MATCH_FIELDS)
@@ -276,10 +307,12 @@ function decodeMatch(value: unknown): InvoiceMatch | null {
     || !isSignedAmount(o.difference) || !isAmount(o.tolerance) || !isText(o.matchedBy) || !isInstant(o.matchedAtUtc)
     || !isNullableText(o.differenceApprovedBy) || !isNullableText(o.differenceReason)
   ) return null
+  const taxes = decodeMatchTaxes(o)
+  if (taxes === undefined) return null
   return {
     officialInvoiceNo: o.officialInvoiceNo, ettn: o.ettn, invoiceAmount: o.invoiceAmount, officialAmount: o.officialAmount,
     difference: o.difference, tolerance: o.tolerance, matchedBy: o.matchedBy, matchedAtUtc: o.matchedAtUtc,
-    differenceApprovedBy: o.differenceApprovedBy, differenceReason: o.differenceReason,
+    differenceApprovedBy: o.differenceApprovedBy, differenceReason: o.differenceReason, taxes,
   }
 }
 

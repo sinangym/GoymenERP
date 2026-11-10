@@ -57,20 +57,22 @@ public sealed class SalesControlCenterService(
                     invoice.DocumentNo, invoice.Header.BusinessDate, age, flagged, invoice.Id, null, null, orders));
             }
 
-            if (invoice.Match is { Difference: > 0m } match)
+            if (invoice.Match is { LargestDifference: > 0m } match)
             {
-                // API-35 recorded a TL difference against the official document (SAT-D229): within the tolerance it is shown as such;
-                // beyond it, the recorded match already carries the approving person's decision (SAT-D106), so it stays informational.
+                // API-35 recorded a TL difference against the official document (SAT-D229) — on the payable amount, the VAT or the
+                // withholding (SAT-D241, each measured on its own): all within the tolerance it is shown as such; any one beyond it, the
+                // recorded match already carries the approving person's decision (SAT-D106), so it stays informational.
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.OfficialDocumentDeviation,
-                    match.Difference <= match.Tolerance ? SalesControlCenterSeverityView.WithinTolerance : SalesControlCenterSeverityView.Info,
+                    match.Exceeded ? SalesControlCenterSeverityView.Info : SalesControlCenterSeverityView.WithinTolerance,
                     invoice.Header.PartyId, invoice.Header.CompanyAccountId, invoice.DocumentNo, invoice.Header.BusinessDate, age,
                     invoice.Lines.Count, invoice.Id, null, null, orders));
             }
 
-            if (invoice.State == SalesInvoiceState.Approved && invoice.Match is { Difference: not 0m })
+            if (invoice.State == SalesInvoiceState.Approved && invoice.Match is { HasOpenDifference: true })
             {
-                // API-36 refuses this invoice (409 sales_invoice_match_difference_open) until NEEDS-SINAN #3 is decided, and there is
-                // no Approved cancel path yet: without this item it would sit unseen.
+                // API-36 refuses this invoice (409 sales_invoice_match_difference_open) until NEEDS-SINAN #3 is decided — a payable, VAT
+                // or withholding difference alike (SAT-D241) — and there is no Approved cancel path yet: without this item it would sit
+                // unseen.
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceFinalizationBlocked,
                     SalesControlCenterSeverityView.Critical, invoice.Header.PartyId, invoice.Header.CompanyAccountId,
                     invoice.DocumentNo, invoice.Header.BusinessDate, age, invoice.Lines.Count, invoice.Id, null, null, orders));

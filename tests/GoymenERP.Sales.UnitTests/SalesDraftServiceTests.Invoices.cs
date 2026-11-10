@@ -59,9 +59,39 @@ public sealed partial class SalesDraftServiceTests
         var detail = await invoicing.Service().GetInvoiceAsync(invoice.Id);
         Assert.Equal(invoice with { IsReplay = false }, detail with { VatGroups = invoice.VatGroups, Instalments = invoice.Instalments, Lines = invoice.Lines });
         var page = await invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery());
-        Assert.Equal(("18.76", "648.49"), (Assert.Single(page.Items).PayableAmount, page.Items[0].FunctionalPayableAmount));
+        Assert.Equal((SalesPriceDisclosure.Visible, "18.76", "648.49"), (Assert.Single(page.Items).AmountDisclosure,
+            page.Items[0].PayableAmount, page.Items[0].FunctionalPayableAmount));
         Assert.Equal((404, "not_found"), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             invoicing.Service().GetInvoiceAsync(Guid.NewGuid()))));
+    }
+
+    [Fact]
+    public async Task The_invoice_list_without_the_price_read_shows_the_rows_with_every_amount_withheld_SAT_D238()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        var created = await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-withheld"));
+        invoicing.World.Authority.Denied.Add(InvoicePriceRead);
+        var measuredBefore = invoicing.World.Authority.Measured.Count;
+
+        var page = await invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery());
+
+        // SAT-D238 (EK48): the row is listed; both amounts are null BECAUSE they are withheld — never "0.00", never an omission.
+        var row = Assert.Single(page.Items);
+        Assert.Equal((created.Invoice.Id, created.Invoice.DocumentNo, SalesPriceDisclosure.Withheld, (string?)null, (string?)null, 1),
+            (row.Id, row.DocumentNo, row.AmountDisclosure, row.PayableAmount, row.FunctionalPayableAmount, row.LineCount));
+        // The invoice read is required first; the price read is asked last, after the store read.
+        var measured = invoicing.World.Authority.Measured.Skip(measuredBefore).ToArray();
+        Assert.Equal(InvoiceRead, measured[0]);
+        Assert.Equal(InvoicePriceRead, measured[^1]);
+
+        // The detail still requires the price read (SAT-D238 opens the list only).
+        Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().GetInvoiceAsync(created.Invoice.Id))).Status);
+
+        // Without the invoice read the list stays closed, and nothing is read.
+        invoicing.World.Authority.Denied.Add(InvoiceRead);
+        Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery()))).Status);
     }
 
     [Fact]
@@ -150,8 +180,6 @@ public sealed partial class SalesDraftServiceTests
         invoicing.World.Authority.Denied.Add(InvoicePriceRead);
         Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-price")))).Status);
-        Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery()))).Status);
         Assert.Empty(invoicing.Shipments.Asked);
 
         invoicing.World.Authority.Denied.Clear();
@@ -293,7 +321,10 @@ public sealed partial class SalesDraftServiceTests
             var approved = await PricedApprovedAsync(world, "k-invoice-order");
             // Q9 / SAT-D114: the customer accepted the approved revision, so the invoicing gate is open on Rev.0.
             await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command(approved.Draft.Version), Metadata("k-invoice-accept"));
-            return new InvoiceWorld(world, approved);
+            var invoicing = new InvoiceWorld(world, approved);
+            // SAT-D224: a coded 50 % withholding line carries 54.27 TL withholding (see the coded withholding test).
+            invoicing.Official.Withholding = withholdingCode is null ? 0m : 54.27m;
+            return invoicing;
         }
 
         public CreateSalesInvoiceRequest Request() => new(Account, [new SalesInvoiceShareRequest(ShipmentId)]);
@@ -431,9 +462,14 @@ public sealed partial class SalesDraftServiceTests
             return Task.FromResult(Answer);
         }
 
-        public void Has(decimal functionalAmount, Guid? customer = null, Guid? currency = null, string no = "GIB2026000000001") =>
+        /// <summary>SAT-D241: the official VAT and withholding TL totals; by default those of the world's invoice (VAT 108.20 TL).</summary>
+        public decimal Vat { get; set; } = 108.20m;
+        public decimal Withholding { get; set; }
+
+        public void Has(decimal functionalAmount, Guid? customer = null, Guid? currency = null, string no = "GIB2026000000001",
+            decimal? vat = null, decimal? withholding = null) =>
             Answer = new(SalesOfficialInvoiceOutcomeV1.Found, new SalesOfficialInvoiceFacts(no, OfficialEttn, customer ?? Party,
-                currency ?? Currency, functionalAmount, functionalAmount));
+                currency ?? Currency, functionalAmount, functionalAmount, vat ?? Vat, withholding ?? Withholding));
     }
 
     private static MatchSalesInvoiceRequest MatchRequest(string version = "3", bool approve = false, string? reason = null,
@@ -506,6 +542,66 @@ public sealed partial class SalesDraftServiceTests
         var approved = await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Kur farki"), Metadata("k-inv-approved"));
         var match = Assert.IsType<SalesInvoiceMatchView>(approved.Invoice.Match);
         Assert.Equal(("0.06", "synthetic-invoice-matcher", "Kur farki"), (match.Difference, match.DifferenceApprovedBy, match.DifferenceReason));
+    }
+
+    [Theory]
+    [InlineData("vat")]
+    [InlineData("withholding")]
+    public async Task A_vat_or_withholding_difference_above_the_tolerance_is_refused_with_its_own_field_and_writes_nothing_SAT_D241(
+        string field)
+    {
+        // SAT-D241 (EK48): the payable TL agrees exactly; the VAT (108.20 TL) or the withholding (54.27 TL) differs by 0.06 TL.
+        var (invoicing, id, _) = await ApprovedInvoiceAsync(withholding: true, withholdingCode: "625");
+        invoicing.Official.Has(594.22m, vat: field == "vat" ? 108.26m : null, withholding: field == "withholding" ? 54.21m : null);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-tax-over")));
+
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.DifferenceApprovalRequired), Status(refused));
+        Assert.Equal([(field + "Difference", "exceeds_tolerance")], refused.Errors.Select(error => (error.Field, error.Code)));
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+        Assert.DoesNotContain("k-inv-tax-over", invoicing.Invoices.StateAttempts.Keys);
+        Assert.Null((await invoicing.Service().GetInvoiceAsync(id)).Match);
+
+        var approved = await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: true, reason: "Vergi farki"),
+            Metadata("k-inv-tax-approved"));
+        var match = Assert.IsType<SalesInvoiceMatchView>(approved.Invoice.Match);
+        Assert.Equal(("0.00", "synthetic-invoice-matcher"), (match.Difference, match.DifferenceApprovedBy));
+        Assert.Equal(field == "vat"
+                ? ("108.20", "108.26", "0.06", "54.27", "54.27", "0.00")
+                : ("108.20", "108.20", "0.00", "54.27", "54.21", "0.06"),
+            (match.InvoiceVatAmount, match.OfficialVatAmount, match.VatDifference, match.InvoiceWithholdingAmount,
+                match.OfficialWithholdingAmount, match.WithholdingDifference));
+    }
+
+    [Fact]
+    public async Task A_payable_vat_and_withholding_difference_above_the_tolerance_are_each_named_SAT_D241()
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync(withholding: true, withholdingCode: "625");
+        invoicing.Official.Has(594.30m, vat: 108.10m, withholding: 54.40m);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-all-over")));
+
+        Assert.Equal(["difference", "vatDifference", "withholdingDifference"], refused.Errors.Select(error => error.Field));
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+    }
+
+    [Theory]
+    [InlineData("-0.01", "0")]
+    [InlineData("0", "-0.01")]
+    public async Task An_official_document_with_a_negative_vat_or_withholding_is_a_provider_failure_that_writes_nothing_SAT_D241(
+        string vat, string withholding)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(648.49m, vat: decimal.Parse(vat, System.Globalization.CultureInfo.InvariantCulture),
+            withholding: decimal.Parse(withholding, System.Globalization.CultureInfo.InvariantCulture));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-neg")));
+
+        Assert.Equal(503, refused.Status);
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
     }
 
     [Fact]

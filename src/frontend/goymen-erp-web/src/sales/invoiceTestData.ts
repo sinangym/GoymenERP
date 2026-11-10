@@ -43,6 +43,12 @@ export const matchOf = (over: Wire = {}): Wire => ({
   matchedAtUtc: '2026-11-02T10:00:00Z',
   differenceApprovedBy: null,
   differenceReason: null,
+  invoiceVatAmount: '200.07',
+  officialVatAmount: '200.07',
+  vatDifference: '0.00',
+  invoiceWithholdingAmount: '20.01',
+  officialWithholdingAmount: '20.01',
+  withholdingDifference: '0.00',
   ...over,
 })
 

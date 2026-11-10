@@ -138,6 +138,21 @@ describe('API-36 invoice detail decoder', () => {
     expect(detailOf(invoiceDetail({ instalments: [{ sequenceNo: 1, dueDate: '2026-12-01', sharePercent: '100', amount: '1180.40', extra: 1 }] }))).toBeNull()
     expect(detailOf(invoiceDetail({ match: { ...matchOf(), tolerance: null } }))).toBeNull()
     expect(detailOf(invoiceDetail({ match: matchOf({ difference: '-0.10' }) }))?.match?.difference).toBe('-0.10')
+    // SAT-D241: the VAT and withholding comparison is all six or none; a match recorded before it carries six nulls.
+    expect(detailOf(invoiceDetail({ match: matchOf({ vatDifference: '0.07', withholdingDifference: '0.04' }) }))?.match?.taxes)
+      .toMatchObject({ invoiceVatAmount: '200.07', vatDifference: '0.07', withholdingDifference: '0.04' })
+    const legacy = matchOf({
+      invoiceVatAmount: null, officialVatAmount: null, vatDifference: null,
+      invoiceWithholdingAmount: null, officialWithholdingAmount: null, withholdingDifference: null,
+    })
+    expect(detailOf(invoiceDetail({ match: legacy }))?.match?.taxes).toBeNull()
+    for (const [field, value] of [
+      ['vatDifference', null], ['officialWithholdingAmount', null], ['invoiceVatAmount', '-1.00'], ['vatDifference', 0.1], ['vatDifference', '-0.07'],
+      ['withholdingDifference', '0,04'],
+    ] as const) {
+      expect(detailOf(invoiceDetail({ match: matchOf({ [field]: value }) })), `match ${field}=${String(value)}`).toBeNull()
+    }
+    expect(detailOf(invoiceDetail({ match: { ...legacy, vatDifference: '0.00' } })), 'a partly compared legacy match').toBeNull()
     for (const field of SALES_INVOICE_FINALIZATION_FIELDS) {
       const finalization = clone(finalizationOf())
       delete finalization[field]

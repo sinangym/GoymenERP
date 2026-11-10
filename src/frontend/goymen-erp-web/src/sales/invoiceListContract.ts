@@ -1,6 +1,10 @@
 /**
  * UI-63 S-09 "Satış faturaları": the company's Sales invoice list, `GET /api/v1/sales/invoices?pageSize&cursor`
- * (API-32, `SalesInvoiceListView` of `SalesInvoiceSummaryView`; `sales.invoices.read` AND `sales.orders.price.read`).
+ * (API-32, `SalesInvoiceListView` of `SalesInvoiceSummaryView`; `sales.invoices.read` only — SAT-D238, Sales shell 1.20).
+ *
+ * SAT-D238 (EK48): `sales.orders.price.read` is asked, never required. Every row carries `amountDisclosure`: `Visible` → the
+ * payable amount is the server's text (and the TL text for a foreign-currency invoice, otherwise null); `Withheld` → BOTH amounts
+ * are null because the caller may not see them. A withheld amount is never a zero; any other combination is not this contract.
  *
  * The server orders the list (newest first) and offers no filter and no sort, so the screen sends only `pageSize` and the
  * owner's `cursor`. Strict and fail-closed: every object carries exactly the members `contracts/openapi/goymen-erp-v1.json`
@@ -20,6 +24,9 @@ export function salesInvoicesListPath(cursor: string | null): string {
   return `${SALES_INVOICES_PATH}?${params.toString()}`
 }
 
+/** SAT-D238: whether the row's amounts are disclosed to this caller (`SalesPriceDisclosure`). */
+export type InvoiceAmountDisclosure = 'Visible' | 'Withheld'
+
 export interface SalesInvoiceSummary {
   readonly id: string
   readonly documentNo: string
@@ -29,7 +36,9 @@ export interface SalesInvoiceSummary {
   readonly partyId: string
   readonly companyAccountId: string
   readonly currencyId: string
-  readonly payableAmount: string
+  readonly amountDisclosure: InvoiceAmountDisclosure
+  /** Null only when `amountDisclosure` is `Withheld`. */
+  readonly payableAmount: string | null
   readonly functionalPayableAmount: string | null
   readonly lineCount: number
   readonly createdAtUtc: string
@@ -72,11 +81,19 @@ const SUMMARY_KEYS = [
   'partyId',
   'companyAccountId',
   'currencyId',
+  'amountDisclosure',
   'payableAmount',
   'functionalPayableAmount',
   'lineCount',
   'createdAtUtc',
 ] as const
+
+/** Visible → an amount (and a null-or-amount TL text); Withheld → both null. Anything else fails the whole page. */
+function amountsAgreeWithDisclosure(disclosure: unknown, payable: unknown, functional: unknown): boolean {
+  if (disclosure === 'Visible') return isAmount(payable) && (functional === null || isAmount(functional))
+  if (disclosure === 'Withheld') return payable === null && functional === null
+  return false
+}
 
 function decodeSummary(value: unknown): SalesInvoiceSummary | null {
   const o = exact(value, SUMMARY_KEYS)
@@ -90,8 +107,7 @@ function decodeSummary(value: unknown): SalesInvoiceSummary | null {
     || !isReferenceId(o.partyId)
     || !isReferenceId(o.companyAccountId)
     || !isReferenceId(o.currencyId)
-    || !isAmount(o.payableAmount)
-    || !(o.functionalPayableAmount === null || isAmount(o.functionalPayableAmount))
+    || !amountsAgreeWithDisclosure(o.amountDisclosure, o.payableAmount, o.functionalPayableAmount)
     || !isCount(o.lineCount)
     || !isInstant(o.createdAtUtc)
   ) {
@@ -106,8 +122,9 @@ function decodeSummary(value: unknown): SalesInvoiceSummary | null {
     partyId: o.partyId,
     companyAccountId: o.companyAccountId,
     currencyId: o.currencyId,
-    payableAmount: o.payableAmount,
-    functionalPayableAmount: o.functionalPayableAmount,
+    amountDisclosure: o.amountDisclosure as InvoiceAmountDisclosure,
+    payableAmount: o.payableAmount as string | null,
+    functionalPayableAmount: o.functionalPayableAmount as string | null,
     lineCount: o.lineCount,
     createdAtUtc: o.createdAtUtc,
   }

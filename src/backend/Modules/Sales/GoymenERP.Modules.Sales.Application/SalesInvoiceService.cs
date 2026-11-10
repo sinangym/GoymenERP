@@ -169,8 +169,8 @@ public sealed partial class SalesInvoiceService(
     public async Task<SalesInvoiceListResponse> GetInvoicesAsync(SalesInvoiceListQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        // SAT-D238 (EK48): the list is open on the invoice read; the amounts are withheld here, in the backend, without the price read.
         var scope = await RequireAsync(ReadPermission, cancellationToken);
-        await RequirePriceReadAsync(scope, cancellationToken);
         if (query.PageSize is < 1 or > SalesInvoiceApiV1.MaximumPageSize || query.Cursor is { Length: 0 or > MaximumCursorLength })
         {
             throw new SalesDraftServiceException(400, "validation_failed");
@@ -178,8 +178,9 @@ public sealed partial class SalesInvoiceService(
 
         var page = await StoreAsync(scope, () => invoices.ListInvoicesAsync(query.PageSize, query.Cursor, cancellationToken),
             cancellationToken, ReadPermission);
-        await RequirePriceReadAsync(scope, cancellationToken);
-        return new SalesInvoiceListResponse([.. page.Items.Select(Summary)], page.NextCursor);
+        await RequireStillAsync(scope, ReadPermission, cancellationToken);
+        var disclosure = await DisclosePriceAsync(scope, cancellationToken);
+        return new SalesInvoiceListResponse([.. page.Items.Select(invoice => Summary(invoice, disclosure))], page.NextCursor);
     }
 
     public async Task<SalesInvoiceDetailView> GetInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default)
@@ -744,11 +745,18 @@ public sealed partial class SalesInvoiceService(
     private static SalesInvoiceCommandResult Result(SalesInvoiceStoreResult stored, bool isReplay) =>
         new(View(stored.Invoice, isReplay), isReplay, stored.OriginalCorrelationId);
 
-    private static SalesInvoiceSummaryView Summary(SalesInvoice invoice) => new(invoice.Id, invoice.DocumentNo, invoice.State.ToString(),
-        invoice.Version.ToString(CultureInfo.InvariantCulture), invoice.Header.BusinessDate, invoice.Header.PartyId,
-        invoice.Header.CompanyAccountId, invoice.Header.CurrencyId, Text(invoice.Totals.Payable.Amount, invoice.Header.AmountScale),
-        invoice.FunctionalTotals is { } functional ? Text(functional.Payable.Amount, invoice.Header.Rate!.FunctionalScale) : null,
-        invoice.Lines.Count, invoice.CreatedAtUtc);
+    /// <summary>SAT-D238: a withheld row carries no amount at all (both null beside <c>Withheld</c>), never a zero.</summary>
+    private static SalesInvoiceSummaryView Summary(SalesInvoice invoice, SalesPriceDisclosure disclosure)
+    {
+        var visible = disclosure == SalesPriceDisclosure.Visible;
+        return new(invoice.Id, invoice.DocumentNo, invoice.State.ToString(),
+            invoice.Version.ToString(CultureInfo.InvariantCulture), invoice.Header.BusinessDate, invoice.Header.PartyId,
+            invoice.Header.CompanyAccountId, invoice.Header.CurrencyId,
+            visible ? SalesPriceDisclosure.Visible : SalesPriceDisclosure.Withheld,
+            visible ? Text(invoice.Totals.Payable.Amount, invoice.Header.AmountScale) : null,
+            visible && invoice.FunctionalTotals is { } functional ? Text(functional.Payable.Amount, invoice.Header.Rate!.FunctionalScale) : null,
+            invoice.Lines.Count, invoice.CreatedAtUtc);
+    }
 
     private static SalesInvoiceAmountsView Amounts(SalesInvoiceAmountSet set, int scale) => new(Text(set.Net.Amount, scale),
         Text(set.Vat.Amount, scale), Text(set.Withholding.Amount, scale), Text(set.Gross.Amount, scale), Text(set.Payable.Amount, scale));
@@ -809,6 +817,24 @@ public sealed partial class SalesInvoiceService(
         {
             throw new SalesDraftServiceException(403, "forbidden");
         }
+    }
+
+    /// <summary>
+    /// SAT-D238: the price read ASKED, never required — the operation's own name was required before this. Unregistered → 503 (a
+    /// setup gap, never a grant); granted company-wide for this actor in this company → <c>Visible</c>; anything else →
+    /// <c>Withheld</c>. Asked last, after every other fence, so the disclosure is the authority's freshest word.
+    /// </summary>
+    private async Task<SalesPriceDisclosure> DisclosePriceAsync(Scope scope, CancellationToken cancellationToken)
+    {
+        if (!ErpPermissions.IsKnown(PriceReadPermission))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
+        }
+
+        var read = await authority.RevalidatePermissionScopeAsync(PriceReadPermission, scope.CompanyId, cancellationToken);
+        return read.IsGranted && read.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId)
+            ? SalesPriceDisclosure.Visible
+            : SalesPriceDisclosure.Withheld;
     }
 
     /// <summary>The invoice is prices: the price read is REQUIRED (403 otherwise), measured for the same company and actor.</summary>
