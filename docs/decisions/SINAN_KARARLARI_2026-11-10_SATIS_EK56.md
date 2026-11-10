@@ -85,6 +85,9 @@ Uygulama ayrıntısı (geri alınabilir):
 - **Açık kalan (`NEEDS-SINAN`, karar verilmedi):** Sevkiyatçı'nın giriş noktası — Lojistik tarafında talebin açılacağı
   ekran (SAT-D159, SAT-D162'deki sevk/yükleme ekranının biçimi ve Satış talep komutuyla bağlantısı). Bu Lojistik
   şeridinin konusudur ve bu belgede seçilmez.
+- **Açık kalan (`NEEDS-SINAN`, karar verilmedi):** Satış'ın sevk tüketimi ve sevk iptali bilgisini nasıl öğreneceği
+  (Lojistik'ten olay/komut). SAT-D209 gereği Lojistik başlayınca karara bağlanır; o zamana kadar kuralı Lojistik sevk
+  kapısı port cevabının üstüne uygular (SAT-D285 (4)).
 - SAT-D285 Lojistik modülünde bağlantı, tablo veya ekran açmaz; Lojistik sevk kapısının portu ne zaman ve nasıl
   tüketeceği Lojistik başlayınca incelenir (SAT-D209).
 - Bu belge hiçbir `OPEN-*` kaydını kapatmaz; production aktivasyonu yapmaz; yeni izin adı açmaz.
