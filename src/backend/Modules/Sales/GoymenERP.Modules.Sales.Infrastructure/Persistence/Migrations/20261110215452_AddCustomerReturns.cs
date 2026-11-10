@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
         // API-40 (EK57 SAT-D288…D294): the recorded customer return invoice against an original sales invoice and its own append-only
         // attempt records. Two new tables only; no existing row changes. The header, the customer's document, the lines and the totals
         // never change, the state moves one step forward and the version by one (TR_CustomerReturns_Guard, 51255); the attempts are
-        // append-only (TR_CustomerReturnAttempts_Guard, 51256). Down guard THROW 51254.
+        // append-only (TR_CustomerReturnAttempts_Guard, 51256). Down guard THROW 51257.
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -220,12 +220,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // Forward fix: a recorded customer return (or a recorded attempt) is evidence that the previous model cannot hold. The guard
-            // refuses (51254) before anything is dropped; dropping a table drops its trigger.
+            // refuses (51257) before anything is dropped; dropping a table drops its trigger.
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [sales].[CustomerReturns])
                    OR EXISTS (SELECT 1 FROM [sales].[CustomerReturnAttempts])
                 BEGIN
-                    THROW 51254, 'Sales customer returns were recorded; AddCustomerReturns is not rolled back (forward fix).', 1;
+                    THROW 51257, 'Sales customer returns were recorded; AddCustomerReturns is not rolled back (forward fix).', 1;
                 END;
                 """);
 

@@ -134,6 +134,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSourcePlanLines", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddInvoiceMatchTaxComparison", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptions", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionWithdrawal", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
         Assert.Equal("20261110215452_AddCustomerReturns", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
@@ -153,6 +154,29 @@ public sealed class SalesPersistenceModelTests
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
         Assert.Contains("THROW 51251,", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    /// <summary>EK56 SAT-D286: pure DDL widening of the state, decision and attempt-command checks (the 51252 trigger is unchanged);
+    /// Down is a forward fix (51254) first.</summary>
+    [Fact]
+    public void The_risk_exception_withdrawal_migration_is_pure_ddl_and_its_down_refuses_with_51254_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddShipmentRiskExceptionWithdrawal();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51254,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[State] = 4", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesRiskExceptionCommands.WithdrawV1, guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(ShipmentRiskExceptionRow))!.GetCheckConstraints(),
+            check => check.Name == "CK_ShipmentRiskExceptions_State" && check.Sql == SalesDbContext.ShipmentRiskExceptionStateConstraint);
+        Assert.Contains("[State] = 4 AND [DecidedBy] IS NULL", SalesDbContext.ShipmentRiskExceptionDecisionConstraint, StringComparison.Ordinal);
+        Assert.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesRiskExceptionCommands.WithdrawV1,
+            SalesDbContext.ShipmentRiskExceptionAttemptCommandConstraint, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -184,6 +208,8 @@ public sealed class SalesPersistenceModelTests
     [Theory]
     [InlineData("approve", true)]
     [InlineData("reject", true)]
+    [InlineData("withdraw", true)]
+    [InlineData("withdrawn-to-approved", false)]
     [InlineData("approved-to-rejected", false)]
     [InlineData("edit-reason", false)]
     [InlineData("edit-shipment", false)]
@@ -195,7 +221,7 @@ public sealed class SalesPersistenceModelTests
     public void A_risk_exception_moves_once_along_its_decision_and_its_request_facts_and_attempts_never_change(string change, bool passes)
     {
         using var context = Context();
-        var row = Attach(context, RiskExceptionRow(change == "approved-to-rejected" ? 2 : 1));
+        var row = Attach(context, RiskExceptionRow(change switch { "approved-to-rejected" => 2, "withdrawn-to-approved" => 4, _ => 1 }));
         switch (change)
         {
             case "approve":
@@ -203,6 +229,12 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "reject":
                 (row.State, row.DecidedBy, row.DecidedAtUtc, row.RejectionReason, row.Version) = (3, "synthetic-manager", At, "SENTETIK", 2);
+                break;
+            case "withdraw":
+                (row.State, row.Version) = (4, 2);
+                break;
+            case "withdrawn-to-approved":
+                (row.State, row.DecidedBy, row.DecidedAtUtc, row.ValidOn, row.Version) = (2, "synthetic-manager", At, new DateOnly(2026, 9, 18), 3);
                 break;
             case "approved-to-rejected":
                 (row.State, row.RejectionReason, row.ValidOn, row.Version) = (3, "SENTETIK", null, 3);
@@ -244,7 +276,7 @@ public sealed class SalesPersistenceModelTests
     {
         Id = Guid.NewGuid(), CompanyId = CompanyA, OrderId = Guid.NewGuid(), ExceptionNo = 1, LoadingInstructionId = Guid.NewGuid(),
         Reason = "SENTETIK ödeme sözü", State = state, RequestedBy = "synthetic-shipper", RequestedAtUtc = At,
-        DecidedBy = state == 1 ? null : "synthetic-manager", DecidedAtUtc = state == 1 ? null : At,
+        DecidedBy = state is 1 or 4 ? null : "synthetic-manager", DecidedAtUtc = state is 1 or 4 ? null : At,
         ValidOn = state == 2 ? new DateOnly(2026, 9, 18) : null, Version = state == 1 ? 1 : 2, RowVersion = [1, 2, 3, 4, 5, 6, 7, 8],
         UpdatedAtUtc = At, CorrelationId = "synthetic-correlation",
     };
@@ -257,9 +289,9 @@ public sealed class SalesPersistenceModelTests
     };
 
     /// <summary>API-40 (SAT-D288..SAT-D294): the customer return tables; Up adds the one-step-forward guard (51255) and the
-    /// append-only attempts guard (51256); Down is a forward fix (51254) first.</summary>
+    /// append-only attempts guard (51256); Down is a forward fix (51257) first.</summary>
     [Fact]
-    public void The_customer_return_migration_adds_two_triggers_and_its_down_refuses_with_51254_first()
+    public void The_customer_return_migration_adds_two_triggers_and_its_down_refuses_with_51257_first()
     {
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddCustomerReturns();
         var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
@@ -268,7 +300,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(up, op => op.Sql.Contains("TR_CustomerReturnAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51256,", StringComparison.Ordinal));
         var down = migration.DownOperations;
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
-        Assert.Contains("THROW 51254,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51257,", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 

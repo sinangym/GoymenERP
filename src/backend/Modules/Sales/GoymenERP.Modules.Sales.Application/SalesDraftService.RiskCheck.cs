@@ -35,7 +35,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>Fences</b> (the draft read's): before anything is read, after the draft, after the order list, after each owner.</item>
 /// </list>
 /// </summary>
-public sealed partial class SalesDraftService
+public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
 {
     /// <summary>
     /// The most open approved orders of one customer one risk read takes (a technical response bound, not a business policy):
@@ -69,20 +69,8 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        var party = await PartyRiskAsync(scope, draft, cancellationToken);
-        var remainder = await ApprovedRemainderAsync(scope, draft, cancellationToken);
-        var shippedNotInvoiced = SalesRiskInput.NoSource(SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing);
-        var thisOrder = await ThisOrderAsync(scope, draft, cancellationToken);
-
-        // SAT-D53: the totals in the company's local currency (TL) and in the credit limit's currency; never the order's.
-        var local = await RiskCurrencyAsync(scope, draft, SettingsCurrencyIdentitiesV1.TurkishLira, cancellationToken);
-        var limitCurrency = party.CreditLimit is { State: SalesRiskInputState.Available, Amounts: [{ } limitAmount] }
-            ? await RiskCurrencyAsync(scope, draft, limitAmount.CurrencyId, cancellationToken)
-            : null;
-        var rates = await RiskExchangeRatesAsync(scope, limitCurrency,
-            [party.OpenReceivables, shippedNotInvoiced, remainder, thisOrder], cancellationToken);
-        var evaluation = SalesCustomerRiskCalculator.Evaluate(local, limitCurrency, party.OpenReceivables, shippedNotInvoiced,
-            remainder, thisOrder, party.CreditLimit, rates);
+        var (party, remainder, shippedNotInvoiced, thisOrder, local, limitCurrency, evaluation) =
+            await EvaluateRiskAsync(scope, bindings.ReadPermission, draft, cancellationToken);
 
         // The price read is asked last, after every other fence: the freshest word on whether amounts cross.
         var disclosure = await DiscloseAsync(scope, cancellationToken);
@@ -134,11 +122,54 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
+    /// EK56 SAT-D284 (<see cref="ISalesOrderRiskOutcomeSource"/>): the same deterministic evaluation as the risk check, read under the
+    /// calling command's own permission (the risk exception request's, never <c>sales.drafts.read</c>; SAT-D162). Only the outcome
+    /// leaves: no amount is disclosed, and the price read is not asked. A lost authority stays a 401/403; an owner that cannot
+    /// answer makes the outcome <c>Unavailable</c>, never <c>Within</c>.
+    /// </summary>
+    public async Task<SalesRiskOutcome> EvaluateOrderRiskOutcomeAsync(SalesOrderDraft order, string permission,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (scope.CompanyId != order.CompanyId)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        var (_, _, _, _, _, _, evaluation) = await EvaluateRiskAsync(scope, permission, order, cancellationToken);
+        return evaluation.Outcome;
+    }
+
+    /// <summary>The inputs and the calculator's evaluation of one order, every owner read fenced on <paramref name="permission"/>.</summary>
+    private async Task<(PartyRiskInputs Party, SalesRiskInput Remainder, SalesRiskInput ShippedNotInvoiced, SalesRiskInput ThisOrder,
+        SalesRiskCurrency? Local, SalesRiskCurrency? LimitCurrency, SalesRiskEvaluation Evaluation)> EvaluateRiskAsync(Scope scope,
+        string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    {
+        var party = await PartyRiskAsync(scope, permission, draft, cancellationToken);
+        var remainder = await ApprovedRemainderAsync(scope, permission, draft, cancellationToken);
+        var shippedNotInvoiced = SalesRiskInput.NoSource(SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing);
+        var thisOrder = await ThisOrderAsync(scope, permission, draft, cancellationToken);
+
+        // SAT-D53: the totals in the company's local currency (TL) and in the credit limit's currency; never the order's.
+        var local = await RiskCurrencyAsync(scope, permission, draft, SettingsCurrencyIdentitiesV1.TurkishLira, cancellationToken);
+        var limitCurrency = party.CreditLimit is { State: SalesRiskInputState.Available, Amounts: [{ } limitAmount] }
+            ? await RiskCurrencyAsync(scope, permission, draft, limitAmount.CurrencyId, cancellationToken)
+            : null;
+        var rates = await RiskExchangeRatesAsync(scope, permission, limitCurrency,
+            [party.OpenReceivables, shippedNotInvoiced, remainder, thisOrder], cancellationToken);
+        var evaluation = SalesCustomerRiskCalculator.Evaluate(local, limitCurrency, party.OpenReceivables, shippedNotInvoiced,
+            remainder, thisOrder, party.CreditLimit, rates);
+        return (party, remainder, shippedNotInvoiced, thisOrder, local, limitCurrency, evaluation);
+    }
+
+    /// <summary>
     /// SAT-D53: a risk total's currency with its approved money scale — the order's own snapshot when it is the order's currency,
     /// otherwise the Settings money profile of the Sales order operation for the order's business date (active and in effect).
     /// An owner that cannot answer gives null (that total is then not made), never a default scale; a lost authority stays a 403.
     /// </summary>
-    private async Task<SalesRiskCurrency?> RiskCurrencyAsync(Scope scope, SalesOrderDraft draft, Guid currencyId,
+    private async Task<SalesRiskCurrency?> RiskCurrencyAsync(Scope scope, string? permission, SalesOrderDraft draft, Guid currencyId,
         CancellationToken cancellationToken)
     {
         if (currencyId == draft.Header.CurrencyId)
@@ -149,7 +180,7 @@ public sealed partial class SalesDraftService
         MoneyProfileSnapshot profile;
         try
         {
-            profile = await ReadMoneyProfileAsync(scope, bindings.ReadPermission, currencyId, draft.Header.BusinessDate,
+            profile = await ReadMoneyProfileAsync(scope, permission, currencyId, draft.Header.BusinessDate,
                 cancellationToken);
         }
         catch (SalesDraftServiceException exception) when (exception.Status is not (401 or 403))
@@ -175,7 +206,7 @@ public sealed partial class SalesDraftService
     /// bulunamadı/belirlenemedi"), an absent port or a failing one leaves it out, so the amounts needing it stay
     /// <c>exchange_rate_unavailable</c> (SAT-D80 "hesaplanamadı"); a lost authority stays a 403.
     /// </summary>
-    private async Task<SalesRiskExchangeRates> RiskExchangeRatesAsync(Scope scope, SalesRiskCurrency? limitCurrency,
+    private async Task<SalesRiskExchangeRates> RiskExchangeRatesAsync(Scope scope, string? permission, SalesRiskCurrency? limitCurrency,
         IEnumerable<SalesRiskInput> inputs, CancellationToken cancellationToken)
     {
         var local = SettingsCurrencyIdentitiesV1.TurkishLira;
@@ -205,7 +236,7 @@ public sealed partial class SalesDraftService
             ExchangeRateResolutionV1 resolution;
             try
             {
-                resolution = await GuardedAsync(scope, bindings.ReadPermission,
+                resolution = await GuardedAsync(scope, permission,
                     () => exchangeRates.ResolveAsync(checkDay, currency, local, cancellationToken), cancellationToken);
             }
             catch (SettingsPrerequisiteException exception) when (exception.Code == ExchangeRateProblemCodesV1.AccessDenied)
@@ -243,7 +274,7 @@ public sealed partial class SalesDraftService
         return new PartyRiskInputs(unavailable, source, unavailable, source, unavailable, source);
     }
 
-    private async Task<PartyRiskInputs> PartyRiskAsync(Scope scope, SalesOrderDraft draft, CancellationToken cancellationToken)
+    private async Task<PartyRiskInputs> PartyRiskAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         if (partyRisk is null)
         {
@@ -254,7 +285,7 @@ public sealed partial class SalesDraftService
         SalesPartyRiskReadAnswerV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, bindings.ReadPermission,
+            answer = await GuardedAsync(scope, permission,
                 () => partyRisk.ReadPartyRiskAsync(draft.Header.PartyId, draft.Header.CompanyAccountId, cancellationToken),
                 cancellationToken);
         }
@@ -306,12 +337,12 @@ public sealed partial class SalesDraftService
     private sealed record RiskBasisLine(Guid LineId, Guid OrderUnitId, decimal Quantity, CommercialDraftFields Commercial,
         SalesLineTaxSnapshot? Tax);
 
-    private async Task<SalesRiskInput> ApprovedRemainderAsync(Scope scope, SalesOrderDraft draft, CancellationToken cancellationToken)
+    private async Task<SalesRiskInput> ApprovedRemainderAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         IReadOnlyList<SalesOrderDraft> orders;
         try
         {
-            orders = await GuardedAsync(scope, bindings.ReadPermission,
+            orders = await GuardedAsync(scope, permission,
                 () => store.ListOpenApprovedOrdersAsync(draft.Header.PartyId, draft.Header.CompanyAccountId, MaximumRiskOrders + 1,
                     cancellationToken),
                 cancellationToken);
@@ -341,7 +372,7 @@ public sealed partial class SalesDraftService
                 return SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.OrderBasisUnreadable);
             }
 
-            var (recorded, unread) = await RecordedForRiskAsync(scope, order, cancellationToken);
+            var (recorded, unread) = await RecordedForRiskAsync(scope, permission, order, cancellationToken);
             if (recorded is null)
             {
                 return SalesRiskInput.Unavailable(unread!);
@@ -379,7 +410,7 @@ public sealed partial class SalesDraftService
     /// cannot say (not composed, failing or malformed) — never "nothing shipped".
     /// </summary>
     private async Task<(Dictionary<Guid, (decimal Shipped, decimal Delivered)>? Recorded, string? Reason)> RecordedForRiskAsync(Scope scope,
-        SalesOrderDraft order, CancellationToken cancellationToken)
+        string? permission, SalesOrderDraft order, CancellationToken cancellationToken)
     {
         if (deliveries is null)
         {
@@ -389,7 +420,7 @@ public sealed partial class SalesDraftService
         SalesOrderDeliveryReadAnswerV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, bindings.ReadPermission,
+            answer = await GuardedAsync(scope, permission,
                 () => deliveries.ReadOrderDeliveriesAsync(order.Id, cancellationToken), cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
@@ -475,7 +506,7 @@ public sealed partial class SalesDraftService
     /// reduced by an amount not yet approved — fail-safe). Every amount is the one calculator's with the lines' own tax snapshots
     /// (MOD-03 → Sales); a line without a usable tax makes it unavailable (<c>vat_inclusive_amount_unavailable</c>).
     /// </summary>
-    private async Task<SalesRiskInput> ThisOrderAsync(Scope scope, SalesOrderDraft draft, CancellationToken cancellationToken)
+    private async Task<SalesRiskInput> ThisOrderAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         if (draft.State != SalesDraftState.Draft || draft.ApprovalState == InternalApprovalState.Approved)
         {
@@ -496,7 +527,7 @@ public sealed partial class SalesDraftService
             return SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.OrderBasisUnreadable);
         }
 
-        var (recorded, unread) = await RecordedForRiskAsync(scope, draft, cancellationToken);
+        var (recorded, unread) = await RecordedForRiskAsync(scope, permission, draft, cancellationToken);
         if (recorded is null)
         {
             return SalesRiskInput.Unavailable(unread!);

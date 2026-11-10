@@ -1488,7 +1488,16 @@ export const sendRiskExceptionRequest = (payload: RiskExceptionRequest, context:
     (exception) => exception.loadingInstructionId.toLowerCase() === payload.loadingInstructionId.toLowerCase()
       && exception.reason === payload.reason.trim(), signal)
 
-/** SAT-D153: the decision; 200 with exactly this exception in the state the decision moves it to. */
+const DECISION_STATE = {
+  approval: RISK_EXCEPTION_STATE.approved,
+  rejection: RISK_EXCEPTION_STATE.rejected,
+  withdrawal: RISK_EXCEPTION_STATE.withdrawn,
+} as const satisfies Record<RiskExceptionDecision, string>
+
+/**
+ * SAT-D153: the decision, and EK56 SAT-D286: the requester's withdrawal; 200 with exactly this exception in the state the command
+ * moves it to.
+ */
 export const sendRiskExceptionDecision = (
   exceptionNo: number,
   decision: RiskExceptionDecision,
@@ -1497,4 +1506,4 @@ export const sendRiskExceptionDecision = (
   signal?: AbortSignal,
 ) => sendRiskExceptionCommand(riskExceptionDecisionPath(context.draftId, exceptionNo, decision), STATE_COMMAND_STATUS, payload,
   context, (exception) => exception.exceptionNo === exceptionNo
-    && exception.state === (decision === 'approval' ? RISK_EXCEPTION_STATE.approved : RISK_EXCEPTION_STATE.rejected), signal)
+    && exception.state === DECISION_STATE[decision], signal)

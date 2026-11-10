@@ -26,7 +26,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the rest of the line (finalised priors only, SAT-D292 (6)), a third is over the remaining quantity (SAT-D293 (3)). The database
 /// itself refuses a second return of the same customer document, a changed document, a skipped step and a delete (TR 51255) and any
 /// change of an attempt (TR 51256). Another company neither sees nor decides a return; the migration refuses to roll back over a
-/// recorded return (THROW 51254, forward fix). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
+/// recorded return (THROW 51257, forward fix). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
 {
@@ -195,7 +195,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task The_customer_return_migrations_Down_passes_with_no_return_and_refuses_51254_while_one_exists()
+    public async Task The_customer_return_migrations_Down_passes_with_no_return_and_refuses_51257_while_one_exists()
     {
         await using var run = await Run.StartAsync();
         var (invoice, shipment) = await run.FinalizedInvoiceAsync("m");
@@ -209,7 +209,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 Metadata("k-create"));
         }
 
-        Assert.Equal(51254, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
+        Assert.Equal(51257, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var index = Array.FindIndex(applied, id => id.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
@@ -217,7 +217,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(applied[index]);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51254, rollback.Number);
+        Assert.Equal(51257, rollback.Number);
         Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());

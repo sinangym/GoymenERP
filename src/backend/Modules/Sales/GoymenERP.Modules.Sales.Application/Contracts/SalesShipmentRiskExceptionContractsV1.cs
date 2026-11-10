@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Modules.Sales.Domain;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 
 namespace GoymenERP.Modules.Sales.Application.Contracts;
@@ -24,7 +25,10 @@ public static class SalesRiskExceptionCommands
     /// <summary>API-07: POST /api/v1/sales/drafts/{id}/risk-exceptions/{no}/rejection (SAT-D153, a reason).</summary>
     public const string RejectV1 = "sales.order.risk-exception.reject.v1";
 
-    public static bool IsRiskExceptionCommand(string? name) => name is RequestV1 or ApproveV1 or RejectV1;
+    /// <summary>API-07: POST /api/v1/sales/drafts/{id}/risk-exceptions/{no}/withdrawal (EK56 SAT-D286, the requester).</summary>
+    public const string WithdrawV1 = "sales.order.risk-exception.withdraw.v1";
+
+    public static bool IsRiskExceptionCommand(string? name) => name is RequestV1 or ApproveV1 or RejectV1 or WithdrawV1;
 }
 
 /// <summary>Routes and technical bounds of API-07 (not policies).</summary>
@@ -33,6 +37,7 @@ public static class SalesRiskExceptionApiV1
     public const string RiskExceptionsPath = "/api/v1/sales/drafts/{id}/risk-exceptions";
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/risk-exceptions/{no}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/risk-exceptions/{no}/rejection";
+    public const string WithdrawalPath = "/api/v1/sales/drafts/{id}/risk-exceptions/{no}/withdrawal";
 
     public const int CreatedStatus = 201;
 
@@ -53,6 +58,16 @@ public static class SalesRiskExceptionProblemCodesV1
 
     /// <summary>409 (not recorded; a decision can change it): the shipment already has a pending or a today-valid exception.</summary>
     public const string Duplicate = SalesRuleCodes.RiskExceptionDuplicate;
+
+    /// <summary>
+    /// 409 (not recorded; the risk can change, a retry is evaluated afresh): the order's risk is within its credit limit, so no
+    /// exception is needed (EK56 SAT-D284). Only a <c>Within</c> result refuses; an <c>Unavailable</c> one does not (fail-closed:
+    /// unknown is never "within"). The answer names no amount, limit or balance (SAT-D162).
+    /// </summary>
+    public const string WithinLimit = SalesRuleCodes.RiskExceptionWithinLimit;
+
+    /// <summary>409 (recorded under the key): someone other than the requester withdraws the request (EK56 SAT-D286).</summary>
+    public const string NotRequester = SalesRuleCodes.RiskExceptionNotRequester;
 }
 
 /// <summary>
@@ -64,7 +79,7 @@ public sealed record RequestSalesRiskExceptionRequest(Guid LoadingInstructionId,
 
 /// <summary>
 /// One risk exception as the screens see it. No amount, limit or balance is ever answered (SAT-D162). <see cref="State"/> is
-/// the stored axis (<c>Requested</c>, <c>Approved</c>, <c>Rejected</c>); <see cref="IsValidToday"/> says whether an approved
+/// the stored axis (<c>Requested</c>, <c>Approved</c>, <c>Rejected</c>, <c>Withdrawn</c>); <see cref="IsValidToday"/> says whether an approved
 /// exception still releases its shipment on today's business date (SAT-D160).
 /// </summary>
 public sealed record SalesRiskExceptionView(
@@ -112,6 +127,9 @@ public static class SalesRiskExceptionJson
 
     /// <summary>The rejection takes the expected version and a reason.</summary>
     public static SalesDraftStateCommandRequest ReadRejection(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: true);
+
+    /// <summary>The withdrawal carries the expected version only (a reason is an unknown member; EK56 SAT-D286).</summary>
+    public static SalesDraftStateCommandRequest ReadWithdrawal(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: false);
 }
 
 /// <summary>The canonical contents of the API-07 commands for the replay identity (ADR-011 §3).</summary>
@@ -196,13 +214,15 @@ public interface ISalesRiskExceptionStore
 }
 
 /// <summary>
-/// API-07 (SAT-D153…D162): request, approve and reject a single-shipment risk exception, and list an order's exceptions. Company,
+/// API-07 (SAT-D153…D162, EK56 SAT-D284/D286): request, approve, reject and withdraw a single-shipment risk exception, and list an order's exceptions. Company,
 /// actor and authority are the server's and measured afresh before anything is read, after every awaited read and right before
 /// the single save.
 /// <list type="bullet">
 /// <item>Request needs <c>sales.orders.risk-exception.request</c> only — never <c>sales.drafts.read</c> (SAT-D162).</item>
 /// <item>Approve and reject need <c>sales.orders.risk-exception.approve</c> and the expected version; the requester never
 /// decides their own request (SAT-D153/D159).</item>
+/// <item>Withdraw needs <c>sales.orders.risk-exception.request</c> (no new permission) and the expected version; only the
+/// requester withdraws, and only a pending request (EK56 SAT-D286).</item>
 /// <item>The list needs <c>sales.drafts.read</c>. No answer carries an amount, a limit or a balance (SAT-D162).</item>
 /// </list>
 /// </summary>
@@ -217,7 +237,22 @@ public interface ISalesRiskExceptionService
     Task<SalesRiskExceptionCommandResult> RejectRiskExceptionAsync(Guid draftId, int exceptionNo, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    Task<SalesRiskExceptionCommandResult> WithdrawRiskExceptionAsync(Guid draftId, int exceptionNo, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     Task<SalesRiskExceptionListResponse> GetRiskExceptionsAsync(Guid draftId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// EK56 SAT-D284: the order's customer risk result as the deterministic risk calculator answers it, read under the command's own
+/// permission (the request's, never <c>sales.drafts.read</c>; SAT-D162). Only the outcome is answered: no amount, limit or balance.
+/// A source that cannot answer returns <see cref="SalesRiskOutcome.Unavailable"/>, never
+/// <c>Within</c>.
+/// </summary>
+public interface ISalesOrderRiskOutcomeSource
+{
+    Task<SalesRiskOutcome> EvaluateOrderRiskOutcomeAsync(SalesOrderDraft order, string permission,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>What the Sales side says about one shipment's risk exception on today's business date (SAT-D160).</summary>
@@ -237,6 +272,9 @@ public enum SalesShipmentRiskExceptionStatusV1
 
     /// <summary>Rejected; the shipment stays held.</summary>
     Rejected = 4,
+
+    /// <summary>Withdrawn by its requester before a decision (EK56 SAT-D286); the shipment stays held. Never answered as Rejected.</summary>
+    Withdrawn = 5,
 }
 
 /// <summary>

@@ -35,7 +35,7 @@ public sealed class SalesShipmentRiskExceptionReadPort(ISalesRiskExceptionStore 
         return Decide(orderId, loadingInstructionId, items, today);
     }
 
-    /// <summary>A today-valid exception wins, then a pending one, then the newest (lapsed or rejected); none answers None.</summary>
+    /// <summary>A today-valid exception wins, then a pending one, then the newest (lapsed, rejected or withdrawn); none answers None.</summary>
     internal static SalesShipmentRiskExceptionReadV1 Decide(Guid orderId, Guid loadingInstructionId,
         IReadOnlyList<SalesShipmentRiskException> items, DateOnly today)
     {
@@ -52,7 +52,11 @@ public sealed class SalesShipmentRiskExceptionReadPort(ISalesRiskExceptionStore 
             SalesShipmentRiskExceptionState.Requested => SalesShipmentRiskExceptionStatusV1.Pending,
             SalesShipmentRiskExceptionState.Approved when chosen.IsValidOn(today) => SalesShipmentRiskExceptionStatusV1.Valid,
             SalesShipmentRiskExceptionState.Approved => SalesShipmentRiskExceptionStatusV1.Lapsed,
-            _ => SalesShipmentRiskExceptionStatusV1.Rejected,
+            SalesShipmentRiskExceptionState.Rejected => SalesShipmentRiskExceptionStatusV1.Rejected,
+            // EK56 SAT-D286: a withdrawn request is never answered as Rejected.
+            SalesShipmentRiskExceptionState.Withdrawn => SalesShipmentRiskExceptionStatusV1.Withdrawn,
+            // A state this port does not know is never mapped to a guess: the gate fails closed.
+            _ => throw new InvalidOperationException("Risk istisnasının bilinmeyen durumu okuma kapısında yanıtlanmaz."),
         };
         return new SalesShipmentRiskExceptionReadV1(orderId, loadingInstructionId, status, chosen.ExceptionNo, chosen.ValidOn);
     }

@@ -3,8 +3,9 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 namespace GoymenERP.Modules.Sales.Domain.RiskExceptions;
 
 /// <summary>
-/// The approval axis of a single-shipment risk exception (API-07; SAT-D153…D162). Born <see cref="Requested"/> and moves
-/// once: <c>Requested → Approved</c> or <c>Requested → Rejected</c>. Both decisions are terminal; nothing is deleted.
+/// The approval axis of a single-shipment risk exception (API-07; SAT-D153…D162, EK56 SAT-D286). Born <see cref="Requested"/>
+/// and moves once: <c>Requested → Approved</c>, <c>Requested → Rejected</c> or, by its requester, <c>Requested → Withdrawn</c>.
+/// All three are terminal; nothing is deleted.
 /// Whether an approved exception still releases its shipment is a question of the day (<see cref="SalesShipmentRiskException.IsValidOn"/>),
 /// never a stored state change.
 /// </summary>
@@ -13,6 +14,9 @@ public enum SalesShipmentRiskExceptionState
     Requested = 1,
     Approved = 2,
     Rejected = 3,
+
+    /// <summary>EK56 SAT-D286: the requester withdrew the pending request; it is neither approved nor rejected afterwards.</summary>
+    Withdrawn = 4,
 }
 
 /// <summary>Who decided the exception and when; the reason is a rejection's (required there, absent on an approval).</summary>
@@ -112,14 +116,38 @@ public sealed class SalesShipmentRiskException
         Decide(SalesShipmentRiskExceptionState.Rejected, new SalesShipmentRiskExceptionDecision(actor, now.ToUniversalTime(), text), now);
     }
 
+    /// <summary>
+    /// EK56 SAT-D286: the requester withdraws their own pending request (another actor's request is not opened). No decision is
+    /// recorded: the withdrawer is the requester by rule, and the instant is <see cref="UpdatedAtUtc"/> and the audit event.
+    /// </summary>
+    public void Withdraw(long expectedVersion, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        if (State != SalesShipmentRiskExceptionState.Requested)
+        {
+            throw new SalesRuleException(SalesRuleCodes.StateConflict, $"Yalnız onay bekleyen risk istisnası geri çekilir (durum: {State}).");
+        }
+
+        if (!string.Equals(actor, RequestedBy, StringComparison.Ordinal))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RiskExceptionNotRequester, "Risk istisnasını yalnız isteyen kişi geri çekebilir.");
+        }
+
+        State = SalesShipmentRiskExceptionState.Withdrawn;
+        Decision = null;
+        UpdatedAtUtc = now.ToUniversalTime();
+        Version = checked(Version + 1);
+    }
+
     /// <summary>SAT-D160: an approved exception releases its shipment only on its approval's business date.</summary>
     public bool IsValidOn(DateOnly businessDate) =>
         State == SalesShipmentRiskExceptionState.Approved && ValidOn == businessDate;
 
     /// <summary>
     /// Restores the stored decision onto an exception rebuilt through <see cref="Request"/>: the facts must match the state
-    /// (Requested: none; Approved: a decision without a reason and a validity date; Rejected: a decision with a reason and
-    /// no validity date), the decider is not the requester and the version is at least the transitions it implies.
+    /// (Requested and Withdrawn: none; Approved: a decision without a reason and a validity date; Rejected: a decision with a
+    /// reason and no validity date), the decider is not the requester and the version is at least the transitions it implies.
     /// A corrupt row is refused, never repaired. Runs once.
     /// </summary>
     public void Restore(SalesShipmentRiskExceptionState state, SalesShipmentRiskExceptionDecision? decision, DateOnly? validOn,
@@ -132,7 +160,7 @@ public sealed class SalesShipmentRiskException
 
         var consistent = state switch
         {
-            SalesShipmentRiskExceptionState.Requested => decision is null && validOn is null,
+            SalesShipmentRiskExceptionState.Requested or SalesShipmentRiskExceptionState.Withdrawn => decision is null && validOn is null,
             SalesShipmentRiskExceptionState.Approved => decision is { RejectionReason: null } && validOn is not null,
             SalesShipmentRiskExceptionState.Rejected =>
                 decision is { RejectionReason: { Length: > 0 and <= MaximumReasonLength } } && validOn is null,

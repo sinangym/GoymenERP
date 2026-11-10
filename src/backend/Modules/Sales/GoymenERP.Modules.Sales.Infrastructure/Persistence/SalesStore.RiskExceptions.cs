@@ -148,9 +148,12 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         var versionBefore = item.Version;
         var now = timeProvider.GetUtcNow();
         mutate(item, now);
+        // A decision names its decider; a withdrawal (EK56 SAT-D286) has no decision and is the requester's own.
+        var actedByActor = item.State == SalesShipmentRiskExceptionState.Withdrawn
+            ? item.Decision is null && string.Equals(item.RequestedBy, actorId, StringComparison.Ordinal)
+            : string.Equals(item.Decision?.DecidedBy, actorId, StringComparison.Ordinal);
         if (item.Version != versionBefore + 1 || item.Id != row.Id || item.CompanyId != companyId
-            || item.State == SalesShipmentRiskExceptionState.Requested
-            || !string.Equals(item.Decision?.DecidedBy, actorId, StringComparison.Ordinal))
+            || item.State == SalesShipmentRiskExceptionState.Requested || !actedByActor)
         {
             throw new InvalidOperationException("Risk istisnası kararı tam olarak bir sürüm ilerletir, aktörün adına verilir ve kaydı değiştirmez.");
         }
