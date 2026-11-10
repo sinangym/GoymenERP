@@ -754,7 +754,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var approved = await ApprovedAsync(run, prefix, approver, build);
         var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
         var official = new SalesOfficialInvoiceFacts("GIB2026000000021", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
-            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount);
+            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
+            approved.WithholdingFunctionalAmount);
         await using var scope = run.Store(CompanyA);
         await scope.Invoices.MatchInvoiceAsync(run.Envelope(prefix + "-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
             Hash('1'), approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
