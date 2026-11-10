@@ -8,7 +8,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// the six S-01 request / quote pool screens of UI-20 with their controls, and since 1.9 the S-07 dispatch list and the S-08
 /// invoice candidates (UI-60 / UI-61), since 1.11 the UI-80 Sales reports screen, since 1.12 the header-revision control
 /// of the detail (API-04), since 1.13 the user-closure control of the detail (SAT-D32) and since 1.14 the over-delivery approval
-/// control of the detail (SAT-D30) and since 1.19 the UI-63 / S-09 sales invoice list (since 1.20 on the invoice read alone, SAT-D238) — to the
+/// control of the detail (SAT-D30), since 1.19 the UI-63 / S-09 sales invoice list (since 1.20 on the invoice read alone, SAT-D238)
+/// and since 1.22 the source-plan control of the detail (S-2 API-11, SAT-D179 / SAT-D251–D255) — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -24,11 +25,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// in the optional providers and one normal-host authority).
 /// <para>1.21 (SAT-D250 / SAT-D266, S-05 marj; merged after the SAT-D238 1.20): registers <see cref="SalesPermissionManifestV1.OrdersMarginRead"/>
 /// (manifest v26) — a disclosure name read by the line-pricing endpoint; no new screen, route or control.</para>
+/// <para>1.22 (S-2 API-11, SAT-D179 / SAT-D251–D255; merged after the SAT-D250 1.21): adds the source-plan control of the detail
+/// (<see cref="SourcePlanWriteCapabilityId"/>) and registers <see cref="SalesPermissionManifestV1.OrdersSourcePlanWrite"/> (manifest v27).</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.21";
+    public const string OwnerContractVersion = "1.22";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -105,6 +108,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// a shortfall. No other Sales name confers it (shell contract 1.18).
     /// </summary>
     public const string LineCloseCapabilityId = "sales.orders.lines.close";
+
+    /// <summary>
+    /// S-2 API-11 / SAT-D179 / SAT-D251–D255: the source-plan CONTROL of the S-04 detail (read + the source-plan write name) —
+    /// saving the non-stock parts of a line's source plan. The plan READ is the detail's own draft read. No other Sales name
+    /// confers it (shell contract 1.22).
+    /// </summary>
+    public const string SourcePlanWriteCapabilityId = "sales.orders.source-plan.write";
 
     /// <summary>
     /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
@@ -315,6 +325,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = LineCloseCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersLineClose],
+        },
+        // S-2 API-11: saving a line's source plan is a control of the detail, like the line closure.
+        detail with
+        {
+            CapabilityId = SourcePlanWriteCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersSourcePlanWrite],
         },
         .. RequestDeclarations(),
         .. QuoteDeclarations(),

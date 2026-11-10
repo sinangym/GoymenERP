@@ -116,6 +116,7 @@ import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm
 import { SalesDraftLineRevisionForm } from './SalesDraftLineRevisionForm'
 import { SalesDraftHeaderRevisionForm } from './SalesDraftHeaderRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { SalesDraftSourcePlan } from './SalesDraftSourcePlan'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
@@ -436,6 +437,20 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      sourcePlan={
+        namespace !== null && companyId !== null && shell.activeContext !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesDraftSourcePlan
+            key={`source-plan:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            namespace={namespace}
+            routeEntryGeneration={shell.routeEntryGeneration}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            userDisplays={outcome.data.userDisplays}
+          />
+        ) : null
+      }
       commands={
         companyId === null ? null : (
           <ApprovalCommands
@@ -520,6 +535,7 @@ export function DraftView({
   revisionHistory = null,
   quantityRevision = null,
   allocations = null,
+  sourcePlan = null,
   deliverySchedule = null,
   deliveryScheduleHistory = null,
   deliveryProgress = null,
@@ -558,6 +574,8 @@ export function DraftView({
   /** DEC-SAL-002: "Revizyon oluştur" — the quantity revision control, under the lines. */
   readonly quantityRevision?: React.ReactNode
   readonly allocations?: React.ReactNode
+  /** API-11 (SAT-D251..SAT-D255): the order's source plan, under the allocations (null: not mounted). */
+  readonly sourcePlan?: React.ReactNode
   /** DEC-SAL-003: the planner's delivery-date control (shell-gated) and the schedule history. */
   readonly deliverySchedule?: React.ReactNode
   readonly deliveryScheduleHistory?: React.ReactNode
@@ -840,6 +858,7 @@ export function DraftView({
             <>
               <p className={styles.muted}>{ORDER_TABS_TEXT.allocationNote}</p>
               {allocations}
+              {sourcePlan}
             </>
           ),
           [ORDER_TAB.realization]: (

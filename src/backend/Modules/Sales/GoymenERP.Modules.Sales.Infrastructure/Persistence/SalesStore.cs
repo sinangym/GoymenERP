@@ -2375,7 +2375,7 @@ public sealed partial class SalesStore(
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
             or SalesDraftCommands.CloseV1
-            or SalesDraftCommands.ApproveOverDeliveryV1 or SalesDraftCommands.CloseLineV1
+            or SalesDraftCommands.ApproveOverDeliveryV1 or SalesDraftCommands.CloseLineV1 or SalesDraftCommands.RecordSourcePlanV1
             or SalesDraftCommands.ReviseQuantityV1 or SalesDraftCommands.ReviseHeaderV1 or SalesDraftCommands.ReviseLinesV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1

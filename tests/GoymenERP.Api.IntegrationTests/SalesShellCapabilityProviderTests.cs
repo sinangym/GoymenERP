@@ -74,6 +74,9 @@ public sealed class SalesShellCapabilityProviderTests
                 // DEC-SAL-002: the quantity-revision CONTROL of the detail.
                 ("sales.orders.quantity.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}", "sales.drafts.detail"),
+                // S-2 API-11 (Sales 1.22): the source-plan CONTROL of the detail (read + its own name).
+                ("sales.orders.source-plan.write", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}", "sales.drafts.detail"),
                 // UI-20 (shell contract 1.8): the S-01 quote screens and their two controls — revision/loss on the quote write
                 // name, conversion on the quote write name AND the order create name (the two names the command measures).
                 ("sales.quotes.convert", "/satis/teklifler/:quoteId",

@@ -38,6 +38,7 @@ import {
   salesDraftDeliverySchedulesPath,
   salesDraftDetailPath,
   salesDraftLineClosurePath,
+  salesDraftSourcePlanPath,
   salesDraftLoadingProgressPath,
   salesDraftPriceFloorExceptionApprovalPath,
   salesDraftQuantityRevisionPath,
@@ -156,6 +157,8 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       // API-04: the revisable header and the SAT-D27 sales-owner list.
       salesDraftHeaderPath('ID'),
       SALES_REFERENCE_SALES_OWNERS_PATH,
+      // API-11: the order's source plan.
+      salesDraftSourcePlanPath('ID'),
     ]
     const writes = [
       SALES_DRAFT_PATH,
@@ -166,6 +169,7 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       salesDraftDeliverySchedulePath('ID'),
       salesDraftCancellationPath('ID'),
       salesDraftLineClosurePath('ID'),
+      salesDraftSourcePlanPath('ID'),
       remainderChangesPath('ID'),
       remainderDecisionPath('ID', 7, 'approval'),
       remainderDecisionPath('ID', 7, 'rejection'),
@@ -196,6 +200,15 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     // SAT-D17: the line closure's strict body — no reason member (SAT-D215).
     expect(requestSchema(salesDraftLineClosurePath('ID'))).toBe('SalesDraftLineClosureRequest')
     expectFits({ expectedVersion: '4', lineId: '66666666-6666-6666-6666-666666666666', shipped: '980' }, 'SalesDraftLineClosureRequest')
+    expect(requestSchema(salesDraftSourcePlanPath('ID'))).toBe('SalesDraftSourcePlanRequest')
+    expectFits(
+      {
+        expectedVersion: '4',
+        confirmLinkedSupply: true,
+        lines: [{ lineId: '66666666-6666-6666-6666-666666666666', production: '600', purchasing: '0', subcontract: '0' }],
+      },
+      'SalesDraftSourcePlanRequest',
+    )
     expect(requestSchema(remainderChangesPath('ID'))).toBe('SalesDraftRemainderChangeRequest')
     expect(requestSchema(remainderDecisionPath('ID', 7, 'approval'))).toBe('SalesDraftRemainderDecisionRequest')
     expect(requestSchema(remainderDecisionPath('ID', 7, 'rejection'))).toBe('SalesDraftRemainderDecisionRequest')

@@ -94,6 +94,9 @@ public static class SalesDraftCommands
     /// <summary>SAT-D17 / SAT-D168: closing one order line with a shortfall (append-only, one version step).</summary>
     public const string CloseLineV1 = "sales.order-draft.close-line.v1";
 
+    /// <summary>SAT-D252..SAT-D255 / API-11: POST /api/v1/sales/drafts/{id}/source-plan — the listed lines' source plan recorded (append-only, one version step, no revision).</summary>
+    public const string RecordSourcePlanV1 = "sales.order-draft.record-source-plan.v1";
+
     /// <summary>Partial delivery: POST /api/v1/sales/drafts/{id}/remainder-changes — a remainder cancel/revise is requested (nothing on the line moves).</summary>
     public const string RequestRemainderChangeV1 = "sales.order-draft.request-remainder-change.v1";
 
@@ -407,6 +410,29 @@ public interface ISalesOrderDraftStore
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// SAT-D252..SAT-D255 / API-11: the source plan save, one save — the line closure's key rules and shape.
+    /// <paramref name="beforeWrite"/> receives the draft as read and is the caller's last word before the mutation (fences, the
+    /// domain's own preconditions, the delivery, allocation and linked-supply owners read afresh, the linked-supply confirmation),
+    /// answered as the plan to record and the linked items the audit names; any refusal it throws leaves nothing written.
+    /// <paramref name="mutate"/> is the domain's <c>RecordSourcePlan</c>. The store APPENDS one plan row per listed line at the new
+    /// version and moves the header's version together with the attempt record and the audit event — or nothing at all. No line,
+    /// revision, schedule, lifecycle or approval column changes (checked). The command name must be
+    /// <see cref="SalesDraftCommands.RecordSourcePlanV1"/>. (A default body refuses for older test doubles.)
+    /// </summary>
+    Task<SalesDraftStateResult?> RecordSourcePlanAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, SourcePlanInput, DateTimeOffset, SourcePlanFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task<SalesSourcePlanWriteInput>> beforeWrite,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Bu taslak deposu kaynak planını desteklemiyor.");
+
+    /// <summary>
+    /// API-11: the CURRENT recorded plan of each line of the draft (its row with the highest draft version), in line order;
+    /// empty when none is recorded. Company-filtered like every read. (A default body refuses for older test doubles.)
+    /// </summary>
+    Task<IReadOnlyList<SourcePlanLineFacts>> FindSourcePlanAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Bu taslak deposu kaynak planını desteklemiyor.");
+
+    /// <summary>
     /// The company's drafts, newest first, by opaque company-bound cursor (#257: pageSize 1–100,
     /// default 50); <paramref name="approvalState"/> narrows to one internal approval state (SALES-A1).
     /// </summary>
@@ -581,6 +607,21 @@ public static class SalesDraftRequestHash
             new { command = commandName, draftId, request.ExpectedVersion, request.LineId, request.Shipped }, SalesDraftJson.Options));
     }
 
+    /// <summary>
+    /// API-11: the canonical content of a source plan save (command, draft, version, confirmation and every line's parts as sent,
+    /// in the order given). Another confirmation or another part is another content.
+    /// </summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftSourcePlanRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        var lines = request.Lines?.Select(line => line is null
+            ? null
+            : new { line.LineId, line.Production, line.Purchasing, line.Subcontract }).ToArray();
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.ConfirmLinkedSupply, lines }, SalesDraftJson.Options));
+    }
+
     /// <summary>Partial delivery: the canonical content of a remainder change request (command, draft, version, line, kind, quantity text, reason as sent).</summary>
     public static string Compute(string commandName, Guid draftId, SalesDraftRemainderChangeRequest request)
     {
@@ -623,3 +664,12 @@ public static class SalesDraftRequestHash
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         SalesDraftLineTaxChoiceV1? Tax);
 }
+
+/// <summary>
+/// API-11: what the source plan's <c>beforeWrite</c> answers — the plan to record (derived locked and stock parts, entered
+/// non-stock parts, the confirmation) and the open linked supply items the confirmation covered (SAT-D254: audited).
+/// </summary>
+public sealed record SalesSourcePlanWriteInput(SourcePlanInput Plan, IReadOnlyList<SalesSourcePlanLinkedItem> LinkedSupply);
+
+/// <summary>One open linked supply item a source plan confirmation covered (the audit's picture; nothing else is derived from it).</summary>
+public sealed record SalesSourcePlanLinkedItem(string Kind, string DocumentType, Guid SupplyId, Guid? SupplyLineId, Guid? OrderLineId);

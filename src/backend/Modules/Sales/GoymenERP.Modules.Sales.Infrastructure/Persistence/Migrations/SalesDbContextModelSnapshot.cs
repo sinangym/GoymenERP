@@ -1485,6 +1485,76 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftSourcePlanLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("DraftVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("LineQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<bool>("LinkedSupplyConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("LockedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("ProductionQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("PurchasingQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("SavedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SavedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("StockQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("SubcontractQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.HasKey("CompanyId", "DraftId", "DraftVersion", "LineId");
+
+                    b.HasIndex("CompanyId", "DraftId", "LineId", "DraftVersion")
+                        .HasDatabaseName("IX_DraftSourcePlanLines_Line");
+
+                    b.HasIndex("CompanyId", "DraftId", "LineNo", "LineId");
+
+                    b.ToTable("DraftSourcePlanLines", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_DraftSourcePlanLines_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [DraftVersion] >= 3 AND [LineQuantity] > 0 AND [LockedQuantity] >= 0 AND [StockQuantity] >= 0 AND [ProductionQuantity] >= 0 AND [PurchasingQuantity] >= 0 AND [SubcontractQuantity] >= 0 AND [LockedQuantity] < [LineQuantity] AND [LockedQuantity] + [StockQuantity] + [ProductionQuantity] + [PurchasingQuantity] + [SubcontractQuantity] = [LineQuantity] AND LEN([SavedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftUserClosureRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3210,6 +3280,29 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "SourceQuoteId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftSourcePlanLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasPrincipalKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftUserClosureRow", b =>

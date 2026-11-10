@@ -2274,6 +2274,39 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        /// <summary>API-11: the recorded source plan rows (append-only) and the write inputs the service handed over.</summary>
+        public List<SourcePlanLineFacts> SourcePlanRecords { get; } = [];
+
+        public List<SalesSourcePlanWriteInput> SourcePlanInputs { get; } = [];
+
+        public async Task<SalesDraftStateResult?> RecordSourcePlanAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+            string commandName, Guid draftId, Func<SalesOrderDraft, SourcePlanInput, DateTimeOffset, SourcePlanFacts> mutate,
+            SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<SalesSourcePlanWriteInput>> beforeWrite,
+            CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.RecordSourcePlanV1) throw new ArgumentException("wrong command", nameof(commandName));
+            SalesSourcePlanWriteInput? input = null;
+            SourcePlanFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, input!.Plan, now), audit,
+                async token => input = await beforeWrite(draft!, token), cancellationToken);
+            if (input is not null && recorded is not null) SourcePlanInputs.Add(input);
+            if (recorded is not null) SourcePlanRecords.AddRange(recorded.Lines);
+            return result;
+        }
+
+        public Task<IReadOnlyList<SourcePlanLineFacts>> FindSourcePlanAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            var lineIds = _drafts.SingleOrDefault(candidate => candidate.Id == draftId)?.AllLines.Select(line => line.Id).ToHashSet() ?? [];
+            return Task.FromResult<IReadOnlyList<SourcePlanLineFacts>>([.. SourcePlanRecords
+                .Where(fact => lineIds.Contains(fact.LineId))
+                .GroupBy(fact => fact.LineId)
+                .Select(group => group.OrderByDescending(fact => fact.DraftVersion).First())
+                .OrderBy(fact => fact.LineNo)]);
+        }
+
         public List<RemainderChangeFacts> RemainderChanges { get; } = [];
 
         public async Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,

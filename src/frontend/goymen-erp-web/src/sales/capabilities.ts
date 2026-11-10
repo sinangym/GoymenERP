@@ -91,6 +91,12 @@ export const SALES_OVER_DELIVERY_APPROVE_CAPABILITY = 'sales.orders.over-deliver
  */
 export const SALES_LINE_CLOSE_CAPABILITY = 'sales.orders.lines.close' as const
 
+/**
+ * SAT-D252..SAT-D255 / API-11: the source-plan CONTROL on S-04 ("Kaynak planını kaydet"). The shell publishes it only to an
+ * actor holding `sales.orders.source-plan.write` beside the read; the plan itself is read under the draft read.
+ */
+export const SALES_SOURCE_PLAN_WRITE_CAPABILITY = 'sales.orders.source-plan.write' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -101,6 +107,7 @@ export type SalesCapabilityId =
   | typeof SALES_CLOSE_CAPABILITY
   | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
   | typeof SALES_LINE_CLOSE_CAPABILITY
+  | typeof SALES_SOURCE_PLAN_WRITE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY

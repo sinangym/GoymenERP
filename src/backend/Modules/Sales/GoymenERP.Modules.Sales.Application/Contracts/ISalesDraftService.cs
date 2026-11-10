@@ -159,6 +159,20 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> CloseLineAsync(Guid draftId, SalesDraftLineClosureRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// SAT-D251..SAT-D255 / API-11: GET …/{id}/source-plan under the draft read — per active line the suggestion, the stock part
+    /// derived from the allocation owner, the locked (shipped) part, the current recorded plan and the warnings.
+    /// </summary>
+    Task<SalesOrderDraftSourcePlanResponse> GetSourcePlanAsync(Guid draftId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// SAT-D252..SAT-D255 / API-11: POST …/{id}/source-plan under <c>sales.orders.source-plan.write</c> — the listed lines' plan
+    /// recorded at the order's next version (no revision, no re-approval); the stock and locked parts are derived, the parts add
+    /// up to the line quantity, an open linked supply needs the explicit confirmation and unreadable owners refuse.
+    /// </summary>
+    Task<SalesOrderDraftResponse> RecordSourcePlanAsync(Guid draftId, SalesDraftSourcePlanRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
     // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the

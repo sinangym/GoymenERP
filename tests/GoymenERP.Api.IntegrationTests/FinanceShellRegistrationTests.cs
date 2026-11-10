@@ -111,6 +111,9 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
                 (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
+                // Sales 1.22 (S-2 API-11): the source-plan control of the detail.
+                (SalesShellCapabilityProvider.SourcePlanWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}"),
                 // Sales 1.8 (UI-20): the S-01 quote and request screens with their controls.
                 (SalesShellCapabilityProvider.QuoteConvertCapabilityId, SalesShellCapabilityProvider.QuoteDetailCapabilityId,
                     $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}+{SalesPermissionManifestV1.DraftsCreate}"),

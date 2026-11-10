@@ -189,6 +189,10 @@ public sealed class SalesDocumentOwnerLinkPortTests
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> CloseLineAsync(Guid draftId, SalesDraftLineClosureRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SalesOrderDraftSourcePlanResponse> GetSourcePlanAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<SalesOrderDraftResponse> RecordSourcePlanAsync(Guid draftId, SalesDraftSourcePlanRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> RequestRemainderChangeAsync(Guid draftId, SalesDraftRemainderChangeRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> ApproveRemainderChangeAsync(Guid draftId, int changeNo,

@@ -496,7 +496,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D241 (EK48): +2 SalesInvoice facts (a VAT or withholding TL difference above the tolerance writes nothing unapproved and
                 // is stored approved; the tax-comparison migration's Down passes with a legacy match and refuses with 51242 while a compared
                 // match exists), kept ordinal-sorted (d9d2c108... -> e49ab090...).
-                "e49ab0909f2268082dc2ec262d7e8beb2f64ccdfbb24aa10b5e705244867f359",
+                // SAT-D252..SAT-D255 (API-11 source plan, merged after SAT-D241): +8 SalesDraftSourcePlan facts (one save with attempt and
+                // audit, the CK and FKs, company isolation, the partial-delivery remainder, terminal refusals, unreadable owners, the
+                // permission, the 51241 rollback refusal), kept ordinal-sorted; recomputed on the merged inventory (e49ab090... -> 320e578b...).
+                "320e578b1ccced070113dbc0b973df4e4ba8f383553379db83b10eabac0e637c",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -634,7 +637,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D241 (EK48): six nullable VAT/withholding columns on the same company-filtered, append-only InvoiceMatches row,
                 // CK_InvoiceMatches_TaxAmounts and the widened CK_InvoiceMatches_Amounts; no query-filter bypass or direct database surface (1d567f05... -> 22f3ea3d...).
                 // The tax check's second branch names every column IS NOT NULL (a CHECK accepts UNKNOWN) (22f3ea3d... -> 48ee7004...).
-                "48ee7004135ac121f6c9714ab779d409d3d8d29e4383c76483a3108f381324fd",
+                // SAT-D252..SAT-D255 (merged after SAT-D241): DraftSourcePlanLines (keyed per draft version and line, FKs to the draft and
+                // its line identity, CK_DraftSourcePlanLines_Identity), append-only in the write guard, on the same company-filtered
+                // context; no query-filter bypass or direct database surface; recomputed on the merged context (48ee7004... -> c40fbf07...).
+                "c40fbf075cd16d7835f47619d367902e74cea6d3560952d7ffc5c83c5033f4ae",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1778,7 +1784,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                     // Re-fingerprinted for SAT-D30 / SAT-D213: the over-delivery approval write (one save: approval row, header version,
                     // attempt, audit) and its restore through the same filtered context; SqlClient count unchanged.
-                        "819cb8e6bfa8364eb404dbbdcd35a32dd684e8a3b230d5386bb81c7b8a6ca8d1",
+                    // Re-fingerprinted for SAT-D252..SAT-D255: the source-plan command joins the draft replay command set (its write is the
+                    // partial SalesStore.SourcePlan.cs over the same filtered context); SqlClient count unchanged.
+                        "44b86f834573a8bcb472126adc49b8321475b72965073de66a4d4513f829638c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2608,6 +2616,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // The tax check names every column IS NOT NULL in its second branch (2e4c2ae6... -> 3bb21c0b...).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110065844_AddInvoiceMatchTaxComparison.cs"] =
                     new("3bb21c0bd25f4a6df6c0284d387e989094ec66c453d6bff9cdc19c6a7fa21a37",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D252..SAT-D255 (source plan): Up creates DraftSourcePlanLines; the Down's only raw SQL is the forward-fix refusal (51241,
+                // used by no other migration) while any recorded source plan exists, before the DropTable (an empty table rolls back freely).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261109221322_AddDraftSourcePlanLines.cs"] =
+                    new("b4961b6aae644bb81eb7bd9b82d84013862f6b0e951f6e89e5f2abb03e47424d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

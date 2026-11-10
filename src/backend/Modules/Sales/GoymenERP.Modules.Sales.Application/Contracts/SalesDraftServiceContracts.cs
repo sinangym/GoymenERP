@@ -260,6 +260,42 @@ public static class SalesDraftProblemCodesV1
     public const string LineClosurePolicyUnavailable = "line_closure_policy_unavailable";
 
     /// <summary>
+    /// 422 (SAT-D252): a line's plan parts (locked + stock + production + purchasing + subcontract) do not add up to the line
+    /// quantity; the field is <c>lines[i]</c>. Not recorded: the user corrects the parts and saves again.
+    /// </summary>
+    public const string SourcePlanSumMismatch = "sales_source_plan_sum_mismatch";
+
+    /// <summary>
+    /// 422 (SAT-D252, fail-closed): the line's order unit is not the kilogram — the unit conversion of the plan parts is not
+    /// decided (NEEDS-SINAN), so no plan is saved for it. Not recorded.
+    /// </summary>
+    public const string SourcePlanUnitUnsupported = "sales_source_plan_unit_unsupported";
+
+    /// <summary>
+    /// 409 (SAT-D253): the line is fully delivered (the delivery owner's shipped total reaches the line quantity) — its plan no
+    /// longer changes. Terminal for the key (recorded, replayed).
+    /// </summary>
+    public const string SourcePlanLineLocked = "sales_source_plan_line_locked";
+
+    /// <summary>
+    /// 409 (SAT-D254): an open production or purchasing document is linked to a planned line and the request does not confirm
+    /// the warning (<c>confirmLinkedSupply</c>). Not recorded: the user confirms and saves again under the same key.
+    /// </summary>
+    public const string SourcePlanLinkedSupplyUnconfirmed = "sales_source_plan_linked_supply_unconfirmed";
+
+    /// <summary>
+    /// 503 (SAT-D255): the Inventory allocation owner is not composed or cannot answer — the stock part is derived from it and is
+    /// never entered, so no plan is saved on an unread allocation. Code-less on the wire.
+    /// </summary>
+    public const string SourcePlanAllocationUnavailable = "source_plan_allocation_unavailable";
+
+    /// <summary>
+    /// 503 (SAT-D254): a production or purchasing link owner cannot answer; the plan is not saved over an unread link.
+    /// Code-less on the wire.
+    /// </summary>
+    public const string SourcePlanLinkedSupplyUnavailable = "source_plan_linked_supply_unavailable";
+
+    /// <summary>
     /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
     /// a loading-instruction line) that a changed quantity would leave inconsistent — the fail-closed reading refuses the
     /// revision, exactly like the cancellation; the field errors name each blocking source. Terminal for the key (recorded,
@@ -370,4 +406,6 @@ public sealed record SalesDraftServiceBindings(
     // SAT-D17 / SAT-D168: the line closure's own name (a grant, never implied here).
     string? LineClosePermission = SalesPermissionManifestV1.OrdersLineClose,
     // SAT-D250 / SAT-D266: the margin disclosure name (a grant, never implied here; the price read does not confer it).
-    string? MarginReadPermission = SalesPermissionManifestV1.OrdersMarginRead);
+    string? MarginReadPermission = SalesPermissionManifestV1.OrdersMarginRead,
+    // SAT-D251..D255 / API-11: the order source plan's own name (a grant, never implied here).
+    string? SourcePlanPermission = SalesPermissionManifestV1.OrdersSourcePlanWrite);
