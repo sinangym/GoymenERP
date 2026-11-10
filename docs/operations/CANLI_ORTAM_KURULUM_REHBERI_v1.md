@@ -45,7 +45,7 @@ olarak işaretlidir.
 | E1 | **Ön yüzde canlı giriş (OIDC oturum açma) yok.** Tarayıcı istemcisi yalnız geliştirme başlığı `X-Development-User` gönderiyor; `Authorization: Bearer` token göndermiyor. Canlı derlemede (`VITE_BOOTSTRAP_IDENTITY_ENABLED=false`) her API isteği 401 alır. | `src/frontend/goymen-erp-web/src/identity/api.ts:28`, `src/frontend/goymen-erp-web/src/sales/api.ts:134`, `src/frontend/goymen-erp-web/Dockerfile` | Kimlik sağlayıcı seçimi (`OPEN-013`) + ön yüz giriş akışı (Claude şeridi işi) |
 | E2 | **Canlıda veritabanı şeması ve ilk kayıtlar otomatik kurulmaz.** Uygulama migration ve seed'i yalnız `Development`/`Testing` ortamında başlangıçta çalıştırır. Canlı için ayrı bir migration paketi/betiği repoda yok. | `src/backend/GoymenERP.Api/Program.cs` (dosya sonundaki `Initialize…ModuleAsync` bloğu, `IsDevelopment() \|\| IsEnvironment("Testing")` koşulu) | Bölüm 4.2'deki elle uygulama yolu veya backend şeridinin (Codex) hazırlayacağı paket |
 | E3 | **Canlıda ilk kullanıcı ve şirket kaydını oluşturan bir yol yok.** Şirketler `Seed/organization-seed.json`, kullanıcı/rol/atamalar `Seed/identity-seed.json` dosyasından yalnız geliştirmede yüklenir. Kimlik seed'indeki kullanıcılar geliştirme hesaplarıdır (`urn:goymen:development-bootstrap`). | `src/backend/GoymenERP.Api/Seed/identity-seed.json`, `src/backend/GoymenERP.Api/Seed/organization-seed.json` | Canlı ilk kayıt (bootstrap) yöntemi kararı ve backend işi |
-| E4 | **Rol atama ekranı yok.** Ayarlar → "Kullanıcılar ve yetkiler" yalnız okuma ekranıdır; rol verme/geri alma bilerek kapalıdır. Sunucuda da yalnız `GET /api/v1/access/users` ve `/access/roles` uçları vardır. | `src/frontend/goymen-erp-web/src/identity/capabilities.ts` (NEEDS-SINAN #66 5738113623, `OPEN-013`), `src/backend/GoymenERP.Api/Endpoints/IdentityEndpoints.cs` | Sinan kararı + backend ve ekran işi |
+| E4 | **Rol atama ekranı yok.** Ayarlar → "Kullanıcılar ve yetkiler" yalnız okuma ekranıdır; rol verme/geri alma bilerek kapalıdır. Sunucuda da yalnız okuma uçları (`GET /api/v1/identity/access/users` ve `GET /api/v1/identity/access/roles`) vardır. | `src/frontend/goymen-erp-web/src/identity/capabilities.ts` (NEEDS-SINAN #66 5738113623, `OPEN-013`), `src/backend/GoymenERP.Api/Endpoints/IdentityEndpoints.cs` | Sinan kararı + backend ve ekran işi |
 
 Bu eksikler kapandığında rehber v2'ye güncellenmelidir.
 
@@ -104,7 +104,7 @@ her ortamda farklı olmalı. Üretme ve saklama yöntemi: **Sinan/BT seçer**.
 | Anahtar | Gizli mi | Ne işe yarar | Boş kalırsa | Nereden okunur |
 |---|---|---|---|---|
 | `Documents:ObjectStore:RootPath` | Hayır (yol) | Belge dosyalarının yazılacağı sunucu klasörü. | Belge yükleme/indirme 503 | `DocumentsModuleExtensions.cs` |
-| `Documents:Scanner:Mode` | Hayır | Canlıda yalnız `WindowsDefender` (veya boş). `DevelopmentSignature` canlıda reddedilir. | — | Aynı dosya |
+| `Documents:Scanner:Mode` | Hayır | Canlıda `WindowsDefender`, boş veya `None` (`None` yalnız klasör ve Defender hiç ayarlanmamışsa geçerlidir; belge kasası kapalı kalır). `DevelopmentSignature` canlıda reddedilir. | — | Aynı dosya |
 | `Documents:Scanner:Defender:ExecutablePath` | Hayır | `MpCmdRun.exe` tam yolu. `RootPath` ile **birlikte** verilmeli. | Belge Kasası kapalı | Aynı dosya |
 | `Documents:Scanner:Defender:QuarantinePath` | Hayır | Tarama sırasında geçici klasör. | Sistem geçici klasörü | Aynı dosya |
 | `Documents:Scanner:Defender:TimeoutSeconds` | Hayır | Tarama zaman aşımı (varsayılan 120). | Varsayılan | `appsettings.json` |
@@ -130,7 +130,7 @@ her ortamda farklı olmalı. Üretme ve saklama yöntemi: **Sinan/BT seçer**.
 
 | Değişken | Ne işe yarar | Canlı değeri |
 |---|---|---|
-| `VITE_API_BASE_URL` | API adresi. Boşsa `/api/v1` (aynı alan adı). | Aynı alan adı kullanılırsa boş bırakın |
+| `VITE_API_BASE_URL` | API adresi. Boşsa `/api/v1` (aynı alan adı). | Aynı alan adı kullanılırsa **hiç tanımlamayın** (boş değer verilmez) |
 | `VITE_BOOTSTRAP_IDENTITY_ENABLED` | Geliştirme girişi | `false` (Dockerfile varsayılanı) |
 
 Ön yüz değişkenleri tarayıcıya gömülür; bunlara **asla gizli bilgi** konmaz.
@@ -160,13 +160,15 @@ tekrarlayın (`DEPLOY_BACKUP_RPO_RTO.md` "Ortamlar").
 ### 4.2 Migration (şema) uygulama
 
 Canlıda uygulama şemayı **kendisi kurmaz** (E2). Şema, her modülün EF Core migration'larından
-elle uygulanır. Repoda araç hazır: `dotnet-tools.json` içinde `dotnet-ef 10.0.8`, her
-modül için `*DesignTimeDbContextFactory.cs`.
+elle uygulanır. Repoda araç hazır: `dotnet-tools.json` içinde `dotnet-ef 10.0.8` ve 18 DbContext'in
+17'si için `*DesignTimeDbContextFactory.cs`. `ProductPriceListDbContext` için fabrika yoktur;
+onun betiği `--startup-project src/backend/GoymenERP.Api` ile üretilmelidir.
 
 Önerilen güvenli yol (yöntem kesinleşene kadar; paket mi betik mi **Sinan/BT + Codex seçer**):
 
 1. Yayınlanacak **tam commit**'i belirleyin. İsteğe bağlı olarak sürüm manifestini üretin:
-   `python3 tools/generate_release_manifest.py --source-commit <sha> > release-manifest.json`
+   `python3 tools/generate_release_manifest.py --source-commit <40 karakterlik küçük harf tam SHA> > release-manifest.json`
+   (`HEAD` veya kısa SHA kabul edilmez; araç exit 2 ile durur)
    (yalnız kaynak bilgisini yazar; derlemez, migration çalıştırmaz).
 2. O commit'te, her DbContext için **idempotent SQL betiği** üretin:
    `dotnet tool restore` ve ardından her context için
@@ -176,14 +178,22 @@ modül için `*DesignTimeDbContextFactory.cs`.
 4. Sıra önemlidir (yabancı anahtarlar). Uygulamanın geliştirmede kullandığı sıra
    `Program.cs` sonundaki bloktadır: Organization → Settings → Identity → Audit →
    Idempotency (CommandExecution) → Counterparty → Inventory → Product +
-   GroupSharedCommand → ProductPriceList → Finance → Sales → Manufacturing → Logistics →
+   GroupSharedCommand → ProductPriceList (yalnız ürün modülü açıksa; `Program.cs`
+   `ProductRuntimeOptions.IsEnabled` koşulu) → Finance → Sales → Manufacturing → Logistics →
    Purchasing → Accounting → Documents.
 5. **Work** modülünün migration'ı API başlangıç zincirinde çağrılmıyor
    (`InitializeWorkModuleAsync` kullanılmıyor). Canlıda uygulanıp uygulanmayacağı backend
    şeridine (Codex) sorulmalı — açık seçim.
-6. Uygulama başladıktan sonra `GET /health/ready` çağrısı, her modülde koddaki migration
-   listesi ile veritabanındaki listenin **birebir** aynı olduğunu kontrol eder
-   (`Startup/DatabaseSchemaCompatibilityHealthCheck.cs`). 200 dönmüyorsa şema eksiktir.
+6. Uygulama başladıktan sonra `GET /health/ready` çağrısı, koddaki migration listesi ile
+   veritabanındaki listenin **birebir** aynı olduğunu **yalnız şu 14 context için** kontrol
+   eder (`Startup/DatabaseSchemaCompatibilityHealthCheck.cs`): Organization, Identity, Audit,
+   Idempotency, Counterparty, Inventory, Product, GroupSharedCommand, Finance, Sales,
+   Manufacturing, Logistics, Purchasing, Accounting. Ürün modülü kapalıysa Product ve
+   GroupSharedCommand da atlanır. 200 dönmüyorsa şema eksiktir.
+7. **Settings, ProductPriceList, Documents ve Work** bu kontrolde **yoktur**; `/health/ready`
+   bunlar eksikken de 200 dönebilir. Bu dört context için her birinin
+   `__EFMigrationsHistory` tablosundaki kayıtlar, `dotnet ef migrations list --context <ad>`
+   çıktısıyla **elle** karşılaştırılmalıdır.
 
 Geri alma: migration'ların bir kısmı veri kaybı riskinde `Down` adımını bilerek reddeder
 (`THROW 51xxx`, "forward fix"). Yani hatalı bir sürümden dönüş **geri sarma değil ileri
@@ -217,7 +227,7 @@ yedek alınmalıdır (Bölüm 5).
    SPA yollarını `index.html`'e düşürür. Canlıda bunun önüne **443/TLS** dinleyen bir
    blok ve gerçek alan adı eklenmelidir (örnek dosya yalnız port 80 dinler).
 4. **Not (E1):** Canlı girişi henüz ön yüzde olmadığı için bu adım sonunda ekran açılır
-   ama veriler 401 ile gelmez. Canlı kullanım E1 kapanınca mümkündür.
+   ama veriler gelmez (API 401 döner). Canlı kullanım E1 kapanınca mümkündür.
 
 ### 4.5 İlk Admin kullanıcı ve şirket kaydı — **bekliyor (E2, E3)**
 
@@ -277,8 +287,9 @@ Asgari uygulama (BT için sade özet):
 3. **Veritabanı ve belge klasörü birlikte** geri yüklenmeli ve sayı/özet (checksum)
    mutabakatı yapılmalıdır (`DEPLOY_BACKUP_RPO_RTO.md` "Production kapısı").
 4. Kopyalardan biri **tesis dışında ve şifreli** tutulur.
-5. Belgeler silinmez (yasal saklama 10 yıl; `DocumentsModuleExtensions.cs` açıklaması).
-   Saklama/imha ayrı politikadır.
+5. Bugünkü kodda belge silme yolu yoktur. Saklama süresi ve imha **açık politikadır**
+   (`DEC-DOC-008`, `OPEN-018`/`OPEN-021`, `SINAN_KARARLARI_2026-10-21.md`); koddaki
+   "10 yıl" notu karar değildir. Süreyi **Sinan/BT seçer**.
 6. Canlıya geçmeden önce en az bir kez **gerçek geri yükleme tatbikatı** yapılır ve
    sonucu yazılır.
 
@@ -325,7 +336,7 @@ Her madde işaretlenmeden production aktivasyonu istenmez. Aktivasyon kararı Si
 - [ ] HTTPS çalışıyor; sertifika geçerli; HTTP → HTTPS yönlendirmesi ters vekilde.
 - [ ] `Cors:AllowedOrigins` ve `AllowedHosts` gerçek alan adına göre ayarlandı.
 - [ ] RCSI açık (`SQL_SERVER_RCSI_READINESS_RUNBOOK.md`).
-- [ ] `GET /health/ready` = 200.
+- [ ] `GET /health/ready` = 200 (14 context) **ve** Settings, ProductPriceList, Documents, Work migration geçmişi elle karşılaştırıldı (Bölüm 4.2 adım 7).
 - [ ] Belge Kasası açılacaksa: klasör + Defender birlikte ayarlı, bir dosya yükleme/indirme denendi.
 
 **Veri**
