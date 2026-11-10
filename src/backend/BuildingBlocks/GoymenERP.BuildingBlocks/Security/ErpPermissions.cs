@@ -655,6 +655,35 @@ public static class ErpPermissions
     public const string SalesReportsRead = "sales.reports.read";
 
     /// <summary>
+    /// API-40 (EK57 SAT-D288…D291, EK58 SAT-D292…D294): read recorded customer return invoices (Sales owner name
+    /// SalesPermissionManifestV1.ReturnsRead, same string). Its own name: no invoice name confers it and it confers none of them; the
+    /// amounts additionally need sales.orders.price.read. Registered, not granted: no seeded role and no real user receives it; the
+    /// grant is a human gate. Company-wide only. Not Critical: a read moves nothing.
+    /// </summary>
+    public const string SalesReturnsRead = "sales.returns.read";
+
+    /// <summary>
+    /// API-40 (SAT-D288, SAT-D290 (2)): record the customer's return invoice against a finalised sales invoice and send it for
+    /// approval (Sales owner name SalesPermissionManifestV1.ReturnsWrite, same string). Registered, not granted (human gate).
+    /// Company-wide only. Not Critical: no Critical source names it; a user decision may change that.
+    /// </summary>
+    public const string SalesReturnsWrite = "sales.returns.write";
+
+    /// <summary>
+    /// API-40 (SAT-D290 (3)): approve a pending customer return; the preparer and the submitter are refused by the Sales service (a
+    /// service rule, not a catalogue rule). Sales owner name SalesPermissionManifestV1.ReturnsApprove, same string. Registered, not
+    /// granted (human gate). Company-wide only. Not Critical: no Critical source names it; a user decision may change that.
+    /// </summary>
+    public const string SalesReturnsApprove = "sales.returns.approve";
+
+    /// <summary>
+    /// API-40 (SAT-D291, SAT-D294): finalise an approved customer return and report it to Finance; refused (503) while no Finance
+    /// reversal port is wired. Sales owner name SalesPermissionManifestV1.ReturnsFinalize, same string. Registered, not granted
+    /// (human gate). Company-wide only. Not Critical: no Critical source names it; a user decision may change that.
+    /// </summary>
+    public const string SalesReturnsFinalize = "sales.returns.finalize";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -1041,6 +1070,10 @@ public static class ErpPermissions
             SalesInvoicesFinalize,
             SalesInvoicesExport,
             SalesReportsRead,
+            SalesReturnsRead,
+            SalesReturnsWrite,
+            SalesReturnsApprove,
+            SalesReturnsFinalize,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -1211,6 +1244,10 @@ public static class ErpPermissions
             SalesInvoicesFinalize,
             SalesInvoicesExport,
             SalesReportsRead,
+            SalesReturnsRead,
+            SalesReturnsWrite,
+            SalesReturnsApprove,
+            SalesReturnsFinalize,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

@@ -134,7 +134,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSourcePlanLines", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddInvoiceMatchTaxComparison", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptions", StringComparison.Ordinal));
-        Assert.Equal("20261110155556_AddShipmentRiskExceptions", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
+        Assert.Equal("20261110215452_AddCustomerReturns", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -253,6 +254,140 @@ public sealed class SalesPersistenceModelTests
         CompanyId = CompanyA, CommandName = GoymenERP.Modules.Sales.Application.Contracts.SalesRiskExceptionCommands.RequestV1,
         IdempotencyKeyHash = new string('A', 64), RequestHash = new string('B', 64), ActorId = "synthetic-shipper", Outcome = 1,
         OrderId = Guid.NewGuid(), ExceptionId = exceptionId, CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
+    };
+
+    /// <summary>API-40 (SAT-D288..SAT-D294): the customer return tables; Up adds the one-step-forward guard (51255) and the
+    /// append-only attempts guard (51256); Down is a forward fix (51254) first.</summary>
+    [Fact]
+    public void The_customer_return_migration_adds_two_triggers_and_its_down_refuses_with_51254_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddCustomerReturns();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(2, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("TR_CustomerReturns_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51255,", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_CustomerReturnAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51256,", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51254,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_customer_return_model_keys_the_customer_document_once_per_party_and_carries_the_maker_checker_check()
+    {
+        using var context = Context();
+        var customerReturn = context.Model.FindEntityType(typeof(CustomerReturnRow))!;
+        Assert.Equal(["Id"], customerReturn.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(customerReturn, "UX_CustomerReturns_CustomerDocument"));
+        Assert.True(UniqueIndex(customerReturn, "UX_CustomerReturns_FinalizationSequence"));
+        Assert.Equal(SalesDbContext.CustomerReturnFinalizationSequenceFilter,
+            customerReturn.GetIndexes().Single(index => index.GetDatabaseName() == "UX_CustomerReturns_FinalizationSequence").GetFilter());
+        Assert.True(customerReturn.FindProperty(nameof(CustomerReturnRow.Version))!.IsConcurrencyToken);
+        var attempt = context.Model.FindEntityType(typeof(CustomerReturnAttemptRow))!;
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempt.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var checks = design.FindEntityType(typeof(CustomerReturnRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(checks, check => check.Name == "CK_CustomerReturns_Facts" && check.Sql == SalesDbContext.CustomerReturnFactsConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_CustomerReturns_MakerChecker" && check.Sql == SalesDbContext.CustomerReturnMakerCheckerConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_CustomerReturns_Rate" && check.Sql == SalesDbContext.CustomerReturnRateConstraint);
+        var attemptChecks = design.FindEntityType(typeof(CustomerReturnAttemptRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(attemptChecks, check => check.Name == "CK_CustomerReturnAttempts_Command" && check.Sql == SalesDbContext.CustomerReturnAttemptCommandConstraint);
+        Assert.Contains(attemptChecks, check => check.Name == "CK_CustomerReturnAttempts_Outcome" && check.Sql == SalesDbContext.CustomerReturnAttemptOutcomeConstraint);
+        // Both guard triggers are declared, so EF Core never sends OUTPUT without INTO (refused on a table with an enabled trigger).
+        Assert.Equal([SalesDbContext.CustomerReturnGuardTrigger],
+            design.FindEntityType(typeof(CustomerReturnRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+        Assert.Equal([SalesDbContext.CustomerReturnAttemptGuardTrigger],
+            design.FindEntityType(typeof(CustomerReturnAttemptRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+    }
+
+    [Theory]
+    [InlineData("submit", true)]
+    [InlineData("approve", true)]
+    [InlineData("finalize", true)]
+    [InlineData("skip-a-step", false)]
+    [InlineData("step-back", false)]
+    [InlineData("edit-document", false)]
+    [InlineData("edit-totals", false)]
+    [InlineData("edit-lines", false)]
+    [InlineData("edit-shipment", false)]
+    [InlineData("facts-without-state", false)]
+    [InlineData("delete-return", false)]
+    [InlineData("edit-attempt", false)]
+    [InlineData("delete-attempt", false)]
+    public void A_customer_return_moves_one_step_forward_and_its_document_lines_totals_and_attempts_never_change(string change, bool passes)
+    {
+        using var context = Context();
+        var row = Attach(context, NewCustomerReturnRow(change switch { "approve" => 2, "finalize" => 3, "step-back" => 2, _ => 1 }));
+        switch (change)
+        {
+            case "submit":
+                (row.State, row.SubmittedBy, row.SubmittedAtUtc, row.Version) = (2, "synthetic-preparer", At, 2);
+                break;
+            case "approve":
+                (row.State, row.ApprovedBy, row.ApprovedAtUtc, row.Version) = (3, "synthetic-approver", At, 3);
+                break;
+            case "finalize":
+                (row.State, row.FinalizedBy, row.FinalizedAtUtc, row.FinalizationSequence, row.Version) = (4, "synthetic-finance", At, 1, 4);
+                break;
+            case "skip-a-step":
+                (row.State, row.Version) = (3, 2);
+                break;
+            case "step-back":
+                (row.State, row.SubmittedBy, row.SubmittedAtUtc, row.Version) = (1, null, null, 3);
+                break;
+            case "edit-document":
+                row.CustomerDocumentNo = "SENTETIK-IADE-2";
+                break;
+            case "edit-totals":
+                row.NetAmount += 1m;
+                break;
+            case "edit-lines":
+                row.LinesJson = "[{}]";
+                break;
+            case "edit-shipment":
+                row.ShipmentId = Guid.NewGuid();
+                break;
+            case "facts-without-state":
+                row.SubmittedBy = "synthetic-preparer";
+                break;
+            case "delete-return":
+                context.Remove(row);
+                break;
+            case "edit-attempt":
+                Attach(context, NewCustomerReturnAttemptRow(row.Id)).ActorId = "synthetic-other";
+                break;
+            case "delete-attempt":
+                context.Remove(Attach(context, NewCustomerReturnAttemptRow(row.Id)));
+                break;
+        }
+
+        if (passes)
+        {
+            Assert.Throws<GuardPassedException>(() => context.SaveChanges());
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+        }
+    }
+
+    private static CustomerReturnRow NewCustomerReturnRow(int state) => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, OriginalInvoiceId = Guid.NewGuid(), OriginalDocumentNo = "SF-SENTETIK-1",
+        PartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(), AmountScale = 2,
+        CustomerDocumentNo = "SENTETIK-IADE-1", CustomerDocumentDate = new DateOnly(2026, 11, 10), State = state,
+        CreatedBy = "synthetic-preparer", CreatedAtUtc = At,
+        SubmittedBy = state >= 2 ? "synthetic-preparer" : null, SubmittedAtUtc = state >= 2 ? At : null,
+        ApprovedBy = state >= 3 ? "synthetic-approver" : null, ApprovedAtUtc = state >= 3 ? At : null,
+        NetAmount = 100m, VatAmount = 20m, WithholdingAmount = 0m, LineTotalAmount = 120m, LineCount = 1, LinesJson = "[]",
+        Version = state, RowVersion = [1, 2, 3, 4, 5, 6, 7, 8], UpdatedAtUtc = At, CorrelationId = "synthetic-correlation",
+    };
+
+    private static CustomerReturnAttemptRow NewCustomerReturnAttemptRow(Guid returnId) => new()
+    {
+        CompanyId = CompanyA, CommandName = SalesCustomerReturnCommands.CreateV1,
+        IdempotencyKeyHash = new string('A', 64), RequestHash = new string('B', 64), ActorId = "synthetic-preparer", Outcome = 1,
+        CustomerReturnId = returnId, CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
     };
 
     /// <summary>API-33 PR2: approval columns, widened state/command CKs and the two immutability triggers; Down is a forward fix (51222).</summary>

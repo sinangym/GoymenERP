@@ -103,8 +103,24 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesRiskExceptionStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
+        // API-40 (SAT-D288…SAT-D294): the customer return invoice over the Sales store and the invoice store. The Finance reversal
+        // port is the Finance owner's and is NOT composed here: without it the finalisation is 503 before any read (SAT-D294).
+        services.AddScoped<ISalesCustomerReturnStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesCustomerReturnService>(CreateCustomerReturnService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing Finance port stays null: the finalisation fails closed, never a silent admission.
+    private static SalesCustomerReturnService CreateCustomerReturnService(IServiceProvider serviceProvider) => new SalesCustomerReturnService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ICorrelationContext>(),
+        serviceProvider.GetRequiredService<ISalesCustomerReturnStore>(),
+        serviceProvider.GetRequiredService<ISalesInvoiceStore>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesCustomerReturnFinancePortV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     private static SalesRiskExceptionService CreateRiskExceptionService(IServiceProvider serviceProvider) => new SalesRiskExceptionService(

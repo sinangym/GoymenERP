@@ -255,6 +255,8 @@ public static partial class SalesEndpoints
         MapDispatchEndpoints(endpoints);
         // S5 API-32 (Fatura çekirdeği 1): the sales invoice draft routes.
         MapInvoiceEndpoints(endpoints);
+        // API-40 (SAT-D288…D294): the recorded customer return invoice — create, list, read, submission, approval, finalisation.
+        MapCustomerReturnEndpoints(endpoints);
         // API-37 (plan §3.3, Kontrol Merkezi): the read-only sales follow-up list.
         MapControlCenterEndpoints(endpoints);
         // API-41 / API-42 (plan §3.4, UI-80): the read-only Sales reports.

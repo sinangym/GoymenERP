@@ -182,6 +182,256 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.CustomerReturnAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("CustomerReturnId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RefusalJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid?>("TargetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "CustomerReturnId");
+
+                    b.ToTable("CustomerReturnAttempts", "sales", t =>
+                        {
+                            t.HasTrigger("TR_CustomerReturnAttempts_Guard");
+
+                            t.HasCheckConstraint("CK_CustomerReturnAttempts_Command", "[CommandName] IN (N'sales.customer-return.create.v1', N'sales.customer-return.submit.v1', N'sales.customer-return.approve.v1', N'sales.customer-return.finalize.v1')");
+
+                            t.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_CustomerReturnAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0 AND ([TargetId] IS NULL OR [TargetId] <> '00000000-0000-0000-0000-000000000000')");
+
+                            t.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome", "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.CustomerReturnRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AmountScale")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CompanyAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("CustomerDocumentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("CustomerDocumentNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal?>("ExchangeRate")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<int?>("FinalizationSequence")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("FinalizedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FinalizedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("FunctionalCurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("FunctionalLineTotalAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<decimal?>("FunctionalNetAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<int?>("FunctionalScale")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("FunctionalVatAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<decimal?>("FunctionalWithholdingAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<int>("LineCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("LineTotalAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<string>("LinesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("NeedsReview")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("NetAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<string>("OriginalDocumentNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("OriginalInvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("ShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SubmittedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("VatAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("WithholdingAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CreatedAtUtc")
+                        .HasDatabaseName("IX_CustomerReturns_Created");
+
+                    b.HasIndex("CompanyId", "OriginalInvoiceId", "FinalizationSequence")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomerReturns_FinalizationSequence")
+                        .HasFilter("[FinalizationSequence] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "PartyId", "CustomerDocumentNo")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomerReturns_CustomerDocument");
+
+                    b.ToTable("CustomerReturns", "sales", t =>
+                        {
+                            t.HasTrigger("TR_CustomerReturns_Guard");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Facts", "([State] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 1) OR ([State] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 2) OR ([State] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 3) OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [FinalizedBy] IS NOT NULL AND LEN([FinalizedBy]) > 0 AND [FinalizedAtUtc] IS NOT NULL AND [FinalizationSequence] >= 1 AND [Version] >= 4)");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND ([ShipmentId] IS NULL OR [ShipmentId] <> '00000000-0000-0000-0000-000000000000')");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Lines", "ISJSON([LinesJson]) = 1 AND [LineCount] >= 1");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_MakerChecker", "[ApprovedBy] IS NULL OR ([ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Rate", "([ExchangeRate] IS NULL AND [FunctionalCurrencyId] IS NULL AND [FunctionalScale] IS NULL AND [FunctionalNetAmount] IS NULL AND [FunctionalVatAmount] IS NULL AND [FunctionalWithholdingAmount] IS NULL AND [FunctionalLineTotalAmount] IS NULL) OR ([ExchangeRate] > 0 AND [FunctionalCurrencyId] IS NOT NULL AND [FunctionalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [FunctionalScale] >= 0 AND [FunctionalScale] <= 8 AND [FunctionalNetAmount] IS NOT NULL AND [FunctionalVatAmount] IS NOT NULL AND [FunctionalWithholdingAmount] IS NOT NULL AND [FunctionalLineTotalAmount] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_State", "[State] IN (1, 2, 3, 4)");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Text", "LEN([OriginalDocumentNo]) > 0 AND LEN([CustomerDocumentNo]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DocumentCounterRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3119,6 +3369,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Outcome", "([Outcome] = 1 AND [ExceptionId] IS NOT NULL AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [ExceptionId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ShipmentRiskExceptionRow", b =>
@@ -3214,6 +3466,39 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptions_Text", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.CustomerReturnAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.CustomerReturnRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CustomerReturnId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.CustomerReturnRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.InvoiceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OriginalInvoiceId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DocumentCounterRow", b =>
