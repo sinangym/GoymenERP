@@ -75,7 +75,7 @@ public sealed partial class SalesDraftServiceTests
             invoice.AmountScale));
         Assert.Equal(detail.Totals, invoice.Totals);
         Assert.Equal(detail.FunctionalTotals, invoice.FunctionalTotals);
-        // Issue #66 comment 6771235622 / EK55 (pending): the official document's VAT and withholding are the recorded match's
+        // SAT-D279 (EK55): the official document's VAT and withholding are the recorded match's
         // (SAT-D241), answered beside the computed totals.
         Assert.NotNull(detail.Match!.OfficialVatAmount);
         Assert.NotNull(detail.Match.OfficialWithholdingAmount);

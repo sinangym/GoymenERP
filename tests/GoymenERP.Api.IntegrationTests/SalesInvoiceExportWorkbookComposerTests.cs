@@ -49,7 +49,7 @@ public sealed class SalesInvoiceExportWorkbookComposerTests
     [Fact]
     public void The_official_vat_and_withholding_columns_sit_beside_the_computed_ones_filled_from_the_match_and_empty_without_it()
     {
-        // Issue #66 comment 6771235622 / EK55 (pending): the official document's own VAT and withholding (TL, SAT-D241) are separate
+        // SAT-D279 (EK55): the official document's own VAT and withholding (TL, SAT-D241) are separate
         // columns beside the computed TL VAT and withheld VAT; the computed figures stay.
         var export = Export();
         var functional = new SalesInvoiceAmountsView("10.00", "2.00", "0.40", "12.00", "11.60");

@@ -103,7 +103,7 @@ public sealed partial class SalesInvoiceService
             header.Rate is { } r ? new SalesInvoiceRateView(Decimal(r.Rate), r.RateDay, r.BulletinDate, r.FunctionalCurrencyId, r.FunctionalScale) : null,
             Amounts(invoice.Totals, scale),
             invoice.FunctionalTotals is { } totals ? Amounts(totals, functionalScale) : null,
-            // Issue #66 comment 6771235622 / EK55 (pending): the official document's own VAT and withholding (TL, SAT-D241) as the
+            // SAT-D279 (EK55): the official document's own VAT and withholding (TL, SAT-D241) as the
             // match recorded them, beside the computed ones; empty without a recorded comparison, never copied from the invoice.
             NullableExactText(invoice.Match?.Taxes?.OfficialVatAmount),
             NullableExactText(invoice.Match?.Taxes?.OfficialWithholdingAmount),

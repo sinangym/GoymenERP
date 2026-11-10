@@ -13,7 +13,7 @@ namespace GoymenERP.Api.SalesRuntime;
 /// the invoice's own recorded figures. One row per invoice line; the invoice's fields repeat on each of its lines, its
 /// orders are named together in one cell (every order of a multi-order invoice, SAT-D248) and each line also names its own
 /// order. Beside the computed TL VAT and withheld VAT the official document's own VAT and withholding TL amounts, as the
-/// API-35 match recorded them (SAT-D241), have their own columns (Issue #66 comment 6771235622 / EK55 (pending)); they are
+/// API-35 match recorded them (SAT-D241), have their own columns (SAT-D279 (EK55)); they are
 /// empty when no official amounts are recorded. The column set is the SAT-D248 wide set; its names, order and layout are not decided and stay in
 /// <c>Resources/SalesRuntime.SalesInvoiceExportWorkbookComposer.resx</c> (a missing text is a server fault, never a key in
 /// its place). Built with the BCL only (no spreadsheet package): every text is an inline string (never a formula), an amount
@@ -89,7 +89,7 @@ public sealed class SalesInvoiceExportWorkbookComposer(IStringLocalizer<SalesInv
             invoice.Rate is { } rate ? Cell.Date(rate.RateDay) : Cell.Empty,
         };
         AddAmounts(cells, invoice.Totals);
-        // Issue #66 comment 6771235622 / EK55 (pending): the official document's VAT and withholding (TL, SAT-D241) sit beside the
+        // SAT-D279 (EK55): the official document's VAT and withholding (TL, SAT-D241) sit beside the
         // computed TL VAT and withheld VAT as their own columns; empty when the service answers none.
         var functional = invoice.FunctionalTotals;
         cells.Add(Cell.Number(functional?.NetAmount));
