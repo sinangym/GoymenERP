@@ -194,6 +194,13 @@ jobs:
           --job backend-test-group \
           --phase test-suite
 
+      - name: Log per-class test durations (measurement only)
+        if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/trx_durations.py \
+          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.unit }}" \
+          --label "backend-${{ matrix.unit }}"
+
       - name: Upload secret-free backend group summary
         if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
         uses: actions/upload-artifact@v7
@@ -582,6 +589,13 @@ jobs:
           --tested-commit "$(git rev-parse HEAD)" \
           --job relational-shard \
           --phase sql-acceptance
+
+      - name: Log per-class test durations (measurement only)
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/trx_durations.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --label "shard-${{ matrix.shard }}"
 
       - name: Upload secret-free relational shard summary
         if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
