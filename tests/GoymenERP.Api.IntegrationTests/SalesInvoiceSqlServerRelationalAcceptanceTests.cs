@@ -1,6 +1,8 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
@@ -367,9 +369,11 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
         }
 
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE CompanyId = @company AND InvoiceId = @id",
+            ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'", ("@id", approved.Id)));
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE CompanyId = @company AND InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'",
+            ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
             + "AND EventType = N'sales.invoice.matched.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
@@ -383,9 +387,13 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id AND Difference = 0.06 AND Tolerance = 0.05 "
+            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE CompanyId = @company AND InvoiceId = @id AND Difference = 0.06 AND Tolerance = 0.05 "
             + "AND DifferenceApprovedBy = @m AND DifferenceReason IS NOT NULL AND OfficialAmount = @official",
-            ("@id", approved.Id), ("@m", matcher), ("@official", approved.PayableFunctionalAmount + 0.06m)));
+            ("@company", CompanyA), ("@id", approved.Id), ("@m", matcher), ("@official", approved.PayableFunctionalAmount + 0.06m)));
+        // The same audit filter that counted 0 above now counts the approved match once, so the earlier 0 is a meaningful proof.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
+            + "AND EventType = N'sales.invoice.matched.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
     }
 
     [SqlServerFact]
@@ -538,13 +546,16 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesRuleCodes.InvoiceInstalmentFunctionalInvalid, refused.Code);
         }
 
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Invoices WHERE Id = @id AND State = 3 AND Version = 3",
-            ("@id", approved.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId = @id", ("@id", approved.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE AggregateId = @id", ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Invoices WHERE CompanyId = @company AND Id = @id AND State = 3 AND Version = 3",
+            ("@company", CompanyA), ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE CompanyId = @company AND InvoiceId = @id",
+            ("@company", CompanyA), ("@id", approved.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE CompanyId = @company AND AggregateId = @id",
+            ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'" + SalesInvoiceCommands.FinalizeV1 + "'",
-            ("@id", approved.Id)));
+            "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE CompanyId = @company AND InvoiceId = @id AND CommandName = N'"
+            + SalesInvoiceCommands.FinalizeV1 + "'", ("@company", CompanyA), ("@id", approved.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
             + "AND EventType = N'sales.invoice.finalized.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
@@ -565,6 +576,84 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
     }
 
     private static string Hash(char fill) => new(fill, 64);
+
+    [SqlServerFact]
+    public async Task The_control_center_lists_every_order_of_a_multi_order_invoice_in_line_order_and_another_company_sees_none_on_real_sql()
+    {
+        // SAT-D246 (EK49): an invoice over two orders is read back from its stored lines and its API-37 item names both orders, in the
+        // order of the lines, once each; another company's control center reads none of it.
+        await using var run = await Run.StartAsync();
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var invoiceId = Guid.NewGuid();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.StoreInvoiceAsync(run.Envelope("cc-create"), Hash('a'),
+                number => Invoice(invoiceId, number, run.Actor, Guid.NewGuid(), Guid.NewGuid()));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.DecideInvoiceAsync(run.Envelope("cc-submit"), Hash('b'), SalesInvoiceCommands.SubmitV1, invoiceId,
+                (invoice, now) => invoice.Submit(1, run.Actor, now), new SalesDraftStateAudit("sales.invoice.submitted.v1", "Submit", "SENTETIK"));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var approved = await scope.Invoices.DecideInvoiceAsync(run.Envelope("cc-approve", actor: approver,
+                permission: SalesPermissionManifestV1.InvoicesApprove), Hash('c'), SalesInvoiceCommands.ApproveV1, invoiceId,
+                (invoice, now) => invoice.Approve(2, approver, now), new SalesDraftStateAudit("sales.invoice.approved.v1", "Approve", "SENTETIK"));
+            Assert.Equal(SalesInvoiceState.Approved, approved!.Invoice.State);
+        }
+
+        var firstOrder = await run.ScalarAsync<Guid>("SELECT SalesOrderId FROM sales.InvoiceLines WHERE InvoiceId = @id AND [LineNo] = 1", ("@id", invoiceId));
+        var secondOrder = await run.ScalarAsync<Guid>("SELECT SalesOrderId FROM sales.InvoiceLines WHERE InvoiceId = @id AND [LineNo] = 2", ("@id", invoiceId));
+        Assert.NotEqual(firstOrder, secondOrder);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var answer = await ControlCenter(scope, CompanyA).GetControlCenterAsync();
+            var waiting = Assert.Single(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch);
+            Assert.Equal((invoiceId, 2), (waiting.InvoiceId, waiting.Count));
+            Assert.Equal([firstOrder, secondOrder], waiting.SalesOrderIds);
+        }
+
+        await using (var scope = run.Store(CompanyB))
+        {
+            var other = await ControlCenter(scope, CompanyB).GetControlCenterAsync();
+            Assert.DoesNotContain(other.Items, item => item.InvoiceId == invoiceId);
+            Assert.DoesNotContain(other.Items, item => item.SalesOrderIds.Contains(firstOrder) || item.SalesOrderIds.Contains(secondOrder));
+            Assert.Empty(other.Items);
+        }
+    }
+
+    private static SalesControlCenterService ControlCenter(StoreScope scope, Guid company)
+    {
+        var companyContext = new CompanyContext();
+        companyContext.Set(company);
+        return new SalesControlCenterService(companyContext, new ReadingUser(company), new ReadAuthority(), scope.Invoices,
+            new SalesControlCenterPolicy(), TimeProvider.System);
+    }
+
+    private sealed class ReadingUser(Guid company) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+
+        public string? UserId => "SENTETIK-control-center-reader";
+
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
+
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class ReadAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(permission == SalesPermissionManifestV1.InvoicesRead
+                ? new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal) { "SENTETIK-SALES" },
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+    }
 
     /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>
     private static SalesInvoice Invoice(Guid id, string number, string actor, Guid shipment1, Guid shipment2)

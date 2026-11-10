@@ -109,6 +109,10 @@ public sealed record SalesControlCenterCheckView(
 /// One entry. <c>reference</c> is the dispatch note's system number or the invoice's document number; <c>referenceDate</c> is the
 /// shipment day or the invoice's business day (Europe/Istanbul) and <c>ageDays</c> the whole days from it to today. <c>count</c> is
 /// the number of lines it concerns (1 for a shipment). Identities the kind does not have are null. No price, amount or total.
+/// <c>salesOrderIds</c> (SAT-D246, EK49; replaces the single <c>salesOrderId</c> of SAT-D240) is never null and never empty: a
+/// shipment entry names the one order its share serves; an invoice entry names every distinct order its lines are on, in the
+/// order of the invoice's lines (first appearance), so a one-order invoice carries a one-element list. It is derived from the
+/// stored lines, never guessed; a list that cannot be derived fails the read closed (503).
 /// </summary>
 public sealed record SalesControlCenterItemView(
     SalesControlCenterCheckKindView Kind,
@@ -122,7 +126,7 @@ public sealed record SalesControlCenterItemView(
     Guid? InvoiceId,
     Guid? DispatchNoteId,
     Guid? ShipmentId,
-    Guid? SalesOrderId);
+    IReadOnlyList<Guid> SalesOrderIds);
 
 /// <summary>API-37 answer: today (business day), the grace days applied, one check state per kind, and the items (most severe, then oldest, first).</summary>
 public sealed record SalesControlCenterResponse(

@@ -74,6 +74,8 @@ export const CONTROL_CENTER_TEXT = {
   customer: 'Müşteri',
   links: 'Bağlantılar',
   openOrder: 'Siparişi aç',
+  /** SAT-D246: an entry over several orders gives each order its own, distinct link label. */
+  openOrderNth: (n: number, total: number) => `Siparişi aç (${n}/${total})`,
   openCandidates: 'Faturaya hazır listesinde göster',
   openCari: 'Cari kartı',
   accountIdentifier: 'Cari hesap kimliği',
