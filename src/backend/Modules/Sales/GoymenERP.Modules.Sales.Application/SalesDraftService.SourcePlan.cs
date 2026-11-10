@@ -295,7 +295,10 @@ public sealed partial class SalesDraftService
             await DiscloseAsync(scope, cancellationToken));
     }
 
-    /// <summary>The entered parts parsed as exact non-negative kilograms (shape refusals are 400 on <c>lines[i]</c>).</summary>
+    /// <summary>
+    /// The entered parts parsed as exact non-negative kilograms within the decimal(18,3) column
+    /// (<see cref="SourcePlanCalculator.MaximumPart"/>); shape refusals are 400 on <c>lines[i]</c>.
+    /// </summary>
     private static IReadOnlyList<SourcePlanLineInput> SourcePlanParts(SalesDraftSourcePlanRequest request)
     {
         if (request.Lines is null || request.Lines.Count == 0 || request.Lines.Count > SalesDraftSourcePlanJson.MaximumLines)
@@ -325,7 +328,8 @@ public sealed partial class SalesDraftService
     {
         value = default;
         if (string.IsNullOrEmpty(text) || text.Length > 32
-            || !decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out value))
+            || !decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out value)
+            || value > SourcePlanCalculator.MaximumPart)
         {
             return false;
         }

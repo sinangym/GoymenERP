@@ -61,6 +61,34 @@ public sealed class SalesOrderDraftSourcePlanTests
     }
 
     [Fact]
+    public void Two_max_range_parts_are_not_balanced_and_the_sum_never_overflows()
+    {
+        // Two parts near decimal's own limit overflow a checked sum: the answer is "not balanced", never an OverflowException.
+        Assert.False(SourcePlanCalculator.IsBalanced(100m, 0m, 79_000_000_000_000_000_000_000_000_000m,
+            79_000_000_000_000_000_000_000_000_000m, 0m, 0m));
+        Assert.False(SourcePlanCalculator.IsBalanced(100m, decimal.MaxValue, decimal.MaxValue, decimal.MaxValue, decimal.MaxValue,
+            decimal.MaxValue));
+        // Five parts at the decimal(18,3) column's maximum stay well inside decimal: summed exactly, no overflow.
+        var max = SourcePlanCalculator.MaximumPart;
+        Assert.Equal(999_999_999_999_999.999m, max);
+        Assert.False(SourcePlanCalculator.IsBalanced(100m, max, max, max, max, max));
+        Assert.True(SourcePlanCalculator.IsBalanced(max * 2m, 0m, max, max, 0m, 0m));
+    }
+
+    [Fact]
+    public void A_part_wider_than_the_decimal_18_3_column_is_refused_without_a_step()
+    {
+        var draft = ApprovedDraft(out var line);
+        var oversized = SourcePlanCalculator.MaximumPart + 0.001m;
+
+        Assert.Throws<ArgumentException>(() => draft.RecordSourcePlan(4, Planner, Plan(line, 0m, 0m, oversized, 0m, 0m), T0));
+        Assert.Throws<ArgumentException>(() => draft.RecordSourcePlan(4, Planner, Plan(line, 0m, 0m, 0m, 0m, oversized), T0));
+        Assert.Throws<ArgumentException>(() => draft.RecordSourcePlan(4, Planner,
+            Plan(line, 0m, 79_000_000_000_000_000_000_000_000_000m, 79_000_000_000_000_000_000_000_000_000m, 0m, 0m), T0));
+        Assert.Equal(4L, draft.Version);
+    }
+
+    [Fact]
     public void A_save_records_one_version_step_and_moves_nothing_else()
     {
         var draft = ApprovedDraft(out var line);

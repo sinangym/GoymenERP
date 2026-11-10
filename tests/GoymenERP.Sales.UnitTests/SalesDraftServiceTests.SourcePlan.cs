@@ -156,6 +156,48 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_part_wider_than_the_decimal_18_3_column_is_a_400_and_no_owner_is_asked()
+    {
+        var world = new World();
+        var (approved, deliveries, allocations) = await PlannedOrderAsync(world);
+        var second = approved.Lines[1].LineId;
+
+        // 16 integer digits, a value near decimal's own limit, and one more than decimal holds: all the same shape refusal.
+        foreach (var text in new[] { "1000000000000000", "79000000000000000000000000000", "99999999999999999999999999999999" })
+        {
+            var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RecordSourcePlanAsync(
+                approved.Draft.Id, new SalesDraftSourcePlanRequest("6", false,
+                    [new SalesDraftSourcePlanLineRequestV1(second, text, text, "0")]), Metadata("k-wide")));
+            Assert.Equal((400, "validation_failed"), Status(refused));
+            Assert.Equal([new SalesDraftFieldError("lines[0]", "validation_failed")], refused.Errors);
+        }
+
+        Assert.Empty(deliveries.Asked);
+        Assert.Empty(allocations.Asked);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.SourcePlanRecords);
+    }
+
+    [Fact]
+    public async Task Max_range_parts_beside_an_oversized_allocation_are_an_unrecorded_422_never_a_crash()
+    {
+        var world = new World();
+        var (approved, _, allocations) = await PlannedOrderAsync(world);
+        var second = approved.Lines[1].LineId;
+        // An allocation near decimal's own limit plus two entered parts at the column maximum: the checked sum would overflow.
+        allocations.Answer = order => new(Company, order, [new SalesOrderLineAllocationV1(second, 1, 79_000_000_000_000_000_000_000_000_000m)]);
+        const string max = "999999999999999.999";
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RecordSourcePlanAsync(
+            approved.Draft.Id, PlanOf("6", second, max, max), Metadata("k-max")));
+
+        Assert.Equal((422, SalesDraftProblemCodesV1.SourcePlanSumMismatch), Status(refused));
+        Assert.Equal([new SalesDraftFieldError("lines[0]", SalesDraftProblemCodesV1.SourcePlanSumMismatch)], refused.Errors);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.SourcePlanRecords);
+    }
+
+    [Fact]
     public async Task A_fully_delivered_line_is_the_keys_recorded_409_and_replays_it()
     {
         var world = new World();

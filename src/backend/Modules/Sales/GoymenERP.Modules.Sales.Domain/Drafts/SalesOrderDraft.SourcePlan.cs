@@ -115,7 +115,7 @@ public sealed partial class SalesOrderDraft
 
     private static bool IsPart(decimal value)
     {
-        if (value < 0m)
+        if (value < 0m || value > SourcePlanCalculator.MaximumPart)
         {
             return false;
         }

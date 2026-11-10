@@ -95,6 +95,12 @@ public sealed record SourcePlanFacts(IReadOnlyList<SourcePlanLineFacts> Lines);
 public static class SourcePlanCalculator
 {
     /// <summary>
+    /// The largest part a plan line can hold: the recorded columns are decimal(18,3) (15 integer digits, 3 decimals), so a wider
+    /// part is refused as a malformed part before any sum, never a provider or overflow fault at the save.
+    /// </summary>
+    public const decimal MaximumPart = 999_999_999_999_999.999m;
+
+    /// <summary>
     /// SAT-D251 suggestion for one line. Reviewer note (c), stated and tested: the line's OWN active allocation is subtracted
     /// from what the line still needs and is never counted as free stock (no double count) — <c>need = (quantity − shipped) −
     /// ownAllocated</c>; a need at or below zero is "stock" (the allocation covers it); otherwise the free stock (which, by the
@@ -143,9 +149,19 @@ public static class SourcePlanCalculator
     /// <summary>
     /// SAT-D252 / SAT-D253 (3) / reviewer note (a): the ONE equality of a save — <c>locked + stock + production + purchasing +
     /// subcontract == lineQuantity</c>. On a partially delivered line this is exactly "the remainder's parts add up to the
-    /// undelivered quantity" (locked = delivered); no second equality is checked.
+    /// undelivered quantity" (locked = delivered); no second equality is checked. The parts are non-negative, so a sum wider than
+    /// a decimal exceeds every line quantity: it is "not balanced", never an <see cref="OverflowException"/> to the caller.
     /// </summary>
     public static bool IsBalanced(decimal lineQuantity, decimal locked, decimal stock, decimal production, decimal purchasing,
-        decimal subcontract) =>
-        checked(locked + stock + production + purchasing + subcontract) == lineQuantity;
+        decimal subcontract)
+    {
+        try
+        {
+            return checked(locked + stock + production + purchasing + subcontract) == lineQuantity;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+    }
 }
