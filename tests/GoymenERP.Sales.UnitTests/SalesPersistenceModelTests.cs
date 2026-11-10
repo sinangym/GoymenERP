@@ -173,6 +173,11 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(checks, check => check.Name == "CK_ShipmentRiskExceptions_Decision" && check.Sql == SalesDbContext.ShipmentRiskExceptionDecisionConstraint);
         Assert.Contains(design.FindEntityType(typeof(ShipmentRiskExceptionAttemptRow))!.GetCheckConstraints(),
             check => check.Name == "CK_ShipmentRiskExceptionAttempts_Command" && check.Sql == SalesDbContext.ShipmentRiskExceptionAttemptCommandConstraint);
+        // Both guard triggers are declared, so EF Core never sends OUTPUT without INTO (refused on a table with an enabled trigger).
+        Assert.Equal([SalesDbContext.ShipmentRiskExceptionGuardTrigger],
+            design.FindEntityType(typeof(ShipmentRiskExceptionRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+        Assert.Equal([SalesDbContext.ShipmentRiskExceptionAttemptGuardTrigger],
+            design.FindEntityType(typeof(ShipmentRiskExceptionAttemptRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
     }
 
     [Theory]

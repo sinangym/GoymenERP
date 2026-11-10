@@ -131,10 +131,12 @@ public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
             + "[RequestedBy],[RequestedAtUtc],[Version],[UpdatedAtUtc],[CorrelationId]) VALUES (NEWID(), @company, @id, 2, @shipment, N'x', 1, "
             + "N'SENTETIK-other', SYSDATETIMEOFFSET(), 1, SYSDATETIMEOFFSET(), N'x'); SELECT 1",
             ("@company", CompanyA), ("@id", draft.Id), ("@shipment", Shipment)))).Number);
-        // TR_ShipmentRiskExceptions_Guard: the request facts never change and nothing is deleted.
+        // TR_ShipmentRiskExceptions_Guard: the request facts never change.
         Assert.Equal(51252, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[ShipmentRiskExceptions] SET [Reason] = N'SENTETIK başka'" + where, ("@id", draft.Id)))).Number);
-        Assert.Equal(51252, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        // FK_ShipmentRiskExceptionAttempts_ShipmentRiskExceptions_CompanyId_ExceptionId: the recorded attempt keeps its exception, and
+        // the foreign key is checked before the AFTER trigger runs (the trigger's own DELETE refusal is proven below on an unreferenced row).
+        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "DELETE FROM [sales].[ShipmentRiskExceptions]" + where, ("@id", draft.Id)))).Number);
         // A valid decision passes once; a second decision is refused by the trigger.
         await run.ScalarAsync<int>("UPDATE [sales].[ShipmentRiskExceptions] SET [State] = 3, [DecidedBy] = N'SENTETIK-manager', "
@@ -150,6 +152,16 @@ public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
         Assert.Equal((3, 1), (
             await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionAttempts] WHERE [OrderId] = @id", ("@id", draft.Id))));
+        // TR_ShipmentRiskExceptions_Guard: nothing is deleted, even a pending row no attempt references (written raw for another
+        // shipment of the order, so neither the foreign key nor a decided state stands in front of the trigger).
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "INSERT INTO [sales].[ShipmentRiskExceptions] ([Id],[CompanyId],[OrderId],[ExceptionNo],[LoadingInstructionId],[Reason],[State],"
+            + "[RequestedBy],[RequestedAtUtc],[Version],[UpdatedAtUtc],[CorrelationId]) VALUES (NEWID(), @company, @id, 2, NEWID(), N'x', 1, "
+            + "N'SENTETIK-other', SYSDATETIMEOFFSET(), 1, SYSDATETIMEOFFSET(), N'x'); SELECT 1",
+            ("@company", CompanyA), ("@id", draft.Id)));
+        Assert.Equal(51252, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "DELETE FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id AND [ExceptionNo] = 2; SELECT 1", ("@id", draft.Id)))).Number);
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)));
     }
 
     [SqlServerFact]

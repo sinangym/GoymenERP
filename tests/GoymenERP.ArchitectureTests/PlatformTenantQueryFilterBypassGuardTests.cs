@@ -646,7 +646,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // context; no query-filter bypass or direct database surface; recomputed on the merged context (48ee7004... -> c40fbf07...).
                 // API-07 (SAT-D153..SAT-D162): ShipmentRiskExceptions and ShipmentRiskExceptionAttempts on the same company-filtered context
                 // (CK_ShipmentRiskExceptions_MakerChecker); no query-filter bypass or direct database surface (c40fbf07... -> b7efaf4b...).
-                "b7efaf4b70260e1e75b702d655fc5f25f854e440b4d6dbad8b0ca687f340f933",
+                // API-07: both guard triggers declared with HasTrigger (EF Core then saves without OUTPUT); no query-filter bypass or
+                // direct database surface (b7efaf4b... -> 7694fe06...).
+                "7694fe066d4f6c8b06cd0ea0f7a0469fe593a27f178c8a2ac035f26c2967aed9",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"

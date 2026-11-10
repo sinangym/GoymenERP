@@ -299,6 +299,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string ShipmentRiskExceptionMakerCheckerConstraint =
         "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2";
 
+    /// <summary>
+    /// TR_ShipmentRiskExceptions_Guard (API-07): a decided exception and the request facts are immutable, the version moves by
+    /// exactly one and no row is deleted (THROW 51252). Declared so EF Core does not use OUTPUT without INTO on this table.
+    /// </summary>
+    internal const string ShipmentRiskExceptionGuardTrigger = "TR_ShipmentRiskExceptions_Guard";
+
+    /// <summary>TR_ShipmentRiskExceptionAttempts_Guard (API-07): an attempt row is append-only (THROW 51253).</summary>
+    internal const string ShipmentRiskExceptionAttemptGuardTrigger = "TR_ShipmentRiskExceptionAttempts_Guard";
+
     /// <summary>UX_ShipmentRiskExceptions_PendingShipment (SAT-D154): at most one pending exception per shipment of an order.</summary>
     internal const string PendingShipmentRiskExceptionFilter = "[State] = 1";
 
@@ -1667,6 +1676,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_ShipmentRiskExceptions_MakerChecker", ShipmentRiskExceptionMakerCheckerConstraint);
             table.HasCheckConstraint("CK_ShipmentRiskExceptions_Text",
                 "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasTrigger(ShipmentRiskExceptionGuardTrigger);
         });
         exception.HasKey(x => x.Id);
         exception.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -1701,6 +1711,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
             table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Command", ShipmentRiskExceptionAttemptCommandConstraint);
             table.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Outcome", ShipmentRiskExceptionAttemptOutcomeConstraint);
+            table.HasTrigger(ShipmentRiskExceptionAttemptGuardTrigger);
         });
         attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
