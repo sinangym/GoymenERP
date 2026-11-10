@@ -132,6 +132,9 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((approved.Approval.SubmittedBy, approved.Approval.DecidedBy, approved.Approval.DecidedAtUtc),
             (printed.Approval!.SubmittedBy, printed.Approval.DecidedBy, printed.Approval.DecidedAtUtc));
         Assert.NotEqual(rejected.Detail.Approval.DecidedAtUtc, printed.Approval.DecidedAtUtc);
+        // MOD-07: the printed totals are the calculator's on Rev.0's 1.25 kg × 12.50 = 15.625 → 15.63, never the rejected Rev.1's.
+        var totals = print.Totals!;
+        Assert.Equal(("Rev.0", "1.25", "15.63"), (totals.Revision, Assert.Single(totals.Lines).Total.Quantity, totals.Document.NetAmount));
 
         // Partly shipped: 1 kg of Rev.0's 1.25 leaves 0.25 kg priced at Rev.0 — unavailable (its VAT has no source), never a
         // recorded zero (Rev.1's 1 kg would leave nothing). 1.25 kg shipped leaves nothing of Rev.0 — a recorded zero (Rev.1's
