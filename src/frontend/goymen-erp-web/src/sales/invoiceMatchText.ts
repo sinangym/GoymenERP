@@ -47,6 +47,8 @@ export const INVOICE_MATCH_TEXT = {
   invoiceWithholding: 'ERP tevkifat (TL)',
   officialWithholding: 'Resmî tevkifat (TL)',
   withholdingDifference: 'Tevkifat farkı (sunucunun hesabı)',
+  /** A match recorded before SAT-D241: neither VAT nor withholding was compared, so the row names both. */
+  taxDifference: 'Vergi farkı (KDV/tevkifat)',
   taxNotCompared: 'Bu eşleşme KDV ve tevkifat ayrı karşılaştırılmadan önce kaydedildi; fatura bu kayıtla kesinleştirilemez.',
   exceededFields: 'Tolerans üstündeki farklar',
   mismatchFields: 'Tutmayan alanlar',

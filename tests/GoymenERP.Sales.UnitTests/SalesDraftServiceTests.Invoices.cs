@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
@@ -92,6 +93,75 @@ public sealed partial class SalesDraftServiceTests
         invoicing.World.Authority.Denied.Add(InvoiceRead);
         Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery()))).Status);
+    }
+
+    [Fact]
+    public async Task The_invoice_list_withholds_the_amounts_when_the_price_read_is_granted_but_not_company_wide_SAT_D238()
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-narrow"));
+        var authority = invoicing.World.Authority;
+        // Only the price read answers granted-but-narrow; the invoice read stays company-wide, so the list itself opens.
+        authority.OnRead = (permission, _) => authority.CompanyWide = permission != InvoicePriceRead;
+
+        var page = await invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery());
+
+        var row = Assert.Single(page.Items);
+        Assert.Equal((SalesPriceDisclosure.Withheld, (string?)null, (string?)null),
+            (row.AmountDisclosure, row.PayableAmount, row.FunctionalPayableAmount));
+        Assert.DoesNotContain(InvoicePriceRead, authority.Denied);
+        Assert.Equal(InvoicePriceRead, authority.Measured[^1]);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task The_invoice_list_withholds_the_amounts_when_the_price_read_is_measured_for_another_actor_or_company_SAT_D238(
+        string drift)
+    {
+        var invoicing = await InvoiceWorld.CreateAsync();
+        await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-drift"));
+        var authority = invoicing.World.Authority;
+        // The price read itself is granted company-wide; the caller's identity or company drifts while it is measured, so the
+        // answer no longer belongs to the scope the list was opened for.
+        authority.OnRead = (permission, _) =>
+        {
+            if (permission != InvoicePriceRead)
+            {
+                return;
+            }
+
+            if (drift == "actor")
+            {
+                invoicing.World.User.Id = "SENTETIK-other-actor";
+            }
+            else
+            {
+                invoicing.World.User.Company = Guid.NewGuid();
+            }
+        };
+
+        var page = await invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery());
+
+        var row = Assert.Single(page.Items);
+        Assert.Equal((SalesPriceDisclosure.Withheld, (string?)null, (string?)null),
+            (row.AmountDisclosure, row.PayableAmount, row.FunctionalPayableAmount));
+        Assert.Equal(InvoicePriceRead, authority.Measured[^1]);
+    }
+
+    [Fact]
+    public async Task The_invoice_list_price_name_is_registered_so_its_unregistered_503_guard_is_only_a_setup_gap_SAT_D238()
+    {
+        // DisclosePriceAsync answers 503 permission_unregistered for an unregistered price name. The name is a compile-time
+        // constant checked against the static registry, so this build can only reach the guard if the registration is lost:
+        // pin the registration, and show that a registered, company-wide grant discloses the amounts.
+        Assert.True(ErpPermissions.IsKnown(InvoicePriceRead));
+        var invoicing = await InvoiceWorld.CreateAsync();
+        await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-invoice-registered"));
+
+        var page = await invoicing.Service().GetInvoicesAsync(new SalesInvoiceListQuery());
+
+        Assert.Equal(SalesPriceDisclosure.Visible, Assert.Single(page.Items).AmountDisclosure);
     }
 
     [Fact]
