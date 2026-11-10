@@ -1,6 +1,8 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.Invoices;
 
 namespace GoymenERP.Sales.UnitTests;
 
@@ -36,7 +38,8 @@ public sealed partial class SalesDraftServiceTests
         var item = Assert.Single(overdue.Items);
         Assert.Equal((SalesControlCenterCheckKindView.UninvoicedDispatchOverdue, SalesControlCenterSeverityView.Critical, 8, 1,
             "IRS-2026-000001", new DateOnly(2026, 10, 20)), (item.Kind, item.Severity, item.AgeDays, item.Count, item.Reference, item.ReferenceDate));
-        Assert.Equal((invoicing.ShipmentId, invoicing.Order.Draft.Id, Party, Account), (item.ShipmentId, item.SalesOrderId, item.PartyId, item.CompanyAccountId));
+        Assert.Equal((invoicing.ShipmentId, Party, Account), (item.ShipmentId, item.PartyId, item.CompanyAccountId));
+        Assert.Equal([invoicing.Order.Draft.Id], item.SalesOrderIds);
         Assert.Null(item.InvoiceId);
         Assert.Equal(SalesControlCenterCheckStateView.Measured, overdue.Checks.Single(check => check.Kind == SalesControlCenterCheckKindView.UninvoicedDispatchOverdue).State);
         Assert.All(invoicing.World.Authority.Measured, name => Assert.Equal(InvoiceRead, name));
@@ -54,8 +57,37 @@ public sealed partial class SalesDraftServiceTests
         Assert.DoesNotContain(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.UninvoicedDispatchOverdue);
         var waiting = Assert.Single(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch);
         Assert.Equal((id, SalesControlCenterSeverityView.Info, 1), (waiting.InvoiceId, waiting.Severity, waiting.Count));
+        Assert.Equal([invoicing.Order.Draft.Id], waiting.SalesOrderIds);
         Assert.All(answer.Checks.Where(check => check.Kind != SalesControlCenterCheckKindView.UninvoicedDispatchOverdue),
             check => Assert.Equal(SalesControlCenterCheckStateView.Measured, check.State));
+    }
+
+    [Fact]
+    public async Task An_invoice_over_several_orders_names_every_distinct_order_once_in_the_order_of_its_lines()
+    {
+        // SAT-D246 (EK49): one invoice may take shares of several orders; the item lists each order once, first appearance in line order.
+        var (invoicing, _, _) = await ApprovedInvoiceAsync();
+        var template = invoicing.Invoices.Stored.Values.Single();
+        var share = template.Lines[0].Share;
+        Guid orderA = Guid.NewGuid(), orderB = Guid.NewGuid();
+        SalesInvoiceShareInput Share(Guid order, int noteLineNo) =>
+            share with { LineId = Guid.NewGuid(), ShipmentId = Guid.NewGuid(), NoteLineNo = noteLineNo, SalesOrderId = order, SalesOrderLineId = Guid.NewGuid() };
+        var terms = SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, 30, "100")]);
+        var multi = SalesInvoice.Create(Guid.NewGuid(), Company, "SF-2026-000099", template.Header,
+            [Share(orderB, 1), Share(orderA, 2), Share(orderB, 3)], SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms,
+            "synthetic-multi-preparer", DateTimeOffset.UnixEpoch);
+        multi.Submit(multi.Version, "synthetic-multi-preparer", DateTimeOffset.UnixEpoch);
+        multi.Approve(multi.Version, "synthetic-multi-approver", DateTimeOffset.UnixEpoch);
+        invoicing.Invoices.Stored[multi.Id] = multi;
+
+        var answer = await ControlCenter(invoicing, new DateOnly(2026, 11, 20)).GetControlCenterAsync();
+
+        var waiting = Assert.Single(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch
+            && item.InvoiceId == multi.Id);
+        Assert.Equal([orderB, orderA], waiting.SalesOrderIds);
+        Assert.Null(waiting.ShipmentId);
+        Assert.All(answer.Items, item => Assert.NotEmpty(item.SalesOrderIds));
+        Assert.All(answer.Items, item => Assert.Equal(item.SalesOrderIds.Count, item.SalesOrderIds.Distinct().Count()));
     }
 
     [Theory]

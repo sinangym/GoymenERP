@@ -8,9 +8,11 @@
  *
  * Every row, its severity, its age in days and the grace days are the server's. The kind filter (`?tur=`) narrows the answer
  * already on screen and never changes what is asked; the server's order is kept. Nothing is written, no amount is shown.
- * An unavailable check says so — never an empty list.
+ * An unavailable check says so — never an empty list. Each order an entry names (SAT-D246 `salesOrderIds`; an invoice may span
+ * several) gets its own link, in the server's order.
  */
 
+import { Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
 import { fetchControlCenter } from './controlCenterApi'
@@ -253,11 +255,16 @@ function Items({ items }: { readonly items: readonly ControlCenterItem[] }) {
       header: T.links,
       cell: (item) => (
         <>
-          {item.salesOrderId !== null && canOpenOrder ? (
-            <Link className={styles.link} to={salesDetailPath(item.salesOrderId)}>
-              {T.openOrder}
-            </Link>
-          ) : null}
+          {canOpenOrder
+            ? item.salesOrderIds.map((orderId, index) => (
+                <Fragment key={orderId}>
+                  {index > 0 ? ' ' : null}
+                  <Link className={styles.link} to={salesDetailPath(orderId)}>
+                    {item.salesOrderIds.length === 1 ? T.openOrder : T.openOrderNth(index + 1, item.salesOrderIds.length)}
+                  </Link>
+                </Fragment>
+              ))
+            : null}
           {item.kind === 'UninvoicedDispatchOverdue' ? (
             <>
               {' '}
