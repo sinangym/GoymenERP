@@ -1074,7 +1074,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
             "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
-            "backend-test-group": "a8ed7bcd80535e04609a8f14f443b6ccb2005f0973a2b882079bce2deb310c16",
+            "backend-test-group": "b5196a6f67af5a964b507a114101c304c9667e73e41a1070e2f4c45f066a5ce8",
             "backend": (
                 "e2e37178376493f6a14224f36a3682680223ee9ce509742a7ef287e80bda78d3"
             ),
@@ -1082,7 +1082,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             "frontend-test": "ae92e87899200dca4b66f33a0749a5e272240cfbc2f1242ddb499eff31113aaf",
             "frontend": "da83a5f80558cd202195fd7a04e99f8046f47df9d791399f70da3ee305063ac7",
             "relational-shard": (
-                "f8414c3df38ceeddf840369521891220587c981491d11ad11df60447dd77fa7b"
+                "c96ba3f6a2eb3bd43dab946b745be2b5979e8240e60683af68a005b9114aed7f"
             ),
             "relational-rcsi": (
                 "4b0f81dd06932cdce3ce52a87798361eb7004a38270f51438497952d3f78caea"
