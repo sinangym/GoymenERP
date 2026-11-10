@@ -57,7 +57,7 @@ export const salesRoutes: RouteObject[] = [
   // UI-60 / UI-61 (Sales shell 1.9): S-07 Sevkiyat / İrsaliyeler and S-08 Faturaya Hazır, each on its own published id.
   { path: SALES_ROUTE.dispatches.slice(1), element: gate(SALES_CAPABILITY.dispatchesList, <SalesDispatchListPage />) },
   { path: SALES_ROUTE.invoiceCandidates.slice(1), element: gate(SALES_CAPABILITY.invoiceCandidatesList, <SalesInvoiceCandidatesPage />) },
-  // UI-63 (Sales shell 1.19): S-09 Satış faturaları on its own published id.
+  // UI-63 (Sales shell 1.19; SAT-D238 1.20 drops the price-read requirement): S-09 Satış faturaları on its own published id.
   { path: SALES_ROUTE.invoices.slice(1), element: gate(SALES_CAPABILITY.invoicesList, <SalesInvoiceListPage />) },
   // UI-80 (Sales shell 1.11): the Sales reports screen on its own published id.
   { path: SALES_ROUTE.reports.slice(1), element: gate(SALES_CAPABILITY.reportsView, <SalesReportsPage />) },

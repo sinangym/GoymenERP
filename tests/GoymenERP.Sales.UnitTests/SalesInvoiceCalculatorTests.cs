@@ -193,9 +193,14 @@ public sealed class SalesInvoiceCalculatorTests
     }
 
     private static SalesOfficialInvoiceFacts Official(SalesInvoice invoice, decimal payable, decimal payableFunctional) =>
-        new("GIB2026000000001", new string('A', SalesInvoice.EttnLength), invoice.Header.PartyId, Usd, payable, payableFunctional);
+        Official(invoice, payable, payableFunctional, invoice.VatFunctionalAmount, invoice.WithholdingFunctionalAmount);
 
-    private static SalesInvoice ApprovedForeignCurrencyInvoice()
+    private static SalesOfficialInvoiceFacts Official(SalesInvoice invoice, decimal payable, decimal payableFunctional, decimal vatFunctional,
+        decimal withholdingFunctional) =>
+        new("GIB2026000000001", new string('A', SalesInvoice.EttnLength), invoice.Header.PartyId, Usd, payable, payableFunctional,
+            vatFunctional, withholdingFunctional);
+
+    private static SalesInvoice ApprovedForeignCurrencyInvoice(decimal? withheld = null)
     {
         var terms = SalesDueTerms.Create(
         [
@@ -204,8 +209,8 @@ public sealed class SalesInvoiceCalculatorTests
         ]);
         var due = SalesDueDateCalculator.Compute(terms, Day, Day);
         var header = Header(Rate: new SalesInvoiceRateSnapshot(34.5678m, Day, Day, Try, 2)) with { CurrencyId = Usd };
-        var invoice = SalesInvoice.Create(Guid.NewGuid(), Company, "SF-2026-000002", header, [Share(1, "3", "33.33"), Share(2, "1", "0.02")],
-            due.DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
+        var invoice = SalesInvoice.Create(Guid.NewGuid(), Company, "SF-2026-000002", header,
+            [Share(1, "3", "33.33", withheld), Share(2, "1", "0.02", withheld)], due.DueDates, terms, "preparer", DateTimeOffset.UnixEpoch);
         invoice.Submit(invoice.Version, "preparer", DateTimeOffset.UnixEpoch);
         invoice.Approve(invoice.Version, "approver", DateTimeOffset.UnixEpoch);
         return invoice;
@@ -245,6 +250,93 @@ public sealed class SalesInvoiceCalculatorTests
         var match = invoice.RecordMatch(invoice.Version, "matcher", official, tolerance, true, "Kur yuvarlama farkı", DateTimeOffset.UnixEpoch);
         Assert.Equal(0.06m, match.Difference);
         Assert.Equal("matcher", match.DifferenceApprovedBy);
+    }
+
+    [Theory]
+    [InlineData("vat")]
+    [InlineData("withholding")]
+    public void A_vat_or_withholding_tl_difference_above_five_kurus_needs_the_approval_even_when_the_payable_agrees_SAT_D241(string field)
+    {
+        // SAT-D241 (EK48): VAT and withholding are compared separately from the payable TL amount, each with the SAT-D232 tolerance.
+        var tolerance = new GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        var invoice = ApprovedForeignCurrencyInvoice(withheld: 50m);
+        Assert.True(invoice.WithholdingFunctionalAmount > 0m);
+        var vat = invoice.VatFunctionalAmount + (field == "vat" ? 0.06m : 0m);
+        var withholding = invoice.WithholdingFunctionalAmount - (field == "withholding" ? 0.06m : 0m);
+        var official = Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount, vat, withholding);
+
+        var evaluation = invoice.EvaluateMatch(official);
+        Assert.Equal(0m, evaluation.Difference);
+        Assert.Equal(field == "vat", evaluation.VatExceeds(tolerance));
+        Assert.Equal(field == "withholding", evaluation.WithholdingExceeds(tolerance));
+
+        var refused = Assert.Throws<SalesRuleException>(() => invoice.RecordMatch(invoice.Version, "matcher", official, tolerance, false,
+            null, DateTimeOffset.UnixEpoch));
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
+        Assert.Null(invoice.Match);
+
+        var match = invoice.RecordMatch(invoice.Version, "matcher", official, tolerance, true, "Vergi farkı", DateTimeOffset.UnixEpoch);
+        Assert.Equal(0m, match.Difference);
+        Assert.Equal((field == "vat" ? 0.06m : 0m, field == "withholding" ? 0.06m : 0m), (match.Taxes!.VatDifference,
+            match.Taxes.WithholdingDifference));
+        Assert.True(match.Exceeded);
+        Assert.Equal("matcher", match.DifferenceApprovedBy);
+
+        var blocked = Assert.Throws<SalesRuleException>(() => invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid,
+            DateTimeOffset.UnixEpoch));
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceOpen, blocked.Code);
+        Assert.Null(invoice.Finalization);
+    }
+
+    [Theory]
+    [InlineData("0.05", "0")]
+    [InlineData("0", "-0.05")]
+    public void A_vat_or_withholding_tl_difference_of_exactly_five_kurus_is_matched_without_approval_but_not_finalized_SAT_D241(
+        string vatDelta, string withholdingDelta)
+    {
+        var tolerance = new GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        var invoice = ApprovedForeignCurrencyInvoice(withheld: 50m);
+        var official = Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount,
+            invoice.VatFunctionalAmount + decimal.Parse(vatDelta, System.Globalization.CultureInfo.InvariantCulture),
+            invoice.WithholdingFunctionalAmount + decimal.Parse(withholdingDelta, System.Globalization.CultureInfo.InvariantCulture));
+
+        var match = invoice.RecordMatch(invoice.Version, "matcher", official, tolerance, false, null, DateTimeOffset.UnixEpoch);
+
+        Assert.False(match.DifferenceWasApproved);
+        Assert.False(match.Exceeded);
+        Assert.Equal(0.05m, match.LargestDifference);
+        Assert.True(match.HasOpenDifference);
+        var blocked = Assert.Throws<SalesRuleException>(() => invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid,
+            DateTimeOffset.UnixEpoch));
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceOpen, blocked.Code);
+    }
+
+    [Fact]
+    public void A_restored_match_recorded_before_SAT_D241_without_the_tax_comparison_is_readable_but_never_finalized()
+    {
+        // Fail-closed: a match without the VAT/withholding comparison cannot show those agree, so the finalisation stays refused.
+        var source = MatchedForeignCurrencyInvoice(0m);
+        var legacy = source.Match! with { Taxes = null };
+        var restored = SalesInvoice.Restore(source.Id, Company, source.DocumentNo, source.Header, source.State, source.Version,
+            source.CreatedBy, source.CreatedAtUtc, source.Lines, source.Instalments, source.Decision);
+        restored.RestoreMatch(legacy);
+
+        Assert.True(restored.Match!.HasOpenDifference);
+        var blocked = Assert.Throws<SalesRuleException>(() => restored.Finalize(restored.Version, "finalizer", Guid.NewGuid,
+            DateTimeOffset.UnixEpoch));
+        Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceOpen, blocked.Code);
+    }
+
+    [Fact]
+    public void A_restored_match_whose_tax_differences_disagree_with_its_amounts_is_refused_SAT_D241()
+    {
+        var source = MatchedForeignCurrencyInvoice(0m);
+        var forged = source.Match! with { Taxes = source.Match.Taxes! with { VatDifference = 0.01m } };
+        var restored = SalesInvoice.Restore(source.Id, Company, source.DocumentNo, source.Header, source.State, source.Version,
+            source.CreatedBy, source.CreatedAtUtc, source.Lines, source.Instalments, source.Decision);
+
+        Assert.Throws<InvalidOperationException>(() => restored.RestoreMatch(forged));
+        Assert.Null(restored.Match);
     }
 
     [Fact]
@@ -394,8 +486,8 @@ public sealed class SalesInvoiceCalculatorTests
         new(Guid.Parse("33333333-3333-4333-8333-333333333333"), Guid.Parse("44444444-4444-4444-8444-444444444444"), Try,
             Guid.Parse("88888888-8888-4888-8888-888888888888"), "1", 2, Day, Rate);
 
-    private static SalesInvoiceShareInput Share(int lineNo, string quantity, string? price) =>
+    private static SalesInvoiceShareInput Share(int lineNo, string quantity, string? price, decimal? withheld = null) =>
         new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "IRS-2026-000001", lineNo, Day, Guid.NewGuid(), Guid.NewGuid(), 0, Product, Kg,
             decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), quantity,
-            new CommercialDraftFields(price, price is null ? null : Kg, null), Tax(vat: 20m));
+            new CommercialDraftFields(price, price is null ? null : Kg, null), Tax(vat: 20m, withheld: withheld));
 }

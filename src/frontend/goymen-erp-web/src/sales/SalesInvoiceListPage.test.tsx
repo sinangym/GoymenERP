@@ -34,6 +34,7 @@ const summary = (over: Wire = {}): Wire => ({
   partyId: PARTY,
   companyAccountId: ACCOUNT,
   currencyId: CURRENCY,
+  amountDisclosure: 'Visible',
   payableAmount: '1180.40',
   functionalPayableAmount: null,
   lineCount: 2,
@@ -84,6 +85,30 @@ describe('UI-63 S-09 Satış faturaları', () => {
     expect(fetch.calls).toHaveLength(1)
     expect(fetch.calls[0].companyId).toBe(COMPANY_A)
     expect(fetch.calls[0].url).toBe('/api/v1/sales/invoices?pageSize=50')
+  })
+
+  it('shows the amounts the server withheld (SAT-D238) as "Gizli", never as 0 or "—"', async () => {
+    const withheld = summary({
+      id: OTHER_INVOICE_ID,
+      documentNo: 'SF-2026-0006',
+      amountDisclosure: 'Withheld',
+      payableAmount: null,
+      functionalPayableAmount: null,
+    })
+    installPoolFetch((call) => (isList(call) ? json(page([summary(), withheld])) : notFound(call)), GRANTED)
+    renderPool(ROUTE)
+    const table = await screen.findByRole('table', { name: T.caption })
+    expect(within(table).getByText('1180.40')).toBeTruthy()
+    const payable = screen.getByTestId(`sales-invoices-payable-withheld-${OTHER_INVOICE_ID}`)
+    const functional = screen.getByTestId(`sales-invoices-functional-withheld-${OTHER_INVOICE_ID}`)
+    for (const cell of [payable, functional]) {
+      expect(cell.textContent).toBe(T.withheld)
+      expect(cell.getAttribute('aria-label')).toBe(T.withheldLabel)
+    }
+    expect(screen.queryByTestId(`sales-invoices-payable-withheld-${INVOICE_ID}`)).toBeNull()
+    const withheldRow = document.querySelector(`[data-invoice-id="${OTHER_INVOICE_ID}"]`) as HTMLElement
+    expect(within(withheldRow).queryByText(/^0(?:[.,]0+)?$/)).toBeNull()
+    expect(within(withheldRow).queryByText(T.none)).toBeNull()
   })
 
   it('pages by the server cursor and never appends a row twice', async () => {
@@ -154,6 +179,7 @@ describe('UI-63 S-09 Satış faturaları', () => {
   it.each([
     ['an unknown state', { state: 'Paid' }],
     ['a numeric amount', { payableAmount: 1180.4 }],
+    ['a withheld row carrying an amount', { amountDisclosure: 'Withheld' }],
     ['an extra member', { companyId: COMPANY_A }],
     ['a negative line count', { lineCount: -1 }],
   ])('refuses a page with %s as a malformed answer', async (_label, over) => {
@@ -184,6 +210,81 @@ describe('UI-63 S-09 Satış faturaları', () => {
     await user.click(screen.getByRole('button', { name: T.close }))
     await waitFor(() => expect(screen.queryByTestId('sales-invoices-detail')).toBeNull())
     expect(router.state.location.search).toBe('')
+  })
+
+  it('opens no detail for a withheld row: the document number is plain text and a deep link shows the hint (SAT-D238)', async () => {
+    const withheld = summary({ amountDisclosure: 'Withheld', payableAmount: null, functionalPayableAmount: null })
+    const fetch = installPoolFetch((call) => (isList(call) ? json(page([withheld])) : notFound(call)), GRANTED)
+    renderPool(ROUTE)
+    await screen.findByRole('table', { name: T.caption })
+    expect(screen.queryByRole('button', { name: T.openLabel(INVOICE_NO) })).toBeNull()
+    const documentNo = screen.getByTestId(`sales-invoices-document-withheld-${INVOICE_ID}`)
+    expect(documentNo.textContent).toBe(INVOICE_NO)
+    expect(documentNo.getAttribute('title')).toBe(T.detailWithheld)
+    cleanup()
+
+    fetch.calls.length = 0
+    const user = userEvent.setup()
+    const { router } = renderPool(`${ROUTE}?fatura=${INVOICE_ID}`)
+    const hint = await screen.findByTestId('sales-invoices-detail-withheld')
+    expect(within(hint).getByText(T.detailWithheld)).toBeTruthy()
+    expect(screen.queryByTestId('sales-invoice-finalization')).toBeNull()
+    expect(fetch.calls.every(isList)).toBe(true)
+    await user.click(within(hint).getByRole('button', { name: T.close }))
+    await waitFor(() => expect(screen.queryByTestId('sales-invoices-detail-withheld')).toBeNull())
+    expect(router.state.location.search).toBe('')
+  })
+
+  it('opens no detail for a deep link beyond the loaded rows once the amounts are withheld from the user (SAT-D238)', async () => {
+    const withheld = summary({ amountDisclosure: 'Withheld', payableAmount: null, functionalPayableAmount: null })
+    const strangerId = '9b2f3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d'
+    const fetch = installPoolFetch((call) => (isList(call) ? json(page([withheld])) : notFound(call)), GRANTED)
+    for (const id of [OTHER_INVOICE_ID, strangerId]) {
+      fetch.calls.length = 0
+      renderPool(`${ROUTE}?fatura=${id}`)
+      const hint = await screen.findByTestId('sales-invoices-detail-withheld')
+      expect(within(hint).getByText(T.detailWithheld)).toBeTruthy()
+      expect(screen.queryByTestId('sales-invoices-detail')).toBeNull()
+      expect(screen.queryByTestId('sales-invoice-finalization')).toBeNull()
+      expect(fetch.calls.length).toBeGreaterThan(0)
+      expect(fetch.calls.every(isList)).toBe(true)
+      cleanup()
+    }
+  })
+
+  it('sends no detail read for a deep link into an empty list', async () => {
+    const fetch = installPoolFetch((call) => (isList(call) ? json(page([])) : notFound(call)), GRANTED)
+    renderPool(`${ROUTE}?fatura=${INVOICE_ID}`)
+    expect(await screen.findByText(/Kayıt yok/)).toBeTruthy()
+    expect(screen.queryByTestId('sales-invoices-detail')).toBeNull()
+    expect(screen.queryByTestId('sales-invoice-finalization')).toBeNull()
+    expect(fetch.calls).toHaveLength(1)
+    expect(fetch.calls.every(isList)).toBe(true)
+  })
+
+  it('sends no detail read before the first page has answered', async () => {
+    let answerList: ((response: Response) => void) | null = null
+    const fetch = installPoolFetch((call) => {
+      if (isList(call)) return new Promise<Response>((resolve) => { answerList = resolve })
+      return notFound(call)
+    }, GRANTED)
+    renderPool(`${ROUTE}?fatura=${INVOICE_ID}`)
+    await waitFor(() => expect(fetch.calls.some(isList)).toBe(true))
+    expect(screen.queryByTestId('sales-invoices-detail')).toBeNull()
+    expect(fetch.calls.every(isList)).toBe(true)
+    expect(answerList).not.toBeNull()
+  })
+
+  it('still opens a deep-linked invoice beyond the loaded rows while the amounts are visible', async () => {
+    const fetch = installPoolFetch((call) => {
+      if (isList(call)) return json(page([summary()]))
+      if (call.url.endsWith(`/sales/invoices/${OTHER_INVOICE_ID}`)) return json(invoiceDetail({ id: OTHER_INVOICE_ID }))
+      return notFound(call)
+    }, GRANTED)
+    renderPool(`${ROUTE}?fatura=${OTHER_INVOICE_ID}`)
+    expect(await screen.findByTestId('sales-invoices-detail')).toBeTruthy()
+    await waitFor(() => expect(fetch.calls.some((call) => call.url.endsWith(`/sales/invoices/${OTHER_INVOICE_ID}`))).toBe(true))
+    expect(screen.queryByTestId('sales-invoices-detail-withheld')).toBeNull()
   })
 
   it('opens a deep-linked invoice and ignores a fatura value that is not a reference id', async () => {

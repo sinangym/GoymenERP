@@ -78,9 +78,8 @@ public sealed class FinanceShellRegistrationTests
                 (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.InvoiceCandidateListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
-                // Sales 1.19 (UI-63): the S-09 invoice list on the invoice read plus the price read its list read measures.
-                (SalesShellCapabilityProvider.InvoiceListCapabilityId, null,
-                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}"),
+                // Sales 1.19 (UI-63); 1.20 (SAT-D238): the S-09 invoice list on the invoice read alone; its list read withholds the amounts.
+                (SalesShellCapabilityProvider.InvoiceListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
                 (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
@@ -112,7 +111,7 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
                 (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
-                // Sales 1.20 (S-2 API-11): the source-plan control of the detail.
+                // Sales 1.22 (S-2 API-11): the source-plan control of the detail.
                 (SalesShellCapabilityProvider.SourcePlanWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}"),
                 // Sales 1.8 (UI-20): the S-01 quote and request screens with their controls.

@@ -26,6 +26,7 @@ import {
 } from './orderAttempt'
 import { INVOICE_FINALIZATION_TEXT as F } from './invoiceText'
 import {
+  INVOICE_MATCH_DIFFERENCE_FIELD_TEXT,
   INVOICE_MATCH_FIELD_TEXT,
   INVOICE_MATCH_PROBLEM_CODE as CODE,
   INVOICE_MATCH_PROBLEM_TEXT,
@@ -233,6 +234,12 @@ export function invoiceMatchNotice(attempt: InvoiceMatchAttempt): string | null 
           .map((error) => (Object.hasOwn(INVOICE_MATCH_FIELD_TEXT, error.field) ? INVOICE_MATCH_FIELD_TEXT[error.field] : null))
           .filter((label): label is string => label !== null)
         if (fields.length > 0) parts.push(`${T.mismatchFields}: ${fields.join(', ')}.`)
+      }
+      if (code === CODE.differenceApprovalRequired) {
+        const fields = (attempt.problem?.errors ?? [])
+          .map((error) => (Object.hasOwn(INVOICE_MATCH_DIFFERENCE_FIELD_TEXT, error.field) ? INVOICE_MATCH_DIFFERENCE_FIELD_TEXT[error.field] : null))
+          .filter((label): label is string => label !== null)
+        if (fields.length > 0) parts.push(`${T.exceededFields}: ${fields.join(', ')}.`)
       }
       // A refusal that answered a retry of an unknown outcome says nothing about the first send.
       if (attempt.unresolvedSince !== undefined) parts.push(F.unknown)

@@ -132,7 +132,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddQuoteDueTerms", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftLineIdentityForeignKeys", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSourcePlanLines", StringComparison.Ordinal));
-        Assert.Equal("20261109221322_AddDraftSourcePlanLines", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddInvoiceMatchTaxComparison", StringComparison.Ordinal));
+        Assert.Equal("20261110065844_AddInvoiceMatchTaxComparison", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -177,6 +178,33 @@ public sealed class SalesPersistenceModelTests
         var design = context.GetService<IDesignTimeModel>().Model;
         Assert.Contains(design.FindEntityType(typeof(InvoiceMatchRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceMatches_Amounts" && check.Sql == SalesDbContext.InvoiceMatchAmountsConstraint);
         Assert.Contains(design.FindEntityType(typeof(InvoiceAttemptRow))!.GetCheckConstraints(), check => check.Name == "CK_InvoiceAttempts_Command" && check.Sql.Contains(GoymenERP.Modules.Sales.Application.Contracts.SalesInvoiceCommands.MatchV1, StringComparison.Ordinal));
+    }
+
+    /// <summary>SAT-D241 (EK48): six nullable tax comparison columns, the widened amounts check and the all-or-nothing tax check;
+    /// Down is a forward fix (51242) first.</summary>
+    [Fact]
+    public void The_invoice_match_tax_comparison_migration_adds_the_checks_and_its_down_refuses_with_51242_first_SAT_D241()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddInvoiceMatchTaxComparison();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51242,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(InvoiceMatchRow))!;
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_InvoiceMatches_TaxAmounts"
+            && check.Sql == SalesDbContext.InvoiceMatchTaxAmountsConstraint);
+        Assert.Contains("ISNULL([VatDifference], 0)", SalesDbContext.InvoiceMatchAmountsConstraint, StringComparison.Ordinal);
+        Assert.Contains("ISNULL([WithholdingDifference], 0)", SalesDbContext.InvoiceMatchAmountsConstraint, StringComparison.Ordinal);
+        foreach (var name in new[] { "InvoiceVatAmount", "OfficialVatAmount", "VatDifference", "InvoiceWithholdingAmount",
+            "OfficialWithholdingAmount", "WithholdingDifference" })
+        {
+            var property = design.FindProperty(name)!;
+            Assert.True(property.IsNullable);
+            Assert.Equal((28, 8), (property.GetPrecision(), property.GetScale()));
+        }
     }
 
     /// <summary>API-36 PR4: the invoice guard is altered, two triggers are added (51232, 51233); Down is a forward fix (51231) first.</summary>

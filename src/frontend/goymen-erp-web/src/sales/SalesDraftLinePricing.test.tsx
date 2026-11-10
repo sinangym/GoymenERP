@@ -116,6 +116,8 @@ function pricing(version: string, over: Record<string, unknown> = {}) {
     version,
     lines: [{ lineId: LINE, lineNo: 1, unitPrice: null, priceUnitId: null, priceSource: null, priceReference: null, discountPercent: null,
       discountAmount: null, surchargePercent: null, surchargeAmount: null, netUnitPrice: null, floorException: null, ...over }],
+    // SAT-D250 (S-05): the margin block is always present; withheld here.
+    margin: { disclosure: 'Withheld', costBasis: null, kind: null, lines: null },
   }
 }
 

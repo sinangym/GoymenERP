@@ -5590,8 +5590,22 @@ public sealed partial class OpenApiContractGenerationTests
                     ("limitPercent", "type:null|string"),
                     ("requiresApproval", "type:boolean"), ("approvedBy", "type:null|string"),
                     ("approvedAtUtc", "type:null|string;format:date-time"), ("reason", "type:null|string")),
+                // SAT-D250 / SAT-D266 / SAT-D267 (S-05): the response-level margin block, always present; its disclosure says
+                // whether the separate margin read was granted (Withheld ⇒ costBasis/kind/lines null).
                 ["SalesOrderDraftLinePricingResponse"] = ObjectSchema(
-                    ["version", "lines"], ("version", "type:string"), ("lines", "type:array;items:ref:SalesDraftLinePricingV1")),
+                    ["version", "lines", "margin"], ("version", "type:string"), ("lines", "type:array;items:ref:SalesDraftLinePricingV1"),
+                    ("margin", "ref:SalesDraftMarginV1")),
+                ["SalesMarginDisclosure"] = ScalarSchema("enum:Visible|Withheld"),
+                ["SalesDraftMarginV1"] = ObjectSchema(
+                    ["disclosure", "costBasis", "kind", "lines"], ("disclosure", "ref:SalesMarginDisclosure"),
+                    ("costBasis", "type:null|string"), ("kind", "type:null|string"),
+                    ("lines", "type:array|null;items:ref:SalesDraftLineMarginV1")),
+                ["SalesDraftLineMarginV1"] = ObjectSchema(
+                    ["lineId", "lineNo", "state", "unavailableReason", "amount", "currencyId", "percent", "percentUnavailableReason"],
+                    ("lineId", "type:string;format:uuid"), ("lineNo", "type:integer|string;format:int32"), ("state", "type:string"),
+                    ("unavailableReason", "type:null|string"), ("amount", "type:null|string"),
+                    ("currencyId", "type:null|string;format:uuid"), ("percent", "type:null|string"),
+                    ("percentUnavailableReason", "type:null|string")),
                 ["SalesOrderDraftPriceReferencesResponse"] = ObjectSchema(
                     ["lineId", "currencyCode", "on", "items", "resolution"], ("lineId", "type:string;format:uuid"),
                     ("currencyCode", "type:string"), ("on", "type:string;format:date"),
@@ -5843,7 +5857,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("openItemId", "type:string;format:uuid"),
                     ("installmentId", "type:string;format:uuid")),
                 ["SalesInvoiceMatchView"] = ObjectSchema(
-                    ["officialInvoiceNo", "ettn", "invoiceAmount", "officialAmount", "difference", "tolerance", "matchedBy", "matchedAtUtc", "differenceApprovedBy", "differenceReason"],
+                    ["officialInvoiceNo", "ettn", "invoiceAmount", "officialAmount", "difference", "tolerance", "matchedBy", "matchedAtUtc", "differenceApprovedBy", "differenceReason", "invoiceVatAmount", "officialVatAmount", "vatDifference", "invoiceWithholdingAmount", "officialWithholdingAmount", "withholdingDifference"],
                     ("officialInvoiceNo", "type:string"),
                     ("ettn", "type:string"),
                     ("invoiceAmount", "type:string"),
@@ -5853,7 +5867,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("matchedBy", "type:string"),
                     ("matchedAtUtc", "type:string;format:date-time"),
                     ("differenceApprovedBy", "type:null|string"),
-                    ("differenceReason", "type:null|string")),
+                    ("differenceReason", "type:null|string"),
+                    ("invoiceVatAmount", "type:null|string"),
+                    ("officialVatAmount", "type:null|string"),
+                    ("vatDifference", "type:null|string"),
+                    ("invoiceWithholdingAmount", "type:null|string"),
+                    ("officialWithholdingAmount", "type:null|string"),
+                    ("withholdingDifference", "type:null|string")),
                 ["SalesInvoiceAmountsView"] = ObjectSchema(
                     ["netAmount", "vatAmount", "withheldVatAmount", "grossAmount", "payableAmount"],
                     ("netAmount", "type:string"),
@@ -5924,7 +5944,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("holdsShares", "type:boolean"),
                     ("createdAtUtc", "type:string;format:date-time")),
                 ["SalesInvoiceSummaryView"] = ObjectSchema(
-                    ["id", "documentNo", "state", "version", "businessDate", "partyId", "companyAccountId", "currencyId", "payableAmount", "functionalPayableAmount", "lineCount", "createdAtUtc"],
+                    ["id", "documentNo", "state", "version", "businessDate", "partyId", "companyAccountId", "currencyId", "amountDisclosure", "payableAmount", "functionalPayableAmount", "lineCount", "createdAtUtc"],
                     ("id", "type:string;format:uuid"),
                     ("documentNo", "type:string"),
                     ("state", "type:string"),
@@ -5933,7 +5953,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("partyId", "type:string;format:uuid"),
                     ("companyAccountId", "type:string;format:uuid"),
                     ("currencyId", "type:string;format:uuid"),
-                    ("payableAmount", "type:string"),
+                    ("amountDisclosure", "ref:SalesPriceDisclosure"),
+                    ("payableAmount", "type:null|string"),
                     ("functionalPayableAmount", "type:null|string"),
                     ("lineCount", "type:integer|string;format:int32"),
                     ("createdAtUtc", "type:string;format:date-time")),

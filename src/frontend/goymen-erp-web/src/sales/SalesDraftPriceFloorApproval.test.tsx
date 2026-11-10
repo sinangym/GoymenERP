@@ -44,6 +44,8 @@ function pricing(version: string, floorException: Record<string, unknown> | null
     lines: [{ lineId: LINE, lineNo: 1, unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference,
       discountPercent: null, discountAmount: null, surchargePercent: null, surchargeAmount: null, netUnitPrice: '39000',
       floorException }],
+    // SAT-D250 (S-05): the margin block is always present; withheld here.
+    margin: { disclosure: 'Withheld', costBasis: null, kind: null, lines: null },
   }
 }
 

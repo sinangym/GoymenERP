@@ -125,6 +125,14 @@ internal sealed class InvoiceMatchRow : ISalesTenantRow
     public DateTimeOffset MatchedAtUtc { get; set; }
     public string? DifferenceApprovedBy { get; set; }
     public string? DifferenceReason { get; set; }
+
+    // SAT-D241 (EK48): the separate VAT and withholding comparison — all six set on a match recorded since, all six null before.
+    public decimal? InvoiceVatAmount { get; set; }
+    public decimal? OfficialVatAmount { get; set; }
+    public decimal? VatDifference { get; set; }
+    public decimal? InvoiceWithholdingAmount { get; set; }
+    public decimal? OfficialWithholdingAmount { get; set; }
+    public decimal? WithholdingDifference { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }
 
@@ -291,7 +299,12 @@ internal static class SalesInvoiceRows
         if (Money.SignificantDecimals(facts.InvoiceFunctionalAmount) > MaximumStoredScale
             || Money.SignificantDecimals(facts.OfficialFunctionalAmount) > MaximumStoredScale
             || Money.SignificantDecimals(facts.Difference) > MaximumStoredScale
-            || Money.SignificantDecimals(facts.Tolerance) > MaximumStoredScale)
+            || Money.SignificantDecimals(facts.Tolerance) > MaximumStoredScale
+            || (facts.Taxes is { } taxes && new[]
+            {
+                taxes.InvoiceVatAmount, taxes.OfficialVatAmount, taxes.VatDifference, taxes.InvoiceWithholdingAmount,
+                taxes.OfficialWithholdingAmount, taxes.WithholdingDifference,
+            }.Any(amount => Money.SignificantDecimals(amount) > MaximumStoredScale)))
         {
             throw new SalesDraftStoreException(SalesDraftStoreCodes.ValueDoesNotFit, "Eşleşme tutar ölçeği saklanan sütuna sığmıyor.");
         }
@@ -310,12 +323,30 @@ internal static class SalesInvoiceRows
             MatchedAtUtc = facts.MatchedAtUtc,
             DifferenceApprovedBy = facts.DifferenceApprovedBy,
             DifferenceReason = facts.DifferenceReason,
+            InvoiceVatAmount = facts.Taxes?.InvoiceVatAmount,
+            OfficialVatAmount = facts.Taxes?.OfficialVatAmount,
+            VatDifference = facts.Taxes?.VatDifference,
+            InvoiceWithholdingAmount = facts.Taxes?.InvoiceWithholdingAmount,
+            OfficialWithholdingAmount = facts.Taxes?.OfficialWithholdingAmount,
+            WithholdingDifference = facts.Taxes?.WithholdingDifference,
             CorrelationId = correlationId.Trim(),
         };
     }
 
     public static SalesInvoiceMatchFacts ToMatchFacts(InvoiceMatchRow row) => new SalesInvoiceMatchFacts(row.OfficialInvoiceNo, row.Ettn, row.InvoiceAmount,
-        row.OfficialAmount, row.Difference, row.Tolerance, row.MatchedBy, row.MatchedAtUtc, row.DifferenceApprovedBy, row.DifferenceReason);
+        row.OfficialAmount, row.Difference, row.Tolerance, row.MatchedBy, row.MatchedAtUtc, row.DifferenceApprovedBy, row.DifferenceReason,
+        ToTaxMatchFacts(row));
+
+    private static SalesInvoiceTaxMatchFacts? ToTaxMatchFacts(InvoiceMatchRow row) =>
+        row is { InvoiceVatAmount: { } invoiceVat, OfficialVatAmount: { } officialVat, VatDifference: { } vatDifference,
+            InvoiceWithholdingAmount: { } invoiceWithholding, OfficialWithholdingAmount: { } officialWithholding,
+            WithholdingDifference: { } withholdingDifference }
+            ? new SalesInvoiceTaxMatchFacts(invoiceVat, officialVat, vatDifference, invoiceWithholding, officialWithholding,
+                withholdingDifference)
+            : row is { InvoiceVatAmount: null, OfficialVatAmount: null, VatDifference: null, InvoiceWithholdingAmount: null,
+                OfficialWithholdingAmount: null, WithholdingDifference: null }
+                ? null
+                : throw new InvalidOperationException("Kayıtlı resmî fatura eşleşmesi okunamadı.");
 
     public static InvoiceFinalizationRow ToFinalizationRow(Guid companyId, Guid invoiceId, SalesInvoiceFinalization facts, string correlationId)
     {

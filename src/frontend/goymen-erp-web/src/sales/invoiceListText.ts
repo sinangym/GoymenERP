@@ -17,7 +17,12 @@ export const INVOICE_LIST_TEXT = {
   lineCount: 'Satır',
   createdAt: 'Oluşturma',
   none: '—',
+  /** SAT-D238: an amount the server withheld from this user (never shown as 0). */
+  withheld: 'Gizli',
+  withheldLabel: 'Tutar gizli: fiyat görme yetkiniz yok',
   openLabel: (documentNo: string) => `${documentNo} faturasının ayrıntısını göster`,
   detailHeading: 'Seçili fatura',
+  /** SAT-D238: the invoice detail needs the price name as well; a withheld row opens nothing. */
+  detailWithheld: 'Fatura ayrıntısı için fiyat görme yetkisi gerekir.',
   close: 'Ayrıntıyı kapat',
 } as const

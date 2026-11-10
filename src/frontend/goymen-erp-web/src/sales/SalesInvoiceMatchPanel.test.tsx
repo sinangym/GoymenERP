@@ -168,6 +168,20 @@ describe('UI-64b official e-invoice match form', () => {
     expect(screen.queryByTestId('sales-invoice-match-panel')).toBeNull()
   })
 
+  it('says a match recorded before SAT-D241 was never compared on VAT and withholding instead of showing zero differences', async () => {
+    serve(() => json(matched({
+      invoiceVatAmount: null, officialVatAmount: null, vatDifference: null,
+      invoiceWithholdingAmount: null, officialWithholdingAmount: null, withholdingDifference: null,
+    })), () => json(null))
+    mount()
+    const notCompared = await screen.findByTestId('sales-invoice-match-tax-not-compared')
+    expect(notCompared.textContent).toBe(T.taxNotCompared)
+    // The row covers VAT and withholding alike, so its label is the general tax difference, not the VAT one.
+    expect(notCompared.previousElementSibling?.textContent).toBe(T.taxDifference)
+    expect(screen.queryByTestId('sales-invoice-match-vat-difference')).toBeNull()
+    expect(screen.queryByTestId('sales-invoice-match-withholding-difference')).toBeNull()
+  })
+
   it('shows no form for an invoice that is not approved', async () => {
     serve(() => json(unmatched({ state: 'Draft', decision: null })), () => json(null))
     mount()
@@ -311,6 +325,31 @@ describe('UI-64b official e-invoice match form', () => {
     expect(second.key).not.toBe(first.key)
     expect(screen.getByTestId('sales-invoice-match-result-approved-by').textContent).toBe('actor-a')
     expect(screen.getByTestId('sales-invoice-match-result-difference').textContent).toBe('0.40')
+  })
+
+  it('names the VAT and withholding differences the server found above the tolerance (SAT-D241) and shows them once recorded', async () => {
+    const answers: Answer[] = [
+      () => problem(409, 'difference_approval_required', [
+        { field: 'vatDifference', code: 'exceeds_tolerance' },
+        { field: 'withholdingDifference', code: 'exceeds_tolerance' },
+      ]),
+      () => json(matched({ differenceApprovedBy: 'actor-a', differenceReason: 'KDV yuvarlama', vatDifference: '0.10', withholdingDifference: '0.06' })),
+    ]
+    const calls = serve(() => json(unmatched()), (call) => answers[posts(calls).indexOf(call)](call))
+    mount({ canApproveDifference: true })
+    const section = await form()
+    fill(section)
+    submit(section)
+    const text = (await notice()).textContent ?? ''
+    expect(text).toContain(`${T.exceededFields}: KDV, Tevkifat.`)
+    expect(text).not.toContain('Ödenecek tutar')
+    const approval = await within(section).findByTestId('sales-invoice-match-approval')
+    fireEvent.click(within(approval).getByTestId('sales-invoice-match-approve'))
+    fireEvent.change(within(section).getByTestId('sales-invoice-match-reason'), { target: { value: 'KDV yuvarlama' } })
+    submit(section)
+    expect(await screen.findByText(T.completed)).toBeTruthy()
+    expect(screen.getByTestId('sales-invoice-match-result-vat-difference').textContent).toBe('0.10')
+    expect(screen.getByTestId('sales-invoice-match-result-withholding-difference').textContent).toBe('0.06')
   })
 
   it('hides the approval fields again when the number or ETTN changes', async () => {
