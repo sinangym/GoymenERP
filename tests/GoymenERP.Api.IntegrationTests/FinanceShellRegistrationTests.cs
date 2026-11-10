@@ -62,7 +62,7 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(23, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.20: thirteen routes (three draft, three request, three quote, S-07, S-08, S-09, UI-80 reports) plus detail controls. Pin identities, parents and authorities here instead of
+        // Sales 1.20: thirteen routes (three draft, three request, three quote, S-07, S-08, S-09, UI-80 reports) plus detail controls; Sales 1.25 adds the three S-10 return routes and their three controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.
         var sales = registry.Registrations
             .Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId)
@@ -73,7 +73,17 @@ public sealed class FinanceShellRegistrationTests
             .ToArray();
         Assert.Equal(
             [
-                (SalesShellCapabilityProvider.DispatchListCapabilityId, (string?)null, SalesPermissionManifestV1.DraftsRead),
+                // Sales 1.25 (UI-70b; SAT-D290): the S-10 customer return screens and the controls of the return detail.
+                (SalesShellCapabilityProvider.CustomerReturnApproveCapabilityId, SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId,
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsApprove}"),
+                (SalesShellCapabilityProvider.CustomerReturnCreateCapabilityId, (string?)null, $"{SalesPermissionManifestV1.ReturnsWrite}+{SalesPermissionManifestV1.OrdersPriceRead}"),
+                (SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId, null, $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}"),
+                (SalesShellCapabilityProvider.CustomerReturnFinalizeCapabilityId, SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId,
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsFinalize}"),
+                (SalesShellCapabilityProvider.CustomerReturnListCapabilityId, null, $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}"),
+                (SalesShellCapabilityProvider.CustomerReturnSubmitCapabilityId, SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId,
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsWrite}"),
+                (SalesShellCapabilityProvider.DispatchListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.CreateCapabilityId, null, SalesPermissionManifestV1.DraftsCreate),
                 (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),

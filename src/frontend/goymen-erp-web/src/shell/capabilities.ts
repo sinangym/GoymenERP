@@ -158,6 +158,12 @@ export const CAPABILITY = {
   salesInvoicesList: 'sales.invoices.list',
   /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
   salesReportsView: 'sales.reports.view',
+  /** UI-70b S-10 Müşteri iade faturaları (API-40 list). Route `/satis/iadeler`. Granted on `sales.returns.read` + `sales.orders.price.read` (Sales shell 1.25). */
+  salesCustomerReturnsList: 'sales.customer-returns.list',
+  /** UI-70b S-10 new return record. Route `/satis/iadeler/yeni`. Granted on `sales.returns.write` + `sales.orders.price.read`. */
+  salesCustomerReturnsCreate: 'sales.customer-returns.create',
+  /** UI-70b S-10 one return. Route `/satis/iadeler/:returnId`. Granted on `sales.returns.read` + `sales.orders.price.read`. */
+  salesCustomerReturnsDetail: 'sales.customer-returns.detail',
   /**
    * S-01 Talep havuzu (UI-20). Route `/satis/talepler`. Granted on its own `sales.requests.read` (Sales shell 1.8); the
    * route itself is mounted by the Sales lane's pool gate (`SalesPoolRoute`), this entry only names it in the sidebar.
@@ -329,6 +335,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.salesInvoicesList]: '/satis/faturalar',
   // UI-80: another static Sales sibling, never a draft id.
   [CAPABILITY.salesReportsView]: '/satis/raporlar',
+  // UI-70b: static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a return id.
+  [CAPABILITY.salesCustomerReturnsList]: '/satis/iadeler',
+  [CAPABILITY.salesCustomerReturnsCreate]: '/satis/iadeler/yeni',
+  [CAPABILITY.salesCustomerReturnsDetail]: '/satis/iadeler/:returnId',
   [CAPABILITY.salesRequestsList]: '/satis/talepler',
   [CAPABILITY.salesQuotesList]: '/satis/teklifler',
   // Static before the parameter route, the /cari/yeni rule: 'emirler' must never be read as an

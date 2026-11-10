@@ -168,8 +168,12 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // (SAT-D32) the user-closure control.
         // (SAT-D30) the over-delivery approval control; Sales 1.17 (SAT-D17) the line-closure control; Sales 1.19 (UI-63) the
         // S-09 invoice list screen (on the invoice read alone since Sales 1.20, SAT-D238); Sales 1.22 (S-2 API-11) the source-plan
-        // control; Sales 1.24 (API-07) the risk exception request and decision controls.
-        Assert.Equal(32, sales.Length);
+        // control; Sales 1.24 (API-07) the risk exception request and decision controls; Sales 1.25 (UI-70b) the three S-10 customer
+        // return screens and the submit / approve / finalize controls of the return detail.
+        Assert.Equal(38, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CustomerReturnApproveCapabilityId)
+                .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.SourcePlanWriteCapabilityId)
                 .Declaration.ParentCapabilityId);

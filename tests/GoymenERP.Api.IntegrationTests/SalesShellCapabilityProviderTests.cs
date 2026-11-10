@@ -35,8 +35,22 @@ public sealed class SalesShellCapabilityProviderTests
         // combine read with their command permission, and remain parented by the detail capability.
         Assert.Equal(
             [
+                // UI-70b (Sales 1.25; SAT-D290): the S-10 customer return screens on the returns names plus the price read (the
+                // answers carry amounts), and the submit / approve / finalize CONTROLS of the return detail.
+                ("sales.customer-returns.approve", "/satis/iadeler/:returnId",
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsApprove}", "sales.customer-returns.detail"),
+                ("sales.customer-returns.create", "/satis/iadeler/yeni",
+                    $"{SalesPermissionManifestV1.ReturnsWrite}+{SalesPermissionManifestV1.OrdersPriceRead}", (string?)null),
+                ("sales.customer-returns.detail", "/satis/iadeler/:returnId",
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}", null),
+                ("sales.customer-returns.finalize", "/satis/iadeler/:returnId",
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsFinalize}", "sales.customer-returns.detail"),
+                ("sales.customer-returns.list", "/satis/iadeler",
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}", null),
+                ("sales.customer-returns.submit", "/satis/iadeler/:returnId",
+                    $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsWrite}", "sales.customer-returns.detail"),
                 // UI-60 (Sales 1.9): the S-07 dispatch list on the order read.
-                ("sales.dispatches.list", "/satis/sevkiyatlar", SalesPermissionManifestV1.DraftsRead, (string?)null),
+                ("sales.dispatches.list", "/satis/sevkiyatlar", SalesPermissionManifestV1.DraftsRead, null),
                 ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, null),
                 ("sales.drafts.detail", "/satis/siparisler/:draftId", SalesPermissionManifestV1.DraftsRead, null),
                 ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
