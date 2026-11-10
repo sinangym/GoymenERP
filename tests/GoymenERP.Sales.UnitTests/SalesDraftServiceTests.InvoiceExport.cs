@@ -41,7 +41,11 @@ public sealed partial class SalesDraftServiceTests
         invoicing.World.User.Id = "synthetic-invoice-approver";
         await invoicing.Service().ApproveInvoiceAsync(created.Id, Command("2"), Metadata("k-export-approve"));
         invoicing.World.User.Id = "synthetic-invoice-matcher";
-        invoicing.Official.Has(decimal.Parse(created.FunctionalTotals!.GrossAmount, CultureInfo.InvariantCulture));
+        // SAT-D241 (merged from main): the official VAT and withholding TL totals are those of this invoice, so a multi-order
+        // invoice's larger VAT is no difference either.
+        invoicing.Official.Has(decimal.Parse(created.FunctionalTotals!.GrossAmount, CultureInfo.InvariantCulture),
+            vat: decimal.Parse(created.FunctionalTotals.VatAmount, CultureInfo.InvariantCulture),
+            withholding: decimal.Parse(created.FunctionalTotals.WithheldVatAmount, CultureInfo.InvariantCulture));
         await invoicing.Service().MatchInvoiceAsync(created.Id, MatchRequest(), Metadata("k-export-match"));
         invoicing.World.User.Id = "synthetic-invoice-finalizer";
         await invoicing.Service().FinalizeInvoiceAsync(created.Id, Command("3"), Metadata("k-export-final"));
