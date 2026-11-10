@@ -1,7 +1,7 @@
 # Satış İzinleri — Rol Öneri Tablosu v1
 
 - **Durum:** ÖNERİ olarak açıldı; iki tablo ve öneri taşıyan maddeler SAT-D230 (EK44) ile Satış'ın onaylı
-  varsayılan rol/yetki seti olarak onaylandı (sonraki netleşmeler: SAT-D235 (2), SAT-D249, SAT-D250). Bu belge karar değildir; yeni karar kimliği üretmez, `KARAR_SICILI.md`'yi ve
+  varsayılan rol/yetki seti olarak onaylandı (sonraki netleşmeler: SAT-D235 (2), SAT-D249, SAT-D250, SAT-D276). Bu belge karar değildir; yeni karar kimliği üretmez, `KARAR_SICILI.md`'yi ve
   `docs/decisions/**`'ı değiştirmez.
 - **İnsan kapısı:** Hiçbir izin bu belgeyle bir role veya kullanıcıya verilmez. Grant, rol tanımı,
   rol seed'i ve Critical sınıfı AGENTS.md "Değişmeyen insan kapıları" gereği Sinan'ın somut kararını
@@ -72,6 +72,7 @@ permission/rol K3 kapsamı ve insan kapısıdır; sütun ayrıca işlemin para/s
 | `sales.orders.price-floor-exception.approve` | Taban fiyat altındaki satırı gerekçeyle onaylar | Critical değil; **fiyat/para etkili** | **Ver** | **Ver** | **Verme** | KARARLI | SAT-D1 + SAT-D188; kartta Satış Uzmanı `—`. |
 | `sales.invoices.approve` | Gönderilmiş fatura taslağını onaylar/reddeder; tolerans aşan eşleştirme farkını onaylar | Critical değil; hazırlayan/gönderen onaylayamaz | **Ver** | **Verme** | **Verme** | KARARLI | SAT-D88, SAT-D106, SAT-D204: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin; Satış Müdürü kalın `—`. |
 | `sales.invoices.match` | Onaylı faturayı resmî belgeyle (no, ETTN, tutar) eşleştirir | Critical değil; para/stok/Finans verisi yazmaz (EK20) | **Ver** | **Verme** | **Verme** | ÖNERİ (yorum) | SAT-D142 eşleştirmeyi Muhasebe'ye verir; SAT-D89/SAT-D229 tolerans. Ad kararlarda personaya bağlanmamış; öneri Muhasebe tarafı + Genel Müdür/Admin (SAT-D187/D190 yorumu). Tolerans aşan farkın onayı ayrıca `sales.invoices.approve` ister. |
+| `sales.invoices.export` | Kesinleşmiş satış faturalarını tarih aralığıyla Excel dosyası olarak dışa aktarır (API-34; izni açık PR #1047 kaydeder) | Critical değil; yalnız dosya üretir, para/stok hareketi yazmaz, resmî dış bağlantı değildir (SAT-D236); dosya fiyat taşıdığı için PR #1047 fiyat okuma iznini de ister (SAT-D238) | **Ver** | **Verme** | **Verme** | KARARLI | SAT-D276 (`SINAN_KARARLARI_2026-11-10_SATIS_EK54.md`): Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin; Satış Müdürü ve Satış Uzmanı verilmez (SAT-D202 "kesme" kümesi; SAT-D236 "kullanıcı Muhasebe" ile tutarlı). Atama kurulumda Ayarlar rol ekranından yapılır; kodda rol seed'i yoktur. |
 
 Bu tabloya alınmayanlar (yalnız okuma veya kapsam dışı): `sales.drafts.read`, `sales.orders.price.read`,
 `sales.invoices.read`, `sales.reports.read`, `sales.requests.read`, `sales.quotes.read`. Taslak/teklif/talep
@@ -83,8 +84,10 @@ istenen dört izin ve onların görev ayrılığı komşularıyla sınırlıdır
 
 S-05 satış marjı görünürlüğü bu tabloya satır olarak alınmaz: SAT-D250
 (`SINAN_KARARLARI_2026-11-09_SATIS_EK49.md`) marjı **yalnız Genel Müdür ve Admin**'e gösterir (Satış Müdürü, öteki
-müdürler, Muhasebe ve Satış Uzmanı görmez); görünürlük backend'de uygulanır. Gerekirse açılacak izin adı henüz
-kayıtlı değildir ve Codex şeridinde belirlenir; bu belge ad önermez. Grant/rol ataması insan kapısıdır.
+müdürler, Muhasebe ve Satış Uzmanı görmez); görünürlük backend'de uygulanır. Marj okuma izninin adı
+`sales.orders.margin.read`'dir (açık PR #1045 kaydeder); SAT-D276 (2) (`SINAN_KARARLARI_2026-11-10_SATIS_EK54.md`)
+bu izni SAT-D250 kümesine eşler: **yalnız Genel Müdür ve Admin**. Grant/rol ataması insan kapısıdır; atama kurulumda
+Ayarlar rol ekranından yapılır, bu belge grant açmaz.
 
 ## Sinan'ın seçeceği noktalar
 
@@ -103,5 +106,10 @@ kayıtlı değildir ve Codex şeridinde belirlenir; bu belge ad önermez. Grant/
 5. **`sales.orders.force-close` kimde olsun?** Öneri: Satış Müdürü + Genel Müdür + Admin; Satış Uzmanı verilmez.
 6. **`sales.orders.cancel` Satış Uzmanı hücresi:** kartta `?`; öneri **Verme**.
 7. **`sales.invoices.match` kimde olsun?** Öneri: Muhasebe tarafı + Genel Müdür + Admin; Satış verilmez.
-8. **Gerçek kullanıcı atamaları:** hangi kişinin hangi role bağlanacağı ve grant'ların ne zaman açılacağı
+8. **`sales.invoices.export` ve `sales.orders.margin.read` kimde olsun?** **Kararlaştırıldı — SAT-D276**
+   (`SINAN_KARARLARI_2026-11-10_SATIS_EK54.md`): `sales.invoices.export` Muhasebe, Muhasebe Müdürü, Genel Müdür,
+   Admin (Satış Müdürü ve Satış Uzmanı verilmez); `sales.orders.margin.read` yalnız Genel Müdür ve Admin (SAT-D250).
+   Bu Sinan'ın somut rol kararıdır; gerçek atama kurulumda Ayarlar rol ekranından yapılır. Kodda rol seed'i yoktur;
+   bu belge grant açmaz.
+9. **Gerçek kullanıcı atamaları:** hangi kişinin hangi role bağlanacağı ve grant'ların ne zaman açılacağı
    (insan kapısı; bu belge hiçbir grant açmaz).
