@@ -8,9 +8,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// S5 API-34 — the sales invoice export (SAT-D236, SAT-D244, SAT-D248; DEC-SAL-006). The finalised invoices whose finalisation
 /// falls on the Europe/Istanbul business days of the range (both included) are read in ONE bulk answer for the Accounting
 /// workbook. A read: it writes nothing (no attempt, audit or file record — the order PDF precedent), opens no official connection
-/// (DEC-INT-001, DEC-FIN-003) and never calls another module. <c>sales.invoices.export</c> AND the price read are measured before
-/// anything is read, after every awaited store read and once more at the end: the file is prices, so without the price read the
-/// export is 403 (SAT-D238 (3): the current fail-closed rule stays until the price-withholding change lands; an export never
+/// (DEC-INT-001, DEC-FIN-003) and never calls another module. <c>sales.invoices.export</c> is measured before anything is read and
+/// after every awaited store read; the price read is measured before anything is read and once more at the end, after the last store
+/// read: the file is prices, so without the price read the export is 403 (SAT-D238 (3): the current fail-closed rule stays until the price-withholding change lands; an export never
 /// releases an amount the detail would withhold). More invoices than <see cref="SalesInvoiceApiV1.MaximumExportInvoices"/> is
 /// 422 <see cref="SalesInvoiceProblemCodesV1.ExportTooLarge"/>: nothing is cut silently.
 /// </summary>
@@ -54,8 +54,9 @@ public sealed partial class SalesInvoiceService
     private static void ValidateExport(SalesInvoiceExportQuery query)
     {
         var errors = new List<SalesDraftFieldError>();
-        // SAT-D236 (1) names Excel AND UBL-TR XML; only the workbook is served now. The XML waits for its open profile and party
-        // fields (not decided), so it is refused as an unknown format — never answered with a guessed document.
+        // SAT-D236 (1) names Excel AND UBL-TR XML; only the workbook is served now. SAT-D278 (EK54) decided that both the
+        // TEMELFATURA and TICARIFATURA profiles are supported, but the invoice type, the VKN/address source and the zip packaging
+        // are still open and the XML is not implemented, so it is refused as an unknown format — never answered with a guessed document.
         if (!string.Equals(query.Format, SalesInvoiceApiV1.ExportFormatXlsx, StringComparison.Ordinal))
         {
             errors.Add(new("format", "validation_failed"));
@@ -102,6 +103,10 @@ public sealed partial class SalesInvoiceService
             header.Rate is { } r ? new SalesInvoiceRateView(Decimal(r.Rate), r.RateDay, r.BulletinDate, r.FunctionalCurrencyId, r.FunctionalScale) : null,
             Amounts(invoice.Totals, scale),
             invoice.FunctionalTotals is { } totals ? Amounts(totals, functionalScale) : null,
+            // SAT-D279 (EK55): the official document's own VAT and withholding (TL, SAT-D241) as the
+            // match recorded them, beside the computed ones; empty without a recorded comparison, never copied from the invoice.
+            NullableExactText(invoice.Match?.Taxes?.OfficialVatAmount),
+            NullableExactText(invoice.Match?.Taxes?.OfficialWithholdingAmount),
             [.. finalization.Plan.OrderBy(item => item.SequenceNo).Select(item => new SalesInvoiceFinalInstalmentView(item.SequenceNo,
                 item.DueDate, Text(item.Amount, scale), item.FunctionalAmount is { } functional ? Text(functional, functionalScale) : null,
                 item.OpenItemId, item.InstallmentId))],
