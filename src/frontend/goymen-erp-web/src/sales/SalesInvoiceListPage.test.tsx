@@ -212,6 +212,29 @@ describe('UI-63 S-09 Satış faturaları', () => {
     expect(router.state.location.search).toBe('')
   })
 
+  it('opens no detail for a withheld row: the document number is plain text and a deep link shows the hint (SAT-D238)', async () => {
+    const withheld = summary({ amountDisclosure: 'Withheld', payableAmount: null, functionalPayableAmount: null })
+    const fetch = installPoolFetch((call) => (isList(call) ? json(page([withheld])) : notFound(call)), GRANTED)
+    renderPool(ROUTE)
+    await screen.findByRole('table', { name: T.caption })
+    expect(screen.queryByRole('button', { name: T.openLabel(INVOICE_NO) })).toBeNull()
+    const documentNo = screen.getByTestId(`sales-invoices-document-withheld-${INVOICE_ID}`)
+    expect(documentNo.textContent).toBe(INVOICE_NO)
+    expect(documentNo.getAttribute('title')).toBe(T.detailWithheld)
+    cleanup()
+
+    fetch.calls.length = 0
+    const user = userEvent.setup()
+    const { router } = renderPool(`${ROUTE}?fatura=${INVOICE_ID}`)
+    const hint = await screen.findByTestId('sales-invoices-detail-withheld')
+    expect(within(hint).getByText(T.detailWithheld)).toBeTruthy()
+    expect(screen.queryByTestId('sales-invoice-finalization')).toBeNull()
+    expect(fetch.calls.every(isList)).toBe(true)
+    await user.click(within(hint).getByRole('button', { name: T.close }))
+    await waitFor(() => expect(screen.queryByTestId('sales-invoices-detail-withheld')).toBeNull())
+    expect(router.state.location.search).toBe('')
+  })
+
   it('opens a deep-linked invoice and ignores a fatura value that is not a reference id', async () => {
     const fetch = installPoolFetch((call) => {
       if (isList(call)) return json(page([summary()]))
