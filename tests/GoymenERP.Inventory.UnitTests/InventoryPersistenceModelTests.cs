@@ -1,4 +1,4 @@
-using GoymenERP.BuildingBlocks.Multitenancy;
+﻿using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
@@ -28,7 +28,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(StockCountRow), typeof(StockCountDecisionRow), typeof(AllocationChangeRow),
             typeof(InventoryTransferRow), typeof(InventoryTransferLineRow),
             typeof(InventoryTransferDispatchRow), typeof(InventoryTransferDispatchLineRow),
-            typeof(InventoryTransferBucketRow), typeof(InventoryTransferAcceptanceRow),
+            typeof(InventoryTransferBucketRow), typeof(InventoryTransferAcceptanceRow), typeof(AverageCostLedgerRow),
         ];
 
     [Fact]
@@ -179,6 +179,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryTransfers", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryLabelProductVersion", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryAverageCostLedger", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -254,6 +256,9 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-allocation-change")]
     [InlineData("delete-allocation-change")]
     [InlineData("edit-allocation-label")]
+    [InlineData("edit-average-cost-ledger-position")]
+    [InlineData("edit-average-cost-ledger-company")]
+    [InlineData("delete-average-cost-ledger")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -361,12 +366,67 @@ public sealed class InventoryPersistenceModelTests
                 // A move never re-points an allocation: it releases it and creates a new one.
                 Attach(context, Allocation()).LabelId = Guid.NewGuid();
                 break;
+            case "edit-average-cost-ledger-position":
+                // SAT-D262: a ledger row is one position; its key never changes (only the cost state does).
+                Attach(context, AverageCostLedger()).ProductId = Guid.NewGuid();
+                break;
+            case "edit-average-cost-ledger-company":
+                Attach(context, AverageCostLedger()).CompanyId = CompanyB;
+                break;
+            case "delete-average-cost-ledger":
+                context.AverageCostLedger.Remove(Attach(context, AverageCostLedger()));
+                break;
             default:
                 Attach(context, Balance()).CompanyId = CompanyB;
                 break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_average_cost_ledger_has_its_nullability_precision_checks_position_key_and_company_scope()
+    {
+        using var context = Context();
+        var ledger = context.Model.FindEntityType(typeof(AverageCostLedgerRow))!;
+        Assert.Equal(("inventory", "AverageCostLedger"), (ledger.GetSchema(), ledger.GetTableName()));
+
+        Assert.Equal(
+            (false, false, false, true, true, true),
+            (ledger.FindProperty(nameof(AverageCostLedgerRow.CompanyId))!.IsNullable,
+                ledger.FindProperty(nameof(AverageCostLedgerRow.LocationId))!.IsNullable,
+                ledger.FindProperty(nameof(AverageCostLedgerRow.Status))!.IsNullable,
+                ledger.FindProperty(nameof(AverageCostLedgerRow.UnreadableReason))!.IsNullable,
+                ledger.FindProperty(nameof(AverageCostLedgerRow.QuantityKg))!.IsNullable,
+                ledger.FindProperty(nameof(AverageCostLedgerRow.AverageCostPerKg))!.IsNullable));
+        Assert.Equal((18, 3), (ledger.FindProperty(nameof(AverageCostLedgerRow.QuantityKg))!.GetPrecision()!.Value,
+            ledger.FindProperty(nameof(AverageCostLedgerRow.QuantityKg))!.GetScale()!.Value));
+        // The internal precision of SAT-D263 is four decimals.
+        Assert.Equal((18, 4), (ledger.FindProperty(nameof(AverageCostLedgerRow.AverageCostPerKg))!.GetPrecision()!.Value,
+            ledger.FindProperty(nameof(AverageCostLedgerRow.AverageCostPerKg))!.GetScale()!.Value));
+        Assert.True(ledger.FindProperty(nameof(AverageCostLedgerRow.RowVersion))!.IsConcurrencyToken);
+
+        Assert.Contains(ledger.GetIndexes(), index => index.IsUnique && index.GetDatabaseName() == "UX_AverageCostLedger_Position"
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LocationId", "ProductId"]));
+
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AverageCostLedgerRow))!;
+        Assert.Equal(InventoryDbContext.AverageCostLedgerStateCheck,
+            Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_AverageCostLedger_State").Sql);
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_AverageCostLedger_Identity");
+        Assert.Contains(design.GetForeignKeys(), key => key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LocationId"]));
+    }
+
+    [Fact]
+    public void The_average_cost_ledger_Down_refuses_while_a_row_exists_and_is_the_only_raw_sql()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryAverageCostLedger();
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51250", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[AverageCostLedger]", guard.Sql, StringComparison.Ordinal);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]
@@ -408,6 +468,12 @@ public sealed class InventoryPersistenceModelTests
         context.Attach(row);
         return row;
     }
+
+    private static AverageCostLedgerRow AverageCostLedger() => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, LocationId = Guid.NewGuid(), ProductId = Guid.NewGuid(),
+        Status = (int)AverageCostStatus.Known, QuantityKg = 5m, AverageCostPerKg = 10.5714m, Version = 1, UpdatedAtUtc = At,
+    };
 
     private static AllocationChangeRow AllocationChange() => new AllocationChangeRow()
     {

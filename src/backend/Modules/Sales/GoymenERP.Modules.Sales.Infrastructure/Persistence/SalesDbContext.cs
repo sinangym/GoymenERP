@@ -222,6 +222,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal DbSet<DraftOverDeliveryApprovalRow> DraftOverDeliveryApprovals => Set<DraftOverDeliveryApprovalRow>();
     internal DbSet<DraftLineClosureRow> DraftLineClosures => Set<DraftLineClosureRow>();
 
+    /// <summary>SAT-D252..SAT-D255 / API-11: the recorded order source plans (append-only, one row per planned line and save).</summary>
+    internal DbSet<DraftSourcePlanLineRow> DraftSourcePlanLines => Set<DraftSourcePlanLineRow>();
+
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
 
@@ -356,11 +359,31 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
 
-    /// <summary>CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106): within the tolerance no approver; beyond it an approver and a reason.</summary>
+    /// <summary>
+    /// CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106; SAT-D241): the payable, VAT and withholding differences all within the tolerance —
+    /// no approver; any one beyond it — an approver and a reason. A match recorded before SAT-D241 has no VAT/withholding columns (NULL)
+    /// and is measured on the payable difference alone, as it was.
+    /// </summary>
     internal const string InvoiceMatchAmountsConstraint =
         "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) "
-        + "AND (([Difference] <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) "
-        + "OR ([Difference] > [Tolerance] AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))";
+        + "AND (([Difference] <= [Tolerance] AND ISNULL([VatDifference], 0) <= [Tolerance] AND ISNULL([WithholdingDifference], 0) <= [Tolerance] "
+        + "AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) "
+        + "OR (([Difference] > [Tolerance] OR ISNULL([VatDifference], 0) > [Tolerance] OR ISNULL([WithholdingDifference], 0) > [Tolerance]) "
+        + "AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))";
+
+    /// <summary>
+    /// CK_InvoiceMatches_TaxAmounts (SAT-D241): the VAT and withholding comparison is all-or-nothing — six NULLs (a match recorded before
+    /// SAT-D241) or six non-negative amounts whose differences are the exact absolute differences. The second branch names every column
+    /// IS NOT NULL because a CHECK accepts UNKNOWN: without it a partly filled row would pass.
+    /// </summary>
+    internal const string InvoiceMatchTaxAmountsConstraint =
+        "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL "
+        + "AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) "
+        + "OR ([InvoiceVatAmount] IS NOT NULL AND [OfficialVatAmount] IS NOT NULL AND [VatDifference] IS NOT NULL "
+        + "AND [InvoiceWithholdingAmount] IS NOT NULL AND [OfficialWithholdingAmount] IS NOT NULL AND [WithholdingDifference] IS NOT NULL "
+        + "AND [InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 "
+        + "AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) "
+        + "AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))";
 
     /// <summary>UX_InvoiceAttempts_InvoiceId: a stored invoice is born from exactly one create attempt.</summary>
     internal const string InvoiceCreateAttemptFilter = "[InvoiceId] IS NOT NULL AND [CommandName] = N'" + SalesInvoiceCommands.CreateV1 + "'";
@@ -434,6 +457,19 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND LEN([CancelledRemainder]) > 0 AND LEN([ClosedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
     /// <summary>
+    /// CK_DraftSourcePlanLines_Identity: identities, the line position, the smallest version a plan save can produce (create 1, one
+    /// line 2, plan 3), non-negative parts, a locked (delivered) part below the line quantity (SAT-D253 (3)), the ONE equality of
+    /// SAT-D252 (locked + stock + production + purchasing + subcontract = line quantity) and non-blank texts.
+    /// </summary>
+    internal const string SourcePlanLineIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1 AND [DraftVersion] >= 3 "
+        + "AND [LineQuantity] > 0 AND [LockedQuantity] >= 0 AND [StockQuantity] >= 0 AND [ProductionQuantity] >= 0 "
+        + "AND [PurchasingQuantity] >= 0 AND [SubcontractQuantity] >= 0 AND [LockedQuantity] < [LineQuantity] "
+        + "AND [LockedQuantity] + [StockQuantity] + [ProductionQuantity] + [PurchasingQuantity] + [SubcontractQuantity] = [LineQuantity] "
+        + "AND LEN([SavedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
     /// AK_DraftLines_LineIdentity: (company, draft, line position, line identity) of a draft line - the principal key of the
     /// line-identity foreign keys of the line-bound history rows.
     /// </summary>
@@ -460,6 +496,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftUserClosures(modelBuilder);
         ConfigureDraftOverDeliveryApprovals(modelBuilder);
         ConfigureDraftLineClosures(modelBuilder);
+        ConfigureDraftSourcePlanLines(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureQuotes(modelBuilder);
@@ -1116,6 +1153,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_InvoiceMatches_Amounts", InvoiceMatchAmountsConstraint);
+            table.HasCheckConstraint("CK_InvoiceMatches_TaxAmounts", InvoiceMatchTaxAmountsConstraint);
             table.HasTrigger(InvoiceMatchGuardTrigger);
         });
         match.HasKey(x => new { x.CompanyId, x.InvoiceId });
@@ -1125,6 +1163,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         match.Property(x => x.OfficialAmount).HasPrecision(28, 8);
         match.Property(x => x.Difference).HasPrecision(28, 8);
         match.Property(x => x.Tolerance).HasPrecision(28, 8);
+        match.Property(x => x.InvoiceVatAmount).HasPrecision(28, 8);
+        match.Property(x => x.OfficialVatAmount).HasPrecision(28, 8);
+        match.Property(x => x.VatDifference).HasPrecision(28, 8);
+        match.Property(x => x.InvoiceWithholdingAmount).HasPrecision(28, 8);
+        match.Property(x => x.OfficialWithholdingAmount).HasPrecision(28, 8);
+        match.Property(x => x.WithholdingDifference).HasPrecision(28, 8);
         match.Property(x => x.MatchedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
         match.Property(x => x.DifferenceApprovedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
         match.Property(x => x.DifferenceReason).HasMaxLength(SalesInvoice.MaximumReasonLength);
@@ -1387,6 +1431,39 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D252..SAT-D255 / API-11: the recorded source plans - append-only history beside the draft, one row per planned line and
+    // save (the current plan of a line is its row with the highest draft version). The line, its quantities, the revision and the
+    // approval axis stay as they are; the plan reserves nothing and writes no other module's record.
+    private void ConfigureDraftSourcePlanLines(ModelBuilder modelBuilder)
+    {
+        var plan = modelBuilder.Entity<DraftSourcePlanLineRow>();
+        plan.ToTable("DraftSourcePlanLines", Schema, table =>
+            table.HasCheckConstraint("CK_DraftSourcePlanLines_Identity", SourcePlanLineIdentityConstraint));
+        plan.HasKey(x => new { x.CompanyId, x.DraftId, x.DraftVersion, x.LineId });
+        plan.HasIndex(x => new { x.CompanyId, x.DraftId, x.LineId, x.DraftVersion })
+            .HasDatabaseName("IX_DraftSourcePlanLines_Line");
+        plan.Property(x => x.LineQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.LockedQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.StockQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.ProductionQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.PurchasingQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.SubcontractQuantity).HasPrecision(18, 3);
+        plan.Property(x => x.SavedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        plan.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        plan.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        plan.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        plan.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.LineNo, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        plan.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -1632,6 +1709,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftOverDeliveryApprovalRow => [],
                     // SAT-D17: a recorded line closure is APPEND-ONLY - no column of it may change afterwards.
                     DraftLineClosureRow => [],
+                    // SAT-D252..SAT-D255: a recorded source plan line is APPEND-ONLY - a new save is a new row.
+                    DraftSourcePlanLineRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],

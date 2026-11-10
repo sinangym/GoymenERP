@@ -26,8 +26,8 @@ export const SALES_CAPABILITY = {
   /** UI-61 S-08 Faturaya Hazır — API-31 under its own `sales.invoices.read` (Sales shell contract 1.9). */
   invoiceCandidatesList: 'sales.invoice-candidates.list',
   /**
-   * UI-63 S-09 Satış faturaları — API-32 GET list under `sales.invoices.read` AND `sales.orders.price.read` (the two names the
-   * list read measures; Sales shell contract 1.19). No control: a row opens the invoice detail read-only.
+   * UI-63 S-09 Satış faturaları — API-32 GET list under `sales.invoices.read` (SAT-D238: `sales.orders.price.read` is asked, not
+   * required — without it the amounts come withheld; Sales shell contract 1.20). No control: a row opens the invoice detail read-only.
    */
   invoicesList: 'sales.invoices.list',
   /** UI-80 Satış raporları — API-41 / API-42 under their own `sales.reports.read` (Sales shell contract 1.11). */
@@ -91,6 +91,12 @@ export const SALES_OVER_DELIVERY_APPROVE_CAPABILITY = 'sales.orders.over-deliver
  */
 export const SALES_LINE_CLOSE_CAPABILITY = 'sales.orders.lines.close' as const
 
+/**
+ * SAT-D252..SAT-D255 / API-11: the source-plan CONTROL on S-04 ("Kaynak planını kaydet"). The shell publishes it only to an
+ * actor holding `sales.orders.source-plan.write` beside the read; the plan itself is read under the draft read.
+ */
+export const SALES_SOURCE_PLAN_WRITE_CAPABILITY = 'sales.orders.source-plan.write' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -101,6 +107,7 @@ export type SalesCapabilityId =
   | typeof SALES_CLOSE_CAPABILITY
   | typeof SALES_OVER_DELIVERY_APPROVE_CAPABILITY
   | typeof SALES_LINE_CLOSE_CAPABILITY
+  | typeof SALES_SOURCE_PLAN_WRITE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY

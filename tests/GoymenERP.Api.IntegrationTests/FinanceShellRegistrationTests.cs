@@ -62,7 +62,7 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(23, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.19: thirteen routes (three draft, three request, three quote, S-07, S-08, S-09, UI-80 reports) plus detail controls. Pin identities, parents and authorities here instead of
+        // Sales 1.20: thirteen routes (three draft, three request, three quote, S-07, S-08, S-09, UI-80 reports) plus detail controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.
         var sales = registry.Registrations
             .Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId)
@@ -78,9 +78,8 @@ public sealed class FinanceShellRegistrationTests
                 (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.InvoiceCandidateListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
-                // Sales 1.19 (UI-63): the S-09 invoice list on the invoice read plus the price read its list read measures.
-                (SalesShellCapabilityProvider.InvoiceListCapabilityId, null,
-                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}"),
+                // Sales 1.19 (UI-63); 1.20 (SAT-D238): the S-09 invoice list on the invoice read alone; its list read withholds the amounts.
+                (SalesShellCapabilityProvider.InvoiceListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
                 (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
@@ -112,6 +111,9 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
                 (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
+                // Sales 1.22 (S-2 API-11): the source-plan control of the detail.
+                (SalesShellCapabilityProvider.SourcePlanWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}"),
                 // Sales 1.8 (UI-20): the S-01 quote and request screens with their controls.
                 (SalesShellCapabilityProvider.QuoteConvertCapabilityId, SalesShellCapabilityProvider.QuoteDetailCapabilityId,
                     $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}+{SalesPermissionManifestV1.DraftsCreate}"),

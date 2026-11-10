@@ -538,6 +538,13 @@ public sealed partial class SalesStore : ISalesInvoiceStore
             facts.MatchedBy,
             facts.DifferenceApprovedBy,
             facts.DifferenceReason,
+            // SAT-D241: the separate VAT and withholding comparison.
+            invoiceVatAmount = facts.Taxes?.InvoiceVatAmount,
+            officialVatAmount = facts.Taxes?.OfficialVatAmount,
+            vatDifference = facts.Taxes?.VatDifference,
+            invoiceWithholdingAmount = facts.Taxes?.InvoiceWithholdingAmount,
+            officialWithholdingAmount = facts.Taxes?.OfficialWithholdingAmount,
+            withholdingDifference = facts.Taxes?.WithholdingDifference,
         },
     }, Json);
 

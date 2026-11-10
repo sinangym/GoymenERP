@@ -167,7 +167,9 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApproveOverDelivery", "ApprovePriceFloorExceptions", "ApproveRemainderChange",
             "Cancel", "CloseByUser", "CloseLine", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected and IsOverDeliveryApproved are the reads in the population (queries).
-            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
+            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved", "RecordCustomerAcceptance", "RecordCustomerRejection",
+            // SAT-D253 / API-11: so is the source plan save (RequireSourcePlanWritable only reads).
+            "RecordSourcePlan", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader",
             // SAT-D167 (EK24): so is the line revision (it reuses RequireQuantityRevisable, which only reads).
             "ReviseLines", "ReviseQuantities", "Submit", "Withdraw"], entries);
@@ -218,6 +220,9 @@ public sealed class SalesOrderDraftApprovalTests
         // API-04: a withdrawn draft's header does not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseHeader(3, new SalesHeaderRevisionInput(draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, null, null, null, Guid.NewGuid(), null), "synthetic-reviser", "SENTETIK", T0)));
+        // SAT-D253: a withdrawn draft's source plan does not move.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordSourcePlan(3, "synthetic-planner",
+            new SourcePlanInput([new SourcePlanLineInput(draft.Lines[0].Id, 0m, 0m, draft.Lines[0].Quantity.Value, 0m, 0m)], false), T0)));
         Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial));
         Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }

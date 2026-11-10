@@ -135,6 +135,22 @@ public static class SalesLinePriceCalculator
     }
 
     /// <summary>
+    /// SAT-D275 (Sinan, 2026-11-10): the line amount BEFORE the maturity surcharge — <paramref name="quantity"/> × the EXACT
+    /// discounted unit price (steps 1–2 of this calculator; the vade farkı of step 3 is left out), multiplied without any
+    /// intermediate rounding and rounded ONCE, half away from zero, to <paramref name="scale"/> (the same SAT-D11 rule as
+    /// <see cref="LineAmount"/>). It is the margin's net sale: the margin is computed from the goods' sale price only; the
+    /// customer-billed vade farkı is financing income and does not raise product profitability. Null without a price.
+    /// </summary>
+    public static decimal? LineAmountBeforeSurcharge(CommercialDraftFields commercial, decimal quantity, int scale)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        RequireScale(scale);
+        return ExactDiscounted(commercial) is { } discounted
+            ? ToDecimal(discounted.Multiply(ExactDecimal.Parse(Format(quantity))).RoundAwayFromZero(scale))
+            : null;
+    }
+
+    /// <summary>
     /// Delegation No 15 (API-03): <paramref name="percent"/> % of <paramref name="amount"/>, exact, rounded ONCE half away from
     /// zero to <paramref name="scale"/> — the line VAT from the line amount and the VAT rate.
     /// </summary>

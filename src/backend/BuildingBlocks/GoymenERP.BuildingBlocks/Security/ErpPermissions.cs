@@ -440,6 +440,17 @@ public static class ErpPermissions
     public const string SalesOrdersPriceRead = "sales.orders.price.read";
 
     /// <summary>
+    /// SAT-D250 (EK49) / SAT-D266 / SAT-D267 (EK52): disclose the S-05 sales margin (SAT-D247/SAT-D259 amount and percent, and the
+    /// draft's non-persisted preview) on the line-pricing read (Sales owner name SalesPermissionManifestV1.OrdersMarginRead). Like
+    /// <see cref="SalesOrdersPriceRead"/> it governs DISCLOSURE, not reachability: without it the read still answers and the margin
+    /// block is withheld in the backend (SAT-D250 (3): not zero, not hidden only in the UI). Its own name: no other Sales name
+    /// (the price read and write names included) confers it and it confers none. Registered, not granted: no seeded role and no
+    /// real user receives it; SAT-D250's "yalnız Genel Müdür ve Admin" is a persona → grant mapping and stays a human gate.
+    /// Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersMarginRead = "sales.orders.margin.read";
+
+    /// <summary>
     /// AT-021: a separate maker-checker permission for the reasoned approval of current below-floor lines.
     /// It grants neither price write nor order approval and is never seeded to a real actor here.
     /// </summary>
@@ -512,6 +523,15 @@ public static class ErpPermissions
     /// SAT-D216 (the shipper does not close their own line) is enforced by the Sales command.
     /// </summary>
     public const string SalesOrdersLineClose = "sales.orders.lines.close";
+
+    /// <summary>
+    /// SAT-D179 (EK25) / SAT-D251–SAT-D255 (EK50): write the source plan of an order's lines (Sales owner name
+    /// SalesPermissionManifestV1.OrdersSourcePlanWrite). Its own name: no other Sales name confers it and it confers none.
+    /// Registration grants nothing: no seeded role and no real user receives it; the persona mapping (SAT-D179 names Satış
+    /// Destek, Satış Uzmanı, Müdür and Admin) stays a human gate. Company-wide only. Not Critical: no approved source adds
+    /// grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersSourcePlanWrite = "sales.orders.source-plan.write";
 
     /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
@@ -974,6 +994,7 @@ public static class ErpPermissions
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersMarginRead,
             SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDiscountExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
@@ -982,6 +1003,7 @@ public static class ErpPermissions
             SalesOrdersClose,
             SalesOrdersOverDeliveryApprove,
             SalesOrdersLineClose,
+            SalesOrdersSourcePlanWrite,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
@@ -1140,6 +1162,7 @@ public static class ErpPermissions
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersMarginRead,
             SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDiscountExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
@@ -1148,6 +1171,7 @@ public static class ErpPermissions
             SalesOrdersClose,
             SalesOrdersOverDeliveryApprove,
             SalesOrdersLineClose,
+            SalesOrdersSourcePlanWrite,
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,

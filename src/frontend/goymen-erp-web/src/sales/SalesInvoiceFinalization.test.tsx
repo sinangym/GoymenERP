@@ -151,6 +151,8 @@ describe('API-36 finalization panel in the tab', () => {
     expect(within(panel).getByTestId('sales-invoice-state').textContent).toBe(INVOICE_STATE_TEXT.Approved)
     expect(within(panel).getByTestId('sales-invoice-payable').textContent).toBe('1180.40')
     expect(within(panel).getByTestId('sales-invoice-match-difference').textContent).toBe('-0.10')
+    expect(within(panel).getByTestId('sales-invoice-match-vat-difference').textContent).toBe('0.00')
+    expect(within(panel).getByTestId('sales-invoice-match-withholding-difference').textContent).toBe('0.00')
     expect(within(panel).getByTestId('sales-invoice-not-finalized').textContent).toBe(T.notFinalized)
     const table = within(panel).getByRole('table', { name: T.instalmentsPlannedCaption })
     const rows = within(table).getAllByRole('row').slice(1)

@@ -11,16 +11,21 @@
  *   GET /api/v1/sales/drafts/{id}/risk-check    → the customer risk card (reused from S-04)
  * The screen never computes a price, a net, a total, a margin or a risk; it only counts the server's pending exceptions.
  *
- * MARGIN: no cost or margin read exists on main, so the margin section is a labelled unavailable state — never a
- * figure derived here (NEEDS-SINAN: the cost source of a sales margin).
+ * MARGIN (SAT-D250 / SAT-D262…D267): the line-pricing read carries the server's margin block. `Withheld` (no
+ * `sales.orders.margin.read`) shows no button and no figure; `Visible` puts it behind "Marjı göster", labelled "yalnız alış
+ * maliyeti" and "tahmini / önizleme", one row per line from the server's one calculator — an unavailable margin reads
+ * "kullanılamıyor" with the server's reason, never zero. The unit cost is the company-wide (all warehouses) weighted
+ * moving-average purchase cost that Stok supplies through its versioned read port (SAT-D272; orders carry no warehouse); until
+ * that port exists every line is unavailable (`CostSourceMissing`).
  */
 
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { fetchDraftDetail } from './api'
 import type { DraftDetail, DraftLine } from './contract'
-import type { DiscountLimitCheck, LinePricing } from './linePricing'
+import type { DiscountLimitCheck, DraftMargin, LinePricing } from './linePricing'
 import { salesDetailPath } from './capabilities'
 import { PRICE_CONTROL_TEXT as T } from './priceControlText'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
@@ -150,12 +155,77 @@ function PriceControlView({ shell, detail, companyId, backLink, onRefreshDetail 
 
       <section className={styles.section} aria-labelledby="sales-price-control-margin-heading" data-testid="sales-price-control-margin">
         <h2 id="sales-price-control-margin-heading">{T.margin.heading}</h2>
-        <p className={styles.notice} data-tone="unknown">{T.margin.unavailable}</p>
+        {bound && pricedLines !== null
+          ? <MarginSection margin={pricedLines.margin} />
+          : <p className={styles.muted} data-testid="sales-price-control-margin-not-read">{T.margin.notRead}</p>}
       </section>
 
       <SalesOrderTotalsCard detail={detail} />
       <SalesOrderRiskCard detail={detail} />
     </article>
+  )
+}
+
+/** The server's margin block as it says it: withheld ⇒ no button; visible ⇒ behind "Marjı göster", nothing computed here. */
+function MarginSection({ margin }: { readonly margin: DraftMargin }) {
+  const [open, setOpen] = useState(false)
+  if (margin.disclosure === 'Withheld') {
+    return <p className={styles.muted} data-testid="sales-price-control-margin-withheld">{T.margin.withheld}</p>
+  }
+  const ordered = [...margin.lines].sort((a, b) => a.lineNo - b.lineNo)
+  return (
+    <>
+      <Button type="button" variant="secondary" aria-expanded={open} aria-controls="sales-price-control-margin-preview"
+        data-testid="sales-price-control-margin-toggle" onClick={() => setOpen((value) => !value)}>
+        {open ? T.margin.hide : T.margin.show}
+      </Button>
+      {open ? (
+        <div id="sales-price-control-margin-preview" data-testid="sales-price-control-margin-preview">
+          <ul className={styles.muted} aria-label={T.margin.heading} data-testid="sales-price-control-margin-labels">
+            <li data-testid="sales-price-control-margin-cost-basis">{T.margin.costBasis}</li>
+            <li data-testid="sales-price-control-margin-kind">{T.margin.kind}</li>
+          </ul>
+          <p className={styles.muted}>{T.margin.note}</p>
+          <div className={styles.tableWrap}>
+            <table className={styles.table} data-testid="sales-price-control-margin-table">
+              <caption className={styles.caption}>{T.margin.caption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{T.margin.line}</th>
+                  <th scope="col">{T.margin.state}</th>
+                  <th scope="col" className={styles.numeric}>{T.margin.amount}</th>
+                  <th scope="col" className={styles.numeric}>{T.margin.percent}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordered.map((line) => (
+                  <tr key={line.lineId} data-testid={`sales-price-control-margin-line-${line.lineNo}`}>
+                    <th scope="row">{line.lineNo}</th>
+                    {line.state === 'Unavailable' ? (
+                      <>
+                        <td data-testid={`sales-price-control-margin-line-${line.lineNo}-state`}>
+                          {`${T.margin.unavailable}: ${T.margin.reason[line.unavailableReason]}`}
+                        </td>
+                        <td className={styles.numeric}>{T.status.none}</td>
+                        <td className={styles.numeric}>{T.status.none}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td data-testid={`sales-price-control-margin-line-${line.lineNo}-state`}>{T.margin.computed}</td>
+                        <td className={styles.numeric} data-testid={`sales-price-control-margin-line-${line.lineNo}-amount`}>{line.amount}</td>
+                        <td className={styles.numeric} data-testid={`sales-price-control-margin-line-${line.lineNo}-percent`}>
+                          {line.percent === null ? T.margin.noPercent : T.margin.percentValue(line.percent)}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </>
   )
 }
 

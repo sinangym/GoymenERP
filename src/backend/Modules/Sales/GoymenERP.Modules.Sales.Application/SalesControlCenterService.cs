@@ -48,31 +48,34 @@ public sealed class SalesControlCenterService(
         foreach (var invoice in invoiceList)
         {
             var age = Math.Max(0, today.DayNumber - invoice.Header.BusinessDate.DayNumber);
+            var orders = OrdersOf(invoice);
             var flagged = invoice.Lines.Count(line => line.Functional is { NeedsReview: true });
             if (flagged > 0)
             {
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceNeedsReview,
                     SalesControlCenterSeverityView.ApprovalRequired, invoice.Header.PartyId, invoice.Header.CompanyAccountId,
-                    invoice.DocumentNo, invoice.Header.BusinessDate, age, flagged, invoice.Id, null, null, null));
+                    invoice.DocumentNo, invoice.Header.BusinessDate, age, flagged, invoice.Id, null, null, orders));
             }
 
-            if (invoice.Match is { Difference: > 0m } match)
+            if (invoice.Match is { LargestDifference: > 0m } match)
             {
-                // API-35 recorded a TL difference against the official document (SAT-D229): within the tolerance it is shown as such;
-                // beyond it, the recorded match already carries the approving person's decision (SAT-D106), so it stays informational.
+                // API-35 recorded a TL difference against the official document (SAT-D229) — on the payable amount, the VAT or the
+                // withholding (SAT-D241, each measured on its own): all within the tolerance it is shown as such; any one beyond it, the
+                // recorded match already carries the approving person's decision (SAT-D106), so it stays informational.
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.OfficialDocumentDeviation,
-                    match.Difference <= match.Tolerance ? SalesControlCenterSeverityView.WithinTolerance : SalesControlCenterSeverityView.Info,
+                    match.Exceeded ? SalesControlCenterSeverityView.Info : SalesControlCenterSeverityView.WithinTolerance,
                     invoice.Header.PartyId, invoice.Header.CompanyAccountId, invoice.DocumentNo, invoice.Header.BusinessDate, age,
-                    invoice.Lines.Count, invoice.Id, null, null, null));
+                    invoice.Lines.Count, invoice.Id, null, null, orders));
             }
 
-            if (invoice.State == SalesInvoiceState.Approved && invoice.Match is { Difference: not 0m })
+            if (invoice.State == SalesInvoiceState.Approved && invoice.Match is { HasOpenDifference: true })
             {
-                // API-36 refuses this invoice (409 sales_invoice_match_difference_open) until NEEDS-SINAN #3 is decided, and there is
-                // no Approved cancel path yet: without this item it would sit unseen.
+                // API-36 refuses this invoice (409 sales_invoice_match_difference_open) until NEEDS-SINAN #3 is decided — a payable, VAT
+                // or withholding difference alike (SAT-D241) — and there is no Approved cancel path yet: without this item it would sit
+                // unseen.
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceFinalizationBlocked,
                     SalesControlCenterSeverityView.Critical, invoice.Header.PartyId, invoice.Header.CompanyAccountId,
-                    invoice.DocumentNo, invoice.Header.BusinessDate, age, invoice.Lines.Count, invoice.Id, null, null, null));
+                    invoice.DocumentNo, invoice.Header.BusinessDate, age, invoice.Lines.Count, invoice.Id, null, null, orders));
             }
 
             if (invoice.State == SalesInvoiceState.Finalized && invoice.Finalization is { FinanceStatus: SalesInvoiceFinanceStatus.Waiting } waiting)
@@ -84,14 +87,14 @@ public sealed class SalesControlCenterService(
                         ? SalesControlCenterSeverityView.Critical
                         : SalesControlCenterSeverityView.Info,
                     invoice.Header.PartyId, invoice.Header.CompanyAccountId, invoice.DocumentNo, invoice.Header.BusinessDate, age,
-                    invoice.Lines.Count, invoice.Id, null, null, null));
+                    invoice.Lines.Count, invoice.Id, null, null, orders));
             }
 
             if (invoice.State == SalesInvoiceState.Approved && invoice.Match is null)
             {
                 items.Add(new SalesControlCenterItemView(SalesControlCenterCheckKindView.InvoiceAwaitingOfficialMatch,
                     SalesControlCenterSeverityView.Info, invoice.Header.PartyId, invoice.Header.CompanyAccountId,
-                    invoice.DocumentNo, invoice.Header.BusinessDate, age, invoice.Lines.Count, invoice.Id, null, null, null));
+                    invoice.DocumentNo, invoice.Header.BusinessDate, age, invoice.Lines.Count, invoice.Id, null, null, orders));
             }
         }
 
@@ -113,6 +116,32 @@ public sealed class SalesControlCenterService(
             new(SalesControlCenterCheckKindView.InvoiceFinanceAdmissionWaiting, SalesControlCenterCheckStateView.Measured,
                 invoicesTruncated),
         ], ordered);
+    }
+
+    /// <summary>
+    /// SAT-D246 (EK49): the distinct Sales orders the invoice's lines are on, in line order (first appearance). An invoice may span
+    /// several orders (DEC-SAL-006 grouping is enforced where the invoice is prepared, not here). The list comes only from the stored
+    /// lines; an invoice whose lines name no order, or an empty order identity, is not answered with an empty or guessed list: the
+    /// read fails closed (503).
+    /// </summary>
+    internal static IReadOnlyList<Guid> OrdersOf(SalesInvoice invoice)
+    {
+        var orders = new List<Guid>();
+        foreach (var line in invoice.Lines)
+        {
+            var orderId = line?.Share?.SalesOrderId ?? Guid.Empty;
+            if (orderId == Guid.Empty)
+            {
+                throw new SalesDraftServiceException(503, "service_unavailable");
+            }
+
+            if (!orders.Contains(orderId))
+            {
+                orders.Add(orderId);
+            }
+        }
+
+        return orders.Count > 0 ? orders : throw new SalesDraftServiceException(503, "service_unavailable");
     }
 
     /// <summary>The company's invoices that still hold shares (Draft, PendingApproval, Approved), newest first, within the page bound.</summary>
@@ -214,7 +243,7 @@ public sealed class SalesControlCenterService(
             {
                 items.Add(new SalesControlCenterItemView(kind, SalesControlCenterSeverityView.Critical, share.CustomerPartyId,
                     share.CompanyAccountId, share.SystemNumber, shipmentDay, age, 1, null, share.DispatchNoteId, share.ShipmentId,
-                    share.SalesOrderId));
+                    [share.SalesOrderId]));
             }
         }
 

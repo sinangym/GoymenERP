@@ -55,8 +55,9 @@ public sealed partial class SalesInvoice
         }
 
         // Which amount Finance opens when the official document differs from the ERP figure is an undecided money policy
-        // (NEEDS-SINAN #3), so a recorded difference fails closed: nothing is finalised until it is resolved.
-        if (Match.Difference != 0m)
+        // (NEEDS-SINAN #3), so a recorded difference fails closed: nothing is finalised until it is resolved. Since SAT-D241 a VAT or a
+        // withholding difference counts the same, and a match recorded before SAT-D241 (VAT and withholding never compared) too.
+        if (Match.HasOpenDifference)
         {
             throw new SalesRuleException(SalesRuleCodes.InvoiceMatchDifferenceOpen,
                 "Resmî belgeyle eşleşmede fark bulunduğundan fatura, fark çözülene kadar kesinleştirilemez.");

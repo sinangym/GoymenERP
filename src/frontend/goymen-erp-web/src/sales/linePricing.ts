@@ -11,6 +11,11 @@
  * customer group > company for the draft's customer, on the Europe/Istanbul business day; every reference names the tier it
  * answered at, and the price-references read says how the chain resolved (one list, an ambiguous tier, or no price at all).
  *
+ * SAT-D250 / SAT-D262…D267 (S-05): the line-pricing read also carries the draft's MARGIN block, decided by the separate
+ * `sales.orders.margin.read` — `Withheld` (every other member null) or `Visible` with one margin per pricing line from the
+ * server's one margin calculator (purchase cost only, a preview). The screen never computes, rounds or estimates a margin;
+ * an unavailable margin ("kullanılamıyor") is never shown as zero.
+ *
  * Exact-member decoders (the S-04 rule): a missing nullable is as wrong as an extra member; a body we cannot read is never
  * painted as data.
  */
@@ -111,7 +116,35 @@ export interface DiscountLimitCheck {
 export interface DraftLinePricing {
   readonly version: string
   readonly lines: readonly LinePricing[]
+  readonly margin: DraftMargin
 }
+
+/** Why a margin (or only its percent) is unavailable — the server's `SalesLineMarginUnavailableReason` member names. */
+export const MARGIN_UNAVAILABLE_REASONS = ['CostSourceMissing', 'CostUnreadable', 'CostNoSource', 'ProducedItem',
+  'MixedSourceItem', 'UnitConversionUndecided', 'CurrencyConversionUndecided', 'SalesAmountUnavailable', 'CostInvalid',
+  'AmountOutOfRange'] as const
+export type MarginUnavailableReason = (typeof MARGIN_UNAVAILABLE_REASONS)[number]
+
+export const MARGIN_KEYS = ['disclosure', 'costBasis', 'kind', 'lines'] as const
+export const LINE_MARGIN_KEYS = ['lineId', 'lineNo', 'state', 'unavailableReason', 'amount', 'currencyId', 'percent',
+  'percentUnavailableReason'] as const
+
+/** One line's margin: computed (amount in the functional currency; percent unless the net sale is not positive) or unavailable. */
+export type LineMargin =
+  | { readonly lineId: string; readonly lineNo: number; readonly state: 'Unavailable'; readonly unavailableReason: MarginUnavailableReason }
+  | {
+    readonly lineId: string
+    readonly lineNo: number
+    readonly state: 'Computed'
+    readonly amount: string
+    readonly currencyId: string
+    /** Null exactly when the net sale is not positive (no ratio). */
+    readonly percent: string | null
+  }
+
+export type DraftMargin =
+  | { readonly disclosure: 'Withheld' }
+  | { readonly disclosure: 'Visible'; readonly costBasis: 'PurchaseCostOnly'; readonly kind: 'Preview'; readonly lines: readonly LineMargin[] }
 
 export interface LinePriceReferences {
   readonly lineId: string
@@ -140,6 +173,13 @@ const isDecimal = (v: unknown): v is string => typeof v === 'string' && v.length
 const isNullableDecimal = (v: unknown): v is string | null => v === null || isDecimal(v)
 const isDate = (v: unknown): v is string => typeof v === 'string' && DATE.test(v)
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1
+/** The server's margin figures: signed, exactly two decimals (0,01 half away from zero is the server's rounding). */
+const SIGNED_HUNDREDTHS = /^-?(?:0|[1-9][0-9]{0,27})\.[0-9]{2}$/
+const isSignedHundredths = (v: unknown): v is string => typeof v === 'string' && SIGNED_HUNDREDTHS.test(v) && !/^-0\.00$/.test(v)
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const isGuid = (v: unknown): v is string => typeof v === 'string' && GUID.test(v) && v !== '00000000-0000-0000-0000-000000000000'
+const isMarginReason = (v: unknown): v is MarginUnavailableReason =>
+  typeof v === 'string' && (MARGIN_UNAVAILABLE_REASONS as readonly string[]).includes(v)
 
 /** Product's decimal(18,3) quantity shape as an exact lexicographically comparable key; no JS Number conversion or rounding. */
 function quantityKey(value: unknown): string | null {
@@ -242,8 +282,43 @@ function decodeDiscountCheck(value: unknown): DiscountLimitCheck | null {
   return pending || approved ? o as unknown as DiscountLimitCheck : null
 }
 
+function decodeLineMargin(value: unknown): LineMargin | null {
+  const o = exact(value, LINE_MARGIN_KEYS)
+  if (o === null || !isText(o.lineId) || !isCount(o.lineNo)) return null
+  if (o.state === 'Unavailable') {
+    // Unavailable is never a figure: no amount, no currency, no percent.
+    if (!isMarginReason(o.unavailableReason) || o.amount !== null || o.currencyId !== null || o.percent !== null
+      || o.percentUnavailableReason !== null) return null
+    return { lineId: o.lineId, lineNo: o.lineNo, state: 'Unavailable', unavailableReason: o.unavailableReason }
+  }
+  if (o.state !== 'Computed' || o.unavailableReason !== null || !isSignedHundredths(o.amount) || !isGuid(o.currencyId)) return null
+  const withPercent = isSignedHundredths(o.percent) && o.percentUnavailableReason === null
+  const withoutPercent = o.percent === null && o.percentUnavailableReason === 'NetSaleNotPositive'
+  if (!withPercent && !withoutPercent) return null
+  return { lineId: o.lineId, lineNo: o.lineNo, state: 'Computed', amount: o.amount, currencyId: o.currencyId, percent: withPercent ? o.percent as string : null }
+}
+
+/** The margin block, bound to the pricing lines it explains: every line once, same number, nothing else. */
+function decodeMargin(value: unknown, lines: readonly LinePricing[]): DraftMargin | null {
+  const o = exact(value, MARGIN_KEYS)
+  if (o === null) return null
+  if (o.disclosure === 'Withheld') return o.costBasis === null && o.kind === null && o.lines === null ? { disclosure: 'Withheld' } : null
+  if (o.disclosure !== 'Visible' || o.costBasis !== 'PurchaseCostOnly' || o.kind !== 'Preview' || !Array.isArray(o.lines)
+    || o.lines.length !== lines.length) return null
+  const numbers = new Map(lines.map((line) => [line.lineId, line.lineNo]))
+  const seen = new Set<string>()
+  const margins: LineMargin[] = []
+  for (const raw of o.lines) {
+    const margin = decodeLineMargin(raw)
+    if (margin === null || numbers.get(margin.lineId) !== margin.lineNo || seen.has(margin.lineId)) return null
+    seen.add(margin.lineId)
+    margins.push(margin)
+  }
+  return { disclosure: 'Visible', costBasis: 'PurchaseCostOnly', kind: 'Preview', lines: margins }
+}
+
 export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null {
-  const response = exact(value, ['version', 'lines'])
+  const response = exact(value, ['version', 'lines', 'margin'])
   if (response === null || typeof response.version !== 'string' || !/^[1-9][0-9]{0,18}$/.test(response.version)
     || !Array.isArray(response.lines)) return null
   const lines: LinePricing[] = []
@@ -269,7 +344,9 @@ export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null 
       surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice, floorException, discountCheck,
     })
   }
-  return { version: response.version, lines }
+  const margin = decodeMargin(response.margin, lines)
+  if (margin === null) return null
+  return { version: response.version, lines, margin }
 }
 
 export function decodeLinePriceReferences(value: unknown, expectedLineId: string): LinePriceReferences | null {

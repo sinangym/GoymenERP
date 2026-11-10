@@ -19,7 +19,7 @@ export const INVOICE_MATCH_TEXT = {
   submitApproval: 'Farkı onaylayarak eşleştir',
   formUnavailable: 'Eşleştirme formu, bu işlemin ekran yetkisi yayımlanana kadar gösterilmez.',
   approvalNeeded:
-    'Sunucu, resmî tutarla fatura tutarı arasındaki farkın tolerans üstünde olduğunu bildirdi. Eşleşme ancak ayrı onay ' +
+    'Sunucu, resmî tutarla fatura tutarı (ödenecek tutar, KDV veya tevkifat) arasındaki farkın tolerans üstünde olduğunu bildirdi. Eşleşme ancak ayrı onay ' +
     'yetkisiyle, gerekçe yazılarak kaydedilebilir.',
   approvalNotAvailable:
     'Fark onayı ayrı bir yetki ister ve faturayı hazırlayan kişi onaylayamaz; bu ekranda fark onayı sunulmuyor.',
@@ -40,6 +40,17 @@ export const INVOICE_MATCH_TEXT = {
   differenceApprovedBy: 'Farkı onaylayan',
   differenceReasonFact: 'Fark onayı gerekçesi',
   noDifferenceApproval: 'Fark onayı yok',
+  // SAT-D241: VAT and withholding are compared separately (TL equivalents); the amounts and differences are the server's.
+  invoiceVat: 'ERP KDV (TL)',
+  officialVat: 'Resmî KDV (TL)',
+  vatDifference: 'KDV farkı (sunucunun hesabı)',
+  invoiceWithholding: 'ERP tevkifat (TL)',
+  officialWithholding: 'Resmî tevkifat (TL)',
+  withholdingDifference: 'Tevkifat farkı (sunucunun hesabı)',
+  /** A match recorded before SAT-D241: neither VAT nor withholding was compared, so the row names both. */
+  taxDifference: 'Vergi farkı (KDV/tevkifat)',
+  taxNotCompared: 'Bu eşleşme KDV ve tevkifat ayrı karşılaştırılmadan önce kaydedildi; fatura bu kayıtla kesinleştirilemez.',
+  exceededFields: 'Tolerans üstündeki farklar',
   mismatchFields: 'Tutmayan alanlar',
   conflict: 'Sunucu eşleştirmeyi yapmadı; faturanın güncel durumu yeniden okundu.',
   refused: 'Sunucu eşleştirmeyi yapmadı.',
@@ -82,4 +93,11 @@ export const INVOICE_MATCH_FIELD_TEXT: Readonly<Record<string, string>> = {
   currency: 'Para birimi',
   officialInvoiceNo: 'Resmî fatura no',
   ettn: 'ETTN',
+}
+
+/** SAT-D241: the differences a `difference_approval_required` refusal names (`errors[].field`). */
+export const INVOICE_MATCH_DIFFERENCE_FIELD_TEXT: Readonly<Record<string, string>> = {
+  difference: 'Ödenecek tutar',
+  vatDifference: 'KDV',
+  withholdingDifference: 'Tevkifat',
 }

@@ -277,6 +277,14 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.lineClosureOpenCommitments]:
     'Satırda sevk edilmemiş yükleme ya da açık stok tahsisi var; satır kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan ' +
     'sonra yeniden deneyin.',
+  [SALES_PROBLEM_CODE.sourcePlanSumMismatch]:
+    'Üretim, satın alma ve fason toplamı; satırın kalan miktarından stok kısmı düşüldükten sonra kalana eşit değil. Plan kaydedilmedi (SAT-D252).',
+  [SALES_PROBLEM_CODE.sourcePlanUnitUnsupported]:
+    'Bu satırın birimi için kaynak planı henüz kaydedilemiyor (yalnız kilogram); birim dönüşümü kararı bekleniyor.',
+  [SALES_PROBLEM_CODE.sourcePlanLineLocked]:
+    'Satır teslim edilmiş, kapatılmış ya da sipariş bu durumda planlanamıyor; plan kaydedilmedi (SAT-D253).',
+  [SALES_PROBLEM_CODE.sourcePlanLinkedSupplyUnconfirmed]:
+    'Siparişe bağlı açık bir üretim ya da satın alma belgesi var; uyarıyı onaylamadan plan kaydedilmez (SAT-D254).',
   [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
   [SALES_PROBLEM_CODE.invoiceMatchRequired]:
@@ -1148,6 +1156,119 @@ export const LINE_CLOSURE_TEXT = {
     'iptal edilmiş ya da kapatılmış siparişte de kapatma yapılmaz.',
   validation: 'Satır kapatılmadı; gönderilen bilgi geçerli değil.',
   unexpected: 'Satır kapatılmadı. Beklenmeyen bir yanıt alındı.',
+} as const
+
+/**
+ * SAT-D251..SAT-D255 (EK50) / API-11: the order source plan ("Kaynak planı") on S-04. Every figure is the server's; the screen
+ * sums nothing and derives no stock or locked part.
+ */
+export const SOURCE_PLAN_TEXT = {
+  heading: 'Kaynak planı',
+  subject: 'kaynak planı',
+  description:
+    'Her satırın kalan miktarının nereden karşılanacağı: stok, üretim, satın alma ya da fason. Stok kısmı satıra yapılan ' +
+    'tahsisten kendiliğinden gelir; ayrıca girilmez (SAT-D255). Teslim edilen miktar kilitlidir; plan teslime kadar ' +
+    'değiştirilebilir (SAT-D253). Plan stok ayırmaz, belge oluşturmaz.',
+  sumRule:
+    'Kaydedilen her satırda üretim + satın alma + fason, kalan miktardan stok kısmı düşüldükten sonra kalana eşit olmalıdır ' +
+    '(SAT-D252). Toplamı sunucu denetler; bu ekran hesaplamaz.',
+  caption: 'Satırların kaynak planı',
+  lineNo: 'Satır',
+  quantity: 'Satır miktarı',
+  locked: 'Teslim edilen (kilitli)',
+  remaining: 'Kalan',
+  stock: 'Stok (tahsisten)',
+  suggestion: 'Öneri',
+  recorded: 'Kayıtlı plan',
+  production: 'Üretim',
+  purchasing: 'Satın alma',
+  subcontract: 'Fason',
+  warnings: 'Uyarılar',
+  unreadable: 'okunamadı',
+  noRecorded: 'Plan yok',
+  recordedParts: (stock: string, production: string, purchasing: string, subcontract: string) =>
+    `Stok ${stock} · Üretim ${production} · Satın alma ${purchasing} · Fason ${subcontract}`,
+  recordedBy: (by: string, at: string, version: string) => `${by} · ${at} · sürüm ${version}`,
+  recordedConfirmed: 'Bağlı belge uyarısı onaylanarak kaydedildi.',
+  inputLabel: (part: string, lineNo: number) => `${lineNo}. satır ${part}`,
+  suggestionValue: {
+    Stock: 'Stok',
+    Production: 'Üretim',
+    Purchasing: 'Satın alma',
+    Unavailable: 'kullanılamıyor',
+  },
+  suggestionReason: {
+    AllocationCoversRemainder: 'Tahsis kalan miktarı karşılıyor.',
+    FreeStockEnough: 'Serbest stok yeterli.',
+    FreeStockUnavailable: 'Serbest stok bilgisi bu sürümde okunamıyor; öneri verilmiyor.',
+    SupplyTypeUnmapped: 'Ürün tipinden üretim/satın alma eşlemesi henüz kararlaştırılmadı.',
+    LineDelivered: 'Satır teslim edildi.',
+    DeliveryUnreadable: 'Teslim bilgisi okunamadı.',
+    AllocationUnreadable: 'Tahsis bilgisi okunamadı.',
+    UnitUnsupported: 'Satır birimi için henüz desteklenmiyor (yalnız kilogram).',
+  },
+  lockReason: {
+    OrderState: 'Sipariş bu durumda planlanamaz (onay bekleyen revizyon, geri çekilmiş, iptal ya da kapatılmış).',
+    LineClosed: 'Satır kapatıldı.',
+    LineDelivered: 'Satır tamamen teslim edildi.',
+    DeliveryUnreadable: 'Teslim bilgisi okunamadığı için kaydedilemez.',
+    AllocationUnreadable: 'Tahsis bilgisi okunamadığı için kaydedilemez.',
+    UnitUnsupported: 'Satır birimi için kaydedilemez (yalnız kilogram).',
+  },
+  lockedNoReason: 'Bağlı belge bilgisi okunamadığı için şu anda kaydedilemez.',
+  warning: {
+    PlanAllocationMismatch: 'Plan ile tahsis uyumsuz: tahsis, plan kaydedildikten sonra değişti.',
+    PlanDeliveryMismatch: 'Teslim edilen miktar, plan kaydedildikten sonra değişti.',
+    PlanQuantityMismatch: 'Satır miktarı, plan kaydedildikten sonra değişti.',
+    LinkedSupplyOpen: 'Bu satıra ya da siparişe bağlı açık bir üretim/satın alma belgesi var.',
+    LinkedSupplyUnreadable: 'Bağlı üretim/satın alma belgeleri okunamadı.',
+    DeliveryUnreadable: 'Teslim bilgisi okunamadı.',
+    AllocationUnreadable: 'Tahsis bilgisi okunamadı.',
+    UnitUnsupported: 'Birim dönüşümü henüz kararlaştırılmadı.',
+    NoPlan: 'Henüz plan kaydedilmedi.',
+  },
+  linkedHeading: 'Bağlı belgeler',
+  linkedKind: { Production: 'Üretim', Purchasing: 'Satın alma' },
+  linkedStatus: { None: 'yok', Present: 'açık belge var', Unreadable: 'okunamadı' },
+  linkedUnreadable: 'Bağlı üretim ya da satın alma belgeleri okunamıyor; okunana kadar plan kaydedilemez (SAT-D254).',
+  linkedPresent: 'Siparişe bağlı açık üretim ya da satın alma belgesi var; kaydetmeden önce uyarıyı onaylamanız istenir (SAT-D254).',
+  orderLocked: 'Sipariş şu anda kaynak planına açık değil; plan yalnız gösterilir.',
+  readOnly: 'Kaynak planını kaydetme yetkiniz yok; plan yalnız gösterilir.',
+  save: 'Kaynak planını kaydet',
+  nothingToSave: 'Kaydedilecek bir satır yok: en az bir yazılabilir satırda üretim, satın alma ya da fason girin.',
+  invalidInput: (lineNo: number) =>
+    `${lineNo}. satırda üretim, satın alma ve fason sıfır ya da pozitif bir sayı olmalı (örnek: 1500 ya da 12,5).`,
+  confirmHeading: 'Bağlı belge uyarısı',
+  confirmNote:
+    'Siparişe bağlı açık bir üretim ya da satın alma belgesi var. Plan bu belgeleri değiştirmez; kayıt, uyarıyı onayladığınız ' +
+    'bilgisiyle denetim kaydına yazılır (SAT-D254).',
+  confirm: 'Uyarıyı onayla ve kaydet',
+  cancel: 'Vazgeç',
+  submitting: 'Kaynak planı gönderiliyor…',
+  completed: 'Kaynak planı kaydedildi.',
+  replayed: 'Bu plan daha önce kaydedilmişti; güncel plan gösteriliyor.',
+  unknown: 'Kaydın sonucu alınamadı; kaydedilmiş olabilir. Aynı planı tekrar göndermek ikinci bir kayıt oluşturmaz.',
+  unknownOffline:
+    'Bağlantı yok; planın sonucu alınamadı, kaydedilmiş olabilir. Bağlantı gelince aynı planı tekrar gönderin; ikinci bir ' +
+    'kayıt oluşmaz.',
+  unknownNetwork:
+    'Sunucuya ulaşılamadı; planın sonucu alınamadı, kaydedilmiş olabilir. Aynı planı tekrar göndermek ikinci bir kayıt oluşturmaz.',
+  unknownServiceUnavailable:
+    'Plan şu anda değerlendirilemedi: Satış servisi ya da bağlı kaynaklar (teslim, stok tahsisi, bağlı üretim/satın alma) ' +
+    'yanıt vermiyor. Biraz sonra aynı planı tekrar gönderin; ikinci bir kayıt oluşmaz.',
+  unknownMalformed:
+    'Sunucudan beklenmeyen bir yanıt alındı; plan kaydedilmiş olabilir. Aynı planı tekrar göndermek ikinci bir kayıt oluşturmaz.',
+  abandoned: 'Bu işlemi bıraktınız; planın sonucu hâlâ bilinmiyor. Sipariş yeniden açıldığında güncel plan okunur.',
+  retry: 'Aynı planı tekrar gönder',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; plan kaydedilmedi.',
+  forbidden: 'Bu şirkette kaynak planı kaydetme yetkiniz yok; plan kaydedilmedi.',
+  notFound: 'Sipariş bulunamadı; plan kaydedilmedi.',
+  conflict: 'Plan kaydedilmedi; sipariş ve plan yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel plan gösteriliyor.',
+  stateConflict: 'Sipariş şu anda kaynak planına açık değil; plan kaydedilmedi.',
+  validation: 'Plan kaydedilmedi; gönderilen bilgi geçerli değil.',
+  unexpected: 'Plan kaydedilmedi. Beklenmeyen bir yanıt alındı.',
 } as const
 
 /** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */

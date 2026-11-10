@@ -457,6 +457,33 @@ internal sealed class DraftLineClosureRow : ISalesTenantRow
 }
 
 /// <summary>
+/// SAT-D252..SAT-D255 (EK50) / API-11: one recorded source plan of one order line at one save (append-only; the current plan of
+/// a line is its row with the highest <see cref="DraftVersion"/>): the line (identity and position), the line quantity the parts
+/// were balanced against, the locked (delivered at the save, attributed to no source) part, the stock part derived from the
+/// Inventory allocation, the entered production / purchasing / subcontract parts (kilograms, decimal(18,3)), whether an open
+/// linked supply warning was confirmed, who saved it, when, the draft version it produced and the correlation. Never modified,
+/// never deleted.
+/// </summary>
+internal sealed class DraftSourcePlanLineRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public long DraftVersion { get; set; }
+    public Guid LineId { get; set; }
+    public int LineNo { get; set; }
+    public decimal LineQuantity { get; set; }
+    public decimal LockedQuantity { get; set; }
+    public decimal StockQuantity { get; set; }
+    public decimal ProductionQuantity { get; set; }
+    public decimal PurchasingQuantity { get; set; }
+    public decimal SubcontractQuantity { get; set; }
+    public bool LinkedSupplyConfirmed { get; set; }
+    public string SavedBy { get; set; } = string.Empty;
+    public DateTimeOffset SavedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// No 30 / SAT-D12: the recorded force-closure of an approved order (append-only, at most one per draft): the revision closed,
 /// who, when, why, the draft version it produced, the impact preview the user confirmed (its token and each category's status
 /// and blocking flag, as JSON) and every line's closed remainder (ordered, shipped, closed remainder as exact text, as JSON).

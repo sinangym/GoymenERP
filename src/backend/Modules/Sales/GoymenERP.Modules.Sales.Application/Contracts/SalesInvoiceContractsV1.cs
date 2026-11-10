@@ -401,6 +401,12 @@ public sealed record SalesInvoiceFinalizationView(Guid AdmissionId, string Final
 public sealed record SalesInvoiceDecisionView(string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? DecidedBy,
     DateTimeOffset? DecidedAtUtc, string? DecisionReason, string? CancelledBy, DateTimeOffset? CancelledAtUtc, string? CancellationReason);
 
+/// <summary>
+/// API-32 list row (S-09). SAT-D238 (EK48): the list needs <c>sales.invoices.read</c> only; <c>sales.orders.price.read</c> is
+/// ASKED, never required. <see cref="AmountDisclosure"/> is never absent: <c>Visible</c> → <see cref="PayableAmount"/> is the
+/// exact text and <see cref="FunctionalPayableAmount"/> the TL text of a foreign-currency invoice (null for a TL invoice);
+/// <c>Withheld</c> → both amounts are null BECAUSE the caller may not see them — a withheld amount is never zero and never empty.
+/// </summary>
 public sealed record SalesInvoiceSummaryView(
     Guid Id,
     string DocumentNo,
@@ -410,7 +416,8 @@ public sealed record SalesInvoiceSummaryView(
     Guid PartyId,
     Guid CompanyAccountId,
     Guid CurrencyId,
-    string PayableAmount,
+    SalesPriceDisclosure AmountDisclosure,
+    string? PayableAmount,
     string? FunctionalPayableAmount,
     int LineCount,
     DateTimeOffset CreatedAtUtc);

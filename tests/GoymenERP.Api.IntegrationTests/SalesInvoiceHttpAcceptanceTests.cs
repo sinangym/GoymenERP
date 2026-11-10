@@ -176,6 +176,37 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         }
     }
 
+    [Fact]
+    public async Task The_invoice_list_carries_withheld_amounts_as_explicit_nulls_beside_the_disclosure_and_never_as_zero_SAT_D238()
+    {
+        // SAT-D238 (EK48): a row the caller may not price keeps its place; both amounts are null on the wire and the disclosure says why.
+        var visibleId = Guid.NewGuid();
+        var withheldId = Guid.NewGuid();
+        var service = new StubInvoiceService
+        {
+            List = _ => Task.FromResult(new SalesInvoiceListResponse(
+            [
+                new SalesInvoiceSummaryView(visibleId, "SF-2026-000001", "Approved", "3", new DateOnly(2026, 11, 7), Guid.NewGuid(), Account,
+                    Guid.NewGuid(), SalesPriceDisclosure.Visible, "18.76", "648.49", 1, DateTimeOffset.UnixEpoch),
+                new SalesInvoiceSummaryView(withheldId, "SF-2026-000002", "Approved", "3", new DateOnly(2026, 11, 7), Guid.NewGuid(), Account,
+                    Guid.NewGuid(), SalesPriceDisclosure.Withheld, null, null, 1, DateTimeOffset.UnixEpoch),
+            ], null)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var list = await client.GetAsync($"{SalesEndpoints.InvoicesPath}?pageSize=10");
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var document = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("items");
+        Assert.Equal(("Visible", "18.76", "648.49"), (items[0].GetProperty("amountDisclosure").GetString(),
+            items[0].GetProperty("payableAmount").GetString(), items[0].GetProperty("functionalPayableAmount").GetString()));
+        Assert.Equal("Withheld", items[1].GetProperty("amountDisclosure").GetString());
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("payableAmount").ValueKind);
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("functionalPayableAmount").ValueKind);
+    }
+
     [Theory]
     [InlineData("submission", "submit")]
     [InlineData("approval", "approve")]

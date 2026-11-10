@@ -42,9 +42,8 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
                 // UI-61 (Sales 1.9): the S-08 invoice candidates on their own name.
                 ("sales.invoice-candidates.list", "/satis/faturaya-hazir", SalesPermissionManifestV1.InvoicesRead, null),
-                // UI-63 (Sales 1.19): the S-09 invoice list on the invoice read plus the price read its list read measures.
-                ("sales.invoices.list", "/satis/faturalar",
-                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}", null),
+                // UI-63 (Sales 1.19; SAT-D238, 1.20): the S-09 invoice list on the invoice read alone; its list read withholds the amounts.
+                ("sales.invoices.list", "/satis/faturalar", SalesPermissionManifestV1.InvoicesRead, null),
                 ("sales.orders.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
                 ("sales.orders.cancel", "/satis/siparisler/:draftId",
@@ -75,6 +74,9 @@ public sealed class SalesShellCapabilityProviderTests
                 // DEC-SAL-002: the quantity-revision CONTROL of the detail.
                 ("sales.orders.quantity.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}", "sales.drafts.detail"),
+                // S-2 API-11 (Sales 1.22): the source-plan CONTROL of the detail (read + its own name).
+                ("sales.orders.source-plan.write", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}", "sales.drafts.detail"),
                 // UI-20 (shell contract 1.8): the S-01 quote screens and their two controls — revision/loss on the quote write
                 // name, conversion on the quote write name AND the order create name (the two names the command measures).
                 ("sales.quotes.convert", "/satis/teklifler/:quoteId",

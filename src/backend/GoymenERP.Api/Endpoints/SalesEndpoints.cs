@@ -443,6 +443,7 @@ public static partial class SalesEndpoints
         MapForceCloseCommand(drafts);
         MapOverDeliveryApproval(drafts);
         MapLineClosure(drafts);
+        MapSourcePlan(drafts);
         MapForceClosure(drafts);
         MapUserClosureEndpoints(drafts);
         MapRemainderChanges(drafts);
@@ -1514,6 +1515,107 @@ public static partial class SalesEndpoints
                 SalesDraftProblemCodesV1.LineClosureShipperUnverified, SalesDraftProblemCodesV1.LineClosureSelfClosure,
                 SalesDraftProblemCodesV1.LineClosureOpenCommitments, SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.LineClosureBlocked)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// SAT-D251..SAT-D255 (EK50) / API-11: the order source plan. GET under the draft read answers per active line the suggestion,
+    /// the stock part derived from the Inventory allocation, the locked (shipped) part, the current recorded plan and the
+    /// warnings; POST records the listed lines' plan under <c>sales.orders.source-plan.write</c>. The source-owned service enforces
+    /// the permission, the version, the ONE equality, the delivery lock, the linked-supply confirmation and the fail-closed owner
+    /// reads. The route owns only the strict HTTP envelope (the line closure's) and never derives a part, a suggestion or a sum.
+    /// </summary>
+    private static void MapSourcePlan(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/source-plan", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetSourcePlanAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftSourcePlanV1")
+            .Produces<SalesOrderDraftSourcePlanResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        drafts.MapPost("/{id:guid}/source-plan", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftSourcePlanRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftSourcePlanJson.Read(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.RecordSourcePlanAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("RecordSalesOrderDraftSourcePlanV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftSourcePlanRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SourcePlanLineLocked, SalesDraftProblemCodesV1.SourcePlanLinkedSupplyUnconfirmed,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.SourcePlanSumMismatch,
+                SalesDraftProblemCodesV1.SourcePlanUnitUnsupported)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }

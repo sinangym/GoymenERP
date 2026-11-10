@@ -701,6 +701,29 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return LineClosure(draftId, request);
         }
 
+        public List<(Guid DraftId, SalesDraftSourcePlanRequest Request, string Key)> SourcePlanCalls { get; } = [];
+
+        public List<Guid> SourcePlanReads { get; } = [];
+
+        public Func<Guid, SalesDraftSourcePlanRequest, Task<SalesOrderDraftResponse>> SourcePlan { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, Task<SalesOrderDraftSourcePlanResponse>> SourcePlanRead { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public Task<SalesOrderDraftSourcePlanResponse> GetSourcePlanAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            SourcePlanReads.Add(draftId);
+            return SourcePlanRead(draftId);
+        }
+
+        public Task<SalesOrderDraftResponse> RecordSourcePlanAsync(Guid draftId, SalesDraftSourcePlanRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            SourcePlanCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return SourcePlan(draftId, request);
+        }
+
         public Func<Guid, SalesDraftRemainderChangeRequest, Task<SalesOrderDraftResponse>> RemainderRequest { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
 
@@ -2386,6 +2409,136 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.DoesNotContain(SalesDraftProblemCodesV1.LineClosurePolicyUnavailable, await unavailable.Content.ReadAsStringAsync(),
                 StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// SAT-D252..SAT-D255 / API-11: the source plan save needs one canonical key and the strict body {expectedVersion,
+    /// confirmLinkedSupply, lines[{lineId, production, purchasing, subcontract}]} before the service is reached (no stock or
+    /// locked part is accepted from the client); it answers 200 with the detail, carries the replay headers, answers the
+    /// unconfirmed linked supply as 409 and the sum mismatch as 422 with their stable codes, and keeps 503 code-less. The read
+    /// answers the service's plan and keeps 404 code-less.
+    /// </summary>
+    [Fact]
+    public async Task Source_plan_uses_the_strict_envelope_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        const string segment = "source-plan";
+        var valid = JsonSerializer.Serialize(new SalesDraftSourcePlanRequest("4", false,
+            [new SalesDraftSourcePlanLineRequestV1(lineId, "60", "40", "0")]), SalesDraftJson.Options);
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}")
+               {
+                   Content = new StringContent(valid, Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        var line = $"{{\"lineId\":\"{lineId:D}\",\"production\":\"60\",\"purchasing\":\"40\",\"subcontract\":\"0\"}}";
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     "{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[]}",
+                     $"{{\"expectedVersion\":4,\"confirmLinkedSupply\":false,\"lines\":[{line}]}}",
+                     $"{{\"expectedVersion\":\"04\",\"confirmLinkedSupply\":false,\"lines\":[{line}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"lines\":[{line}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":\"true\",\"lines\":[{line}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[{line},{line}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[{{\"lineId\":\"{Guid.Empty:D}\",\"production\":\"60\",\"purchasing\":\"40\",\"subcontract\":\"0\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[{{\"lineId\":\"{lineId:D}\",\"production\":\"-1\",\"purchasing\":\"40\",\"subcontract\":\"0\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[{{\"lineId\":\"{lineId:D}\",\"production\":60,\"purchasing\":\"40\",\"subcontract\":\"0\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[{{\"lineId\":\"{lineId:D}\",\"stock\":\"1\",\"production\":\"60\",\"purchasing\":\"40\",\"subcontract\":\"0\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"confirmLinkedSupply\":false,\"lines\":[{line}],\"reason\":\"x\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, segment, "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.SourcePlanCalls);
+
+        service.SourcePlan = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"),
+            request.ConfirmLinkedSupply, "SENTETIK-plan-first"));
+        using (var saved = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-plan", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            Assert.False(saved.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        var call = Assert.Single(service.SourcePlanCalls);
+        Assert.Equal((draftId, "4", false, "SENTETIK-plan"), (call.DraftId, call.Request.ExpectedVersion, call.Request.ConfirmLinkedSupply, call.Key));
+        Assert.Equal((lineId, "60", "40", "0"),
+            (call.Request.Lines[0].LineId, call.Request.Lines[0].Production, call.Request.Lines[0].Purchasing, call.Request.Lines[0].Subcontract));
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-plan-2",
+                   JsonSerializer.Serialize(new SalesDraftSourcePlanRequest("4", true,
+                       [new SalesDraftSourcePlanLineRequestV1(lineId, "60", "40", "0")]), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-plan-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.SourcePlan = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.SourcePlanLinkedSupplyUnconfirmed,
+            [new("confirmLinkedSupply", SalesDraftProblemCodesV1.SourcePlanLinkedSupplyUnconfirmed)]);
+        using (var unconfirmed = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-unconfirmed", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, unconfirmed.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.SourcePlanLinkedSupplyUnconfirmed,
+                (await unconfirmed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.SourcePlan = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.SourcePlanLineLocked,
+            [new("lines[0]", SalesDraftProblemCodesV1.SourcePlanLineLocked)], true, "SENTETIK-locked-first");
+        using (var locked = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-locked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, locked.StatusCode);
+            Assert.Equal("true", Assert.Single(locked.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(SalesDraftProblemCodesV1.SourcePlanLineLocked,
+                (await locked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.SourcePlan = (_, _) => throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.SourcePlanSumMismatch,
+            [new("lines[0]", SalesDraftProblemCodesV1.SourcePlanSumMismatch)]);
+        using (var mismatch = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-mismatch", valid)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, mismatch.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.SourcePlanSumMismatch,
+                (await mismatch.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.SourcePlan = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.SourcePlanAllocationUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.SourcePlanAllocationUnavailable, await unavailable.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+        }
+
+        using (var missing = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.DoesNotContain("\"code\"", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        service.SourcePlanRead = _ => Task.FromResult(new SalesOrderDraftSourcePlanResponse("5", "0", true, [], []));
+        using (var read = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            var body = await read.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("5", body.GetProperty("version").GetString());
+            Assert.True(body.GetProperty("writable").GetBoolean());
+        }
+
+        Assert.Equal([draftId, draftId], service.SourcePlanReads);
     }
 
     private static HttpRequestMessage StateCommand(Guid draftId, string segment, string idempotencyKey, string json)
