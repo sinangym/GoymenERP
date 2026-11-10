@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 152
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "0a0554324a516e7ce1c15304a33d5ff553554a5de57f7170d8e039eb074b97d3"
 )
-EXPECTED_DURABLE_STORE_COUNT = 30
+EXPECTED_DURABLE_STORE_COUNT = 31
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -206,6 +206,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("sales", "InvoiceAttempts"),
     ("sales", "QuoteAttempts"),
     ("sales", "RequestAttempts"),
+    ("sales", "ShipmentRiskExceptionAttempts"),
 )
 METADATA_ONLY_IDEMPOTENCY_KEY_TABLES = (("audit", "AuditEvents"),)
 AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
@@ -604,6 +605,15 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027063346_AddSalesRequests.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
         ("dbContext.RequestAttempts.Add(new RequestAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "sales.shipment-risk-exception-attempts", "Sales", "idempotency", "SalesDbContext",
+        "ShipmentRiskExceptionAttemptRow",
+        "sales", "ShipmentRiskExceptionAttempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110155556_AddShipmentRiskExceptions.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs",
+        ("dbContext.ShipmentRiskExceptionAttempts.Add(NewRiskExceptionAttempt(",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "sales.outbox", "Sales", "outbox", "SalesDbContext", "SalesOutboxRow", "sales",
