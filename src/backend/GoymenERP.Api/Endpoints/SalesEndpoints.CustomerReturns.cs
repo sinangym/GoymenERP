@@ -101,27 +101,17 @@ public static partial class SalesEndpoints
         // The company's returns, optionally of one original invoice (`invoiceId`), newest first (technical bound
         // SalesCustomerReturnApiV1.MaximumListed), under `sales.returns.read` (+ the price read).
         returns.MapGet("/", async (
+            [FromQuery] Guid? invoiceId,
             HttpContext httpContext,
             [FromServices] ISalesCustomerReturnService service,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
-            var query = httpContext.Request.Query;
-            Guid? invoiceId = null;
-            if (!HasOnlySingleQuery(query, CustomerReturnListQueryNames, Array.Empty<string>()))
+            if (!HasOnlySingleQuery(httpContext.Request.Query, CustomerReturnListQueryNames, Array.Empty<string>())
+                || invoiceId == Guid.Empty)
             {
                 return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
-            }
-
-            if (query.TryGetValue("invoiceId", out var raw))
-            {
-                if (!Guid.TryParseExact(raw[0], "D", out var parsed) || parsed == Guid.Empty)
-                {
-                    return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
-                }
-
-                invoiceId = parsed;
             }
 
             try
@@ -246,11 +236,18 @@ public static partial class SalesEndpoints
                     SalesRuleCodes.CustomerReturnAmountOutOfRange)
                 .ProducesErpServiceUnavailable(SalesCustomerReturnProblemCodesV1.FinancePortUnavailable);
         }
-        else
+        else if (string.Equals(segment, "approval", StringComparison.Ordinal))
         {
+            // SAT-D290 (3): only the approval refuses the preparer or the submitter.
             route.ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                     SalesCustomerReturnProblemCodesV1.SelfApproval, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
                     SalesDraftProblemCodesV1.ConcurrentChange)
+                .ProducesErpServiceUnavailable();
+        }
+        else
+        {
+            route.ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                    SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
                 .ProducesErpServiceUnavailable();
         }
 
