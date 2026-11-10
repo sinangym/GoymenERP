@@ -1,28 +1,28 @@
 # Sinan Kararları — 2026-11-10 (Satış: API-07 risk istisnası — sevk kimliği, limit içi ret, tek sevk tüketimi, talebin geri çekilmesi, izinlerin ataması)
 
 Bu belge önceki karar dosyalarını silmez; SAT-D283…SAT-D287'yi ekler. SAT-D153…SAT-D162 (EK21), SAT-D209 (EK35),
-SAT-D281 ve SAT-D282 (EK55), DEC-SAL-002 ve DEC-FIN-009 geçerlidir; bu belge onların metnini değiştirmez (bkz.
-"Bilinçli değişiklikler").
+SAT-D281 ve SAT-D282 (EK55), DEC-SAL-002 ve DEC-FIN-009 geçerlidir; bu belge onların karar metnini değiştirmez
+(bkz. "Bilinçli değişiklikler"). `KARAR_SICILI` DEC-FIN-009 satırının yalnız `KabulKaniti` sütununa EK56 referansı
+eklenir.
 
 **Kaynak:**
 
 - Sinan'ın 10 Kasım 2026'da Claude Code cloud oturumunda (`session_01SPADrzecggx3apH2gfNW7b`) Satış (Claude) şeridine
   önerili seçenekli bir soru turunda verdiği beş cevap; beşinde de **önerilen seçenek** seçildi. Sorular, Satış
   tarafı taslak PR #1054'ün (API-07 tek sevk risk istisnası) açık bıraktığı noktalar içindir.
-- Soruların seçilmeyen seçenekleri ve seçenek açıklamaları bu belgeyi yazan ajana iletilmediği için yazılmadı
-  (uydurulmadı); "Kayda geçen anlam" sütunu koordinatörün ilettiği seçilen seçeneğin anlamıdır.
+- Seçilmeyen seçenekler aşağıdaki tabloda soru turundaki açıklamalarıyla yazılmıştır.
 - Cevaplar henüz Issue #66'ya yazılmadı; bu belge Issue #66'ya yorum yazmaz. Merge makbuzu merge eden tarafından
   yazılır.
 
 ## Soru ve cevaplar
 
-| # | Soru | Cevap | Kayda geçen anlam |
-|---|---|---|---|
-| 1 | Risk istisnası hangi sevk kimliğine bağlanır? | Önerilen seçenek | İstisna, Lojistik'in **yükleme talimatı** kimliğine bağlanır. PR #1054'ün bugünkü tasarımını (`loadingInstructionId`) teyit eder. |
-| 2 | Riski limit içinde olan sipariş için istisna talebi açılabilir mi? | Önerilen seçenek | **Hayır.** Siparişin riski limit içindeyse talep **reddedilir**; yalnız limiti aşan sipariş istisna isteyebilir. |
-| 3 | Onaylanmış istisna nasıl tüketilir; bağlı sevk iptal edilirse ne olur? | Önerilen seçenek | Onaylanmış istisnayı **tek bir sevk** tüketir. O sevk iptal edilirse istisna **düşer**; yeni sevk için yeni talep gerekir. |
-| 4 | Talep eden, bekleyen talebini geri çekebilir mi? | Önerilen seçenek | **Evet.** Talep eden **kendi bekleyen** talebini geri çekebilir; yeni bir **Geri çekildi** (`Withdrawn`) durumu eklenir. |
-| 5 | `sales.orders.risk-exception.request` / `.approve` izinleri rollere nasıl verilir? | Önerilen seçenek | Kodda grant **yoktur**; izinler kurulumda **Ayarlar rol ekranından** atanır (EK55 SAT-D282 (4) yolu). Grant insan kapısı değişmez. |
+| # | Soru | Cevap | Seçilmeyen seçenek(ler) | Kayda geçen anlam |
+|---|---|---|---|---|
+| 1 | Risk istisnası hangi sevk kimliğine bağlanır? | Önerilen seçenek: Yükleme talimatı | **İrsaliye** (irsaliye kesilirken bağlanır; daha geç, yeniden tasarım gerekir) · **Kesin sevkiyat** (kesinleşmiş sevkiyata bağlanır; en geç an) | İstisna, Lojistik'in **yükleme talimatı** kimliğine bağlanır. PR #1054'ün bugünkü tasarımını (`loadingInstructionId`) teyit eder. |
+| 2 | Riski limit içinde olan sipariş için istisna talebi açılabilir mi? | Önerilen seçenek: Evet, reddet | **Hayır, izin ver** (önceden onay almak için limit içindeyken de talep açılabilir) | **Hayır.** Siparişin riski limit içindeyse talep **reddedilir**; yalnız limiti aşan sipariş istisna isteyebilir. |
+| 3 | Onaylanmış istisna nasıl tüketilir; bağlı sevk iptal edilirse ne olur? | Önerilen seçenek: Tek sevk, iptalde düşer | **Gün sonuna kadar geçerli** (aynı iş günü içinde o sevkiyat için tekrar kullanılabilir; iptal etkilemez) | Onaylanmış istisnayı **tek bir sevk** tüketir. O sevk iptal edilirse istisna **düşer**; yeni sevk için yeni talep gerekir. |
+| 4 | Talep eden, bekleyen talebini geri çekebilir mi? | Önerilen seçenek: Evet, geri çeksin | **Hayır** (yalnız onaycı reddederek kapatır) | **Evet.** Talep eden **kendi bekleyen** talebini geri çekebilir; yeni bir **Geri çekildi** (`Withdrawn`) durumu eklenir. |
+| 5 | `sales.orders.risk-exception.request` / `.approve` izinleri rollere nasıl verilir? | Ayarlar ekranı (EK55 cevabı; bu turda yeniden sorulmadı) | — (EK55 SAT-D282 (4) turunda: kod PR'ında rol tanımı seçeneği reddedildi) | Kodda grant **yoktur**; izinler kurulumda **Ayarlar rol ekranından** atanır (EK55 SAT-D282 (4) yolu). Grant insan kapısı değişmez. |
 
 ## Kararlar
 
@@ -38,9 +38,13 @@ Uygulama ayrıntısı (geri alınabilir):
 
 - **SAT-D284:** Ret, mevcut problem kodu ailesinde ayrı bir kodla döner (ör. `risk_exception_within_limit`);
   durum değişebileceği için (risk sonradan limiti aşabilir) kayıtlı terminal ret değildir, yeniden denenebilir.
-  Kodun adı uygulama PR'ında seçilir.
-- **SAT-D285:** Okuma portu, tüketilmiş veya sevki iptal edilmiş istisnayı "geçerli" olarak dönmez; port cevabındaki
-  durum adları (ör. `Lapsed`) uygulama PR'ında sözleşme testiyle sabitlenir.
+  Kodun adı uygulama PR'ında seçilir. Yalnız risk sonucu açıkça **limit içi** (`Within`) olduğunda reddedilir; risk
+  sonucu okunamıyorsa (`Unavailable`) "limit içi" sayılmaz ve talep bu kararla reddedilmez (fail-closed: istisna
+  yine onaycı onayı ister).
+- **SAT-D285:** Satış okuma portu tüketimi ve sevk iptalini bilmez (bunlar Lojistik durumudur); port yalnız Satış
+  kaydının durumunu ve SAT-D160 iş tarihi geçerliliğini döner. Tüketim ve iptal kuralını Lojistik sevk kapısı port
+  cevabının üstüne uygular. Satış'ın tüketim/iptal bilgisini nasıl öğreneceği (olay/komut) Lojistik başlayınca karara
+  bağlanır (`NEEDS-SINAN`, SAT-D209).
 - **SAT-D286:** Geri çekme yalnız `Requested` durumundan yapılır; geri çekilen talep, aynı yükleme talimatı için yeni
   talep açılmasını engellemez (bekleyen talep tekilliği yalnız `Requested` durumunu kapsar).
 
@@ -67,10 +71,10 @@ Uygulama ayrıntısı (geri alınabilir):
 
 | Karar | İş | Şerit / Kapı |
 |---|---|---|
-| SAT-D283 | PR #1054'te kod değişikliği gerekmez; PR açıklamasında karar referansı SAT-D283 olarak güncellenir. | Claude (Satış); K3 (PR #1054) |
+| SAT-D283 | PR #1054'te davranış değişikliği gerekmez; PR açıklaması ve sözleşme kod yorumlarındaki "EK55 pending" / "NEEDS-SINAN" referansları SAT-D283/SAT-D285'e çekilir. SAT-D284 takip PR'ı gelene kadar #1054'ün limit içindeki siparişte de talep kabul ettiği PR açıklamasına bilinen açık olarak yazılır. | Claude (Satış); K3 (PR #1054) |
 | SAT-D284 | Talep komutunda limit içi siparişin reddi (risk kontrolü sonucundan), problem kodu, OpenAPI ve testler; ön yüzde ret mesajı. | Satış (ayrı PR, #1054 sonrası); K3 değerlendirmesi o PR'da |
 | SAT-D285 | Satış tarafında kod yok; okuma portu sözleşmesine tüketim ve iptal kuralının yazılması. Tüketim ve iptal bağlantısı Lojistik sevk kapısında. | Lojistik (Lojistik başlayınca); cross-module contract K3 |
-| SAT-D286 | `Withdrawn` durumu, geri çekme komutu ve endpoint'i (expected version, idempotency, audit), constraint/trigger güncellemesi (forward-fix migration), OpenAPI ve testler; ön yüzde "geri çek" düğmesi. | Satış (ayrı PR); migration K3 |
+| SAT-D286 | `Withdrawn` durumu, geri çekme komutu ve endpoint'i (expected version, idempotency, audit), constraint/trigger güncellemesi (forward-fix migration), okuma portu durum eşlemesi ve `SalesShipmentRiskExceptionStatusV1` sözleşmesi (geri çekilen talep `Rejected` dönmemeli), OpenAPI ve testler; ön yüzde "geri çek" düğmesi. | Satış (ayrı PR); migration ve cross-module contract K3 |
 | SAT-D287 | Bu PR'da kod işi yoktur; persona kartı ve kurulum kontrol listesine iki izin satırı ayrı doküman adımında. | Doküman; grant insan kapısı |
 
 ## Sınırlar
