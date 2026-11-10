@@ -35,6 +35,15 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 {
     public const string Schema = "inventory";
 
+    /// <summary>
+    /// SAT-D262: a known row holds both numbers (kg >= 0, average >= 0) and no reason; an unreadable row holds a reason
+    /// (1..8, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
+    /// </summary>
+    internal const string AverageCostLedgerStateCheck =
+        "[Version] >= 1 AND (([Status] = 1 AND [UnreadableReason] IS NULL AND [QuantityKg] IS NOT NULL AND [QuantityKg] >= 0 "
+        + "AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) "
+        + "OR ([Status] = 2 AND [UnreadableReason] BETWEEN 1 AND 8 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
+
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
     internal DbSet<LabelRow> Labels => Set<LabelRow>();
@@ -60,6 +69,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<AllocationRow> Allocations => Set<AllocationRow>();
 
     internal DbSet<AllocationChangeRow> AllocationChanges => Set<AllocationChangeRow>();
+
+    internal DbSet<AverageCostLedgerRow> AverageCostLedger => Set<AverageCostLedgerRow>();
 
     internal DbSet<InventoryOutboxRow> OutboxMessages => Set<InventoryOutboxRow>();
 
@@ -105,6 +116,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureBalances(modelBuilder);
         ConfigureAllocations(modelBuilder);
         ConfigureAllocationChanges(modelBuilder);
+        ConfigureAverageCostLedger(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
@@ -554,6 +566,36 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// SAT-D262 moving-average purchase cost ledger: one row per (company, location, product), company-filtered, versioned.
+    /// No price input is connected yet (Purchasing price input: NEEDS-SINAN, #66), so nothing writes it and the port
+    /// answers NoSource; the table only fixes the owner-side shape.
+    /// </summary>
+    private void ConfigureAverageCostLedger(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AverageCostLedgerRow>();
+        entity.ToTable("AverageCostLedger", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_AverageCostLedger_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_AverageCostLedger_State", AverageCostLedgerStateCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        entity.Property(x => x.AverageCostPerKg).HasPrecision(18, 4);
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.LocationId, x.ProductId })
+            .IsUnique()
+            .HasDatabaseName("UX_AverageCostLedger_Position");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LocationOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureOutboxMessages(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<InventoryOutboxRow>();
@@ -993,6 +1035,13 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(LabelRow.Classification), nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc),
                     ],
                     BalanceRow => [nameof(BalanceRow.QuantityKg)],
+                    AverageCostLedgerRow =>
+                    [
+                        // SAT-D262: the position's state moves; its identity (company, location, product) never does.
+                        nameof(AverageCostLedgerRow.Status), nameof(AverageCostLedgerRow.UnreadableReason),
+                        nameof(AverageCostLedgerRow.QuantityKg), nameof(AverageCostLedgerRow.AverageCostPerKg),
+                        nameof(AverageCostLedgerRow.Version), nameof(AverageCostLedgerRow.UpdatedAtUtc),
+                    ],
                     AllocationRow =>
                     [
                         // INV-AL-1 change: an in-place resize re-states AllocatedKg (consumed part kept exactly).
