@@ -597,6 +597,16 @@ public static class ErpPermissions
     public const string SalesInvoicesFinalize = "sales.invoices.finalize";
 
     /// <summary>
+    /// S5 API-34 (SAT-D236, SAT-D244, SAT-D248): export the finalised sales invoices of a date range as one file for Muhasebe (Sales
+    /// owner name SalesPermissionManifestV1.InvoicesExport, same string). It only produces a file: no official outbound connection
+    /// (GIB, integrator, Mikro) is opened (DEC-INT-001, DEC-FIN-003). Its own name: the invoice read, write, approve, match and finalise
+    /// names do not confer it and it confers none of them; the file's amounts additionally need sales.orders.price.read (SAT-D238).
+    /// Registered, not granted: no seeded role and no real user receives it (who exports is a grant and a human gate, EK47 Sinirlar).
+    /// Company-wide only. Not Critical: a read moves nothing.
+    /// </summary>
+    public const string SalesInvoicesExport = "sales.invoices.export";
+
+    /// <summary>
     /// API-41 / API-42 (plan §3.4, UI-80; KPI No 124, No 25, SAT-D25): read the Sales reports — open order quantities, lost
     /// quotes and the invoice-to-order price variance (Sales owner name SalesPermissionManifestV1.ReportsRead, same string). Its
     /// own name: no order, quote, invoice or price name confers it and it confers none of them (an amount in a report still needs
@@ -986,6 +996,7 @@ public static class ErpPermissions
             SalesInvoicesApprove,
             SalesInvoicesMatch,
             SalesInvoicesFinalize,
+            SalesInvoicesExport,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -1151,6 +1162,7 @@ public static class ErpPermissions
             SalesInvoicesApprove,
             SalesInvoicesMatch,
             SalesInvoicesFinalize,
+            SalesInvoicesExport,
             SalesReportsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,

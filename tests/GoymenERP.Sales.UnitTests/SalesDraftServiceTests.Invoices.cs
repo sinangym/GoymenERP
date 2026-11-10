@@ -746,6 +746,29 @@ public sealed partial class SalesDraftServiceTests
         public Task<SalesInvoicePage> ListInvoicesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesInvoicePage([.. Stored.Values.Take(pageSize)], null));
 
+        public Dictionary<Guid, string> OrderNumbers { get; } = [];
+
+        public int ExportReads { get; private set; }
+
+        /// <summary>Answers "more invoices than the limit" for the export (API-34) without storing 501 invoices.</summary>
+        public bool ExportHasMore { get; set; }
+
+        public Task<SalesInvoiceExportBatch> ListFinalizedInvoicesAsync(DateTimeOffset fromUtc, DateTimeOffset toUtcExclusive, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            ExportReads++;
+            var found = Stored.Values
+                .Where(invoice => invoice.State == SalesInvoiceState.Finalized && invoice.Finalization is { } finalization
+                    && finalization.FinalizedAtUtc >= fromUtc && finalization.FinalizedAtUtc < toUtcExclusive)
+                .OrderBy(invoice => invoice.Finalization!.FinalizedAtUtc).ThenBy(invoice => invoice.Id).ToList();
+            return Task.FromResult(new SalesInvoiceExportBatch([.. found.Take(limit)], ExportHasMore || found.Count > limit));
+        }
+
+        public Task<IReadOnlyDictionary<Guid, string>> FindOrderDocumentNumbersAsync(IReadOnlyCollection<Guid> orderIds,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, string>>(OrderNumbers.Where(pair => orderIds.Contains(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value));
+
         public int OfOrderReads { get; private set; }
 
         public Task<SalesOrderInvoicePage> ListInvoicesOfOrderAsync(Guid salesOrderId, int limit, CancellationToken cancellationToken = default)

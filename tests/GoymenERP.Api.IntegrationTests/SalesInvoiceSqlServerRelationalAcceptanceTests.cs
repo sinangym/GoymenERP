@@ -564,21 +564,112 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             [share], SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms, actor, DateTimeOffset.UtcNow);
     }
 
+    /// <summary>
+    /// API-34 (SAT-D244, SAT-D246, SAT-D248): the export reads only finalised invoices by the finalisation instant (from included, to
+    /// excluded), oldest first, says when more exist than the limit, and resolves every order number of a multi-order invoice; another
+    /// company sees neither the invoices nor the order numbers.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_export_reads_only_finalized_invoices_of_the_range_with_every_order_number_and_company_isolation_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var firstOrder = await OrderDraftAsync(run, CompanyA, "x-order-1");
+        var secondOrder = await OrderDraftAsync(run, CompanyA, "x-order-2");
+        var otherCompanyOrder = await OrderDraftAsync(run, CompanyB, "x-order-b");
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var finalizer = "SENTETIK-finalizer-" + Guid.NewGuid().ToString("N");
+        var multiOrder = await FinalizedAsync(run, "x1", approver, finalizer,
+            (id, number) => Invoice(id, number, run.Actor, Guid.NewGuid(), Guid.NewGuid(), firstOrder.Id, secondOrder.Id));
+        var later = await FinalizedAsync(run, "x2", approver, finalizer);
+        var onlyApproved = await ApprovedAsync(run, "x3", approver);
+
+        SalesInvoiceExportBatch all;
+        await using (var scope = run.Store(CompanyA))
+        {
+            all = await scope.Invoices.ListFinalizedInvoicesAsync(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1),
+                SalesInvoiceApiV1.MaximumExportInvoices);
+            Assert.False(all.HasMore);
+            Assert.Equal([multiOrder.Id, later.Id], all.Items.Select(invoice => invoice.Id));
+            Assert.DoesNotContain(onlyApproved.Id, all.Items.Select(invoice => invoice.Id));
+            Assert.All(all.Items, invoice => Assert.Equal(SalesInvoiceState.Finalized, invoice.State));
+            var exported = all.Items[0];
+            Assert.Equal([1, 2], exported.Lines.Select(line => line.LineNo).Order());
+            Assert.Equal(new HashSet<Guid> { firstOrder.Id, secondOrder.Id }, exported.Lines.Select(line => line.Share.SalesOrderId).ToHashSet());
+            Assert.NotNull(exported.Finalization);
+            Assert.NotEmpty(exported.Finalization!.Plan);
+            Assert.Equal("GIB2026000000021", exported.Match?.OfficialNo);
+
+            var limited = await scope.Invoices.ListFinalizedInvoicesAsync(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1), 1);
+            Assert.True(limited.HasMore);
+            Assert.Equal([multiOrder.Id], limited.Items.Select(invoice => invoice.Id));
+
+            // The bounds: the first finalisation instant is included as "from" and excluded as "to".
+            var first = exported.Finalization.FinalizedAtUtc;
+            Assert.Contains(multiOrder.Id, (await scope.Invoices.ListFinalizedInvoicesAsync(first, first.AddDays(1), 10)).Items.Select(i => i.Id));
+            Assert.DoesNotContain(multiOrder.Id, (await scope.Invoices.ListFinalizedInvoicesAsync(first.AddDays(-1), first, 10)).Items
+                .Select(i => i.Id));
+            Assert.Empty((await scope.Invoices.ListFinalizedInvoicesAsync(DateTimeOffset.UtcNow.AddDays(1), DateTimeOffset.UtcNow.AddDays(2),
+                10)).Items);
+
+            var numbers = await scope.Invoices.FindOrderDocumentNumbersAsync([firstOrder.Id, secondOrder.Id, otherCompanyOrder.Id]);
+            Assert.Equal(new Dictionary<Guid, string> { [firstOrder.Id] = firstOrder.DocumentNo, [secondOrder.Id] = secondOrder.DocumentNo },
+                numbers);
+        }
+
+        await using (var scope = run.Store(CompanyB))
+        {
+            Assert.Empty((await scope.Invoices.ListFinalizedInvoicesAsync(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1),
+                SalesInvoiceApiV1.MaximumExportInvoices)).Items);
+            var numbers = await scope.Invoices.FindOrderDocumentNumbersAsync([firstOrder.Id, otherCompanyOrder.Id]);
+            Assert.Equal(new Dictionary<Guid, string> { [otherCompanyOrder.Id] = otherCompanyOrder.DocumentNo }, numbers);
+        }
+    }
+
+    private static async Task<SalesInvoice> FinalizedAsync(Run run, string prefix, string approver, string finalizer,
+        Func<Guid, string, SalesInvoice>? build = null)
+    {
+        var approved = await ApprovedAsync(run, prefix, approver, build);
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000021", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount);
+        await using var scope = run.Store(CompanyA);
+        await scope.Invoices.MatchInvoiceAsync(run.Envelope(prefix + "-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
+            Hash('1'), approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
+            new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+        var finalized = await scope.Invoices.FinalizeInvoiceAsync(
+            run.Envelope(prefix + "-final", actor: finalizer, permission: SalesPermissionManifestV1.InvoicesFinalize), Hash('2'), approved.Id,
+            (invoice, now) => invoice.Finalize(3, finalizer, Guid.NewGuid, now),
+            new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "SENTETIK"));
+        return finalized!.Invoice;
+    }
+
+    /// <summary>A stored order draft (no lines) of the company: the export only needs its number.</summary>
+    private static async Task<SalesOrderDraft> OrderDraftAsync(Run run, Guid company, string key)
+    {
+        var money = new MoneyProfileSnapshot(company, Usd, SalesOrderDraft.MoneyOperation, Guid.NewGuid(), "3", Day, true, Day.AddDays(-30),
+            null, 2);
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Usd, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
+        await using var scope = run.Store(company);
+        return (await scope.Drafts.StoreDraftAsync(run.Envelope(key, permission: SalesPermissionManifestV1.DraftsCreate), Hash('d'),
+            documentNo => SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, DateTimeOffset.UtcNow))).Draft;
+    }
+
     private static string Hash(char fill) => new(fill, 64);
 
     /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>
-    private static SalesInvoice Invoice(Guid id, string number, string actor, Guid shipment1, Guid shipment2)
+    private static SalesInvoice Invoice(Guid id, string number, string actor, Guid shipment1, Guid shipment2,
+        Guid? order1 = null, Guid? order2 = null)
     {
         var tax = new SalesLineTaxSnapshot(Product, Day, "Normal", "Steel", "Resolved", null, "Record", Guid.NewGuid(), 1, "Resolved", 20m,
             "NotRequired", null, null, "NotApplied", null, "NotRequired", null, null, null, 0, "Normal", false);
-        SalesInvoiceShareInput Share(Guid shipment, int lineNo, string quantity, string price) => new(Guid.NewGuid(), shipment, Guid.NewGuid(),
-            "IRS-2026-000001", lineNo, Day, Guid.NewGuid(), Guid.NewGuid(), 0, Product, Kg, decimal.Parse(quantity,
+        SalesInvoiceShareInput Share(Guid shipment, int lineNo, string quantity, string price, Guid? order) => new(Guid.NewGuid(), shipment,
+            Guid.NewGuid(), "IRS-2026-000001", lineNo, Day, order ?? Guid.NewGuid(), Guid.NewGuid(), 0, Product, Kg, decimal.Parse(quantity,
                 System.Globalization.CultureInfo.InvariantCulture), quantity, new CommercialDraftFields(price, Kg, null), tax);
         var terms = SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, 30, "100")]);
         return SalesInvoice.Create(id, CompanyA, number,
             new SalesInvoiceHeader(Guid.NewGuid(), Guid.NewGuid(), Usd, Guid.NewGuid(), "1", 2, Day,
                 new SalesInvoiceRateSnapshot(34.5678m, Day, Day.AddDays(-1), Try, 2)),
-            [Share(shipment1, 1, "3", "33.33"), Share(shipment2, 2, "1", "10.01")],
+            [Share(shipment1, 1, "3", "33.33", order1), Share(shipment2, 2, "1", "10.01", order2)],
             SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms, actor, DateTimeOffset.UtcNow);
     }
 
@@ -672,6 +763,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
     private sealed class StoreScope(SalesDbContext dbContext, SalesStore store) : IAsyncDisposable
     {
         public ISalesInvoiceStore Invoices => store;
+
+        public ISalesOrderDraftStore Drafts => store;
 
         public SalesDbContext Context => dbContext;
 

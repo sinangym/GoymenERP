@@ -80,6 +80,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.InvoicesMatch, ErpPermissions.SalesInvoicesMatch)]
     // S5 API-36 (SAT-D208): the finalisation name; not Critical by SAT-D249 (replaces SAT-D235 (1)).
     [InlineData(SalesPermissionManifestV1.InvoicesFinalize, ErpPermissions.SalesInvoicesFinalize)]
+    // S5 API-34 (SAT-D236/D244/D248): the invoice export's own name, company-wide, not Critical, granted to no role.
+    [InlineData(SalesPermissionManifestV1.InvoicesExport, ErpPermissions.SalesInvoicesExport)]
     // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
     // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
     [InlineData(SalesPermissionManifestV1.QuotesWrite, ErpPermissions.SalesQuotesWrite)]

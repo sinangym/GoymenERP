@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <data name="SheetName" xml:space="preserve"><value>Satış Faturaları</value></data>
+  <data name="FileName" xml:space="preserve"><value>satis-faturalari-{0}-{1}.xlsx</value></data>
+  <data name="InstalmentItem" xml:space="preserve"><value>{0}. taksit {1}: {2}</value></data>
+  <data name="InstalmentItemFunctional" xml:space="preserve"><value>{0}. taksit {1}: {2} (TL karşılığı {3})</value></data>
+  <data name="ListSeparator" xml:space="preserve"><value>; </value></data>
+  <data name="OrderSeparator" xml:space="preserve"><value>, </value></data>
+  <data name="ColumnDocumentNo" xml:space="preserve"><value>Fatura No</value></data>
+  <data name="ColumnOfficialNo" xml:space="preserve"><value>Resmî Fatura No</value></data>
+  <data name="ColumnEttn" xml:space="preserve"><value>ETTN</value></data>
+  <data name="ColumnFinalizedOn" xml:space="preserve"><value>Kesinleşme Tarihi</value></data>
+  <data name="ColumnBusinessDate" xml:space="preserve"><value>Fatura İş Tarihi</value></data>
+  <data name="ColumnPartyId" xml:space="preserve"><value>Cari Id</value></data>
+  <data name="ColumnCompanyAccountId" xml:space="preserve"><value>Cari Hesap Id</value></data>
+  <data name="ColumnCurrencyId" xml:space="preserve"><value>Para Birimi Id</value></data>
+  <data name="ColumnRate" xml:space="preserve"><value>Kur</value></data>
+  <data name="ColumnRateDay" xml:space="preserve"><value>Kur Günü</value></data>
+  <data name="ColumnInvoiceNet" xml:space="preserve"><value>Fatura Matrahı</value></data>
+  <data name="ColumnInvoiceVat" xml:space="preserve"><value>Fatura KDV</value></data>
+  <data name="ColumnInvoiceWithheld" xml:space="preserve"><value>Fatura Tevkif Edilen KDV</value></data>
+  <data name="ColumnInvoiceGross" xml:space="preserve"><value>Fatura Brüt Toplam</value></data>
+  <data name="ColumnInvoicePayable" xml:space="preserve"><value>Fatura Ödenecek Tutar</value></data>
+  <data name="ColumnInvoiceNetFunctional" xml:space="preserve"><value>Fatura Matrahı (TL)</value></data>
+  <data name="ColumnInvoiceVatFunctional" xml:space="preserve"><value>Fatura KDV (TL)</value></data>
+  <data name="ColumnInvoiceWithheldFunctional" xml:space="preserve"><value>Fatura Tevkif Edilen KDV (TL)</value></data>
+  <data name="ColumnInvoiceGrossFunctional" xml:space="preserve"><value>Fatura Brüt Toplam (TL)</value></data>
+  <data name="ColumnInvoicePayableFunctional" xml:space="preserve"><value>Fatura Ödenecek Tutar (TL)</value></data>
+  <data name="ColumnInstalments" xml:space="preserve"><value>Vade Planı</value></data>
+  <data name="ColumnSalesOrderNos" xml:space="preserve"><value>Sipariş No(lar)</value></data>
+  <data name="ColumnLineNo" xml:space="preserve"><value>Satır No</value></data>
+  <data name="ColumnDispatchNoteNumber" xml:space="preserve"><value>İrsaliye No</value></data>
+  <data name="ColumnNoteLineNo" xml:space="preserve"><value>İrsaliye Satır No</value></data>
+  <data name="ColumnShipmentDate" xml:space="preserve"><value>Sevk Tarihi</value></data>
+  <data name="ColumnLineSalesOrderNo" xml:space="preserve"><value>Satır Sipariş No</value></data>
+  <data name="ColumnProductId" xml:space="preserve"><value>Ürün Id</value></data>
+  <data name="ColumnUnitId" xml:space="preserve"><value>Birim Id</value></data>
+  <data name="ColumnQuantity" xml:space="preserve"><value>Miktar</value></data>
+  <data name="ColumnNetUnitPrice" xml:space="preserve"><value>Net Birim Fiyat</value></data>
+  <data name="ColumnDiscountPercent" xml:space="preserve"><value>İskonto %</value></data>
+  <data name="ColumnDiscountAmount" xml:space="preserve"><value>İskonto Tutarı</value></data>
+  <data name="ColumnSurchargePercent" xml:space="preserve"><value>Vade Farkı %</value></data>
+  <data name="ColumnSurchargeAmount" xml:space="preserve"><value>Vade Farkı Tutarı</value></data>
+  <data name="ColumnVatPercent" xml:space="preserve"><value>KDV %</value></data>
+  <data name="ColumnWithholdingShare" xml:space="preserve"><value>Tevkifat Oranı</value></data>
+  <data name="ColumnLineNet" xml:space="preserve"><value>Satır Matrahı</value></data>
+  <data name="ColumnLineVat" xml:space="preserve"><value>Satır KDV</value></data>
+  <data name="ColumnLineWithheld" xml:space="preserve"><value>Satır Tevkif Edilen KDV</value></data>
+  <data name="ColumnLineGross" xml:space="preserve"><value>Satır Brüt Tutar</value></data>
+  <data name="ColumnLinePayable" xml:space="preserve"><value>Satır Ödenecek Tutar</value></data>
+  <data name="ColumnLineNetFunctional" xml:space="preserve"><value>Satır Matrahı (TL)</value></data>
+  <data name="ColumnLineVatFunctional" xml:space="preserve"><value>Satır KDV (TL)</value></data>
+  <data name="ColumnLineWithheldFunctional" xml:space="preserve"><value>Satır Tevkif Edilen KDV (TL)</value></data>
+  <data name="ColumnLineGrossFunctional" xml:space="preserve"><value>Satır Brüt Tutar (TL)</value></data>
+  <data name="ColumnLinePayableFunctional" xml:space="preserve"><value>Satır Ödenecek Tutar (TL)</value></data>
+</root>

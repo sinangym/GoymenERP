@@ -2,10 +2,12 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.SalesRuntime;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -22,6 +24,7 @@ public static partial class SalesEndpoints
 {
     public const string InvoicesPath = SalesInvoiceApiV1.InvoicesPath;
     private static readonly HashSet<string> InvoiceListQueryNames = new(["pageSize", "cursor"], StringComparer.Ordinal);
+    private static readonly HashSet<string> InvoiceExportQueryNames = new(["format", "from", "to"], StringComparer.Ordinal);
 
     private static void MapInvoiceEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -119,6 +122,70 @@ public static partial class SalesEndpoints
             .Produces<SalesInvoiceListResponse>()
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.InvalidCursor)
             .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // API-34 (SAT-D236, SAT-D244, SAT-D248): the finalised invoices of a business-day range as one workbook for Accounting.
+        // A read (no Idempotency-Key, nothing written, stored nowhere); exactly one `format`, `from` and `to` (yyyy-MM-dd), else 400.
+        // Under `sales.invoices.export` AND the price read (the file is prices; SAT-D238 (3): without it 403, never a price-less
+        // file). More than the technical bound is 422 `sales_invoice_export_too_large` (nothing is cut). A missing text or an
+        // answer the composer cannot write faithfully is a code-less 503.
+        invoices.MapGet("/export", async (
+            [FromQuery] string? format,
+            [FromQuery] string? from,
+            [FromQuery] string? to,
+            HttpContext httpContext,
+            [FromServices] ISalesInvoiceService service,
+            [FromServices] IStringLocalizer<SalesInvoiceExportWorkbookComposer> texts,
+            [FromServices] ILogger<SalesInvoiceExportWorkbookComposer> logger,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!HasOnlySingleQuery(httpContext.Request.Query, InvoiceExportQueryNames, ["format", "from", "to"])
+                || !TryReportDate(from, out var fromDate) || !TryReportDate(to, out var toDate)
+                || fromDate is null || toDate is null)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            SalesInvoiceExportV1 export;
+            try
+            {
+                export = await service.ExportInvoicesAsync(new SalesInvoiceExportQuery(format, fromDate.Value, toDate.Value),
+                    cancellationToken);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+
+            byte[] content;
+            string fileName;
+            try
+            {
+                (content, fileName) = new SalesInvoiceExportWorkbookComposer(texts).Compose(export);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or FormatException)
+            {
+                // The log names the composer's own rule text only; a framework message could carry a cell value, so it is not logged.
+                logger.LogWarning(
+                    "Sales invoice export was not written. Reason={Reason} CorrelationId={CorrelationId}",
+                    exception is InvalidOperationException ? exception.Message : "value_not_writable",
+                    correlation.IsResolved ? correlation.CorrelationId : null);
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            // An attachment of the stated type only, never sniffed or rendered as a page of this origin.
+            var headers = httpContext.Response.Headers;
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+            return Results.File(content, SalesInvoiceApiV1.XlsxMediaType, fileName);
+        })
+            .WithName("ExportSalesInvoicesV1")
+            .Produces<Stream>(StatusCodes.Status200OK, SalesInvoiceApiV1.XlsxMediaType)
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpUnprocessableEntity(SalesInvoiceProblemCodesV1.ExportTooLarge)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

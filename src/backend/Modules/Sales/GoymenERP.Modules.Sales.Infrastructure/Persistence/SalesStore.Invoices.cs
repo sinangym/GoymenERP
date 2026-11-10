@@ -205,6 +205,65 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         return found.ToHashSet();
     }
 
+    public async Task<SalesInvoiceExportBatch> ListFinalizedInvoicesAsync(DateTimeOffset fromUtc, DateTimeOffset toUtcExclusive, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        if (limit < 1 || limit > SalesInvoiceApiV1.MaximumExportInvoices)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit));
+        }
+
+        if (toUtcExclusive <= fromUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(toUtcExclusive));
+        }
+
+        // API-34 (SAT-D244): finalised invoices only, by the finalisation instant; both sets are tenant-filtered.
+        var finalized = (int)SalesInvoiceState.Finalized;
+        var finalizations = await dbContext.InvoiceFinalizations.AsNoTracking()
+            .Where(item => item.FinalizedAtUtc >= fromUtc && item.FinalizedAtUtc < toUtcExclusive
+                && dbContext.Invoices.Any(row => row.Id == item.InvoiceId && row.State == finalized))
+            .OrderBy(item => item.FinalizedAtUtc).ThenBy(item => item.InvoiceId).Take(limit + 1)
+            .ToListAsync(cancellationToken);
+        var page = finalizations.Take(limit).ToList();
+        var ids = page.Select(item => item.InvoiceId).ToArray();
+        var rows = (await dbContext.Invoices.AsNoTracking().Where(row => ids.Contains(row.Id)).ToListAsync(cancellationToken))
+            .ToDictionary(row => row.Id);
+        var lines = (await dbContext.InvoiceLines.AsNoTracking().Where(line => ids.Contains(line.InvoiceId)).ToListAsync(cancellationToken))
+            .ToLookup(line => line.InvoiceId);
+        var matches = (await dbContext.InvoiceMatches.AsNoTracking().Where(match => ids.Contains(match.InvoiceId)).ToListAsync(cancellationToken))
+            .ToDictionary(match => match.InvoiceId);
+        var items = page.Select(finalizationRow =>
+        {
+            var restored = SalesInvoiceRows.Restore(rows[finalizationRow.InvoiceId], [.. lines[finalizationRow.InvoiceId]]);
+            if (matches.TryGetValue(finalizationRow.InvoiceId, out var matchRow))
+            {
+                restored.RestoreMatch(SalesInvoiceRows.ToMatchFacts(matchRow));
+            }
+
+            restored.RestoreFinalization(SalesInvoiceRows.ToFinalizationFacts(finalizationRow));
+            return restored;
+        }).ToList();
+        return new SalesInvoiceExportBatch(items, finalizations.Count > limit);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> FindOrderDocumentNumbersAsync(IReadOnlyCollection<Guid> orderIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(orderIds);
+        RequireResolvedCompany();
+        var ids = orderIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        // Tenant-filtered: another company's order is simply absent.
+        return await dbContext.Drafts.AsNoTracking().Where(row => ids.Contains(row.Id))
+            .ToDictionaryAsync(row => row.Id, row => row.DocumentNo, cancellationToken);
+    }
+
     public async Task<SalesInvoiceReplay?> FindInvoiceStateReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default)
     {
