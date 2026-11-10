@@ -68,7 +68,7 @@ Tüm yeni uçlar `/api/v1/sales/` altında; değişiklik yapanlar `Idempotency-K
 | API-04 | `POST drafts/{id}/header-revision` | Cari hesap, para birimi, vade, satış sorumlusu, teslim bilgisi revizyonu → Rev+1, yeniden onay | `sales.orders.header.write` (yeni) | DEC-SAL-002, SAT-D3 | K3 |
 | API-05 | `POST drafts/{id}/line-revision` | Satır ekle/çıkar, ürün değiştir → Rev+1, yeniden onay | `sales.orders.quantity.write` | DEC-SAL-002, SAT-D3 | K3 |
 | API-06 | `GET drafts/{id}/risk-check` | Brüt risk (açık alacak + faturalanmamış sevk + sevk edilmemiş onaylı kalan), limit, sonuç | `sales.drafts.read` | DEC-FIN-007/009 | K3 |
-| API-07 | `POST drafts/{id}/risk-exceptions` · `POST …/risk-exceptions/{no}/approval|rejection` | Sevkiyat başı veya tarih aralığı (≤ 30 gün) risk istisnası | `sales.orders.risk-exception.request` / `.approve` (yeni) | No 31, 32 | K3 |
+| API-07 | `POST drafts/{id}/risk-exceptions` · `POST …/risk-exceptions/{no}/approval|rejection` | Tek sevk risk istisnası: yalnız bir sevki serbest bırakır, onaylandığı iş tarihinin sonuna kadar geçerlidir (SAT-D154, SAT-D160 — `SINAN_KARARLARI_2026-11-01_SATIS_EK21.md`; Satış tarafı ve okuma portu SAT-D281 — `SINAN_KARARLARI_2026-11-10_SATIS_EK55.md`) | `sales.orders.risk-exception.request` / `.approve` (yeni) | No 31, 32 | K3 |
 | API-08 | `GET drafts/{id}/status` | Yedi eksen: yaşam döngüsü, iç onay, müşteri onayı, kaynak, gerçekleşme (SAT-D5 toleransıyla), faturalama, finansal kapanış | `sales.drafts.read` | DEC-SAL-001, SAT-D5 | K3 |
 | API-09 | `GET drafts/{id}/invoices` | Sipariş 360 "Faturalar" sekmesi | `sales.drafts.read` | – | K2 |
 | API-10 | `GET drafts/{id}/customer-returns` | Siparişe bağlı müşteri iadeleri (Lojistik portu hazır) | `sales.drafts.read` | No 21, 38 | K2 |
