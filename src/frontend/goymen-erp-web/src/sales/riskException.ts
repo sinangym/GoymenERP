@@ -1,12 +1,14 @@
 /**
  * API-07 (EK21 SAT-D153…D162; Sinan 2026-11-10): the single-shipment risk exception wire contract of an order, decoded strictly.
  * An answer counts only with exactly the documented keys, a known state, and a decision that agrees with that state (an approval
- * names its decider and its Istanbul business date, a rejection its decider and reason, a request neither). Anything else is
+ * names its decider and its Istanbul business date, a rejection its decider and reason, a request and a withdrawal neither). Anything else is
  * refused as a whole (`null`), never partly shown. No field carries an amount (SAT-D162).
  */
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
-export const RISK_EXCEPTION_STATE = { requested: 'Requested', approved: 'Approved', rejected: 'Rejected' } as const
+export const RISK_EXCEPTION_STATE = {
+  requested: 'Requested', approved: 'Approved', rejected: 'Rejected', withdrawn: 'Withdrawn',
+} as const
 export type RiskExceptionState = (typeof RISK_EXCEPTION_STATE)[keyof typeof RISK_EXCEPTION_STATE]
 
 /** The server's reason bound (`SalesShipmentRiskException.MaximumReasonLength`); a longer reason is refused, never cut. */
@@ -22,7 +24,8 @@ export interface RiskExceptionDecisionRequest {
   readonly reason: string | null
 }
 
-export type RiskExceptionDecision = 'approval' | 'rejection'
+/** EK56 SAT-D286: `withdrawal` is the requester's own command, not a decision; it shares the route shape and the body. */
+export type RiskExceptionDecision = 'approval' | 'rejection' | 'withdrawal'
 
 export interface RiskException {
   readonly orderId: string
@@ -79,7 +82,10 @@ export function decodeRiskException(value: unknown, orderId: string): RiskExcept
     ? undecided && o.version === '1' && !o.isValidToday
     : state === RISK_EXCEPTION_STATE.approved
       ? decided && o.rejectionReason === null && isDateOnly(o.validOn) && o.version === '2'
-      : decided && text(o.rejectionReason) && o.validOn === null && o.version === '2' && !o.isValidToday
+      : state === RISK_EXCEPTION_STATE.rejected
+        ? decided && text(o.rejectionReason) && o.validOn === null && o.version === '2' && !o.isValidToday
+        // EK56 SAT-D286: a withdrawal records no decision; the withdrawer is the requester by rule.
+        : undecided && o.version === '2' && !o.isValidToday
   if (!consistent) return null
   return {
     orderId: o.orderId,

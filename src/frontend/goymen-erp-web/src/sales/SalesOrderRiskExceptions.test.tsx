@@ -3,7 +3,9 @@
  * GET under the draft read), offers the request only with `sales.orders.risk-exception.request` and the decision only on a
  * pending exception with `sales.orders.risk-exception.approve`, sends exactly one key per attempt and the same key again on an
  * unknown outcome, names the server's refusal (a self-decision included) and refreshes on success or a conflict. Loading,
- * empty, 403, 503 (with its support code), offline and malformed answers show no exception. Component evidence, NOT_ENV: the
+ * empty, 403, 503 (with its support code), offline and malformed answers show no exception. EK56 SAT-D286: the requester's own
+ * pending request offers "Geri çek" (another person's does not); SAT-D284's within-limit refusal is named; a 502/503/504 command
+ * answer keeps the key for a same-key retry (#1054 follow-up). Component evidence, NOT_ENV: the
  * API answers here are the harness's. Every identity is synthetic.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +18,7 @@ import {
 import { REPLAY_HEADER } from './contract'
 import { RISK_EXCEPTION_TEXT as T } from './riskText'
 import { OrderRiskExceptions } from './SalesOrderRiskExceptions'
-import { ALL_SALES, COMPANY_A, installFetch, json, renderSalesApp } from './testHarness'
+import { ALL_SALES, COMPANY_A, HARNESS_USER_ID, installFetch, json, renderSalesApp } from './testHarness'
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const SHIPMENT = 'e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1'
@@ -240,6 +242,122 @@ describe('S-04 single-shipment risk exceptions (API-07)', () => {
     fireEvent.click(within(await within(section).findByTestId('sales-risk-exception-1-decision')).getByRole('button', { name: T.approve }))
     expect(await within(section).findByText(T.unknown)).toBeTruthy()
     expect(within(section).getByTestId('sales-risk-exception-retry')).toBeTruthy()
+  })
+})
+
+describe('S-04 risk exception withdrawal and retries (EK56 SAT-D284/D286)', () => {
+  const mine = (overrides: Body = {}) => requested({ requestedBy: HARNESS_USER_ID, ...overrides })
+  const withdrawn = (overrides: Body = {}) => mine({ state: 'Withdrawn', version: '2', ...overrides })
+
+  it('offers the requester a withdrawal of their own pending request, sends the version only and shows it withdrawn', async () => {
+    let lists = 0
+    const harness = installFetch({
+      capabilities: REQUESTER,
+      onDetail: () => json(detail()),
+      onRiskExceptions: () => { lists += 1; return json({ items: lists === 1 ? [mine({ exceptionNo: 2 }), requested()] : [withdrawn({ exceptionNo: 2 }), requested()] }) },
+      onRiskExceptionCommand: () => json(withdrawn({ exceptionNo: 2 })),
+    })
+    renderSalesApp(PATH)
+    const section = await panel()
+    const own = await within(section).findByTestId('sales-risk-exception-2-withdrawal')
+    // Another person's pending request carries no withdrawal; the approver's buttons are not offered without that capability.
+    expect(within(section).queryByTestId('sales-risk-exception-1-withdrawal')).toBeNull()
+    expect(within(section).queryByRole('button', { name: T.approve })).toBeNull()
+    fireEvent.click(within(own).getByRole('button', { name: T.withdraw }))
+
+    expect(await within(section).findByText(T.withdrawn)).toBeTruthy()
+    await waitFor(() => expect(within(section).getByTestId('sales-risk-exception-2-state').textContent).toBe(T.state.Withdrawn))
+    expect(within(section).queryByTestId('sales-risk-exception-2-withdrawal')).toBeNull()
+    expect(within(section).queryByTestId('sales-risk-exception-2-decided')).toBeNull()
+    const posts = exceptionCalls(harness.calls).filter((call) => call.method === 'POST')
+    expect(posts).toHaveLength(1)
+    expect(posts[0].url).toMatch(new RegExp(`/sales/drafts/${DRAFT}/risk-exceptions/2/withdrawal$`))
+    expect(posts[0].idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+    expect(JSON.parse(posts[0].body as string)).toEqual({ expectedVersion: '1', reason: null })
+  })
+
+  it('offers no withdrawal without the request capability, and names the server’s not-requester refusal', async () => {
+    installFetch({ capabilities: APPROVER, onDetail: () => json(detail()), onRiskExceptions: () => json({ items: [mine()] }) })
+    renderSalesApp(PATH)
+    const section = await panel()
+    await within(section).findByTestId('sales-risk-exception-1-decision')
+    expect(within(section).queryByTestId('sales-risk-exception-1-withdrawal')).toBeNull()
+    cleanup()
+
+    installFetch({
+      capabilities: REQUESTER,
+      onDetail: () => json(detail()),
+      onRiskExceptions: () => json({ items: [mine()] }),
+      onRiskExceptionCommand: () => problem(409, 'sales_risk_exception_not_requester'),
+    })
+    renderSalesApp(PATH)
+    const again = await panel()
+    fireEvent.click(within(await within(again).findByTestId('sales-risk-exception-1-withdrawal')).getByRole('button', { name: T.withdraw }))
+    expect((await within(again).findByTestId('sales-risk-exception-notice')).textContent)
+      .toBe(`${T.problem.sales_risk_exception_not_requester} · ${T.supportCode('corr-risk-exception-1')}`)
+    expect(within(again).queryByTestId('sales-risk-exception-retry')).toBeNull()
+  })
+
+  it('names the within-limit refusal of a request (SAT-D284) and keeps no key', async () => {
+    installFetch({
+      capabilities: REQUESTER,
+      onDetail: () => json(detail()),
+      onRiskExceptionCommand: () => problem(409, 'sales_risk_exception_within_limit'),
+    })
+    renderSalesApp(PATH)
+    const section = await panel()
+    const form = await within(section).findByTestId('sales-risk-exception-request')
+    fireEvent.change(within(form).getByLabelText(T.shipment), { target: { value: SHIPMENT } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'r' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.request }))
+    expect((await within(section).findByTestId('sales-risk-exception-notice')).textContent)
+      .toContain(T.problem.sales_risk_exception_within_limit)
+    expect(within(section).queryByTestId('sales-risk-exception-retry')).toBeNull()
+    expect((within(form).getByRole('button', { name: T.request }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it.each([502, 503, 504])('keeps the key after a %i answer and retries with the same key and body', async (status) => {
+    let attempts = 0
+    const harness = installFetch({
+      capabilities: REQUESTER,
+      onDetail: () => json(detail()),
+      onRiskExceptionCommand: () => {
+        attempts += 1
+        return attempts === 1 ? problem(status, null, 'corr-gateway') : json(requested(), 201, { [REPLAY_HEADER]: 'true' })
+      },
+    })
+    renderSalesApp(PATH)
+    const section = await panel()
+    const form = await within(section).findByTestId('sales-risk-exception-request')
+    fireEvent.change(within(form).getByLabelText(T.shipment), { target: { value: SHIPMENT } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'SENTETIK müşteri ödeme sözü verdi' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.request }))
+
+    expect((await within(section).findByTestId('sales-risk-exception-notice')).textContent)
+      .toBe(`${T.retryPending} · ${T.supportCode('corr-gateway')}`)
+    expect((within(form).getByRole('button', { name: T.request }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(section).getByTestId('sales-risk-exception-retry'))
+    expect(await within(section).findByText(T.requested + T.replayed)).toBeTruthy()
+    const posts = exceptionCalls(harness.calls).filter((call) => call.method === 'POST')
+    expect(posts).toHaveLength(2)
+    expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
+    expect(posts[1].body).toBe(posts[0].body)
+  })
+
+  it('still clears the key on a 500 (an answered server error), offering no retry', async () => {
+    installFetch({
+      capabilities: REQUESTER,
+      onDetail: () => json(detail()),
+      onRiskExceptionCommand: () => problem(500, null),
+    })
+    renderSalesApp(PATH)
+    const section = await panel()
+    const form = await within(section).findByTestId('sales-risk-exception-request')
+    fireEvent.change(within(form).getByLabelText(T.shipment), { target: { value: SHIPMENT } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'r' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.request }))
+    expect((await within(section).findByTestId('sales-risk-exception-notice')).textContent).toContain(T.serviceUnavailable)
+    expect(within(section).queryByTestId('sales-risk-exception-retry')).toBeNull()
   })
 })
 

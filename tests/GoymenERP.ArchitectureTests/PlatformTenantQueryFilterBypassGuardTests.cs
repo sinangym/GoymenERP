@@ -503,7 +503,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // with every order number and company isolation), kept ordinal-sorted; recomputed on the merged inventory (320e578b... -> 17f70832...).
                 // API-07 (SAT-D153..SAT-D162): +4 SalesShipmentRiskException facts (one save with attempt and audit, the maker-checker CK and
                 // decision guard, company isolation, the 51251 rollback refusal), kept ordinal-sorted (17f70832... -> e083b70f...).
-                "e083b70f534613fd0e7116c98ef4682324937e33a57474fa22cfddcae530c152",
+                // EK56 SAT-D286: +2 SalesShipmentRiskException facts (the requester's withdrawal in one save with attempt and audit, the
+                // shipment's new request and the 51252 guard on a withdrawn row; the 51254 rollback refusal), kept ordinal-sorted
+                // (e083b70f... -> 1628581b...).
+                "1628581b3816ca74005f41819bafc0a6090f81d0e75347db46d1237a2caebb47",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -648,7 +651,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (CK_ShipmentRiskExceptions_MakerChecker); no query-filter bypass or direct database surface (c40fbf07... -> b7efaf4b...).
                 // API-07: both guard triggers declared with HasTrigger (EF Core then saves without OUTPUT); no query-filter bypass or
                 // direct database surface (b7efaf4b... -> 7694fe06...).
-                "7694fe066d4f6c8b06cd0ea0f7a0469fe593a27f178c8a2ac035f26c2967aed9",
+                // EK56 SAT-D286: the state, decision and attempt-command checks admit a withdrawn exception (State 4, no decision facts)
+                // and the write guard lets Requested move to Withdrawn; no query-filter bypass or direct database surface
+                // (7694fe06... -> 8a351e15...).
+                "8a351e15b394a7a69955df828dd5a4667abf56188cb8e871324264aa55115f40",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1732,8 +1738,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // by the host; Production's are not); provider branch and token counts unchanged (7fc85621... -> b7241b6f...).
                     // API-07 (SAT-D153..SAT-D162): registers the risk exception service, its store and the versioned read port
                     // ISalesShipmentRiskExceptionReadPortV1; provider branch and token counts unchanged (b7241b6f... -> 4ad1aeaf...).
+                    // EK56 SAT-D284: registers the order risk outcome source the risk exception request consults; provider branch and
+                    // token counts unchanged (4ad1aeaf... -> ecf53c18...).
                     new(
-                        "4ad1aeafc786b20d5d07ede168727a7b3aadeafa88072de1a2e4fedd4afbf871",
+                        "ecf53c18511d29eaa3f2b9545ab6484690efaa3a2e986d89724203ad132cbd8a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2640,6 +2648,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("40e4e1ca6cf28d81513a567ecc74980ba168ace81c7d4eff2de38b41879b4048",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 3 }),
+                // EK56 SAT-D286: Up is pure DDL (the widened checks); the Down's only raw SQL is the forward-fix refusal (51254, used by no
+                // other migration) while any withdrawn exception exists, before the checks are narrowed again.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110192441_AddShipmentRiskExceptionWithdrawal.cs"] =
+                    new("4d05b81018565b5461570aeaa4b40b64356706bbccb40a3e670bc520414ecda8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

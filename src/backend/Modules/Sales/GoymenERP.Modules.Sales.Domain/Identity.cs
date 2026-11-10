@@ -449,6 +449,12 @@ public static class SalesRuleCodes
     /// <summary>API-07 (SAT-D154): the same shipment already has a pending, or a today-valid, exception.</summary>
     public const string RiskExceptionDuplicate = "sales_risk_exception_duplicate";
 
+    /// <summary>API-07 (EK56 SAT-D284): the order's risk is within its credit limit, so no exception is needed; nothing is recorded.</summary>
+    public const string RiskExceptionWithinLimit = "sales_risk_exception_within_limit";
+
+    /// <summary>API-07 (EK56 SAT-D286): only the requester withdraws their own pending exception; another actor's request is not opened.</summary>
+    public const string RiskExceptionNotRequester = "sales_risk_exception_not_requester";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

@@ -101,6 +101,8 @@ public static class SalesModuleExtensions
         // API-07 (SAT-D153…D162): the single-shipment risk exception over the Sales store, and its versioned read port for the
         // Logistics shipment gate (the consumer binds to it later; no Logistics port is composed here, SAT-D209).
         services.AddScoped<ISalesRiskExceptionStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        // EK56 SAT-D284: the request's within-limit refusal reads the same deterministic risk evaluation as the S-04 risk check.
+        services.AddScoped<ISalesOrderRiskOutcomeSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
         return services;
@@ -114,7 +116,8 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ICorrelationContext>(),
         serviceProvider.GetRequiredService<ISalesRiskExceptionStore>(),
         serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetRequiredService<ISalesOrderRiskOutcomeSource>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing Logistics port stays null: the overdue check answers Unavailable, never a silent zero.

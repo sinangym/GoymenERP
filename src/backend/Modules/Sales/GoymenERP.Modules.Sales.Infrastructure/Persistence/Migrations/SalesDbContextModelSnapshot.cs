@@ -3111,7 +3111,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         {
                             t.HasTrigger("TR_ShipmentRiskExceptionAttempts_Guard");
 
-                            t.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Command", "[CommandName] IN (N'sales.order.risk-exception.request.v1', N'sales.order.risk-exception.approve.v1', N'sales.order.risk-exception.reject.v1')");
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Command", "[CommandName] IN (N'sales.order.risk-exception.request.v1', N'sales.order.risk-exception.approve.v1', N'sales.order.risk-exception.reject.v1', N'sales.order.risk-exception.withdraw.v1')");
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
 
@@ -3119,6 +3119,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptionAttempts_Outcome", "([Outcome] = 1 AND [ExceptionId] IS NOT NULL AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [ExceptionId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ShipmentRiskExceptionRow", b =>
@@ -3204,16 +3206,18 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         {
                             t.HasTrigger("TR_ShipmentRiskExceptions_Guard");
 
-                            t.HasCheckConstraint("CK_ShipmentRiskExceptions_Decision", "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL AND [Version] >= 1) OR ([State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NOT NULL AND [Version] >= 2) OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [ValidOn] IS NULL AND [Version] >= 2)");
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptions_Decision", "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL AND [Version] >= 1) OR ([State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NOT NULL AND [Version] >= 2) OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [ValidOn] IS NULL AND [Version] >= 2) OR ([State] = 4 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL AND [Version] >= 2)");
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptions_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' AND [ExceptionNo] >= 1");
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptions_MakerChecker", "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2");
 
-                            t.HasCheckConstraint("CK_ShipmentRiskExceptions_State", "[State] IN (1, 2, 3)");
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptions_State", "[State] IN (1, 2, 3, 4)");
 
                             t.HasCheckConstraint("CK_ShipmentRiskExceptions_Text", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DocumentCounterRow", b =>

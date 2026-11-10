@@ -286,14 +286,19 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>
     /// CK_ShipmentRiskExceptions_Decision (SAT-D153/D160): Requested (1) carries no decision and no validity date; Approved (2) a
-    /// decision without a reason and with its business date; Rejected (3) a decision with a non-blank reason and no validity date.
+    /// decision without a reason and with its business date; Rejected (3) a decision with a non-blank reason and no validity date;
+    /// Withdrawn (4, EK56 SAT-D286) no decision and no validity date, after one transition.
     /// </summary>
     internal const string ShipmentRiskExceptionDecisionConstraint =
         "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL AND [Version] >= 1) "
         + "OR ([State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL "
         + "AND [ValidOn] IS NOT NULL AND [Version] >= 2) "
         + "OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL "
-        + "AND LEN([RejectionReason]) > 0 AND [ValidOn] IS NULL AND [Version] >= 2)";
+        + "AND LEN([RejectionReason]) > 0 AND [ValidOn] IS NULL AND [Version] >= 2) "
+        + "OR ([State] = 4 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL AND [Version] >= 2)";
+
+    /// <summary>CK_ShipmentRiskExceptions_State: the stored axis (Requested, Approved, Rejected, Withdrawn).</summary>
+    internal const string ShipmentRiskExceptionStateConstraint = "[State] IN (1, 2, 3, 4)";
 
     /// <summary>CK_ShipmentRiskExceptions_MakerChecker (SAT-D153/D159): the decider is never the requester, compared ordinally.</summary>
     internal const string ShipmentRiskExceptionMakerCheckerConstraint =
@@ -314,7 +319,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>CK_ShipmentRiskExceptionAttempts_Command: only the risk exception's own versioned commands record here.</summary>
     internal const string ShipmentRiskExceptionAttemptCommandConstraint =
         "[CommandName] IN (N'" + SalesRiskExceptionCommands.RequestV1 + "', N'" + SalesRiskExceptionCommands.ApproveV1 + "', N'"
-        + SalesRiskExceptionCommands.RejectV1 + "')";
+        + SalesRiskExceptionCommands.RejectV1 + "', N'" + SalesRiskExceptionCommands.WithdrawV1 + "')";
 
     /// <summary>CK_ShipmentRiskExceptionAttempts_Outcome: a recorded attempt names its exception; a refusal carries its JSON.</summary>
     internal const string ShipmentRiskExceptionAttemptOutcomeConstraint =
@@ -1671,7 +1676,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [ExceptionNo] >= 1");
-            table.HasCheckConstraint("CK_ShipmentRiskExceptions_State", "[State] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptions_State", ShipmentRiskExceptionStateConstraint);
             table.HasCheckConstraint("CK_ShipmentRiskExceptions_Decision", ShipmentRiskExceptionDecisionConstraint);
             table.HasCheckConstraint("CK_ShipmentRiskExceptions_MakerChecker", ShipmentRiskExceptionMakerCheckerConstraint);
             table.HasCheckConstraint("CK_ShipmentRiskExceptions_Text",
@@ -1930,14 +1935,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
                 if (entry.Entity is ShipmentRiskExceptionRow)
                 {
-                    // API-07: a decision is taken once — Requested → Approved | Rejected; nothing else.
+                    // API-07: a decision is taken once — Requested → Approved | Rejected, or the requester's Withdrawn
+                    // (EK56 SAT-D286); nothing else.
                     var exceptionState = entry.Property(nameof(ShipmentRiskExceptionRow.State));
                     if (!(exceptionState.IsModified
                             && (int)exceptionState.OriginalValue! == (int)SalesShipmentRiskExceptionState.Requested
                             && (int)exceptionState.CurrentValue! is (int)SalesShipmentRiskExceptionState.Approved
-                                or (int)SalesShipmentRiskExceptionState.Rejected))
+                                or (int)SalesShipmentRiskExceptionState.Rejected or (int)SalesShipmentRiskExceptionState.Withdrawn))
                     {
-                        throw new InvalidOperationException("Risk istisnasının durumu yalnız bir kez, Onay bekliyor → Onaylı/Reddedildi yönünde değişir.");
+                        throw new InvalidOperationException("Risk istisnasının durumu yalnız bir kez, Onay bekliyor → Onaylı/Reddedildi/Geri çekildi yönünde değişir.");
                     }
                 }
 

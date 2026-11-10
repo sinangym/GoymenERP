@@ -5,9 +5,11 @@
  * The list is shown to a caller holding the S-04 detail in the order's company. The request form appears only with
  * `sales.orders.risk-exception.request`, the approve / reject buttons only on a pending exception and only with
  * `sales.orders.risk-exception.approve`; the server measures both afresh and decides (no self-decision, SAT-D153; a decision at
- * the exception's version). Validity is the server's `isValidToday` for its Istanbul business date (SAT-D160), never computed
- * here. A command whose outcome is unknown keeps its key in memory and is retried with the same key, never a new request. No
- * amount is shown (SAT-D162).
+ * the exception's version). The requester's own pending request carries a "Geri çek" button under the request capability
+ * (EK56 SAT-D286); whether the caller is the requester is the server's decision, the button only follows the shell's user id.
+ * Validity is the server's `isValidToday` for its Istanbul business date (SAT-D160), never computed here. A command whose outcome
+ * is unknown (offline, network error, malformed answer, or a 502/503/504 gateway answer) keeps its key in memory and is retried
+ * with the same key, never a new request. No amount is shown (SAT-D162).
  */
 import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -58,6 +60,7 @@ export function SalesOrderRiskExceptions({ detail }: { readonly detail: DraftDet
     && hasCapability(shell, SALES_CAPABILITY.draftsDetail)
   const canRequest = canRead && hasCapability(shell, SALES_RISK_EXCEPTION_REQUEST_CAPABILITY)
   const canDecide = canRead && hasCapability(shell, SALES_RISK_EXCEPTION_APPROVE_CAPABILITY)
+  const actorId = shell.activeContext?.userId ?? null
   const boundary = useAuthBoundary()
   const query = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft-risk-exceptions', detail.draft.id, detail.draft.version],
@@ -91,6 +94,7 @@ export function SalesOrderRiskExceptions({ detail }: { readonly detail: DraftDet
       outcome={query.data}
       canRequest={canRequest}
       canDecide={canDecide}
+      actorId={actorId}
       send={send}
       onRecorded={() => void query.refetch()}
     />
@@ -99,11 +103,13 @@ export function SalesOrderRiskExceptions({ detail }: { readonly detail: DraftDet
 
 /** The panel for one read outcome (undefined while loading). Exported so every outcome and action can be checked on its own. */
 export function OrderRiskExceptions({
-  outcome, canRequest, canDecide, send, onRecorded,
+  outcome, canRequest, canDecide, actorId = null, send, onRecorded,
 }: {
   readonly outcome: ViewOutcome<readonly RiskException[]> | undefined
   readonly canRequest: boolean
   readonly canDecide: boolean
+  /** The shell's user id: the withdraw button is offered only on this user's own pending request (SAT-D286). */
+  readonly actorId?: string | null
   readonly send: (action: PendingRiskExceptionAction) => Promise<OrderCommandOutcome<RiskExceptionMutation>>
   readonly onRecorded: () => void
 }) {
@@ -116,8 +122,11 @@ export function OrderRiskExceptions({
   const [notice, setNotice] = useState<{ readonly text: string; readonly supportCode: string | null } | null>(null)
   const locked = busy || pending !== null
 
+  /** The request and the withdrawal run under the request capability; a decision under the approve capability. */
+  const allowed = (kind: PendingRiskExceptionAction['kind']) => kind === 'request' || kind === 'withdrawal' ? canRequest : canDecide
+
   async function execute(action: PendingRiskExceptionAction) {
-    if (!(action.kind === 'request' ? canRequest : canDecide)) {
+    if (!allowed(action.kind)) {
       setNotice({ text: T.noAuthority, supportCode: null })
       return
     }
@@ -127,12 +136,14 @@ export function OrderRiskExceptions({
     setBusy(false)
     if (result.type === 'succeeded') {
       setPending(null)
-      const done = action.kind === 'request' ? T.requested : action.kind === 'approval' ? T.approved : T.rejected
+      const done = action.kind === 'request' ? T.requested
+        : action.kind === 'approval' ? T.approved
+          : action.kind === 'withdrawal' ? T.withdrawn : T.rejected
       setNotice({ text: result.data.isReplay ? done + T.replayed : done, supportCode: null })
       if (action.kind === 'request') {
         setShipment('')
         setReason('')
-      } else {
+      } else if (action.kind !== 'withdrawal') {
         setRejectionReasons((current) => ({ ...current, [action.exceptionNo]: '' }))
       }
       onRecorded()
@@ -142,6 +153,12 @@ export function OrderRiskExceptions({
       // The server may have recorded it: keep the key so the retry replays instead of opening a second request.
       setPending(action)
       setNotice({ text: T.unknown, supportCode: null })
+      return
+    }
+    if (GATEWAY_STATUSES.includes(result.status)) {
+      // A gateway or unavailable answer does not say whether the command was recorded: keep the key for a same-key retry.
+      setPending(action)
+      setNotice({ text: T.retryPending, supportCode: result.problem?.correlationId ?? null })
       return
     }
     setPending(null)
@@ -188,6 +205,14 @@ export function OrderRiskExceptions({
     })
   }
 
+  /** SAT-D286: the requester's withdrawal of their own pending request at its version (no reason). */
+  function withdraw(item: RiskException) {
+    reserve({
+      kind: 'withdrawal', key: generateOrderAttemptKey(), exceptionNo: item.exceptionNo,
+      payload: { expectedVersion: item.version, reason: null },
+    })
+  }
+
   let body
   if (outcome?.type === 'ok-single') {
     const items = outcome.data
@@ -200,7 +225,7 @@ export function OrderRiskExceptions({
           </p>
         )}
         {pending !== null && !busy ? (
-          <Button type="button" variant="secondary" disabled={pending.kind === 'request' ? !canRequest : !canDecide}
+          <Button type="button" variant="secondary" disabled={!allowed(pending.kind)}
             onClick={() => void execute(pending)} data-testid="sales-risk-exception-retry">{T.retry}</Button>
         ) : null}
         {canRequest ? (
@@ -244,6 +269,11 @@ export function OrderRiskExceptions({
                 <Button type="button" variant="secondary" disabled={locked} onClick={() => decide(item, 'rejection')}>{T.reject}</Button>
               </div>
             ) : null}
+            {item.state === RISK_EXCEPTION_STATE.requested && canRequest && actorId !== null && item.requestedBy === actorId ? (
+              <div className={pages.actions} data-testid={`sales-risk-exception-${item.exceptionNo}-withdrawal`}>
+                <Button type="button" variant="secondary" disabled={locked} onClick={() => withdraw(item)}>{T.withdraw}</Button>
+              </div>
+            ) : null}
           </article>
         ))}
       </>
@@ -278,6 +308,9 @@ export function OrderRiskExceptions({
     </section>
   )
 }
+
+/** Answers that do not say whether the command was recorded (a gateway or an unavailable server): the key is kept. */
+const GATEWAY_STATUSES: readonly number[] = [502, 503, 504]
 
 /** A refused command in words: the problem code the server named when known, else the status. */
 function failureNotice(outcome: Extract<OrderCommandOutcome<RiskExceptionMutation>, { type: 'http' }>) {

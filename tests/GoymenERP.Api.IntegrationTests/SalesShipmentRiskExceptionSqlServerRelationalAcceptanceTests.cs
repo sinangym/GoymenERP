@@ -224,6 +224,98 @@ public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)));
     }
 
+    [SqlServerFact]
+    public async Task SAT_D286_the_requester_withdraws_a_pending_exception_in_one_save_and_the_shipment_takes_a_new_request_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        var clock = new Clock(T0);
+        await using var scope = run.SalesStore(CompanyA, clock);
+        var shipper = run.Service(scope.Store, CompanyA, Shipper, clock);
+        await shipper.RequestRiskExceptionAsync(draft.Id, new RequestSalesRiskExceptionRequest(Shipment, "SENTETIK"), Metadata("k-request"));
+
+        // Another actor cannot withdraw: the refusal is recorded under its key and nothing moves.
+        var manager = run.Service(scope.Store, CompanyA, Manager, clock);
+        var foreign = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            manager.WithdrawRiskExceptionAsync(draft.Id, 1, new SalesDraftStateCommandRequest("1"), Metadata("k-foreign-withdraw")));
+        Assert.Equal((409, SalesRiskExceptionProblemCodesV1.NotRequester), (foreign.Status, foreign.Code));
+        Assert.Equal((1, 1), (
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionAttempts] WHERE [Outcome] = 2")));
+
+        // The requester withdraws: one save of the row (State 4, no decision facts, version 2), its attempt and its audit.
+        var withdrawn = await shipper.WithdrawRiskExceptionAsync(draft.Id, 1, new SalesDraftStateCommandRequest("1"), Metadata("k-withdraw"));
+        Assert.Equal(("Withdrawn", "2", false), (withdrawn.Exception.State, withdrawn.Exception.Version, withdrawn.IsReplay));
+        Assert.Equal((4, 2L, 1), (
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id AND [DecidedBy] IS NULL "
+                + "AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [ValidOn] IS NULL", ("@id", draft.Id))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionAttempts] WHERE [OrderId] = @id AND [Outcome] = 1 AND [CommandName] = @command",
+            ("@id", draft.Id), ("@command", SalesRiskExceptionCommands.WithdrawV1)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'sales.order.risk-exception.withdrawn.v1' "
+            + "AND [ActorId] = @actor AND [EntityVersionBefore] = 1 AND [EntityVersionAfter] = 2", ("@actor", Shipper)));
+
+        // The same key replays; the read port no longer sees a pending exception and a new request of the shipment is taken.
+        Assert.True((await shipper.WithdrawRiskExceptionAsync(draft.Id, 1, new SalesDraftStateCommandRequest("1"), Metadata("k-withdraw"))).IsReplay);
+        var port = new SalesShipmentRiskExceptionReadPort(scope.Store, run.Company(CompanyA), clock);
+        Assert.Equal((SalesShipmentRiskExceptionStatusV1.Withdrawn, (int?)1), Answer(await port.GetAsync(draft.Id, Shipment)));
+        var again = await shipper.RequestRiskExceptionAsync(draft.Id, new RequestSalesRiskExceptionRequest(Shipment, "SENTETIK yeniden"),
+            Metadata("k-request-again"));
+        Assert.Equal((2, "Requested"), (again.Exception.ExceptionNo, again.Exception.State));
+        Assert.Equal((SalesShipmentRiskExceptionStatusV1.Pending, (int?)2), Answer(await port.GetAsync(draft.Id, Shipment)));
+
+        // TR_ShipmentRiskExceptions_Guard: a withdrawn row never moves again (not even to an approval written raw).
+        Assert.Equal(51252, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[ShipmentRiskExceptions] SET [State] = 2, [DecidedBy] = N'SENTETIK-manager', [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
+            + "[ValidOn] = '2026-11-10', [Version] = 3 WHERE [OrderId] = @id AND [ExceptionNo] = 1; SELECT 1", ("@id", draft.Id)))).Number);
+        // CK_ShipmentRiskExceptions_Decision: a withdrawal carries no decision facts.
+        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[ShipmentRiskExceptions] SET [State] = 4, [DecidedBy] = N'SENTETIK-manager', [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
+            + "[Version] = 2 WHERE [OrderId] = @id AND [ExceptionNo] = 2; SELECT 1", ("@id", draft.Id)))).Number);
+        Assert.Equal((4, 1), (
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id AND [ExceptionNo] = 1", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id AND [ExceptionNo] = 2", ("@id", draft.Id))));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_D286_the_withdrawal_migrations_Down_passes_with_no_withdrawal_and_refuses_51254_while_one_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        var guard = Assert.IsType<SqlOperation>(new AddShipmentRiskExceptionWithdrawal().DownOperations[0]).Sql;
+        var clock = new Clock(T0);
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            await run.Service(scope.Store, CompanyA, Shipper, clock).RequestRiskExceptionAsync(draft.Id,
+                new RequestSalesRiskExceptionRequest(Shipment, "SENTETIK"), Metadata("k-request"));
+        }
+
+        // A pending exception is not a withdrawal: the guard passes.
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            await run.Service(scope.Store, CompanyA, Shipper, clock).WithdrawRiskExceptionAsync(draft.Id, 1,
+                new SalesDraftStateCommandRequest("1"), Metadata("k-withdraw"));
+        }
+
+        Assert.Equal(51254, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var index = Array.FindIndex(applied, id => id.EndsWith("_AddShipmentRiskExceptionWithdrawal", StringComparison.Ordinal));
+        Assert.True(index > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[index]);
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
+        Assert.Equal(51254, rollback.Number);
+        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)));
+    }
+
     private static (SalesShipmentRiskExceptionStatusV1, int?) Answer(SalesShipmentRiskExceptionReadV1 read) => (read.Status, read.ExceptionNo);
 
     private static SalesCommandMetadata Metadata(string key) =>
