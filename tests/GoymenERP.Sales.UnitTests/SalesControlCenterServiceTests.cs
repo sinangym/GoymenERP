@@ -111,6 +111,25 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Theory]
+    [InlineData("108.24", "WithinTolerance")]
+    [InlineData("108.30", "Info")]
+    public async Task A_vat_only_match_difference_is_a_deviation_and_a_blocked_finalization_SAT_D241(string officialVat, string severity)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        var vat = decimal.Parse(officialVat, System.Globalization.CultureInfo.InvariantCulture);
+        invoicing.Official.Has(648.49m, vat: vat);
+        var over = vat - 108.20m > 0.05m;
+        await invoicing.Service().MatchInvoiceAsync(id, MatchRequest(approve: over, reason: over ? "Vergi farki" : null), Metadata("k-inv-match"));
+
+        var answer = await ControlCenter(invoicing, new DateOnly(2026, 11, 20)).GetControlCenterAsync();
+
+        var deviation = Assert.Single(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.OfficialDocumentDeviation);
+        Assert.Equal((id, severity), (deviation.InvoiceId, deviation.Severity.ToString()));
+        var blocked = Assert.Single(answer.Items, item => item.Kind == SalesControlCenterCheckKindView.InvoiceFinalizationBlocked);
+        Assert.Equal((id, SalesControlCenterSeverityView.Critical), (blocked.InvoiceId, blocked.Severity));
+    }
+
+    [Theory]
     [InlineData("refused", "Critical")]
     [InlineData("unavailable", "Info")]
     [InlineData("admitted", null)]

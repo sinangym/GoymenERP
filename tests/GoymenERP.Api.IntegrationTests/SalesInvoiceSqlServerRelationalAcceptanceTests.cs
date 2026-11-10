@@ -300,7 +300,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
         var approved = await ApprovedAsync(run, "m1", approver);
         var official = new SalesOfficialInvoiceFacts("GIB2026000000001", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
-            approved.PayableFunctionalAmount + 0.05m, approved.PayableFunctionalAmount + 0.05m);
+            approved.PayableFunctionalAmount + 0.05m, approved.PayableFunctionalAmount + 0.05m, approved.VatFunctionalAmount,
+            approved.WithholdingFunctionalAmount);
         var envelope = run.Envelope("m1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
 
         await using (var scope = run.Store(CompanyA))
@@ -356,7 +357,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(Usd, approved.Header.CurrencyId);
         var tolerance = new SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
         var official = new SalesOfficialInvoiceFacts("GIB2026000000006", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
-            approved.Totals.Payable.Amount, approved.PayableFunctionalAmount + 0.06m);
+            approved.Totals.Payable.Amount, approved.PayableFunctionalAmount + 0.06m, approved.VatFunctionalAmount,
+            approved.WithholdingFunctionalAmount);
         var envelope = run.Envelope("m6-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
 
         await using (var scope = run.Store(CompanyA))
@@ -389,6 +391,113 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_vat_or_withholding_tl_difference_above_the_tolerance_writes_nothing_without_approval_and_is_stored_approved_on_real_sql()
+    {
+        // SAT-D241 (EK48): the payable TL agrees exactly; the VAT TL differs by 0,06 on one invoice and the withholding TL on another.
+        // Each unapproved match writes no row, attempt or audit event; the approved one stores the six comparison columns.
+        await using var run = await Run.StartAsync();
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var tolerance = new SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
+        foreach (var (prefix, no, vatDelta, withholdingDelta) in new[]
+        {
+            ("t1", "GIB2026000000241", 0.06m, 0m),
+            ("t2", "GIB2026000000242", 0m, 0.06m),
+        })
+        {
+            var approved = await ApprovedAsync(run, prefix, approver);
+            var ettn = Guid.NewGuid().ToString("D");
+            var official = new SalesOfficialInvoiceFacts(no, ettn, approved.Header.PartyId, approved.Header.CurrencyId,
+                approved.Totals.Payable.Amount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount + vatDelta,
+                approved.WithholdingFunctionalAmount + withholdingDelta);
+            var envelope = run.Envelope(prefix + "-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
+
+            await using (var scope = run.Store(CompanyA))
+            {
+                var refused = await Assert.ThrowsAsync<SalesRuleException>(() => scope.Invoices.MatchInvoiceAsync(envelope, Hash('a'),
+                    approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, tolerance, false, null, now),
+                    new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK")));
+                Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceNotApproved, refused.Code);
+            }
+
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id", ("@id", approved.Id)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sales.InvoiceAttempts WHERE InvoiceId = @id AND CommandName = N'sales.invoice.match.v1'", ("@id", approved.Id)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityType = N'Sales.Invoice' AND EntityId = @id "
+                + "AND EventType = N'sales.invoice.matched.v1'", ("@company", CompanyA), ("@id", approved.Id.ToString("D"))));
+
+            await using (var scope = run.Store(CompanyA))
+            {
+                var matched = await scope.Invoices.MatchInvoiceAsync(envelope, Hash('b'), approved.Id,
+                    (invoice, now) => invoice.RecordMatch(3, matcher, official, tolerance, true, "SENTETIK vergi farkı", now),
+                    new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+                Assert.Equal((SalesDraftWriteOutcome.Recorded, 0m), (matched!.Outcome, matched.Invoice.Match!.Difference));
+                var found = await scope.Invoices.FindInvoiceAsync(approved.Id);
+                Assert.Equal((vatDelta, withholdingDelta), (found!.Match!.Taxes!.VatDifference, found.Match.Taxes.WithholdingDifference));
+            }
+
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id AND Difference = 0 AND Tolerance = 0.05 "
+                + "AND DifferenceApprovedBy = @m AND DifferenceReason IS NOT NULL AND InvoiceVatAmount = @vat AND OfficialVatAmount = @officialVat "
+                + "AND VatDifference = @vatDiff AND InvoiceWithholdingAmount = @wh AND OfficialWithholdingAmount = @officialWh "
+                + "AND WithholdingDifference = @whDiff",
+                ("@id", approved.Id), ("@m", matcher), ("@vat", approved.VatFunctionalAmount), ("@officialVat", official.VatFunctionalAmount),
+                ("@vatDiff", vatDelta), ("@wh", approved.WithholdingFunctionalAmount), ("@officialWh", official.WithholdingFunctionalAmount),
+                ("@whDiff", withholdingDelta)));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task The_match_tax_comparison_migrations_Down_passes_with_a_legacy_match_and_refuses_while_a_compared_match_exists_on_real_sql()
+    {
+        // SAT-D241 (EK48): the six columns are all-or-nothing (CK_InvoiceMatches_TaxAmounts), a VAT difference above the tolerance needs
+        // the approver (CK_InvoiceMatches_Amounts), and the forward-fix Down refuses (51242) once a compared match exists.
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddInvoiceMatchTaxComparison().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+
+        var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
+        var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
+        var legacy = await ApprovedAsync(run, "d1", approver);
+        var other = await ApprovedAsync(run, "d2", approver);
+        var compared = await ApprovedAsync(run, "d3", approver);
+        const string insert = "INSERT INTO sales.InvoiceMatches (CompanyId, InvoiceId, OfficialInvoiceNo, Ettn, InvoiceAmount, OfficialAmount, "
+            + "Difference, Tolerance, MatchedBy, MatchedAtUtc, CorrelationId";
+
+        // A match stored before SAT-D241 carries no comparison: storable, and the Down still passes.
+        await run.ExecuteAsync(insert + ") VALUES (@c, @id, N'GIB2026000000243', @ettn, 100, 100, 0, 0.05, N'SENTETIK-m', SYSUTCDATETIME(), "
+            + "N'SENTETIK-c')", ("@c", CompanyA), ("@id", legacy.Id), ("@ettn", Guid.NewGuid().ToString("D")));
+        await run.ExecuteAsync(guard);
+
+        var partial = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(insert + ", InvoiceVatAmount) VALUES (@c, @id, "
+            + "N'GIB2026000000244', @ettn, 100, 100, 0, 0.05, N'SENTETIK-m', SYSUTCDATETIME(), N'SENTETIK-c', 20)",
+            ("@c", CompanyA), ("@id", other.Id), ("@ettn", Guid.NewGuid().ToString("D"))));
+        Assert.Contains("CK_InvoiceMatches_TaxAmounts", partial.Message, StringComparison.Ordinal);
+
+        var unapproved = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(insert + ", InvoiceVatAmount, OfficialVatAmount, "
+            + "VatDifference, InvoiceWithholdingAmount, OfficialWithholdingAmount, WithholdingDifference) VALUES (@c, @id, N'GIB2026000000244', "
+            + "@ettn, 100, 100, 0, 0.05, N'SENTETIK-m', SYSUTCDATETIME(), N'SENTETIK-c', 20, 20.06, 0.06, 0, 0, 0)",
+            ("@c", CompanyA), ("@id", other.Id), ("@ettn", Guid.NewGuid().ToString("D"))));
+        Assert.Contains("CK_InvoiceMatches_Amounts", unapproved.Message, StringComparison.Ordinal);
+
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000245", OfficialEttn, compared.Header.PartyId, compared.Header.CurrencyId,
+            compared.Totals.Payable.Amount, compared.PayableFunctionalAmount, compared.VatFunctionalAmount, compared.WithholdingFunctionalAmount);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.MatchInvoiceAsync(run.Envelope("d3-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
+                Hash('c'), compared.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+        }
+
+        var down = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51242, down.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId = @id AND VatDifference = 0 AND WithholdingDifference = 0",
+            ("@id", compared.Id)));
+    }
+
+    [SqlServerFact]
     public async Task The_official_match_table_is_append_only_checks_its_amounts_and_its_Down_refuses_once_a_match_exists_on_real_sql()
     {
         await using var run = await Run.StartAsync();
@@ -400,7 +509,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var approved = await ApprovedAsync(run, "m3", approver);
         var other = await ApprovedAsync(run, "m4", approver);
         var official = new SalesOfficialInvoiceFacts("GIB2026000000003", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
-            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount);
+            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
+            approved.WithholdingFunctionalAmount);
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("m3-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
@@ -443,7 +553,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var approved = await ApprovedAsync(run, "f1", approver);
         var unmatched = await ApprovedAsync(run, "f2", approver);
         var official = new SalesOfficialInvoiceFacts("GIB2026000000011", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
-            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount);
+            approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
+            approved.WithholdingFunctionalAmount);
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("f1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
@@ -521,7 +632,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             "SELECT SUM(FunctionalNetAmount + FunctionalVatAmount - FunctionalWithholdingAmount) FROM sales.InvoiceLines WHERE InvoiceId = @id",
             ("@id", approved.Id)));
         var official = new SalesOfficialInvoiceFacts("GIB2026000000245", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
-            approved.Totals.Payable.Amount, approved.PayableFunctionalAmount);
+            approved.Totals.Payable.Amount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
+            approved.WithholdingFunctionalAmount);
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("z1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),

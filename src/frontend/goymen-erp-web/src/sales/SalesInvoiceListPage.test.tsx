@@ -34,6 +34,7 @@ const summary = (over: Wire = {}): Wire => ({
   partyId: PARTY,
   companyAccountId: ACCOUNT,
   currencyId: CURRENCY,
+  amountDisclosure: 'Visible',
   payableAmount: '1180.40',
   functionalPayableAmount: null,
   lineCount: 2,
@@ -84,6 +85,30 @@ describe('UI-63 S-09 Satış faturaları', () => {
     expect(fetch.calls).toHaveLength(1)
     expect(fetch.calls[0].companyId).toBe(COMPANY_A)
     expect(fetch.calls[0].url).toBe('/api/v1/sales/invoices?pageSize=50')
+  })
+
+  it('shows the amounts the server withheld (SAT-D238) as "Gizli", never as 0 or "—"', async () => {
+    const withheld = summary({
+      id: OTHER_INVOICE_ID,
+      documentNo: 'SF-2026-0006',
+      amountDisclosure: 'Withheld',
+      payableAmount: null,
+      functionalPayableAmount: null,
+    })
+    installPoolFetch((call) => (isList(call) ? json(page([summary(), withheld])) : notFound(call)), GRANTED)
+    renderPool(ROUTE)
+    const table = await screen.findByRole('table', { name: T.caption })
+    expect(within(table).getByText('1180.40')).toBeTruthy()
+    const payable = screen.getByTestId(`sales-invoices-payable-withheld-${OTHER_INVOICE_ID}`)
+    const functional = screen.getByTestId(`sales-invoices-functional-withheld-${OTHER_INVOICE_ID}`)
+    for (const cell of [payable, functional]) {
+      expect(cell.textContent).toBe(T.withheld)
+      expect(cell.getAttribute('aria-label')).toBe(T.withheldLabel)
+    }
+    expect(screen.queryByTestId(`sales-invoices-payable-withheld-${INVOICE_ID}`)).toBeNull()
+    const withheldRow = document.querySelector(`[data-invoice-id="${OTHER_INVOICE_ID}"]`) as HTMLElement
+    expect(within(withheldRow).queryByText(/^0(?:[.,]0+)?$/)).toBeNull()
+    expect(within(withheldRow).queryByText(T.none)).toBeNull()
   })
 
   it('pages by the server cursor and never appends a row twice', async () => {
@@ -154,6 +179,7 @@ describe('UI-63 S-09 Satış faturaları', () => {
   it.each([
     ['an unknown state', { state: 'Paid' }],
     ['a numeric amount', { payableAmount: 1180.4 }],
+    ['a withheld row carrying an amount', { amountDisclosure: 'Withheld' }],
     ['an extra member', { companyId: COMPANY_A }],
     ['a negative line count', { lineCount: -1 }],
   ])('refuses a page with %s as a malformed answer', async (_label, over) => {

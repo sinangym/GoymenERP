@@ -189,6 +189,7 @@ public sealed partial class SalesInvoiceService
                 && string.Equals(found.OfficialNo, officialNo, StringComparison.Ordinal)
                 && string.Equals(found.Ettn, ettn, StringComparison.OrdinalIgnoreCase)
                 && found.PayableFunctionalAmount >= 0m && found.PayableAmount >= 0m
+                && found.VatFunctionalAmount >= 0m && found.WithholdingFunctionalAmount >= 0m
                 && found.CustomerPartyId != Guid.Empty && found.CurrencyId != Guid.Empty:
                 return found with { Ettn = ettn };
             default:
@@ -215,10 +216,26 @@ public sealed partial class SalesInvoiceService
             throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.OfficialMatchMismatch, errors);
         }
 
-        if (evaluation.Difference > tolerance && !approveDifference)
+        if (evaluation.Exceeds(tolerance) && !approveDifference)
         {
-            throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.DifferenceApprovalRequired,
-                [new("difference", "exceeds_tolerance")]);
+            // SAT-D241: the payable amount, the VAT and the withholding are measured separately; each one beyond the tolerance is named.
+            var errors = new List<SalesDraftFieldError>();
+            if (evaluation.PayableExceeds(tolerance))
+            {
+                errors.Add(new("difference", "exceeds_tolerance"));
+            }
+
+            if (evaluation.VatExceeds(tolerance))
+            {
+                errors.Add(new("vatDifference", "exceeds_tolerance"));
+            }
+
+            if (evaluation.WithholdingExceeds(tolerance))
+            {
+                errors.Add(new("withholdingDifference", "exceeds_tolerance"));
+            }
+
+            throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.DifferenceApprovalRequired, errors);
         }
     }
 
@@ -226,7 +243,12 @@ public sealed partial class SalesInvoiceService
         ? null
         : new SalesInvoiceMatchView(match.OfficialNo, match.Ettn, ExactText(match.InvoiceFunctionalAmount),
             ExactText(match.OfficialFunctionalAmount), ExactText(match.Difference), ExactText(match.Tolerance), match.MatchedBy,
-            match.MatchedAtUtc, match.DifferenceApprovedBy, match.DifferenceReason);
+            match.MatchedAtUtc, match.DifferenceApprovedBy, match.DifferenceReason, NullableExactText(match.Taxes?.InvoiceVatAmount),
+            NullableExactText(match.Taxes?.OfficialVatAmount), NullableExactText(match.Taxes?.VatDifference),
+            NullableExactText(match.Taxes?.InvoiceWithholdingAmount), NullableExactText(match.Taxes?.OfficialWithholdingAmount),
+            NullableExactText(match.Taxes?.WithholdingDifference));
 
     private static string ExactText(decimal value) => value.ToString("0.00######", CultureInfo.InvariantCulture);
+
+    private static string? NullableExactText(decimal? value) => value is { } exact ? ExactText(exact) : null;
 }

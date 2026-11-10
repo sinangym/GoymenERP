@@ -36,7 +36,7 @@ import {
 import { useInvoiceDraftCommand } from './invoiceDraft'
 import { InvoiceDecisionFacts, InvoiceDraftAttemptNotice, SalesInvoiceDraftActions } from './SalesInvoiceDraftActions'
 import { isOutcomeStillUnknown } from './orderAttempt'
-import { SalesInvoiceMatchPanel } from './SalesInvoiceMatchPanel'
+import { MatchTaxFacts, SalesInvoiceMatchPanel } from './SalesInvoiceMatchPanel'
 import { INVOICE_MATCH_TEXT as M } from './invoiceMatchText'
 import { formatBusinessDate, formatInstant } from './format'
 import {
@@ -282,6 +282,7 @@ function MatchFacts({ detail }: { readonly detail: SalesInvoiceDetail }) {
           <div><dt>{T.officialAmount}</dt><dd className={styles.numericValue}>{match.officialAmount}</dd></div>
           <div><dt>{T.difference}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-difference">{match.difference}</dd></div>
           <div><dt>{T.tolerance}</dt><dd className={styles.numericValue}>{match.tolerance}</dd></div>
+          <MatchTaxFacts match={match} testIdPrefix="sales-invoice-match" />
           <div><dt>{T.matchedBy}</dt><dd>{match.matchedBy}</dd></div>
           <div><dt>{T.matchedAt}</dt><dd>{formatInstant(match.matchedAtUtc)}</dd></div>
           <div>

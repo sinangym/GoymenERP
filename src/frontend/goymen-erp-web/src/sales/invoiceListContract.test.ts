@@ -14,6 +14,7 @@ const summary = (over: Record<string, unknown> = {}) => ({
   partyId: REF,
   companyAccountId: REF,
   currencyId: REF,
+  amountDisclosure: 'Visible',
   payableAmount: '10.00',
   functionalPayableAmount: null,
   lineCount: 0,
@@ -29,6 +30,7 @@ describe('API-32 invoice list contract', () => {
 
   it('decodes an exact page, keeping amounts as text', () => {
     const decoded = decodeSalesInvoicePage({ items: [summary({ functionalPayableAmount: '350.10' })], nextCursor: 'next' })
+    expect(decoded?.items[0].amountDisclosure).toBe('Visible')
     expect(decoded?.items[0].payableAmount).toBe('10.00')
     expect(decoded?.items[0].functionalPayableAmount).toBe('350.10')
     expect(decoded?.nextCursor).toBe('next')
@@ -48,9 +50,25 @@ describe('API-32 invoice list contract', () => {
     ['an all-zero id', { items: [summary({ id: '00000000-0000-0000-0000-000000000000' })], nextCursor: null }],
     ['a date-time business date', { items: [summary({ businessDate: '2026-11-01T00:00:00Z' })], nextCursor: null }],
     ['a blank document number', { items: [summary({ documentNo: ' ' })], nextCursor: null }],
+    ['a missing amountDisclosure', { items: [{ ...summary(), amountDisclosure: undefined }], nextCursor: null }],
+    ['an unknown disclosure', { items: [summary({ amountDisclosure: 'Hidden' })], nextCursor: null }],
+    ['a visible row without its payable amount', { items: [summary({ payableAmount: null })], nextCursor: null }],
+    ['a withheld row carrying a payable amount', { items: [summary({ amountDisclosure: 'Withheld' })], nextCursor: null }],
+    ['a withheld row showing zero', { items: [summary({ amountDisclosure: 'Withheld', payableAmount: '0' })], nextCursor: null }],
+    ['a withheld row carrying a TL amount', {
+      items: [summary({ amountDisclosure: 'Withheld', payableAmount: null, functionalPayableAmount: '0.00' })], nextCursor: null }],
+    ['a withheld row with an empty amount', { items: [summary({ amountDisclosure: 'Withheld', payableAmount: '' })], nextCursor: null }],
     ['a repeated id', { items: [summary(), summary()], nextCursor: null }],
   ])('refuses %s', (_label, body) => {
     expect(decodeSalesInvoicePage(JSON.parse(JSON.stringify(body)))).toBeNull()
+  })
+
+  it('decodes a withheld row (SAT-D238) with both amounts null, never a zero', () => {
+    const decoded = decodeSalesInvoicePage({
+      items: [summary({ amountDisclosure: 'Withheld', payableAmount: null, functionalPayableAmount: null })],
+      nextCursor: null,
+    })
+    expect(decoded?.items[0]).toMatchObject({ amountDisclosure: 'Withheld', payableAmount: null, functionalPayableAmount: null })
   })
 
   it('accepts two distinct invoices in the server order', () => {

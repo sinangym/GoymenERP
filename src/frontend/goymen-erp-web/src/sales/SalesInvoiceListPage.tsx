@@ -1,8 +1,11 @@
 /**
  * UI-63 / S-09 "Satış faturaları": the company's Sales invoices, pinned to `GET /api/v1/sales/invoices?pageSize&cursor` (API-32,
- * `sales.invoices.read` AND `sales.orders.price.read`; Sales shell 1.19 `sales.invoices.list`). The server orders the list
+ * `sales.invoices.read` only; Sales shell 1.20 `sales.invoices.list`). The server orders the list
  * (newest first) and offers no filter and no sort; paging follows the owner's cursor and the client never sorts, filters or
  * counts (LF-01).
+ *
+ * SAT-D238 (EK48): a user without `sales.orders.price.read` sees the list with the amounts WITHHELD by the server
+ * (`amountDisclosure: Withheld`, both amounts null); each such cell says "Gizli" — never 0, never "—".
  *
  * A row's document number opens the existing invoice detail — `SalesInvoiceFinalizationPanel` (API-36, the same read under the
  * same two names) — below the list, addressed by `?fatura=<id>` so the selection survives a reload and the back button. The
@@ -130,13 +133,17 @@ function InvoiceList({ namespace }: { readonly namespace: string | null }) {
       key: 'payable',
       header: T.payable,
       align: 'end',
-      cell: (row) => <span className={styles.numeric}>{row.payableAmount}</span>,
+      cell: (row) => (row.amountDisclosure === 'Withheld' ? <WithheldAmount id={`sales-invoices-payable-withheld-${row.id}`} /> : (
+        <span className={styles.numeric}>{row.payableAmount}</span>
+      )),
     },
     {
       key: 'functionalPayable',
       header: T.functionalPayable,
       align: 'end',
-      cell: (row) => <span className={styles.numeric}>{row.functionalPayableAmount ?? T.none}</span>,
+      cell: (row) => (row.amountDisclosure === 'Withheld' ? <WithheldAmount id={`sales-invoices-functional-withheld-${row.id}`} /> : (
+        <span className={styles.numeric}>{row.functionalPayableAmount ?? T.none}</span>
+      )),
     },
     { key: 'lineCount', header: T.lineCount, align: 'end', cell: (row) => <span className={styles.numeric}>{row.lineCount}</span> },
     { key: 'createdAt', header: T.createdAt, cell: (row) => formatInstant(row.createdAtUtc) },
@@ -155,5 +162,14 @@ function InvoiceList({ namespace }: { readonly namespace: string | null }) {
       <PoolContinuation list={list} />
       {detail}
     </section>
+  )
+}
+
+/** SAT-D238: the server withheld this amount from the user; it is "Gizli", not a value. */
+function WithheldAmount({ id }: { readonly id: string }) {
+  return (
+    <span data-testid={id} aria-label={INVOICE_LIST_TEXT.withheldLabel} title={INVOICE_LIST_TEXT.withheldLabel}>
+      {INVOICE_LIST_TEXT.withheld}
+    </span>
   )
 }

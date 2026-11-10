@@ -11,7 +11,7 @@
  *  - 401/403 go to the shell's auth boundary; an unknown outcome keeps the same key until it is retried or left.
  */
 import { useId, useState } from 'react'
-import type { SalesInvoiceDetail } from './invoiceFinalizationContract'
+import type { InvoiceMatch, SalesInvoiceDetail } from './invoiceFinalizationContract'
 import {
   DIFFERENCE_REASON_MAX_LENGTH,
   OFFICIAL_INVOICE_NO_MAX_LENGTH,
@@ -69,6 +69,30 @@ export function SalesInvoiceMatchPanel({
   )
 }
 
+/**
+ * SAT-D241: the VAT and withholding comparison rows of a recorded match (inside a `<dl>`), the server's TL text as written. A match
+ * recorded before SAT-D241 carries no comparison and says so (it is never shown as zero differences).
+ */
+export function MatchTaxFacts({ match, testIdPrefix }: { readonly match: InvoiceMatch; readonly testIdPrefix: string }) {
+  const taxes = match.taxes
+  if (taxes === null) {
+    return <div><dt>{T.vatDifference}</dt><dd data-testid={`${testIdPrefix}-tax-not-compared`}>{T.taxNotCompared}</dd></div>
+  }
+  return (
+    <>
+      <div><dt>{T.invoiceVat}</dt><dd className={styles.numericValue}>{taxes.invoiceVatAmount}</dd></div>
+      <div><dt>{T.officialVat}</dt><dd className={styles.numericValue}>{taxes.officialVatAmount}</dd></div>
+      <div><dt>{T.vatDifference}</dt><dd className={styles.numericValue} data-testid={`${testIdPrefix}-vat-difference`}>{taxes.vatDifference}</dd></div>
+      <div><dt>{T.invoiceWithholding}</dt><dd className={styles.numericValue}>{taxes.invoiceWithholdingAmount}</dd></div>
+      <div><dt>{T.officialWithholding}</dt><dd className={styles.numericValue}>{taxes.officialWithholdingAmount}</dd></div>
+      <div>
+        <dt>{T.withholdingDifference}</dt>
+        <dd className={styles.numericValue} data-testid={`${testIdPrefix}-withholding-difference`}>{taxes.withholdingDifference}</dd>
+      </div>
+    </>
+  )
+}
+
 function MatchNotice({ controller }: { readonly controller: InvoiceMatchController }) {
   const { attempt } = controller
   const notice = invoiceMatchNotice(attempt)
@@ -84,6 +108,7 @@ function MatchNotice({ controller }: { readonly controller: InvoiceMatchControll
         <dl className={styles.facts} aria-label={T.resultCaption} data-testid="sales-invoice-match-result">
           <div><dt>{T.resultDifference}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-result-difference">{match.difference}</dd></div>
           <div><dt>{T.resultTolerance}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-result-tolerance">{match.tolerance}</dd></div>
+          <MatchTaxFacts match={match} testIdPrefix="sales-invoice-match-result" />
           {match.differenceApprovedBy === null ? null : (
             <div><dt>{T.resultApprovedBy}</dt><dd data-testid="sales-invoice-match-result-approved-by">{match.differenceApprovedBy}</dd></div>
           )}
