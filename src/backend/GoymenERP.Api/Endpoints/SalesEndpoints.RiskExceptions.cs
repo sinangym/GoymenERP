@@ -46,8 +46,9 @@ public static partial class SalesEndpoints
             .ProducesErpAuthenticatedProblems();
 
         // SAT-D159: the request under `sales.orders.risk-exception.request` only (never `sales.drafts.read`). The strict body
-        // `{loadingInstructionId, reason}`; 201 with the exception. A pending or today-valid exception of the same shipment and an
-        // order that is not approved/open are 409s that are NOT recorded under the key (they can change).
+        // `{loadingInstructionId, reason}`; 201 with the exception. A pending or today-valid exception of the same shipment, an
+        // order that is not approved/open and an order whose risk is within its limit (EK56 SAT-D284) are 409s that are NOT
+        // recorded under the key (they can change).
         drafts.MapPost("/{id:guid}/risk-exceptions", async (
             Guid id,
             HttpContext httpContext,
@@ -103,7 +104,8 @@ public static partial class SalesEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SalesRiskExceptionProblemCodesV1.Duplicate, SalesRiskExceptionProblemCodesV1.OrderNotEligible,
-                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+                SalesRiskExceptionProblemCodesV1.WithinLimit, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
+                SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", SalesRuleCodes.RiskExceptionReasonTooLong)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
@@ -112,16 +114,33 @@ public static partial class SalesEndpoints
         // rejection); 200 with the exception. A stale version, a wrong state or a self-decision is the key's recorded 409 (§7).
         MapRiskExceptionDecision(drafts, "approval", "ApproveSalesOrderRiskExceptionV1", carriesReason: false, SalesRiskExceptionJson.ReadApproval,
             (service, id, no, body, metadata, cancellationToken) =>
-                service.ApproveRiskExceptionAsync(id, no, body, metadata, cancellationToken));
+                service.ApproveRiskExceptionAsync(id, no, body, metadata, cancellationToken), DecisionConflicts);
         MapRiskExceptionDecision(drafts, "rejection", "RejectSalesOrderRiskExceptionV1", carriesReason: true, SalesRiskExceptionJson.ReadRejection,
             (service, id, no, body, metadata, cancellationToken) =>
-                service.RejectRiskExceptionAsync(id, no, body, metadata, cancellationToken));
+                service.RejectRiskExceptionAsync(id, no, body, metadata, cancellationToken), DecisionConflicts);
+
+        // EK56 SAT-D286: the requester withdraws their own pending request under `sales.orders.risk-exception.request` (no new
+        // permission). The strict body `{expectedVersion}`; 200 with the Withdrawn exception. A stale version, a decided exception
+        // or another actor (`sales_risk_exception_not_requester`) is the key's recorded 409 (§7).
+        MapRiskExceptionDecision(drafts, "withdrawal", "WithdrawSalesOrderRiskExceptionV1", carriesReason: false,
+            SalesRiskExceptionJson.ReadWithdrawal,
+            (service, id, no, body, metadata, cancellationToken) =>
+                service.WithdrawRiskExceptionAsync(id, no, body, metadata, cancellationToken),
+            [SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict, SalesRiskExceptionProblemCodesV1.NotRequester,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange]);
     }
+
+    private static readonly string[] DecisionConflicts =
+    [
+        SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict, SalesRiskExceptionProblemCodesV1.SelfDecision,
+        SalesRiskExceptionProblemCodesV1.OrderNotEligible, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
+        SalesDraftProblemCodesV1.ConcurrentChange,
+    ];
 
     private static void MapRiskExceptionDecision(RouteGroupBuilder drafts, string segment, string name, bool carriesReason,
         Func<string, SalesDraftStateCommandRequest> read,
         Func<ISalesRiskExceptionService, Guid, int, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken,
-            Task<SalesRiskExceptionCommandResult>> command)
+            Task<SalesRiskExceptionCommandResult>> command, string[] conflicts)
     {
         var route = drafts.MapPost($"/{{id:guid}}/risk-exceptions/{{no:int:min(1)}}/{segment}", async (
             Guid id,
@@ -178,9 +197,7 @@ public static partial class SalesEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
-                SalesRiskExceptionProblemCodesV1.SelfDecision, SalesRiskExceptionProblemCodesV1.OrderNotEligible,
-                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange);
+            .ProducesErpConflict(conflicts);
 
         // Only the rejection carries a reason, so only it can answer 422 (a blank or over-long rejection reason).
         if (carriesReason)

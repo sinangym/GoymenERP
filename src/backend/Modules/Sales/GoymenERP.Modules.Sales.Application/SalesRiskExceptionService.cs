@@ -17,14 +17,18 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <list type="bullet">
 /// <item><b>Request</b> (<c>sales.orders.risk-exception.request</c>, SAT-D159/D162): an approved, open order (not cancelled or
 /// closed) and one loading instruction; a pending or a today-valid exception of the same shipment is a 409 (not recorded).
-/// <c>sales.drafts.read</c> is not asked; the answer carries no amount.</item>
+/// An order whose risk the deterministic calculator answers <c>Within</c> its limit is a 409
+/// <c>sales_risk_exception_within_limit</c> (EK56 SAT-D284; not recorded, retryable); <c>Over</c> and <c>Unavailable</c> are
+/// accepted (an unknown risk is never "within"). <c>sales.drafts.read</c> is not asked; the answer carries no amount.</item>
 /// <item><b>Approve / reject</b> (<c>sales.orders.risk-exception.approve</c>, SAT-D153): the expected version, never the
 /// requester; the approval is valid until the end of today's Europe/Istanbul business date (SAT-D160).</item>
+/// <item><b>Withdraw</b> (<c>sales.orders.risk-exception.request</c>, no new permission; EK56 SAT-D286): the expected version,
+/// only the requester and only a pending request; another actor is a recorded 409 <c>sales_risk_exception_not_requester</c>.
+/// The order's eligibility is not asked (a cancelled order's pending request can still be withdrawn).</item>
 /// <item><b>Separate record</b> (SAT-D161): the order is read, never changed; no revision or re-approval opens.</item>
 /// </list>
-/// Whether the order's risk is actually over its limit is not asked here yet (the Logistics gate decides when a shipment is
-/// held). EK56 SAT-D284 decides that a request for an order whose risk is within its limit (<c>Within</c>) is refused; that
-/// refusal lands in a follow-up Sales PR, so until then this service still accepts a within-limit request (known gap).
+/// Today the risk read cannot answer <c>Within</c> (shipped-not-invoiced has no source yet), so the SAT-D284 refusal is
+/// reachable once the invoicing owner answers; until then every request is <c>Over</c> or <c>Unavailable</c> and accepted.
 /// </summary>
 public sealed class SalesRiskExceptionService(
     ICompanyContext companyContext,
@@ -33,7 +37,8 @@ public sealed class SalesRiskExceptionService(
     ICorrelationContext correlation,
     ISalesRiskExceptionStore exceptions,
     ISalesOrderDraftStore orders,
-    TimeProvider timeProvider) : ISalesRiskExceptionService
+    TimeProvider timeProvider,
+    ISalesOrderRiskOutcomeSource? riskOutcomes = null) : ISalesRiskExceptionService
 {
     private const string RequestPermission = SalesPermissionManifestV1.OrdersRiskExceptionRequest;
     private const string ApprovePermission = SalesPermissionManifestV1.OrdersRiskExceptionApprove;
@@ -47,6 +52,9 @@ public sealed class SalesRiskExceptionService(
 
     private static readonly SalesDraftStateAudit RejectedAudit =
         new("sales.order.risk-exception.rejected.v1", "RejectRiskException", "Tek sevk risk istisnası reddedildi");
+
+    private static readonly SalesDraftStateAudit WithdrawnAudit =
+        new("sales.order.risk-exception.withdrawn.v1", "WithdrawRiskException", "Tek sevk risk istisnası geri çekildi");
 
     public async Task<SalesRiskExceptionCommandResult> RequestRiskExceptionAsync(Guid draftId, RequestSalesRiskExceptionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -84,6 +92,14 @@ public sealed class SalesRiskExceptionService(
         {
             throw new SalesDraftServiceException(409, SalesRiskExceptionProblemCodesV1.Duplicate,
                 [new("loadingInstructionId", SalesRiskExceptionProblemCodesV1.Duplicate)]);
+        }
+
+        // EK56 SAT-D284: an order within its limit needs no exception. Only Within refuses (not recorded: the risk can change,
+        // the retry is evaluated afresh); Unavailable is accepted. No amount, limit or balance is named (SAT-D162).
+        if (await RiskOutcomeAsync(scope, order, cancellationToken) == SalesRiskOutcome.Within)
+        {
+            throw new SalesDraftServiceException(409, SalesRiskExceptionProblemCodesV1.WithinLimit,
+                [new("risk", SalesRiskExceptionProblemCodesV1.WithinLimit)]);
         }
 
         var exceptionId = Guid.NewGuid();
@@ -127,13 +143,19 @@ public sealed class SalesRiskExceptionService(
 
     public Task<SalesRiskExceptionCommandResult> ApproveRiskExceptionAsync(Guid draftId, int exceptionNo,
         SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-        DecideAsync(draftId, exceptionNo, request, SalesRiskExceptionCommands.ApproveV1, metadata,
+        DecideAsync(draftId, exceptionNo, request, SalesRiskExceptionCommands.ApproveV1, ApprovePermission, metadata,
             (target, actor, version, now) => target.Approve(version, actor, now, Day(now)), ApprovedAudit, cancellationToken);
 
     public Task<SalesRiskExceptionCommandResult> RejectRiskExceptionAsync(Guid draftId, int exceptionNo,
         SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-        DecideAsync(draftId, exceptionNo, request, SalesRiskExceptionCommands.RejectV1, metadata,
+        DecideAsync(draftId, exceptionNo, request, SalesRiskExceptionCommands.RejectV1, ApprovePermission, metadata,
             (target, actor, version, now) => target.Reject(version, actor, request!.Reason, now), RejectedAudit, cancellationToken);
+
+    /// <summary>EK56 SAT-D286: the requester withdraws their own pending request under the request permission (no new name).</summary>
+    public Task<SalesRiskExceptionCommandResult> WithdrawRiskExceptionAsync(Guid draftId, int exceptionNo,
+        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(draftId, exceptionNo, request, SalesRiskExceptionCommands.WithdrawV1, RequestPermission, metadata,
+            (target, actor, version, now) => target.Withdraw(version, actor, now), WithdrawnAudit, cancellationToken);
 
     public async Task<SalesRiskExceptionListResponse> GetRiskExceptionsAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
@@ -152,12 +174,13 @@ public sealed class SalesRiskExceptionService(
     }
 
     private async Task<SalesRiskExceptionCommandResult> DecideAsync(Guid draftId, int exceptionNo, SalesDraftStateCommandRequest? request,
-        string commandName, SalesCommandMetadata metadata, Action<SalesShipmentRiskException, string, long, DateTimeOffset> decide,
-        SalesDraftStateAudit audit, CancellationToken cancellationToken)
+        string commandName, string permission, SalesCommandMetadata metadata,
+        Action<SalesShipmentRiskException, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
-        var scope = await RequireAsync(ApprovePermission, cancellationToken);
+        var scope = await RequireAsync(permission, cancellationToken);
         if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
             || expectedVersion < 1)
         {
@@ -165,8 +188,8 @@ public sealed class SalesRiskExceptionService(
         }
 
         var requestHash = SalesRiskExceptionHash.Compute(commandName, draftId, exceptionNo, request);
-        var envelope = Envelope(scope, ApprovePermission, metadata);
-        var replay = await FindReplayAsync(scope, ApprovePermission, envelope, requestHash, commandName, cancellationToken);
+        var envelope = Envelope(scope, permission, metadata);
+        var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
         if (replay is not null)
         {
             return Replayed(replay);
@@ -177,7 +200,7 @@ public sealed class SalesRiskExceptionService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        var order = await StoreAsync(scope, ApprovePermission, () => orders.FindDraftAsync(draftId, cancellationToken), cancellationToken)
+        var order = await StoreAsync(scope, permission, () => orders.FindDraftAsync(draftId, cancellationToken), cancellationToken)
             ?? throw new SalesDraftServiceException(404, "not_found");
         if (commandName == SalesRiskExceptionCommands.ApproveV1)
         {
@@ -186,7 +209,7 @@ public sealed class SalesRiskExceptionService(
         }
 
         // The last fence that can still prevent the write; none after the commit.
-        await RequireStillAsync(scope, ApprovePermission, cancellationToken);
+        await RequireStillAsync(scope, permission, cancellationToken);
         SalesRiskExceptionStoreResult? result;
         try
         {
@@ -212,6 +235,13 @@ public sealed class SalesRiskExceptionService(
                 new SalesDraftTerminalRefusal(409, SalesRiskExceptionProblemCodesV1.SelfDecision, [new("actor", exception.Code)]),
                 cancellationToken);
         }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.RiskExceptionNotRequester)
+        {
+            // EK56 SAT-D286: someone else withdraws the request; the same actor under the same key stays refused.
+            return await TerminalAsync(scope, envelope, requestHash, commandName, order.Id,
+                new SalesDraftTerminalRefusal(409, SalesRiskExceptionProblemCodesV1.NotRequester, [new("actor", exception.Code)]),
+                cancellationToken);
+        }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.RiskExceptionReasonTooLong)
         {
             throw new SalesDraftServiceException(422, exception.Code, [new("reason", exception.Code)]);
@@ -227,7 +257,7 @@ public sealed class SalesRiskExceptionService(
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
             // ADR-011 §8: a lost same-key race answers the winner; a lost version race is the caller's concurrent_change.
-            var won = await FindReplayAsync(scope, ApprovePermission, envelope, requestHash, commandName, cancellationToken);
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
             return won is null ? throw Store(exception) : Replayed(won);
         }
         catch (SalesDraftStoreException exception)
@@ -238,6 +268,31 @@ public sealed class SalesRiskExceptionService(
         return result is null
             ? throw new SalesDraftServiceException(404, "not_found")
             : Result(result, result.Outcome == SalesDraftWriteOutcome.Replayed);
+    }
+
+    /// <summary>
+    /// EK56 SAT-D284: the order's risk result under the request permission. Without a source, or when it cannot answer, the result
+    /// is Unavailable (accepted, never "within"); a lost authority stays the source's 401/403. The fence is measured again after.
+    /// </summary>
+    private async Task<SalesRiskOutcome> RiskOutcomeAsync(Scope scope, SalesOrderDraft order, CancellationToken cancellationToken)
+    {
+        if (riskOutcomes is null)
+        {
+            return SalesRiskOutcome.Unavailable;
+        }
+
+        SalesRiskOutcome outcome;
+        try
+        {
+            outcome = await riskOutcomes.EvaluateOrderRiskOutcomeAsync(order, RequestPermission, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            outcome = SalesRiskOutcome.Unavailable;
+        }
+
+        await RequireStillAsync(scope, RequestPermission, cancellationToken);
+        return outcome;
     }
 
     /// <summary>SAT-D154/D161: only an approved (now or in an earlier revision), open order ships, so only it takes an exception.</summary>
@@ -277,14 +332,15 @@ public sealed class SalesRiskExceptionService(
     private async Task<SalesRiskExceptionCommandResult> TerminalAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, Guid orderId, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken)
     {
-        await RequireStillAsync(scope, ApprovePermission, cancellationToken);
+        var permission = envelope.PermissionCode;
+        await RequireStillAsync(scope, permission, cancellationToken);
         try
         {
             await exceptions.RecordRiskExceptionRefusalAsync(envelope, requestHash, commandName, orderId, refusal, cancellationToken);
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
-            var won = await FindReplayAsync(scope, ApprovePermission, envelope, requestHash, commandName, cancellationToken);
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
             if (won is not null)
             {
                 return Replayed(won);

@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 
 namespace GoymenERP.Sales.UnitTests;
@@ -27,12 +28,12 @@ public sealed partial class SalesDraftServiceTests
         new(shipment ?? RiskShipment, reason);
 
     private static SalesRiskExceptionService RiskService(World world, FakeRiskExceptionStore store, TimeProvider? clock = null,
-        Guid? company = null)
+        Guid? company = null, ISalesOrderRiskOutcomeSource? riskOutcomes = null)
     {
         var context = new CompanyContext();
         context.Set(company ?? Company);
         return new SalesRiskExceptionService(context, world.User, world.Authority, new FixedCorrelation(), store, world.Store,
-            clock ?? world.Clock);
+            clock ?? world.Clock, riskOutcomes);
     }
 
     [Fact]
@@ -331,6 +332,200 @@ public sealed partial class SalesDraftServiceTests
             SalesRiskExceptionJson.ReadRequest($$"""{"loadingInstructionId":"{{RiskShipment}}","reason":"r","amount":1}"""));
         Assert.ThrowsAny<System.Text.Json.JsonException>(() => SalesRiskExceptionJson.ReadApproval("""{"expectedVersion":"1","reason":"r"}"""));
         Assert.Equal("r", SalesRiskExceptionJson.ReadRejection("""{"expectedVersion":"1","reason":"r"}""").Reason);
+    }
+
+    [Fact]
+    public async Task SAT_D284_a_request_for_an_order_within_its_limit_is_an_unrecorded_409_and_writes_nothing()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var store = new FakeRiskExceptionStore();
+        var risk = new FakeRiskOutcomes(SalesRiskOutcome.Within);
+
+        var within = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            RiskService(world, store, riskOutcomes: risk).RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1")));
+
+        Assert.Equal((409, SalesRiskExceptionProblemCodesV1.WithinLimit), Status(within));
+        Assert.Equal("risk", Assert.Single(within.Errors).Field);
+        Assert.Empty(store.Writes);
+        Assert.Empty(store.Refusals);
+        Assert.Empty(store.Items);
+        // The outcome is read under the request permission, never under sales.drafts.read (SAT-D159/D162).
+        Assert.Equal([(approved.Draft.Id, RiskRequestPermission)], risk.Asked);
+
+        // The risk can change: the same key is evaluated afresh, and once over the limit the request is recorded.
+        risk.Outcome = SalesRiskOutcome.Over;
+        var accepted = await RiskService(world, store, riskOutcomes: risk).RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(),
+            Metadata("r-1"));
+        Assert.Equal((false, 1, "Requested"), (accepted.IsReplay, accepted.Exception.ExceptionNo, accepted.Exception.State));
+        Assert.Single(store.Writes);
+    }
+
+    [Theory]
+    [InlineData(SalesRiskOutcome.Over)]
+    [InlineData(SalesRiskOutcome.Unavailable)]
+    public async Task SAT_D284_a_request_over_the_limit_or_with_an_unavailable_risk_is_accepted(SalesRiskOutcome outcome)
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var store = new FakeRiskExceptionStore();
+
+        var result = await RiskService(world, store, riskOutcomes: new FakeRiskOutcomes(outcome))
+            .RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1"));
+
+        Assert.Equal("Requested", result.Exception.State);
+        Assert.Single(store.Writes);
+    }
+
+    [Fact]
+    public async Task SAT_D284_a_risk_source_that_cannot_answer_is_unavailable_never_within_and_a_lost_authority_stays_403()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var store = new FakeRiskExceptionStore();
+
+        var failing = new FakeRiskOutcomes(SalesRiskOutcome.Within) { Failure = new InvalidOperationException("synthetic") };
+        var accepted = await RiskService(world, store, riskOutcomes: failing)
+            .RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1"));
+        Assert.Equal("Requested", accepted.Exception.State);
+
+        var forbidden = new FakeRiskOutcomes(SalesRiskOutcome.Over) { Failure = new SalesDraftServiceException(403, "forbidden") };
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => RiskService(world, store, riskOutcomes: forbidden)
+            .RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(OtherShipment), Metadata("r-2")));
+        Assert.Equal((403, "forbidden"), Status(refused));
+        Assert.Single(store.Writes);
+        Assert.Empty(store.Refusals);
+    }
+
+    [Fact]
+    public async Task SAT_D284_the_real_risk_evaluation_reads_under_the_request_permission_and_is_not_within_while_a_part_has_no_source()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var order = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        world.Authority.Measured.Clear();
+        world.Authority.Denied.Add(SalesPermissionManifestV1.DraftsRead);
+
+        var outcome = await world.Service().EvaluateOrderRiskOutcomeAsync(order, RiskRequestPermission);
+
+        Assert.NotEqual(SalesRiskOutcome.Within, outcome);
+        Assert.NotEmpty(world.Authority.Measured);
+        Assert.All(world.Authority.Measured, permission => Assert.Equal(RiskRequestPermission, permission));
+
+        // A request for the order through the real source is therefore accepted today (shipped-not-invoiced has no owner yet).
+        var store = new FakeRiskExceptionStore();
+        var result = await RiskService(world, store, riskOutcomes: world.Service())
+            .RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1"));
+        Assert.Equal("Requested", result.Exception.State);
+    }
+
+    [Fact]
+    public async Task SAT_D286_the_requester_withdraws_a_pending_request_under_the_request_name_and_the_shipment_is_free_again()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var store = new FakeRiskExceptionStore();
+        var service = RiskService(world, store);
+        await service.RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1"));
+        world.Authority.Measured.Clear();
+        world.Authority.Denied.Add(RiskApprovePermission);
+        world.Authority.Denied.Add(SalesPermissionManifestV1.DraftsRead);
+
+        var withdrawn = await service.WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("1"), Metadata("w-1"));
+
+        Assert.Equal(("Withdrawn", "2", (string?)null, (DateOnly?)null, false),
+            (withdrawn.Exception.State, withdrawn.Exception.Version, withdrawn.Exception.DecidedBy, withdrawn.Exception.ValidOn,
+            withdrawn.Exception.IsValidToday));
+        Assert.All(world.Authority.Measured, permission => Assert.Equal(RiskRequestPermission, permission));
+        var write = store.Writes[^1];
+        Assert.Equal((SalesRiskExceptionCommands.WithdrawV1, RiskRequestPermission, "sales.order.risk-exception.withdrawn.v1"),
+            (write.Command, write.Envelope.PermissionCode, write.Audit.EventType));
+        var order = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        Assert.Equal((4L, 0), (order.Version, order.ArchivedRevisions.Count));
+
+        var replay = await service.WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("1"), Metadata("w-1", correlation: "retry"));
+        Assert.True(replay.IsReplay);
+        Assert.Equal(2, store.Writes.Count);
+
+        // A withdrawn request no longer holds the shipment: a new request is its own exception (number 2).
+        var next = await service.RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-2"));
+        Assert.Equal(2, next.Exception.ExceptionNo);
+    }
+
+    [Fact]
+    public async Task SAT_D286_another_actor_cannot_withdraw_the_refusal_is_recorded_and_replayed_and_nothing_moves()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var store = new FakeRiskExceptionStore();
+        await RiskService(world, store).RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1"));
+        world.User.Id = RiskApprover;
+        var service = RiskService(world, store);
+
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            service.WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("1"), Metadata("w-1")));
+        Assert.Equal((409, SalesRiskExceptionProblemCodesV1.NotRequester), Status(other));
+        Assert.Equal(SalesRiskExceptionProblemCodesV1.NotRequester, Assert.Single(store.Refusals).Code);
+        Assert.Equal((SalesShipmentRiskExceptionState.Requested, 1L), (store.Items.Single().State, store.Items.Single().Version));
+
+        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            service.WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("1"), Metadata("w-1", correlation: "retry")));
+        Assert.Equal((409, SalesRiskExceptionProblemCodesV1.NotRequester, true), (again.Status, again.Code, again.IsReplay));
+        Assert.Single(store.Writes);
+    }
+
+    [Fact]
+    public async Task SAT_D286_a_decided_exception_a_stale_version_and_a_missing_permission_are_not_withdrawn()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var store = new FakeRiskExceptionStore();
+        await RiskService(world, store).RequestRiskExceptionAsync(approved.Draft.Id, RiskOf(), Metadata("r-1"));
+
+        var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            RiskService(world, store).WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("2"), Metadata("w-0")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict), Status(stale));
+
+        world.Authority.Denied.Add(RiskRequestPermission);
+        var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            RiskService(world, store).WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("1"), Metadata("w-1")));
+        Assert.Equal((403, "forbidden"), Status(forbidden));
+        world.Authority.Denied.Clear();
+
+        world.User.Id = RiskApprover;
+        await RiskService(world, store).ApproveRiskExceptionAsync(approved.Draft.Id, 1, Command("1"), Metadata("a-1"));
+        world.User.Id = Actor;
+        var decided = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            RiskService(world, store).WithdrawRiskExceptionAsync(approved.Draft.Id, 1, Command("2"), Metadata("w-2")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(decided));
+        Assert.Equal([SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict],
+            store.Refusals.Select(refusal => refusal.Code));
+        Assert.Equal(SalesShipmentRiskExceptionState.Approved, store.Items.Single().State);
+
+        var missing = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            RiskService(world, store).WithdrawRiskExceptionAsync(approved.Draft.Id, 9, Command("1"), Metadata("w-3")));
+        Assert.Equal((404, "not_found"), Status(missing));
+    }
+
+    [Fact]
+    public void SAT_D286_the_withdrawal_body_takes_the_expected_version_only()
+    {
+        Assert.Equal("1", SalesRiskExceptionJson.ReadWithdrawal("""{"expectedVersion":"1"}""").ExpectedVersion);
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => SalesRiskExceptionJson.ReadWithdrawal("""{"expectedVersion":"1","reason":"r"}"""));
+    }
+
+    private sealed class FakeRiskOutcomes(SalesRiskOutcome outcome) : ISalesOrderRiskOutcomeSource
+    {
+        public SalesRiskOutcome Outcome { get; set; } = outcome;
+        public Exception? Failure { get; init; }
+        public List<(Guid OrderId, string Permission)> Asked { get; } = [];
+
+        public Task<SalesRiskOutcome> EvaluateOrderRiskOutcomeAsync(SalesOrderDraft order, string permission,
+            CancellationToken cancellationToken = default)
+        {
+            Asked.Add((order.Id, permission));
+            return Failure is null ? Task.FromResult(Outcome) : Task.FromException<SalesRiskOutcome>(Failure);
+        }
     }
 
     private sealed class StepClock(DateTimeOffset now) : TimeProvider

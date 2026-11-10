@@ -891,7 +891,8 @@ nothing, opens no document and writes no other module's record.
 
 - **Routes** (under the drafts group, Sales-owned): `GET /api/v1/sales/drafts/{id}/risk-exceptions` (the order's exceptions,
   newest first, under `sales.drafts.read`), `POST …/risk-exceptions` (request, `sales.orders.risk-exception.request`, 201),
-  `POST …/risk-exceptions/{no}/approval` and `…/{no}/rejection` (decision, `sales.orders.risk-exception.approve`, 200). There is no
+  `POST …/risk-exceptions/{no}/approval` and `…/{no}/rejection` (decision, `sales.orders.risk-exception.approve`, 200),
+  `POST …/risk-exceptions/{no}/withdrawal` (the requester's withdrawal, `sales.orders.risk-exception.request`, 200). There is no
   date-range (customer) variant. Requesting does not need `sales.drafts.read` (SAT-D159); no answer carries an amount (SAT-D162).
 - **Permissions:** both names are registered in `ErpPermissions`, `SalesPermissionManifestV1` and the shell provider (1.24) as
   controls of the S-04 detail, company-wide, not Critical, and **granted to nobody**. The decisions name the requesters
@@ -903,20 +904,32 @@ nothing, opens no document and writes no other module's record.
   at the exception's version (`1` → `2`), by a decider who is not the requester (ordinal after trim; SAT-D153); a stale version,
   a decided exception and a self-decision are the key's recorded 409. An approval is valid on its Europe/Istanbul business date only
   (SAT-D160), never measured in UTC. The exception is a separate approval record: it opens no revision and changes no order version.
-  Known gaps (follow-up Sales PRs): a request for an order whose risk is within its limit is still accepted until the SAT-D284
-  refusal lands, and the requester's withdrawal of a pending request (`Withdrawn`, SAT-D286) does not exist yet.
+  **SAT-D284:** a request for an order whose risk result is `Within` answers 409 `sales_risk_exception_within_limit` and records
+  nothing (no exception, no attempt; the risk can change). The result is the risk check's own deterministic evaluation
+  (`ISalesOrderRiskOutcomeSource`), read under the request permission and never disclosing an amount; `Over` and `Unavailable`
+  (an owner that cannot answer, or a missing source) are not refused. Today the shipped-not-invoiced source is always missing
+  (no Invoicing owner), so a real evaluation is never `Within` yet and the refusal only bites once that source lands.
+  **SAT-D286:** the requester withdraws their own pending request (`Requested → Withdrawn`, version `1` → `2`, no decision facts:
+  the withdrawer is the requester by rule and the time is the row's update time and the audit
+  `sales.order.risk-exception.withdrawn.v1`); another actor gets the key's recorded 409 `sales_risk_exception_not_requester`, a decided
+  or withdrawn exception the recorded 409 `state_conflict`. A withdrawn exception releases nothing and no longer blocks a new
+  request for the same shipment.
 - **K3 skeleton:** permission fence first, idempotency replay (`Idempotency-Replayed`), correlation/causation, one save that writes
   the exception, its attempt and the audit (requester, approver, shipment, reason, time), `CompanyId` on every row. Migration
   `20261110155556_AddShipmentRiskExceptions` adds `sales.ShipmentRiskExceptions` and its append-only
   `sales.ShipmentRiskExceptionAttempts`: a trigger keeps the request facts and lets a row take one decision only (51252), another
   refuses any attempt change (51253) and a check constraint refuses a self-decision; the forward-fix `Down` refuses with 51251 while an exception or an attempt exists.
+  Migration `20261110192441_AddShipmentRiskExceptionWithdrawal` widens the state (`[State] IN (1, 2, 3, 4)`), decision and
+  attempt-command checks (the 51252 trigger is unchanged); its forward-fix `Down` refuses with 51254 while a withdrawn exception or a
+  withdrawal attempt exists.
 - **Read port:** `ISalesShipmentRiskExceptionReadPortV1.GetAsync(orderId, loadingInstructionId)` answers None / Pending / Valid /
-  Lapsed / Rejected (a today-valid one wins, then a pending one, then the newest) under the caller's company; without a company or
+  Lapsed / Rejected / Withdrawn (a today-valid one wins, then a pending one, then the newest) under the caller's company; without a company or
   the Istanbul time zone it throws, so the gate fails closed. Logistics does not consume it yet: no Logistics connection or port is
   opened here (SAT-D209). Contract for the gate (EK56 SAT-D285): one shipment consumes an approved exception and a cancelled
   shipment lapses it (new request and approval needed); the gate applies both on top of the port's answer. How Sales learns of
   consumption or cancellation stays NEEDS-SINAN (SAT-D285, SAT-D209).
 - **UI:** the S-04 panel `SalesOrderRiskExceptions` lists the exceptions (detail capability), shows the request form only with the
-  request capability and approve / reject only on a pending exception with the approve capability; an unknown outcome is retried
-  with the same key. The shipment is typed as its loading instruction id (SAT-D283) until a Logistics screen offers the entry
+  request capability, approve / reject only on a pending exception with the approve capability and "Geri çek" only on the signed-in
+  user's own pending exception with the request capability; an unknown outcome (network error, 502/503/504) keeps its key and is
+  retried with the same key. The shipment is typed as its loading instruction id (SAT-D283) until a Logistics screen offers the entry
   (NEEDS-SINAN; SAT-D159/SAT-D162, EK56 "Sınırlar").

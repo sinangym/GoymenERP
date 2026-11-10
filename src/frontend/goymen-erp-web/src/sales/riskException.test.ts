@@ -19,6 +19,7 @@ const approvedException = (overrides: Body = {}): Body => requestedException({
   state: 'Approved', version: '2', decidedBy: 'synthetic-manager', decidedAtUtc: '2026-11-10T08:00:00Z', validOn: '2026-11-10',
   isValidToday: true, ...overrides,
 })
+const withdrawnException = (overrides: Body = {}): Body => requestedException({ state: 'Withdrawn', version: '2', ...overrides })
 const rejectedException = (overrides: Body = {}): Body => requestedException({
   state: 'Rejected', version: '2', decidedBy: 'synthetic-manager', decidedAtUtc: '2026-11-10T08:00:00Z',
   rejectionReason: 'SENTETIK risk çok yüksek', ...overrides,
@@ -30,6 +31,8 @@ describe('API-07 risk exception decoder', () => {
     expect(decodeRiskException(approvedException(), ORDER.toUpperCase())?.validOn).toBe('2026-11-10')
     expect(decodeRiskException(approvedException({ isValidToday: false }), ORDER)?.isValidToday).toBe(false)
     expect(decodeRiskException(rejectedException(), ORDER)?.rejectionReason).toBe('SENTETIK risk çok yüksek')
+    // EK56 SAT-D286: a withdrawal records no decision (the withdrawer is the requester by rule).
+    expect(decodeRiskException(withdrawnException(), ORDER)?.state).toBe('Withdrawn')
     expect(decodeRiskException(requestedException({ reason: 'x'.repeat(RISK_EXCEPTION_REASON_MAX) }), ORDER)).not.toBeNull()
   })
 
@@ -37,7 +40,7 @@ describe('API-07 risk exception decoder', () => {
     ['another order', requestedException({ orderId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' })],
     ['an extra key (an amount)', requestedException({ amount: '100.00' })],
     ['a missing key', (() => { const body = requestedException(); delete body.validOn; return body })()],
-    ['an unknown state', requestedException({ state: 'Withdrawn' })],
+    ['an unknown state', requestedException({ state: 'Lapsed' })],
     ['a non-positive number', requestedException({ exceptionNo: 0 })],
     ['a fractional number', requestedException({ exceptionNo: 1.5 })],
     ['a blank reason', requestedException({ reason: '  ' })],
@@ -54,6 +57,10 @@ describe('API-07 risk exception decoder', () => {
     ['a rejection without a reason', rejectedException({ rejectionReason: null })],
     ['a rejection valid today', rejectedException({ isValidToday: true })],
     ['a rejection with a business date', rejectedException({ validOn: '2026-11-10' })],
+    ['a withdrawal at version 1 (SAT-D286)', withdrawnException({ version: '1' })],
+    ['a withdrawal carrying a decision', withdrawnException({ decidedBy: 'synthetic-manager', decidedAtUtc: '2026-11-10T08:00:00Z' })],
+    ['a withdrawal with a business date', withdrawnException({ validOn: '2026-11-10' })],
+    ['a withdrawal valid today', withdrawnException({ isValidToday: true })],
     ['a decision without its time', rejectedException({ decidedAtUtc: 'yesterday' })],
   ])('refuses %s as a whole', (_, body) => {
     expect(decodeRiskException(body, ORDER)).toBeNull()
@@ -70,5 +77,6 @@ describe('API-07 risk exception decoder', () => {
 
   it('names the decision routes under the order', () => {
     expect(riskExceptionDecisionPath(ORDER, 3, 'rejection')).toBe(`/sales/drafts/${ORDER}/risk-exceptions/3/rejection`)
+    expect(riskExceptionDecisionPath(ORDER, 3, 'withdrawal')).toBe(`/sales/drafts/${ORDER}/risk-exceptions/3/withdrawal`)
   })
 })

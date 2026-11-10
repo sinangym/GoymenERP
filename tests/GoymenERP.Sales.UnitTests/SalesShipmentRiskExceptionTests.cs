@@ -156,6 +156,83 @@ public sealed class SalesShipmentRiskExceptionTests
     }
 
     [Fact]
+    public void SAT_D286_the_requester_withdraws_their_own_pending_request_without_a_decision_and_it_releases_nothing()
+    {
+        var item = Requested();
+        var later = T0.AddMinutes(5);
+
+        item.Withdraw(1, " " + Requester + " ", later);
+
+        Assert.Equal((SalesShipmentRiskExceptionState.Withdrawn, 2L, later), (item.State, item.Version, item.UpdatedAtUtc));
+        Assert.Null(item.Decision);
+        Assert.Null(item.ValidOn);
+        Assert.False(item.IsValidOn(Day));
+        Assert.Equal((Requester, T0), (item.RequestedBy, item.RequestedAtUtc));
+    }
+
+    [Fact]
+    public void SAT_D286_another_actor_never_withdraws_a_request_and_nothing_moves()
+    {
+        var item = Requested();
+
+        Assert.Equal(SalesRuleCodes.RiskExceptionNotRequester,
+            Assert.Throws<SalesRuleException>(() => item.Withdraw(1, Approver, T0)).Code);
+        Assert.Equal((SalesShipmentRiskExceptionState.Requested, 1L), (item.State, item.Version));
+    }
+
+    [Fact]
+    public void SAT_D286_a_decided_or_withdrawn_exception_and_a_stale_version_are_not_withdrawn()
+    {
+        var item = Requested();
+        Assert.Throws<SalesVersionConflictException>(() => item.Withdraw(2, Requester, T0));
+        Assert.Equal(1L, item.Version);
+
+        var approved = Requested();
+        approved.Approve(1, Approver, T0, Day);
+        Assert.Equal(SalesRuleCodes.StateConflict, Assert.Throws<SalesRuleException>(() => approved.Withdraw(2, Requester, T0)).Code);
+        Assert.Equal((SalesShipmentRiskExceptionState.Approved, 2L), (approved.State, approved.Version));
+
+        var rejected = Requested();
+        rejected.Reject(1, Approver, "r", T0);
+        Assert.Equal(SalesRuleCodes.StateConflict, Assert.Throws<SalesRuleException>(() => rejected.Withdraw(2, Requester, T0)).Code);
+
+        item.Withdraw(1, Requester, T0);
+        Assert.Equal(SalesRuleCodes.StateConflict, Assert.Throws<SalesRuleException>(() => item.Withdraw(2, Requester, T0)).Code);
+        Assert.Equal(SalesRuleCodes.StateConflict, Assert.Throws<SalesRuleException>(() => item.Approve(2, Approver, T0, Day)).Code);
+        Assert.Equal(SalesRuleCodes.StateConflict, Assert.Throws<SalesRuleException>(() => item.Reject(2, Approver, "r", T0)).Code);
+        Assert.Equal((SalesShipmentRiskExceptionState.Withdrawn, 2L), (item.State, item.Version));
+    }
+
+    [Fact]
+    public void SAT_D286_a_stored_withdrawal_is_restored_without_a_decision_and_a_corrupt_one_is_refused()
+    {
+        var withdrawn = Requested();
+        withdrawn.Restore(SalesShipmentRiskExceptionState.Withdrawn, null, null, 2, T0);
+        Assert.Equal((SalesShipmentRiskExceptionState.Withdrawn, 2L), (withdrawn.State, withdrawn.Version));
+        Assert.False(withdrawn.IsValidOn(Day));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            Requested().Restore(SalesShipmentRiskExceptionState.Withdrawn, new(Approver, T0, null), null, 2, T0));
+        Assert.Throws<InvalidOperationException>(() =>
+            Requested().Restore(SalesShipmentRiskExceptionState.Withdrawn, null, Day, 2, T0));
+        Assert.Throws<InvalidOperationException>(() =>
+            Requested().Restore(SalesShipmentRiskExceptionState.Withdrawn, null, null, 1, T0));
+    }
+
+    [Fact]
+    public void SAT_D286_the_read_port_answers_withdrawn_for_the_newest_withdrawn_exception_and_prefers_a_new_pending_one()
+    {
+        var withdrawn = SalesShipmentRiskException.Request(Guid.NewGuid(), Company, Order, 1, Shipment, "r", Requester, T0);
+        withdrawn.Withdraw(1, Requester, T0);
+        Assert.Equal((SalesShipmentRiskExceptionStatusV1.Withdrawn, (int?)1),
+            Answer(SalesShipmentRiskExceptionReadPort.Decide(Order, Shipment, [withdrawn], Day)));
+
+        var pending = SalesShipmentRiskException.Request(Guid.NewGuid(), Company, Order, 2, Shipment, "r", Requester, T0);
+        Assert.Equal((SalesShipmentRiskExceptionStatusV1.Pending, (int?)2),
+            Answer(SalesShipmentRiskExceptionReadPort.Decide(Order, Shipment, [pending, withdrawn], Day)));
+    }
+
+    [Fact]
     public void The_read_port_answers_none_without_an_exception_and_prefers_valid_then_pending_then_the_newest()
     {
         Assert.Equal(SalesShipmentRiskExceptionStatusV1.None, SalesShipmentRiskExceptionReadPort.Decide(Order, Shipment, [], Day).Status);
