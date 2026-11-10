@@ -1,7 +1,8 @@
 /**
  * UI-50 / S-05 "Fiyat–İskonto–Marj–Risk Kontrolü" in the real shell: the read-only comparison shows the server's reference,
  * floor, unit price, adjustments and net per line, the server's floor-exception and discount-limit states, counts of the
- * pending ones, the margin as a labelled unavailable state, and the S-04 totals and risk cards. Loading, 403, 404, 503 with
+ * pending ones, the server's margin block (withheld: no button; visible: behind "Marjı göster", labelled purchase-cost-only
+ * preview, unavailable lines "kullanılamıyor", never zero), and the S-04 totals and risk cards. Loading, 403, 404, 503 with
  * retry, malformed, foreign, withheld, stale and unbound pricing never paint a figure. Component evidence, NOT_ENV.
  */
 
@@ -34,9 +35,16 @@ const reference = {
   lowerQuantity: '10', upperQuantity: '20', tier: 'Company',
 }
 
-function pricing(version = '3', over: Record<string, unknown> = {}) {
+const WITHHELD_MARGIN = { disclosure: 'Withheld', costBasis: null, kind: null, lines: null }
+const unavailableLine = (reason = 'CostSourceMissing') => ({ lineId: LINE, lineNo: 1, state: 'Unavailable', unavailableReason: reason,
+  amount: null, currencyId: null, percent: null, percentUnavailableReason: null })
+const visibleMargin = (lines: readonly Record<string, unknown>[]) => ({ disclosure: 'Visible', costBasis: 'PurchaseCostOnly', kind: 'Preview', lines })
+const FUNCTIONAL = '7a7a7a7a-7a7a-4a7a-8a7a-7a7a7a7a7a7a'
+
+function pricing(version = '3', over: Record<string, unknown> = {}, margin: unknown = WITHHELD_MARGIN) {
   return {
     version,
+    margin,
     lines: [{
       lineId: LINE, lineNo: 1, unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference,
       discountPercent: '12', discountAmount: null, surchargePercent: null, surchargeAmount: null, netUnitPrice: '34320',
@@ -75,7 +83,9 @@ describe('UI-50 S-05 price, discount, margin and risk control', () => {
     expect(screen.getByTestId('sales-price-control-floor-pending-count').textContent).toBe('1')
     expect(screen.getByTestId('sales-price-control-discount-pending-count').textContent).toBe('1')
     expect(screen.getByText(T.note)).toBeTruthy()
-    expect(within(screen.getByTestId('sales-price-control-margin')).getByText(T.margin.unavailable)).toBeTruthy()
+    // Without the separate margin read: no button, no figure.
+    expect(screen.getByTestId('sales-price-control-margin-withheld').textContent).toBe(T.margin.withheld)
+    expect(screen.queryByTestId('sales-price-control-margin-toggle')).toBeNull()
     expect(screen.getByTestId('sales-price-control-back').getAttribute('href')).toBe(`/satis/siparisler/${DRAFT}`)
     // Read-only: no POST of any kind left the screen.
     expect(harness.calls.filter((call) => call.method !== 'GET')).toEqual([])
@@ -178,14 +188,14 @@ describe('UI-50 S-05 price, discount, margin and risk control', () => {
     expect(screen.queryByTestId('sales-price-control-table')).toBeNull()
   })
 
-  it('shows an unreadable pricing read as its own state and keeps the margin unavailable', async () => {
+  it('shows an unreadable pricing read as its own state and shows no margin', async () => {
     installFetch({ onDetail: () => json(detail()), onLinePricing: () => json({ status: 503 }, 503) })
     renderSalesApp(PATH)
 
     const block = await screen.findByTestId('sales-price-control-unreadable')
     expect(within(block).getByText(T.lines.unreadable)).toBeTruthy()
     await findState('service-unavailable', block)
-    expect(within(screen.getByTestId('sales-price-control-margin')).getByText(T.margin.unavailable)).toBeTruthy()
+    expect(screen.getByTestId('sales-price-control-margin-not-read').textContent).toBe(T.margin.notRead)
   })
 
   it('routes a 403 detail read through the real auth boundary: the page closes and no figure or pricing read is left', async () => {
@@ -222,6 +232,86 @@ describe('UI-50 S-05 price, discount, margin and risk control', () => {
     await findState('malformed-response', block)
     expect(screen.queryByTestId('sales-price-control-table')).toBeNull()
     expect(screen.queryByTestId('sales-price-control-summary')).toBeNull()
+  })
+
+  it('SAT-D250: a visible margin waits behind "Marjı göster" and reads "kullanılamıyor" with the reason, never zero', async () => {
+    const harness = installFetch({ onDetail: () => json(detail()), onLinePricing: () => json(pricing('3', {}, visibleMargin([unavailableLine()]))) })
+    renderSalesApp(PATH)
+
+    const toggle = await screen.findByTestId('sales-price-control-margin-toggle')
+    expect(toggle.textContent).toBe(T.margin.show)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByTestId('sales-price-control-margin-preview')).toBeNull()
+
+    await userEvent.click(toggle)
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId('sales-price-control-margin-cost-basis').textContent).toBe(T.margin.costBasis)
+    expect(screen.getByTestId('sales-price-control-margin-kind').textContent).toBe(T.margin.kind)
+    const row = screen.getByTestId('sales-price-control-margin-line-1')
+    expect(within(row).getByTestId('sales-price-control-margin-line-1-state').textContent)
+      .toBe(`${T.margin.unavailable}: ${T.margin.reason.CostSourceMissing}`)
+    expect(within(row).queryByText('0')).toBeNull()
+    expect(within(row).queryByText('0.00')).toBeNull()
+    expect(screen.queryByTestId('sales-price-control-margin-line-1-amount')).toBeNull()
+    // Reading the margin sends no command.
+    expect(harness.salesCalls().every((call) => call.method === 'GET')).toBe(true)
+
+    await userEvent.click(toggle)
+    expect(screen.queryByTestId('sales-price-control-margin-preview')).toBeNull()
+  })
+
+  it('SAT-D259: a computed margin shows the server\'s amount and percent as sent', async () => {
+    const computed = { lineId: LINE, lineNo: 1, state: 'Computed', unavailableReason: null, amount: '-20.00', currencyId: FUNCTIONAL,
+      percent: '-20.00', percentUnavailableReason: null }
+    installFetch({ onDetail: () => json(detail()), onLinePricing: () => json(pricing('3', {}, visibleMargin([computed]))) })
+    renderSalesApp(PATH)
+
+    await userEvent.click(await screen.findByTestId('sales-price-control-margin-toggle'))
+    expect(screen.getByTestId('sales-price-control-margin-line-1-state').textContent).toBe(T.margin.computed)
+    expect(screen.getByTestId('sales-price-control-margin-line-1-amount').textContent).toBe('-20.00')
+    expect(screen.getByTestId('sales-price-control-margin-line-1-percent').textContent).toBe('%-20.00')
+  })
+
+  it('SAT-D259: a non-positive net sale has a margin amount but no ratio', async () => {
+    const computed = { lineId: LINE, lineNo: 1, state: 'Computed', unavailableReason: null, amount: '-10.00', currencyId: FUNCTIONAL,
+      percent: null, percentUnavailableReason: 'NetSaleNotPositive' }
+    installFetch({ onDetail: () => json(detail()), onLinePricing: () => json(pricing('3', {}, visibleMargin([computed]))) })
+    renderSalesApp(PATH)
+
+    await userEvent.click(await screen.findByTestId('sales-price-control-margin-toggle'))
+    expect(screen.getByTestId('sales-price-control-margin-line-1-amount').textContent).toBe('-10.00')
+    expect(screen.getByTestId('sales-price-control-margin-line-1-percent').textContent).toBe(T.margin.noPercent)
+  })
+
+  it('shows no margin while the price is withheld: the margin never outruns the price read', async () => {
+    const harness = installFetch({ onDetail: () => json(detail({ disclosure: 'Withheld' })) })
+    renderSalesApp(PATH)
+
+    expect((await screen.findByTestId('sales-price-control-margin-not-read')).textContent).toBe(T.margin.notRead)
+    expect(screen.queryByTestId('sales-price-control-margin-toggle')).toBeNull()
+    expect(harness.salesCalls().some((call) => call.url.includes('/line-pricing'))).toBe(false)
+  })
+
+  it.each<[string, () => unknown]>([
+    ['no margin block', () => { const { margin: _margin, ...rest } = pricing(); return rest }],
+    ['a withheld margin that still carries lines', () => pricing('3', {}, { ...WITHHELD_MARGIN, lines: [] })],
+    ['an unavailable margin painted as zero', () => pricing('3', {}, visibleMargin([{ ...unavailableLine(), amount: '0.00' }]))],
+    ['an unknown unavailable reason', () => pricing('3', {}, visibleMargin([unavailableLine('SENTETIK')]))],
+    ['a margin for another line', () => pricing('3', {}, visibleMargin([{ ...unavailableLine(), lineId: '77777777-7777-4777-8777-777777777777' }]))],
+    ['a missing line margin', () => pricing('3', {}, visibleMargin([]))],
+    ['a numeric margin amount', () => pricing('3', {}, visibleMargin([{ ...unavailableLine(), state: 'Computed', unavailableReason: null,
+      amount: -20, currencyId: FUNCTIONAL, percent: null, percentUnavailableReason: 'NetSaleNotPositive' }]))],
+    ['a visible margin of another cost basis', () => pricing('3', {}, { ...visibleMargin([unavailableLine()]), costBasis: 'FullCost' })],
+    ['a margin line with an unknown member', () => pricing('3', {}, visibleMargin([{ ...unavailableLine(), cost: '5' }]))],
+  ])('SAT-D247: fails closed on %s and paints neither the comparison nor a margin', async (_name, body) => {
+    installFetch({ onDetail: () => json(detail()), onLinePricing: () => json(body()) })
+    renderSalesApp(PATH)
+
+    await findState('malformed-response', await screen.findByTestId('sales-price-control-unreadable'))
+    expect(screen.queryByTestId('sales-price-control-table')).toBeNull()
+    expect(screen.queryByTestId('sales-price-control-margin-toggle')).toBeNull()
+    expect(screen.getByTestId('sales-price-control-margin-not-read')).toBeTruthy()
   })
 
   it('opens under the detail capability only: without it nothing is read', async () => {

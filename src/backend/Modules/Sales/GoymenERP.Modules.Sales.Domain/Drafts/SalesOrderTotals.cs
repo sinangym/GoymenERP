@@ -109,6 +109,12 @@ public sealed record SalesTotalsLineInput(Guid LineId, int LineNo, Guid OrderUni
 /// One line's totals. Every amount is <see cref="Money"/> in the document currency at the amount scale; each is null exactly when
 /// the state says it cannot be computed.
 /// </summary>
+/// <param name="NetAmountBeforeSurcharge">
+/// SAT-D275: quantity × the discounted unit price BEFORE the maturity surcharge (vade farkı), rounded once like
+/// <paramref name="NetAmount"/> (<see cref="SalesLinePriceCalculator.LineAmountBeforeSurcharge"/>) — the margin's KDV hariç net
+/// sale (<see cref="SalesLineMarginInput.NetSale"/>). It is not an invoice, tax or document amount; the totals never sum it. Null
+/// exactly when <paramref name="NetAmount"/> is null.
+/// </param>
 public sealed record SalesLineTotal(
     Guid LineId,
     int LineNo,
@@ -121,7 +127,8 @@ public sealed record SalesLineTotal(
     Money? WithheldVatAmount,
     Money? GrossAmount,
     Money? PayableAmount,
-    string? TaxReason = null);
+    string? TaxReason = null,
+    Money? NetAmountBeforeSurcharge = null);
 
 /// <summary>
 /// The document totals: the sums of the line amounts (SAT-D11 "toplamlar satırlardan"), never recomputed from a document net.
@@ -257,10 +264,13 @@ public static class SalesOrderTotalsCalculator
         {
             var netUnitPrice = SalesLinePriceCalculator.NetUnitPrice(commercial);
             var net = Money.Of(SalesLinePriceCalculator.LineAmount(commercial, line.Quantity, scale)!.Value, currencyId, scale);
+            // SAT-D275: the margin's net sale leaves the vade farkı out; the same calculator's steps 1–2, rounded the same way.
+            var beforeSurcharge = Money.Of(SalesLinePriceCalculator.LineAmountBeforeSurcharge(commercial, line.Quantity, scale)!.Value,
+                currencyId, scale);
             if (taxRates?.Invoke(line.LineId) is not { } rate)
             {
                 return new SalesLineTotal(line.LineId, line.LineNo, SalesLineTotalState.Computed, netUnitPrice, net,
-                    SalesTaxState.NoSource, null, null, null, null, null, taxReasons?.Invoke(line.LineId));
+                    SalesTaxState.NoSource, null, null, null, null, null, taxReasons?.Invoke(line.LineId), beforeSurcharge);
             }
 
             var vat = Money.Of(SalesLinePriceCalculator.RoundedPercentOf(net.Amount, rate.VatPercent, scale), currencyId, scale);
@@ -271,7 +281,7 @@ public static class SalesOrderTotalsCalculator
             var gross = Money.Of(SalesLinePriceCalculator.ExactSum([net.Amount, vat.Amount]), currencyId, scale);
             var payable = Money.Of(SalesLinePriceCalculator.ExactSum([gross.Amount], [withheld.Amount]), currencyId, scale);
             return new SalesLineTotal(line.LineId, line.LineNo, SalesLineTotalState.Computed, netUnitPrice, net,
-                SalesTaxState.Computed, rate, vat, withheld, gross, payable);
+                SalesTaxState.Computed, rate, vat, withheld, gross, payable, NetAmountBeforeSurcharge: beforeSurcharge);
         }
         catch (OverflowException)
         {

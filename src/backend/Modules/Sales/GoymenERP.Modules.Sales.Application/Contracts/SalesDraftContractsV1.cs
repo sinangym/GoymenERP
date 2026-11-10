@@ -182,8 +182,49 @@ public sealed record SalesDraftDiscountExceptionApprovalLineV1(Guid LineId, stri
 public sealed record SalesDraftDiscountExceptionApprovalRequest(string ExpectedVersion,
     IReadOnlyList<SalesDraftDiscountExceptionApprovalLineV1> Lines);
 
-/// <summary>GET …/{id}/line-pricing (price read): every line's pricing at the draft's current version.</summary>
-public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines);
+/// <summary>
+/// GET …/{id}/line-pricing (price read): every line's pricing at the draft's current version, and — SAT-D250 / SAT-D266 —
+/// the margin block, always present: <see cref="SalesDraftMarginV1.Disclosure"/> says whether the caller may see it.
+/// </summary>
+public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines,
+    SalesDraftMarginV1 Margin);
+
+/// <summary>
+/// SAT-D250 / SAT-D266 / SAT-D267: whether the margin is disclosed. Decided by the separate <c>sales.orders.margin.read</c>
+/// name (granted only by a human, intended for Genel Müdür and Admin); the price read never confers it. <see cref="Withheld"/>
+/// says "you may not see this" — every other field of the block is null BECAUSE of it, never a margin of zero.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesMarginDisclosure>))]
+public enum SalesMarginDisclosure { Visible, Withheld }
+
+/// <summary>
+/// SAT-D247 / SAT-D259 / SAT-D262…D267 (S-05): the line margins of the draft. <c>Withheld</c> ⇒ <c>costBasis</c>, <c>kind</c>
+/// and <c>lines</c> are null. <c>Visible</c> ⇒ <c>costBasis</c> = <c>PurchaseCostOnly</c> (the margin is the KDV hariç net sale
+/// after discount and before the maturity surcharge — the vade farkı is left out, SAT-D275 — minus the purchase cost only — no
+/// freight, overhead or financing; the unit cost is the company-wide, all-warehouse weighted
+/// moving-average purchase cost that Stok supplies through its versioned read port, never a manual entry — SAT-D272, orders
+/// carry no warehouse), <c>kind</c> = <c>Preview</c> (an estimate on the draft,
+/// not a booked result) and one entry per line. Until the Inventory cost source exists every line is <c>Unavailable</c> with
+/// <c>CostSourceMissing</c> (SAT-D265 (5)): an unknown cost is never a margin of zero.
+/// </summary>
+public sealed record SalesDraftMarginV1(SalesMarginDisclosure Disclosure, string? CostBasis, string? Kind,
+    IReadOnlyList<SalesDraftLineMarginV1>? Lines);
+
+/// <summary>The fixed texts of the margin block (SAT-D266: purchase cost only; SAT-D264: a preview, not a booked result).</summary>
+public static class SalesDraftMarginTextsV1
+{
+    public const string PurchaseCostOnly = "PurchaseCostOnly";
+    public const string Preview = "Preview";
+}
+
+/// <summary>
+/// One line's margin from the one <see cref="GoymenERP.Modules.Sales.Domain.Drafts.SalesLineMarginCalculator"/>.
+/// <c>state</c>: <c>Computed</c> (<c>amount</c> to 0,01 in <c>currencyId</c>, the functional currency; <c>percent</c> to 0,01
+/// from the unrounded amount, or null with <c>percentUnavailableReason</c> when the net sale is not positive) or
+/// <c>Unavailable</c> (<c>unavailableReason</c> set; <c>amount</c>, <c>currencyId</c>, <c>percent</c> null).
+/// </summary>
+public sealed record SalesDraftLineMarginV1(Guid LineId, int LineNo, string State, string? UnavailableReason, string? Amount,
+    Guid? CurrencyId, string? Percent, string? PercentUnavailableReason);
 
 /// <summary>
 /// GET …/{id}/lines/{lineId}/price-references (price write): the Product owner's list price for the line's product in its
