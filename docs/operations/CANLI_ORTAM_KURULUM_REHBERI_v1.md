@@ -162,7 +162,9 @@ tekrarlayın (`DEPLOY_BACKUP_RPO_RTO.md` "Ortamlar").
 Canlıda uygulama şemayı **kendisi kurmaz** (E2). Şema, her modülün EF Core migration'larından
 elle uygulanır. Repoda araç hazır: `dotnet-tools.json` içinde `dotnet-ef 10.0.8` ve 18 DbContext'in
 17'si için `*DesignTimeDbContextFactory.cs`. `ProductPriceListDbContext` için fabrika yoktur;
-onun betiği `--startup-project src/backend/GoymenERP.Api` ile üretilmelidir.
+onun betiği `--startup-project src/backend/GoymenERP.Api` ile üretilmelidir. Bu yolda API
+host'u ayağa kalktığı için `DB_CONNECTION_STRING` ve ürün modülü ayarları (`ProductRuntime:Issuer*`)
+tanımlı olmalıdır; değilse komut hata ile durur (yanlış betik üretmez).
 
 Önerilen güvenli yol (yöntem kesinleşene kadar; paket mi betik mi **Sinan/BT + Codex seçer**):
 
@@ -191,9 +193,13 @@ onun betiği `--startup-project src/backend/GoymenERP.Api` ile üretilmelidir.
    Manufacturing, Logistics, Purchasing, Accounting. Ürün modülü kapalıysa Product ve
    GroupSharedCommand da atlanır. 200 dönmüyorsa şema eksiktir.
 7. **Settings, ProductPriceList, Documents ve Work** bu kontrolde **yoktur**; `/health/ready`
-   bunlar eksikken de 200 dönebilir. Bu dört context için her birinin
-   `__EFMigrationsHistory` tablosundaki kayıtlar, `dotnet ef migrations list --context <ad>`
-   çıktısıyla **elle** karşılaştırılmalıdır.
+   bunlar eksikken de 200 dönebilir. Bu dört context için migration geçmiş tablosundaki
+   kayıtlar, `dotnet ef migrations list --context <ad> --no-connect` çıktısıyla **elle**
+   karşılaştırılmalıdır. Geçmiş tabloları: `settings.__EFMigrationsHistory`,
+   `product.__EFMigrationsHistory_PriceLists` (dikkat: `product.__EFMigrationsHistory`
+   ProductDbContext'indir), `documents.__EFMigrationsHistory`, `work.__EFMigrationsHistory`.
+   Tasarım zamanı fabrikalarında yerel (localdb) bağlantı dizesi gömülü olduğu için
+   `--no-connect` kullanılmalıdır.
 
 Geri alma: migration'ların bir kısmı veri kaybı riskinde `Down` adımını bilerek reddeder
 (`THROW 51xxx`, "forward fix"). Yani hatalı bir sürümden dönüş **geri sarma değil ileri
@@ -287,9 +293,11 @@ Asgari uygulama (BT için sade özet):
 3. **Veritabanı ve belge klasörü birlikte** geri yüklenmeli ve sayı/özet (checksum)
    mutabakatı yapılmalıdır (`DEPLOY_BACKUP_RPO_RTO.md` "Production kapısı").
 4. Kopyalardan biri **tesis dışında ve şifreli** tutulur.
-5. Bugünkü kodda belge silme yolu yoktur. Saklama süresi ve imha **açık politikadır**
-   (`DEC-DOC-008`, `OPEN-018`/`OPEN-021`, `SINAN_KARARLARI_2026-10-21.md`); koddaki
-   "10 yıl" notu karar değildir. Süreyi **Sinan/BT seçer**.
+5. Bugünkü kodda belge silme yolu yoktur. Yasal alt sınır (TTK 10 yıl / VUK 5 yıl —
+   büyüğü) kullanıcı kararıyla **sistemce zorlanır** (`SINAN_KARARLARI_2026-10-21.md` EK-43);
+   bunun altına inilemez. Açık olan belge türüne göre süre tablosu, yasal tutma (legal hold)
+   ve imha yöntemidir (`DEC-DOC-008`, `OPEN-018`/`OPEN-021`); bunlar **Sinan kararıdır**,
+   yedek kopyaların saklama süresi bu alt sınırla çelişmeyecek şekilde ayarlanır.
 6. Canlıya geçmeden önce en az bir kez **gerçek geri yükleme tatbikatı** yapılır ve
    sonucu yazılır.
 
