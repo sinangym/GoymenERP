@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 30
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 623
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 624
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "0cb0353f6cda1c422dd70d27fa6855de93d838ffcb052356337251580bb58f66"
+    "48f3a05c6638703c9e31b0ddafda866c9000d07c25cdca6617e3653547ce299d"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -940,7 +940,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "5257fa0e68814752f86879618bd492de6848f93fe63c09d1418934e3cf5c4af4",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "819cb8e6bfa8364eb404dbbdcd35a32dd684e8a3b230d5386bb81c7b8a6ca8d1",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs": "ff85d839eb1b9c9030cba9295b2eb0db0e466526164da4fa51483e590d6ba2e2",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs": "28309ceb1bbe24384df85ed29f7fdb5438ea68ecc46352924ec781d21c16b92f",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs": "754fde914ab573515fd34db5c2d0af03144f24bee9334568ceeae2eebd9f2f2e",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
