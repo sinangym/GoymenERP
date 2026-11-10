@@ -82,7 +82,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 name: "CK_InvoiceMatches_TaxAmounts",
                 schema: "sales",
                 table: "InvoiceMatches",
-                sql: "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) OR ([InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))");
+                sql: "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) OR ([InvoiceVatAmount] IS NOT NULL AND [OfficialVatAmount] IS NOT NULL AND [VatDifference] IS NOT NULL AND [InvoiceWithholdingAmount] IS NOT NULL AND [OfficialWithholdingAmount] IS NOT NULL AND [WithholdingDifference] IS NOT NULL AND [InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))");
         }
 
         /// <inheritdoc />

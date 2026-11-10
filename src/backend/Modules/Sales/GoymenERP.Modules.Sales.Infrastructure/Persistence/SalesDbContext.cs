@@ -370,12 +370,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>
     /// CK_InvoiceMatches_TaxAmounts (SAT-D241): the VAT and withholding comparison is all-or-nothing — six NULLs (a match recorded before
-    /// SAT-D241) or six non-negative amounts whose differences are the exact absolute differences.
+    /// SAT-D241) or six non-negative amounts whose differences are the exact absolute differences. The second branch names every column
+    /// IS NOT NULL because a CHECK accepts UNKNOWN: without it a partly filled row would pass.
     /// </summary>
     internal const string InvoiceMatchTaxAmountsConstraint =
         "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL "
         + "AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) "
-        + "OR ([InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 "
+        + "OR ([InvoiceVatAmount] IS NOT NULL AND [OfficialVatAmount] IS NOT NULL AND [VatDifference] IS NOT NULL "
+        + "AND [InvoiceWithholdingAmount] IS NOT NULL AND [OfficialWithholdingAmount] IS NOT NULL AND [WithholdingDifference] IS NOT NULL "
+        + "AND [InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 "
         + "AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) "
         + "AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))";
 
