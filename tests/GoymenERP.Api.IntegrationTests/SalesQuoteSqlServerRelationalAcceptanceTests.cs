@@ -22,6 +22,7 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -778,6 +779,7 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             Assert.Equal(("Fiyat yüksek", false), (price.GetProperty("label").GetString(), price.GetProperty("requiresExplanation").GetBoolean()));
             reasonId = price.GetProperty("reasonId").GetGuid();
             profileId = body.GetProperty("profileId").GetGuid();
+            Assert.Equal(ApprovedSalesQuotePolicyCatalog.GdcLossReasonsV1.ProfileId, profileId);
         }
 
         var correlation = Guid.NewGuid().ToString("N");
@@ -806,8 +808,9 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             + "AND LossReasonProfileId = @p AND LossReasonProfileVersion = 1",
             ("@c", CompanyA), ("@q", quoteId), ("@r", reasonId), ("@p", profileId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.QuoteAttempts WHERE CommandName = N'sales.quote.lose.v2' AND QuoteId = @q AND Outcome = 1 AND IdempotencyKeyHash = @h",
-            ("@q", quoteId), ("@h", SalesStore.IdempotencyKeyHash("SENTETIK-lose-catalogued"))));
+            "SELECT COUNT(*) FROM sales.QuoteAttempts WHERE CompanyId = @c AND CommandName = N'sales.quote.lose.v2' AND QuoteId = @q AND Outcome = 1 "
+            + "AND IdempotencyKeyHash = @h",
+            ("@c", CompanyA), ("@q", quoteId), ("@h", SalesStore.IdempotencyKeyHash("SENTETIK-lose-catalogued"))));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c AND EntityType = N'Sales.Quote' AND EventType = N'sales.quote.lost.v1' "
             + "AND EntityId = @q AND CorrelationId = @corr AND EntityVersionBefore = 1 AND EntityVersionAfter = 2 "
