@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Identity.Application.Contracts;
 
@@ -14,11 +15,17 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Shell;
 /// names, so the host registers this provider only after the central catalogue knows the name, together with its
 /// accepted revision. The ids and routes are the frontend lane's (<c>src/identity/capabilities.ts</c>).
 /// </para>
+/// <para>
+/// 1.1 (UI-K02 audit log list, KLN-D2): adds the read-only "Denetim kaydı" screen (SY-07) under Ayarlar › Sistem
+/// Yönetimi over the existing <c>GET /api/v1/audit/events</c>, on <see cref="ErpPermissions.IdentityAuditRead"/>
+/// alone, company-wide, in one company. The endpoint, the permission and every grant are unchanged; no control is
+/// declared. The ids and route are the frontend lane's (<c>src/audit/capabilities.ts</c>).
+/// </para>
 /// </summary>
 public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "IDENTITY";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string AccessListCapabilityId = "identity.assignments.list";
     public const string AccessListRouteId = "identity.assignments.list";
@@ -28,6 +35,10 @@ public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
     public const string RoleDetailRouteId = "identity.roles.detail";
     public const string RoleDetailRoutePath = "/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId";
     public const string RoleDetailScreenId = "SY-02";
+    public const string AuditListCapabilityId = "identity.audit.list";
+    public const string AuditListRouteId = "identity.audit.list";
+    public const string AuditListRoutePath = "/ayarlar/denetim-kaydi";
+    public const string AuditListScreenId = "SY-07";
 
     public string Owner => OwnerId;
 
@@ -54,6 +65,16 @@ public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [IdentityPermissionManifestV1.AssignmentsRead],
+            ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(
+            AuditListCapabilityId,
+            AuditListRouteId,
+            AuditListRoutePath,
+            AuditListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.IdentityAuditRead],
             ImplementationAvailable: true),
     ];
 }

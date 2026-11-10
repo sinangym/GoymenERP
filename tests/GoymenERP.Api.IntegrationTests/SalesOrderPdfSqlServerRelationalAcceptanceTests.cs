@@ -113,9 +113,15 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             Assert.Contains("12.50 TRY / kg", text, StringComparison.Ordinal);
             Assert.Contains("%5", text, StringComparison.Ordinal);
             Assert.Contains("11.875 TRY / kg", text, StringComparison.Ordinal);
-            Assert.Contains("Sipariş toplamları bu belgede yer almaz", text, StringComparison.Ordinal);
-            // 6 kg × 11.875 = 71.25: no line amount or total is computed.
-            Assert.DoesNotContain("71.25", text, StringComparison.Ordinal);
+            // SAT-D11 / SAT-D75: the ONE totals calculator on the stored tax snapshot — 6 kg × 11.875 = 71.25 net, 20 % VAT 14.25,
+            // 50 % of it withheld 7.125 → 7.13 (half away from zero), gross 85.50, payable 85.50 − 7.13 = 78.37.
+            Assert.Contains("Net toplam71.25 TRY", text, StringComparison.Ordinal);
+            Assert.Contains("KDV toplamı14.25 TRY", text, StringComparison.Ordinal);
+            Assert.Contains("Tevkif edilen KDV toplamı7.13 TRY", text, StringComparison.Ordinal);
+            Assert.Contains("KDV dahil toplam85.50 TRY", text, StringComparison.Ordinal);
+            Assert.Contains("Ödenecek tutar78.37 TRY", text, StringComparison.Ordinal);
+            Assert.Contains("Tevkifat: 624", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("Sipariş toplamları bu belgede yer almaz", text, StringComparison.Ordinal);
             // SAT-D56: the approved revision carries no draft watermark.
             Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
         }
@@ -156,6 +162,9 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
         Assert.DoesNotContain($"{draft.DocumentNo} · Rev.1", text, StringComparison.Ordinal);
         Assert.DoesNotContain(InternalRejectionReason, text, StringComparison.Ordinal);
         Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
+        // The totals are the accepted Rev.0's (6 kg), never the rejected Rev.1's 7.777 kg.
+        Assert.Contains("Net toplam71.25 TRY", text, StringComparison.Ordinal);
+        Assert.Contains("Ödenecek tutar78.37 TRY", text, StringComparison.Ordinal);
 
         var withoutPrice = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using var pricelessClient = run.Factory.CreateClientFor(withoutPrice, CompanyA);
@@ -343,7 +352,9 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             var product = new ProductSnapshot(Product, "1", "SENTETIK-PDF-001", "Sentetik PDF bandı", Day, binding, binding, binding);
             draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "6", 6m, Day.AddDays(3),
                 Commercial: SalesOrderDraft.WithDiscountLimitCheck(new CommercialDraftFields("12.50", KgUnit, "5", ListedAt("12.50")),
-                    WithinTenPercent, Actor, T0)), T0);
+                    WithinTenPercent, Actor, T0),
+                Tax: new SalesLineTaxSnapshot(Product, Day, "Normal", "Steel", "Resolved", null, "Record", Guid.NewGuid(), 1, "Resolved", 20m,
+                    "NotRequired", null, null, "Resolved", 50m, "Resolved", "624", null, null, 0, "Normal", false)), T0);
             return draft;
         }
 

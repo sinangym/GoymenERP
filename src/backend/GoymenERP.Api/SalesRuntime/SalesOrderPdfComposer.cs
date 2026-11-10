@@ -7,10 +7,12 @@ namespace GoymenERP.Api.SalesRuntime;
 
 /// <summary>
 /// MOD-07: lays the sales order out for the PDF from the two Sales reads it is given — the enriched detail (the party
-/// and people as their owners show them) and the print pricing (the price read's decision). It prints stored values
-/// verbatim and computes nothing: no line amount, total, tax or exchange exists yet (API-03, T28), and the totals
-/// section says so. Prices appear ONLY when the pricing answer is <see cref="SalesPriceDisclosure.Visible"/> AND every
-/// detail line says the same; otherwise the price columns are not drawn at all (never as empty cells). Every user text
+/// and people as their owners show them) and the print pricing (the price read's decision). It prints the answers
+/// verbatim and computes nothing: the line amounts, VAT, withholding and document totals are the one backend totals
+/// calculator's (API-03 / SAT-D11 / SAT-D75), as the print read answers them; an amount the calculator could not give is
+/// printed as its reason, never as 0. No exchange is printed. Prices and totals appear ONLY when the pricing answer is
+/// <see cref="SalesPriceDisclosure.Visible"/> AND every detail line says the same; otherwise the price columns and the tax
+/// table are not drawn at all (never as empty cells). Every user text
 /// comes from <c>Resources/SalesRuntime.SalesOrderPdfComposer.resx</c>; a missing text is a server fault, never a key
 /// printed in its place. Not a corporate template (DEC-DOC-010): no logo, letterhead or company name.
 /// </summary>
@@ -67,6 +69,7 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
         var pricesVisible = pricing.PriceDisclosure == SalesPriceDisclosure.Visible
             && detail.Lines.All(line => line.PriceDisclosure == SalesPriceDisclosure.Visible);
         var linePricing = pricesVisible ? PricingByLine(detail, pricing) : null;
+        var lineTotals = pricesVisible ? TotalsByLine(detail, pricing) : null;
         var currency = pricesVisible ? pricing.CurrencyCode! : null;
 
         var title = Format(draft.CommercialStage == SalesCommercialStageV1.Quote ? "TitleQuote" : "TitleOrder", draft.DocumentNo);
@@ -87,8 +90,22 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             blocks.Add(LineTable(detail, linePricing, currency));
         }
 
+        if (lineTotals is not null && detail.Lines.Count > 0)
+        {
+            blocks.Add(new DocumentPdfHeading(T("HeadingTaxes")));
+            blocks.Add(TaxTable(detail, lineTotals, currency!));
+        }
+
         blocks.Add(new DocumentPdfHeading(T("HeadingTotals")));
-        blocks.Add(new DocumentPdfParagraph(pricesVisible ? T("TotalsNotAvailable") : T("PricesNotShown")));
+        if (pricesVisible)
+        {
+            blocks.Add(new DocumentPdfFields(TotalFields(pricing.Totals!.Document, currency!)));
+            blocks.Add(new DocumentPdfParagraph(T("TotalsNote")));
+        }
+        else
+        {
+            blocks.Add(new DocumentPdfParagraph(T("PricesNotShown")));
+        }
 
         var request = new DocumentPdfRequest(
             technicalId,
@@ -178,6 +195,146 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
 
         return byLine;
     }
+
+    /// <summary>
+    /// MOD-07 → API-03: the visible answer's totals must be the printed revision's and answer every printed line once under its
+    /// line number; anything else cannot be printed faithfully (fail-closed, never totals of another revision or a partial set).
+    /// </summary>
+    private static Dictionary<Guid, SalesOrderPrintLineTotalV1> TotalsByLine(
+        SalesOrderDraftReadDetailViewV1 detail, SalesOrderPrintPricingV1 pricing)
+    {
+        var totals = pricing.Totals;
+        if (totals?.Document is null || totals.Lines is null || !string.Equals(totals.Revision, detail.Draft.Revision, StringComparison.Ordinal)
+            || totals.Lines.Count != detail.Lines.Count)
+        {
+            throw new InvalidOperationException("The visible print totals are missing or belong to another revision.");
+        }
+
+        var byLine = new Dictionary<Guid, SalesOrderPrintLineTotalV1>();
+        foreach (var line in totals.Lines)
+        {
+            if (line?.Total is null || !byLine.TryAdd(line.Total.LineId, line))
+            {
+                throw new InvalidOperationException("The visible print totals repeat or omit a line.");
+            }
+        }
+
+        if (detail.Lines.Any(line => !byLine.TryGetValue(line.LineId, out var total) || total.Total.LineNo != line.LineNo))
+        {
+            throw new InvalidOperationException("The visible print totals do not answer the detail's lines.");
+        }
+
+        return byLine;
+    }
+
+    /// <summary>
+    /// The per-line amounts and taxes as the totals calculator answered them: a line without an amount prints why (unpriced,
+    /// another price unit, out of range); a line whose tax has no source prints "Vergi kaynağı yok" and no tax amount — never 0.
+    /// </summary>
+    private DocumentPdfTable TaxTable(SalesOrderDraftReadDetailViewV1 detail,
+        IReadOnlyDictionary<Guid, SalesOrderPrintLineTotalV1> totals, string currency)
+    {
+        var columns = new List<DocumentPdfColumn>
+        {
+            new(T("ColumnLineNo"), NarrowColumn, DocumentPdfAlignment.End),
+            new(T("ColumnNetAmount"), PriceColumn, DocumentPdfAlignment.End),
+            new(T("ColumnVatPercent"), UnitColumn, DocumentPdfAlignment.End),
+            new(T("ColumnVatAmount"), PriceColumn, DocumentPdfAlignment.End),
+            new(T("ColumnWithholdingPercent"), UnitColumn, DocumentPdfAlignment.End),
+            new(T("ColumnWithheldVatAmount"), PriceColumn, DocumentPdfAlignment.End),
+            new(T("ColumnGrossAmount"), PriceColumn, DocumentPdfAlignment.End),
+            new(T("ColumnPayableAmount"), PriceColumn, DocumentPdfAlignment.End),
+            new(T("ColumnTaxCodes"), CodeColumn),
+        };
+        var rows = new List<IReadOnlyList<string>>(detail.Lines.Count);
+        foreach (var line in detail.Lines.OrderBy(line => line.LineNo))
+        {
+            var printed = totals[line.LineId];
+            var total = printed.Total;
+            var row = new List<string> { line.LineNo.ToString(CultureInfo.InvariantCulture), LineAmountText(total, currency) };
+            if (total.TaxState == SalesDraftTotalsStatesV1.Computed)
+            {
+                row.Add(Format("Percent", Required(total.VatPercent)));
+                row.Add(Format("Amount", Required(total.VatAmount), currency));
+                row.Add(total.WithholdingShare is null ? T("NoWithholding") : Format("Percent", Required(printed.WithholdingPercent)));
+                row.Add(Format("Amount", Required(total.WithheldVatAmount), currency));
+                row.Add(Format("Amount", Required(total.GrossAmount), currency));
+                row.Add(Format("Amount", Required(total.PayableAmount), currency));
+            }
+            else
+            {
+                var reason = total.TaxState == SalesDraftTotalsStatesV1.NoSource ? T("LineTaxNoSource") : T("None");
+                row.Add(reason);
+                row.AddRange(Enumerable.Repeat(T("None"), 5));
+            }
+
+            row.Add(TaxCodesText(printed));
+            rows.Add(row);
+        }
+
+        return new DocumentPdfTable(columns, rows);
+    }
+
+    private string LineAmountText(SalesDraftLineTotalV1 total, string currency) => total.State switch
+    {
+        SalesDraftTotalsStatesV1.Computed => Format("Amount", Required(total.NetAmount), currency),
+        SalesDraftTotalsStatesV1.Unpriced => T("NotPriced"),
+        SalesDraftTotalsStatesV1.PriceUnitNotOrderUnit => T("LineAmountPriceUnitDiffers"),
+        SalesDraftTotalsStatesV1.AmountOutOfRange => T("LineAmountOutOfRange"),
+        _ => throw new InvalidOperationException("The line total state has no text."),
+    };
+
+    private string TaxCodesText(SalesOrderPrintLineTotalV1 printed)
+    {
+        var codes = new List<string>(2);
+        if (!string.IsNullOrWhiteSpace(printed.ExemptionCode))
+        {
+            codes.Add(Format("ExemptionCode", printed.ExemptionCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(printed.WithholdingCode))
+        {
+            codes.Add(Format("WithholdingCode", printed.WithholdingCode));
+        }
+
+        return codes.Count == 0 ? T("None") : string.Join('\n', codes);
+    }
+
+    /// <summary>
+    /// The document totals: the net when the document is computed, otherwise why not; the VAT, withheld VAT, gross and payable
+    /// only when every line's tax was computed, otherwise why not — never a partial sum or 0.
+    /// </summary>
+    private List<DocumentPdfField> TotalFields(SalesDraftDocumentTotalsV1 document, string currency)
+    {
+        var net = document.State switch
+        {
+            SalesDraftTotalsStatesV1.Computed => Format("Amount", Required(document.NetAmount), currency),
+            SalesDraftTotalsStatesV1.Incomplete => document.UnpricedLineCount + document.PriceUnitNotOrderUnitLineCount > 0
+                ? T("TotalIncomplete")
+                : document.AmountOutOfRangeLineCount > 0 ? T("TotalOutOfRange") : T("None"),
+            SalesDraftTotalsStatesV1.AmountOutOfRange => T("TotalOutOfRange"),
+            _ => throw new InvalidOperationException("The document total state has no text."),
+        };
+        var taxed = document.State == SalesDraftTotalsStatesV1.Computed && document.TaxState == SalesDraftTotalsStatesV1.Computed
+            && document.VatAmount is not null;
+        string Tax(string? amount) => taxed
+            ? Format("Amount", Required(amount), currency)
+            : document.State != SalesDraftTotalsStatesV1.Computed ? net
+            : document.TaxUnavailableLineCount > 0 || document.TaxState == SalesDraftTotalsStatesV1.NoSource ? T("TotalTaxNoSource")
+            : T("None");
+        return
+        [
+            new(T("FieldNetTotal"), net),
+            new(T("FieldVatTotal"), Tax(document.VatAmount)),
+            new(T("FieldWithheldVatTotal"), Tax(document.WithheldVatAmount)),
+            new(T("FieldGrossTotal"), Tax(document.GrossAmount)),
+            new(T("FieldPayableTotal"), Tax(document.PayableAmount)),
+        ];
+    }
+
+    /// <summary>A value the calculator's state promises; its absence is an answer that cannot be printed faithfully.</summary>
+    private static string Required(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? throw new InvalidOperationException("A computed print total has no value.") : value;
 
     private List<DocumentPdfField> OrderFields(SalesOrderDraftReadDetailViewV1 detail, string? currency)
     {

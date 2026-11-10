@@ -32,8 +32,8 @@ public static class PurchasingRuleCodes
     public const string RequestWithoutLines = "purchasing_request_without_lines";
 
     /// <summary>
-    /// A1-2b (SAT-D219, SAT-D220; fail-closed): a new request line cannot record a Sales source until MOD-03 validates it through
-    /// the Sales order line reference port and wires the linked-supply read adaptor in the same delivery.
+    /// A1-2b (SAT-D219, SAT-D220; fail-closed): a new request line records a Sales source only when the Application layer has read it through
+    /// the Sales order line reference port (A4b); without that port the request is refused with this code.
     /// </summary>
     public const string RequestSourceSalesUnavailable = "purchasing_request_source_sales_unavailable";
 

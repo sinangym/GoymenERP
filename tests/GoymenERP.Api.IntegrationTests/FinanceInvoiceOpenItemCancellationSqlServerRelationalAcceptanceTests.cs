@@ -295,6 +295,26 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
     }
 
     [SqlServerFact]
+    public async Task An_open_item_reduced_without_an_active_allocation_is_refused_with_the_not_understood_code_and_writes_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Sales, Installment(1, "9.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("corrupt-1", invoice)).Outcome);
+        // Reduced outside any allocation (stored state the cancellation cannot explain): not the allocation warning.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE finance.OpenItems SET OutstandingAmountText = N'4.00' WHERE Id = @id; SELECT @@ROWCOUNT",
+            ("@id", invoice.Installments[0].OpenItemId)));
+
+        var refused = await run.CancelAsync("corrupt-2", Cancellation(invoice));
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.Contains(refused.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemCancellationService.StoredStateNotUnderstoodCode);
+        Assert.DoesNotContain(refused.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemCancellationService.HasAllocationsCode);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellations"));
+    }
+
+    [SqlServerFact]
     public async Task The_rollback_refuses_while_a_cancelled_open_item_is_stored_even_without_its_receipt()
     {
         await using var run = await Run.StartAsync();
