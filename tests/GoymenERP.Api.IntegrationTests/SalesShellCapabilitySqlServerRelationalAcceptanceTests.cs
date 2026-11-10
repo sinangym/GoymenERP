@@ -60,12 +60,14 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
                     SalesOnly(await ReadAsync(maker)));
             }
 
-            // + sales.invoices.read (API-31): exactly the S-08 list joins; no other screen or control.
+            // + sales.invoices.read (API-31): the S-08 list joins and (SAT-D238, Sales 1.20) the S-09 invoice list on the same read —
+            // its list read withholds the amounts without the price read; no other screen or control.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.InvoicesRead, AccessScopeType.Company, CompanyA);
             using (var invoicer = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
                 Assert.Equal(
-                    new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list", "sales.invoice-candidates.list" },
+                    new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list", "sales.invoice-candidates.list",
+                        "sales.invoices.list" },
                     SalesOnly(await ReadAsync(invoicer)));
             }
 
@@ -75,12 +77,12 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
             {
                 Assert.Equal(
                     new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list", "sales.invoice-candidates.list",
-                        "sales.reports.view" },
+                        "sales.invoices.list", "sales.reports.view" },
                     SalesOnly(await ReadAsync(reporter)));
             }
 
-            // + sales.orders.price.read (Sales 1.19, UI-63): the invoice read alone never opened the S-09 invoice list; with the
-            // price read its list read measures, exactly sales.invoices.list joins; no control.
+            // + sales.orders.price.read: since SAT-D238 (Sales 1.20) the price read opens no further Sales screen — it only discloses
+            // the S-09 amounts; no control.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.OrdersPriceRead, AccessScopeType.Company, CompanyA);
             using (var priceReader = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {

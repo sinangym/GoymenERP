@@ -356,11 +356,31 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
 
-    /// <summary>CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106): within the tolerance no approver; beyond it an approver and a reason.</summary>
+    /// <summary>
+    /// CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106; SAT-D241): the payable, VAT and withholding differences all within the tolerance —
+    /// no approver; any one beyond it — an approver and a reason. A match recorded before SAT-D241 has no VAT/withholding columns (NULL)
+    /// and is measured on the payable difference alone, as it was.
+    /// </summary>
     internal const string InvoiceMatchAmountsConstraint =
         "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) "
-        + "AND (([Difference] <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) "
-        + "OR ([Difference] > [Tolerance] AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))";
+        + "AND (([Difference] <= [Tolerance] AND ISNULL([VatDifference], 0) <= [Tolerance] AND ISNULL([WithholdingDifference], 0) <= [Tolerance] "
+        + "AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) "
+        + "OR (([Difference] > [Tolerance] OR ISNULL([VatDifference], 0) > [Tolerance] OR ISNULL([WithholdingDifference], 0) > [Tolerance]) "
+        + "AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))";
+
+    /// <summary>
+    /// CK_InvoiceMatches_TaxAmounts (SAT-D241): the VAT and withholding comparison is all-or-nothing — six NULLs (a match recorded before
+    /// SAT-D241) or six non-negative amounts whose differences are the exact absolute differences. The second branch names every column
+    /// IS NOT NULL because a CHECK accepts UNKNOWN: without it a partly filled row would pass.
+    /// </summary>
+    internal const string InvoiceMatchTaxAmountsConstraint =
+        "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL "
+        + "AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) "
+        + "OR ([InvoiceVatAmount] IS NOT NULL AND [OfficialVatAmount] IS NOT NULL AND [VatDifference] IS NOT NULL "
+        + "AND [InvoiceWithholdingAmount] IS NOT NULL AND [OfficialWithholdingAmount] IS NOT NULL AND [WithholdingDifference] IS NOT NULL "
+        + "AND [InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 "
+        + "AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) "
+        + "AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))";
 
     /// <summary>UX_InvoiceAttempts_InvoiceId: a stored invoice is born from exactly one create attempt.</summary>
     internal const string InvoiceCreateAttemptFilter = "[InvoiceId] IS NOT NULL AND [CommandName] = N'" + SalesInvoiceCommands.CreateV1 + "'";
@@ -1116,6 +1136,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_InvoiceMatches_Amounts", InvoiceMatchAmountsConstraint);
+            table.HasCheckConstraint("CK_InvoiceMatches_TaxAmounts", InvoiceMatchTaxAmountsConstraint);
             table.HasTrigger(InvoiceMatchGuardTrigger);
         });
         match.HasKey(x => new { x.CompanyId, x.InvoiceId });
@@ -1125,6 +1146,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         match.Property(x => x.OfficialAmount).HasPrecision(28, 8);
         match.Property(x => x.Difference).HasPrecision(28, 8);
         match.Property(x => x.Tolerance).HasPrecision(28, 8);
+        match.Property(x => x.InvoiceVatAmount).HasPrecision(28, 8);
+        match.Property(x => x.OfficialVatAmount).HasPrecision(28, 8);
+        match.Property(x => x.VatDifference).HasPrecision(28, 8);
+        match.Property(x => x.InvoiceWithholdingAmount).HasPrecision(28, 8);
+        match.Property(x => x.OfficialWithholdingAmount).HasPrecision(28, 8);
+        match.Property(x => x.WithholdingDifference).HasPrecision(28, 8);
         match.Property(x => x.MatchedBy).HasMaxLength(SalesInvoice.MaximumActorLength).IsRequired();
         match.Property(x => x.DifferenceApprovedBy).HasMaxLength(SalesInvoice.MaximumActorLength);
         match.Property(x => x.DifferenceReason).HasMaxLength(SalesInvoice.MaximumReasonLength);

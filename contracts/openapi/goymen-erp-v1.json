@@ -124294,7 +124294,13 @@
           "matchedBy",
           "matchedAtUtc",
           "differenceApprovedBy",
-          "differenceReason"
+          "differenceReason",
+          "invoiceVatAmount",
+          "officialVatAmount",
+          "vatDifference",
+          "invoiceWithholdingAmount",
+          "officialWithholdingAmount",
+          "withholdingDifference"
         ],
         "type": "object",
         "properties": {
@@ -124330,6 +124336,42 @@
             ]
           },
           "differenceReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "invoiceVatAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "officialVatAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatDifference": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "invoiceWithholdingAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "officialWithholdingAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingDifference": {
             "type": [
               "null",
               "string"
@@ -124421,6 +124463,7 @@
           "partyId",
           "companyAccountId",
           "currencyId",
+          "amountDisclosure",
           "payableAmount",
           "functionalPayableAmount",
           "lineCount",
@@ -124457,8 +124500,14 @@
             "type": "string",
             "format": "uuid"
           },
+          "amountDisclosure": {
+            "$ref": "#/components/schemas/SalesPriceDisclosure"
+          },
           "payableAmount": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "functionalPayableAmount": {
             "type": [

@@ -1839,6 +1839,14 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasPrecision(28, 8)
                         .HasColumnType("decimal(28,8)");
 
+                    b.Property<decimal?>("InvoiceVatAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<decimal?>("InvoiceWithholdingAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
                     b.Property<DateTimeOffset>("MatchedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1857,7 +1865,23 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<decimal?>("OfficialVatAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<decimal?>("OfficialWithholdingAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
                     b.Property<decimal>("Tolerance")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<decimal?>("VatDifference")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<decimal?>("WithholdingDifference")
                         .HasPrecision(28, 8)
                         .HasColumnType("decimal(28,8)");
 
@@ -1875,9 +1899,11 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         {
                             t.HasTrigger("TR_InvoiceMatches_Guard");
 
-                            t.HasCheckConstraint("CK_InvoiceMatches_Amounts", "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) AND (([Difference] <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) OR ([Difference] > [Tolerance] AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))");
+                            t.HasCheckConstraint("CK_InvoiceMatches_Amounts", "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) AND (([Difference] <= [Tolerance] AND ISNULL([VatDifference], 0) <= [Tolerance] AND ISNULL([WithholdingDifference], 0) <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) OR (([Difference] > [Tolerance] OR ISNULL([VatDifference], 0) > [Tolerance] OR ISNULL([WithholdingDifference], 0) > [Tolerance]) AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_InvoiceMatches_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_InvoiceMatches_TaxAmounts", "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) OR ([InvoiceVatAmount] IS NOT NULL AND [OfficialVatAmount] IS NOT NULL AND [VatDifference] IS NOT NULL AND [InvoiceWithholdingAmount] IS NOT NULL AND [OfficialWithholdingAmount] IS NOT NULL AND [WithholdingDifference] IS NOT NULL AND [InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
