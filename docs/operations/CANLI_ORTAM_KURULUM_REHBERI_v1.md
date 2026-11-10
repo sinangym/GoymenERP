@@ -272,9 +272,11 @@ Her atama yine Sinan'ın somut kararıdır (insan kapısı).
 #### Satış izinleri kurulum kontrol listesi
 
 Sinan aşağıdaki üç izin için somut rol kararını verdi (SAT-D282 —
-`docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK55.md`). Kodda rol seed'i veya grant
-yoktur; kurulum operatörü bu atamaları Ayarlar rol ekranından yapar. Ekran gelene kadar (E4)
-bu liste bekler; ilk rol dağılımının başka bir yolla verilmesi ayrıca Sinan kararıdır.
+`docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK55.md`). İş rolleri ve satış izinleri için
+kodda seed/grant yoktur. Ayrı rol tanımı adımının biçimi (kurulumda Ayarlar rol ekranı mı, kodda
+rol tanımı PR'ı mı) henüz seçilmedi (`NEEDS-SINAN`); o zamana kadar EK54 SAT-D276 (3) gereği
+kurulum operatörü bu atamaları Ayarlar rol ekranından yapar. Ekran gelene kadar (E4) bu liste
+bekler; ilk rol dağılımının başka bir yolla verilmesi ayrıca Sinan kararıdır.
 
 - [ ] `sales.invoices.export` (satış faturalarını Excel'e aktarma, API-34): **Muhasebe,
   Muhasebe Müdürü, Genel Müdür, Admin**. Satış Müdürü ve Satış Uzmanı **almaz** (SAT-D276).
