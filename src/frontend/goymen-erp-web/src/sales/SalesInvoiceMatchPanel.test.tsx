@@ -174,7 +174,10 @@ describe('UI-64b official e-invoice match form', () => {
       invoiceWithholdingAmount: null, officialWithholdingAmount: null, withholdingDifference: null,
     })), () => json(null))
     mount()
-    expect((await screen.findByTestId('sales-invoice-match-tax-not-compared')).textContent).toBe(T.taxNotCompared)
+    const notCompared = await screen.findByTestId('sales-invoice-match-tax-not-compared')
+    expect(notCompared.textContent).toBe(T.taxNotCompared)
+    // The row covers VAT and withholding alike, so its label is the general tax difference, not the VAT one.
+    expect(notCompared.previousElementSibling?.textContent).toBe(T.taxDifference)
     expect(screen.queryByTestId('sales-invoice-match-vat-difference')).toBeNull()
     expect(screen.queryByTestId('sales-invoice-match-withholding-difference')).toBeNull()
   })
