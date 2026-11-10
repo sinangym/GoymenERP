@@ -245,6 +245,27 @@ internal sealed class AllocationChangeRow : IInventoryTenantRow
 }
 
 /// <summary>
+/// The moving-average purchase cost ledger of one (company, location, product) position (SAT-D262). One current-state row;
+/// its Version is the expected-version fence and RowVersion the concurrency token. A known row holds the weighted kg and
+/// the 4-decimal average per stock kg; an unreadable row holds a reason and neither number (unknown is never zero). No row
+/// reads as NoSource. Only Inventory writes it; Sales reads the figure through the versioned port.
+/// </summary>
+internal sealed class AverageCostLedgerRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public int Status { get; set; }
+    public int? UnreadableReason { get; set; }
+    public decimal? QuantityKg { get; set; }
+    public decimal? AverageCostPerKg { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}
+
+/// <summary>
 /// One unpublished Inventory-owned event stored in the producer transaction. This slice has no
 /// dispatcher and never mutates publication state; the row is append-only.
 /// </summary>

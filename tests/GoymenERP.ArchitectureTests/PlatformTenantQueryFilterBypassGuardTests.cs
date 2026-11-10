@@ -296,7 +296,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D12 force-close: +1 active-allocation-blocks SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/inventory.txt"] =
                 // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
-                "c005163cd329b9f98c7d07ff0bf822e3430054029ab36e8613a616346d3c2a5c",
+                // SAT-D262..D267: +4 average-cost ledger/port SQL facts (c005163c... -> 0b766916...), kept ordinal-sorted.
+                "0b7669164b24d30a8f7ff1a21f893a1ce1ebc4c138c90bbbede9cbe12e559016",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -730,7 +731,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
                 // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
-                "b4ba4c31c800ecd28a59cb3a68eacd58dbcf6ccbb7cfe949b0bffe4886effa70",
+                // Re-fingerprinted for SAT-D262: AverageCostLedger table (company filter, company-leading unique position key, write guard); provider tokens unchanged.
+                "cf6d165268b28b49c57cbc7a4f8f2de8f80c29e22b680677b187734e4c05aa60",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -1056,7 +1058,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // provider branch and its token counts are unchanged.
                     new(
                         // Re-fingerprinted for B-01: one scoped registration of the plan-input allocation read port; provider tokens unchanged.
-                        "dc04c025d76387bd67bf92c07e65d48bd9d95f214a05ee307637a0c400c3b576",
+                        // Re-fingerprinted for SAT-D262: one scoped registration of the versioned average-cost read port; provider tokens unchanged.
+                        "bbfa521c9c0b068450dafaab38d0e064aa1ffc24085bb484d53abef4f152c585",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2775,6 +2778,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // drop. An empty schema rolls back freely; a populated one needs a forward fix.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928161227_AddInventoryStockScraps.cs"] =
                     new("9a4b4e0fd2233b33b8b95ffca4a9df4b06049dc86b7cfd0fd84e1a47b83424d4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D262: the average-cost ledger is a durable fact; the Down's only raw SQL is the Inventory refusal
+                // (51250, used by no other migration) while any ledger row exists, and the THROW precedes the drop.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261110065424_AddInventoryAverageCostLedger.cs"] =
+                    new("6605994dc4912511c0a1af641f67b304c2f135378db41a16a54374c96c4a002e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // R17: Down refuses before dropping manufacturing-return state while durable facts exist.
