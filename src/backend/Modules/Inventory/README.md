@@ -545,6 +545,24 @@ be rolled back once its facts exist (`AddInventoryLabelGenealogy`, `AddInventory
 Finance's `AddManualBankPayments` uses the same number for the same meaning ("facts exist; forward fix"). It is kept
 as is — existing migrations are never renumbered — and the message text names the owner and the facts.
 
+## Average purchase cost ledger and read port V1 (SAT-D262..D267, slice 1)
+
+Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory owns the moving-average purchase cost
+(key CompanyId + location + product, internal scale 4, `MidpointRounding.AwayFromZero`) and hands it out only through
+`IInventoryAverageCostReadPortV1` (Application; Value / Unreadable / NoSource). Sales never reads this table.
+
+- **Core:** `Domain/Costing/AverageCostCalculator` is deterministic. A purchase receipt recomputes the average; a transfer
+  enters the target at the source average; a production receipt never enters the average (the position becomes
+  Unreadable `mixed_source_undecided`). Negative stock, unit conversion, foreign currency, landed/additional cost, returns
+  and stock the ledger never costed are NOT decided: each answers Unreadable with its own code and an
+  `OPEN-INV-AVGCOST-*` comment in the code. Unreadable is sticky (leaving it would be a policy choice).
+- **Ledger:** `inventory.AverageCostLedger` (`AddInventoryAverageCostLedger`), company-filtered, unique per position,
+  `Version` + `RowVersion` concurrency, state check `CK_AverageCostLedger_State`. `Down` refuses (THROW 51250) while any
+  row exists (forward fix).
+- **No price input source is connected yet** (Purchasing price input is NEEDS-SINAN, Issue #66 comment 6760990097), so
+  nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
+  no authority (the Sales caller fences around it).
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
