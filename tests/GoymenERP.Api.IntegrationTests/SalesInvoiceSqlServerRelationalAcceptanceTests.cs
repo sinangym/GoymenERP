@@ -568,7 +568,6 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
 
     private static string Hash(char fill) => new(fill, 64);
 
-    /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>
     [SqlServerFact]
     public async Task The_control_center_lists_every_order_of_a_multi_order_invoice_in_line_order_and_another_company_sees_none_on_real_sql()
     {
@@ -647,6 +646,7 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
                 : PermissionScope.Denied);
     }
 
+    /// <summary>A USD invoice of two 20 % lines (99.99 and 10.01) at 34.5678 — the calculator golden's first group.</summary>
     private static SalesInvoice Invoice(Guid id, string number, string actor, Guid shipment1, Guid shipment2)
     {
         var tax = new SalesLineTaxSnapshot(Product, Day, "Normal", "Steel", "Resolved", null, "Record", Guid.NewGuid(), 1, "Resolved", 20m,
