@@ -516,7 +516,7 @@ public static class ErpPermissions
     public const string SalesOrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
 
     /// <summary>
-    /// API-07 / SAT-D153–SAT-D162 (EK21), Issue #66 comment 6771235622 / EK55 (pending): request a single-shipment risk
+    /// API-07 / SAT-D153–SAT-D162 (EK21), EK55 SAT-D282 / EK56 SAT-D287: request a single-shipment risk
     /// exception for an order (Sales owner name SalesPermissionManifestV1.OrdersRiskExceptionRequest). Its own name: the draft
     /// read is NOT required and is not conferred; no other Sales name confers it and it confers none. Registration grants
     /// nothing: no seeded role and no real user receives it; the persona mapping (Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür,
@@ -526,7 +526,7 @@ public static class ErpPermissions
     public const string SalesOrdersRiskExceptionRequest = "sales.orders.risk-exception.request";
 
     /// <summary>
-    /// API-07 / SAT-D153–SAT-D162 (EK21), Issue #66 comment 6771235622 / EK55 (pending): approve or reject a single-shipment
+    /// API-07 / SAT-D153–SAT-D162 (EK21), EK55 SAT-D282 / EK56 SAT-D287: approve or reject a single-shipment
     /// risk exception (Sales owner name SalesPermissionManifestV1.OrdersRiskExceptionApprove). Its own name: the request name
     /// does not confer it and it confers none. Registration grants nothing: no seeded role and no real user receives it; the
     /// persona mapping (Satış Uzmanı, Müdür, Admin) stays a human gate. Company-wide only. Not Critical. "The requester does not

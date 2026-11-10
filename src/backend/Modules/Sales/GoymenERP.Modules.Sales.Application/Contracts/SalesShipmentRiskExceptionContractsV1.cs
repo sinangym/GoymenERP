@@ -7,9 +7,10 @@ using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 namespace GoymenERP.Modules.Sales.Application.Contracts;
 
 // API-07 — tek sevk risk istisnası, Satış tarafı (EK21 SAT-D153…D162; EK7 SAT-D47/D48/D53; EK31 SAT-D200; DEC-FIN-009;
-// Sinan 2026-11-10, Issue #66 comment 6771235622 / EK55 pending). EK21 removes the date-range (customer) variant: only the
-// single-shipment exception exists. Sales records the request, the decision and the validity; the Logistics shipment gate
-// reads it later through ISalesShipmentRiskExceptionReadPortV1 (no Logistics connection is opened here, SAT-D209).
+// Sinan 2026-11-10, EK55 SAT-D281/D282 and EK56 SAT-D283…D287). EK21 removes the date-range (customer) variant: only the
+// single-shipment exception exists, bound to the Logistics loading instruction (SAT-D283). Sales records the request, the
+// decision and the validity; the Logistics shipment gate reads it later through ISalesShipmentRiskExceptionReadPortV1 (no
+// Logistics connection is opened here, SAT-D209).
 
 /// <summary>The versioned command names the risk exception attempt record is keyed by (ADR-011 §2).</summary>
 public static class SalesRiskExceptionCommands
@@ -55,9 +56,9 @@ public static class SalesRiskExceptionProblemCodesV1
 }
 
 /// <summary>
-/// API-07 request body: the single shipment (loading instruction id, SAT-D154) and the reason. The id is an opaque Logistics
-/// reference; Sales neither reads nor writes the Logistics owner's tables (SAT-D209). NEEDS-SINAN: whether the shipment key is
-/// the loading instruction, the dispatch note or the definite shipment.
+/// API-07 request body: the single shipment (loading instruction id, SAT-D154) and the reason. The shipment key is the
+/// Logistics loading instruction (EK56 SAT-D283). The id is an opaque Logistics reference kept on the Sales record; Sales
+/// neither reads nor writes the Logistics owner's tables (SAT-D209, SAT-D283 (3)).
 /// </summary>
 public sealed record RequestSalesRiskExceptionRequest(Guid LoadingInstructionId, string? Reason);
 
@@ -250,8 +251,10 @@ public sealed record SalesShipmentRiskExceptionReadV1(Guid OrderId, Guid Loading
 /// server-resolved company (tenant filter) and creates or changes nothing; another company's order answers
 /// <see cref="SalesShipmentRiskExceptionStatusV1.None"/>. Among several exceptions of the shipment a today-valid one wins, then a
 /// pending one, then the newest. Without a resolved company or the Europe/Istanbul time zone it throws: the gate fails closed
-/// (the shipment stays held). Consumption on a definite shipment and the cancellation lapse are the gate's contract, not yet
-/// opened (NEEDS-SINAN).
+/// (the shipment stays held). Contract for the gate (EK56 SAT-D285): one shipment consumes an approved exception, and when
+/// that shipment is cancelled the exception lapses (a new request and a new approval are needed). The port knows neither (both
+/// are Logistics state) and answers only the Sales record and its SAT-D160 validity; the gate applies consumption and the
+/// cancellation lapse on top of it. How Sales learns of consumption or cancellation stays NEEDS-SINAN (SAT-D285, SAT-D209).
 /// </summary>
 public interface ISalesShipmentRiskExceptionReadPortV1
 {

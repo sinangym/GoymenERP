@@ -144,7 +144,7 @@ public static class SalesPermissionManifestV1
     public const string OrdersOverDeliveryApprove = "sales.orders.over-delivery.approve";
 
     /// <summary>
-    /// API-07 / SAT-D153–SAT-D162 (EK21), Issue #66 comment 6771235622 / EK55 (pending): requesting a single-shipment risk
+    /// API-07 / SAT-D153–SAT-D162 (EK21), EK55 SAT-D282 / EK56 SAT-D287: requesting a single-shipment risk
     /// exception — POST drafts/{id}/risk-exceptions. The decision names Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür and Admin;
     /// which persona holds it is a human gate (registered, granted to no role). Requesting does NOT need <see cref="DraftsRead"/>
     /// and the request answer carries no amount. Its own name: no other Sales name confers it and it confers none.
@@ -153,7 +153,7 @@ public static class SalesPermissionManifestV1
     public const string OrdersRiskExceptionRequest = "sales.orders.risk-exception.request";
 
     /// <summary>
-    /// API-07 / SAT-D153–SAT-D162 (EK21), Issue #66 comment 6771235622 / EK55 (pending): approving or rejecting a single-shipment
+    /// API-07 / SAT-D153–SAT-D162 (EK21), EK55 SAT-D282 / EK56 SAT-D287: approving or rejecting a single-shipment
     /// risk exception — POST …/risk-exceptions/{no}/approval|rejection. The decision names Satış Uzmanı, Müdür and Admin; which
     /// persona holds it is a human gate (registered, granted to no role). The requester does not decide their own request (a rule
     /// of the command). Its own name: the request name does NOT confer it and it confers none. Company-wide; not Critical.

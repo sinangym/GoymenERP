@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
-/// API-07 (EK21 SAT-D153…D162; Sinan 2026-11-10, Issue #66 / EK55 pending): the single-shipment risk exception routes of an
+/// API-07 (EK21 SAT-D153…D162; Sinan 2026-11-10, EK56 SAT-D283…D287): the single-shipment risk exception routes of an
 /// order over <see cref="ISalesRiskExceptionService"/>. The route binds only the server context and the strict body; the service
 /// decides (authority first, replay, the order, one save). The draft routes' wire rules apply unchanged: exactly one canonical
 /// <c>Idempotency-Key</c> (else 400 <c>command_metadata_invalid</c>), JSON only (415), the strict body (400

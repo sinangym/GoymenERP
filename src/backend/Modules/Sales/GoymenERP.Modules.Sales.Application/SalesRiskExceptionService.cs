@@ -22,8 +22,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// requester; the approval is valid until the end of today's Europe/Istanbul business date (SAT-D160).</item>
 /// <item><b>Separate record</b> (SAT-D161): the order is read, never changed; no revision or re-approval opens.</item>
 /// </list>
-/// Whether the order's risk is actually over its limit is not asked here (the Logistics gate decides when a shipment is held;
-/// NEEDS-SINAN whether a within-limit request is refused).
+/// Whether the order's risk is actually over its limit is not asked here yet (the Logistics gate decides when a shipment is
+/// held). EK56 SAT-D284 decides that a request for an order whose risk is within its limit (<c>Within</c>) is refused; that
+/// refusal lands in a follow-up Sales PR, so until then this service still accepts a within-limit request (known gap).
 /// </summary>
 public sealed class SalesRiskExceptionService(
     ICompanyContext companyContext,

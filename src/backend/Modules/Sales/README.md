@@ -887,7 +887,7 @@ nothing, opens no document and writes no other module's record.
 | Shell | Control `sales.orders.source-plan.write` (parent S-04 detail), Sales shell contract 1.22. Frontend: the "Kaynak planı" panel on the order detail (`SalesDraftSourcePlan.tsx`). |
 | Evidence | Unit: `SalesOrderDraftSourcePlanTests`, `SalesDraftServiceTests.SourcePlan`, `SalesPersistenceModelTests`. Real SQL: `SalesDraftSourcePlanSqlServerRelationalAcceptanceTests` (eight inventoried facts). Frontend: `sourcePlan.test.ts`, `SalesDraftSourcePlan.test.tsx`. |
 
-## Single-shipment risk exception (API-07; SAT-D153…D162, EK21; Sinan 2026-11-10, EK55 pending)
+## Single-shipment risk exception (API-07; SAT-D153…D162, EK21; Sinan 2026-11-10, EK55 SAT-D281/D282, EK56 SAT-D283…D287)
 
 - **Routes** (under the drafts group, Sales-owned): `GET /api/v1/sales/drafts/{id}/risk-exceptions` (the order's exceptions,
   newest first, under `sales.drafts.read`), `POST …/risk-exceptions` (request, `sales.orders.risk-exception.request`, 201),
@@ -896,13 +896,15 @@ nothing, opens no document and writes no other module's record.
 - **Permissions:** both names are registered in `ErpPermissions`, `SalesPermissionManifestV1` and the shell provider (1.24) as
   controls of the S-04 detail, company-wide, not Critical, and **granted to nobody**. The decisions name the requesters
   (Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür, Admin) and the approvers (Satış Uzmanı, Müdür, Admin); the persona → grant row is
-  a human gate.
+  a human gate: no grant in code; roles are assigned in the Ayarlar role screen (EK56 SAT-D287).
 - **Rules:** the request needs one loading instruction (`LoadingInstructionId`, opaque, fail-closed) and a reason (≤ 4000, never
   cut). One pending exception per shipment (filtered unique index); a pending or today-valid exception of the same shipment and an
   order that is not approved/open answer 409 and are **not** recorded under the key (they can change). The decision moves once,
   at the exception's version (`1` → `2`), by a decider who is not the requester (ordinal after trim; SAT-D153); a stale version,
   a decided exception and a self-decision are the key's recorded 409. An approval is valid on its Europe/Istanbul business date only
   (SAT-D160), never measured in UTC. The exception is a separate approval record: it opens no revision and changes no order version.
+  Known gaps (follow-up Sales PRs): a request for an order whose risk is within its limit is still accepted until the SAT-D284
+  refusal lands, and the requester's withdrawal of a pending request (`Withdrawn`, SAT-D286) does not exist yet.
 - **K3 skeleton:** permission fence first, idempotency replay (`Idempotency-Replayed`), correlation/causation, one save that writes
   the exception, its attempt and the audit (requester, approver, shipment, reason, time), `CompanyId` on every row. Migration
   `20261110155556_AddShipmentRiskExceptions` adds `sales.ShipmentRiskExceptions` and its append-only
@@ -911,8 +913,10 @@ nothing, opens no document and writes no other module's record.
 - **Read port:** `ISalesShipmentRiskExceptionReadPortV1.GetAsync(orderId, loadingInstructionId)` answers None / Pending / Valid /
   Lapsed / Rejected (a today-valid one wins, then a pending one, then the newest) under the caller's company; without a company or
   the Istanbul time zone it throws, so the gate fails closed. Logistics does not consume it yet: no Logistics connection or port is
-  opened here (SAT-D209). Consumption on a definite shipment and the lapse on a cancelled shipment are the gate's contract
-  (NEEDS-SINAN).
+  opened here (SAT-D209). Contract for the gate (EK56 SAT-D285): one shipment consumes an approved exception and a cancelled
+  shipment lapses it (new request and approval needed); the gate applies both on top of the port's answer. How Sales learns of
+  consumption or cancellation stays NEEDS-SINAN (SAT-D285, SAT-D209).
 - **UI:** the S-04 panel `SalesOrderRiskExceptions` lists the exceptions (detail capability), shows the request form only with the
   request capability and approve / reject only on a pending exception with the approve capability; an unknown outcome is retried
-  with the same key. The shipment is typed as its loading instruction id until a Logistics screen offers the entry (NEEDS-SINAN).
+  with the same key. The shipment is typed as its loading instruction id (SAT-D283) until a Logistics screen offers the entry
+  (NEEDS-SINAN; SAT-D159/SAT-D162, EK56 "Sınırlar").
