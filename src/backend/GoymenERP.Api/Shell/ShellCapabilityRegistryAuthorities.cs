@@ -106,8 +106,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // API-36 PR4 (merged after SAT-D17): Sales 1.18 (sales.invoices.finalize registered, ungranted; manifest v25) re-derived every live row carrying Sales
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:b84DQYxiqhE8PvkZrhNxF8OFBO-2R51yyNuItDUasPo";
+        "sha256:e3OEJyp7v1t2wdhz4WJtoUG7XdhBb-uGep1BPtYP0S0";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -165,8 +166,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // SAT-D17/SAT-D168: Sales 1.17 (sales.orders.lines.close registered, ungranted; the line-closure control of the S-04 detail) re-derived this row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:ia93gGTo5kUoNPNSVaEHL2XQi0HcJQmEXKo1flcoW08";
+        "sha256:HfHuS7TbsMT_SYUXtg886OPixRUecFx_560f_UIEnak";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -211,8 +213,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:bWq4und-TMmu5mJEuyNcE_QNpA98B7_EatTAmplOlWw";
+        "sha256:9YiRhWN1rmHwtxdVAIPvVeye89Kf7uVJI0k6doJsARY";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -478,8 +481,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:kZG-9xrDH5hLa4jviN-COqNudCM2hW7YFAHo0grkXuY";
+        "sha256:5nkfsDEKUEGo_BUCDPkdhgSB06grRUp8fmKSLt_9whY";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -492,8 +496,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:yso3zkdUB6br0r5d8hxJHtzZ_R0sOXDI4r3-Nt0Jyjs";
+        "sha256:EJ_oe-eeCND9lOsQVzk8cobivOtGjH1y8DtxkFhKAR8";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -506,8 +511,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:5fQ9VR274XcjZ1cOUE__zoxnAo8f8xYhBQXKqtiIoMc";
+        "sha256:816uAYruWsbH0-0c7MBAlial_qK5CP0UD-tnqEIVzfw";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -520,8 +526,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // TAKIP-URT-02: Manufacturing 1.6 adds manufacturing.plans.cancel; this row re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:15pII-a0vWusHzPh7Yf4aYHGkIyIQWqc9VfYZ-ZiVu8";
+        "sha256:zsPlxGQZhoGo0HkbJ8VyrsUnD9D76PwEMwxxqfXUppg";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -537,8 +544,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:g9EVthmzhXPpc8gFSr6JjJm2e7Qwg5IwOrWYOnNpiU0";
+        "sha256:nRw54o1IRCRLqFIxW0wsWh8MJ30IAmwLvhCQYkiBteg";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -554,8 +562,9 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:dM-4oyZKjB4-N9rECho-cgWFHRScj5s2dXb3B_rddYk";
+        "sha256:ah8stH9qA8WMsANutDcb1ZNkfId1p_bPclayKzBWCp0";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -576,8 +585,9 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // identity.audit.read); this live row was re-derived IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:"); its "IdentityV10" / historical name stays.
     // SAT-D250 / SAT-D266 (merged after SAT-D238): Sales 1.21 (sales.orders.margin.read registered, ungranted; manifest v26) re-derived every live row carrying Sales IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // S-2 API-11 (merged after SAT-D250 1.21): Sales 1.22 (the source-plan control of the S-04 detail; sales.orders.source-plan.write registered, ungranted; manifest v27) re-derived this row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:PpuwEFjJssb2uNIlsWfyukDExkiX_kFTh9glSqt7ygw";
+        "sha256:34-NOLoHcbVsUXf4MjXpmF4HL_umIDkhf-usbrjtiEk";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
