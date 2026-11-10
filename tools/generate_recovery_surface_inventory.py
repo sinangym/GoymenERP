@@ -49,9 +49,9 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 152
+EXPECTED_MIGRATION_COUNT = 153
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "0a0554324a516e7ce1c15304a33d5ff553554a5de57f7170d8e039eb074b97d3"
+    "e951b7925b6b7f86ad79d298c2a475ea7c4c558f8dfe6df456b5349b63e013c8"
 )
 EXPECTED_DURABLE_STORE_COUNT = 31
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 31
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 635
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 637
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "a813e3c5efd983c664b9af9259ea4cd383c0db10d0378ca350ea47390186e4ea"
+    "9b39920ec3c60f65476095437eb308ce4d6906575ef29874529cc3f79d68bf11"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -962,7 +962,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs": "754fde914ab573515fd34db5c2d0af03144f24bee9334568ceeae2eebd9f2f2e",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs": "8cfa2b15c0c0059f59c4659d62e97b9292cb8cbde9419e032f9bb4474fc472d8",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs": "695a4d2fe5fbcfc1209290390011eaf92f84ced0b20ce33b4679717478ce6fab",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
 
