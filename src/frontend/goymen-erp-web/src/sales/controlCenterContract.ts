@@ -9,6 +9,9 @@
  *
  * The screen decides NOTHING: which record is listed, its severity, its age in days, the grace days (SAT-D95) and the tolerance
  * class of an official-document difference (SAT-D229) are the server's. There is no amount on this wire.
+ *
+ * SAT-D246 (EK49): an entry names its orders as the `salesOrderIds` list (never a single `salesOrderId`) — exactly one for a
+ * shipment entry, one or more for an invoice entry (an invoice may span several orders), each order once, in the server's order.
  */
 
 import { isDateOnly, isReferenceId } from './wirePrimitives'
@@ -54,7 +57,8 @@ export interface ControlCenterItem {
   readonly invoiceId: string | null
   readonly dispatchNoteId: string | null
   readonly shipmentId: string | null
-  readonly salesOrderId: string | null
+  /** Every order the entry concerns, each once, in the server's order (SAT-D246): one for a shipment, one or more for an invoice. */
+  readonly salesOrderIds: readonly string[]
 }
 
 export interface ControlCenter {
@@ -81,6 +85,12 @@ const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().le
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 const isPositive = (v: unknown): v is number => isCount(v) && v >= 1
 const isNullableId = (v: unknown): v is string | null => v === null || isReferenceId(v)
+const ORDER_IDS_MAX = 512
+/** A non-empty list of distinct order identities (compared case-insensitively). */
+const isOrderIds = (v: unknown): v is readonly string[] => {
+  if (!Array.isArray(v) || v.length === 0 || v.length > ORDER_IDS_MAX || !v.every(isReferenceId)) return false
+  return new Set(v.map((id: string) => id.toLowerCase())).size === v.length
+}
 const oneOf = <T extends string>(values: readonly T[]) => (v: unknown): v is T => typeof v === 'string' && (values as readonly string[]).includes(v)
 const isKind = oneOf(CONTROL_CENTER_KINDS)
 const isSeverity = oneOf(CONTROL_CENTER_SEVERITIES)
@@ -98,7 +108,7 @@ function decodeCheck(value: unknown): ControlCenterCheck | null {
 
 const ITEM_KEYS = [
   'kind', 'severity', 'partyId', 'companyAccountId', 'reference', 'referenceDate', 'ageDays', 'count', 'invoiceId',
-  'dispatchNoteId', 'shipmentId', 'salesOrderId',
+  'dispatchNoteId', 'shipmentId', 'salesOrderIds',
 ] as const
 
 function decodeItem(value: unknown): ControlCenterItem | null {
@@ -106,13 +116,13 @@ function decodeItem(value: unknown): ControlCenterItem | null {
   if (
     o === null || !isKind(o.kind) || !isSeverity(o.severity) || !isReferenceId(o.partyId) || !isReferenceId(o.companyAccountId)
     || !isText(o.reference) || !isDateOnly(o.referenceDate) || !isCount(o.ageDays) || !isPositive(o.count)
-    || !isNullableId(o.invoiceId) || !isNullableId(o.dispatchNoteId) || !isNullableId(o.shipmentId) || !isNullableId(o.salesOrderId)
+    || !isNullableId(o.invoiceId) || !isNullableId(o.dispatchNoteId) || !isNullableId(o.shipmentId) || !isOrderIds(o.salesOrderIds)
   ) return null
-  // The identities agree with the kind: a shipment entry names its dispatch note, shipment and order and no invoice (one line);
-  // an invoice entry names its invoice and nothing else.
+  // The identities agree with the kind: a shipment entry names its dispatch note, shipment and its one order and no invoice
+  // (one line); an invoice entry names its invoice and its orders, and no dispatch note or shipment.
   if (o.kind === 'UninvoicedDispatchOverdue') {
-    if (o.invoiceId !== null || o.dispatchNoteId === null || o.shipmentId === null || o.salesOrderId === null || o.count !== 1) return null
-  } else if (o.invoiceId === null || o.dispatchNoteId !== null || o.shipmentId !== null || o.salesOrderId !== null) {
+    if (o.invoiceId !== null || o.dispatchNoteId === null || o.shipmentId === null || o.salesOrderIds.length !== 1 || o.count !== 1) return null
+  } else if (o.invoiceId === null || o.dispatchNoteId !== null || o.shipmentId !== null) {
     return null
   }
   return {
@@ -127,7 +137,7 @@ function decodeItem(value: unknown): ControlCenterItem | null {
     invoiceId: o.invoiceId,
     dispatchNoteId: o.dispatchNoteId,
     shipmentId: o.shipmentId,
-    salesOrderId: o.salesOrderId,
+    salesOrderIds: [...o.salesOrderIds],
   }
 }
 
