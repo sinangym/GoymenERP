@@ -53,42 +53,47 @@ public sealed partial class SalesDraftService
     {
         var quantities = draft.Lines.ToDictionary(line => line.Id, line => line.QuantityText);
         var orderUnits = draft.Lines.ToDictionary(line => line.Id, line => line.OrderUnit.UnitId);
-        var document = totals.Document;
         return new SalesOrderDraftTotalsResponse(
             draft.Version.ToString(CultureInfo.InvariantCulture),
             SalesDraftApiV1.RevisionText(draft.Revision),
             totals.CurrencyId,
             totals.AmountScale,
             TaxStateText(totals.TaxState),
-            new SalesDraftDocumentTotalsV1(
-                DocumentStateText(document.State),
-                document.UnpricedLineCount,
-                document.PriceUnitNotOrderUnitLineCount,
-                document.AmountOutOfRangeLineCount,
-                Amount(document.NetAmount),
-                TaxStateText(document.TaxState),
-                Amount(document.VatAmount),
-                Amount(document.WithheldVatAmount),
-                Amount(document.GrossAmount),
-                Amount(document.PayableAmount),
-                document.TaxUnavailableLineCount),
-            [.. totals.Lines.Select(line => new SalesDraftLineTotalV1(
-                line.LineId,
-                line.LineNo,
-                orderUnits[line.LineId],
-                quantities[line.LineId],
-                LineStateText(line.State),
-                line.NetUnitPrice is { } net ? SalesLinePriceCalculator.Format(net) : null,
-                Amount(line.NetAmount),
-                TaxStateText(line.TaxState),
-                line.TaxRate is { } rate ? SalesLinePriceCalculator.Format(rate.VatPercent) : null,
-                Amount(line.VatAmount),
-                line.TaxRate?.WithholdingShare is { } share ? SalesLinePriceCalculator.Format(share) : null,
-                Amount(line.WithheldVatAmount),
-                Amount(line.GrossAmount),
-                Amount(line.PayableAmount),
-                line.TaxState == SalesTaxState.NoSource ? line.TaxReason : null))]);
+            WireDocument(totals.Document),
+            [.. totals.Lines.Select(line => WireLine(line, orderUnits[line.LineId], quantities[line.LineId]))]);
     }
+
+    /// <summary>The document totals as the totals read and the order PDF (MOD-07) answer them.</summary>
+    private static SalesDraftDocumentTotalsV1 WireDocument(SalesDocumentTotal document) => new(
+        DocumentStateText(document.State),
+        document.UnpricedLineCount,
+        document.PriceUnitNotOrderUnitLineCount,
+        document.AmountOutOfRangeLineCount,
+        Amount(document.NetAmount),
+        TaxStateText(document.TaxState),
+        Amount(document.VatAmount),
+        Amount(document.WithheldVatAmount),
+        Amount(document.GrossAmount),
+        Amount(document.PayableAmount),
+        document.TaxUnavailableLineCount);
+
+    /// <summary>One line's totals as the totals read and the order PDF (MOD-07) answer them.</summary>
+    private static SalesDraftLineTotalV1 WireLine(SalesLineTotal line, Guid orderUnitId, string quantity) => new(
+        line.LineId,
+        line.LineNo,
+        orderUnitId,
+        quantity,
+        LineStateText(line.State),
+        line.NetUnitPrice is { } net ? SalesLinePriceCalculator.Format(net) : null,
+        Amount(line.NetAmount),
+        TaxStateText(line.TaxState),
+        line.TaxRate is { } rate ? SalesLinePriceCalculator.Format(rate.VatPercent) : null,
+        Amount(line.VatAmount),
+        line.TaxRate?.WithholdingShare is { } share ? SalesLinePriceCalculator.Format(share) : null,
+        Amount(line.WithheldVatAmount),
+        Amount(line.GrossAmount),
+        Amount(line.PayableAmount),
+        line.TaxState == SalesTaxState.NoSource ? line.TaxReason : null);
 
     /// <summary>The amount padded to its scale in the invariant culture ("1250.00" at 2); null stays null.</summary>
     private static string? Amount(Money? money) => money is { } value

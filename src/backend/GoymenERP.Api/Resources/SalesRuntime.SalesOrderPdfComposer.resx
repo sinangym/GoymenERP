@@ -63,6 +63,29 @@
   <data name="Percent" xml:space="preserve"><value>%{0}</value></data>
   <data name="NotPriced" xml:space="preserve"><value>Fiyatsız</value></data>
   <data name="NoLines" xml:space="preserve"><value>Siparişte satır yok.</value></data>
-  <data name="TotalsNotAvailable" xml:space="preserve"><value>Sipariş toplamları bu belgede yer almaz; KDV ve KDV dahil toplam, KDV kaynağı tanımlanana kadar hesaplanamaz. Satırlardaki değerler kayıtlı değerlerdir.</value></data>
+  <data name="HeadingTaxes" xml:space="preserve"><value>Satır tutarları ve vergiler</value></data>
+  <data name="ColumnNetAmount" xml:space="preserve"><value>Net tutar</value></data>
+  <data name="ColumnVatPercent" xml:space="preserve"><value>KDV oranı</value></data>
+  <data name="ColumnVatAmount" xml:space="preserve"><value>KDV</value></data>
+  <data name="ColumnWithholdingPercent" xml:space="preserve"><value>Tevkifat oranı</value></data>
+  <data name="ColumnWithheldVatAmount" xml:space="preserve"><value>Tevkif edilen KDV</value></data>
+  <data name="ColumnGrossAmount" xml:space="preserve"><value>KDV dahil</value></data>
+  <data name="ColumnPayableAmount" xml:space="preserve"><value>Ödenecek</value></data>
+  <data name="ColumnTaxCodes" xml:space="preserve"><value>Vergi kodları</value></data>
+  <data name="ExemptionCode" xml:space="preserve"><value>İstisna: {0}</value></data>
+  <data name="WithholdingCode" xml:space="preserve"><value>Tevkifat: {0}</value></data>
+  <data name="NoWithholding" xml:space="preserve"><value>Yok</value></data>
+  <data name="LineAmountPriceUnitDiffers" xml:space="preserve"><value>Fiyat birimi sipariş biriminden farklı; tutar hesaplanamaz</value></data>
+  <data name="LineAmountOutOfRange" xml:space="preserve"><value>Tutar hesaplanabilir aralığın dışında</value></data>
+  <data name="LineTaxNoSource" xml:space="preserve"><value>Vergi kaynağı yok</value></data>
+  <data name="FieldNetTotal" xml:space="preserve"><value>Net toplam</value></data>
+  <data name="FieldVatTotal" xml:space="preserve"><value>KDV toplamı</value></data>
+  <data name="FieldWithheldVatTotal" xml:space="preserve"><value>Tevkif edilen KDV toplamı</value></data>
+  <data name="FieldGrossTotal" xml:space="preserve"><value>KDV dahil toplam</value></data>
+  <data name="FieldPayableTotal" xml:space="preserve"><value>Ödenecek tutar</value></data>
+  <data name="TotalIncomplete" xml:space="preserve"><value>Hesaplanamadı: fiyatsız veya fiyat birimi farklı satır var</value></data>
+  <data name="TotalOutOfRange" xml:space="preserve"><value>Hesaplanamadı: tutar hesaplanabilir aralığın dışında</value></data>
+  <data name="TotalTaxNoSource" xml:space="preserve"><value>Hesaplanamadı: vergi kaynağı olmayan satır var</value></data>
+  <data name="TotalsNote" xml:space="preserve"><value>Tutarlar satır bazında yuvarlanır; belge toplamları satır tutarlarının toplamıdır. Tevkifat, yuvarlanmış satır KDV'si üzerinden hesaplanır.</value></data>
   <data name="PricesNotShown" xml:space="preserve"><value>Fiyat bilgileri bu belgede yer almaz.</value></data>
 </root>
