@@ -730,7 +730,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/InventoryDbContext.cs"] =
                 // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
                 // Re-fingerprinted for SAT-D262: AverageCostLedger table (company filter, company-leading unique position key, write guard); provider tokens unchanged.
-                "fef3019492b8e9df50b6b7e79f115bcc42112164885c80160b13e8ce6a67bd63",
+                "cf6d165268b28b49c57cbc7a4f8f2de8f80c29e22b680677b187734e4c05aa60",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -2781,7 +2781,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D262: the average-cost ledger is a durable fact; the Down's only raw SQL is the Inventory refusal
                 // (51250, used by no other migration) while any ledger row exists, and the THROW precedes the drop.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261110065424_AddInventoryAverageCostLedger.cs"] =
-                    new("2082746bd35ba9e793ef5ea0115ebe5f31362be16cd798ff64e463543d535a53",
+                    new("6605994dc4912511c0a1af641f67b304c2f135378db41a16a54374c96c4a002e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // R17: Down refuses before dropping manufacturing-return state while durable facts exist.

@@ -42,7 +42,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal const string AverageCostLedgerStateCheck =
         "[Version] >= 1 AND (([Status] = 1 AND [UnreadableReason] IS NULL AND [QuantityKg] IS NOT NULL AND [QuantityKg] >= 0 "
         + "AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) "
-        + "OR ([Status] = 2 AND [UnreadableReason] BETWEEN 1 AND 8 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
+        + "OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 8 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
 
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
