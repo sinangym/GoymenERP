@@ -30,7 +30,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// asked); the submission is refused while the exception waits; a holder of the draft read alone is 403; another person with <c>sales.orders.discount-exception.approve</c> approves it in ONE save (line pricing,
 /// header version, attempt with both price-visibility replay variants, audit event); the same key replays with no second effect,
 /// another body under it is 409, a stale version is the key's recorded 409; another company sees nothing; the replay-result
-/// constraint holds and the migration refuses to roll back over a recorded result (51069). Orders are stored through the real
+/// constraint holds and the migration refuses to roll back over a recorded result (51069). The line-pricing read's margin block
+/// (SAT-D250 / SAT-D266, S-05) is withheld for the price read alone, visible but unavailable (<c>CostSourceMissing</c>, never
+/// zero) with <c>sales.orders.margin.read</c>, and another company's line-pricing read is not found. Orders are stored through the real
 /// Sales store from SYNTHETIC owner snapshots (the AT-024 precedent); every grant is a fresh synthetic role. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
@@ -59,7 +61,7 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
         var (readerSubject, _) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SalesPermissionManifestV1.DraftsRead);
         var (managerSubject, manager) = await run.GrantAsync(TestUsers.GroupAdmin, CompanyA,
             SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceRead,
-            SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+            SalesPermissionManifestV1.OrdersDiscountExceptionApprove, SalesPermissionManifestV1.OrdersMarginRead);
         using var preparerClient = run.Client(preparerSubject, CompanyA);
         using var readerClient = run.Client(readerSubject, CompanyA);
         using var managerClient = run.Client(managerSubject, CompanyA);
@@ -75,7 +77,23 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(0, run.Groups.Calls);
-        var pricing = Assert.Single((await run.JsonAsync(preparerClient, $"{draftPath}/line-pricing")).GetProperty("lines").EnumerateArray());
+        var preparerPricing = await run.JsonAsync(preparerClient, $"{draftPath}/line-pricing");
+        var pricing = Assert.Single(preparerPricing.GetProperty("lines").EnumerateArray());
+        // SAT-D250 / SAT-D266 (S-05): the price read alone never confers the margin — the block is withheld, every field null.
+        var withheld = preparerPricing.GetProperty("margin");
+        Assert.Equal(("Withheld", JsonValueKind.Null, JsonValueKind.Null, JsonValueKind.Null), (withheld.GetProperty("disclosure").GetString(),
+            withheld.GetProperty("costBasis").ValueKind, withheld.GetProperty("kind").ValueKind, withheld.GetProperty("lines").ValueKind));
+        // With the separate margin read the block is visible, but no cost source exists: the line is unavailable, never zero.
+        var visible = (await run.JsonAsync(managerClient, $"{draftPath}/line-pricing")).GetProperty("margin");
+        Assert.Equal(("Visible", "PurchaseCostOnly", "Preview"), (visible.GetProperty("disclosure").GetString(),
+            visible.GetProperty("costBasis").GetString(), visible.GetProperty("kind").GetString()));
+        var lineMargin = Assert.Single(visible.GetProperty("lines").EnumerateArray());
+        Assert.Equal((lineId, Assert.Single(draft.Lines).LineNo, "Unavailable", "CostSourceMissing"), (lineMargin.GetProperty("lineId").GetGuid(),
+            lineMargin.GetProperty("lineNo").GetInt32(), lineMargin.GetProperty("state").GetString(),
+            lineMargin.GetProperty("unavailableReason").GetString()));
+        Assert.All(new[] { "amount", "currencyId", "percent", "percentUnavailableReason" },
+            name => Assert.Equal(JsonValueKind.Null, lineMargin.GetProperty(name).ValueKind));
+
         var check = pricing.GetProperty("discountCheck");
         Assert.Equal((preparer, JsonValueKind.Null, JsonValueKind.Null, true, JsonValueKind.Null), (check.GetProperty("checkedBy").GetString(),
             check.GetProperty("listUnitPrice").ValueKind, check.GetProperty("limitPercent").ValueKind,
@@ -160,13 +178,21 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @command AND [Outcome] = 2 AND [DraftId] = @id AND [ResultJson] IS NULL",
             ("@command", Command), ("@id", draft.Id)));
 
-        // Another company's approver: the draft does not exist for it.
+        // Another company's approver: the draft does not exist for it — nor its line pricing or margin, even with both reads.
         var (otherSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB,
-            SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+            SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersDiscountExceptionApprove,
+            SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersMarginRead);
         using (var otherClient = run.Client(otherSubject, CompanyB))
-        using (var other = await otherClient.SendAsync(Approval(approvalPath, "SENTETIK-other", $"{version + 1}", lineId, "SENTETIK")))
         {
-            Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+            using (var other = await otherClient.SendAsync(Approval(approvalPath, "SENTETIK-other", $"{version + 1}", lineId, "SENTETIK")))
+            {
+                Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+            }
+
+            using (var otherPricing = await otherClient.GetAsync($"{draftPath}/line-pricing"))
+            {
+                Assert.Equal(HttpStatusCode.NotFound, otherPricing.StatusCode);
+            }
         }
 
         // With the exception approved, the preparer submits.

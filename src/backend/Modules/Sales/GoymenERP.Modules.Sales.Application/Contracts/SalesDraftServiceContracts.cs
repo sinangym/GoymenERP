@@ -368,4 +368,6 @@ public sealed record SalesDraftServiceBindings(
     // SAT-D30 / SAT-D168: the approval-band over-delivery approval name (a grant, never implied here).
     string? OverDeliveryApprovePermission = SalesPermissionManifestV1.OrdersOverDeliveryApprove,
     // SAT-D17 / SAT-D168: the line closure's own name (a grant, never implied here).
-    string? LineClosePermission = SalesPermissionManifestV1.OrdersLineClose);
+    string? LineClosePermission = SalesPermissionManifestV1.OrdersLineClose,
+    // SAT-D250 / SAT-D266: the margin disclosure name (a grant, never implied here; the price read does not confer it).
+    string? MarginReadPermission = SalesPermissionManifestV1.OrdersMarginRead);
