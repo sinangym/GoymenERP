@@ -85,7 +85,7 @@ istenen dört izin ve onların görev ayrılığı komşularıyla sınırlıdır
 S-05 satış marjı görünürlüğü bu tabloya satır olarak alınmaz: SAT-D250
 (`SINAN_KARARLARI_2026-11-09_SATIS_EK49.md`) marjı **yalnız Genel Müdür ve Admin**'e gösterir (Satış Müdürü, öteki
 müdürler, Muhasebe ve Satış Uzmanı görmez); görünürlük backend'de uygulanır. Marj okuma izninin adı
-`sales.orders.margin.read`'dir (açık PR #1045 kaydeder); SAT-D276 (2) (`SINAN_KARARLARI_2026-11-10_SATIS_EK54.md`)
+`sales.orders.margin.read`'dir (PR #1045 ile main'de kayıtlı); SAT-D276 (2) (`SINAN_KARARLARI_2026-11-10_SATIS_EK54.md`)
 bu izni SAT-D250 kümesine eşler: **yalnız Genel Müdür ve Admin**. Grant/rol ataması insan kapısıdır; atama kurulumda
 Ayarlar rol ekranından yapılır, bu belge grant açmaz.
 
