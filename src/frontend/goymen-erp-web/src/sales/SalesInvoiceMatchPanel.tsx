@@ -76,7 +76,7 @@ export function SalesInvoiceMatchPanel({
 export function MatchTaxFacts({ match, testIdPrefix }: { readonly match: InvoiceMatch; readonly testIdPrefix: string }) {
   const taxes = match.taxes
   if (taxes === null) {
-    return <div><dt>{T.vatDifference}</dt><dd data-testid={`${testIdPrefix}-tax-not-compared`}>{T.taxNotCompared}</dd></div>
+    return <div><dt>{T.taxDifference}</dt><dd data-testid={`${testIdPrefix}-tax-not-compared`}>{T.taxNotCompared}</dd></div>
   }
   return (
     <>
