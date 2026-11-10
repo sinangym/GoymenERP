@@ -33,6 +33,8 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
     internal const string NotAdmittedCode = "finance_invoice_not_admitted";
     internal const string VersionMismatchCode = "finance_invoice_version_mismatch";
     internal const string HasAllocationsCode = "finance_invoice_cancellation_has_allocations";
+    /// <summary>Stored amounts or item state the cancellation cannot read back safely: nothing is written (not an allocation warning).</summary>
+    internal const string StoredStateNotUnderstoodCode = "finance_invoice_cancellation_state_not_understood";
     internal const string AlreadyCancelledCode = "finance_invoice_already_cancelled";
     internal const string CancellationIdentityConflictCode = "finance_invoice_cancellation_identity_conflict";
     private const int TokenMaximumLength = 128;
@@ -139,7 +141,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             {
                 dbContext.ChangeTracker.Clear();
                 return Refused(context, CommandOutcome.ValidationFailed,
-                    new ValidationIssue("invoiceId", HasAllocationsCode));
+                    new ValidationIssue("invoiceId", StoredStateNotUnderstoodCode));
             }
             allocation.Status = FinanceAllocationStatuses.Released;
             allocation.Version = checked(allocation.Version + 1);
@@ -169,7 +171,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             {
                 dbContext.ChangeTracker.Clear();
                 return Refused(context, CommandOutcome.ValidationFailed,
-                    new ValidationIssue("invoiceId", HasAllocationsCode));
+                    new ValidationIssue("invoiceId", StoredStateNotUnderstoodCode));
             }
             allocation.Status = FinanceAllocationStatuses.Released;
             allocation.Version = checked(allocation.Version + 1);
@@ -189,7 +191,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             // Something other than an active allocation reduced the item: not understood, nothing is written.
             dbContext.ChangeTracker.Clear();
             return Refused(context, CommandOutcome.ValidationFailed,
-                new ValidationIssue("invoiceId", HasAllocationsCode));
+                new ValidationIssue("invoiceId", StoredStateNotUnderstoodCode));
         }
 
         foreach (var item in items)

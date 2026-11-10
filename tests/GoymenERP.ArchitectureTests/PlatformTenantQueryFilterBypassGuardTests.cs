@@ -267,8 +267,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-04 F2a: +6 invoice admission facts, ordinal-sorted (c7ce4f0f… -> 4575e229…).
             // F2b: +4 invoice cancellation facts, ordinal-sorted (4575e229… -> c2205fa2…).
             // F3a / API-20 +7 facts, then F2b follow-up +3 facts (admission after cancellation, late fence and race, status-only Down), ordinal-sorted (c2205fa2… -> bfc11064…).
+            // F2b K3 takip: +1 not-understood-code fact, ordinal-sorted (33dcc442… -> 19001373…).
             ["tools/relational_inventory/finance.txt"] =
-                "33dcc442bc29b42c999874cb3ae42dfc8602e782cdad0489719f83d139349deb",
+                "190013738f057ae8fec77ab7d4d34d2b1644ec46d705f4bcc26f0e473754883d",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -1325,9 +1326,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SqlClient only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
                 // F3a / API-20: an active payment allocation also refuses (one more tenant-filtered EF read;
                 // 2ae7b299… -> f9ef0286…).
+                // F2b K3 takip: the corrupt-state refusals use their own code (2abc569a… -> 5f81e19b…).
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "2abc569a4100b56bb7f92ef0179366961763b35ba25db881d3daaca62fc7c6d3",
+                        "5f81e19befe983f9b17b6d84e5b3927ec879625bb74367d6c334c4113c1d9d04",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
