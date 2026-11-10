@@ -8,7 +8,8 @@ eklenir.
 **Kaynak:**
 
 - Sinan'ın 10 Kasım 2026'da Claude Code cloud oturumunda (`session_01SPADrzecggx3apH2gfNW7b`) Satış (Claude) şeridine
-  önerili seçenekli bir soru turunda verdiği beş cevap; beşinde de **önerilen seçenek** seçildi. Sorular, Satış
+  önerili seçenekli bir soru turunda verdiği **dört** cevap (sorular 1–4); dördünde de **önerilen seçenek** seçildi.
+  Soru 5 bu turda sorulmadı; aynı gün EK55 SAT-D282 (4) turunda verilen "Ayarlar ekranı" cevabından aynen alınır. Sorular, Satış
   tarafı taslak PR #1054'ün (API-07 tek sevk risk istisnası) açık bıraktığı noktalar içindir.
 - Seçilmeyen seçenekler aşağıdaki tabloda soru turundaki açıklamalarıyla yazılmıştır.
 - Cevaplar henüz Issue #66'ya yazılmadı; bu belge Issue #66'ya yorum yazmaz. Merge makbuzu merge eden tarafından
@@ -19,10 +20,10 @@ eklenir.
 | # | Soru | Cevap | Seçilmeyen seçenek(ler) | Kayda geçen anlam |
 |---|---|---|---|---|
 | 1 | Risk istisnası hangi sevk kimliğine bağlanır? | Önerilen seçenek: Yükleme talimatı | **İrsaliye** (irsaliye kesilirken bağlanır; daha geç, yeniden tasarım gerekir) · **Kesin sevkiyat** (kesinleşmiş sevkiyata bağlanır; en geç an) | İstisna, Lojistik'in **yükleme talimatı** kimliğine bağlanır. PR #1054'ün bugünkü tasarımını (`loadingInstructionId`) teyit eder. |
-| 2 | Riski limit içinde olan sipariş için istisna talebi açılabilir mi? | Önerilen seçenek: Evet, reddet | **Hayır, izin ver** (önceden onay almak için limit içindeyken de talep açılabilir) | **Hayır.** Siparişin riski limit içindeyse talep **reddedilir**; yalnız limiti aşan sipariş istisna isteyebilir. |
+| 2 | Siparişin riski limit içindeyse istisna talebi reddedilsin mi? | Önerilen seçenek: "Evet, reddet" | **Hayır, izin ver** (önceden onay almak için limit içindeyken de talep açılabilir) | **Evet, reddedilir.** Siparişin riski limit içindeyse talep **reddedilir**; yalnız limiti aşan sipariş istisna isteyebilir. |
 | 3 | Onaylanmış istisna nasıl tüketilir; bağlı sevk iptal edilirse ne olur? | Önerilen seçenek: Tek sevk, iptalde düşer | **Gün sonuna kadar geçerli** (aynı iş günü içinde o sevkiyat için tekrar kullanılabilir; iptal etkilemez) | Onaylanmış istisnayı **tek bir sevk** tüketir. O sevk iptal edilirse istisna **düşer**; yeni sevk için yeni talep gerekir. |
 | 4 | Talep eden, bekleyen talebini geri çekebilir mi? | Önerilen seçenek: Evet, geri çeksin | **Hayır** (yalnız onaycı reddederek kapatır) | **Evet.** Talep eden **kendi bekleyen** talebini geri çekebilir; yeni bir **Geri çekildi** (`Withdrawn`) durumu eklenir. |
-| 5 | `sales.orders.risk-exception.request` / `.approve` izinleri rollere nasıl verilir? | Ayarlar ekranı (EK55 cevabı; bu turda yeniden sorulmadı) | — (EK55 SAT-D282 (4) turunda: kod PR'ında rol tanımı seçeneği reddedildi) | Kodda grant **yoktur**; izinler kurulumda **Ayarlar rol ekranından** atanır (EK55 SAT-D282 (4) yolu). Grant insan kapısı değişmez. |
+| 5 | `sales.orders.risk-exception.request` / `.approve` izinleri rollere nasıl verilir? | Bu turda sorulmadı; EK55 SAT-D282 (4) cevabı "Ayarlar ekranı" aynen uygulanır | — (EK55 SAT-D282 (4) turunda: kod PR'ında rol tanımı seçeneği reddedildi) | Kodda grant **yoktur**; izinler kurulumda **Ayarlar rol ekranından** atanır (EK55 SAT-D282 (4) yolu). Grant insan kapısı değişmez. |
 
 ## Kararlar
 
