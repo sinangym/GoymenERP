@@ -5529,8 +5529,22 @@ public sealed partial class OpenApiContractGenerationTests
                     ("limitPercent", "type:null|string"),
                     ("requiresApproval", "type:boolean"), ("approvedBy", "type:null|string"),
                     ("approvedAtUtc", "type:null|string;format:date-time"), ("reason", "type:null|string")),
+                // SAT-D250 / SAT-D266 / SAT-D267 (S-05): the response-level margin block, always present; its disclosure says
+                // whether the separate margin read was granted (Withheld ⇒ costBasis/kind/lines null).
                 ["SalesOrderDraftLinePricingResponse"] = ObjectSchema(
-                    ["version", "lines"], ("version", "type:string"), ("lines", "type:array;items:ref:SalesDraftLinePricingV1")),
+                    ["version", "lines", "margin"], ("version", "type:string"), ("lines", "type:array;items:ref:SalesDraftLinePricingV1"),
+                    ("margin", "ref:SalesDraftMarginV1")),
+                ["SalesMarginDisclosure"] = ScalarSchema("enum:Visible|Withheld"),
+                ["SalesDraftMarginV1"] = ObjectSchema(
+                    ["disclosure", "costBasis", "kind", "lines"], ("disclosure", "ref:SalesMarginDisclosure"),
+                    ("costBasis", "type:null|string"), ("kind", "type:null|string"),
+                    ("lines", "type:array|null;items:ref:SalesDraftLineMarginV1")),
+                ["SalesDraftLineMarginV1"] = ObjectSchema(
+                    ["lineId", "lineNo", "state", "unavailableReason", "amount", "currencyId", "percent", "percentUnavailableReason"],
+                    ("lineId", "type:string;format:uuid"), ("lineNo", "type:integer|string;format:int32"), ("state", "type:string"),
+                    ("unavailableReason", "type:null|string"), ("amount", "type:null|string"),
+                    ("currencyId", "type:null|string;format:uuid"), ("percent", "type:null|string"),
+                    ("percentUnavailableReason", "type:null|string")),
                 ["SalesOrderDraftPriceReferencesResponse"] = ObjectSchema(
                     ["lineId", "currencyCode", "on", "items", "resolution"], ("lineId", "type:string;format:uuid"),
                     ("currencyCode", "type:string"), ("on", "type:string;format:date"),

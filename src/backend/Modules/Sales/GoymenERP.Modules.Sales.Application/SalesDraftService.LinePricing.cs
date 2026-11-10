@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
@@ -36,9 +37,52 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
+        // SAT-D250 / SAT-D266: the margin is a SEPARATE disclosure, asked after the price read (the price read never confers it).
+        var margin = await DiscloseMarginAsync(scope, cancellationToken) == SalesMarginDisclosure.Visible
+            ? new SalesDraftMarginV1(SalesMarginDisclosure.Visible, SalesDraftMarginTextsV1.PurchaseCostOnly, SalesDraftMarginTextsV1.Preview,
+                [.. draft.Lines.OrderBy(line => line.LineNo).Select(line => LineMargin(line.Id, line.LineNo,
+                    SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostSourceMissing)))])
+            : new SalesDraftMarginV1(SalesMarginDisclosure.Withheld, null, null, null);
         return new SalesOrderDraftLinePricingResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
-            [.. draft.Lines.Select(line => Pricing(line.Id, line.LineNo, line.Commercial))]);
+            [.. draft.Lines.Select(line => Pricing(line.Id, line.LineNo, line.Commercial))], margin);
     }
+
+    /// <summary>
+    /// SAT-D250 / SAT-D266 / SAT-D267: the margin read — granted, company-wide and still the caller's scope, else withheld
+    /// (never a margin of zero). An unbound or unregistered name is the host's fault: 503 <c>permission_unregistered</c>.
+    /// </summary>
+    private async Task<SalesMarginDisclosure> DiscloseMarginAsync(Scope scope, CancellationToken cancellationToken)
+    {
+        var permission = bindings.MarginReadPermission;
+        if (string.IsNullOrWhiteSpace(permission) || !ErpPermissions.IsKnown(permission))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
+        }
+
+        var read = await authority.RevalidatePermissionScopeAsync(permission, scope.CompanyId, cancellationToken);
+        return read.IsGranted && read.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId)
+            ? SalesMarginDisclosure.Visible
+            : SalesMarginDisclosure.Withheld;
+    }
+
+    /// <summary>
+    /// SAT-D265 (5): no cost source exists yet (the unit cost is the company-wide, all-warehouse weighted moving-average purchase
+    /// cost that Stok supplies through its versioned read port — SAT-D272, orders carry no warehouse, no manual cost entry — and
+    /// that port is another lane's) and the formula is not activated before its golden is in main, so the line-pricing read hands every line the <c>Unavailable</c> / <c>CostSourceMissing</c>
+    /// result directly — the calculator is not called (it would also need the functional currency, which Sales does not read
+    /// yet). The cost read, the functional currency and the one <see cref="SalesLineMarginCalculator"/> are wired here once the
+    /// cost port's contract is accepted; this mapping is already the calculator result's wire form.
+    /// The order-side cost snapshot is a separate later slice and is NOT written here (SAT-D268…SAT-D274: pinned at internal
+    /// approval; a revision re-pins only new lines and lines whose product or quantity changed — a price, discount or commercial
+    /// term change alone keeps the pinned cost and only the margin is recomputed; lines approved before the port existed stay
+    /// "kullanılamıyor" with no backfill).
+    /// </summary>
+    private static SalesDraftLineMarginV1 LineMargin(Guid lineId, int lineNo, SalesLineMargin margin) =>
+        new(lineId, lineNo, margin.State.ToString(), margin.UnavailableReason?.ToString(),
+            margin.Amount is { } amount ? amount.Amount.ToString("F" + SalesLineMarginCalculator.AmountScale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture) : null,
+            margin.Amount?.CurrencyId,
+            margin.Percent is { } percent ? percent.ToString("F" + SalesLineMarginCalculator.PercentScale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture) : null,
+            margin.PercentUnavailableReason?.ToString());
 
     /// <summary>The Product owner's list prices for one line of the draft, under the price-write name.</summary>
     public async Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,

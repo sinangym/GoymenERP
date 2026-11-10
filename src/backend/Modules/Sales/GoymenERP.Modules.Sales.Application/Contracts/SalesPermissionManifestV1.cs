@@ -13,8 +13,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 public static class SalesPermissionManifestV1
 {
     // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write; v19 (SAT-D32 /
-    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match; v24 (SAT-D17 / SAT-D168): sales.orders.lines.close; v25 (S5 API-36, Fatura çekirdeği 4): sales.invoices.finalize.
-    public const int Version = 25;
+    // SAT-D168): sales.orders.close; v20 (SAT-D30 / SAT-D168): sales.orders.over-delivery.approve; v21 (S5 API-32, Fatura çekirdeği 1): sales.invoices.write; v22 (S5 API-33, Fatura çekirdeği 2): sales.invoices.approve; v23 (S5 API-35, Fatura çekirdeği 3): sales.invoices.match; v24 (SAT-D17 / SAT-D168): sales.orders.lines.close; v25 (S5 API-36, Fatura çekirdeği 4): sales.invoices.finalize; v26 (SAT-D250 / SAT-D266 / SAT-D267, S-05 marj): sales.orders.margin.read.
+    public const int Version = 26;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -53,6 +53,15 @@ public static class SalesPermissionManifestV1
     /// confers nothing adjacent — no cost, margin, bank or Finance read. Company-wide; the grant is a human gate.
     /// </summary>
     public const string OrdersPriceRead = "sales.orders.price.read";
+
+    /// <summary>
+    /// SAT-D250 (EK49) / SAT-D266 / SAT-D267 (EK52): disclosing the S-05 sales margin — the margin block of GET
+    /// /api/v1/sales/drafts/{id}/line-pricing (SAT-D247/SAT-D259 amount and percent; on a draft the non-persisted preview). A
+    /// SEPARATE, NARROW name: the draft read and <see cref="OrdersPriceRead"/> do NOT confer it (their holders get the WITHHELD
+    /// block, never a margin and never a zero), and it confers nothing adjacent — no price, cost or Finance read. Company-wide;
+    /// not Critical; registered, granted to no role: SAT-D250 names Genel Müdür and Admin, the grant itself is a human gate.
+    /// </summary>
+    public const string OrdersMarginRead = "sales.orders.margin.read";
 
     /// <summary>Approves a reasoned below-floor exception; never conferred by price write or order approval.</summary>
     public const string OrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
@@ -234,7 +243,7 @@ public static class SalesPermissionManifestV1
 
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
-            OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
+            OrdersMarginRead, OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
             OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, OrdersLineClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, InvoicesApprove, InvoicesMatch, InvoicesFinalize, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);

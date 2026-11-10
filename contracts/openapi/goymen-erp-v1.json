@@ -121628,6 +121628,67 @@
           }
         }
       },
+      "SalesDraftLineMarginV1": {
+        "required": [
+          "lineId",
+          "lineNo",
+          "state",
+          "unavailableReason",
+          "amount",
+          "currencyId",
+          "percent",
+          "percentUnavailableReason"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "state": {
+            "type": "string"
+          },
+          "unavailableReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "amount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "currencyId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "percent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "percentUnavailableReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SalesDraftLinePricingV1": {
         "required": [
           "lineId",
@@ -122404,6 +122465,41 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SalesDraftMarginV1": {
+        "required": [
+          "disclosure",
+          "costBasis",
+          "kind",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "disclosure": {
+            "$ref": "#/components/schemas/SalesMarginDisclosure"
+          },
+          "costBasis": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SalesDraftLineMarginV1"
+            }
           }
         }
       },
@@ -124622,6 +124718,12 @@
           }
         }
       },
+      "SalesMarginDisclosure": {
+        "enum": [
+          "Visible",
+          "Withheld"
+        ]
+      },
       "SalesOpenOrderGroupStateView": {
         "enum": [
           "Measured",
@@ -125383,7 +125485,8 @@
       "SalesOrderDraftLinePricingResponse": {
         "required": [
           "version",
-          "lines"
+          "lines",
+          "margin"
         ],
         "type": "object",
         "properties": {
@@ -125395,6 +125498,9 @@
             "items": {
               "$ref": "#/components/schemas/SalesDraftLinePricingV1"
             }
+          },
+          "margin": {
+            "$ref": "#/components/schemas/SalesDraftMarginV1"
           }
         }
       },

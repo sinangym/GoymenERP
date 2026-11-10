@@ -22,11 +22,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// The central registry requires registered names, so the host registers this provider only after
 /// the central catalogue knows them, together with its own accepted revision (one module = one row
 /// in the optional providers and one normal-host authority).
+/// <para>1.20 (SAT-D250 / SAT-D266, S-05 marj): registers <see cref="SalesPermissionManifestV1.OrdersMarginRead"/>
+/// (manifest v26) — a disclosure name read by the line-pricing endpoint; no new screen, route or control.</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.19";
+    public const string OwnerContractVersion = "1.20";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
