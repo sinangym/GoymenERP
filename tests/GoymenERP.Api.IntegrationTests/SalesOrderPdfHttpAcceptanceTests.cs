@@ -26,7 +26,7 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
     private static readonly Guid Kg = Guid.Parse("6a1f0c3e-0d5b-4e7c-9f21-3b4c5d6e7f80");
 
     [Fact]
-    public async Task The_priced_order_is_a_pdf_attachment_with_the_stored_line_prices_the_calculators_net_and_no_total()
+    public async Task The_priced_order_is_a_pdf_attachment_with_the_stored_line_prices_and_the_calculators_net_tax_and_totals()
     {
         var draftId = Guid.NewGuid();
         var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
@@ -56,11 +56,20 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Assert.Contains("0.25 TRY", text, StringComparison.Ordinal);
         Assert.Contains("12.125 TRY / kg", text, StringComparison.Ordinal);
         Assert.Contains("Para birimiTRY", text, StringComparison.Ordinal);
-        Assert.Contains("Sipariş toplamları bu belgede yer almaz", text, StringComparison.Ordinal);
+        // MOD-07 → API-03 (SAT-D11, SAT-D75): the totals read's amounts printed verbatim (the stub's answer), with the
+        // withholding percent and code of the line tax snapshot; nothing is computed by the PDF.
+        Assert.Contains("Satır tutarları ve vergiler", text, StringComparison.Ordinal);
+        AssertInOrder(text, ["48.50 TRY", "%20", "9.70 TRY", "%50", "4.85 TRY", "58.20 TRY", "53.35 TRY", "Tevkifat: 624"]);
+        Assert.Contains("Net toplam48.50 TRY", text, StringComparison.Ordinal);
+        Assert.Contains("KDV toplamı9.70 TRY", text, StringComparison.Ordinal);
+        Assert.Contains("Tevkif edilen KDV toplamı4.85 TRY", text, StringComparison.Ordinal);
+        Assert.Contains("KDV dahil toplam58.20 TRY", text, StringComparison.Ordinal);
+        Assert.Contains("Ödenecek tutar53.35 TRY", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Sipariş toplamları bu belgede yer almaz", text, StringComparison.Ordinal);
         Assert.Contains("SO-2026-000123 · Rev.1 · Bilgi amaçlı teknik çıktıdır; resmî belge değildir.", text, StringComparison.Ordinal);
         Assert.Contains("Sayfa 1 / 1", text, StringComparison.Ordinal);
-        // Nothing is computed: 4 kg × 12.125 = 48.5 is no line amount or total of this document.
-        Assert.DoesNotContain("48.5", text, StringComparison.Ordinal);
+        // Nothing is computed here: the amounts are the answer's text at its scale, never a recomputed "48.5".
+        Assert.DoesNotContain("48.5 ", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Fiyat bilgileri bu belgede yer almaz", text, StringComparison.Ordinal);
         // SAT-D56: an approved revision carries no draft watermark.
         Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
@@ -426,6 +435,7 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
                 [new SalesOrderPrintRevisionLineV1(line.LineId, 1, line.ProductId, Kg, "3.333")],
                 new SalesDraftApprovalV1("SENTETIK-rev0-preparer", new DateTimeOffset(2026, 10, 20, 7, 0, 0, TimeSpan.Zero),
                     "SENTETIK-rev0-approver", new DateTimeOffset(2026, 10, 20, 8, 0, 0, TimeSpan.Zero), null)),
+            Totals = Totals("Rev.0", line.LineId, "3.333"),
         };
         using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(accepted)));
         using var client = CreateClient(host);
@@ -537,6 +547,116 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         }
     }
 
+    /// <summary>
+    /// MOD-07 → API-03: a line whose tax has no source prints its net and "Vergi kaynağı yok" — no VAT, withholding, gross or
+    /// payable, never 0 — and the document's tax totals say why they cannot be given while its net is printed.
+    /// </summary>
+    [Fact]
+    public async Task A_line_without_a_tax_source_prints_its_net_and_the_reason_never_a_zero_tax_or_total()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
+        var line = Assert.Single(pricing.Totals!.Lines);
+        var noSource = pricing with
+        {
+            Totals = pricing.Totals with
+            {
+                Document = new SalesDraftDocumentTotalsV1("Computed", 0, 0, 0, "48.50", "Computed", null, null, null, null, 1),
+                Lines = [new SalesOrderPrintLineTotalV1(line.Total with
+                {
+                    TaxState = "NoSource", VatPercent = null, VatAmount = null, WithholdingShare = null, WithheldVatAmount = null,
+                    GrossAmount = null, PayableAmount = null, TaxReason = "item_type_default_missing",
+                }, null, null, null)],
+            },
+        };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(noSource)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var text = await TextAsync(response);
+        // The narrow tax column wraps the reason over lines; the extracted text loses the breaks.
+        Assert.Contains("Vergikaynağıyok", text.Replace(" ", "", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Contains("Net toplam48.50 TRY", text, StringComparison.Ordinal);
+        Assert.Contains("KDV toplamıHesaplanamadı: vergi kaynağı olmayan satır var", text, StringComparison.Ordinal);
+        Assert.Contains("Ödenecek tutarHesaplanamadı: vergi kaynağı olmayan satır var", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("0.00", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("9.70", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("item_type_default_missing", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>MOD-07 → API-03: an unpriced line prints "Fiyatsız" as its amount and the document net says why it is not given.</summary>
+    [Fact]
+    public async Task An_unpriced_line_prints_no_amount_and_the_document_total_says_why()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
+        var line = Assert.Single(pricing.Totals!.Lines);
+        var unpriced = pricing with
+        {
+            Totals = pricing.Totals with
+            {
+                Document = new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "Computed", null, null, null, null, 0),
+                Lines = [new SalesOrderPrintLineTotalV1(line.Total with
+                {
+                    State = "Unpriced", NetUnitPrice = null, NetAmount = null, TaxState = "NotComputed", VatPercent = null,
+                    VatAmount = null, WithholdingShare = null, WithheldVatAmount = null, GrossAmount = null, PayableAmount = null,
+                }, null, null, null)],
+            },
+        };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(unpriced)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var text = await TextAsync(response);
+        Assert.Contains("Net toplamHesaplanamadı: fiyatsız veya fiyat birimi farklı satır var", text, StringComparison.Ordinal);
+        Assert.Contains("KDV dahil toplamHesaplanamadı: fiyatsız veya fiyat birimi farklı satır var", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("48.50", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("0.00", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// MOD-07 → API-03 fail-closed: a visible answer without totals, with the totals of another revision, of another line or with a
+    /// computed state missing its amount is not printed (503); the price-less variant draws no tax table and no total.
+    /// </summary>
+    [Fact]
+    public async Task Visible_totals_that_are_missing_or_do_not_answer_the_printed_revision_are_503_and_the_price_less_variant_has_none()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
+        var totals = pricing.Totals!;
+        var line = Assert.Single(totals.Lines);
+        foreach (var broken in new[]
+                 {
+                     pricing with { Totals = null },
+                     pricing with { Totals = totals with { Revision = "Rev.0" } },
+                     pricing with { Totals = totals with { Lines = [line with { Total = line.Total with { LineId = Guid.NewGuid() } }] } },
+                     pricing with { Totals = totals with { Lines = [line, line] } },
+                     pricing with { Totals = totals with { Lines = [line with { Total = line.Total with { VatAmount = null } }] } },
+                     pricing with { Totals = totals with { Document = totals.Document with { NetAmount = null } } },
+                 })
+        {
+            using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(broken)));
+            using var client = CreateClient(host);
+            using var response = await client.GetAsync(PdfPath(draftId));
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        }
+
+        var (pricelessDetail, withheld) = Order(draftId, SalesPriceDisclosure.Withheld);
+        using var priceless = CreateHost(new StubDetail(_ => Task.FromResult(pricelessDetail)), new StubPricing(_ => Task.FromResult(withheld)));
+        using var pricelessClient = CreateClient(priceless);
+        using var pricelessResponse = await pricelessClient.GetAsync(PdfPath(draftId));
+        Assert.Equal(HttpStatusCode.OK, pricelessResponse.StatusCode);
+        var text = await TextAsync(pricelessResponse);
+        Assert.Contains("Fiyat bilgileri bu belgede yer almaz", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Satır tutarları ve vergiler", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("KDV toplamı", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ödenecek tutar", text, StringComparison.Ordinal);
+    }
+
     /// <summary>The approved Rev.1 of <see cref="Order"/> as the customer rejected it, after accepting Rev.0 (acceptance required).</summary>
     private static SalesOrderDraftReadDetailViewV1 Rejected(SalesOrderDraftReadDetailViewV1 order) => order with
     {
@@ -591,10 +711,22 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
             [new SalesUserDisplayV1(approver, "SENTETIK Onaylayan", true)]);
         var pricing = visible
             ? new SalesOrderPrintPricingV1("7", SalesPriceDisclosure.Visible, "TRY",
-                [new SalesDraftLinePricingV1(lineId, 1, unitPrice, Kg, "Manual", null, "5", null, null, "0.25", "12.125", null)])
+                [new SalesDraftLinePricingV1(lineId, 1, unitPrice, Kg, "Manual", null, "5", null, null, "0.25", "12.125", null)],
+                null, Totals("Rev.1", lineId, "4"))
             : new SalesOrderPrintPricingV1("7", SalesPriceDisclosure.Withheld, null, []);
         return (detail, pricing);
     }
+
+    /// <summary>
+    /// SENTETIK totals as the print read wires the one calculator's answer for one line of net 48.50 at VAT 20 % and withholding
+    /// 50 % (code 624): VAT 9.70, withheld 4.85, gross 58.20, payable 53.35. The stub answers them; the PDF only prints them.
+    /// </summary>
+    private static SalesOrderPrintTotalsV1 Totals(string revision, Guid lineId, string quantity) => new(revision,
+        new SalesDraftDocumentTotalsV1("Computed", 0, 0, 0, "48.50", "Computed", "9.70", "4.85", "58.20", "53.35", 0),
+        [new SalesOrderPrintLineTotalV1(
+            new SalesDraftLineTotalV1(lineId, 1, Kg, quantity, "Computed", "12.125", "48.50", "Computed", "20", "9.70", "0.5", "4.85",
+                "58.20", "53.35"),
+            "50", null, "624")]);
 
     private WebApplicationFactory<Program> CreateHost(ISalesDraftReadServiceV1 detail, ISalesOrderPrintReadServiceV1 pricing,
         Action<IServiceCollection>? configure = null) =>

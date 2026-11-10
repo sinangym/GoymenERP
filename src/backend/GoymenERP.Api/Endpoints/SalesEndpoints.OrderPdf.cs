@@ -16,8 +16,9 @@ public static partial class SalesEndpoints
     /// company's order is 404, without the read 403. The prices are printed only under the existing
     /// <c>sales.orders.price.read</c> decision, asked last; without it the price-less variant is answered (no price column,
     /// no currency), never an empty or zero price. The two reads must describe the same version of the order, otherwise
-    /// the order changed in between and the answer is 409 <c>concurrent_change</c> (try again). No total, tax or exchange is
-    /// printed: they do not exist yet (API-03, T28). Every order the domain accepts lays out (rows and fields taller than a page
+    /// the order changed in between and the answer is 409 <c>concurrent_change</c> (try again). With the price read the printed
+    /// revision's line amounts, VAT, withholding and document totals are printed as the one backend totals calculator answers them
+    /// (API-03 / SAT-D11 / SAT-D75; an amount it cannot give is printed as its reason, never 0); no exchange is printed. Every order the domain accepts lays out (rows and fields taller than a page
     /// continue on the next pages); an order longer than the PDF component's page bound is 422 <c>sales_order_pdf_too_large</c>
     /// (stable: a retry gives the same answer), never a cut document. A missing or malformed text and missing time-zone rules
     /// are a code-less 503. SAT-D165 (EK23): when the customer rejected the current approved revision, the revision the
