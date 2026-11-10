@@ -457,10 +457,15 @@ public sealed record SalesInvoiceExportLineV1(int LineNo, string DispatchNoteNum
 /// <summary>
 /// API-34 (SAT-D236/D244/D248): one finalised invoice of the export — header, the official match, the day of finalisation, the
 /// totals, the due plan offered to Finance (vade), every order number the invoice is tied to (SAT-D246) and its lines.
+/// <see cref="OfficialVatFunctionalAmount"/> and <see cref="OfficialWithholdingFunctionalAmount"/> are the official document's VAT
+/// and withholding TL equivalents as the API-35 match recorded them (SAT-D241), shown beside the invoice's own computed figures
+/// (SAT-D279 (EK55)). The official document states them per invoice only, so they exist per invoice,
+/// never per line; null when no SAT-D241 comparison is recorded — never filled with the computed value.
 /// </summary>
 public sealed record SalesInvoiceExportInvoiceV1(Guid Id, string DocumentNo, string? OfficialNo, string? Ettn, DateOnly FinalizedOn,
     DateOnly BusinessDate, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, int AmountScale, SalesInvoiceRateView? Rate,
-    SalesInvoiceAmountsView Totals, SalesInvoiceAmountsView? FunctionalTotals, IReadOnlyList<SalesInvoiceFinalInstalmentView> Instalments,
+    SalesInvoiceAmountsView Totals, SalesInvoiceAmountsView? FunctionalTotals, string? OfficialVatFunctionalAmount,
+    string? OfficialWithholdingFunctionalAmount, IReadOnlyList<SalesInvoiceFinalInstalmentView> Instalments,
     IReadOnlyList<string> SalesOrderNos, IReadOnlyList<SalesInvoiceExportLineV1> Lines);
 
 /// <summary>
