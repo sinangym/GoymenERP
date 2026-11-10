@@ -80,7 +80,7 @@ describe('Kontrol Merkezi (API-37)', () => {
     expect(within(tabs).getByRole('link', { name: 'Kontrol Merkezi' }).getAttribute('aria-current')).toBe('page')
   })
 
-  it('links the overdue dispatch to its order and to the invoice candidates of its account; invoice rows carry no order link', async () => {
+  it('links the overdue dispatch to its order and to the invoice candidates of its account; invoice rows link their orders only', async () => {
     installPoolFetch(controlCenter(), GRANTED)
     renderPool(PATH)
     const rows = await itemRows()
@@ -88,8 +88,12 @@ describe('Kontrol Merkezi (API-37)', () => {
     expect(within(rows[0]).getByRole('link', { name: T.openCandidates }).getAttribute('href')).toBe(
       '/satis/faturaya-hazir?cari=44444444-4444-4444-8444-444444444444',
     )
-    expect(within(rows[1]).queryByRole('link', { name: T.openOrder })).toBeNull()
+    expect(within(rows[1]).getByRole('link', { name: T.openOrder }).getAttribute('href')).toContain('c3c3c3c3-0000-4000-8000-000000000004')
     expect(within(rows[1]).queryByRole('link', { name: T.openCandidates })).toBeNull()
+    // SAT-D246: an invoice over two orders links each one, in the server order, with distinct labels.
+    expect(within(rows[3]).queryByRole('link', { name: T.openOrder })).toBeNull()
+    expect(within(rows[3]).getByRole('link', { name: T.openOrderNth(1, 2) }).getAttribute('href')).toContain('c3c3c3c3-0000-4000-8000-000000000005')
+    expect(within(rows[3]).getByRole('link', { name: T.openOrderNth(2, 2) }).getAttribute('href')).toContain('c3c3c3c3-0000-4000-8000-000000000008')
     // Without the Cari card capability the account identifier stands in its place.
     expect(within(rows[0]).getByText('44444444-4444-4444-8444-444444444444')).toBeTruthy()
     expect(within(rows[0]).queryByRole('link', { name: T.openCari })).toBeNull()
@@ -100,6 +104,7 @@ describe('Kontrol Merkezi (API-37)', () => {
     renderPool(PATH)
     const rows = await itemRows()
     expect(within(rows[0]).queryByRole('link', { name: T.openOrder })).toBeNull()
+    expect(within(rows[3]).queryByRole('link', { name: T.openOrderNth(1, 2) })).toBeNull()
     expect(within(rows[0]).getByRole('link', { name: T.openCari }).getAttribute('href')).toContain('33333333-3333-4333-8333-333333333333')
   })
 

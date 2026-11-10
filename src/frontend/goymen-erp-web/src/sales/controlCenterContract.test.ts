@@ -113,11 +113,44 @@ describe('decodeControlCenter', () => {
       expect(decodeControlCenter(wrong), `${member}=${String(value)}`).toBeNull()
     }
     const itemMissing = body()
-    delete itemMissing.items[1].salesOrderId
+    delete itemMissing.items[1].salesOrderIds
     expect(decodeControlCenter(itemMissing)).toBeNull()
+    // SAT-D246: the retired single member is not accepted, neither in place of the list nor beside it.
+    const singleOrder = body()
+    singleOrder.items[1].salesOrderId = (singleOrder.items[1].salesOrderIds as string[])[0]
+    delete singleOrder.items[1].salesOrderIds
+    expect(decodeControlCenter(singleOrder)).toBeNull()
+    const bothOrderMembers = body()
+    bothOrderMembers.items[1].salesOrderId = null
+    expect(decodeControlCenter(bothOrderMembers)).toBeNull()
     const itemAmount = body()
     itemAmount.items[1].amount = '100.00'
     expect(decodeControlCenter(itemAmount)).toBeNull()
+  })
+
+  it('keeps every order of a multi-order invoice entry in the server order, as a copy', () => {
+    const wire = body()
+    const decoded = decodeControlCenter(wire)
+    expect(decoded?.items[3].salesOrderIds).toEqual(['c3c3c3c3-0000-4000-8000-000000000005', 'c3c3c3c3-0000-4000-8000-000000000008'])
+    expect(decoded?.items[0].salesOrderIds).toEqual(['c3c3c3c3-0000-4000-8000-000000000007'])
+    expect(decoded?.items[3].salesOrderIds).not.toBe(wire.items[3].salesOrderIds)
+  })
+
+  it('refuses an order list that is not a non-empty list of distinct identities', () => {
+    for (const value of [
+      null,
+      'c3c3c3c3-0000-4000-8000-000000000004',
+      [],
+      ['x'],
+      ['00000000-0000-0000-0000-000000000000'],
+      [null],
+      ['c3c3c3c3-0000-4000-8000-000000000004', 'c3c3c3c3-0000-4000-8000-000000000004'],
+      ['c3c3c3c3-0000-4000-8000-00000000000a', 'C3C3C3C3-0000-4000-8000-00000000000A'],
+    ]) {
+      const wrong = body()
+      wrong.items[1].salesOrderIds = value
+      expect(decodeControlCenter(wrong), JSON.stringify(value)).toBeNull()
+    }
   })
 
   it('refuses a missing or repeated check: a check never goes silent', () => {
@@ -134,8 +167,11 @@ describe('decodeControlCenter', () => {
     shipmentWithInvoice.items[0].invoiceId = 'f1f1f1f1-0000-4000-8000-000000000099'
     expect(decodeControlCenter(shipmentWithInvoice)).toBeNull()
     const shipmentWithoutOrder = body()
-    shipmentWithoutOrder.items[0].salesOrderId = null
+    shipmentWithoutOrder.items[0].salesOrderIds = []
     expect(decodeControlCenter(shipmentWithoutOrder)).toBeNull()
+    const shipmentTwoOrders = body()
+    shipmentTwoOrders.items[0].salesOrderIds = ['c3c3c3c3-0000-4000-8000-000000000007', 'c3c3c3c3-0000-4000-8000-000000000017']
+    expect(decodeControlCenter(shipmentTwoOrders)).toBeNull()
     const shipmentLines = body()
     shipmentLines.items[0].count = 2
     expect(decodeControlCenter(shipmentLines)).toBeNull()
