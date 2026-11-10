@@ -701,9 +701,9 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var otherCompanyOrder = await OrderDraftAsync(run, CompanyB, "x-order-b");
         var approver = "SENTETIK-approver-" + Guid.NewGuid().ToString("N");
         var finalizer = "SENTETIK-finalizer-" + Guid.NewGuid().ToString("N");
-        var multiOrder = await FinalizedAsync(run, "x1", approver, finalizer,
+        var multiOrder = await FinalizedAsync(run, "x1", "GIB2026000000021", OfficialEttn, approver, finalizer,
             (id, number) => Invoice(id, number, run.Actor, Guid.NewGuid(), Guid.NewGuid(), firstOrder.Id, secondOrder.Id));
-        var later = await FinalizedAsync(run, "x2", approver, finalizer);
+        var later = await FinalizedAsync(run, "x2", "GIB2026000000022", "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", approver, finalizer);
         var onlyApproved = await ApprovedAsync(run, "x3", approver);
 
         SalesInvoiceExportBatch all;
@@ -748,12 +748,16 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task<SalesInvoice> FinalizedAsync(Run run, string prefix, string approver, string finalizer,
-        Func<Guid, string, SalesInvoice>? build = null)
+    /// <summary>
+    /// An approved, matched and finalised invoice of company A. Each call needs its own official number and ETTN: both are unique per
+    /// company (UX_InvoiceMatches_OfficialNo, UX_InvoiceMatches_Ettn).
+    /// </summary>
+    private static async Task<SalesInvoice> FinalizedAsync(Run run, string prefix, string officialNo, string ettn, string approver,
+        string finalizer, Func<Guid, string, SalesInvoice>? build = null)
     {
         var approved = await ApprovedAsync(run, prefix, approver, build);
         var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
-        var official = new SalesOfficialInvoiceFacts("GIB2026000000021", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
+        var official = new SalesOfficialInvoiceFacts(officialNo, ettn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
             approved.WithholdingFunctionalAmount);
         await using var scope = run.Store(CompanyA);
