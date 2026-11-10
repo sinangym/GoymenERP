@@ -1,21 +1,23 @@
-# Sinan Kararları — 2026-11-10 (Satış: S-05 marj maliyeti — maliyetin sahibi Stok, sipariş anı anlık görüntüsü, yalnız alış maliyeti, iç hassasiyet ve yuvarlama, line-pricing marj alanı, iç onayda sabitleme, revizyon, okunamayan port)
+# Sinan Kararları — 2026-11-10 (Satış: S-05 marj maliyeti — maliyetin sahibi Stok, sipariş anı anlık görüntüsü, yalnız alış maliyeti, iç hassasiyet ve yuvarlama, line-pricing marj alanı, iç onayda sabitleme, revizyon, okunamayan port, yalnız fiyatı değişen satır, depo taşımayan sipariş, port öncesi onaylı satırlar)
 
-Bu belge önceki karar dosyalarını silmez; SAT-D262…SAT-D270'i ekler. EK51
+Bu belge önceki karar dosyalarını silmez; SAT-D262…SAT-D273'ü ekler. EK51
 (`SINAN_KARARLARI_2026-11-09_SATIS_EK51.md`) "Sınırlar"da açık bırakılan üç noktayı (hareketli ortalama maliyet
 üreticisinin sahibi, SAT-D256'daki "satış anı", SAT-D261'deki ara yuvarlama ve iç hassasiyet), EK52'nin ilk taslağında `NEEDS-SINAN` bırakılan taslak aşaması önizlemesi
-sorusunu, anlık görüntünün koddaki adımı, revizyon ve okunamayan port sorularını (SAT-D268…SAT-D270) ve EK49
+sorusunu, anlık görüntünün koddaki adımı, revizyon ve okunamayan port sorularını (SAT-D268…SAT-D270), #1041 DOCS review B'nin ortaya çıkardığı üç soruyu
+(SAT-D271…SAT-D273) ve EK49
 (`SINAN_KARARLARI_2026-11-09_SATIS_EK49.md`) SAT-D247'deki "API-50 marj alanı" ifadesinin hangi uç noktayı
 anlattığını kayda geçirir. SAT-D247, SAT-D250 (EK49), SAT-D256…SAT-D261 (EK51), DEC-PRD-011 ve `OPEN-008`
-geçerlidir; bu belge onların metnini değiştirmez (SAT-D256 ve SAT-D261'deki açık kısımların cevaplanması için
-"Bilinçli değişiklikler"e bakın). Sinan'ın "Taslak siparişe dönüşünce" cevabının koddaki karşılığını Sinan sonradan
+geçerlidir; bu belge onların metnini değiştirmez (SAT-D256 ve SAT-D261'deki açık kısımların cevaplanması ve SAT-D257'nin
+depo bilgisi olmayan sipariş durumu (SAT-D272) için "Bilinçli değişiklikler"e bakın). Sinan'ın "Taslak siparişe dönüşünce" cevabının koddaki karşılığını Sinan sonradan
 **iç onay** olarak belirtmiştir (SAT-D268).
 
 **Kaynak:**
 
 - Sinan'ın 10 Kasım 2026'da Claude Code cloud oturumunda (`session_01SPADrzecggx3apH2gfNW7b`) Satış (Claude) şeridine
-  doğrudan sorularla verdiği cevaplar (sorular 1–5: Issue #66 yorumu
-  [6760682324](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6760682324); cevapların özeti: #66 yorumu
-  [6760794644](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6760794644)). Cevapların anlamı bu belgeyi yazan ajana koordinatör tarafından iletildi ve
+  doğrudan sorularla verdiği cevaplar (sorular 1, 3, 4 ve 5: Issue #66 yorumu
+  [6760682324](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6760682324)'teki dört `NEEDS-SINAN` maddesi;
+  soru 2 (ilk aşamadaki maliyet türleri) o yorumda yer almaz, aynı oturumda Sinan'a doğrudan soruldu; beş cevabın
+  özeti: #66 yorumu [6760794644](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6760794644)). Cevapların anlamı bu belgeyi yazan ajana koordinatör tarafından iletildi ve
   aşağıda iletildiği biçimiyle kayda geçirildi. Soruların seçilmeyen seçenekleri, seçenek açıklamaları ve
   "(Önerilen)" işaretleri bu ajana iletilmediği için yazılmadı (uydurulmadı); "Cevap" sütunu aynen alıntı değil,
   iletilen cevabın anlamıdır.
@@ -23,7 +25,8 @@ geçerlidir; bu belge onların metnini değiştirmez (SAT-D256 ve SAT-D261'deki 
   tarafından iletildi); #66 yorumu 6760794644 etiketten söz etmez.
 - **SAT-D267 (soru 6):** bu belgenin ilk taslağında açılan `NEEDS-SINAN` maddesine (taslak aşamasında marj önizlemesi ve
   "sipariş anı"nın komut karşılığı) Sinan'ın aynı gün (10 Kasım 2026) Satış (Claude) şeridine doğrudan sorularla
-  verdiği cevaplar; koordinatör tarafından iletildi. Fiyat okuma izni olanların da önizlemeyi görüp görmeyeceği
+  verdiği cevaplar; koordinatör tarafından iletildi; cevabın özeti #66 yorumu
+  [6760960114](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6760960114). Fiyat okuma izni olanların da önizlemeyi görüp görmeyeceği
   sorulduğunda Sinan görünürlüğü açıkça yeniden teyit etti: "Yalnız GM ve Admin kalsın" (aynen). Anlık görüntünün
   zamanı için Sinan'ın sözü: "Taslak siparişe dönüşünce" (aynen). Öteki ifadeler iletilen anlamdır; seçilmeyen
   seçenekler iletilmediği için yazılmadı.
@@ -33,6 +36,22 @@ geçerlidir; bu belge onların metnini değiştirmez (SAT-D256 ve SAT-D261'deki 
   gün (10 Kasım 2026) Satış (Claude) şeridine doğrudan sorularla cevap verdi; cevaplar #66 yorumu
   [6761272162](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6761272162) ile kayda geçti ve koordinatör tarafından bu ajana iletildi. "Cevap" sütunu iletilen anlamdır;
   seçilmeyen seçenekler iletilmediği için yazılmadı.
+- **SAT-D271…SAT-D273 (sorular 10–12):** #1041 DOCS review B (yorum
+  [6761405795](https://github.com/sinangym/GoymenERP/pull/1041#issuecomment-6761405795)) P2 bulgularının (yalnız fiyatı
+  değişen satır, iç onayda depo bilgisinin olmaması, port öncesi onaylı satırlar) ortaya çıkardığı üç soruya Sinan'ın
+  aynı gün Satış (Claude) şeridine verdiği cevaplar (şerit sohbeti, 10 Kasım 2026); koordinatör tarafından bu ajana
+  iletildi. Soru 10 için Sinan'ın sözü: "satış fiyatının değişmesi maliyetini değiştirmemeli bence" (aynen). Soru 11'de
+  Sinan "Şirket geneli ortalama" seçeneğini seçti (seçenek adı aynen). Soru 12'nin "Cevap" sütunu iletilen anlamdır.
+  Seçilmeyen seçenekler ve açıklamaları iletilmediği için yazılmadı.
+- **Maliyet girdisinin kaynağı (SAT-D262 kaynak notu):** Sinan'ın #66 yorumu
+  [6761125860](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6761125860) ("SINAN-KARARI", koordinatör
+  oturumu üzerinden, 10 Kasım 2026): marj/maliyet fiyat girdisinin kaynağı **alış sipariş satırı fiyatıdır**; Stok bu
+  fiyatı **sürümlü okuma portuyla** okur; Stok'ta **elle maliyet girişi yoktur**; çift kayıt yoktur. Yorum, soru metninin
+  #66'dan doğrulanamadığını ve koordinatörün soruyu kendi anlayışıyla sorduğunu, Stok/Satış şeridinin kapsamı farklıysa
+  `NEEDS-SINAN` ile düzeltilmesini not eder. Soru #66 yorumu
+  [6760990097](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6760990097)'dir; oradaki (a)/(b) seçimi
+  (birim dönüşümü ve döviz) bu cevapla seçilmemiştir ve "Sınırlar"daki `NEEDS-SINAN` maddeleri olarak açık kalır. Bu not
+  yeni bir SAT kimliği açmaz; SAT-D262 ile birlikte okunur (bkz. "Kararlar" altındaki kaynak notu).
 
 Bu belge merge makbuzu dışında Issue #66'ya karar yazmaz.
 
@@ -49,28 +68,45 @@ Bu belge merge makbuzu dışında Issue #66'ya karar yazmaz.
 | 7 | Alış maliyeti anlık görüntüsü hangi adımda yazılsın: onaya gönderim, iç onay ya da müşteri kabulü? (#66 yorumu 6761194105, soru 1) | **İç onayda** (GM veya yetkili onaycının onayı). | "Taslak siparişe dönüşünce" = iç onay; anlık görüntü iç onay komutunda yazılır (SAT-D268). |
 | 8 | Onaylı siparişin revizyonunda değişen veya yeni eklenen satırların anlık görüntüsüne ne olsun? (#66 yorumu 6761194105, soru 2) | Revizyon onaylanınca **yalnız değişen ve yeni satırlar** yeniden sabitlenir; değişmeyen satırlar eski anlık görüntüyü korur. | Revizyon onayında yalnız değişen/yeni satırlar yeniden okunur ve sabitlenir (SAT-D269). |
 | 9 | Port o an `Unreadable` dönerse marj kalıcı olarak "kullanılamıyor" mu kalsın, yoksa sonradan bir kez tamamlanabilsin mi? (#66 yorumu 6761194105, soru 3) | Sabitleme anında maliyet okunamazsa (`Unreadable`/`NoSource`) **onay engellenmez**; o satırın marjı **kalıcı olarak "kullanılamıyor"** kaydedilir. | Onay engellenmez; satırda kalıcı "kullanılamıyor" kaydı; sonradan tamamlama yok (SAT-D270). |
+| 10 | Revizyonda bir satırın yalnız satış fiyatı (veya iskontosu/ticari fiyat koşulları) değişirse o satırın maliyet anlık görüntüsü yeniden sabitlensin mi? (review B 6761405795 P2-2) | "satış fiyatının değişmesi maliyetini değiştirmemeli bence" (aynen, şerit sohbeti) | Yalnız fiyatı/iskontosu değişen satır yeniden sabitlenmez; eski maliyet korunur, marj yeni satış fiyatına göre yeniden hesaplanır; yeniden sabitleme yeni satırlarda ve ürünü veya miktarı değişen satırlarda olur (SAT-D271). |
+| 11 | Satış siparişi depo taşımıyor; iç onayda (ve taslak önizlemesinde) maliyet hangi ortalamadan okunsun? (review B 6761405795 P2-3) | **"Şirket geneli ortalama"** (seçilen seçenek, şerit sohbeti) | Maliyet Stok portunun şirket geneli (tüm depolar) ağırlıklı hareketli ortalama alış maliyeti okumasından alınır; değeri Stok üretir (SAT-D272). |
+| 12 | Stok maliyet portundan önce iç onayı verilmiş, anlık görüntüsü olmayan satırlarda ne gösterilsin; geriye dönük doldurma olsun mu? (review B 6761405795 P2-4) | Marj **"kullanılamıyor"** gösterilir; **geriye dönük doldurma yok**; sonraki revizyon onayı yalnız yeni/değişen satırları sabitler. | Anlık görüntüsü olmayan onaylı satırda marj "kullanılamıyor"; backfill yok; değişmeyen eski satırlar "kullanılamıyor" kalır (SAT-D273). |
 
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| SAT-D262 | Maliyet üreticisinin sahibi (EK51 "Sınırlar" sahiplik sorusunun cevabı) | (1) SAT-D256…SAT-D258 ve SAT-D260'taki depo bazında, `CompanyId` kapsamlı hareketli ortalama **alış** maliyetini **Stok (Inventory) modülü üretir** (soru 1). (2) Maliyet, **Stok'un sahip olduğu sürümlü bir okuma portuyla** verilir; portun cevabı EK51'deki gibi değer, `Unreadable` (okunamıyor) ve `NoSource` (kayıt yok) durumlarını ayırır. (3) **Satış maliyeti hiçbir zaman kendisi hesaplamaz**; Stok'un hiçbir tablosuna yazmaz ve o tabloları doğrudan okumaz (Mimari değişmez: bir modül başka modül tablosuna doğrudan yazmaz). (4) Satış maliyeti **sipariş anında** (SAT-D264) porttan okur ve **satış siparişi satırına anlık görüntü (snapshot) olarak yazar**; bu anlık görüntü sonradan **değişmez** (sonraki stok girişleri, transferler veya ortalama güncellemeleri kayıtlı siparişin maliyetini değiştirmez). (5) Port `Unreadable` veya `NoSource` döndürürse ya da EK51'de `NEEDS-SINAN` kalan bir durum gerekiyorsa marj **"kullanılamıyor"** kalır (SAT-D247 fail-closed); sıfır veya tahmini maliyet yazılmaz. Master v3'teki M-09 Maliyet Muhasebesi kapısı bu kararla S-05 marjının maliyet üreticisi olmaz; genel stok değerleme ve muhasebe maliyet yöntemi `OPEN-008`'de açık kalır | Stok modülü (hareketli ortalama maliyet üreticisi + sürümlü okuma portu, yeni), Satış sipariş satırı (maliyet anlık görüntüsü), marj hesaplayıcısı (SAT-D247) |
+| SAT-D262 | Maliyet üreticisinin sahibi (EK51 "Sınırlar" sahiplik sorusunun cevabı) | (1) SAT-D256…SAT-D258 ve SAT-D260'taki depo bazında, `CompanyId` kapsamlı hareketli ortalama **alış** maliyetini **Stok (Inventory) modülü üretir** (soru 1). (2) Maliyet, **Stok'un sahip olduğu sürümlü bir okuma portuyla** verilir; portun cevabı EK51'deki gibi değer, `Unreadable` (okunamıyor) ve `NoSource` (kayıt yok) durumlarını ayırır. (3) **Satış maliyeti hiçbir zaman kendisi hesaplamaz**; Stok'un hiçbir tablosuna yazmaz ve o tabloları doğrudan okumaz (Mimari değişmez: bir modül başka modül tablosuna doğrudan yazmaz). (4) Satış maliyeti **sipariş anında** (SAT-D264) porttan okur ve **satış siparişi satırına anlık görüntü (snapshot) olarak yazar**; bu anlık görüntü sonradan **değişmez** (revizyon istisnası SAT-D269; sonraki stok girişleri, transferler veya ortalama güncellemeleri kayıtlı siparişin maliyetini değiştirmez). (5) Port `Unreadable` veya `NoSource` döndürürse ya da EK51'de `NEEDS-SINAN` kalan bir durum gerekiyorsa marj **"kullanılamıyor"** kalır (SAT-D247 fail-closed); sıfır veya tahmini maliyet yazılmaz. Master v3'teki M-09 Maliyet Muhasebesi kapısı bu kararla S-05 marjının maliyet üreticisi olmaz; genel stok değerleme ve muhasebe maliyet yöntemi `OPEN-008`'de açık kalır | Stok modülü (hareketli ortalama maliyet üreticisi + sürümlü okuma portu, yeni), Satış sipariş satırı (maliyet anlık görüntüsü), marj hesaplayıcısı (SAT-D247) |
 | SAT-D263 | İlk aşamada maliyet türü | (1) İlk aşamada marj **yalnız alış maliyetiyle** hesaplanır (soru 2; SAT-D258 ile aynı yönde). (2) S-05 ekranı marjın maliyet tarafını **"yalnız alış maliyeti"** diye etiketler (kaynak: şerit sohbetindeki cevap; #66'da yok); etiket metni Türkçe kullanıcı metni olarak kaynak dosyadadır. (3) **İkinci maliyet türü** — vade farkı, öteki giderler ve ek (landed) maliyetler — **ayrı ve ileride verilecek bir karardır**; bu belgede seçilmez, açık kalır (bkz. "Sınırlar"). O karar verilene kadar bu maliyetler marja eklenmez, sıfır sayıldığı ima edilmez | Marj hesaplayıcısı, line-pricing marj alanları, S-05 (UI-50) etiketi |
-| SAT-D264 | "Satış anı" (SAT-D256 açık kısmının cevabı) | SAT-D256'daki **"satış anı" sipariş anıdır** (soru 3). Marjda kullanılan hareketli ortalama, sipariş anında Stok portunun verdiği ortalamadır ve SAT-D262 (4) uyarınca sipariş satırına anlık görüntü olarak yazılır. Fatura zamanındaki ortalama marjda kullanılmaz | Marj hesaplayıcısı, Satış sipariş satırı anlık görüntüsü |
+| SAT-D264 | "Satış anı" (SAT-D256 açık kısmının cevabı) | SAT-D256'daki **"satış anı" sipariş anıdır** (soru 3). Marjda kullanılan hareketli ortalama, sipariş anında Stok portunun verdiği ortalamadır ve SAT-D262 (4) uyarınca sipariş satırına anlık görüntü olarak yazılır (revizyon istisnası SAT-D269). Fatura zamanındaki ortalama marjda kullanılmaz | Marj hesaplayıcısı, Satış sipariş satırı anlık görüntüsü |
 | SAT-D265 | İç hassasiyet ve yuvarlama (SAT-D261 açık kısmının cevabı) | (1) **Marj yüzdesi yuvarlanmamış marj tutarından** hesaplanır; yuvarlanmış (kuruşa indirilmiş) tutardan türetilmez (soru 4). (2) Hareketli ortalama maliyetin **iç hassasiyeti 4 ondalık basamaktır**. (3) **Gösterimde** marj tutarı **kuruşa (0,01 TL)**, marj yüzdesi **2 ondalık basamağa (0,01)** yuvarlanır; SAT-D261'in 0,01 TL / 0,01 hassasiyeti aynen geçerlidir. (4) Yuvarlama kipi için yeni bir kural açılmaz: **mevcut para yuvarlama kuralı** uygulanır; EK51 SAT-D261 bu kuralı `Money` değer nesnesindeki yarımda sıfırdan uzağa yuvarlama (`MidpointRounding.AwayFromZero`) olarak kaydetmiştir. (5) Bu kurallar formül golden'ında (ChatGPT şeridi) kilitlenir; golden main'e girene kadar formül etkinleştirilmez | Marj hesaplayıcısı, Stok hareketli ortalama hesabı (iç hassasiyet), formül golden'ı |
 | SAT-D266 | Marjın uç noktası (EK49 SAT-D247/SAT-D250 "API-50 marj alanı" ifadesinin netleşmesi) | (1) EK49'da "API-50 marj alanı" diye anılan yer, **Satış'ın sahip olduğu `GET /api/v1/sales/drafts/{id}/line-pricing` okumasıdır** (soru 5). (2) Marj tutarı ve yüzdesi (SAT-D259) bu okumanın cevabında yer alır; SAT-D250 görünürlüğü (yalnız Genel Müdür ve Admin; yetkisizde backend'de esirgenir) bu alanlara uygulanır. (3) **Ayarlar'daki API-50** (satış iskonto limiti politikası, `SATIS_HAZIRLIK_PLANI_v1.md` API-50 satırı) **değişmez**; marj alanı oraya eklenmez. EK51'deki "API-50 marj alanları" ifadeleri de aynı biçimde line-pricing okumasını anlatır | `GET /api/v1/sales/drafts/{id}/line-pricing` (`SalesDraftContractsV1`), OpenAPI, S-05 (UI-50); Ayarlar API-50 (değişmez) |
 | SAT-D267 | Taslak önizlemesi ve anlık görüntünün zamanı (SAT-D262 (4) ve SAT-D264 ile birlikte okunur) | (1) **Taslak aşamasında** S-05 line-pricing okuması Stok portunun o anki cevabından **canlı bir önizleme marjı** gösterebilir; bu marj **"tahmini/önizleme"** diye etiketlenir ve **saklanmaz** (sipariş satırına, taslağa veya rapora yazılmaz). (2) Önizleme, satır ve sayfa kalabalık olmasın diye **ayrı bir "Marjı göster" düğmesiyle** açılır (UX; Claude frontend şeridi). (3) Görünürlük **aynen SAT-D250'dir**: yalnız Genel Müdür ve Admin; backend'de uygulanır, yetkisize önizleme de verilmez. Sinan fiyat okuyabilenlerin de görüp görmeyeceği sorulduğunda "Yalnız GM ve Admin kalsın" diye yeniden teyit etti; **yeni grant veya izin yoktur**. (4) Sinan'ın sözüyle maliyet anlık görüntüsü **"Taslak siparişe dönüşünce"** sipariş satırına yazılır ve **sonradan değişmez**. Kodda ayrı bir taslak→sipariş adımı yoktur; Sinan bu ifadenin **iç onay** olduğunu sonradan belirtti (SAT-D268); revizyon SAT-D269'da, okunamayan port SAT-D270'te karara bağlanmıştır. (5) Line-pricing okuması, satırın anlık görüntüsü **varsa anlık görüntü marjını**, **yoksa** (iç onaydan önce) (1)–(3)'teki saklanmayan önizlemeyi gösterir | `GET /api/v1/sales/drafts/{id}/line-pricing` (önizleme / anlık görüntü), Satış sipariş satırı, S-05 (UI-50) "Marjı göster" düğmesi |
-| SAT-D268 | Anlık görüntünün adımı (SAT-D267 (4) "Taslak siparişe dönüşünce" ifadesinin kod karşılığı) | (1) Alış maliyeti anlık görüntüsü siparişin **iç onayında** (Genel Müdür veya yetkili onaycının onayı; onaya gönderim → iç onay ekseninde `Approved` geçişi) yazılır (soru 7). (2) Onaya gönderimde ve müşteri kabulünde anlık görüntü yazılmaz; müşteri kabulü anlık görüntüyü değiştirmez. (3) SAT-D262 (4) ve SAT-D264'teki "sipariş anı" bu iç onay anıdır; anlık görüntü sonradan değişmez (revizyon istisnası SAT-D269). (4) İç onaydan önce line-pricing yalnız saklanmayan önizlemeyi (SAT-D267 (1)–(3)), iç onaydan sonra satırın anlık görüntü marjını gösterir | Satış iç onay komutu (anlık görüntü yazımı), Satış sipariş satırı, `GET /api/v1/sales/drafts/{id}/line-pricing` |
-| SAT-D269 | Revizyonda anlık görüntü | (1) Onaylı siparişin revizyonu **onaylandığında** yalnız **değişen ve yeni eklenen satırlar** için maliyet Stok portundan yeniden okunur ve yeniden sabitlenir (soru 8). (2) **Değişmeyen satırlar eski anlık görüntüsünü korur**. (3) Revizyon onaylanmadan anlık görüntü değişmez | Satış revizyon onayı (commercial/line/quantity revision), Satış sipariş satırı anlık görüntüsü |
-| SAT-D270 | Sabitleme anında okunamayan port | (1) İç onayda (SAT-D268) veya revizyon onayında (SAT-D269) Stok portu satır için `Unreadable` veya `NoSource` döndürürse **onay engellenmez** (soru 9). (2) O satırın marjı **kalıcı olarak "kullanılamıyor"** kaydedilir; sonradan yeniden okunmaz ve tamamlanmaz (o satırın yeniden sabitlenmesi yalnız SAT-D269'daki revizyon onayıyla olur). (3) Sıfır veya tahmini maliyet yazılmaz (SAT-D247, SAT-D262 (5)) | Satış iç onay ve revizyon onayı komutları, Satış sipariş satırı anlık görüntüsü |
+| SAT-D268 | Anlık görüntünün adımı (SAT-D267 (4) "Taslak siparişe dönüşünce" ifadesinin kod karşılığı) | (1) Alış maliyeti anlık görüntüsü siparişin **iç onayında** (Genel Müdür veya yetkili onaycının onayı; onaya gönderim → iç onay ekseninde `Approved` geçişi) yazılır (soru 7). (2) Onaya gönderimde ve müşteri kabulünde anlık görüntü yazılmaz; müşteri kabulü anlık görüntüyü değiştirmez (türetilmiş; ayrı Sinan cevabı değildir: seçilen "iç onay" seçeneğinin sonucudur). (3) SAT-D262 (4) ve SAT-D264'teki "sipariş anı" bu iç onay anıdır; anlık görüntü sonradan değişmez (revizyon istisnası SAT-D269). (4) İç onaydan önce line-pricing yalnız saklanmayan önizlemeyi (SAT-D267 (1)–(3)), iç onaydan sonra satırın anlık görüntü marjını gösterir | Satış iç onay komutu (anlık görüntü yazımı), Satış sipariş satırı, `GET /api/v1/sales/drafts/{id}/line-pricing` |
+| SAT-D269 | Revizyonda anlık görüntü ("değişen satır": SAT-D271) | (1) Onaylı siparişin revizyonu **onaylandığında** yalnız **değişen ve yeni eklenen satırlar** için maliyet Stok portundan yeniden okunur ve yeniden sabitlenir (soru 8). (2) **Değişmeyen satırlar eski anlık görüntüsünü korur**. (3) Revizyon onaylanmadan anlık görüntü değişmez. (4) "Değişen satır" SAT-D271 ile netleşir: yeni eklenen satır ile ürünü veya miktarı değişen satır; yalnız satış fiyatı, iskontosu veya ticari fiyat koşulları değişen satır yeniden sabitlenmez. Kodda ayrı bir revizyon onayı komutu yoktur: revizyon onaylı siparişi Rev+1 ile `Preparing` durumuna döndürür (`SalesOrderDraft.LineRevision.cs`, `AdvanceRevision`); aynı `Submit` → `Approve` geçişi Rev+1 için çalışır; "revizyon onayı" bu `Approve`'dur | Satış `Approve` komutu (Rev+1 revizyon onayı; revizyon yolları: ticari `ReviseCommercial`, satır `ReviseLines`, miktar `ReviseQuantities`, başlık `ReviseHeader`), Satış sipariş satırı anlık görüntüsü |
+| SAT-D270 | Sabitleme anında okunamayan port | (1) İç onayda (SAT-D268) veya revizyon onayında (SAT-D269) Stok portu satır için `Unreadable` veya `NoSource` döndürürse **onay engellenmez** (soru 9). (2) O satırın marjı **kalıcı olarak "kullanılamıyor"** kaydedilir; sonradan yeniden okunmaz ve tamamlanmaz (türetilmiş; ayrı Sinan cevabı değildir: o satırın yeniden sabitlenmesi yalnız SAT-D269'daki revizyon onayıyla, satır o revizyonda değişmişse olur — SAT-D271). (3) Sıfır veya tahmini maliyet yazılmaz (SAT-D247, SAT-D262 (5)) | Satış `Approve` komutu (iç onay ve Rev+1 revizyon onayı aynı komut), Satış sipariş satırı anlık görüntüsü |
+| SAT-D271 | Yalnız fiyatı değişen satır (SAT-D269 "değişen satır" ifadesinin netleşmesi) | (1) Revizyonda bir satırın **yalnız satış fiyatı veya iskontosu / ticari fiyat koşulları** değişirse o satırın maliyet anlık görüntüsü **yeniden sabitlenmez**; eski anlık görüntü korunur (soru 10; Sinan: "satış fiyatının değişmesi maliyetini değiştirmemeli bence", aynen). (2) O satırın marjı, korunan maliyetten **yeni satış fiyatına göre** yeniden hesaplanır (SAT-D259 formülü; maliyet tarafı değişmez). (3) SAT-D269'daki yeniden sabitleme **yeni eklenen satırlarda** ve **ürünü veya miktarı değişen satırlarda** olur. (4) Revizyon onaylanmadan hiçbir satırın anlık görüntüsü değişmez (SAT-D269 (3)) | Satış `Approve` komutu (Rev+1), Satış sipariş satırı anlık görüntüsü, marj hesaplayıcısı, `GET /api/v1/sales/drafts/{id}/line-pricing` |
+| SAT-D272 | Depo taşımayan siparişte maliyet okuması | (1) Satış siparişi ve satırları **depo taşımaz** (`SalesOrderDraftLine`'da depo alanı yoktur; depo tahsisi sonradan Stok'ta yapılır). (2) İç onaydaki anlık görüntü (SAT-D268) ve taslak önizlemesi (SAT-D267 (1)) için maliyet, Stok portunun **şirket geneli (tüm depolar) ağırlıklı hareketli ortalama alış maliyeti** okumasından alınır (soru 11; Sinan'ın seçimi: "Şirket geneli ortalama"). (3) Bu okuma, Stok portunun **depo bilgisi olmayan durum için** verdiği okumadır; değeri **Stok üretir**, Satış hesaplamaz (SAT-D262 (3)); `CompanyId` kapsamı (SAT-D257 (3)) ve değer / `Unreadable` / `NoSource` ayrımı (SAT-D262 (2)) aynen geçerlidir; okunamazsa SAT-D270 uygulanır. (4) Bu durum için EK51 SAT-D257'deki "Şirket geneli tek ortalama kullanılmaz" (2) ve "depo belirlenemiyorsa marj kullanılamıyor" hükmünün **yerine geçer**; depo bazında ortalamanın Stok'ta tutulması (SAT-D257 (1)) ve transfer kuralı (SAT-D260) değişmez. (5) Marjın ileride depo düzeyinde okunması gerekirse bu **ayrı bir karardır** | Stok okuma portu (şirket geneli okuma, yeni), Satış iç onay anlık görüntüsü ve taslak önizlemesi, marj hesaplayıcısı |
+| SAT-D273 | Port öncesi onaylı satırlar | (1) Stok maliyet portu main'e girmeden **önce iç onayı verilmiş** satırların anlık görüntüsü yoktur; bu satırlarda marj **"kullanılamıyor"** gösterilir (soru 12). (2) **Geriye dönük doldurma (backfill) yapılmaz.** (3) Böyle bir siparişte sonraki revizyon onayı yalnız **yeni ve değişen satırları** (SAT-D269, SAT-D271) sabitler; **değişmeyen eski satırlar "kullanılamıyor" kalır**. (4) Bu satırlarda canlı taslak önizlemesi (SAT-D267 (1)) gösterilmez; SAT-D267 (5)'teki "anlık görüntü yoksa önizleme" yalnız iç onaydan önceki satırlar içindir (türetilmiş; ayrı Sinan cevabı değildir: (1)'in sonucudur) | `GET /api/v1/sales/drafts/{id}/line-pricing`, Satış sipariş satırı anlık görüntüsü, S-05 (UI-50) |
+
+**SAT-D262 kaynak notu (#66 yorumu 6761125860):** SAT-D262'deki Stok hareketli ortalamasının fiyat girdisi **alış
+sipariş satırı fiyatıdır**; Stok bu fiyatı sürümlü okuma portuyla okur; Stok'ta elle maliyet girişi ve çift kayıt
+yoktur (Sinan, koordinatör oturumu üzerinden). Birim dönüşümü ve döviz bu notla seçilmez ("Sınırlar").
 
 Uygulama ayrıntısı (geri alınabilir):
 
 - SAT-D262'de anlık görüntünün sipariş satırındaki alan adı, okunan portun sürümünü/kaynak kimliğini birlikte
   saklayıp saklamadığı ve port durumunun (`Unreadable`/`NoSource`) satırda nasıl kayda geçtiği backend sözleşmesinde
   kesinleşir; anlık görüntü portun verdiği değeri 4 basamak iç hassasiyetle (SAT-D265) aynen saklar.
-- SAT-D269'da revizyonda "değişen satır" sayılan alanlar mevcut revizyon modelindeki satır/miktar değişikliğinden
-  türetilir ve backend sözleşmesinde kesinleşir; bu türetme yeni bir para/stok politikası seçmeyi gerektirirse
+- SAT-D269'da "değişen satır" SAT-D271'den türetilir: yeni eklenen satır ile ürünü veya miktarı değişen satır yeniden
+  sabitlenir; yalnız satış fiyatı, iskontosu veya ticari fiyat koşulları değişen satır sabitlenmez. Hangi revizyon
+  yolunun (`ReviseLines`, `ReviseQuantities`, `ReviseCommercial`, `ReviseHeader`) satırın ürününü veya miktarını
+  değiştirdiği backend sözleşmesinde satır bazında belirlenir; yeniden sabitleme `Approve` içinde Rev>0 için satır
+  bazında yapılır. Yalnız vergi veya başlık alanı değişen satırın da yeniden sabitlenmemesi SAT-D271'in türetilmiş
+  okunuşudur (maliyet ürün ve miktara bağlıdır); bu okunuş yeni bir para/stok politikası seçmeyi gerektirirse
+  `NEEDS-SINAN` olur.
+- SAT-D272'deki şirket geneli ağırlıklı ortalamanın depo ortalamalarından nasıl hesaplandığı Stok'un sürümlü port
+  sözleşmesinde ve formül golden'ında kilitlenir; bu tanım yeni bir para/stok politikası seçmeyi gerektirirse
   `NEEDS-SINAN` olur.
 - SAT-D263'teki etiketin tam metni ve yeri (marj alanının başlığı ya da yardım metni) UI'da belirlenir; "yalnız
   alış maliyeti" anlamı çıkarılamaz.
@@ -84,8 +120,11 @@ Uygulama ayrıntısı (geri alınabilir):
 - #66 yorumu 6761194105 — anlık görüntünün adımı, revizyon ve o anda okunamayan port (`NEEDS-SINAN`) — SAT-D268
   (iç onay), SAT-D269 (yalnız değişen/yeni satırlar), SAT-D270 (onay engellenmez, kalıcı "kullanılamıyor").
 - EK49 SAT-D247/SAT-D250 — "API-50 marj alanı"nın hangi uç nokta olduğu — SAT-D266 (Satış line-pricing okuması).
+- #1041 DOCS review B (yorum 6761405795) P2 bulguları — yalnız fiyatı değişen satır SAT-D271; iç onayda depo
+  bilgisinin olmaması SAT-D272 (şirket geneli ortalama); port öncesi onaylı satırlar SAT-D273 ("kullanılamıyor",
+  backfill yok). P2-1 (#66 yorumu 6761125860) Kaynak'a ve SAT-D262 kaynak notuna eklendi.
 - **Bu belge hiçbir `OPEN-*` kaydını kapatmaz.** Yukarıdaki soruların `OPEN-NNN` kimliği yoktur. `OPEN-008` (stok
-  değerleme ve ayrıntılı üretim maliyeti) **açık kalır**: SAT-D262…SAT-D270 yalnız S-05 marjının maliyet tarafını
+  değerleme ve ayrıntılı üretim maliyeti) **açık kalır**: SAT-D262…SAT-D273 yalnız S-05 marjının maliyet tarafını
   belirler; genel stok değerleme, muhasebe maliyet yöntemi ve üretim maliyeti seçilmez.
 
 ## Bilinçli değişiklikler
@@ -97,10 +136,19 @@ Uygulama ayrıntısı (geri alınabilir):
   cevaplanmıştır**. 0,01 TL / 0,01 hassasiyet ve mevcut `Money` yuvarlama kuralı aynen geçerlidir.
 - **EK51 "Uygulama listesi" ve "Sınırlar" sahiplik maddesi:** üreticinin sahibi SAT-D262 ile Stok olarak
   belirlenmiştir; EK51 dosyası yerinde düzenlenmez.
-- **SAT-D262 (4) ve SAT-D264:** metni değişmez. Sinan "sipariş anı"nı SAT-D267 (4)'te "Taslak siparişe dönüşünce"
+- **SAT-D262 (4) ve SAT-D264:** anlamı değişmez; yalnız "(revizyon istisnası SAT-D269)" atfı eklendi. Sinan "sipariş anı"nı SAT-D267 (4)'te "Taslak siparişe dönüşünce"
   diye açıkladı, ardından bunun iç onay olduğunu belirtti (SAT-D268). Anlık görüntünün sonradan değişmemesi aynen
   geçerlidir; tek istisna revizyon onayında değişen/yeni satırların yeniden sabitlenmesidir (SAT-D269). Taslaktaki önizleme (SAT-D267 (1))
   anlık görüntü değildir ve saklanmaz.
+- **SAT-D257 (EK51):** metni değişmez; depo taşımayan satış siparişinde (iç onay anlık görüntüsü ve taslak
+  önizlemesi) SAT-D257 (2) "şirket geneli tek ortalama kullanılmaz" ve "depo belirlenemiyorsa marj kullanılamıyor"
+  hükmünün **yerine SAT-D272 geçer** (Stok portunun şirket geneli okuması). Depo bazında ortalamanın Stok'ta tutulması
+  (SAT-D257 (1)), `CompanyId` kapsamı (SAT-D257 (3)) ve SAT-D260 aynen geçerlidir; depo düzeyinde marj okuması ayrı
+  karardır.
+- **SAT-D269:** "değişen satır" SAT-D271 ile netleşir (aynı belge; SAT-D269'un Etkilenen yeri ve uygulama ayrıntısı
+  SAT-D271 ile hizalandı).
+- **SAT-D267 (5):** "anlık görüntü yoksa önizleme" iç onaydan önceki satırlar içindir; port öncesi onaylanmış,
+  anlık görüntüsü olmayan satırlar SAT-D273'e göre "kullanılamıyor" gösterilir.
 - **SAT-D250:** metni değişmez; SAT-D267 (3) ile önizlemeye de aynen uygulanır (Sinan'ın yeniden teyidi).
 - **SAT-D247 ve SAT-D250:** metni değişmez; "API-50 marj alanı" SAT-D266 ile Satış'ın line-pricing okuması olarak
   netleşir.
@@ -115,9 +163,9 @@ contract içerdiği için işler **K3**'tür (iki bağımsız exact-head review,
 
 | Karar | İş | Kapı / bağımlılık |
 |---|---|---|
-| SAT-D262, SAT-D265; SAT-D256, SAT-D257, SAT-D258, SAT-D260 | Stok modülünde depo bazında, `CompanyId` kapsamlı hareketli ortalama alış maliyeti üreticisi (alış girişlerinde yeniden hesap, transferde kaynak deponun ortalamasıyla hedefe giriş, üretim girişleri ortalamaya girmez, iç hassasiyet 4 basamak) ve Stok'un sahip olduğu **sürümlü okuma portu** (değer / `Unreadable` / `NoSource`). Migration geri alınabilir veya forward-fix planlı; port için sürümlü contract testi. | Stok şeridi; **K3** (cross-module contract + para/formül + migration) |
-| SAT-D262, SAT-D264, SAT-D267, SAT-D268, SAT-D269, SAT-D270 | **İç onay komutunda** Stok portundan okunan maliyetin sipariş satırına anlık görüntüsü; sonradan değişmez. Revizyon onayında yalnız değişen ve yeni satırlar yeniden okunur ve sabitlenir; değişmeyen satırlar eski anlık görüntüyü korur. Port `Unreadable`/`NoSource` ise onay engellenmez, satırın marjı kalıcı "kullanılamıyor" kaydedilir. Migration geri alınabilir veya forward-fix planlı; idempotency/expected version mevcut onay komutlarıyla. | Satış (Claude) şeridi; **Stok portu henüz yok (bekliyor), main'de olmalı**; **K3** (para + migration + cross-module contract) |
-| SAT-D263, SAT-D265, SAT-D266; SAT-D259, SAT-D261 | `GET /api/v1/sales/drafts/{id}/line-pricing` cevabında marj tutarı ve yüzdesi (yalnız alış maliyeti; yüzde yuvarlanmamış tutardan; gösterimde kuruş ve 0,01; mevcut `Money` kuralı). **Stok portu main'e girene kadar line-pricing marj bloğu "kullanılamıyor" kalır**; sıfır, tahmini veya ekranda hesaplanmış marj yok. **Satırın anlık görüntüsü varsa line-pricing anlık görüntü marjını, yoksa (iç onaydan önce) saklanmayan taslak önizlemesini (SAT-D267 (1)–(3)) gösterir**; kalıcı "kullanılamıyor" kaydı olan satırda marj "kullanılamıyor"dur (SAT-D270). OpenAPI yenilenir. Formül golden'ı (ChatGPT şeridi), birim + gerçek-SQL kanıtı. | Satış (Claude) şeridi; **K3** (para/formül) |
+| SAT-D262, SAT-D265, SAT-D272; SAT-D256, SAT-D257, SAT-D258, SAT-D260 | Stok modülünde depo bazında, `CompanyId` kapsamlı hareketli ortalama alış maliyeti üreticisi (alış girişlerinde yeniden hesap, transferde kaynak deponun ortalamasıyla hedefe giriş, üretim girişleri ortalamaya girmez, iç hassasiyet 4 basamak) ve Stok'un sahip olduğu **sürümlü okuma portu** (değer / `Unreadable` / `NoSource`); depo bilgisi olmayan durum için şirket geneli (tüm depolar) ağırlıklı hareketli ortalama okuması (SAT-D272). Fiyat girdisi alış sipariş satırı fiyatıdır; Stok onu sürümlü portla okur, elle maliyet girişi yok (#66 yorumu 6761125860). Migration geri alınabilir veya forward-fix planlı; port için sürümlü contract testi. | Stok şeridi; **K3** (cross-module contract + para/formül + migration) |
+| SAT-D262, SAT-D264, SAT-D267, SAT-D268, SAT-D269, SAT-D270, SAT-D271, SAT-D272, SAT-D273 | **İç onayda (`Approve`)** Stok portunun şirket geneli okumasından (SAT-D272) alınan maliyetin sipariş satırına anlık görüntüsü; sonradan değişmez. Revizyon onayında (aynı `Approve`, Rev+1) yalnız yeni ve ürünü/miktarı değişen satırlar yeniden okunur ve sabitlenir; yalnız fiyatı/iskontosu değişen ve değişmeyen satırlar eski anlık görüntüyü korur (SAT-D271). Port öncesi onaylanmış satırlara backfill yok (SAT-D273). Port `Unreadable`/`NoSource` ise onay engellenmez, satırın marjı kalıcı "kullanılamıyor" kaydedilir. Migration geri alınabilir veya forward-fix planlı; idempotency/expected version mevcut onay komutlarıyla. | Satış (Claude) şeridi; **Stok portu henüz yok (bekliyor), main'de olmalı**; **K3** (para + migration + cross-module contract) |
+| SAT-D263, SAT-D265, SAT-D266, SAT-D271, SAT-D273; SAT-D259, SAT-D261 | `GET /api/v1/sales/drafts/{id}/line-pricing` cevabında marj tutarı ve yüzdesi (yalnız alış maliyeti; yüzde yuvarlanmamış tutardan; gösterimde kuruş ve 0,01; mevcut `Money` kuralı). **Stok portu main'e girene kadar line-pricing marj bloğu "kullanılamıyor" kalır**; sıfır, tahmini veya ekranda hesaplanmış marj yok. **Satırın anlık görüntüsü varsa line-pricing anlık görüntü marjını, yoksa (iç onaydan önce) saklanmayan taslak önizlemesini (SAT-D267 (1)–(3)) gösterir**; kalıcı "kullanılamıyor" kaydı olan satırda ve port öncesi onaylanmış, anlık görüntüsü olmayan satırda marj "kullanılamıyor"dur (SAT-D270, SAT-D273). Yalnız fiyatı değişen satırda marj korunan maliyetten yeni fiyata göre hesaplanır (SAT-D271). OpenAPI yenilenir. Formül golden'ı (ChatGPT şeridi), birim + gerçek-SQL kanıtı. | Satış (Claude) şeridi; **K3** (para/formül) |
 | SAT-D250, SAT-D266 | Marj alanlarının line-pricing cevabında yalnız marj görme izniyle verilmesi; yetkisizde ikisi de backend'de esirgenir (SAT-D250'de karara bağlandığı gibi). | **K3** (permission/rol); grant insan kapısıdır |
 | SAT-D267, SAT-D250 | Taslak line-pricing okumasında saklanmayan canlı önizleme marjı ("tahmini/önizleme"); yalnız marj görme izniyle, yetkisizde backend'de esirgenir; hiçbir kayda yazılmaz. | Satış (Claude) şeridi; Stok portu main'de olmalı; **K3** (para/formül + permission) |
 | SAT-D267 | S-05 (UI-50) taslakta ayrı "Marjı göster" düğmesi; önizleme "tahmini/önizleme" etiketiyle; "kullanılamıyor" ve "gizli" durumları; ekranda marj hesabı yok. | Satış (Claude) frontend şeridi; backend main'de |
@@ -143,9 +191,12 @@ contract içerdiği için işler **K3**'tür (iki bağımsız exact-head review,
   - **Negatif stok (`NEEDS-SINAN`):** stok negatife düştüğünde ortalamanın ve marjın davranışı.
   - **Karma kaynaklı ürün (`NEEDS-SINAN`):** hem satın alınan hem üretilen üründe marjın alış ortalamasıyla mı
     verileceği yoksa "kullanılamıyor" mu kalacağı (SAT-D258).
-- **Taslak önizlemesi ve anlık görüntü** SAT-D267, SAT-D268…SAT-D270 ile kararlaştırılmıştır; #66 yorumu 6761194105'teki
+- **Taslak önizlemesi ve anlık görüntü** SAT-D267, SAT-D268…SAT-D273 ile kararlaştırılmıştır; #66 yorumu 6761194105'teki
   üç `NEEDS-SINAN` maddesi kapanmıştır. Anlık görüntü yazımı Stok portu main'e girene kadar uygulanamaz; o zamana kadar
-  sipariş marjı "kullanılamıyor" kalır (yukarıdaki Stok portu maddesi).
+  sipariş marjı "kullanılamıyor" kalır (yukarıdaki Stok portu maddesi); o dönemde onaylanan satırlara sonradan
+  doldurma yapılmaz (SAT-D273).
+- **Depo düzeyinde marj okuması seçilmez:** depo taşımayan siparişte maliyet şirket geneli ortalamadır (SAT-D272);
+  marjın ileride depo düzeyinde okunması gerekirse ayrı bir karardır.
 - **`OPEN-008` açık kalır.** Genel stok değerleme, muhasebe maliyet yöntemi ve üretim maliyeti bu belgede seçilmez;
   ileride farklı bir değerleme yöntemi seçilirse S-05 marjının onunla hizalanıp hizalanmayacağı `NEEDS-SINAN` olur
   (EK49 ve EK51 ile aynı).
