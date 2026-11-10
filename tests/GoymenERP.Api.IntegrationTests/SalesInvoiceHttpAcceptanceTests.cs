@@ -484,7 +484,7 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         SalesInvoiceExportLineV1 Line(int lineNo, Guid order, string orderNo) => new(lineNo, "IRS-1", lineNo, new DateOnly(2026, 11, 2),
             order, orderNo, Guid.NewGuid(), Guid.NewGuid(), "1.000", "10.00", null, null, null, null, "20", null, amounts, null);
         var invoice = new SalesInvoiceExportInvoiceV1(Guid.NewGuid(), "SF-2026-000001", null, null, new DateOnly(2026, 11, 3),
-            new DateOnly(2026, 11, 3), Guid.NewGuid(), Account, Guid.NewGuid(), 2, null, amounts, null,
+            new DateOnly(2026, 11, 3), Guid.NewGuid(), Account, Guid.NewGuid(), 2, null, amounts, null, null, null,
             [new SalesInvoiceFinalInstalmentView(1, new DateOnly(2026, 12, 3), "24.00", null, Guid.NewGuid(), Guid.NewGuid())],
             ["SS-2026-000001", "SS-2026-000002"], [Line(1, firstOrder, "SS-2026-000001"), Line(2, secondOrder, "SS-2026-000002")]);
         return new SalesInvoiceExportV1("xlsx", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [invoice]);

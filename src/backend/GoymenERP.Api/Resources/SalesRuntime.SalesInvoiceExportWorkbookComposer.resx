@@ -25,7 +25,9 @@
   <data name="ColumnInvoicePayable" xml:space="preserve"><value>Fatura Ödenecek Tutar</value></data>
   <data name="ColumnInvoiceNetFunctional" xml:space="preserve"><value>Fatura Matrahı (TL)</value></data>
   <data name="ColumnInvoiceVatFunctional" xml:space="preserve"><value>Fatura KDV (TL)</value></data>
+  <data name="ColumnOfficialVatFunctional" xml:space="preserve"><value>Resmî Belge KDV (TL)</value></data>
   <data name="ColumnInvoiceWithheldFunctional" xml:space="preserve"><value>Fatura Tevkif Edilen KDV (TL)</value></data>
+  <data name="ColumnOfficialWithheldFunctional" xml:space="preserve"><value>Resmî Belge Tevkif Edilen KDV (TL)</value></data>
   <data name="ColumnInvoiceGrossFunctional" xml:space="preserve"><value>Fatura Brüt Toplam (TL)</value></data>
   <data name="ColumnInvoicePayableFunctional" xml:space="preserve"><value>Fatura Ödenecek Tutar (TL)</value></data>
   <data name="ColumnInstalments" xml:space="preserve"><value>Vade Planı</value></data>

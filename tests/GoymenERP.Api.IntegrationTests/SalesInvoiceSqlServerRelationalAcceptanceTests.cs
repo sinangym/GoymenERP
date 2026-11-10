@@ -721,6 +721,9 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.NotNull(exported.Finalization);
             Assert.NotEmpty(exported.Finalization!.Plan);
             Assert.Equal("GIB2026000000021", exported.Match?.OfficialNo);
+            // Issue #66 comment 6771235622 / EK55 (pending): the export batch restores the SAT-D241 official VAT and withholding.
+            Assert.Equal((exported.VatFunctionalAmount, exported.WithholdingFunctionalAmount),
+                (exported.Match!.Taxes!.OfficialVatAmount, exported.Match.Taxes.OfficialWithholdingAmount));
 
             var limited = await scope.Invoices.ListFinalizedInvoicesAsync(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1), 1);
             Assert.True(limited.HasMore);

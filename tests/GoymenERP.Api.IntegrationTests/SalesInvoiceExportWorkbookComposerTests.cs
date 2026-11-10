@@ -47,6 +47,57 @@ public sealed class SalesInvoiceExportWorkbookComposerTests
     }
 
     [Fact]
+    public void The_official_vat_and_withholding_columns_sit_beside_the_computed_ones_filled_from_the_match_and_empty_without_it()
+    {
+        // Issue #66 comment 6771235622 / EK55 (pending): the official document's own VAT and withholding (TL, SAT-D241) are separate
+        // columns beside the computed TL VAT and withheld VAT; the computed figures stay.
+        var export = Export();
+        var functional = new SalesInvoiceAmountsView("10.00", "2.00", "0.40", "12.00", "11.60");
+        var matched = export.Invoices[0] with
+        {
+            FunctionalTotals = functional, OfficialVatFunctionalAmount = "2.01", OfficialWithholdingFunctionalAmount = "0.41",
+        };
+
+        var (content, _) = Composer().Compose(export with { Invoices = [matched] });
+        using var archive = new ZipArchive(new MemoryStream(content), ZipArchiveMode.Read);
+        var rows = Rows(archive);
+        var header = rows[0].ToDictionary(cell => cell.Value.Value, cell => cell.Key);
+        var computedVat = header["Fatura KDV (TL)"];
+        var officialVat = header["Resmî Belge KDV (TL)"];
+        var computedWithheld = header["Fatura Tevkif Edilen KDV (TL)"];
+        var officialWithheld = header["Resmî Belge Tevkif Edilen KDV (TL)"];
+        Assert.Equal(Next(computedVat), officialVat);
+        Assert.Equal(Next(officialVat), computedWithheld);
+        Assert.Equal(Next(computedWithheld), officialWithheld);
+        Assert.Equal(SalesInvoiceExportWorkbookComposer.ColumnCount, rows[0].Count);
+        foreach (var row in rows.Skip(1))
+        {
+            // Invoice-level official amounts repeat on every line row; never a per-line figure.
+            Assert.Equal(("2.00", true), row[computedVat]);
+            Assert.Equal(("2.01", true), row[officialVat]);
+            Assert.Equal(("0.40", true), row[computedWithheld]);
+            Assert.Equal(("0.41", true), row[officialWithheld]);
+        }
+
+        var (unmatchedContent, _) = Composer().Compose(export with
+        {
+            Invoices = [matched with { OfficialVatFunctionalAmount = null, OfficialWithholdingFunctionalAmount = null }],
+        });
+        using var unmatchedArchive = new ZipArchive(new MemoryStream(unmatchedContent), ZipArchiveMode.Read);
+        foreach (var row in Rows(unmatchedArchive).Skip(1))
+        {
+            Assert.Equal(("2.00", true), row[computedVat]);
+            Assert.False(row.ContainsKey(officialVat));
+            Assert.Equal(("0.40", true), row[computedWithheld]);
+            Assert.False(row.ContainsKey(officialWithheld));
+        }
+
+        static string Next(string column) => SalesInvoiceExportWorkbookComposer.ColumnName(
+            Enumerable.Range(0, SalesInvoiceExportWorkbookComposer.ColumnCount)
+                .Single(index => SalesInvoiceExportWorkbookComposer.ColumnName(index) == column) + 1);
+    }
+
+    [Fact]
     public void Exact_amounts_are_number_cells_and_a_value_beyond_fifteen_digits_stays_exact_text()
     {
         var export = Export();
@@ -123,7 +174,7 @@ public sealed class SalesInvoiceExportWorkbookComposerTests
         var invoice = new SalesInvoiceExportInvoiceV1(Guid.Parse("40000000-0000-4000-8000-000000000001"), "SF-2026-000001", null, null,
             new DateOnly(2026, 11, 3), new DateOnly(2026, 11, 3), Guid.Parse("50000000-0000-4000-8000-000000000001"),
             Guid.Parse("60000000-0000-4000-8000-000000000001"), Guid.Parse("70000000-0000-4000-8000-000000000001"), 2, null, amounts, null,
-            [new SalesInvoiceFinalInstalmentView(1, new DateOnly(2026, 12, 3), "24.00", null, Guid.Empty, Guid.Empty)],
+            null, null, [new SalesInvoiceFinalInstalmentView(1, new DateOnly(2026, 12, 3), "24.00", null, Guid.Empty, Guid.Empty)],
             ["SS-2026-000001", "SS-2026-000002"], [Line(1, firstOrder, "SS-2026-000001"), Line(2, secondOrder, "SS-2026-000002")]);
         return new SalesInvoiceExportV1("xlsx", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [invoice]);
     }
