@@ -22,7 +22,7 @@
       "invoiceId": null,
       "dispatchNoteId": "a7a7a7a7-0000-4000-8000-000000000011",
       "shipmentId": "a8a8a8a8-0000-4000-8000-000000000011",
-      "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000007"
+      "salesOrderIds": ["c3c3c3c3-0000-4000-8000-000000000007"]
     },
     {
       "kind": "InvoiceFinanceAdmissionWaiting",
@@ -36,7 +36,7 @@
       "invoiceId": "f1f1f1f1-0000-4000-8000-000000000004",
       "dispatchNoteId": null,
       "shipmentId": null,
-      "salesOrderId": null
+      "salesOrderIds": ["c3c3c3c3-0000-4000-8000-000000000004"]
     },
     {
       "kind": "InvoiceNeedsReview",
@@ -50,7 +50,7 @@
       "invoiceId": "f1f1f1f1-0000-4000-8000-000000000006",
       "dispatchNoteId": null,
       "shipmentId": null,
-      "salesOrderId": null
+      "salesOrderIds": ["c3c3c3c3-0000-4000-8000-000000000006"]
     },
     {
       "kind": "OfficialDocumentDeviation",
@@ -64,7 +64,7 @@
       "invoiceId": "f1f1f1f1-0000-4000-8000-000000000005",
       "dispatchNoteId": null,
       "shipmentId": null,
-      "salesOrderId": null
+      "salesOrderIds": ["c3c3c3c3-0000-4000-8000-000000000005", "c3c3c3c3-0000-4000-8000-000000000008"]
     },
     {
       "kind": "InvoiceAwaitingOfficialMatch",
@@ -78,7 +78,7 @@
       "invoiceId": "f1f1f1f1-0000-4000-8000-000000000007",
       "dispatchNoteId": null,
       "shipmentId": null,
-      "salesOrderId": null
+      "salesOrderIds": ["c3c3c3c3-0000-4000-8000-000000000009"]
     }
   ]
 }

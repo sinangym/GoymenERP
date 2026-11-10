@@ -489,7 +489,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // with its Settings snapshot, attempt and audit), kept ordinal-sorted (2016a227... -> 21fade35...).
                 // SAT-D245 (EK48): +1 SalesInvoice fact (a single-instalment USD invoice whose TL payable is 0,00 is refused at finalisation
                 // and writes nothing), kept ordinal-sorted (21fade35... -> 834500af...).
-                "834500af4999a11dca77d9c212f25bb53261eb9a4496d95021bc26bf1d659e5f",
+                // SAT-D246 (EK49): +1 SalesInvoice fact (the control center lists every order of a two-order invoice in line order and
+                // another company sees none), kept ordinal-sorted (834500af... -> d9d2c108...).
+                "d9d2c10852f5eb8a9d6517aa98413295ee5c8ae0be07751db475c1053758b5c9",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
