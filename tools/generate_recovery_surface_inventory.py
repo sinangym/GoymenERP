@@ -49,11 +49,11 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 151
+EXPECTED_MIGRATION_COUNT = 152
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "43ea62835f3aca43c5ffc9d097cbe9a19665617f5607e79356d721268cba2f9e"
+    "0a0554324a516e7ce1c15304a33d5ff553554a5de57f7170d8e039eb074b97d3"
 )
-EXPECTED_DURABLE_STORE_COUNT = 30
+EXPECTED_DURABLE_STORE_COUNT = 31
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 30
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 632
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 635
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "6c440ffd6cde0752fdb48bb4ab27a5d270764e3b0e511439786d48d3f622337a"
+    "a813e3c5efd983c664b9af9259ea4cd383c0db10d0378ca350ea47390186e4ea"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -206,6 +206,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("sales", "InvoiceAttempts"),
     ("sales", "QuoteAttempts"),
     ("sales", "RequestAttempts"),
+    ("sales", "ShipmentRiskExceptionAttempts"),
 )
 METADATA_ONLY_IDEMPOTENCY_KEY_TABLES = (("audit", "AuditEvents"),)
 AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
@@ -606,6 +607,15 @@ DURABLE_STORE_SPECS = (
         ("dbContext.RequestAttempts.Add(new RequestAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "sales.shipment-risk-exception-attempts", "Sales", "idempotency", "SalesDbContext",
+        "ShipmentRiskExceptionAttemptRow",
+        "sales", "ShipmentRiskExceptionAttempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110155556_AddShipmentRiskExceptions.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs",
+        ("dbContext.ShipmentRiskExceptionAttempts.Add(NewRiskExceptionAttempt(",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "sales.outbox", "Sales", "outbox", "SalesDbContext", "SalesOutboxRow", "sales",
         "OutboxMessages",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
@@ -744,6 +754,10 @@ WRITER_METHOD_SCOPES = {
         "sales.request-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
     ): "RecordRequestRefusalAsync",
+    (
+        "sales.shipment-risk-exception-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs",
+    ): "RecordRiskExceptionRefusalAsync",
     (
         "work.observation-inbox",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
@@ -905,6 +919,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "RecordRequestRefusalAsync",
     ): "81c17b68bf692f4cbecb7bf7220776ff1f623add0d868829cca4484fbc0a0bb0",
     (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs",
+        "RecordRiskExceptionRefusalAsync",
+    ): "ade77a294e3c768b7f939b445fca42e6ade3f12060ebc87f8830c2f436743328",
+    (
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
         "ReconcileAsync",
     ): "0c760ebfe36fce642faa069b72637e699f16e1d14a04f0d154f43357be542657",
@@ -944,6 +962,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs": "754fde914ab573515fd34db5c2d0af03144f24bee9334568ceeae2eebd9f2f2e",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs": "8cfa2b15c0c0059f59c4659d62e97b9292cb8cbde9419e032f9bb4474fc472d8",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
 

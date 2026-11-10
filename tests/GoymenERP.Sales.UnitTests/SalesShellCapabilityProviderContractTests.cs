@@ -40,8 +40,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // SAT-D250 / SAT-D266 (1.21, merged after SAT-D238 1.20): registers sales.orders.margin.read (manifest v26); no screen, route or control.
         // SAT-D252..SAT-D255 / API-11 (1.22, merged after SAT-D250 1.21): registers sales.orders.source-plan.write (manifest v27) and its detail control.
         // S5 API-34 (1.23, merged after API-11 1.22): registers sales.invoices.export (manifest v28); no screen control.
-        Assert.Equal(("SALES", "1.23"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(30, declarations.Count);
+        // API-07 / SAT-D153..SAT-D162 (1.24, merged after API-34 1.23): registers the two risk exception names (manifest v29) and their detail controls.
+        Assert.Equal(("SALES", "1.24"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(32, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -167,6 +168,21 @@ public sealed class SalesShellCapabilityProviderContractTests
                 sourcePlan.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, sourcePlan.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersSourcePlanWrite], sourcePlan.RequiredPermissions);
+
+        // API-07 / SAT-D153 / SAT-D159: the risk exception request and decision are two controls of the detail - the read plus each
+        // one's own name only; the request name does not confer the decision.
+        var riskRequest = Assert.Single(declarations,
+            item => item.CapabilityId == SalesShellCapabilityProvider.RiskExceptionRequestCapabilityId);
+        Assert.Equal("sales.orders.risk-exception.request", riskRequest.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId), (riskRequest.RouteId, riskRequest.RoutePath, riskRequest.ScreenId));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, riskRequest.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersRiskExceptionRequest], riskRequest.RequiredPermissions);
+        var riskApprove = Assert.Single(declarations,
+            item => item.CapabilityId == SalesShellCapabilityProvider.RiskExceptionApproveCapabilityId);
+        Assert.Equal("sales.orders.risk-exception.approve", riskApprove.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId), (riskApprove.RouteId, riskApprove.RoutePath, riskApprove.ScreenId));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, riskApprove.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersRiskExceptionApprove], riskApprove.RequiredPermissions);
 
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
@@ -397,7 +413,10 @@ public sealed class SalesShellCapabilityProviderContractTests
         // SAT-D250 / SAT-D266 / SAT-D267: the SEPARATE margin disclosure name; the price read does not confer it.
         Assert.Equal("sales.orders.margin.read", SalesPermissionManifestV1.OrdersMarginRead);
         Assert.NotEqual(SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersMarginRead);
-        Assert.Equal((28, 31), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // API-07 / SAT-D153..SAT-D162: the SEPARATE risk exception request and decision names; neither confers the other.
+        Assert.Equal("sales.orders.risk-exception.request", SalesPermissionManifestV1.OrdersRiskExceptionRequest);
+        Assert.Equal("sales.orders.risk-exception.approve", SalesPermissionManifestV1.OrdersRiskExceptionApprove);
+        Assert.Equal((29, 33), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -431,6 +450,8 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.InvoicesExport,
                 SalesPermissionManifestV1.ReportsRead,
                 SalesPermissionManifestV1.OrdersSourcePlanWrite,
+                SalesPermissionManifestV1.OrdersRiskExceptionRequest,
+                SalesPermissionManifestV1.OrdersRiskExceptionApprove,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));

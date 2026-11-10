@@ -237,6 +237,10 @@ export interface HarnessConfig {
    * withheld exactly when a line's price is (a 404 when it served none).
    */
   readonly onRiskCheck?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-07: GET `/sales/drafts/{id}/risk-exceptions`; default: no exception. */
+  readonly onRiskExceptions?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-07: a POST on `…/risk-exceptions` (request) or `…/risk-exceptions/{no}/approval|rejection` (decision). */
+  readonly onRiskExceptionCommand?: (call: RecordedCall) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -423,6 +427,13 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/status$/.test(url)) {
           return config.onStatus?.(url, call.companyId) ?? statusOf(details.get(url.replace(/\/status$/, '')))
+        }
+        if (/\/sales\/drafts\/[^/?]+\/risk-exceptions(\/\d+\/(approval|rejection))?$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onRiskExceptionCommand === undefined) throw new Error('unexpected risk exception command')
+            return config.onRiskExceptionCommand(call)
+          }
+          return config.onRiskExceptions?.(url, call.companyId) ?? json({ items: [] })
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/risk-check$/.test(url)) {
           return config.onRiskCheck?.(url, call.companyId) ?? riskCheckOf(details.get(url.replace(/\/risk-check$/, '')))

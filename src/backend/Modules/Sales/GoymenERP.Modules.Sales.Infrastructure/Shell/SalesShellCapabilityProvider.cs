@@ -30,11 +30,16 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// <para>1.23 (S5 API-34, SAT-D236 / SAT-D244 / SAT-D248; merged after the S-2 API-11 1.22): registers
 /// <see cref="SalesPermissionManifestV1.InvoicesExport"/> (manifest v28) — read by the invoice export endpoint; no new screen, route or
 /// control (a screen control is the frontend lane's later slice).</para>
+/// <para>1.24 (API-07, SAT-D153–SAT-D162 / EK21; merged after the S5 API-34 1.23): adds the two risk exception controls of the
+/// detail (<see cref="RiskExceptionRequestCapabilityId"/>, <see cref="RiskExceptionApproveCapabilityId"/>) and registers
+/// <see cref="SalesPermissionManifestV1.OrdersRiskExceptionRequest"/> and <see cref="SalesPermissionManifestV1.OrdersRiskExceptionApprove"/>
+/// (manifest v29). The request API itself does not need the draft read (SAT-D162); the detail control does, because it lives on
+/// the detail screen.</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.23";
+    public const string OwnerContractVersion = "1.24";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -118,6 +123,18 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// confers it (shell contract 1.22).
     /// </summary>
     public const string SourcePlanWriteCapabilityId = "sales.orders.source-plan.write";
+
+    /// <summary>
+    /// API-07 / SAT-D159: the risk exception request CONTROL of the S-04 detail (read + the request name) — asking for a
+    /// single-shipment exception. No other Sales name confers it (shell contract 1.24).
+    /// </summary>
+    public const string RiskExceptionRequestCapabilityId = "sales.orders.risk-exception.request";
+
+    /// <summary>
+    /// API-07 / SAT-D153: the risk exception decision CONTROL of the S-04 detail (read + the approve name) — approving or
+    /// rejecting another user's request. No other Sales name confers it (shell contract 1.24).
+    /// </summary>
+    public const string RiskExceptionApproveCapabilityId = "sales.orders.risk-exception.approve";
 
     /// <summary>
     /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
@@ -335,6 +352,19 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = SourcePlanWriteCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersSourcePlanWrite],
+        },
+        // API-07: requesting and deciding a single-shipment risk exception are controls of the detail, like the source plan.
+        detail with
+        {
+            CapabilityId = RiskExceptionRequestCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersRiskExceptionRequest],
+        },
+        detail with
+        {
+            CapabilityId = RiskExceptionApproveCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersRiskExceptionApprove],
         },
         .. RequestDeclarations(),
         .. QuoteDeclarations(),

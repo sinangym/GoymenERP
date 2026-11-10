@@ -54,6 +54,10 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.OrdersOverDeliveryApprove, ErpPermissions.SalesOrdersOverDeliveryApprove)]
     // API-04: the header-revision name, company-wide and not Critical, granted to no role.
     [InlineData(SalesPermissionManifestV1.OrdersHeaderWrite, ErpPermissions.SalesOrdersHeaderWrite)]
+    // API-07 / SAT-D153..SAT-D162: requesting and deciding a single-shipment risk exception. Two separate names, company-wide,
+    // not Critical and granted to no role (the reasons are on ErpPermissions.SalesOrdersRiskException*).
+    [InlineData(SalesPermissionManifestV1.OrdersRiskExceptionRequest, ErpPermissions.SalesOrdersRiskExceptionRequest)]
+    [InlineData(SalesPermissionManifestV1.OrdersRiskExceptionApprove, ErpPermissions.SalesOrdersRiskExceptionApprove)]
     // DEC-SAL-002: the quantity revision of an approved order. Its own name, company-wide and not Critical (the reason is
     // on ErpPermissions.SalesOrdersQuantityWrite).
     [InlineData(SalesPermissionManifestV1.OrdersQuantityWrite, ErpPermissions.SalesOrdersQuantityWrite)]
@@ -164,8 +168,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // (SAT-D32) the user-closure control.
         // (SAT-D30) the over-delivery approval control; Sales 1.17 (SAT-D17) the line-closure control; Sales 1.19 (UI-63) the
         // S-09 invoice list screen (on the invoice read alone since Sales 1.20, SAT-D238); Sales 1.22 (S-2 API-11) the source-plan
-        // control.
-        Assert.Equal(30, sales.Length);
+        // control; Sales 1.24 (API-07) the risk exception request and decision controls.
+        Assert.Equal(32, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.SourcePlanWriteCapabilityId)
                 .Declaration.ParentCapabilityId);

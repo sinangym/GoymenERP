@@ -133,9 +133,127 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftLineIdentityForeignKeys", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftSourcePlanLines", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddInvoiceMatchTaxComparison", StringComparison.Ordinal));
-        Assert.Equal("20261110065844_AddInvoiceMatchTaxComparison", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptions", StringComparison.Ordinal));
+        Assert.Equal("20261110155556_AddShipmentRiskExceptions", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
+
+    /// <summary>API-07 (SAT-D153…D162): the risk exception tables; Up adds the decision-once guard (51252) and the append-only
+    /// attempts guard (51253); Down is a forward fix (51251) first.</summary>
+    [Fact]
+    public void The_risk_exception_migration_adds_two_triggers_and_its_down_refuses_with_51251_first()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddShipmentRiskExceptions();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(2, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("TR_ShipmentRiskExceptions_Guard", StringComparison.Ordinal) && op.Sql.Contains("51252", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_ShipmentRiskExceptionAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("51253", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51251,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_risk_exception_model_is_numbered_per_order_with_one_pending_per_shipment_and_the_maker_checker_check()
+    {
+        using var context = Context();
+        var exception = context.Model.FindEntityType(typeof(ShipmentRiskExceptionRow))!;
+        Assert.Equal(["Id"], exception.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(exception, "UX_ShipmentRiskExceptions_No"));
+        Assert.True(UniqueIndex(exception, "UX_ShipmentRiskExceptions_PendingShipment"));
+        Assert.Equal(SalesDbContext.PendingShipmentRiskExceptionFilter,
+            exception.GetIndexes().Single(index => index.GetDatabaseName() == "UX_ShipmentRiskExceptions_PendingShipment").GetFilter());
+        Assert.True(exception.FindProperty(nameof(ShipmentRiskExceptionRow.RowVersion))!.IsConcurrencyToken);
+        var attempt = context.Model.FindEntityType(typeof(ShipmentRiskExceptionAttemptRow))!;
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempt.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var checks = design.FindEntityType(typeof(ShipmentRiskExceptionRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(checks, check => check.Name == "CK_ShipmentRiskExceptions_MakerChecker" && check.Sql == SalesDbContext.ShipmentRiskExceptionMakerCheckerConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_ShipmentRiskExceptions_Decision" && check.Sql == SalesDbContext.ShipmentRiskExceptionDecisionConstraint);
+        Assert.Contains(design.FindEntityType(typeof(ShipmentRiskExceptionAttemptRow))!.GetCheckConstraints(),
+            check => check.Name == "CK_ShipmentRiskExceptionAttempts_Command" && check.Sql == SalesDbContext.ShipmentRiskExceptionAttemptCommandConstraint);
+        // Both guard triggers are declared, so EF Core never sends OUTPUT without INTO (refused on a table with an enabled trigger).
+        Assert.Equal([SalesDbContext.ShipmentRiskExceptionGuardTrigger],
+            design.FindEntityType(typeof(ShipmentRiskExceptionRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+        Assert.Equal([SalesDbContext.ShipmentRiskExceptionAttemptGuardTrigger],
+            design.FindEntityType(typeof(ShipmentRiskExceptionAttemptRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+    }
+
+    [Theory]
+    [InlineData("approve", true)]
+    [InlineData("reject", true)]
+    [InlineData("approved-to-rejected", false)]
+    [InlineData("edit-reason", false)]
+    [InlineData("edit-shipment", false)]
+    [InlineData("edit-requester", false)]
+    [InlineData("decision-without-state", false)]
+    [InlineData("delete-exception", false)]
+    [InlineData("edit-attempt", false)]
+    [InlineData("delete-attempt", false)]
+    public void A_risk_exception_moves_once_along_its_decision_and_its_request_facts_and_attempts_never_change(string change, bool passes)
+    {
+        using var context = Context();
+        var row = Attach(context, RiskExceptionRow(change == "approved-to-rejected" ? 2 : 1));
+        switch (change)
+        {
+            case "approve":
+                (row.State, row.DecidedBy, row.DecidedAtUtc, row.ValidOn, row.Version) = (2, "synthetic-manager", At, new DateOnly(2026, 9, 18), 2);
+                break;
+            case "reject":
+                (row.State, row.DecidedBy, row.DecidedAtUtc, row.RejectionReason, row.Version) = (3, "synthetic-manager", At, "SENTETIK", 2);
+                break;
+            case "approved-to-rejected":
+                (row.State, row.RejectionReason, row.ValidOn, row.Version) = (3, "SENTETIK", null, 3);
+                break;
+            case "edit-reason":
+                row.Reason = "SENTETIK başka";
+                break;
+            case "edit-shipment":
+                row.LoadingInstructionId = Guid.NewGuid();
+                break;
+            case "edit-requester":
+                row.RequestedBy = "synthetic-other";
+                break;
+            case "decision-without-state":
+                row.DecidedBy = "synthetic-manager";
+                break;
+            case "delete-exception":
+                context.Remove(row);
+                break;
+            case "edit-attempt":
+                Attach(context, RiskAttemptRow(row.Id)).ActorId = "synthetic-other";
+                break;
+            case "delete-attempt":
+                context.Remove(Attach(context, RiskAttemptRow(row.Id)));
+                break;
+        }
+
+        if (passes)
+        {
+            Assert.Throws<GuardPassedException>(() => context.SaveChanges());
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+        }
+    }
+
+    private static ShipmentRiskExceptionRow RiskExceptionRow(int state) => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, OrderId = Guid.NewGuid(), ExceptionNo = 1, LoadingInstructionId = Guid.NewGuid(),
+        Reason = "SENTETIK ödeme sözü", State = state, RequestedBy = "synthetic-shipper", RequestedAtUtc = At,
+        DecidedBy = state == 1 ? null : "synthetic-manager", DecidedAtUtc = state == 1 ? null : At,
+        ValidOn = state == 2 ? new DateOnly(2026, 9, 18) : null, Version = state == 1 ? 1 : 2, RowVersion = [1, 2, 3, 4, 5, 6, 7, 8],
+        UpdatedAtUtc = At, CorrelationId = "synthetic-correlation",
+    };
+
+    private static ShipmentRiskExceptionAttemptRow RiskAttemptRow(Guid exceptionId) => new()
+    {
+        CompanyId = CompanyA, CommandName = GoymenERP.Modules.Sales.Application.Contracts.SalesRiskExceptionCommands.RequestV1,
+        IdempotencyKeyHash = new string('A', 64), RequestHash = new string('B', 64), ActorId = "synthetic-shipper", Outcome = 1,
+        OrderId = Guid.NewGuid(), ExceptionId = exceptionId, CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
+    };
 
     /// <summary>API-33 PR2: approval columns, widened state/command CKs and the two immutability triggers; Down is a forward fix (51222).</summary>
     [Fact]
