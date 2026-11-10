@@ -39,7 +39,8 @@ public sealed class SalesShellCapabilityProviderContractTests
         // S5 API-35 (1.16): registers sales.invoices.match (manifest v23); API-33 (1.15) registered sales.invoices.approve (v22); no screen control is declared yet (frontend lane).
         // SAT-D250 / SAT-D266 (1.21, merged after SAT-D238 1.20): registers sales.orders.margin.read (manifest v26); no screen, route or control.
         // SAT-D252..SAT-D255 / API-11 (1.22, merged after SAT-D250 1.21): registers sales.orders.source-plan.write (manifest v27) and its detail control.
-        Assert.Equal(("SALES", "1.22"), (provider.Owner, provider.ContractVersion));
+        // S5 API-34 (1.23, merged after API-11 1.22): registers sales.invoices.export (manifest v28); no screen control.
+        Assert.Equal(("SALES", "1.23"), (provider.Owner, provider.ContractVersion));
         Assert.Equal(30, declarations.Count);
         foreach (var declaration in declarations)
         {
@@ -385,6 +386,8 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.invoices.match", SalesPermissionManifestV1.InvoicesMatch);
         // S5 API-36 (Fatura cekirdegi 4; S6): the SEPARATE finalisation name; the invoice write, read, approve and match names do not confer it.
         Assert.Equal("sales.invoices.finalize", SalesPermissionManifestV1.InvoicesFinalize);
+        // S5 API-34 (SAT-D236/D244/D248): the SEPARATE invoice export name; no other invoice name confers it (it also needs the price read).
+        Assert.Equal("sales.invoices.export", SalesPermissionManifestV1.InvoicesExport);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
         // SAT-D30 / SAT-D168: the SEPARATE over-delivery approval name; no other Sales name confers it.
@@ -394,7 +397,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         // SAT-D250 / SAT-D266 / SAT-D267: the SEPARATE margin disclosure name; the price read does not confer it.
         Assert.Equal("sales.orders.margin.read", SalesPermissionManifestV1.OrdersMarginRead);
         Assert.NotEqual(SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersMarginRead);
-        Assert.Equal((27, 30), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((28, 31), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -425,6 +428,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.InvoicesApprove,
                 SalesPermissionManifestV1.InvoicesMatch,
                 SalesPermissionManifestV1.InvoicesFinalize,
+                SalesPermissionManifestV1.InvoicesExport,
                 SalesPermissionManifestV1.ReportsRead,
                 SalesPermissionManifestV1.OrdersSourcePlanWrite,
             ],

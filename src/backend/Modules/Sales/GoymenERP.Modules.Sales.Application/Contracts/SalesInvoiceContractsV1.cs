@@ -71,6 +71,23 @@ public static class SalesInvoiceApiV1
 
     /// <summary>The four state commands answer the invoice after the command with 200 (the same key again too, with the replay headers).</summary>
     public const int CommandStatus = 200;
+
+    /// <summary>
+    /// API-34 (SAT-D236/D244/D248): the bulk export of the finalised invoices of a date range as ONE file for Accounting. A read
+    /// (GET): it writes nothing, opens no official connection (DEC-INT-001, DEC-FIN-003) and stores no file.
+    /// </summary>
+    public const string ExportPath = "/api/v1/sales/invoices/export";
+
+    /// <summary>API-34: the Excel workbook format (SAT-D236 (1)); the only format served now.</summary>
+    public const string ExportFormatXlsx = "xlsx";
+
+    public const string XlsxMediaType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>API-34 technical bound (not a policy): the most invoices one export answers; more is 422, nothing is cut silently.</summary>
+    public const int MaximumExportInvoices = 500;
+
+    /// <summary>API-34 technical bound (not a policy): the longest date range of one export, both days included.</summary>
+    public const int MaximumExportRangeDays = 366;
 }
 
 /// <summary>
@@ -288,6 +305,9 @@ public static class SalesInvoiceProblemCodesV1
     /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative or zero last remainder (SAT-D227, SAT-D233).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
 
+    /// <summary>422 (API-34): more finalised invoices in the range than one export answers; nothing is cut, the range is narrowed.</summary>
+    public const string ExportTooLarge = "sales_invoice_export_too_large";
+
     public const string DifferenceReasonRequired = SalesRuleCodes.InvoiceMatchDifferenceReasonRequired;
     public const string DifferenceNotApplicable = SalesRuleCodes.InvoiceMatchDifferenceNotApplicable;
 }
@@ -419,6 +439,39 @@ public sealed record SalesInvoiceListResponse(IReadOnlyList<SalesInvoiceSummaryV
 
 public sealed record SalesInvoiceListQuery(int PageSize = SalesInvoiceApiV1.DefaultPageSize, string? Cursor = null);
 
+/// <summary>
+/// API-34 query: the format and the Europe/Istanbul business days of finalisation, both included (SAT-D244: date range, finalised
+/// invoices only, one bulk file). Sales holds no official invoice date, so the day of finalisation is the range basis.
+/// </summary>
+public sealed record SalesInvoiceExportQuery(string? Format, DateOnly From, DateOnly To);
+
+/// <summary>
+/// API-34 (SAT-D248): one invoice line of the export — the shipment share, the order it came from, the price basis line's discount
+/// and surcharge as entered (percent OR amount), and the frozen amounts as exact invariant text at the currency's scale.
+/// </summary>
+public sealed record SalesInvoiceExportLineV1(int LineNo, string DispatchNoteNumber, int NoteLineNo, DateOnly ShipmentDate,
+    Guid SalesOrderId, string SalesOrderNo, Guid ProductId, Guid UnitId, string Quantity, string NetUnitPrice, string? DiscountPercent,
+    string? DiscountAmount, string? SurchargePercent, string? SurchargeAmount, string VatPercent, string? WithholdingShare,
+    SalesInvoiceAmountsView Amounts, SalesInvoiceAmountsView? FunctionalAmounts);
+
+/// <summary>
+/// API-34 (SAT-D236/D244/D248): one finalised invoice of the export — header, the official match, the day of finalisation, the
+/// totals, the due plan offered to Finance (vade), every order number the invoice is tied to (SAT-D246) and its lines.
+/// </summary>
+public sealed record SalesInvoiceExportInvoiceV1(Guid Id, string DocumentNo, string? OfficialNo, string? Ettn, DateOnly FinalizedOn,
+    DateOnly BusinessDate, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, int AmountScale, SalesInvoiceRateView? Rate,
+    SalesInvoiceAmountsView Totals, SalesInvoiceAmountsView? FunctionalTotals, IReadOnlyList<SalesInvoiceFinalInstalmentView> Instalments,
+    IReadOnlyList<string> SalesOrderNos, IReadOnlyList<SalesInvoiceExportLineV1> Lines);
+
+/// <summary>
+/// API-34 answer of the service: the facts of the export, laid out into the file by the host composer (the PDF precedent: the
+/// service reads and formats amounts with the one calculator's values; the host only lays them out with its resource texts).
+/// </summary>
+public sealed record SalesInvoiceExportV1(string Format, DateOnly From, DateOnly To, IReadOnlyList<SalesInvoiceExportInvoiceV1> Invoices);
+
+/// <summary>API-34 store answer: the finalised invoices of the range (oldest finalisation first) and whether more exist.</summary>
+public sealed record SalesInvoiceExportBatch(IReadOnlyList<SalesInvoice> Items, bool HasMore);
+
 /// <summary>What the store did for an invoice create: the invoice, recorded now or replayed, and the first correlation.</summary>
 public sealed record SalesInvoiceStoreResult(SalesInvoice Invoice, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId);
 
@@ -492,6 +545,18 @@ public interface ISalesInvoiceStore
 
     /// <summary>The shipments among <paramref name="shipmentIds"/> already on an active invoice line of this company.</summary>
     Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-34: this company's FINALISED invoices whose finalisation instant is in [<paramref name="fromUtc"/>,
+    /// <paramref name="toUtcExclusive"/>), oldest finalisation first (then id), at most <paramref name="limit"/>, with lines, match
+    /// and finalisation, and whether more exist.
+    /// </summary>
+    Task<SalesInvoiceExportBatch> ListFinalizedInvoicesAsync(DateTimeOffset fromUtc, DateTimeOffset toUtcExclusive, int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-34: the document numbers of this company's sales orders among <paramref name="orderIds"/> (another company's are absent).</summary>
+    Task<IReadOnlyDictionary<Guid, string>> FindOrderDocumentNumbersAsync(IReadOnlyCollection<Guid> orderIds,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -551,6 +616,13 @@ public interface ISalesInvoiceService
     /// another company's order is 404 and its invoices are never read.
     /// </summary>
     Task<SalesDraftInvoicesResponse> GetDraftInvoicesAsync(Guid draftId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-34 (SAT-D236/D244/D248): the facts of the finalised invoices of a date range for the one Excel workbook for Accounting. Needs
+    /// <c>sales.invoices.export</c> AND <c>sales.orders.price.read</c> (the file is prices; SAT-D238 (3): without the price read the
+    /// export fails closed with 403, never an amount-less file). Writes nothing and opens no official connection.
+    /// </summary>
+    Task<SalesInvoiceExportV1> ExportInvoicesAsync(SalesInvoiceExportQuery query, CancellationToken cancellationToken = default);
 }
 
 /// <summary>One instalment as Sales offers it to the Finance owner (ids fixed at finalisation; TL amount only for a foreign-currency invoice).</summary>

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -393,6 +394,102 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         Assert.DoesNotContain("official_invoice_provider_unavailable", body.RootElement.GetRawText(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_export_answers_one_private_xlsx_attachment_with_every_order_of_a_multi_order_invoice()
+    {
+        SalesInvoiceExportQuery? asked = null;
+        var service = new StubInvoiceService
+        {
+            Export = query =>
+            {
+                asked = query;
+                return Task.FromResult(ExportAnswer());
+            },
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{SalesInvoiceApiV1.ExportPath}?format=xlsx&from=2026-11-01&to=2026-11-30");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new SalesInvoiceExportQuery("xlsx", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30)), asked);
+        Assert.Equal(SalesInvoiceApiV1.XlsxMediaType, response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("satis-faturalari-2026-11-01-2026-11-30.xlsx", response.Content.Headers.ContentDisposition?.FileName);
+        Assert.True(response.Headers.CacheControl is { NoStore: true, Private: true });
+        Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
+        Assert.Equal("default-src 'none'; sandbox", Assert.Single(response.Headers.GetValues("Content-Security-Policy")));
+
+        using var archive = new ZipArchive(new MemoryStream(await response.Content.ReadAsByteArrayAsync()), ZipArchiveMode.Read);
+        using var reader = new StreamReader(archive.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+        var sheet = await reader.ReadToEndAsync();
+        Assert.Contains("Sipariş No(lar)", sheet, StringComparison.Ordinal);
+        Assert.Contains("SS-2026-000001, SS-2026-000002", sheet, StringComparison.Ordinal);
+        Assert.Contains("<row r=\"3\">", sheet, StringComparison.Ordinal);
+        Assert.DoesNotContain("<row r=\"4\">", sheet, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("from=2026-11-01&to=2026-11-30")]
+    [InlineData("format=xlsx&to=2026-11-30")]
+    [InlineData("format=xlsx&from=2026-11-01")]
+    [InlineData("format=xlsx&from=2026-11-01&to=2026-11-30&to=2026-12-01")]
+    [InlineData("format=xlsx&from=2026-11-01&to=2026-11-30&state=Finalized")]
+    [InlineData("format=xlsx&from=01.11.2026&to=2026-11-30")]
+    [InlineData("format=xlsx&from=2026-11-01&to=2026-13-01")]
+    public async Task An_export_query_that_is_not_strict_answers_400_before_the_service(string query)
+    {
+        var service = new StubInvoiceService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{SalesInvoiceApiV1.ExportPath}?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("validation_failed", body.RootElement.GetProperty("code").GetString());
+        Assert.Equal(0, service.ExportCalls);
+    }
+
+    [Theory]
+    [InlineData(400, "validation_failed")]
+    [InlineData(422, "sales_invoice_export_too_large")]
+    [InlineData(403, "forbidden")]
+    [InlineData(503, "service_unavailable")]
+    public async Task An_export_refusal_carries_its_stable_code_and_403_and_503_stay_code_less(int status, string code)
+    {
+        var service = new StubInvoiceService
+        {
+            Export = _ => throw new SalesDraftServiceException(status, code, status is 400 or 422 ? [new("to", "range_too_large")] : null),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{SalesInvoiceApiV1.ExportPath}?format=xml&from=2026-11-01&to=2026-11-30");
+
+        Assert.Equal(status, (int)response.StatusCode);
+        Assert.NotEqual(SalesInvoiceApiV1.XlsxMediaType, response.Content.Headers.ContentType?.MediaType);
+        if (status is 400 or 422)
+        {
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
+            Assert.Contains("range_too_large", body.RootElement.GetProperty("errors").GetRawText(), StringComparison.Ordinal);
+        }
+    }
+
+    private static SalesInvoiceExportV1 ExportAnswer()
+    {
+        var amounts = new SalesInvoiceAmountsView("10.00", "2.00", "0.00", "12.00", "12.00");
+        var firstOrder = Guid.NewGuid();
+        var secondOrder = Guid.NewGuid();
+        SalesInvoiceExportLineV1 Line(int lineNo, Guid order, string orderNo) => new(lineNo, "IRS-1", lineNo, new DateOnly(2026, 11, 2),
+            order, orderNo, Guid.NewGuid(), Guid.NewGuid(), "1.000", "10.00", null, null, null, null, "20", null, amounts, null);
+        var invoice = new SalesInvoiceExportInvoiceV1(Guid.NewGuid(), "SF-2026-000001", null, null, new DateOnly(2026, 11, 3),
+            new DateOnly(2026, 11, 3), Guid.NewGuid(), Account, Guid.NewGuid(), 2, null, amounts, null,
+            [new SalesInvoiceFinalInstalmentView(1, new DateOnly(2026, 12, 3), "24.00", null, Guid.NewGuid(), Guid.NewGuid())],
+            ["SS-2026-000001", "SS-2026-000002"], [Line(1, firstOrder, "SS-2026-000001"), Line(2, secondOrder, "SS-2026-000002")]);
+        return new SalesInvoiceExportV1("xlsx", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 30), [invoice]);
+    }
+
     private static HttpRequestMessage StatePost(Guid invoiceId, string route, string json, string? key)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.InvoicesPath}/{invoiceId:D}/{route}")
@@ -448,6 +545,8 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Func<Guid, Task<SalesInvoiceDetailView>> Detail { get; set; } = _ => throw new InvalidOperationException("not called");
         public Func<SalesInvoiceListQuery, Task<SalesInvoiceListResponse>> List { get; set; } = _ => throw new InvalidOperationException("not called");
         public Func<string, Guid, Task<SalesInvoiceCommandResult>> State { get; set; } = (_, _) => throw new InvalidOperationException("not called");
+        public Func<SalesInvoiceExportQuery, Task<SalesInvoiceExportV1>> Export { get; set; } = _ => throw new InvalidOperationException("not called");
+        public int ExportCalls { get; private set; }
         public List<string> Keys { get; } = [];
         public List<string> StateBodies { get; } = [];
 
@@ -495,6 +594,12 @@ public sealed class SalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
             List(query);
 
         public Task<SalesInvoiceDetailView> GetInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default) => Detail(invoiceId);
+
+        public Task<SalesInvoiceExportV1> ExportInvoicesAsync(SalesInvoiceExportQuery query, CancellationToken cancellationToken = default)
+        {
+            ExportCalls++;
+            return Export(query);
+        }
 
         public Task<SalesDraftInvoicesResponse> GetDraftInvoicesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("not called");

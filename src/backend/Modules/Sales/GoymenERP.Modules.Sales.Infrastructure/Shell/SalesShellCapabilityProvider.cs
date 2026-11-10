@@ -10,6 +10,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// of the detail (API-04), since 1.13 the user-closure control of the detail (SAT-D32) and since 1.14 the over-delivery approval
 /// control of the detail (SAT-D30), since 1.19 the UI-63 / S-09 sales invoice list (since 1.20 on the invoice read alone, SAT-D238)
 /// and since 1.22 the source-plan control of the detail (S-2 API-11, SAT-D179 / SAT-D251–D255) — to the
+/// shell. Since 1.23 (S5 API-34, SAT-D236/D244/D248; merged after the S-2 API-11 1.22) the catalogue also carries
+/// <c>sales.invoices.export</c> (manifest v28); no screen control is declared for it yet (frontend lane, later) — published to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -31,7 +33,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.22";
+    public const string OwnerContractVersion = "1.23";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
