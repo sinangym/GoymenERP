@@ -169,7 +169,8 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             Assert.Equal((active.Card.Product.Id, active.Card.Product.Version),
                 (Assert.Single(order.Detail.Lines).ProductId, order.Detail.Lines[0].ProductVersion));
 
-            using var approvedOrder = await SendCommandAsync(companyA, HttpMethod.Post,
+            // A2a-5a (ALS-D3): the order's preparer never approves it; the second actor approves.
+            using var approvedOrder = await SendCommandAsync(requestApprover, HttpMethod.Post,
                 $"/api/v1/purchasing/orders/{order.Detail.Order.Id:D}/approval",
                 new ApprovePurchaseOrderRequest(order.Detail.Order.Version),
                 "purchase-genuine-order-approve");
@@ -339,8 +340,9 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
         var approverRoleId = Guid.NewGuid();
         var approverRole = new RoleDefinition(approverRoleId,
             $"PURCHASE-GENUINE-REQUEST-APPROVER-{approverRoleId:N}",
-            "Disposable Company A purchase-request approver (A1-1 maker-checker); not a production grant", true);
+            "Disposable Company A purchase-request and order approver (A1-1, A2a-5a maker-checker); not a production grant", true);
         approverRole.AddPermission(PurchasingPermissionManifestV1.RequestsApprove);
+        approverRole.AddPermission(PurchasingPermissionManifestV1.OrdersApprove);
         var approverAssignment = new RoleAssignment(Guid.NewGuid(), RequestApproverId, approverRoleId, CompanyA,
             DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
         approverAssignment.AddScope(AccessScopeType.Company, CompanyA);

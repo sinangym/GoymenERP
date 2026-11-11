@@ -116,6 +116,20 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using (var migrationContext = MigrationContext(run, CompanyA))
         {
             var migrator = migrationContext.GetService<IMigrator>();
+            // A2a-5a: the newer approval migration's Down refuses first while the order's approver is recorded.
+            var approvalRefusal = await Assert.ThrowsAsync<SqlException>(() =>
+                migrator.MigrateAsync(InitialPurchasingMigration));
+            Assert.Equal(51172, approvalRefusal.Number);
+        }
+
+        Assert.Equal(beforeRefusedDown, await AcceptanceDatabaseStateAsync(run, seeded.OrderId));
+
+        // With the approver cleared (the legacy, pre-A2a-5a shape the approval check allows), the acceptance guard refuses.
+        await run.ExecuteAsync("UPDATE purchasing.PurchaseOrders SET ApprovedBy = NULL, ApprovedAtUtc = NULL WHERE Id = @id",
+            ("@id", seeded.OrderId));
+        await using (var migrationContext = MigrationContext(run, CompanyA))
+        {
+            var migrator = migrationContext.GetService<IMigrator>();
             var refusal = await Assert.ThrowsAsync<SqlException>(() =>
                 migrator.MigrateAsync(InitialPurchasingMigration));
             Assert.Equal(51042, refusal.Number);
