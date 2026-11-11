@@ -97,6 +97,33 @@ public static class ManufacturingRuleCodes
     public const string PlanCancelled = "manufacturing_plan_cancelled";
 
     /// <summary>
+    /// Üretim U2-b / API-16 (SAT-D219): the plan's sales order link moved since the caller read it (its link revision
+    /// differs); the caller reads the plan again. Answered as a conflict.
+    /// </summary>
+    public const string PlanSalesOrderLinkChanged = "manufacturing_plan_sales_order_link_changed";
+
+    /// <summary>Üretim U2-b / API-16: the plan's order is closed; its sales order link no longer changes.</summary>
+    public const string PlanSalesOrderLinkOrderClosed = "manufacturing_plan_sales_order_link_order_closed";
+
+    /// <summary>Üretim U2-b / API-16: the request links the line the plan is already linked to (or unlinks an unlinked plan).</summary>
+    public const string PlanSalesOrderLinkNoChange = "manufacturing_plan_sales_order_link_no_change";
+
+    /// <summary>
+    /// Üretim U2-b / API-16: the plan's customer-owned inputs belong to a different party than the sales order line's
+    /// customer; the link (or a revision under a link) is refused.
+    /// </summary>
+    public const string PlanSalesOrderPartyMismatch = "manufacturing_plan_sales_order_party_mismatch";
+
+    /// <summary>Üretim U2-b / API-16: the sales order line exists but is not approved (Sales owns the approval).</summary>
+    public const string PlanSalesOrderLineNotApproved = "manufacturing_plan_sales_order_line_not_approved";
+
+    /// <summary>Üretim U2-b / API-16: Sales has no such order line for this company.</summary>
+    public const string PlanSalesOrderLineNotFound = "manufacturing_plan_sales_order_line_not_found";
+
+    /// <summary>Üretim U2-b / API-16: Sales could not answer for the order line now; nothing was changed (503).</summary>
+    public const string PlanSalesOrderLineUnavailable = "manufacturing_plan_sales_order_line_unavailable";
+
+    /// <summary>
     /// Üretim U2-d (URT-D2): the user who prepared the plan's current version (saved it, or recorded its last revision)
     /// may not approve or reject it; another user decides.
     /// </summary>

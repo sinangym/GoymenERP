@@ -2435,6 +2435,200 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((PlanStatus.Approved, version), (plan.Status, plan.Version));
     }
 
+    private static readonly Guid SalesOrder = Guid.Parse("50000000-0000-0000-0000-00000000a001");
+    private static readonly Guid SalesOrderLine = Guid.Parse("50000000-0000-0000-0000-00000000a002");
+    private static readonly Guid SalesProduct = Guid.Parse("50000000-0000-0000-0000-00000000a003");
+
+    private static (Fixture Fixture, ProductionPlan Plan, SalesOrderLinePort Lines, ManufacturingCommandService Service)
+        SalesOrderLinkCase(bool withLinkStore = true, bool withLinePort = true)
+    {
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        fixture.Store.Plans[plan.Id] = plan;
+        var lines = new SalesOrderLinePort(fixture.Calls);
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            planSalesOrderLinks: withLinkStore ? fixture.Store : null, salesOrderLines: withLinePort ? lines : null);
+        return (fixture, plan, lines, service);
+    }
+
+    private static ChangePlanSalesOrderLinkRequestV1 LinkRequest(long linkRevision = 0) =>
+        new(1, linkRevision, SalesOrder, SalesOrderLine);
+
+    [Fact]
+    public async Task A_plan_is_linked_to_an_approved_sales_order_line_once_and_the_key_replays_the_answer()
+    {
+        // Üretim U2-b / API-16: the line Sales answered is stored with the actor and the clock; the plan's version stays,
+        // its link revision moves; the same key answers the stored view without asking Sales or writing again.
+        var (fixture, plan, lines, service) = SalesOrderLinkCase();
+
+        var first = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+        var replay = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (first.Status, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Ok, true), (replay.Status, replay.IsReplay));
+        var view = Assert.IsType<PlanViewV1>(first.Resource);
+        Assert.Equal((1L, 1L), (view.Version, view.SalesOrderLinkRevision));
+        var link = Assert.IsType<PlanSalesOrderLinkViewV1>(view.SalesOrderLink);
+        Assert.Equal((SalesOrder, SalesOrderLine, Party, PartyAccount, SalesProduct, 4, Actor.ToString("D"), At),
+            (link.SalesOrderId, link.SalesOrderLineId, link.CustomerPartyId, link.CustomerAccountId, link.ProductId,
+                link.LineRevision, link.LinkedBy, link.LinkedAtUtc));
+        Assert.Equal(1, lines.Asked);
+        Assert.Single(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Equal((1L, 1L), (plan.Version, plan.SalesOrderLinkRevision));
+    }
+
+    [Fact]
+    public async Task A_link_is_removed_without_asking_sales_and_a_stale_link_revision_is_409()
+    {
+        var (fixture, plan, lines, service) = SalesOrderLinkCase();
+        await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        var stale = await service.ChangePlanSalesOrderLinkAsync(plan.Id, new(1, 0, null, null), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+        var removed = await service.ChangePlanSalesOrderLinkAsync(plan.Id, new(1, 1, null, null), "key-3",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.PlanSalesOrderLinkChanged),
+            (stale.Status, stale.Code));
+        Assert.Equal(ManufacturingApiStatus.Ok, removed.Status);
+        Assert.Null(removed.Resource!.SalesOrderLink);
+        Assert.Equal(2L, removed.Resource.SalesOrderLinkRevision);
+        Assert.Equal(1, lines.Asked);
+        Assert.Equal(2, fixture.Store.Writes.Count);
+        Assert.Null(plan.SalesOrderLink);
+    }
+
+    [Theory]
+    [InlineData(ManufacturingSalesOrderLineOutcomeV1.NotApproved, ManufacturingApiStatus.Unprocessable,
+        ManufacturingRuleCodes.PlanSalesOrderLineNotApproved)]
+    [InlineData(ManufacturingSalesOrderLineOutcomeV1.NotFound, ManufacturingApiStatus.Unprocessable,
+        ManufacturingRuleCodes.PlanSalesOrderLineNotFound)]
+    [InlineData(ManufacturingSalesOrderLineOutcomeV1.Unavailable, ManufacturingApiStatus.Unavailable,
+        ManufacturingRuleCodes.PlanSalesOrderLineUnavailable)]
+    public async Task A_line_sales_does_not_answer_as_approved_links_nothing_and_records_no_key(
+        ManufacturingSalesOrderLineOutcomeV1 outcome, ManufacturingApiStatus status, string code)
+    {
+        var (fixture, plan, lines, service) = SalesOrderLinkCase();
+        lines.Outcome = outcome;
+
+        var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((status, code), (result.Status, result.Code));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Equal(0L, plan.SalesOrderLinkRevision);
+    }
+
+    [Fact]
+    public async Task An_approved_answer_for_another_company_or_line_is_503_and_links_nothing()
+    {
+        var (fixture, plan, lines, service) = SalesOrderLinkCase();
+        foreach (var answered in new[]
+                 {
+                     lines.Line with { CompanyId = Guid.NewGuid() },
+                     lines.Line with { SalesOrderLineId = Guid.NewGuid() },
+                     lines.Line with { CustomerPartyId = Guid.Empty },
+                     lines.Line with { LineRevision = -1 },
+                 })
+        {
+            lines.Answered = answered;
+            var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+                "manufacturing.plans.write", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingRuleCodes.PlanSalesOrderLineUnavailable),
+                (result.Status, result.Code));
+        }
+
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task Without_the_line_port_or_the_link_store_the_link_is_503()
+    {
+        var (_, noPortPlan, _, noPort) = SalesOrderLinkCase(withLinePort: false);
+        var (_, noStorePlan, _, noStore) = SalesOrderLinkCase(withLinkStore: false);
+
+        var withoutPort = await noPort.ChangePlanSalesOrderLinkAsync(noPortPlan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+        var withoutStore = await noStore.ChangePlanSalesOrderLinkAsync(noStorePlan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingRuleCodes.PlanSalesOrderLineUnavailable),
+            (withoutPort.Status, withoutPort.Code));
+        Assert.Equal(ManufacturingApiStatus.Unavailable, withoutStore.Status);
+        Assert.Equal(0L, noPortPlan.SalesOrderLinkRevision);
+    }
+
+    [Fact]
+    public async Task A_closed_order_refuses_the_link_with_422()
+    {
+        var (fixture, plan, _, service) = SalesOrderLinkCase();
+        fixture.Store.OrderClosed = true;
+
+        var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanSalesOrderLinkOrderClosed),
+            (result.Status, result.Code));
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task A_malformed_sales_order_link_request_is_400_before_any_read()
+    {
+        var (fixture, plan, lines, service) = SalesOrderLinkCase();
+        var cases = new (ChangePlanSalesOrderLinkRequestV1? Request, string Field)[]
+        {
+            (null, "expectedVersion"),
+            (new(0, 0, SalesOrder, SalesOrderLine), "expectedVersion"),
+            (new(1, -1, SalesOrder, SalesOrderLine), "expectedLinkRevision"),
+            (new(1, 0, SalesOrder, null), "salesOrderLineId"),
+            (new(1, 0, null, SalesOrderLine), "salesOrderLineId"),
+            (new(1, 0, Guid.Empty, SalesOrderLine), "salesOrderLineId"),
+            (new(1, 0, SalesOrder, Guid.Empty), "salesOrderLineId"),
+        };
+
+        foreach (var (request, field) in cases)
+        {
+            var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, request, "key-1",
+                "manufacturing.plans.write", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (result.Status, result.Field));
+        }
+
+        Assert.Equal(0, lines.Asked);
+        Assert.Empty(fixture.Calls);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    private sealed class SalesOrderLinePort(List<string> calls) : IManufacturingSalesOrderLineReferencePortV1
+    {
+        public ManufacturingSalesOrderLineV1 Line { get; } =
+            new(Company, SalesOrder, SalesOrderLine, Party, PartyAccount, SalesProduct, 4);
+
+        public ManufacturingSalesOrderLineV1? Answered { get; set; }
+
+        public ManufacturingSalesOrderLineOutcomeV1 Outcome { get; set; } = ManufacturingSalesOrderLineOutcomeV1.Approved;
+
+        public int Asked { get; private set; }
+
+        public Task<ManufacturingSalesOrderLineAnswerV1> GetApprovedLineAsync(Guid salesOrderId, Guid salesOrderLineId,
+            CancellationToken cancellationToken = default)
+        {
+            Asked++;
+            calls.Add("sales-order-line");
+            return Task.FromResult(new ManufacturingSalesOrderLineAnswerV1(Outcome,
+                Outcome == ManufacturingSalesOrderLineOutcomeV1.Approved ? Answered ?? Line : null));
+        }
+    }
+
     private sealed class ThrowingLifecycleStore : IManufacturingPlanLifecycleStore
     {
         public Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId,
@@ -2926,8 +3120,25 @@ public sealed class ManufacturingCommandServiceTests
 
     /// <summary>An in-memory store with the store's contract: the company's records, the domain's rules.</summary>
     private sealed class FakeStore : IManufacturingPlanStore, IManufacturingPlanRevisionStore,
-        IManufacturingOrderStore, IManufacturingCommandLog
+        IManufacturingOrderStore, IManufacturingCommandLog, IManufacturingPlanSalesOrderLinkStore
     {
+        /// <summary>Whether the plan's order is closed when the sales order link changes (U2-b).</summary>
+        public bool OrderClosed { get; set; }
+
+        public Task<ProductionPlan> ChangeSalesOrderLinkAsync(Guid planId, long expectedVersion,
+            long expectedLinkRevision, PlanSalesOrderLink? link, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var plan = Plans.GetValueOrDefault(planId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
+            plan.ChangeSalesOrderLink(expectedVersion, expectedLinkRevision, link, OrderClosed);
+            Complete(metadata, plan);
+            Writes.Add(metadata);
+            return Task.FromResult(plan);
+        }
+
         public Dictionary<(string Command, string KeyHash), ManufacturingCommandRecord> Commands { get; } = [];
 
         /// <summary>Runs when a write starts: another attempt of the same key committing meanwhile.</summary>

@@ -23,6 +23,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private const string PlanProcessSpecs = "20261102224501_AddManufacturingPlanProcessSpecs";
     private const string PlanPreparer = "20261107082508_AddManufacturingPlanPreparer";
     private const string PlanInputAllocations = "20261107145415_AddManufacturingPlanInputAllocations";
+    private const string PlanSalesOrderLinks = "20261111183848_AddManufacturingPlanSalesOrderLinks";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -49,16 +50,17 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(PlanInputAllocations, reapplied[^1]);
-            Assert.Equal(PlanPreparer, reapplied[^2]);
-            Assert.Equal(PlanProcessSpecs, reapplied[^3]);
-            Assert.Equal(PlanLifecycle, reapplied[^4]);
-            Assert.Equal(PlanParameterSnapshots, reapplied[^5]);
-            Assert.Equal(TechnicalLengthSnapshots, reapplied[^6]);
-            Assert.Equal(PlanCutLines, reapplied[^7]);
-            Assert.Equal(CommercialContexts, reapplied[^8]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^9]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^10]);
+            Assert.Equal(PlanSalesOrderLinks, reapplied[^1]);
+            Assert.Equal(PlanInputAllocations, reapplied[^2]);
+            Assert.Equal(PlanPreparer, reapplied[^3]);
+            Assert.Equal(PlanProcessSpecs, reapplied[^4]);
+            Assert.Equal(PlanLifecycle, reapplied[^5]);
+            Assert.Equal(PlanParameterSnapshots, reapplied[^6]);
+            Assert.Equal(TechnicalLengthSnapshots, reapplied[^7]);
+            Assert.Equal(PlanCutLines, reapplied[^8]);
+            Assert.Equal(CommercialContexts, reapplied[^9]);
+            Assert.Equal(TechnicalSnapshots, reapplied[^10]);
+            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^11]);
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
