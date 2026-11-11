@@ -559,6 +559,11 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 - **Ledger:** `inventory.AverageCostLedger` (`AddInventoryAverageCostLedger`), company-filtered, unique per position,
   `Version` + `RowVersion` concurrency, state check `CK_AverageCostLedger_State`. `Down` refuses (THROW 51250) while any
   row exists (forward fix).
+- **Sinan 2026-11-11 (SAT-D296/D297, `docs/decisions/SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md`):** at
+  zero stock the last average stays readable (Value). A purchase receipt with a zero unit cost is "cost unknown": the
+  position becomes sticky Unreadable `zero_cost_receipt` (reason 9) and the zero never enters the average. Migration
+  `RelaxInventoryAverageCostReasonToZeroCostReceipt` widens the reason check to 1..9; its `Down` refuses (THROW 51258)
+  while a reason 9 row exists. Purchase-line price input, USD/TL and unit conversion stay open (NEEDS-SINAN, Issue #66).
 - **No price input source is connected yet** (Purchasing price input is NEEDS-SINAN, Issue #66 comment 6760990097), so
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).

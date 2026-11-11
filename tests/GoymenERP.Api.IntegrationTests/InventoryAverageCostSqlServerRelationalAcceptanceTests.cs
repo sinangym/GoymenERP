@@ -1,4 +1,4 @@
-using GoymenERP.BuildingBlocks.Multitenancy;
+﻿using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
@@ -60,7 +60,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var product = Guid.NewGuid();
         await InsertKnownAverageCostAsync(run, CompanyA, locationA, product, 1m, 5m);
 
-        // CK_AverageCostLedger_State: known needs both figures non-negative and no reason; unreadable needs a reason 1..8 and no figures.
+        // CK_AverageCostLedger_State: known needs both figures non-negative and no reason; unreadable needs a reason 1..9 and no figures.
         foreach (var values in new[]
         {
             "1, NULL, -1, 5, 1",   // negative quantity
@@ -68,7 +68,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "1, NULL, NULL, 5, 1", // known without quantity
             "1, 3, 1, 5, 1",       // known with a reason
             "2, NULL, NULL, NULL, 1", // unreadable without a reason
-            "2, 9, NULL, NULL, 1", // unknown reason
+            "2, 10, NULL, NULL, 1", // unknown reason
             "2, 3, 1, NULL, 1",    // unreadable carrying a quantity
             "2, 3, NULL, 5, 1",    // unreadable carrying an average
             "3, NULL, 1, 5, 1",    // unknown status
@@ -152,11 +152,39 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var rejected = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
             Assert.Equal(51250, rejected.Number);
-            Assert.Equal(context.Database.GetMigrations().Last(),
-                (await context.Database.GetAppliedMigrationsAsync()).Last());
+            // The later reason-widening migration rolled back (no reason 9 row); the ledger migration itself refuses.
+            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.AverageCostLedger"));
+    }
+
+    [SqlServerFact]
+    public async Task The_average_cost_reason_migration_Down_passes_with_older_reasons_and_refuses_while_a_zero_cost_receipt_row_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.RelaxInventoryAverageCostReasonToZeroCostReceipt().DownOperations[0]).Sql;
+
+        await run.ExecuteAsync(guard);
+        await run.ExecuteAsync(
+            """
+            INSERT INTO inventory.AverageCostLedger
+                (Id, CompanyId, LocationId, ProductId, Status, UnreadableReason, QuantityKg, AverageCostPerKg, Version, UpdatedAtUtc)
+            VALUES (NEWID(), @company, @location, NEWID(), 2, 1, NULL, NULL, 1, SYSUTCDATETIME());
+            """, ("@company", CompanyA), ("@location", location));
+        await run.ExecuteAsync(guard);
+
+        await run.ExecuteAsync(
+            """
+            INSERT INTO inventory.AverageCostLedger
+                (Id, CompanyId, LocationId, ProductId, Status, UnreadableReason, QuantityKg, AverageCostPerKg, Version, UpdatedAtUtc)
+            VALUES (NEWID(), @company, @location, NEWID(), 2, 9, NULL, NULL, 1, SYSUTCDATETIME());
+            """, ("@company", CompanyA), ("@location", location));
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51258, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.AverageCostLedger WHERE UnreadableReason = 9"));
     }
 
     private static async Task<InventoryAverageCostReadAnswerV1> AverageCostReadAsync(

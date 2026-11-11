@@ -59,6 +59,12 @@ public enum AverageCostUnreadableReason
     /// had a cost). The ledger cannot blend a quantity it never costed (OPEN-INV-AVGCOST-UNCOSTED-STOCK, NEEDS-SINAN).
     /// </summary>
     LedgerStockMismatch = 8,
+
+    /// <summary>
+    /// A purchase receipt (or a transfer at a zero source average) carries a zero unit cost: Sinan 2026-11-11 decided a
+    /// zero-cost receipt means "cost unknown" (Unreadable), never a zero that pulls the average down.
+    /// </summary>
+    ZeroCostReceipt = 9,
 }
 
 /// <summary>

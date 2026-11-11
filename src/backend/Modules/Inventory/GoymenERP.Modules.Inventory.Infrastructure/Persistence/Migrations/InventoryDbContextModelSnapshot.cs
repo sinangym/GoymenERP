@@ -432,7 +432,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_AverageCostLedger_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_AverageCostLedger_State", "[Version] >= 1 AND (([Status] = 1 AND [UnreadableReason] IS NULL AND [QuantityKg] IS NOT NULL AND [QuantityKg] >= 0 AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 8 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))");
+                            t.HasCheckConstraint("CK_AverageCostLedger_State", "[Version] >= 1 AND (([Status] = 1 AND [UnreadableReason] IS NULL AND [QuantityKg] IS NOT NULL AND [QuantityKg] >= 0 AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 9 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))");
                         });
                 });
 

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -297,7 +297,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/inventory.txt"] =
                 // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
                 // SAT-D262..D267: +4 average-cost ledger/port SQL facts (c005163c... -> 0b766916...), kept ordinal-sorted.
-                "0b7669164b24d30a8f7ff1a21f893a1ce1ebc4c138c90bbbede9cbe12e559016",
+                "ca832f2d003c6d6310f7fbee44d5a19a2eadd843e39ba1e0572f3eee261db495",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -768,7 +768,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/InventoryDbContext.cs"] =
                 // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
                 // Re-fingerprinted for SAT-D262: AverageCostLedger table (company filter, company-leading unique position key, write guard); provider tokens unchanged.
-                "cf6d165268b28b49c57cbc7a4f8f2de8f80c29e22b680677b187734e4c05aa60",
+                "f367b28bdcfd848da3e3b63b8a8f72ef7475c5ad5a0041870e0b38bda40d254b",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -2862,6 +2862,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // drop. An empty schema rolls back freely; a populated one needs a forward fix.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928161227_AddInventoryStockScraps.cs"] =
                     new("9a4b4e0fd2233b33b8b95ffca4a9df4b06049dc86b7cfd0fd84e1a47b83424d4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D297: widens the ledger reason check to 1..9 (zero_cost_receipt); the Down's only raw SQL is the Inventory
+                // refusal (51258, used by no other migration) while a reason 9 row exists, and the THROW precedes the check swap.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261111091157_RelaxInventoryAverageCostReasonToZeroCostReceipt.cs"] =
+                    new("927921240465ff834888409d12f20282d4634069a452b5c75170fe62e5c92946",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // SAT-D262: the average-cost ledger is a durable fact; the Down's only raw SQL is the Inventory refusal

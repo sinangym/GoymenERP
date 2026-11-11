@@ -62,10 +62,24 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void Zero_stock_keeps_the_last_average_and_the_next_receipt_restarts_from_its_own_cost()
     {
-        // OPEN-INV-AVGCOST-ZERO-STOCK: the last average is kept (not cleared) at zero; no policy is chosen beyond that.
+        // Sinan 2026-11-11 (SAT-D296): at zero stock the last average stays readable (a Value, not Unreadable).
         var empty = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(Issue, 5m, 5m));
         AssertKnown(empty, 0m, 8m);
         AssertKnown(AverageCostCalculator.Apply(empty, Purchase(2m, 0m, 20m)), 2m, 20m);
+    }
+
+    [Fact]
+    public void A_zero_cost_purchase_is_cost_unknown_and_never_enters_the_average()
+    {
+        // Sinan 2026-11-11 (SAT-D297): zero unit cost is "cost unknown" (Unreadable), sticky like the other reasons.
+        var first = AverageCostCalculator.Apply(null, Purchase(5m, 0m, 0m));
+        Assert.Equal(AverageCostStatus.Unreadable, first.Status);
+        Assert.Equal(ZeroCostReceipt, first.UnreadableReason);
+
+        var held = AverageCostPosition.Known(10m, 12m);
+        var after = AverageCostCalculator.Apply(held, Purchase(4m, 10m, 0m));
+        Assert.Equal(ZeroCostReceipt, after.UnreadableReason);
+        Assert.Equal(ZeroCostReceipt, AverageCostCalculator.Apply(after, Purchase(1m, 14m, 9m)).UnreadableReason);
     }
 
     [Fact]
@@ -215,7 +229,7 @@ public sealed class InventoryAverageCostCalculatorTests
     public void The_persisted_reason_numbers_are_pinned()
     {
         Assert.Equal(
-            [1, 2, 3, 4, 5, 6, 7, 8],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9],
             Enum.GetValues<AverageCostUnreadableReason>().Select(reason => (int)reason).Order());
         Assert.Equal((1, 2), ((int)AverageCostStatus.Known, (int)AverageCostStatus.Unreadable));
         Assert.Equal(4, AverageCostPrecision.InternalScale);

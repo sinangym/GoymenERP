@@ -43,11 +43,12 @@ public static class InventoryAverageCostUnreadableCodesV1
     public const string ProductionSource = "mixed_source_undecided";
     public const string TransferSourceUnreadable = "transfer_source_unreadable";
     public const string LedgerStockMismatch = "uncosted_stock_on_hand";
+    public const string ZeroCostReceipt = "zero_cost_receipt";
 
     public static IReadOnlyList<string> All { get; } =
     [
         NegativeStock, UnitConversion, ForeignCurrency, LandedOrAdditionalCost, Return, ProductionSource,
-        TransferSourceUnreadable, LedgerStockMismatch,
+        TransferSourceUnreadable, LedgerStockMismatch, ZeroCostReceipt,
     ];
 }
 

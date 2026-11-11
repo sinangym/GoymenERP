@@ -65,6 +65,7 @@ internal sealed class InventoryAverageCostReadPort(InventoryDbContext dbContext,
         AverageCostUnreadableReason.ProductionSource => InventoryAverageCostUnreadableCodesV1.ProductionSource,
         AverageCostUnreadableReason.TransferSourceUnreadable => InventoryAverageCostUnreadableCodesV1.TransferSourceUnreadable,
         AverageCostUnreadableReason.LedgerStockMismatch => InventoryAverageCostUnreadableCodesV1.LedgerStockMismatch,
+        AverageCostUnreadableReason.ZeroCostReceipt => InventoryAverageCostUnreadableCodesV1.ZeroCostReceipt,
         _ => throw new ArgumentOutOfRangeException(nameof(reason)),
     };
 }
