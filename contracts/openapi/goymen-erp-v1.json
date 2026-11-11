@@ -82655,6 +82655,8 @@
             },
             "x-erp-problem-codes": [
               "concurrent_change",
+              "purchasing_order_maker_unknown",
+              "purchasing_order_same_actor",
               "purchasing_order_state",
               "purchasing_request_line_over_sourced",
               "purchasing_request_state",

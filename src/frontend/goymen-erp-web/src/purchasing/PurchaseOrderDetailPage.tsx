@@ -16,7 +16,7 @@ import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
-import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
+import { ORDER_APPROVAL_PROBLEM_TEXT, PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 import { PurchaseOrderSupplierIdentity } from './PurchaseOrderListPage'
 import { CAPABILITY } from '../shell/capabilities'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
@@ -216,7 +216,9 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const outcomeNotice = attempt.phase === 'applied'
     ? <p role="status" className={styles.success}>{attempt.replayed ? T.approvalReplayed : T.approvalApplied}</p>
     : attempt.phase === 'failed'
-      ? <p role="alert" className={styles.error}>{T.approvalFailed(attempt.code ?? attempt.status)}</p>
+      ? <p role="alert" className={styles.error}>{attempt.code !== null && Object.hasOwn(ORDER_APPROVAL_PROBLEM_TEXT, attempt.code)
+        ? T.approvalRefused(ORDER_APPROVAL_PROBLEM_TEXT[attempt.code], attempt.code)
+        : T.approvalFailed(attempt.code ?? attempt.status)}</p>
       : null
   return frame(<>
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">

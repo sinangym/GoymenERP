@@ -68,11 +68,13 @@ hiçbir AI izni kullanıcıya ulaşmaz; iki karar birlikte verilirse tekrar soru
 |---|---|
 | C1. Panel: tüm aktif kullanıcılar (araçlar zaten kullanıcının kendi yetkisiyle çalışır). Politika: onaylayan ≠ hazırlayan, yayımlayan ≠ hazırlayan (onaylayan yayımlayabilir) | Görev ayrılığı korunur |
 | C2. Panel: yalnız seçilen personalar (pilot). Politika: C1 gibi | Kademeli açılış |
-| C3. Panel ve politika tek yöneticide | Görev ayrılığı yok; AI-D6'nın hazırla → onayla → yayınla akışıyla çelişir. ADR-SET-002'nin "onaylayan ≠ hazırlayan" kuralı K15 gereği AI ailesine kendiliğinden geçmez; AI ailesinin onay/yürürlük dayanağı aile kararıyla verilir (önerilmez) |
+| C3. Panel ve politika tek yöneticide | Görev ayrılığı yok; AI-D6'nın hazırla → onayla → yayınla akışıyla ve `SINAN_KARARLARI_2026-10-21.md` §3.6 K15'le (yaşam döngüsü ve onaylayan ≠ hazırlayan, yayımlayan ≠ hazırlayan bütün ailelere uygulanır) çelişir (önerilmez) |
 
 **Önerilen varsayılan:** C2 (pilot), politika için onaylayan ≠ hazırlayan ve yayımlayan ≠ hazırlayan. Panel için aday izin adları
-(`ai.panel.use`, `ai.center.view`; ikisi de `ASSUMPTION`) yalnız katalogda kayıtlı olur; politika izin adları
-henüz seçilmedi (ADR-SET-002 K16: izin adı/rol/grant seçilmez). **Grant yok**, rol adı kodda yok.
+(`ai.panel.use`, `ai.center.view`; ikisi de `ASSUMPTION`) yalnız katalogda kayıtlı olur. Politika izin adları
+`SINAN_KARARLARI_2026-10-21.md` §3.6 K16 (No 133) ile konmuştur: genel aileler için `settings.policies.prepare`,
+`settings.policies.approve`, `settings.policies.publish`; kritik aileler için ek `settings.policies.publish-critical`
+(yalnız katalog kaydı). **Grant yok**, rol adı kodda yok.
 
 **Cevapsızken:** Panel açılır ama her durumda "kullanılamıyor" der (bugünkü davranış); hiçbir AI izni kimseye verilmez. Rol verme her zaman insan kapısıdır.
 
@@ -92,6 +94,8 @@ Soru: `AI_VERI_GUVENLIK`'te "Gizli" olup Sinan'ın AI-D4 listesinde (fiyat, baki
 **Cevapsızken:** D1 uygulanır; değişiklik gerekmez.
 
 ## E. Güvenlik olayı kanalı (ADR-SEC-001, "Öneri")
+
+> **Durum (2026-11-11):** Sinan Grup E önerilerini kabul etti (`SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-11, #66 6806619303 madde 11). E7 BS-15 ile toplulaştırma olarak karara bağlandı (#66 6806860620 madde 15; pencere ve eşik Ayarlar'dan, ilk değer ölçümden sonra önerilir, hız sınırı yok). E8 (hash anahtarı, secret) ve harici AI'nin canlıya alınması insan kapısında kalır; E8 cevaplanana kadar kullanıcı adı hash'i yazılmaz. Aşağıdaki tablo karar öncesi metindir.
 
 ERP-000J §18 gereği AI runtime (AI-3) bu kanal olmadan başlamaz. ADR-SEC-001'in kabulü için K3 review ve
 aşağıdaki cevaplar gerekir. E1–E4, E6 ve E9'daki öneri ADR'daki öneridir (E2'nin "cevapsızken" hücresi AI-2'nin başlamamasından gelir). E5, E7 ve E8 ayrıca işaretlidir.

@@ -230,7 +230,7 @@ public sealed partial class PurchasingServiceTests
     {
         var world = new World { Bindings = new(CreatePermission, ReadPermission, ApprovePermission, CreatePermission) };
         var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "10"), Metadata("create"));
-        await world.Service().ApproveOrderAsync(created.Detail.Order.Id, new("2"), Metadata("approve"));
+        await world.AsApprover(() => world.Service().ApproveOrderAsync(created.Detail.Order.Id, new("2"), Metadata("approve")));
         return (world, new ReceiptRunner(), created.Detail.Order.Id, created.Detail.Lines[0].LineId);
     }
 
