@@ -13,8 +13,8 @@ namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
 /// AI-2b (ADR-SEC-001 section 5): the security event read name is REGISTERED, not granted (BS-11, 2026-11-11:
-/// the name is a candidate and carries no grant). It is company-wide and not Critical; marking it Critical or
-/// handing it to a role is a human gate. Same shape as the Logistics registration.
+/// the name is a candidate and carries no grant). It is company-wide and Critical (user decision 2026-11-11, Issue #66
+/// comment 6810051185 item 19); handing it to a role is a human gate. Same shape as the Logistics registration.
 /// </summary>
 public sealed class SecurityEventsReadPermissionRegistrationTests
 {
@@ -33,12 +33,12 @@ public sealed class SecurityEventsReadPermissionRegistrationTests
 
     [Theory]
     [MemberData(nameof(Permissions))]
-    public void The_name_is_registered_once_company_wide_and_not_critical(string permission)
+    public void The_name_is_registered_once_company_wide_and_critical(string permission)
     {
         Assert.True(ErpPermissions.IsKnown(permission));
         Assert.Single(ErpPermissions.All, name => name == permission);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(permission));
-        Assert.False(ErpPermissions.IsCritical(permission));
+        Assert.True(ErpPermissions.IsCritical(permission));
     }
 
     [Theory]

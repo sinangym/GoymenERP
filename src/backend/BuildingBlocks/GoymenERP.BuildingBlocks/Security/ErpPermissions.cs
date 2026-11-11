@@ -1013,8 +1013,9 @@ public static class ErpPermissions
     public const string IdentityAssignmentsRead = "identity.assignments.read";
     /// <summary>
     /// ADR-SEC-001 section 5 read of the company's security event channel (security.SecurityEvents). Company-wide
-    /// only; platform rows need a separate platform permission. Registration only: no seeded role holds it, and
-    /// granting it or marking it Critical is a human decision (BS-11, 2026-11-11).
+    /// only; platform rows need a separate platform permission. Critical (user decision 2026-11-11, Issue #66
+    /// comment 6810051185 item 19: held only by Sinan and the admin; any other holder needs Sinan's approval). No
+    /// seeded role holds it: applying the grant is a human gate.
     /// </summary>
     public const string PlatformSecurityEventsRead = "platform.security-events.read";
 
@@ -1194,6 +1195,7 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
             CounterpartyPartiesTaxIdentityApprove,
