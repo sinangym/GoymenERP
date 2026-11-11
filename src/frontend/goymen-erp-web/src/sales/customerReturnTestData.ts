@@ -16,6 +16,8 @@ export const SHIPMENT_2 = 'f7000000-0000-4000-8000-000000000002'
 export const RETURN_DOCUMENT_NO = 'MIF-2026-0001'
 export const PREPARER = 'company-a-preparer'
 export const APPROVER = 'company-a-approver'
+export const REJECTION_REASON = 'Müşteri belgesi eksik (SENTETIK).'
+export const CANCELLATION_REASON = 'Yanlış faturaya kaydedildi (SENTETIK).'
 const TL = '33333333-3333-3333-3333-333333333334'
 
 export const returnAmounts = (over: Wire = {}): Wire => ({
@@ -46,14 +48,32 @@ export const returnLine = (over: Wire = {}): Wire => ({
   ...over,
 })
 
-const ACTORS: Record<string, Wire> = {
-  Draft: { submittedBy: null, submittedAtUtc: null, approvedBy: null, approvedAtUtc: null, finalizedBy: null, finalizedAtUtc: null },
-  PendingApproval: { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: null, approvedAtUtc: null, finalizedBy: null, finalizedAtUtc: null },
-  Approved: { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: APPROVER, approvedAtUtc: '2026-11-05T10:00:00Z', finalizedBy: null, finalizedAtUtc: null },
-  Finalized: { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: APPROVER, approvedAtUtc: '2026-11-05T10:00:00Z', finalizedBy: APPROVER, finalizedAtUtc: '2026-11-05T11:00:00Z' },
+const OPEN: Wire = {
+  rejectedBy: null,
+  rejectedAtUtc: null,
+  rejectionReason: null,
+  cancelledBy: null,
+  cancelledAtUtc: null,
+  cancellationReason: null,
 }
 
-const VERSION: Record<string, string> = { Draft: '1', PendingApproval: '2', Approved: '3', Finalized: '4' }
+const ACTORS: Record<string, Wire> = {
+  Draft: { submittedBy: null, submittedAtUtc: null, approvedBy: null, approvedAtUtc: null, finalizedBy: null, finalizedAtUtc: null, ...OPEN },
+  PendingApproval: { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: null, approvedAtUtc: null, finalizedBy: null, finalizedAtUtc: null, ...OPEN },
+  Approved: { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: APPROVER, approvedAtUtc: '2026-11-05T10:00:00Z', finalizedBy: null, finalizedAtUtc: null, ...OPEN },
+  Finalized: { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: APPROVER, approvedAtUtc: '2026-11-05T10:00:00Z', finalizedBy: APPROVER, finalizedAtUtc: '2026-11-05T11:00:00Z', ...OPEN },
+  Rejected: {
+    submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: null, approvedAtUtc: null, finalizedBy: null, finalizedAtUtc: null,
+    ...OPEN, rejectedBy: APPROVER, rejectedAtUtc: '2026-11-05T10:00:00Z', rejectionReason: REJECTION_REASON,
+  },
+  // Cancelled from Draft (never submitted); a cancellation from PendingApproval also carries the submission.
+  Cancelled: {
+    submittedBy: null, submittedAtUtc: null, approvedBy: null, approvedAtUtc: null, finalizedBy: null, finalizedAtUtc: null,
+    ...OPEN, cancelledBy: PREPARER, cancelledAtUtc: '2026-11-05T09:30:00Z', cancellationReason: CANCELLATION_REASON,
+  },
+}
+
+const VERSION: Record<string, string> = { Draft: '1', PendingApproval: '2', Approved: '3', Finalized: '4', Rejected: '3', Cancelled: '2' }
 
 /** A TL return of the synthetic invoice in `state`, with exactly the actor facts that state has passed through. */
 export function returnView(state = 'Draft', over: Wire = {}): Wire {

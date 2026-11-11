@@ -5,8 +5,12 @@
  * A finalization refused with 503 `sales_customer_return_finance_port_unavailable` stays an unresolved attempt — the
  * house rule for every 5xx: the key is kept and only the same send may follow — but it says WHY (SAT-D294: no Finance
  * port is registered, so the return did not finalize).
+ *
+ * A rejection or cancellation refused with 422 `sales_approval_reason_too_long` says the reason was too long (the shared Sales
+ * sentence speaks of a rejection only).
  */
 import type { CustomerReturnMutation } from './customerReturnApi'
+import { SALES_PROBLEM_CODE } from './contract'
 import { CUSTOMER_RETURN_PROBLEM_CODE, CUSTOMER_RETURN_TEXT, customerReturnOwnProblemText } from './customerReturnText'
 import type { OrderAttemptState } from './orderAttempt'
 import { poolNotice, type PoolNotice } from './poolAttempt'
@@ -32,6 +36,10 @@ export function customerReturnNotice<P>(
   }
   const base = poolNotice(state, options)
   if (base === null || state.phase !== 'failed' || state.unresolvedSince !== undefined) return base
+  // 422 `sales_approval_reason_too_long` on a rejection or a cancellation: the shared sentence names a rejection only.
+  if (state.problem?.code === SALES_PROBLEM_CODE.approvalReasonTooLong) {
+    return { ...base, message: CUSTOMER_RETURN_TEXT.detail.reasonTooLongServer }
+  }
   const reason = customerReturnOwnProblemText(state.problem?.code ?? null)
   return reason === null ? base : { ...base, message: `${base.message} ${reason}` }
 }

@@ -1,23 +1,33 @@
 /**
  * UI-70b S-10 — one customer return invoice as `GET /api/v1/sales/customer-returns/{id}` describes it (API-40), with its
- * three commands: "Onaya gönder" (Draft), "Onayla" (Onay bekliyor) and "Kesinleştir" (Onaylandı) — SAT-D290/SAT-D294.
+ * three commands: "Onaya gönder" (Draft), "Onayla" (Onay bekliyor) and "Kesinleştir" (Onaylandı) — SAT-D290/SAT-D294 — and
+ * the invoice's two terminal decisions (SAT-D290 (2, 3)): "Reddet" (Onay bekliyor, the approver's capability) and "İptal et"
+ * (Taslak or Onay bekliyor, the preparer's capability), each with an optional reason checked against the server's bound.
  *
  * Every amount is the server's text (SAT-D241/SAT-D292: the deterministic backend calculator); the screen never computes
  * or rounds. Each command is offered only in its source state and under its own published capability; the server re-judges
  * every one (the preparer/submitter cannot approve — 409 — and finalization fails closed with 503 while no Finance port is
  * registered, SAT-D294). After a recorded command, or a 409, the return is re-read.
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import {
+  cancelCustomerReturn,
   fetchCustomerReturn,
+  rejectCustomerReturn,
   sendCustomerReturnCommand,
   type CustomerReturnCommand,
-  type CustomerReturnCommandBody,
+  type CustomerReturnDecision,
+  type CustomerReturnDecisionBody,
   type CustomerReturnMutation,
 } from './customerReturnApi'
-import type { CustomerReturnAmounts, CustomerReturnState, CustomerReturnView } from './customerReturnContract'
+import {
+  CUSTOMER_RETURN_REASON_MAX,
+  type CustomerReturnAmounts,
+  type CustomerReturnState,
+  type CustomerReturnView,
+} from './customerReturnContract'
 import { CUSTOMER_RETURN_STATE_TEXT, CUSTOMER_RETURN_SUBJECT, CUSTOMER_RETURN_TEXT, CUSTOMER_RETURN_TONE } from './customerReturnText'
 import { customerReturnNotice } from './customerReturnNotice'
 import {
@@ -164,6 +174,24 @@ function ReturnView({
           {view.finalizedBy === null || view.finalizedAtUtc === null ? null : (
             <div><dt>{T.finalizedBy}</dt><dd>{T.at(view.finalizedBy, formatInstant(view.finalizedAtUtc))}</dd></div>
           )}
+          {view.rejectedBy === null || view.rejectedAtUtc === null ? null : (
+            <>
+              <div><dt>{T.rejectedBy}</dt><dd>{T.at(view.rejectedBy, formatInstant(view.rejectedAtUtc))}</dd></div>
+              <div>
+                <dt>{T.rejectionReason}</dt>
+                <dd data-testid="customer-return-rejection-reason">{view.rejectionReason ?? T.reasonNone}</dd>
+              </div>
+            </>
+          )}
+          {view.cancelledBy === null || view.cancelledAtUtc === null ? null : (
+            <>
+              <div><dt>{T.cancelledBy}</dt><dd>{T.at(view.cancelledBy, formatInstant(view.cancelledAtUtc))}</dd></div>
+              <div>
+                <dt>{T.cancellationReason}</dt>
+                <dd data-testid="customer-return-cancellation-reason">{view.cancellationReason ?? T.reasonNone}</dd>
+              </div>
+            </>
+          )}
         </dl>
         <ReturnCommands view={view} onReread={onReread} />
       </section>
@@ -288,28 +316,71 @@ const COMMAND_LABEL: Readonly<Record<CustomerReturnCommand, string>> = {
   finalization: T.finalize,
 }
 
-const commandOf = (path: string): CustomerReturnCommand =>
-  path.endsWith('/finalization') ? 'finalization' : path.endsWith('/approval') ? 'approval' : 'submission'
+/** SAT-D290 (2, 3): rejection by the approver from PendingApproval; cancellation by the preparer before approval. */
+const DECISION_SOURCES: Readonly<Record<CustomerReturnDecision, readonly CustomerReturnState[]>> = {
+  rejection: ['PendingApproval'],
+  cancellation: ['Draft', 'PendingApproval'],
+}
 
-/** The command whose target state a recorded answer is in (the transport accepts only the target state). */
-const commandFor = (state: CustomerReturnState): CustomerReturnCommand =>
-  state === 'Finalized' ? 'finalization' : state === 'Approved' ? 'approval' : 'submission'
+/** The published controls: rejection beside `sales.returns.approve`, cancellation beside `sales.returns.write` (submission's). */
+const DECISION_CAPABILITY: Readonly<Record<CustomerReturnDecision, string>> = {
+  rejection: SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
+  cancellation: SALES_CUSTOMER_RETURN_SUBMIT_CAPABILITY,
+}
+
+const DECISION_LABEL: Readonly<Record<CustomerReturnDecision, string>> = {
+  rejection: T.reject,
+  cancellation: T.cancel,
+}
+
+type ReturnAction = CustomerReturnCommand | CustomerReturnDecision
+
+const ACTIONS: readonly ReturnAction[] = ['submission', 'approval', 'finalization', 'rejection', 'cancellation']
+
+const actionOf = (path: string): ReturnAction => ACTIONS.find((action) => path.endsWith(`/${action}`)) ?? 'submission'
+
+const isDecision = (action: ReturnAction): action is CustomerReturnDecision => action === 'rejection' || action === 'cancellation'
+
+/** The action whose target state a recorded answer is in (the transport accepts only the target state). */
+const actionFor = (state: CustomerReturnState): ReturnAction =>
+  state === 'Finalized'
+    ? 'finalization'
+    : state === 'Approved'
+      ? 'approval'
+      : state === 'Rejected'
+        ? 'rejection'
+        : state === 'Cancelled'
+          ? 'cancellation'
+          : 'submission'
 
 function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView; readonly onReread: () => void }) {
   const shell = useShellState()
+  const reasonId = useId()
+  const hintId = useId()
   // The code of the last 5xx answer (the attempt machine keeps none): it says why a finalization stayed unresolved.
   const [serviceCode, setServiceCode] = useState<string | null>(null)
-  const attempt = usePoolAttempt<CustomerReturnCommandBody, CustomerReturnMutation>(
+  const [reasonFor, setReasonFor] = useState<CustomerReturnDecision | null>(null)
+  const [reason, setReason] = useState('')
+  const [localError, setLocalError] = useState<string | null>(null)
+  // Every action posts the version it read; only a decision sends its reason (the steps refuse a reason member).
+  const attempt = usePoolAttempt<CustomerReturnDecisionBody, CustomerReturnMutation>(
     commandScope(view.id),
     async (snapshot) => {
-      const outcome = await sendCustomerReturnCommand(commandOf(snapshot.path), view.id, snapshot.payload, {
-        idempotencyKey: snapshot.key,
-        companyId: snapshot.companyId,
-      })
+      const action = actionOf(snapshot.path)
+      const context = { idempotencyKey: snapshot.key, companyId: snapshot.companyId }
+      const outcome = action === 'rejection'
+        ? await rejectCustomerReturn(view.id, snapshot.payload, context)
+        : action === 'cancellation'
+          ? await cancelCustomerReturn(view.id, snapshot.payload, context)
+          : await sendCustomerReturnCommand(action, view.id, { expectedVersion: snapshot.payload.expectedVersion }, context)
       setServiceCode(outcome.type === 'http' && outcome.status >= 500 ? (outcome.problem?.code ?? null) : null)
       return outcome
     },
     (next) => {
+      if (next.phase === 'completed') {
+        setReasonFor(null)
+        setReason('')
+      }
       if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onReread()
     },
   )
@@ -317,34 +388,105 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
   const offered = (Object.keys(COMMAND_SOURCE) as CustomerReturnCommand[]).filter(
     (command) => view.state === COMMAND_SOURCE[command] && hasCapability(shell, COMMAND_CAPABILITY[command]),
   )
+  const decisions = (Object.keys(DECISION_SOURCES) as CustomerReturnDecision[]).filter(
+    (decision) => DECISION_SOURCES[decision].includes(view.state) && hasCapability(shell, DECISION_CAPABILITY[decision]),
+  )
   const notice = customerReturnNotice(attempt.state, {
     noun: T.noun,
     onRecord: true,
     blockedChange: attempt.blockedChange,
-    completed: (result) => T.completed[commandFor(result.view.state)],
+    completed: (result) => T.completed[actionFor(result.view.state)],
     serviceCode,
   })
-  if (offered.length === 0 && notice === null) return null
+  if (offered.length === 0 && decisions.length === 0 && notice === null) return null
+  const formOpen = reasonFor !== null && decisions.includes(reasonFor)
 
-  function send(command: CustomerReturnCommand) {
+  function send(action: ReturnAction, reasonText: string | null) {
     // A recorded earlier command closed its own attempt; the next command is a new one (an unresolved one is kept).
     attempt.reset()
-    attempt.submit(`${view.id}/${command}`, { expectedVersion: view.version })
+    attempt.submit(`${view.id}/${action}`, { expectedVersion: view.version, reason: isDecision(action) ? reasonText : null })
+  }
+
+  function startStep(command: CustomerReturnCommand) {
+    setReasonFor(null)
+    setLocalError(null)
+    send(command, null)
+  }
+
+  function openDecision(decision: CustomerReturnDecision) {
+    setLocalError(null)
+    setReasonFor(decision)
+  }
+
+  function confirmDecision() {
+    if (reasonFor === null) return
+    const trimmed = reason.trim()
+    // The server measures the trimmed text; whitespace only is no reason.
+    if (trimmed.length > CUSTOMER_RETURN_REASON_MAX) {
+      setLocalError(T.reasonTooLong(CUSTOMER_RETURN_REASON_MAX))
+      return
+    }
+    setLocalError(null)
+    send(reasonFor, trimmed.length === 0 ? null : trimmed)
   }
 
   return (
     <div className={styles.page} role="group" aria-label={T.commands} data-testid="customer-return-commands">
       <PoolAttemptNotice attempt={attempt} notice={notice} testId="customer-return-notice" />
-      {offered.includes('approval') ? <p className={styles.muted}>{T.approveHint}</p> : null}
-      {offered.length === 0 ? null : (
+      {offered.includes('approval') || decisions.includes('rejection') ? <p className={styles.muted}>{T.approveHint}</p> : null}
+      {decisions.includes('rejection') ? <p className={styles.muted}>{T.rejectNote}</p> : null}
+      {decisions.includes('cancellation') ? <p className={styles.muted}>{T.cancelNote}</p> : null}
+      {offered.length === 0 && decisions.length === 0 ? null : (
         <div className={styles.actions}>
           {offered.map((command) => (
-            <Button key={command} type="button" variant="primary" disabled={attempt.frozen} onClick={() => send(command)}>
+            <Button key={command} type="button" variant="primary" disabled={attempt.frozen} onClick={() => startStep(command)}>
               {COMMAND_LABEL[command]}
+            </Button>
+          ))}
+          {decisions.map((decision) => (
+            <Button
+              key={decision}
+              type="button"
+              variant="secondary"
+              disabled={attempt.frozen}
+              aria-pressed={reasonFor === decision && formOpen}
+              onClick={() => openDecision(decision)}
+              data-testid={`customer-return-${decision}`}
+            >
+              {DECISION_LABEL[decision]}
             </Button>
           ))}
         </div>
       )}
+      {formOpen ? (
+        <div className={styles.actions} data-testid="customer-return-reason-form">
+          {localError === null ? null : (
+            <p role="alert" className={styles.notice} data-testid="customer-return-reason-error">{localError}</p>
+          )}
+          <label htmlFor={reasonId}>{T.reasonLabel}</label>
+          <textarea
+            id={reasonId}
+            aria-describedby={hintId}
+            value={reason}
+            disabled={attempt.frozen}
+            onChange={(event) => setReason(event.target.value)}
+            data-testid="customer-return-reason"
+          />
+          <span id={hintId} className={styles.muted}>{T.reasonHint(CUSTOMER_RETURN_REASON_MAX)}</span>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={attempt.frozen}
+            onClick={confirmDecision}
+            data-testid="customer-return-reason-confirm"
+          >
+            {reasonFor === 'rejection' ? T.rejectConfirm : T.cancelConfirm}
+          </Button>
+          <Button type="button" variant="ghost" disabled={attempt.frozen} onClick={() => setReasonFor(null)}>
+            {T.reasonBack}
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

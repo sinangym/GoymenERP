@@ -99,9 +99,10 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         string commandName, Guid customerReturnId, Action<SalesCustomerReturn, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default)
     {
-        if (commandName is not (SalesCustomerReturnCommands.SubmitV1 or SalesCustomerReturnCommands.ApproveV1))
+        if (commandName is not (SalesCustomerReturnCommands.SubmitV1 or SalesCustomerReturnCommands.ApproveV1
+            or SalesCustomerReturnCommands.RejectV1 or SalesCustomerReturnCommands.CancelV1))
         {
-            throw new ArgumentException("Yalnız gönderme ve onay bu mağaza yöntemini kullanır.", nameof(commandName));
+            throw new ArgumentException("Yalnız gönderme, onay, ret ve iptal bu mağaza yöntemini kullanır.", nameof(commandName));
         }
 
         return await StepCustomerReturnAsync(envelope, requestHash, commandName, customerReturnId, null, mutate, audit, cancellationToken);
@@ -204,18 +205,22 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         {
             SalesCustomerReturnCommands.SubmitV1 => SalesCustomerReturnState.PendingApproval,
             SalesCustomerReturnCommands.ApproveV1 => SalesCustomerReturnState.Approved,
+            SalesCustomerReturnCommands.RejectV1 => SalesCustomerReturnState.Rejected,
+            SalesCustomerReturnCommands.CancelV1 => SalesCustomerReturnState.Cancelled,
             _ => SalesCustomerReturnState.Finalized,
         };
         var actorFact = expectedState switch
         {
             SalesCustomerReturnState.PendingApproval => item.Facts.SubmittedBy,
             SalesCustomerReturnState.Approved => item.Facts.ApprovedBy,
+            SalesCustomerReturnState.Rejected => item.Facts.RejectedBy,
+            SalesCustomerReturnState.Cancelled => item.Facts.CancelledBy,
             _ => item.Facts.FinalizedBy,
         };
         if (item.Version != versionBefore + 1 || item.Id != row.Id || item.CompanyId != companyId || item.State != expectedState
-            || (int)item.State != (int)stateBefore + 1 || !string.Equals(actorFact, actorId, StringComparison.Ordinal))
+            || !SalesCustomerReturnRows.IsStep(stateBefore, item.State) || !string.Equals(actorFact, actorId, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("İade adımı tam olarak bir sürüm ve bir durum ilerletir ve aktörün adına atılır.");
+            throw new InvalidOperationException("İade adımı tam olarak bir sürüm ve izinli bir durum ilerletir ve aktörün adına atılır.");
         }
 
         SalesCustomerReturnRows.Apply(row, item);
@@ -367,6 +372,10 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         item.Facts.SubmittedBy,
         item.Facts.ApprovedBy,
         item.Facts.FinalizedBy,
+        item.Facts.RejectedBy,
+        item.Facts.RejectionReason,
+        item.Facts.CancelledBy,
+        item.Facts.CancellationReason,
         lineCount = item.Lines.Count,
         lineTotalAmount = item.Totals.LineTotal.Amount,
         currencyId = item.Header.CurrencyId,

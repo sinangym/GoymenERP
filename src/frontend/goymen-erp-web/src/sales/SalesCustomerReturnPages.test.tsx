@@ -13,11 +13,15 @@ import {
   SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY,
   SALES_CUSTOMER_RETURN_SUBMIT_CAPABILITY,
 } from './capabilities'
+import { CUSTOMER_RETURN_REASON_MAX } from './customerReturnContract'
+import { SALES_PROBLEM_CODE } from './contract'
 import { CUSTOMER_RETURN_PROBLEM_CODE, CUSTOMER_RETURN_TEXT, customerReturnProblemText } from './customerReturnText'
 import { INVOICE_ID, INVOICE_NO, OTHER_INVOICE_ID } from './invoiceTestData'
 import {
+  CANCELLATION_REASON,
   INVOICE_LINE_1,
   INVOICE_LINE_2,
+  REJECTION_REASON,
   RETURN_2,
   RETURN_DOCUMENT_NO,
   RETURN_ID,
@@ -350,5 +354,121 @@ describe('UI-70b S-10 detail and commands', () => {
     expect(second.idempotencyKey).toBe(first.idempotencyKey)
     expect(second.body).toEqual({ expectedVersion: '3' })
     expect(screen.getByTestId('customer-return-state').textContent).toBe('Onaylandı')
+  })
+})
+
+describe('UI-70b S-10 rejection and cancellation (SAT-D290 (2, 3))', () => {
+  it('rejects a pending return with its reason after the confirm step, then shows who rejected and why', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['PendingApproval', 'Rejected'], () => json(returnView('Rejected')))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.reject }))
+    // Opening the form sends nothing; only the confirm does.
+    expect(fetch.posts()).toHaveLength(0)
+    await user.type(screen.getByLabelText(T.detail.reasonLabel), `  ${REJECTION_REASON}  `)
+    await user.click(screen.getByRole('button', { name: T.detail.rejectConfirm }))
+    expect((await screen.findByTestId('customer-return-notice')).textContent).toBe(T.detail.completed.rejection)
+    await waitFor(() => expect(screen.getByTestId('customer-return-state').textContent).toBe('Reddedildi'))
+    expect(screen.getByTestId('customer-return-rejection-reason').textContent).toBe(REJECTION_REASON)
+    expect(screen.queryByTestId('customer-return-reason-form')).toBeNull()
+    const [post] = fetch.posts()
+    expect(post.url).toBe(`${DETAIL_URL}/rejection`)
+    expect(post.body).toEqual({ expectedVersion: '2', reason: REJECTION_REASON })
+    expect(post.companyId).toBe(COMPANY_A)
+    expect(post.idempotencyKey).toMatch(/\S{8,}/)
+    expect(fetch.posts()).toHaveLength(1)
+  })
+
+  it('cancels a draft with no reason as null, then shows who cancelled it', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['Draft', 'Cancelled'], () => json(returnView('Cancelled', { cancellationReason: null })))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.cancel }))
+    await user.type(screen.getByLabelText(T.detail.reasonLabel), '   ')
+    await user.click(screen.getByRole('button', { name: T.detail.cancelConfirm }))
+    expect((await screen.findByTestId('customer-return-notice')).textContent).toBe(T.detail.completed.cancellation)
+    await waitFor(() => expect(screen.getByTestId('customer-return-state').textContent).toBe('İptal edildi'))
+    const [post] = fetch.posts()
+    expect(post.url).toBe(`${DETAIL_URL}/cancellation`)
+    expect(post.body).toEqual({ expectedVersion: '1', reason: null })
+    expect(post.idempotencyKey).toMatch(/\S{8,}/)
+  })
+
+  it('shows a cancellation recorded without a reason as such', async () => {
+    installPoolFetch((call) => {
+      if (call.method === 'GET' && call.url === DETAIL_URL) return json(returnView('Cancelled', { cancellationReason: null }))
+      return unexpected(call)
+    }, COMMANDS)
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    expect((await screen.findByTestId('customer-return-cancellation-reason')).textContent).toBe(T.detail.reasonNone)
+    expect(screen.getByTestId('customer-return-state').textContent).toBe('İptal edildi')
+    expect(screen.queryByTestId('customer-return-commands')).toBeNull()
+  })
+
+  it('offers cancellation on a pending return too, and going back closes the form without a send', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['PendingApproval'], unexpected)
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.cancel }))
+    expect(screen.getByTestId('customer-return-reason-form')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: T.detail.reasonBack }))
+    expect(screen.queryByTestId('customer-return-reason-form')).toBeNull()
+    expect(fetch.posts()).toHaveLength(0)
+  })
+
+  it('refuses a reason over the bound locally and sends nothing', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['PendingApproval'], unexpected)
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.reject }))
+    fireEvent.change(screen.getByLabelText(T.detail.reasonLabel), { target: { value: 'x'.repeat(CUSTOMER_RETURN_REASON_MAX + 1) } })
+    await user.click(screen.getByRole('button', { name: T.detail.rejectConfirm }))
+    expect((await screen.findByTestId('customer-return-reason-error')).textContent).toBe(T.detail.reasonTooLong(CUSTOMER_RETURN_REASON_MAX))
+    expect(fetch.posts()).toHaveLength(0)
+  })
+
+  it('says why the server refused a self-rejection (409) and keeps the return as it is', async () => {
+    const user = userEvent.setup()
+    serveDetail(['PendingApproval'], () => problem(409, { code: CUSTOMER_RETURN_PROBLEM_CODE.selfApproval }))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.reject }))
+    await user.click(screen.getByRole('button', { name: T.detail.rejectConfirm }))
+    const notice = await screen.findByTestId('customer-return-notice')
+    expect(notice.textContent).toContain(customerReturnProblemText(CUSTOMER_RETURN_PROBLEM_CODE.selfApproval))
+    expect(screen.getByTestId('customer-return-state').textContent).toBe('Onay bekliyor')
+  })
+
+  it('says the server refused a reason as too long', async () => {
+    const user = userEvent.setup()
+    serveDetail(['Draft'], () =>
+      problem(422, { code: SALES_PROBLEM_CODE.approvalReasonTooLong, errors: [{ field: 'reason', code: SALES_PROBLEM_CODE.approvalReasonTooLong }] }),
+    )
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.cancel }))
+    await user.type(screen.getByLabelText(T.detail.reasonLabel), CANCELLATION_REASON)
+    await user.click(screen.getByRole('button', { name: T.detail.cancelConfirm }))
+    expect((await screen.findByTestId('customer-return-notice')).textContent).toBe(T.detail.reasonTooLongServer)
+    expect(screen.getByTestId('customer-return-state').textContent).toBe('Taslak')
+  })
+
+  it.each(['Approved', 'Finalized', 'Rejected', 'Cancelled'])('offers neither decision on a %s return', async (state) => {
+    serveDetail([state], unexpected)
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await screen.findByTestId('customer-return-state')
+    expect(screen.queryByTestId('customer-return-rejection')).toBeNull()
+    expect(screen.queryByTestId('customer-return-cancellation')).toBeNull()
+  })
+
+  it('offers rejection only with the approve id and cancellation only with the submit id', async () => {
+    serveDetail(['PendingApproval'], unexpected, [SALES_CAPABILITY.customerReturnsDetail, SALES_CUSTOMER_RETURN_SUBMIT_CAPABILITY])
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    expect(await screen.findByTestId('customer-return-cancellation')).toBeTruthy()
+    expect(screen.queryByTestId('customer-return-rejection')).toBeNull()
+    cleanup()
+    vi.unstubAllGlobals()
+    serveDetail(['PendingApproval'], unexpected, [SALES_CAPABILITY.customerReturnsDetail, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY])
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    expect(await screen.findByTestId('customer-return-rejection')).toBeTruthy()
+    expect(screen.queryByTestId('customer-return-cancellation')).toBeNull()
   })
 })

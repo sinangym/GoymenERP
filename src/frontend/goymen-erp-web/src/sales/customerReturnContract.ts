@@ -8,6 +8,8 @@
  *   POST /api/v1/sales/customer-returns/{id}/submission   → 200 SalesCustomerReturnView (PendingApproval)
  *   POST /api/v1/sales/customer-returns/{id}/approval     → 200 SalesCustomerReturnView (Approved)
  *   POST /api/v1/sales/customer-returns/{id}/finalization → 200 SalesCustomerReturnView (Finalized)
+ *   POST /api/v1/sales/customer-returns/{id}/rejection    → 200 SalesCustomerReturnView (Rejected; SAT-D290 (2, 3))
+ *   POST /api/v1/sales/customer-returns/{id}/cancellation → 200 SalesCustomerReturnView (Cancelled; SAT-D290 (2))
  *
  * Sales RECORDS the customer's return invoice against a finalised sales invoice; the ERP never issues it (SAT-D288). Every
  * amount is the server's TEXT (the deterministic backend calculator's answer; the screen never computes, proportions or rounds
@@ -31,7 +33,13 @@ export const CUSTOMER_RETURN_DOCUMENT_NO_MAX = 64
 /** `SalesCustomerReturn.MaximumLines` (the order draft's own bound). */
 export const CUSTOMER_RETURN_MAX_LINES = 500
 
-export const CUSTOMER_RETURN_STATES = ['Draft', 'PendingApproval', 'Approved', 'Finalized'] as const
+/**
+ * `SalesCustomerReturn.MaximumReasonLength` (= `SalesInvoice.MaximumReasonLength`): the optional rejection or cancellation
+ * reason, measured by the server on the trimmed text.
+ */
+export const CUSTOMER_RETURN_REASON_MAX = 4000
+
+export const CUSTOMER_RETURN_STATES = ['Draft', 'PendingApproval', 'Approved', 'Finalized', 'Rejected', 'Cancelled'] as const
 export type CustomerReturnState = (typeof CUSTOMER_RETURN_STATES)[number]
 
 export interface CustomerReturnAmounts {
@@ -104,6 +112,12 @@ export interface CustomerReturnView {
   readonly approvedAtUtc: string | null
   readonly finalizedBy: string | null
   readonly finalizedAtUtc: string | null
+  readonly rejectedBy: string | null
+  readonly rejectedAtUtc: string | null
+  readonly rejectionReason: string | null
+  readonly cancelledBy: string | null
+  readonly cancelledAtUtc: string | null
+  readonly cancellationReason: string | null
   readonly updatedAtUtc: string
   readonly lines: readonly CustomerReturnLine[]
 }
@@ -135,6 +149,9 @@ const isState = (v: unknown): v is CustomerReturnState =>
   typeof v === 'string' && (CUSTOMER_RETURN_STATES as readonly string[]).includes(v)
 const isNullableText = (v: unknown): v is string | null => v === null || isText(v)
 const isNullableInstant = (v: unknown): v is string | null => v === null || isInstant(v)
+/** The server stores a reason trimmed, never blank, within its bound; whitespace-only is stored as none (null). */
+const isNullableReason = (v: unknown): v is string | null =>
+  v === null || (typeof v === 'string' && v.length > 0 && v.length <= CUSTOMER_RETURN_REASON_MAX && v.trim() === v)
 
 const AMOUNT_FIELDS = [
   'netAmount',
@@ -333,6 +350,12 @@ export const CUSTOMER_RETURN_VIEW_FIELDS = [
   'approvedAtUtc',
   'finalizedBy',
   'finalizedAtUtc',
+  'rejectedBy',
+  'rejectedAtUtc',
+  'rejectionReason',
+  'cancelledBy',
+  'cancelledAtUtc',
+  'cancellationReason',
   'updatedAtUtc',
   'lines',
 ] as const
@@ -344,16 +367,29 @@ function factsAgreeWithState(o: Obj, state: CustomerReturnState): boolean {
   const approved = o.approvedBy !== null && o.approvedAtUtc !== null
     && o.approvedBy !== o.createdBy && o.approvedBy !== o.submittedBy
   const finalized = o.finalizedBy !== null && o.finalizedAtUtc !== null
+  // SAT-D290 (3): the rejecter, like the approver, is neither the preparer nor the submitter.
+  const rejected = o.rejectedBy !== null && o.rejectedAtUtc !== null
+    && o.rejectedBy !== o.createdBy && o.rejectedBy !== o.submittedBy
+  const cancelled = o.cancelledBy !== null && o.cancelledAtUtc !== null
   const none = (by: unknown, at: unknown) => by === null && at === null
+  const notRejected = none(o.rejectedBy, o.rejectedAtUtc) && o.rejectionReason === null
+  const notCancelled = none(o.cancelledBy, o.cancelledAtUtc) && o.cancellationReason === null
+  const open = notRejected && notCancelled
+  const notApprovedNorFinalized = none(o.approvedBy, o.approvedAtUtc) && none(o.finalizedBy, o.finalizedAtUtc)
   switch (state) {
     case 'Draft':
-      return none(o.submittedBy, o.submittedAtUtc) && none(o.approvedBy, o.approvedAtUtc) && none(o.finalizedBy, o.finalizedAtUtc)
+      return none(o.submittedBy, o.submittedAtUtc) && notApprovedNorFinalized && open
     case 'PendingApproval':
-      return submitted && none(o.approvedBy, o.approvedAtUtc) && none(o.finalizedBy, o.finalizedAtUtc)
+      return submitted && notApprovedNorFinalized && open
     case 'Approved':
-      return submitted && approved && none(o.finalizedBy, o.finalizedAtUtc)
+      return submitted && approved && none(o.finalizedBy, o.finalizedAtUtc) && open
     case 'Finalized':
-      return submitted && approved && finalized
+      return submitted && approved && finalized && open
+    case 'Rejected':
+      return submitted && notApprovedNorFinalized && rejected && notCancelled
+    case 'Cancelled':
+      // Cancelled before approval: from Draft (not submitted) or from PendingApproval (submitted, both facts or neither).
+      return (submitted || none(o.submittedBy, o.submittedAtUtc)) && notApprovedNorFinalized && notRejected && cancelled
     default:
       return false
   }
@@ -386,6 +422,12 @@ export function decodeCustomerReturnView(value: unknown, returnId: string): Cust
     || !isNullableInstant(o.approvedAtUtc)
     || !isNullableText(o.finalizedBy)
     || !isNullableInstant(o.finalizedAtUtc)
+    || !isNullableText(o.rejectedBy)
+    || !isNullableInstant(o.rejectedAtUtc)
+    || !isNullableReason(o.rejectionReason)
+    || !isNullableText(o.cancelledBy)
+    || !isNullableInstant(o.cancelledAtUtc)
+    || !isNullableReason(o.cancellationReason)
     || !isInstant(o.updatedAtUtc)
     || !factsAgreeWithState(o, o.state)
     || !Array.isArray(o.lines)
@@ -441,6 +483,12 @@ export function decodeCustomerReturnView(value: unknown, returnId: string): Cust
     approvedAtUtc: o.approvedAtUtc as string | null,
     finalizedBy: o.finalizedBy as string | null,
     finalizedAtUtc: o.finalizedAtUtc as string | null,
+    rejectedBy: o.rejectedBy as string | null,
+    rejectedAtUtc: o.rejectedAtUtc as string | null,
+    rejectionReason: o.rejectionReason as string | null,
+    cancelledBy: o.cancelledBy as string | null,
+    cancelledAtUtc: o.cancelledAtUtc as string | null,
+    cancellationReason: o.cancellationReason as string | null,
     updatedAtUtc: o.updatedAtUtc,
     lines,
   }

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -47,6 +48,20 @@ public sealed class SalesCustomerReturnServiceTests
         await Assert.ThrowsAsync<SalesDraftServiceException>(act);
 
     [Fact]
+    public void Only_the_rejection_and_the_cancellation_bodies_take_a_reason_and_every_step_needs_a_positive_expected_version()
+    {
+        Assert.Equal(new SalesDraftStateCommandRequest("2", "Belge eksik"),
+            SalesCustomerReturnJson.ReadDecisionCommand("{\"expectedVersion\":\"2\",\"reason\":\"Belge eksik\"}"));
+        Assert.Equal(new SalesDraftStateCommandRequest("1"), SalesCustomerReturnJson.ReadDecisionCommand("{\"expectedVersion\":\"1\"}"));
+        Assert.Equal(new SalesDraftStateCommandRequest("1"), SalesCustomerReturnJson.ReadStateCommand("{\"expectedVersion\":\"1\"}"));
+        Assert.Throws<JsonException>(() => SalesCustomerReturnJson.ReadStateCommand("{\"expectedVersion\":\"1\",\"reason\":\"x\"}"));
+        foreach (var body in new[] { "{}", "{\"expectedVersion\":\"0\"}", "{\"expectedVersion\":1}", "null" })
+        {
+            Assert.Throws<JsonException>(() => SalesCustomerReturnJson.ReadDecisionCommand(body));
+        }
+    }
+
+    [Fact]
     public async Task Finalize_without_the_finance_port_is_503_before_any_replay_or_read_and_nothing_is_written_SAT_D294()
     {
         var (service, store, invoices, authority) = Build(Approver);
@@ -93,6 +108,108 @@ public sealed class SalesCustomerReturnServiceTests
         var recorded = Assert.Single(store.Refusals);
         Assert.Equal((SalesCustomerReturnCommands.ApproveV1, 409, SalesCustomerReturnProblemCodesV1.SelfApproval),
             (recorded.Command, recorded.Refusal.Status, recorded.Refusal.Code));
+    }
+
+    [Fact]
+    public async Task Rejecting_needs_the_approvers_authority_stores_the_reason_and_the_submitter_rejecting_is_a_recorded_409()
+    {
+        var (service, store, _, authority) = Build(Approver);
+        var item = Draft();
+        item.Submit(1, "SENTETIK-submitter", Now);
+        store.Stored = item;
+
+        var result = await service.RejectCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("2", " Belge eksik "), Metadata);
+
+        Assert.Equal(("Rejected", "3", Approver, "Belge eksik"), (result.CustomerReturn.State, result.CustomerReturn.Version,
+            result.CustomerReturn.RejectedBy, result.CustomerReturn.RejectionReason));
+        Assert.Equal(SalesPermissionManifestV1.ReturnsApprove, authority.Asked[0]);
+
+        var (submitterService, submitterStore, _, _) = Build("SENTETIK-submitter");
+        var pending = Draft();
+        pending.Submit(1, "SENTETIK-submitter", Now);
+        submitterStore.Stored = pending;
+        var refused = await Refused(() =>
+            submitterService.RejectCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("2"), Metadata));
+        Assert.Equal((409, SalesCustomerReturnProblemCodesV1.SelfApproval), (refused.Status, refused.Code));
+        Assert.Equal(SalesCustomerReturnCommands.RejectV1, Assert.Single(submitterStore.Refusals).Command);
+        Assert.Equal(SalesCustomerReturnState.PendingApproval, submitterStore.Stored.State);
+    }
+
+    [Fact]
+    public async Task Rejecting_without_the_approve_permission_is_403_before_any_read()
+    {
+        var (service, store, _, authority) = Build(Approver);
+        authority.Denied.Add(SalesPermissionManifestV1.ReturnsApprove);
+
+        var refused = await Refused(() => service.RejectCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("2"), Metadata));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Empty(store.Calls);
+    }
+
+    [Fact]
+    public async Task Cancelling_needs_the_write_permission_and_an_approved_return_is_a_recorded_409_state_conflict()
+    {
+        var (service, store, _, authority) = Build(Preparer);
+        store.Stored = Draft();
+
+        var result = await service.CancelCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("1", "Müşteri vazgeçti"), Metadata);
+
+        Assert.Equal(("Cancelled", "2", Preparer, "Müşteri vazgeçti"), (result.CustomerReturn.State, result.CustomerReturn.Version,
+            result.CustomerReturn.CancelledBy, result.CustomerReturn.CancellationReason));
+        Assert.Equal(SalesPermissionManifestV1.ReturnsWrite, authority.Asked[0]);
+
+        var (approvedService, approvedStore, _, _) = Build(Preparer);
+        var approved = Draft();
+        approved.Submit(1, "SENTETIK-submitter", Now);
+        approved.Approve(2, Approver, Now);
+        approvedStore.Stored = approved;
+        var refused = await Refused(() =>
+            approvedService.CancelCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("3"), Metadata));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (refused.Status, refused.Code));
+        Assert.Equal(SalesCustomerReturnCommands.CancelV1, Assert.Single(approvedStore.Refusals).Command);
+        Assert.Equal(SalesCustomerReturnState.Approved, approvedStore.Stored.State);
+    }
+
+    [Fact]
+    public async Task A_too_long_reason_is_422_and_neither_the_decision_nor_a_refusal_is_recorded()
+    {
+        var (service, store, _, _) = Build(Preparer);
+        store.Stored = Draft();
+        var reason = new string('x', SalesCustomerReturn.MaximumReasonLength + 1);
+
+        var refused = await Refused(() => service.CancelCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("1", reason), Metadata));
+
+        Assert.Equal((422, SalesDraftProblemCodesV1.ApprovalReasonTooLong), (refused.Status, refused.Code));
+        Assert.Empty(store.Refusals);
+        Assert.Equal((SalesCustomerReturnState.Draft, 1L), (store.Stored.State, store.Stored.Version));
+    }
+
+    [Fact]
+    public async Task Rejecting_or_cancelling_a_missing_return_is_404()
+    {
+        var (service, _, _, _) = Build(Approver);
+
+        var rejected = await Refused(() => service.RejectCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("2"), Metadata));
+        var cancelled = await Refused(() => service.CancelCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("1"), Metadata));
+
+        Assert.Equal((404, 404), (rejected.Status, cancelled.Status));
+    }
+
+    [Fact]
+    public void The_reason_is_part_of_a_decisions_request_hash_so_another_reason_under_the_same_key_is_a_different_request()
+    {
+        var first = SalesCustomerReturnHash.ComputeDecision(SalesCustomerReturnCommands.RejectV1, ReturnId,
+            new SalesDraftStateCommandRequest("2", "A"));
+        var second = SalesCustomerReturnHash.ComputeDecision(SalesCustomerReturnCommands.RejectV1, ReturnId,
+            new SalesDraftStateCommandRequest("2", "B"));
+        var cancel = SalesCustomerReturnHash.ComputeDecision(SalesCustomerReturnCommands.CancelV1, ReturnId,
+            new SalesDraftStateCommandRequest("2", "A"));
+
+        Assert.NotEqual(first, second);
+        Assert.NotEqual(first, cancel);
+        Assert.Equal(first, SalesCustomerReturnHash.ComputeDecision(SalesCustomerReturnCommands.RejectV1, ReturnId,
+            new SalesDraftStateCommandRequest("2", "A")));
     }
 
     [Fact]

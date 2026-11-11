@@ -4,6 +4,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  CUSTOMER_RETURN_REASON_MAX,
+  CUSTOMER_RETURN_VIEW_FIELDS,
   SALES_CUSTOMER_RETURNS_PATH,
   decodeCustomerReturnList,
   decodeCustomerReturnView,
@@ -15,7 +17,9 @@ import { decodeSalesInvoiceDetail } from './invoiceFinalizationContract'
 import { INVOICE_ID, OTHER_INVOICE_ID } from './invoiceTestData'
 import {
   APPROVER,
+  CANCELLATION_REASON,
   PREPARER,
+  REJECTION_REASON,
   RETURN_2,
   RETURN_ID,
   SHIPMENT_1,
@@ -29,7 +33,7 @@ import {
 } from './customerReturnTestData'
 
 describe('UI-70b customer return view decoder', () => {
-  it.each(['Draft', 'PendingApproval', 'Approved', 'Finalized'])('accepts a %s return with exactly its actor facts', (state) => {
+  it.each(['Draft', 'PendingApproval', 'Approved', 'Finalized', 'Rejected', 'Cancelled'])('accepts a %s return with exactly its actor facts', (state) => {
     const view = decodeCustomerReturnView(returnView(state), RETURN_ID)
     expect(view?.state).toBe(state)
     expect(view?.lines[0].amounts.lineTotalAmount).toBe('240.00')
@@ -40,6 +44,40 @@ describe('UI-70b customer return view decoder', () => {
     expect(decodeCustomerReturnView(returnView('Draft', { totals: returnAmounts({ driftAmount: '-0.01' }) }), RETURN_ID)).not.toBeNull()
   })
 
+  it('reads the rejection and cancellation facts with their optional reasons (SAT-D290 (2, 3))', () => {
+    const rejected = decodeCustomerReturnView(returnView('Rejected'), RETURN_ID)
+    expect([rejected?.rejectedBy, rejected?.rejectionReason, rejected?.cancelledBy]).toEqual([APPROVER, REJECTION_REASON, null])
+    const cancelled = decodeCustomerReturnView(returnView('Cancelled'), RETURN_ID)
+    expect([cancelled?.cancelledBy, cancelled?.cancellationReason, cancelled?.rejectedBy]).toEqual([PREPARER, CANCELLATION_REASON, null])
+    expect(decodeCustomerReturnView(returnView('Rejected', { rejectionReason: null }), RETURN_ID)?.rejectionReason).toBeNull()
+    expect(decodeCustomerReturnView(returnView('Cancelled', { cancellationReason: null }), RETURN_ID)?.cancellationReason).toBeNull()
+    expect(
+      decodeCustomerReturnView(returnView('Rejected', { rejectionReason: 'x'.repeat(CUSTOMER_RETURN_REASON_MAX) }), RETURN_ID),
+    ).not.toBeNull()
+  })
+
+  it('accepts a return cancelled from PendingApproval, which carries its submission', () => {
+    const wire = returnView('Cancelled', { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z' })
+    expect(decodeCustomerReturnView(wire, RETURN_ID)?.submittedBy).toBe(PREPARER)
+  })
+
+  it('requires exactly the six decision members between finalizedAtUtc and updatedAtUtc', () => {
+    const at = CUSTOMER_RETURN_VIEW_FIELDS.indexOf('finalizedAtUtc')
+    expect(CUSTOMER_RETURN_VIEW_FIELDS.slice(at + 1, at + 8)).toEqual([
+      'rejectedBy',
+      'rejectedAtUtc',
+      'rejectionReason',
+      'cancelledBy',
+      'cancelledAtUtc',
+      'cancellationReason',
+      'updatedAtUtc',
+    ])
+    for (const member of ['rejectedBy', 'rejectedAtUtc', 'rejectionReason', 'cancelledBy', 'cancelledAtUtc', 'cancellationReason']) {
+      const { [member]: _drop, ...rest } = returnView('Draft')
+      expect(decodeCustomerReturnView(rest, RETURN_ID), member).toBeNull()
+    }
+  })
+
   it('accepts a shipment-linked return whose lines are all of that shipment', () => {
     expect(decodeCustomerReturnView(returnView('Draft', { shipmentId: SHIPMENT_1 }), RETURN_ID)?.shipmentId).toBe(SHIPMENT_1)
   })
@@ -48,7 +86,27 @@ describe('UI-70b customer return view decoder', () => {
     ['a stray member', returnView('Draft', { isReplay: false })],
     ['a missing member', (() => { const { updatedAtUtc: _drop, ...rest } = returnView('Draft'); return rest })()],
     ['another id', returnView('Draft', { id: RETURN_2 })],
-    ['an unknown state', returnView('Draft', { state: 'Cancelled' })],
+    ['an unknown state', returnView('Draft', { state: 'Withdrawn' })],
+    ['a numeric state', returnView('Draft', { state: 5 })],
+    ['an unknown decision member', returnView('Rejected', { rejectionCode: null })],
+    ['a Rejected return without its rejecter', returnView('Rejected', { rejectedBy: null })],
+    ['a Rejected return without its rejection time', returnView('Rejected', { rejectedAtUtc: null })],
+    ['a rejecter who prepared it', returnView('Rejected', { rejectedBy: PREPARER })],
+    ['a rejecter who submitted it', returnView('Rejected', { submittedBy: APPROVER })],
+    ['a Rejected return never submitted', returnView('Rejected', { submittedBy: null, submittedAtUtc: null })],
+    ['a Rejected return carrying an approval', returnView('Rejected', { approvedBy: APPROVER, approvedAtUtc: '2026-11-05T10:00:00Z' })],
+    ['a Rejected return carrying a cancellation', returnView('Rejected', { cancelledBy: PREPARER, cancelledAtUtc: '2026-11-05T09:30:00Z' })],
+    ['a Cancelled return without its canceller', returnView('Cancelled', { cancelledBy: null })],
+    ['a Cancelled return carrying an approval', returnView('Cancelled', { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z', approvedBy: APPROVER, approvedAtUtc: '2026-11-05T10:00:00Z' })],
+    ['a Cancelled return carrying a rejection reason', returnView('Cancelled', { rejectionReason: REJECTION_REASON })],
+    ['a Cancelled return with half a submission', returnView('Cancelled', { submittedBy: PREPARER })],
+    ['a PendingApproval return carrying a rejection', returnView('PendingApproval', { rejectedBy: APPROVER, rejectedAtUtc: '2026-11-05T10:00:00Z' })],
+    ['a Draft carrying a cancellation reason', returnView('Draft', { cancellationReason: CANCELLATION_REASON })],
+    ['a Finalized return carrying a cancellation', returnView('Finalized', { cancelledBy: PREPARER, cancelledAtUtc: '2026-11-05T12:00:00Z' })],
+    ['a blank reason', returnView('Rejected', { rejectionReason: '' })],
+    ['an untrimmed reason', returnView('Cancelled', { cancellationReason: ' boşluklu ' })],
+    ['a reason over the bound', returnView('Rejected', { rejectionReason: 'x'.repeat(CUSTOMER_RETURN_REASON_MAX + 1) })],
+    ['a numeric reason', returnView('Rejected', { rejectionReason: 1 })],
     ['a Draft carrying a submission', returnView('Draft', { submittedBy: PREPARER, submittedAtUtc: '2026-11-05T09:10:00Z' })],
     ['an approver who prepared it', returnView('Approved', { approvedBy: PREPARER })],
     ['an approver who submitted it', returnView('Approved', { submittedBy: APPROVER })],
@@ -156,5 +214,14 @@ describe('UI-70b OpenAPI parity', () => {
       expect(document.components.schemas[name].required ?? []).toEqual(['expectedVersion'])
     }
     expect(Object.keys(document.paths[at(customerReturnCommandPath(RETURN_ID, 'finalization'))]?.post?.responses ?? {})).toContain('503')
+    for (const decision of ['rejection', 'cancellation'] as const) {
+      const operation = document.paths[at(customerReturnCommandPath(RETURN_ID, decision))]?.post
+      expect(operation, decision).toBeDefined()
+      const name = (operation?.requestBody?.content?.['application/json']?.schema?.$ref ?? '').replace('#/components/schemas/', '')
+      // The client sends the version it read and the optional reason (null for none).
+      expect(members(name)).toEqual(['expectedVersion', 'reason'])
+      expect(document.components.schemas[name].required ?? []).toEqual(['expectedVersion'])
+      expect(Object.keys(operation?.responses ?? {})).toEqual(expect.arrayContaining(['200', '409', '422']))
+    }
   })
 })
