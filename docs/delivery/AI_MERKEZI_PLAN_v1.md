@@ -21,6 +21,22 @@ Değişmezler: AI DB'ye veya ham SQL'e erişmez, yalnız modüllerin şemalı ar
 her AI çağrısı kaydedilir (DEC-AI-005) · dış AI'a hassas veri yalnız takma adla ve yöneticinin açtığı veri
 türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılması, veri türü izni ve rol/yetki Sinan'da.
 
+## 1a. Durum güncellemesi (2026-11-11, main@0a789a2)
+
+| Dilim | Durum | Kanıt |
+|---|---|---|
+| AI-0 | Merge edildi | Bu plan + `SINAN_KARARLARI_2026-11-03_AI.md` |
+| AI-1 (W05.1) | Merge edildi | #945; ADR-008 (yalnız sözleşme katmanı kabul), `BuildingBlocks/Ai/*`, `GoymenERP.Ai.UnitTests` |
+| AI-4a (dış AI süzgeci) | Merge edildi; sertleştirme PR #1077 (açık) | `AiExternalEgressV1.cs` (#970) |
+| AI-5 (sağ panel) | Merge edildi; panel düğmesi her sayfada görünür, açılınca her durumda "kullanılamıyor" gösterir; çalışan AI yolu yok | #947; `src/frontend/goymen-erp-web/src/ai/` |
+| AI-2 | Bekliyor: ADR-SEC-001 "Öneri"; karar paketi E1–E9 | `docs/adr/ADR-SEC-001-durable-security-event-channel.md` |
+| AI-3 | Bekliyor: AI-2 (ERP-000J §18) | — |
+| AI-4b (Ayarlar AI politikası) | Bekliyor: Ayarlar ADR-SET-002 runtime (Ayarlar şeridi) | — |
+| AI-6…AI-10 | Bekliyor: AI-3 ve modül portları (§5) | — |
+
+Açık sorular tek belgede: `docs/delivery/AI_KARAR_PAKETI_2026-11.md` (A–E). Fable 5.2 analizi bu modülü
+F-030 olarak işaretler (OPEN-020'ye bağlı, "Sonra" grubu); rol sorusu F-001 ile birlikte sorulur.
+
 ## 2. Var / eksik tablosu (main@2318317)
 
 | Alan | Var | Eksik | Dilim |
@@ -74,7 +90,7 @@ türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılm
 Sıra W05.1 → W05.2 → W06 kararına (2026-10-22 §1.3) uyar: AI-0 → AI-1 → AI-2 → AI-3 → AI-4 ve AI-5 (paralel) →
 AI-6 → AI-7 → AI-8 → AI-9 → AI-10. Her dilim ayrı PR'dır. AI-8, AI-4 süzgeci main'e girmeden merge edilmez.
 
-## 5. Modül şeritlerinden gelen araç ihtiyaçları (3 Kasım)
+## 5. Modül şeritlerinden gelen araç ihtiyaçları (3 Kasım; 11 Kasım AI-6 güncellemesi)
 
 3 Kasım'da beş şeride aynı soru gönderildi; cevaplar aşağıdadır. Adlar şeritlerin önerisidir (AI-6'da
 katalogda sürümlenir). İzin adları mevcut `ErpPermissions`/manifest adları ya da sahip şeridin açık PR'ında planlanan adlardır ("bekleyen" diye işaretli); AI şeridi yeni ad açmaz. Tutar/fiyat
@@ -84,10 +100,40 @@ Redacted); AI bu maskeyi aynen taşır, tutarı yeniden hesaplamaz veya toplamaz
 | Modül | İlk 3 (READ/SIMULATE) | Dayanak | İzin | Hassas |
 |---|---|---|---|---|
 | Satış | `sales.order.status.explain`, `sales.open_orders.daily_summary`, `sales.customer.risk.explain` | `GET /api/v1/sales/drafts/{id}/status`, `…/{id}`, `…/{id}/line-pricing`; `GET /api/v1/sales/reports/open-orders`; `GET …/{id}/risk-check` | `sales.drafts.read`, `sales.reports.read` (+ `sales.orders.price.read`) | fiyat, iskonto, risk limiti/teminat/açık alacak |
-| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` (bekleyen: Alış API-10 / #932, henüz main'de değil) | bugün yok; A2a'dan sonra birim fiyat/tutar/iskonto |
-| Finans | `finance.party-balance.explain`, `finance.party-ledger.explain`, `finance.open-items.overdue-summary` | `IPartyLedgerService.ReadAuthorizedAsync`; `SummarizeAuthorizedAsync` (bekleyen: #912); `IFinanceOpenItemReadServiceV1` | `finance.party-ledger.read` (+ `.amount.read`), `finance.open-items.read` (+ `.amount.read`) | tüm tutarlar, cari kimliği, IBAN, çek no (Finans önerisi: IBAN dış AI'a hiç açılmasın) |
+| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` (`GetOrderCancelImpactAsync`) | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` (main'de) | sipariş fiyat/tutar/KDV/kur (Price; `PricePending` maskesi main'de, ayrıntı §5a) |
+| Finans | `finance.party-balance.explain`, `finance.party-ledger.explain`, `finance.open-items.overdue-summary` | `IPartyLedgerService.ReadAuthorizedAsync`, `SummarizeAuthorizedAsync` (main'de); `IFinanceOpenItemReadServiceV1.ListAuthorizedAsync`/`DetailAuthorizedAsync` | `finance.party-ledger.read` (+ `.amount.read`), `finance.open-items.read` (+ `.amount.read`) | tüm tutarlar, cari kimliği, IBAN, çek no (Finans önerisi: IBAN dış AI'a hiç açılmasın) |
 | Üretim | `manufacturing.plan.explain`, `manufacturing.plan.simulate` (SIMULATE), `manufacturing.order.variance.explain` | `GET plans/{id}`; `POST plans/preview` (calculator, kayıt yok); `GET orders/{id}` | `manufacturing.plans.read`, `manufacturing.plans.write`, `manufacturing.orders.read` | yok (ticari bağlam müşteri adı taşıyabilir: dışarı aktarılmaz) |
 | Kalan Modüller | Liste K0 dalgasından sonra gelecek | Belgeler: `IDocumentContentReadPortV1` istendi (K6, AI-9 için) | `documents.files.read` + sahip kontrolü | şirket belgeleri |
+
+### 5a. AI-6 veri sınıfı girdileri (11 Kasım, şeritlerin önerisi — karar değil)
+
+Kaynak: Satış, Alış, Finans ve Üretim şeritlerinin 11 Kasım cevapları (taban `main@0a789a2`…`3f60f58`). Tabloda
+"(planlanan)" işaretli olanlar dışındaki dayanaklar main'de mevcuttur; AI için yeni port veya izin adı açılmaz. Üretim ayrı bir AI okuma portu planlamaz;
+AI host mevcut HTTP uçlarını/servislerini kullanır.
+
+| Modül | Dönüş tipi / sonuç | Şirket içi (dış AI açılırsa takma adsız gidebilir; dış AI canlıya alma AI-D6 insan kapısı) | Hassas tür (AI-D4: yalnız takma ad + yöneticinin açtığı tür) | Dış AI'a hiç gitmez (cevapsızken) |
+|---|---|---|---|---|
+| Satış | `SalesOrderDraftStatusResponse`, `SalesOpenOrderReportResponse` (grup düzeyinde `SalesOpenOrderGroupView.Complete=false` = kısmi; `TooManyOrders` grubunda toplamlar null), `SalesOrderDraftRiskCheckResponse` | durum, kimlikler, miktarlar, risk sonucu/gerekçe kodları | fiyat/iskonto/tutar (Price, FinanceAmount; Withheld maskesi aynen taşınır), risk tutarları (Balance), belge no (CompanyDocument; kur/belge no eşlemesi şerit önerisi) | müşteri adı, cari kimliği (§D) |
+| Alış | `PurchaseRequestDetailView`, `PurchaseRequestListResponse` (Submitted), `PurchaseOrderListResponse` (Draft), `PurchaseOrderCancelImpactView` | kimlikler, durum, sürüm, tarihler, miktarlar, Cancellable/Blocker/HasAcceptance | sipariş fiyat/tutar/KDV/kur/ödeme planı (Price; `purchasing.orders.price.read` yoksa sahip serviste gizli, `PricePending` dahil) | ret/geri çekme gerekçesi serbest metni, SupplierPartyId/CompanyAccountId (§D), aktör kimlikleri |
+| Finans | `PartyBalanceResult`, `PartyLedgerResult` (`TooManyEntries` > 1000 satır, kesilmez), `ReadResult<FinanceOpenItemPageV1>` | Kind, Side, Status, Direction, tarihler, CurrencyId, Version, SourceKind, DocumentId/InstrumentId | bütün tutar/bakiye alanları (Balance, FinanceAmount; `.amount.read` yoksa Redacted, Money ve Status null) | PartyId/CompanyAccountId (§D); IBAN bu portlarda yok |
+| Üretim | `PlanViewV1`, `PlanPreviewViewV1` (kayıt yok), `OrderViewV1` (rulo başına kütle dengesi) | kimlikler, iş merkezi, proses, durum, sürüm, kg/mm/adet, etiket/rulo, fire, WIP, parametre snapshot'ı, tolerans | yok | ticari bağlam (commercial party/account), U2-b `salesOrderLink` (planlanan, main'de yok), aktör kimlikleri |
+
+Uygulama kuralları (mevcut kararlardan türer, yeni politika değildir):
+
+- **Cari kimliği:** Finans kimlikleri "Şirket içi" önerir, Satış "Gizli" der. AI-D4'e göre cari kimliği Sinan'ın
+  listesinde olmayan "Gizli" kalemdir; karar paketi §D cevaplanana kadar dış AI'a gönderilmez (`AiEgressRulesV1`:
+  eşlenmemiş Gizli → Deny). AI şeridi yeniden sınıflamaz.
+- **Tutarlar:** Finans'ın "Gizli mi Çok gizli mi" sorusunu AI-D4 cevaplar: bakiye ve finans tutarı "Gizli" sınıfı +
+  Balance/FinanceAmount türüdür ("Çok gizli" etiketlenirse kod her durumda reddeder), yalnız takma adla ve tür izni açıksa gider; izin varsayılan kapalıdır. Yeni soru açılmaz.
+- **Aktör kimlikleri ve serbest metin** (PreparedBy/ApprovedBy/…, ret gerekçesi): kişisel veri içerebilir; OPEN-020
+  KVKK zemini kapanana kadar gönderilmez (AI-D4 kişisel veri kuralının ihtiyatlı uygulaması; Sinan'ın listesinde
+  ayrı kalem değil).
+- **Maske:** Withheld/Redacted/`PricePending` sahip serviste uygulanır; AI maskeyi aynen taşır, açmaya çalışmaz.
+- **Hesap yok:** AI toplam, fark, aging veya "vadesi geçmiş" özeti hesaplamaz (formül tek backend calculator).
+  Finans'ta ayrı vadesi geçmiş özeti ucu yoktur (aging API-90…93 Finans backlog'u); o zamana kadar
+  `finance.open-items.overdue-summary` yalnız sunucunun döndürdüğü kalemleri listeler.
+- **Eksik risk kaynağı:** Satış risk kontrolünde kaynak yoksa (F-018/OPEN-010) araç "hesaplanamadı" der, "risk yok"
+  demez.
 
 Sonraki adaylar (AI-9/AI-10, önizleme + kullanıcı onayı + Idempotency-Key + `expectedVersion`):
 Satış iptal/zorla kapatma (önizlemenin `impactToken`'ı zorunlu), teklif/sipariş taslağı; Alış talep taslağı,
@@ -103,6 +149,8 @@ içe aktarma), termin önerisi, teklif karşılaştırma; satır/miktar revizyon
 (F7); müşteri bazlı risk ucu.
 
 ## 6. NEEDS-SINAN (Issue #66)
+
+Seçenekler, önerilen varsayılanlar ve cevapsızken davranış: `docs/delivery/AI_KARAR_PAKETI_2026-11.md`.
 
 1. Dış AI sağlayıcısı ve hesabı — veri saklamama ve eğitimde kullanmama kanıtıyla (AI-D5, OPEN-020).
 2. Yerel model ve OCR çalışma ortamı, GPU kapasitesi (OPEN-020 yerel PoC).
