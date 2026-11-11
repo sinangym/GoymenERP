@@ -16,6 +16,8 @@ public sealed class PurchaseOrderCancellationTests
     private static readonly DateTimeOffset T0 = new(2026, 11, 3, 9, 0, 0, TimeSpan.FromHours(3));
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Supplier = Guid.Parse("22222222-2222-4222-8222-222222222222");
+    private const string Preparer = "SENTETIK-hazirlayan";
+    private const string Approver = "SENTETIK-onaylayan";
     private static readonly Guid KgUnit = Guid.Parse("55555555-5555-4555-8555-555555555555");
     private static readonly Guid PieceUnit = Guid.Parse("66666666-6666-4666-8666-666666666666");
     private const string Canceller = "SENTETIK-canceller";
@@ -28,10 +30,10 @@ public sealed class PurchaseOrderCancellationTests
 
     private static (PurchaseOrder Order, PurchaseOrderLine Kg, PurchaseOrderLine Pieces) Approved()
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         var kg = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(100_000m), T0);
         var pieces = order.AddLine(2, Guid.NewGuid(), Guid.NewGuid(), PieceUnit, Pieces(40m), T0);
-        order.Approve(3, T0);
+        order.Approve(3, Approver, T0);
         return (order, kg, pieces);
     }
 
@@ -58,9 +60,9 @@ public sealed class PurchaseOrderCancellationTests
     [Fact]
     public void A_broken_down_order_cancels_the_general_and_the_technical_remainders_each_in_its_own_line()
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         var general = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(1_000m), T0);
-        order.Approve(2, T0);
+        order.Approve(2, Approver, T0);
         var technical = order.BreakDown(3, general.Id, Guid.NewGuid(), Guid.NewGuid(), Kg(75m), T0);
         order.RecordAcceptance(4, Guid.NewGuid(), technical.Id, Kg(25m), T0);
 
@@ -86,7 +88,7 @@ public sealed class PurchaseOrderCancellationTests
     [Fact]
     public void A_draft_or_an_already_cancelled_order_is_not_cancellable_and_nothing_moves()
     {
-        var draft = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var draft = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         draft.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(5m), T0);
         Assert.Equal(PurchasingRuleCodes.OrderNotCancellable, CodeOf(() => draft.Cancel(2, Canceller, "SENTETIK", T0)));
         Assert.Equal((PurchaseOrderStatus.Draft, 2L, null), (draft.Status, draft.Version, draft.Cancellation));
@@ -151,7 +153,7 @@ public sealed class PurchaseOrderCancellationTests
 
         Assert.Equal(PurchasingRuleCodes.OrderCancelled, CodeOf(() => order.RecordAcceptance(5, Guid.NewGuid(), kg.Id, Kg(1m), T0)));
         Assert.Equal(PurchasingRuleCodes.OrderCancelled, CodeOf(() => order.BreakDown(5, kg.Id, Guid.NewGuid(), Guid.NewGuid(), Kg(1m), T0)));
-        Assert.Equal(PurchasingRuleCodes.OrderNotDraft, CodeOf(() => order.Approve(5, T0)));
+        Assert.Equal(PurchasingRuleCodes.OrderNotDraft, CodeOf(() => order.Approve(5, Approver, T0)));
         Assert.Equal(5L, order.Version);
     }
 

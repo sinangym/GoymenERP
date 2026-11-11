@@ -400,8 +400,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // 51170), kept ordinal-sorted (c3fa56d7… -> dab7b47e…).
             // A2a-2 (ALS-D38, ALS-D75): +2 maturity surcharge SQL facts (stored + audited + rebuilt + the surcharge check, Down refusal
             // 51171), kept ordinal-sorted (dab7b47e… -> e4eea63d…).
+            // A2a-5a (ALS-D3, Fable F-015): +3 order approval SQL facts (preparer refused + another actor's approval stored, audited
+            // and rebuilt; the approval check on direct writes + a legacy approval still loads; Down refusal 51172), kept
+            // ordinal-sorted (70821828… -> c307bc9f…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "708218280f44c7c30e52b589a953397a45804c3348a74c5ca1a00cab1d5a68fc",
+                "c307bc9f360db7c5e06c2de24a0eeab32d18223044dba7da4a4b902d1978715d",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -701,9 +704,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // the money check, the write guard's allow-list, filters and keys unchanged.
             // Re-measured for A2a-2 (ALS-D38, ALS-D75): the line's two maturity surcharge columns (precisions) and their own check
             // (one, beside a unit price above 0); the price check, the write guard's allow-list, filters and keys unchanged.
+            // Re-measured for A2a-5a (ALS-D3, Fable F-015): the order's two nullable approval columns (ApprovedBy 128, ApprovedAtUtc)
+            // and their own check (both or neither, only on an approved order, approver ≠ CreatedBy in binary collation); the
+            // write guard's allow-list, filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "cfa97b2c51734eece7f384f6374495387dfeb39ecb239bfa36a3da025660bb9e",
+                "d5951612b1c87d85256e84f6f268a72c760422cdbf63f12cf88a26f4c3a5e301",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1670,10 +1676,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // rebuilt through the domain; same SqlClient use.
                 // Re-fingerprinted for A2a-2: the line's maturity surcharge written once with the price, audited and rebuilt through
                 // the domain; same SqlClient use.
+                // Re-fingerprinted for A2a-5a: the create envelope's actor stamped as the order's preparer before the row is written
+                // (row CreatedBy, domain and audit agree); the approver and approval time written, audited and rebuilt through the
+                // domain, a legacy approval rebuilt without an approver; same SqlClient use.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "5257fa0e68814752f86879618bd492de6848f93fe63c09d1418934e3cf5c4af4",
+                        "0b46c5c5edd90c7e6f584c17d948ad334266563ae8df2be734df4ff844e66cc2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2386,6 +2395,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
                     new(
                         "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // A2a-5a (ALS-D3, Fable F-015): one reviewed statement, before every drop. Down refuses (51172, used by no other
+                // migration) while any order records an approver, which dropping the columns would erase (who approved, and when).
+                // Up only adds two nullable columns and their check; orders approved before it keep no approver.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261111182351_AddPurchaseOrderApproval.cs"] =
+                    new(
+                        "43e1297bf25e0f92a99e0f8b35e58a864c3b83da5f77b907d8022db4ef8f2e7a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

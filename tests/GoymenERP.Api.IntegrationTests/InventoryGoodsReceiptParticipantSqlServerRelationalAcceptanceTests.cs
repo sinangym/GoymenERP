@@ -22,6 +22,8 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
+    /// <summary>A2a-5a (Purchasing): the purchase order's approver is never its preparer.</summary>
+    private const string OrderApprover = "SENTETIK-order-approver";
     private static readonly Guid GoodsReceiptSupplier = Guid.Parse("72000000-0000-0000-0000-000000000001");
     private static readonly Guid GoodsReceiptAccount = Guid.Parse("73000000-0000-0000-0000-000000000001");
     private static readonly Guid GoodsReceiptProduct = Guid.Parse("74000000-0000-0000-0000-000000000001");
@@ -289,7 +291,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             GoodsReceiptHash($"goods-receipt-seed-approve-{orderId:N}"),
             PurchasingCommands.OrderApproveV1,
             orderId,
-            (candidate, now) => candidate.Approve(candidate.Version, now),
+            (candidate, now) => candidate.Approve(candidate.Version, OrderApprover, now),
             new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "SENTETIK approval"));
         Assert.NotNull(approved);
         Assert.Equal(3L, approved.Order.Order.Version);
