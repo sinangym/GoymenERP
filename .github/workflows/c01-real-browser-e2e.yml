@@ -224,11 +224,16 @@ jobs:
             echo "::error::BROWSER_BINARY_MISSING: $chrome";
             exit 1;
           }
-          if ldd "$chrome" | grep -q "not found"; then
-            ldd "$chrome" | grep "not found";
-            echo "::error::BROWSER_SYSTEM_LIBS_MISSING: runner image lacks Chromium libraries";
-            exit 1;
-          fi
+          shell="$(find "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" -type f -name chrome-headless-shell | head -n 1)"
+          for binary in "$chrome" "$shell"; do
+            test -n "$binary" || continue
+            libs="$(ldd "$binary" 2>&1 || true)"
+            if grep -q "not found" <<<"$libs"; then
+              grep "not found" <<<"$libs";
+              echo "::error::BROWSER_SYSTEM_LIBS_MISSING: runner image lacks Chromium libraries for $binary";
+              exit 1;
+            fi
+          done
 
       - name: Run B-C01-001 through B-C01-010
         working-directory: tests/e2e
