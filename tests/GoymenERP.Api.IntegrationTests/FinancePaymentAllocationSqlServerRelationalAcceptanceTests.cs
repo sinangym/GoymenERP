@@ -132,6 +132,41 @@ public sealed class FinancePaymentAllocationSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task An_amount_with_more_decimals_than_the_payment_or_the_payable_is_a_durable_refusal_and_a_boundary_amount_is_accepted()
+    {
+        // FNS-D16 (Sinan 2026-11-11): the allocation scale never exceeds the payment's and never grows the payable's text.
+        await using var run = await Run.StartAsync();
+        var purchase = await run.AdmitAsync(FinanceInvoiceProducerV1.Purchasing, "500.00");
+        var payment = await run.RecordPaymentAsync("300.00");
+        var payable = purchase.Installments[0].OpenItemId;
+
+        var tooPrecise = Allocate(payment, payable, "100.000");
+        var refused = await run.CreateAsync("scale-refused", tooPrecise);
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.Contains(refused.Issues, issue => issue.Code == "finance_allocation_amount_invalid"
+            && issue.Field == "amount");
+        var replayed = await run.CreateAsync("scale-refused", tooPrecise);
+        Assert.True(replayed.IsReplay);
+        Assert.Equal(refused.Issues, replayed.Issues);
+        Assert.Equal(CommandOutcome.IdempotencyConflict,
+            (await run.CreateAsync("scale-refused", tooPrecise with { Amount = "100.00" })).Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PaymentAllocations"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PaymentAllocationStates"));
+
+        // The boundary: a scale-0 amount and a scale-2 amount both keep both stored balance texts at scale 2.
+        Assert.Equal(CommandOutcome.Succeeded, (await run.CreateAsync("scale-zero", Allocate(payment, payable, "100"))).Outcome);
+        var fresh = await run.CreateAsync("scale-two",
+            Allocate(payment, payable, "50.25") with { ExpectedOpenItemVersion = "2" });
+        Assert.Equal(CommandOutcome.Succeeded, fresh.Outcome);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = '349.75'",
+            ("@id", payable)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentAllocationStates WHERE PaymentId = @id AND UnallocatedAmountText = '149.75'",
+            ("@id", payment)));
+    }
+
+    [SqlServerFact]
     public async Task A_release_restores_the_payment_and_the_payable_once_and_a_stale_release_is_refused()
     {
         await using var run = await Run.StartAsync();
@@ -270,6 +305,43 @@ public sealed class FinancePaymentAllocationSqlServerRelationalAcceptanceTests
         Assert.Equal(moneyEvents, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3", ("@id", invoice.InvoiceId)));
+    }
+
+    [SqlServerFact]
+    public async Task A_confirmed_cancellation_releases_every_active_payment_allocation_of_the_invoice_and_each_payment_once()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = await run.AdmitAsync(FinanceInvoiceProducerV1.Purchasing, "250.00", "250.00");
+        var firstPayment = await run.RecordPaymentAsync("100.00");
+        var secondPayment = await run.RecordPaymentAsync("150.00");
+        var first = Allocate(firstPayment, invoice.Installments[0].OpenItemId, "100");
+        var second = Allocate(secondPayment, invoice.Installments[1].OpenItemId, "150");
+        Assert.Equal(CommandOutcome.Succeeded, (await run.CreateAsync("multi-a", first)).Outcome);
+        Assert.Equal(CommandOutcome.Succeeded, (await run.CreateAsync("multi-b", second)).Outcome);
+
+        Assert.Equal(CommandOutcome.Succeeded,
+            (await run.CancelAsync("multi-cancel", invoice, releaseActiveAllocations: true)).Outcome);
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentAllocations WHERE Status = 2 AND Id IN (@a, @b)",
+            ("@a", first.AllocationId), ("@b", second.AllocationId)));
+        Assert.Equal("100.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", firstPayment)));
+        Assert.Equal("150.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", secondPayment)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3", ("@id", invoice.InvoiceId)));
+        // Cancelling the already cancelled invoice again is not a success and releases nothing a second time.
+        var again = await run.CancelAsync("multi-cancel-again", invoice, releaseActiveAllocations: true);
+        Assert.NotEqual(CommandOutcome.Succeeded, again.Outcome);
+        Assert.Equal("100.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", firstPayment)));
+        Assert.Equal("150.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", secondPayment)));
     }
 
     [SqlServerFact]
