@@ -73,4 +73,14 @@ internal static class SecurityEventFixtures
     };
 
     public static SecurityEventRetentionResolver Retention() => new(RetentionClasses());
+
+    /// <summary>The writer's server clock in tests: a fixed instant after <see cref="OccurredAt"/>.</summary>
+    public static readonly DateTimeOffset ServerNow = OccurredAt.AddMinutes(5);
+
+    public static TimeProvider ServerClock() => new FixedTimeProvider(ServerNow);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }

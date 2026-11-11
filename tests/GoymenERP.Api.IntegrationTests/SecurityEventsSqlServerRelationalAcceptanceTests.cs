@@ -24,10 +24,12 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
             var writer = services.GetRequiredService<ISecurityEventWriterV1>();
             var companyA = Denial(TestCompanyIds.CompanyA);
             var companyB = Denial(TestCompanyIds.CompanyB);
+            var serverBefore = DateTimeOffset.UtcNow;
 
             Assert.True((await writer.WriteAsync(companyA, CancellationToken.None)).Recorded);
             Assert.True((await writer.WriteAsync(companyB, CancellationToken.None)).Recorded);
             Assert.True((await writer.WriteAsync(PlatformLoginFailure(), CancellationToken.None)).Recorded);
+            var serverAfter = DateTimeOffset.UtcNow;
             Assert.Equal("3", await ScalarAsync(connectionString, "SELECT COUNT(*) FROM [security].[SecurityEvents]"));
 
             await using (var readA = Db(connectionString, TestCompanyIds.CompanyA))
@@ -35,7 +37,8 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
                 var row = Assert.Single(await readA.SecurityEvents.AsNoTracking().ToListAsync());
                 Assert.Equal(companyA.EventId, row.Id);
                 Assert.Equal(OccurredAt, row.OccurredAtUtc);
-                Assert.Equal(OccurredAt.AddYears(2), row.RetainUntilUtc);
+                // Retention is measured from the server clock, never from the caller-supplied (back-dated) time.
+                Assert.InRange(row.RetainUntilUtc, serverBefore.AddYears(2), serverAfter.AddYears(2));
                 Assert.Equal("SINAN-2026-10-21-No134", row.RetentionPolicyRef);
                 Assert.False(row.LegalHold);
                 Assert.Equal(1, row.OccurrenceCount);
@@ -49,6 +52,42 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
                 Assert.Equal(companyB.EventId, row.Id);
                 Assert.Null(await readB.SecurityEvents.AsNoTracking().SingleOrDefaultAsync(x => x.Id == companyA.EventId));
             }
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Duplicate_event_ids_are_recorded_once_on_retry_and_refused_on_conflicting_content_on_real_sql()
+    {
+        await WithHostAsync(async (services, connectionString) =>
+        {
+            var writer = services.GetRequiredService<ISecurityEventWriterV1>();
+            var original = Denial(TestCompanyIds.CompanyA);
+            Assert.True((await writer.WriteAsync(original, CancellationToken.None)).Recorded);
+
+            var retry = await writer.WriteAsync(original with { }, CancellationToken.None);
+            Assert.True(retry.Recorded);
+            Assert.Null(retry.FailureKind);
+
+            var conflicting = await writer.WriteAsync(
+                original with { PermissionCode = "purchasing.requests.reject" }, CancellationToken.None);
+            Assert.False(conflicting.Recorded);
+            Assert.Equal(SecurityEventWriteFailureKindsV1.DuplicateEventId, conflicting.FailureKind);
+
+            var otherCompany = await writer.WriteAsync(
+                original with { CompanyId = TestCompanyIds.CompanyB }, CancellationToken.None);
+            Assert.False(otherCompany.Recorded);
+            Assert.Equal(SecurityEventWriteFailureKindsV1.DuplicateEventId, otherCompany.FailureKind);
+
+            var platform = PlatformLoginFailure();
+            Assert.True((await writer.WriteAsync(platform, CancellationToken.None)).Recorded);
+            var platformRetry = await writer.WriteAsync(platform with { }, CancellationToken.None);
+            Assert.False(platformRetry.Recorded);
+            Assert.Equal(SecurityEventWriteFailureKindsV1.DuplicateEventId, platformRetry.FailureKind);
+
+            Assert.Equal("2", await ScalarAsync(connectionString, "SELECT COUNT(*) FROM [security].[SecurityEvents]"));
+            await using var readA = Db(connectionString, TestCompanyIds.CompanyA);
+            var row = Assert.Single(await readA.SecurityEvents.AsNoTracking().ToListAsync());
+            Assert.Equal("purchasing.requests.approve", row.PermissionCode);
         });
     }
 

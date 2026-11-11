@@ -4,6 +4,7 @@ using GoymenERP.Modules.SecurityEvents.Infrastructure.Writing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Modules.SecurityEvents.Infrastructure;
 
@@ -37,6 +38,7 @@ public static class SecurityEventsModuleExtensions
             options.UseSqlServer(
                 connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SecurityEventModelBuilderExtensions.Schema)));
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(retention);
         services.AddSingleton(aggregation);
         services.AddSingleton<ISecurityEventStore, StandaloneSecurityEventStore>();

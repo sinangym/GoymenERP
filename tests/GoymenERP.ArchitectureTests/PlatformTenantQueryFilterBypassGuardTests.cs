@@ -371,7 +371,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // empty-store rollback) (69a1024a… -> 84945670…).
                 // AI-2a (ADR-SEC-001): +4 security event SQL facts (company isolation and hash; append-only trigger and checks;
                 // Down refusal; empty Down/Up round trip) (84945670… -> 006edd9c…).
-                "006edd9c5d15a565cecc890b2f04b2ea44cfee87af2fed5dd3d3bd66c8de1bf8",
+                // AI-2a hardening: +1 security event SQL fact (duplicate EventId retry/conflict) (006edd9c… -> e3ed24d3…).
+                "e3ed24d341ed2fc8b577f4db68c6c29489bbdf12be6d6ee0a1d19175536df57b",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -1004,14 +1005,25 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["MigrateAsync"] = 1
                         }),
                 // AI-2a (ADR-SEC-001): security event channel bootstrap; migrates its own schema like Audit.
+                // AI-2a hardening: registers TimeProvider.System for server-clock retention (4fa27691… -> 308b6836…).
                 ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
                  + "SecurityEventsModuleExtensions.cs"] =
                     new(
-                        "4fa2769122ebc17f3eb6aad84c395f482327b084a8284304dc020667d55a6a15",
+                        "308b683660230a6381ddce54746b3d9c0bd1822c8fe43d0489099480984596d1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
+                        }),
+                // AI-2a hardening: the security event store classifies a duplicate EventId (SqlException 2601/2627)
+                // after SaveChanges and re-reads it under the company filter; no connection, command or raw SQL.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Writing/SecurityEventStore.cs"] =
+                    new(
+                        "53f6379121a52a5d6c1754c1f76cdf2bc800c7cbaa7d8092c69fdf2493acc95d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
                         }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
                  + "Executions/SqlGroupSharedCommandTerminalStore.cs"] =
