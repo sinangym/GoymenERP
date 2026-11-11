@@ -364,7 +364,7 @@ class ComposeContractTests(unittest.TestCase):
         sab_run = workflow.index("npm run sab:ci -- --reporter=list,junit,html")
         self.assertLess(workflow.index("npm ci"), sab_run)
         self.assertLess(
-            workflow.index("playwright install --with-deps chromium"), sab_run
+            workflow.index("playwright install chromium"), sab_run
         )
         self.assertLess(
             workflow.index("tools/validate_sab_e2e_contract.py preflight"), sab_run

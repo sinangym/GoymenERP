@@ -215,7 +215,25 @@ jobs:
         run: |
           npm ci
           npm audit --audit-level=high
-          ./node_modules/.bin/playwright install --with-deps chromium
+          ./node_modules/.bin/playwright install chromium
+          # ubuntu-latest already ships Chromium's system libraries; --with-deps
+          # only adds optional fonts through an unbounded apt-get that fails when
+          # the Ubuntu archive DNS is down. Verify instead, with an explicit error.
+          chrome="$(node -e "process.stdout.write(require('@playwright/test').chromium.executablePath())")"
+          test -x "$chrome" || {
+            echo "::error::BROWSER_BINARY_MISSING: $chrome";
+            exit 1;
+          }
+          shell="$(find "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" -type f -name chrome-headless-shell | head -n 1)"
+          for binary in "$chrome" "$shell"; do
+            test -n "$binary" || continue
+            libs="$(ldd "$binary" 2>&1 || true)"
+            if grep -q "not found" <<<"$libs"; then
+              grep "not found" <<<"$libs";
+              echo "::error::BROWSER_SYSTEM_LIBS_MISSING: runner image lacks Chromium libraries for $binary";
+              exit 1;
+            fi
+          done
 
       - name: Run B-C01-001 through B-C01-010
         working-directory: tests/e2e
