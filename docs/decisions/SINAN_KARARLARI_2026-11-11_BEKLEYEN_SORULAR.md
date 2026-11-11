@@ -1,0 +1,63 @@
+# Sinan Kararları — 2026-11-11 (bekleyen sorular: maliyet kuru, iade belge no, tevkifat tabanı, F-005, OC-3, F-001, OPEN-013, Alış A3, U-08, paket/boya verisi, AI Grup E, Work Plan 9)
+
+Bu belge önceki karar dosyalarını silmez; 11 Kasım 2026'da cevaplanan 12 bekleyen soruyu tek yerde kaydeder. Bu
+maddeler için şeritler ayrı karar dosyası yazmaz, bu dosyaya referans verir. Belge içinde maddeler `BS-1` … `BS-12`
+diye anılır. Satış maddesi BS-2'ye ayrıca `SAT-D300` kimliği verilir (SAT-D299'un devamı). Daha önceki kimlikler
+(SAT-D295…SAT-D299, DEC-PRDCT-007, ALS-D*, URT-D25/D27 vb.) geçerliliğini korur. Bu belge `KARAR_SICILI` satırı eklemez.
+
+**Kaynak:** Sinan, cevapları 11 Kasım 2026'da koordinatör oturumunda (`AskUserQuestion`) verdi; koordinatör iki
+yoruma kaydetti. İki yorum da Issue #66'da `sinangym` hesabındandır:
+
+- [`6806579823`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806579823) (2026-11-11T20:36Z, madde 1–9)
+- [`6806619303`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806619303) (2026-11-11T20:39Z, madde 10–12)
+
+Cevap metinleri bu yorumlardan özetsiz alınmıştır. Soruların kaydı her satırda parantezle verilen #66 yorumlarındadır.
+Seçenek listeleri bu kayıtta yoksa, satırda yalnız seçilen cevap yazılıdır. Sorulup seçilmeyen seçenek için
+ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
+
+## Soru ve cevaplar
+
+| # | Soru (kaynak #66 yorumu) | Cevap (Sinan, kayıttaki metin) | Seçilen seçeneğin açıklaması |
+|---|---|---|---|
+| BS-1 | `OPEN-INV-AVGCOST-FX`: Alış sipariş satırı dövizli olduğunda stok maliyetinin TL karşılığı hangi kurla hesaplanır? (6791808196; EK59 "Doğrulama" `NEEDS-SINAN`) | "TL ortalama maliyet **tedarikçi faturasındaki resmi kurla** hesaplanır. Fatura gelene kadar TL maliyet `Unavailable` görünür, geçici kur ve düzeltme hareketi yoktur." | Seçilmeyen yol (EK59'daki soruda): fatura gelmeden ERP kontrol kuruyla (ALS-D6/D14) geçici hesaplayıp sonra faturadaki kurla düzeltmek. |
+| BS-2 | Satış iadesinde müşteri belge numarası düzeltilebilir mi? (6793862024) | "**Her zaman kilitli** (bugünkü 409 davranışı korunur)." Sinan "kullanılamamalı" dedi ve araştırma istedi. Koordinatörün kaydettiği araştırma: e-fatura/e-arşiv belge numarası iptal veya ret sonrasında yeniden kullanılmaz; düzeltilmiş iade yeni belge numarasıyla gelir. | Bugünkü davranış: değiştirme isteği 409 ile reddedilir. |
+| BS-3 | Alış tevkifat eşiği hangi tutara bakar, "aşarsa" nasıl kıyaslanır? (6794888600 madde 3) | "Eşik, **fatura/belgenin KDV dahil tutarına** bakılarak uygulanır. 'Aşarsa' kesin büyüktür (`>`) demektir. Taban ve kıyas ayar olarak değiştirilebilir kalır. Production aktivasyonu yine insan kapısıdır." | Taban: belgenin KDV dahil tutarı. Kıyas: `>`. |
+| BS-4 | F-005: Resmî fatura verisi ERP'ye nasıl girer? (6803867595 Soru 3) | "**İkisi birden.** Birincil yol, muhasebenin kontrollü dosya aktarımıdır (numara, ETTN, matrah, KDV, tevkifat). Dosya aktarılamadığında **elle giriş + ikinci kişi onayı** (maker≠approver) yapılır." | Dosya aktarımı birincil yoldur; elle giriş yedek yoldur ve iki kişi gerektirir. |
+| BS-5 | OC-3: Üretimde kullanılabilir artık (UsableRemnant) çıktısının Stok etiketinde nasıl gösterileceği. (6804976107) | "Etiket sınıfı değişmez. **Etikete ayrı üretim-durumu alanı** eklenir (seçenek b)." | Seçenek (b): etiket sınıfı (Standard/SecondQuality/Scrap) aynı kalır. Üretim durumu ayrı bir alanda taşınır (DEC-PRDCT-007). |
+| BS-6 | F-001: Rol atama mekanizması. | "**İki kişi kuralı + tek seferlik kurucu admin.** Bu, mekanizmanın tasarım kararıdır. Gerçek grant/rol ataması ve Critical, insan kapısı olarak kalır." | Rol atamasında iki kişi kuralı uygulanır. İlk kurulum için bir kez kullanılan kurucu admin vardır. |
+| BS-7 | OPEN-013: Production giriş yöntemi. | "Yön seçildi: **mevcut kurumsal hesap (M365 vb.) OIDC + MFA + dış erişim VPN.** OPEN-013'ün resmi kapatılması ve production kurulumu insan kapısıdır." | OIDC sağlayıcısı kurumun mevcut hesabıdır; MFA zorunludur; dış erişim VPN üzerindendir. |
+| BS-8 | Alış A3: Kapatılan PR'lar ne olacak? (6799866464) | "Kapatılan #750 ve #772–776 **yeniden başlatılır**. Alış şeridi bu PR'ları yalnız referans alır, işi bugünkü main'e göre yeniden yazar ve kör kopya yapmaz." | Yeniden başlatma. İş bugünkü main üzerinde yeniden yazılır. |
+| BS-9 | U-08: Ürün birim çevrim verisi. (6803883711) | Yoğunluk: tek genel ayar (Settings, şirket bazlı, örn. 7,85 g/cm³). Kaplama/galvaniz payı: hesaba **katılmaz**. Kesit: ürün kartında ayrı bir **"Ebat/kalınlık" sekmesi** olur; hangi ürünün hangi ebat ve kalınlıktan üretileceği bu tabloda tutulur, hesaplama buradan yapılır; satırı olmayan ürün `NoSource` döner. Yuvarlama: basamak sayısı boru/profil pratiğine göre **araştırılıp önerilecek**; Ürün şeridi öneriyi ayarlanabilir değerle getirir. Kantar–hesap toleransı: **%1**, ayarlanabilir. Paket tablosu ve boya sınıfı listesi: ayrıca sorulacak (→ BS-10). | Alt maddeler cevaptaki gibidir. |
+| BS-10 | Paket adet tablosu ve boya ürün sınıfı listesinin veri kaynağı (URT-D25/D27, OPEN-007). | "Veri **Excel'den içe aktarılır** ve sonra **ERP üzerinde düzenlenebilir**. Liste gelene kadar sistem tahmin yapmaz, veri `NoSource` kalır. OPEN-007'nin resmi kapatılması ayrı bir insan kararıdır." | Veri Excel'den içe aktarılır, sonra ERP'de düzenlenir. Veri yoksa `NoSource`. |
+| BS-11 | AI karar paketi Grup E (6804270247, `docs/delivery/AI_KARAR_PAKETI_2026-11.md`). | "**Paketteki öneriler kabul edildi.** E8 (hash anahtarı sahibi ve rotasyonu, yani secret) ile harici AI'nin canlıya alınması insan kapısı olarak kalır." | Paketteki önerilen seçenekler kabul edildi. E8 ve canlıya alma hariçtir. |
+| BS-12 | Work "Plan 9 iş onayı sözleşmesi" için kaynak belge. (6804046604) | "Ayrı bir kaynak belge beklenmez. Work şeridi kapsamı repodaki onay akışı kararlarına göre yazar, #66'da gösterir ve **mevcut kapsamla devam eder**." | Ayrı kaynak belge beklenmez; Work mevcut kapsamla devam eder. |
+
+## Kararlar
+
+| No | Konu | Karar | Etkilenen yer |
+|---|---|---|---|
+| BS-1 | Dövizli alışta TL ortalama maliyet kuru | TL karşılığı **tedarikçi faturasındaki resmî kurla** hesaplanır. Fatura gelene kadar TL maliyet `Unavailable` okunur. Geçici kur ve düzeltme hareketi **yoktur**. Döviz cinsi değer SAT-D295'teki gibi okunur. `OPEN-INV-AVGCOST-FX`: **Sinan kararıyla karara bağlandı (2026-11-11, #66 6806579823).** EK59'daki diğer `OPEN-INV-AVGCOST-*` maddeleri açık kalır. | Stok maliyet defteri, `IInventoryAverageCostReadPortV1` (TL değer), `AverageCostPosition`; fatura kuru girdisi Alış/Finans fatura sözleşmesinden gelir (ayrı dilim, `Modül bağlantıları` satırıyla) |
+| SAT-D300 (BS-2) | Satış iadesinde müşteri belge numarası | Belge numarası **her zaman kilitlidir**; değiştirme isteği bugünkü gibi 409 ile reddedilir. Düzeltilmiş iade yeni belge numarasıyla gelir. | Satış iade belge numarası alanı ve mevcut 409 davranışı (kod değişikliği gerekmez) |
+| BS-3 | Alış tevkifat eşiği | Eşik **belgenin KDV dahil tutarına** uygulanır, kıyas **kesin büyüktür (`>`)**. Taban ve kıyas **ayar** olarak değiştirilebilir kalır. Production aktivasyonu insan kapısıdır. | Alış tevkifat eşik kontrolü ve ilgili ayar (Alış şeridi) |
+| BS-4 | F-005 resmî fatura verisi | Birincil yol, muhasebenin **kontrollü dosya aktarımıdır** (numara, ETTN, matrah, KDV, tevkifat). Yedek yol **elle giriş + ikinci kişi onayıdır** (maker≠approver). | F-005 resmî fatura kaydı (Finans/Alış) |
+| BS-5 | OC-3 UsableRemnant etiketi | Stok etiket sınıfı **değişmez** (Standard/SecondQuality/Scrap). Etikete **ayrı bir üretim-durumu alanı** eklenir. Uygulama okunuşu (geri alınabilir; Stok ile Üretim şeridinin #66 6804976107 sonrası mutabakatı, Sinan kararı değildir): UsableRemnant çıktısı Standard sınıfı + üretim durumu = UsableRemnant olarak eşlenir. Alan adı, değer listesi ve şema Stok şeridinin K3 dilimidir. Alan gelene kadar Üretim UsableRemnant çıktısını fail-closed reddeder. Satılabilirlik bu alandan ayrı karar verilir (DEC-PRDCT-007). | Inventory `MaterialLabel`, etiket sözleşmesi; Üretim çıktı→etiket eşlemesi (§5.3a) okuma portuyla |
+| BS-6 | F-001 rol atama | Mekanizma: **iki kişi kuralı + tek seferlik kurucu admin**. Bu bir tasarım yönüdür; gerçek grant/rol ataması ve Critical insan kapısıdır. | F-001 kimlik/rol atama tasarımı |
+| BS-7 | OPEN-013 production girişi | Yön: **mevcut kurumsal hesap (M365 vb.) OIDC + MFA + dış erişim VPN**. Yön seçildi; **resmi kapatma insan kapısıdır**, `OPEN-013` açık kalır. Production kurulumu insan kapısıdır. | Kimlik doğrulama tasarımı (`DEC-TEC-008`) |
+| BS-8 | Alış A3 | Kapatılan #750 ve #772–776 **yeniden başlatılır**. Bu PR'lar yalnız referanstır; iş bugünkü main'e göre yeniden yazılır, kör kopya yapılmaz. | Alış şeridi A3 dilimleri |
+| BS-9 | U-08 çevrim verisi | Yoğunluk: tek, şirket bazlı Settings ayarı (örn. 7,85 g/cm³). Kaplama/galvaniz payı hesaba katılmaz. Kesit: ürün kartında "Ebat/kalınlık" sekmesi; hesap buradan yapılır, satırı olmayan ürün `NoSource`. Yuvarlama basamağı: boru/profil pratiğine göre araştırılıp önerilir; Ürün şeridi öneriyi ayarlanabilir değerle getirir. Kantar–hesap toleransı: %1, ayarlanabilir. | Ürün birim çevrim (SAT-D298/D299 "Açık kalan"), Settings; aday belge PR #1086 |
+| BS-10 | Paket adet tablosu ve boya ürün sınıfı listesi | Veri **Excel'den içe aktarılır**, sonra **ERP'de düzenlenebilir**. Liste gelene kadar sistem tahmin yapmaz, veri `NoSource` kalır. Yön seçildi; **`OPEN-007`'nin resmi kapatılması insan kapısıdır**, `OPEN-007` açık kalır. | URT-D25/D27 veri kaynağı |
+| BS-11 | AI karar paketi Grup E | `docs/delivery/AI_KARAR_PAKETI_2026-11.md` Grup E önerileri **kabul edildi**. Hariç ve insan kapısında kalanlar: **E8** (hash anahtarı sahibi ve rotasyonu, secret) ve harici AI'nin canlıya alınması. | AI şeridi |
+| BS-12 | Work Plan 9 iş onayı | Ayrı kaynak belge beklenmez. Work şeridi kapsamı repodaki onay akışı kararlarından yazar, #66'da gösterir ve mevcut kapsamla devam eder. | Work şeridi |
+
+## Sınırlar
+
+- Bu belge kod, şema veya migration değiştirmez. Her madde ilgili şeridin ayrı dilim PR'ında, o PR'ın K seviyesi ve
+  kapılarıyla uygulanır. Örnekler: BS-5 etiket alanı (K3: şema + sözleşme), BS-1 fatura kuru girdisi (K3:
+  para + modüller arası sözleşme).
+- Hâlâ açık (#66 6806619303): Fason (Fable Soru 4); B-06 Ürün runtime için secret ve grant; sızan `sk-ant-usr`
+  anahtarının iptali (Sinan'ın konsol işlemi); grant ve production aktivasyonları. U-08 yuvarlama basamak değeri
+  araştırma sonucuna bağlıdır. EK59'daki `OPEN-INV-AVGCOST-NEGATIVE-STOCK`, `-LANDED`, `-RETURN` ve `-MIXED-SOURCE` açıktır.
+- `OPEN-013` ve `OPEN-007` için yön seçildi; resmi kapatma insan kapısıdır.
+- BS-6, BS-7 ve BS-11 tasarım yönüdür. Grant, rol ataması, Critical, secret veya production değildir.
+- Deployment, environment, secret, Settings'te etkinleştirme, grant/rol/Critical, production aktivasyonu, `OPEN-*`
+  kapatma ve `.claude/settings.json` kapıları değişmez.
