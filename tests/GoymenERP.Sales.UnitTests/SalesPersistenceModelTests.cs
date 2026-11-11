@@ -306,10 +306,10 @@ public sealed class SalesPersistenceModelTests
     }
 
     /// <summary>SAT-D290 (2, 3): rejection and cancellation of a customer return; Up widens the facts, the maker-checker and the
-    /// attempt commands and replaces the guard trigger with the allowed steps (51255); Down is a forward fix (51258) first and then
+    /// attempt commands and replaces the guard trigger with the allowed steps (51255); Down is a forward fix (51259) first and then
     /// restores the original trigger.</summary>
     [Fact]
-    public void The_customer_return_rejection_migration_replaces_the_guard_and_its_down_refuses_with_51258_first()
+    public void The_customer_return_rejection_migration_replaces_the_guard_and_its_down_refuses_with_51259_first()
     {
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddCustomerReturnRejectionAndCancellation();
         var up = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
@@ -323,7 +323,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(SalesDbContext.CustomerReturnAttemptCommandConstraint, checks["CK_CustomerReturnAttempts_Command"]);
         var down = migration.DownOperations;
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
-        Assert.Contains("THROW 51258,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51259,", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[State] IN (5, 6)", guard.Sql, StringComparison.Ordinal);
         var restore = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[^1]);
         Assert.Contains("ALTER TRIGGER [sales].[TR_CustomerReturns_Guard]", restore.Sql, StringComparison.Ordinal);

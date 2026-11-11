@@ -27,7 +27,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// itself refuses a second return of the same customer document, a changed document, a skipped step and a delete (TR 51255) and any
 /// change of an attempt (TR 51256). Another company neither sees nor decides a return; the migration refuses to roll back over a
 /// recorded return (THROW 51257, forward fix). SAT-D290 (2, 3): a pending return is rejected only by another actor, a draft or pending
-/// one is cancelled, both are terminal on the database too (TR 51255, CK maker-checker) and that migration's Down refuses (THROW 51258). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
+/// one is cancelled, both are terminal on the database too (TR 51255, CK maker-checker) and that migration's Down refuses (THROW 51259). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
 {
@@ -295,7 +295,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task The_rejection_migrations_Down_passes_with_no_rejected_or_cancelled_return_and_refuses_51258_once_one_exists()
+    public async Task The_rejection_migrations_Down_passes_with_no_rejected_or_cancelled_return_and_refuses_51259_once_one_exists()
     {
         await using var run = await Run.StartAsync();
         var (invoice, shipment) = await run.FinalizedInvoiceAsync("n");
@@ -317,7 +317,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 .CancelCustomerReturnAsync(id, new SalesDraftStateCommandRequest("1"), Metadata("k-cancel"));
         }
 
-        Assert.Equal(51258, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
+        Assert.Equal(51259, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
@@ -325,7 +325,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(applied[index]);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51258, rollback.Number);
+        Assert.Equal(51259, rollback.Number);
         Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());

@@ -510,8 +510,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Finance-port finalisation, the document/step/delete and attempt guards, company isolation, the 51257 rollback refusal),
                 // kept ordinal-sorted; recomputed on the merged inventory (1628581b... -> e02ba740...).
                 // SAT-D290 (2, 3): +2 SalesCustomerReturn facts (the rejection by another actor and the draft's cancellation, both terminal
-                // under the 51255 guard and the maker-checker CK; the 51258 rollback refusal), kept ordinal-sorted (e02ba740... -> 6ed81bb0...).
-                "6ed81bb02a2e183a5893e787ca06a2c17616cb290121902cc5799a88ebd67e13",
+                // under the 51255 guard and the maker-checker CK; the 51259 rollback refusal), kept ordinal-sorted (e02ba740... -> 766e032e...).
+                "766e032e9d0fc6db6f8d9d93c7419c29aa4d75e43202e50362150f2555b2b709",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -2675,10 +2675,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 3 }),
                 // SAT-D290 (2, 3): Up replaces the 51255 guard trigger so a pending return may also move to Rejected and a draft or pending
-                // one to Cancelled (both terminal); the Down's forward-fix refusal (51258, used by no other migration) while any rejected or
+                // one to Cancelled (both terminal); the Down's forward-fix refusal (51259, used by no other migration) while any rejected or
                 // cancelled return or such an attempt exists, then the earlier trigger is restored.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261111090320_AddCustomerReturnRejectionAndCancellation.cs"] =
-                    new("46b15335b286b6c8f3e1d321045e43fa638d84bb8516c552215a80f29f77ce70",
+                    new("3e25438ea4a5e5122da96c84980f552b730c9388d4982854d2ac58f37e2526ff",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 3 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

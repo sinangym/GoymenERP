@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
         // SAT-D290 (2, 3): a pending return can be rejected and a draft or pending return cancelled, each with an optional reason. Six
         // nullable fact columns; no existing row changes (every stored return is in states 1-4 with the new facts null). States 4, 5
         // and 6 are terminal; TR_CustomerReturns_Guard (51255) now allows exactly 1->2, 2->3, 3->4, 2->5, 1->6 and 2->6. Down guard
-        // THROW 51258.
+        // THROW 51259.
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -158,13 +158,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // Forward fix: a rejected or cancelled return, or an attempt of the new commands, is evidence that the previous model cannot
-            // hold. The guard refuses (51258) before anything is dropped.
+            // hold. The guard refuses (51259) before anything is dropped.
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [sales].[CustomerReturns] WHERE [State] IN (5, 6))
                    OR EXISTS (SELECT 1 FROM [sales].[CustomerReturnAttempts]
                               WHERE [CommandName] IN (N'sales.customer-return.reject.v1', N'sales.customer-return.cancel.v1'))
                 BEGIN
-                    THROW 51258, 'Sales customer returns were rejected or cancelled; AddCustomerReturnRejectionAndCancellation is not rolled back (forward fix).', 1;
+                    THROW 51259, 'Sales customer returns were rejected or cancelled; AddCustomerReturnRejectionAndCancellation is not rolled back (forward fix).', 1;
                 END;
                 """);
 
