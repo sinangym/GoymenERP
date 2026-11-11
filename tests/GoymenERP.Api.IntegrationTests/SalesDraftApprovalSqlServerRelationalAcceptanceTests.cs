@@ -794,10 +794,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         }
 
         // The sales schema's tables, by name: no money, no stock, no shipment movement table exists here for a withdrawal to touch
-        // (the risk exception tables hold approval requests only, not shipments).
+        // (the risk exception tables hold approval requests only, not shipments; the customer return tables hold return documents
+        // written only by their own commands, never by an order withdrawal).
         var tables = await run.ScalarAsync<string>(
             "SELECT STRING_AGG([name], N',') WITHIN GROUP (ORDER BY [name]) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND [name] <> N'__EFMigrationsHistory'");
-        Assert.Equal("DocumentCounters,DraftAttempts,DraftCancellations,DraftCustomerRejections,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLineClosures,DraftLines,DraftNumbers,DraftOverDeliveryApprovals,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionHeaders,DraftRevisionLines,DraftRevisions,Drafts,DraftSourcePlanLines,DraftUserClosures,InvoiceAttempts,InvoiceFinalizations,InvoiceLines,InvoiceMatches,Invoices,OutboxMessages,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests,ShipmentRiskExceptionAttempts,ShipmentRiskExceptions", tables);
+        Assert.Equal("CustomerReturnAttempts,CustomerReturns,DocumentCounters,DraftAttempts,DraftCancellations,DraftCustomerRejections,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLineClosures,DraftLines,DraftNumbers,DraftOverDeliveryApprovals,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionHeaders,DraftRevisionLines,DraftRevisions,Drafts,DraftSourcePlanLines,DraftUserClosures,InvoiceAttempts,InvoiceFinalizations,InvoiceLines,InvoiceMatches,Invoices,OutboxMessages,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests,ShipmentRiskExceptionAttempts,ShipmentRiskExceptions", tables);
         async Task<(int Drafts, int Lines, int Slices, int Numbers, int Revisions, int RevisionLines)> QuietCountsAsync() => (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [CompanyId] = @c", ("@c", CompanyA)),
