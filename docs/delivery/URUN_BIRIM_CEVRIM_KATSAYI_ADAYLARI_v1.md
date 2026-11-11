@@ -13,7 +13,7 @@ URT-D25/D27; Fable F-004 (01 numaralı analiz, OPEN-007 verileri).
 
 | Bulgu | HEAD kanıtı |
 | --- | --- |
-| Ürün ailesi yalnız 5 yassı aile (rulo, dilimli rulo, kesilmiş sac/levha) | `ProductInitialTechnicalDefinitionV1.cs` |
+| Ürün ailesi yalnız 5 yassı aile (rulo, dilinmiş bant, kesilmiş sac/levha) | `ProductInitialTechnicalDefinitionV1.cs` |
 | Boru/profil ürün ailesi ve şablonu yok; motor (TUB-001…004) var | `TubeProfileEngineV1.cs`: birim kg Ürün/paket kartından beklenir, yoksa `Unavailable` |
 | Paket standardı kaynağı yok | `ProductPackageStandardStatusV2` yalnız `Unavailable = 1` |
 | Birim çevrimi yok; "varsayılan katsayı yok" | Ürün `README.md`: "There is no assumed conversion" |
@@ -33,7 +33,7 @@ Her çevrim ürün kartında **sürümlü** bir çevrim tanımıdır; sınıf a�
 Fail-closed: girdi özelliklerinden biri eksik/geçersizse sonuç **hesaplanamıyor**, sıfır/yuvarlanmış
 tahmin üretilmez.
 
-## 3. Formül adayları (özellik girdileriyle; değerler Sinan/OPEN-007'den gelir)
+## 3. Formül ve paket adayları (özellik girdileriyle; değerler Sinan/OPEN-007'den gelir)
 
 Yalnız yapı önerilir; sayısal değer ve yuvarlama kuralı yazılmaz.
 
@@ -43,7 +43,22 @@ Yalnız yapı önerilir; sayısal değer ve yuvarlama kuralı yazılmaz.
 | F-B | Rulo / dilimli rulo kg ↔ metre | kalınlık, en, yoğunluk | `metre başına kg = kalınlık × en × yoğunluk` |
 | F-C | Boru/profil kg ↔ metre | kesit alanı (ya da dış ölçü + et kalınlığı) , yoğunluk | `metre başına kg = kesit alanı × yoğunluk`; kesit tipi (yuvarlak/kutu/…) ayrı aile |
 | F-D | Boru/profil kg ↔ adet | F-C + parça boyu | `adet başına kg = metre başına kg × boy` |
-| F-E | Paket içi adet | paket standardı (adet/paket) | sabit sınıf; öneri planda değişebilir (URT-D27) |
+| F-E | Paket içi adet (**formül değil, sabit sınıf**) | paket standardı (adet/paket) | öneri planda değişebilir (URT-D27); zincir: paket → adet (F-E) → kg (F-A/F-D) |
+
+Birim tutarlılığı (aday; ölçek hatasını önlemek için implementasyon bu tabloyu açıkça uygular):
+
+| Büyüklük | Girdi birimi (aday) | Ara/sonuç birimi |
+| --- | --- | --- |
+| kalınlık, en, boy | mm | m (÷10³) |
+| yoğunluk | kg/m³ | — |
+| kesit alanı | mm² mi m² mi: **açık, Sinan seçer** | m² (÷10⁶ yalnız mm² ise) |
+| sonuç | — | kg/adet, kg/m |
+
+Ters yön (kg → adet/metre = kg ÷ katsayı) aynı calculator'dan gelir; adet için tam sayı yuvarlaması OPEN-007'dir.
+Ton/kg gibi sabit ölçek tanımları katsayı sınıfı değildir (birim kataloğu); kapsam dışıdır.
+Terim: bu belgede "çevrim" tek terimdir (SAT-D298'deki "dönüşüm" aynı anlamdadır).
+Fiilî sınıfta ölçüm yoksa veya eskiyse sonuç da "hesaplanamıyor"dur (§2).
+Rulo/dilinmiş bant çevriminde kenar kırpma (`EdgeTrimMm`) ve kerf etkisi de açık noktadır.
 
 Açık sorular #66'da: `NEEDS-SINAN` yorumu 6803883711 (Sinan kararı: yorum 6794787903 — Issue #66 yorumu, repo dışı).
 Kesit alanı ölçü girişi (tablo/hesap) OPEN-007 metninde açıkça sayılmaz; yeni `OPEN-*` kimliği gerekirse Sinan açar (burada yalnız etiket, kapatma değil).
