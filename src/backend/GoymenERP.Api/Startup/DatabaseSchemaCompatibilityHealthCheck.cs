@@ -13,6 +13,7 @@ using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -43,6 +44,7 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
         ("logistics", typeof(LogisticsDbContext)),
         ("purchasing", typeof(PurchasingDbContext)),
         ("accounting", typeof(AccountingDbContext)),
+        ("work", typeof(WorkDbContext)),
     ];
 
     public async Task<HealthCheckResult> CheckHealthAsync(
