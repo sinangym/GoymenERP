@@ -90,6 +90,10 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
     public string? CancelledBy { get; set; }
     public DateTimeOffset? CancelledAtUtc { get; set; }
     public string? CancellationReason { get; set; }
+
+    /// <summary>A2a-5a (ALS-D3): the approver (never <see cref="CreatedBy"/>) and the approval time; null for a Draft and for an order approved before A2a-5a.</summary>
+    public string? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
     public Guid? CurrencyId { get; set; }
     public string? CurrencyCode { get; set; }
     public Guid? MoneyProfileId { get; set; }
