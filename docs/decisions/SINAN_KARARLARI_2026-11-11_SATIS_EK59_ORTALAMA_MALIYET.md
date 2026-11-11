@@ -1,4 +1,4 @@
-# Sinan Kararları — 2026-11-11 (Stok: ortalama maliyet takibi — fiyat girdisi ve döviz, sıfır stok, sıfır maliyetli alış girişi)
+# Sinan Kararları — 2026-11-11 (Stok: ortalama maliyet takibi — fiyat girdisi ve döviz, sıfır stok, sıfır maliyetli alış girişi, birim çevrim ve ALS-D58 Ürün çevrim portu)
 
 Bu belge önceki karar dosyalarını silmez; SAT-D295…SAT-D299'u ekler ve EK52'nin
 (`SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`) "Sınırlar"ında ve Stok kodundaki `OPEN-INV-AVGCOST-*` yorumlarında açık
@@ -64,7 +64,7 @@ Soru: "Faturalanmış kur" hangi belgeden geliyor?
 
 `NEEDS-SINAN:` Alış sipariş satırı USD iken stok maliyetinin TL karşılığı **tedarikçi faturasındaki (resmî) kurla** mı hesaplansın (fatura gelene kadar dövizli satırın TL maliyeti "kullanılamıyor" kalsın), yoksa fatura gelmeden ERP kontrol kuruyla (ALS-D6/D14) geçici hesaplanıp faturadaki kurla düzeltilsin mi?
 
-Birim dönüşümü için ayrı soru (**CEVAPLANDI, bkz. SAT-D298**; kalan açık soru yalnız kur sorusudur):
+Birim dönüşümü için ayrı soru (**CEVAPLANDI, bkz. SAT-D298**; kalan açık sorular: kur sorusu ve SAT-D299 "Açık kalan" bölümündeki U-08 katsayı tanımı sorusu, #66 yorumu 6794545274):
 
 `NEEDS-SINAN:` Alış sipariş satırının birimi stok biriminden (kg) farklıysa (örn. adet, metre, ton) stok maliyeti kg başına nasıl hesaplansın: ürün kartındaki birim çevrim katsayısı mı kullanılsın (katsayı yoksa "kullanılamıyor" kalsın), yoksa satır başına elle kg girişi mi istensin?
 
@@ -111,7 +111,7 @@ kanıtı). Bu belge kod değiştirmez.
 |---|---|---|
 | SAT-D296 | Sıfır stokta okunabilir ortalama testi ve yorum güncellemesi | Stok backend; K3 (para/formül) |
 | SAT-D297 | `ZeroCostReceipt = 9`, okuma portu yeni kod, calculator ve birim/sözleşme testleri | Stok backend; K3 |
-| SAT-D299 | `IProductPurchaseUnitConversionV1` portu (katsayı modeli U-08 cevabına bağlı); Stok kg başına hesap | Ürün (port) + Stok; cross-module contract K3 |
+| SAT-D299 | `IProductPurchaseUnitConversionV1` portu (katsayı modeli U-08 cevabına bağlı); Stok tarafı bağlantısı (kg başına hesap SAT-D298 işidir) | Ürün (port) + Stok; cross-module contract K3 |
 | SAT-D295 | Alış satırı girişi ve dövizli okuma (kur `NEEDS-SINAN` sonrası; birim için SAT-D298) | Alış + Stok; cross-module contract K3 |
 
 ## Ek karar: birim çevrim (SAT-D298; 11 Kasım 2026, aynı gün)
@@ -120,7 +120,7 @@ kanıtı). Bu belge kod değiştirmez.
 yorum [6794310745](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6794310745) (6791808512 için; aynı yorum 6794251775'e de atıf yapar, o konu Finans şeridindedir ve bu belgeye alınmadı). Cevap metni
 (aynen): "Alış satırı birimi stok biriminden farklıysa stok maliyeti **ürün kartındaki birim çevrim katsayısı** ile kg
 başına hesaplanır; katsayı yoksa "kullanılamıyor" (NoSource) kalır. Satırda elle kg girişi yok." Yukarıdaki ikinci
-`NEEDS-SINAN` (birim) bu cevapla kapanmıştır; kur sorusu açıktır.
+`NEEDS-SINAN` (birim) bu cevapla kapanmıştır; kur sorusu ve SAT-D299'daki U-08 katsayı tanımı sorusu (#66 6794545274) açıktır.
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
@@ -130,7 +130,7 @@ başına hesaplanır; katsayı yoksa "kullanılamıyor" (NoSource) kalır. Satı
 çevrim yok; `IProductPurchaseUnitConversionV1` önerisi `docs/handoffs/ALIS_URUN_DEVIR_v1.md` U-A1'de ertelendi). ALS-D58
 (`SINAN_KARARLARI_2026-11-02_ALIS_EK9.md`) Ürün için yeni port açılmasını Alış/Satış/Finans/Üretim bitene kadar yasaklar.
 Bu nedenle uygulama o gün şuydu: çevrim gerektiren satır `NoSource` kalır (katsayı yok). **Güncelleme:** ALS-D58'in bu port
-için kalkması aynı gün SAT-D299 ile Sinan tarafından verildi (aşağıda); bu paragraftaki "yasaklar" ve "açılmaz" ifadeleri
+için kalkması aynı gün SAT-D299 ile `SINAN-KARARI` kaydıyla verildi (aşağıda); bu paragraftaki "yasaklar" ifadesi
 yalnız `IProductPurchaseUnitConversionV1` için artık geçerli değildir. Port açıldığında hesap bu karara göre bağlanır. Kod PR'ı (K3) kapsamı: kg başına hesap ve 4 ondalık
 AwayFromZero yuvarlama (mevcut defter kuralı), `AverageCostPosition.cs` yorumundaki `NEEDS-SINAN` ibaresinin kaldırılması;
 katsayı kaynağı gelmeden calculator'a katsayı girişi eklenmez.
@@ -147,7 +147,7 @@ başlatabilir (iki bağımsız exact-head review)."
 |---|---|---|---|
 | SAT-D299 | ALS-D58 ve Ürün çevrim portu | (1) ALS-D58 erteleme kararı, kayıt metnine göre Stok ortalama maliyeti için kalkar; port olarak **ürün kartı birim çevrim katsayısını okuyan `IProductPurchaseUnitConversionV1`** açılabilir. (2) Port Ürün şeridinde açılabilir. (3) Katsayı yoksa `NoSource` kuralı ve "elle kg girişi yok" değişmez (SAT-D298). | `ALIS_URUN_DEVIR_v1.md` U-A1, Ürün modülü, Stok maliyet okuma portu |
 
-**Yazarın dar okuması (Sinan kararı değildir; kayıt metni daha geniş yazılmıştır):** Bu belge kalkışı yalnız
+**Yazarın dar okuması (Sinan kararı değildir; kayıt metni daha geniş yazılmıştır):** Bu belge kalkmasını yalnız
 `IProductPurchaseUnitConversionV1` ile sınırlı uygular. ALS-D58'in diğer kalemleri (Stok/Ayarlar/Cari yeni port-tablo-ekran,
 Lojistik ALS-D65, ALS-D63/ALS-D69 dar istisnaları dahil) bu kararla değiştirilmiş sayılmaz; Ürün için yeni tablo/ekranın
 bu kararla açılıp açılmadığı kayıtta yazmaz ve burada seçilmez. Sınırlama muhafazakârdır; Sinan daha geniş istiyorsa ayrı
