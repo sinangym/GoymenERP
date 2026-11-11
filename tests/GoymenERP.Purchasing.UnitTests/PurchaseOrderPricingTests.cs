@@ -15,6 +15,8 @@ public sealed class PurchaseOrderPricingTests
 {
     private static readonly Guid Company = Guid.Parse("91000000-0000-0000-0000-000000000001");
     private static readonly Guid Supplier = Guid.Parse("92000000-0000-0000-0000-000000000001");
+    private const string Preparer = "SENTETIK-hazirlayan";
+    private const string Approver = "SENTETIK-onaylayan";
     private static readonly Guid Product = Guid.Parse("93000000-0000-0000-0000-000000000001");
     private static readonly Guid Kg = Guid.Parse("94000000-0000-0000-0000-000000000001");
     private static readonly Guid Currency = Guid.Parse("95000000-0000-0000-0000-000000000001");
@@ -84,15 +86,15 @@ public sealed class PurchaseOrderPricingTests
     [Fact]
     public void A_priced_line_keeps_its_price_and_an_unpriced_order_is_still_approved_and_received()
     {
-        var priced = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var priced = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
         var line = priced.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(10m), null, new PurchaseOrderLinePrice(12.5m, Kg, 10m), At);
         Assert.Equal((12.5m, 11.25m, 112.5m), (line.Price!.UnitPrice, line.Price.NetUnitPrice, line.Price.LineAmount(line.Quantity.Value, Lira)));
         Assert.Equal(Lira, priced.Money);
 
         // ALS-D18: no currency, no price — approved and received as usual.
-        var unpriced = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, At);
+        var unpriced = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, At, Preparer);
         var open = unpriced.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(10m), At);
-        unpriced.Approve(2, At);
+        unpriced.Approve(2, Approver, At);
         unpriced.RecordAcceptance(3, Guid.NewGuid(), open.Id, Kilos(4m), At);
         Assert.Equal((PurchaseOrderStatus.Approved, (PurchaseOrderLinePrice?)null, (PurchaseOrderMoney?)null), (unpriced.Status, open.Price, unpriced.Money));
     }
@@ -100,7 +102,7 @@ public sealed class PurchaseOrderPricingTests
     [Fact]
     public void A_technical_slice_carries_no_price_its_quantity_is_priced_on_the_general_line()
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
         var general = order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1000m), null, new PurchaseOrderLinePrice(2m, Kg), At);
 
         var technical = order.BreakDown(2, general.Id, Guid.NewGuid(), Guid.NewGuid(), Kilos(75m), At);
@@ -126,8 +128,8 @@ public sealed class PurchaseOrderPricingTests
     public void Every_price_rule_is_refused_with_its_code_and_adds_nothing(string fault, string code)
     {
         var order = fault == "no-currency"
-            ? PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, At)
-            : PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+            ? PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, At, Preparer)
+            : PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
         var price = fault switch
         {
             "zero-with-amount" => new PurchaseOrderLinePrice(0m, Kg, null, 0.01m),
@@ -160,7 +162,7 @@ public sealed class PurchaseOrderPricingTests
     {
         // Sinan (#66 6704170096): "Satırda açıkça 0 fiyat girilebilir; satır tutarı 0 olur. Boş fiyattan ayrı tutulur." On a zero
         // price a percent discount is allowed (net 0) and an amount only as 0 (a positive amount exceeds the price, fail-closed).
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
         var line = order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(10m), null, new PurchaseOrderLinePrice(0m, Kg, Parse(percent), Parse(amount)), At);
 
         Assert.NotNull(line.Price);
@@ -173,7 +175,7 @@ public sealed class PurchaseOrderPricingTests
         // #944 review A P2: at scale 6 the line amount of 123456789012345678.123457 × (1 − 33.333333 %) fits, but the exact net
         // 82304526419753082.12345692707819 (32 significant digits) needs more than System.Decimal holds; it is refused when written, never a 500 on a read.
         var wide = PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 6);
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, wide, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, wide, At, Preparer);
         var price = new PurchaseOrderLinePrice(123456789012345678.123457m, Kg, 33.333333m);
         Assert.Throws<OverflowException>(() => _ = price.NetUnitPrice);
 
@@ -187,7 +189,7 @@ public sealed class PurchaseOrderPricingTests
     public void A_profile_wider_than_the_columns_still_holds_a_price_to_six_decimals()
     {
         var wide = PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 8);
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, wide, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, wide, At, Preparer);
         Assert.Equal(6, wide.PriceScale);
 
         order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1m), null, new PurchaseOrderLinePrice(1.123456m, Kg), At);
@@ -246,7 +248,7 @@ public sealed class PurchaseOrderPricingTests
     public void A_unit_price_scale_of_4_takes_four_decimals_refuses_a_fifth_and_still_rounds_the_line_amount_once_to_the_amount_scale()
     {
         var lira4 = PurchaseOrderMoney.Of(Currency, "TRY", Profile, 1, 2, unitPriceScale: 4);
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, lira4, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, lira4, At, Preparer);
         Assert.Equal((4, (int?)4, 2), (lira4.PriceScale, lira4.UnitPriceScale, lira4.Scale));
 
         // 41.2575 x 1250.5 = 51592.50375 -> 51592.50 (once, half away from zero, SAT-D11); the net is never rounded (SAT-D76).
@@ -268,7 +270,7 @@ public sealed class PurchaseOrderPricingTests
     {
         // A legacy (A2a-1) snapshot or a profile that answers none: the amount scale, as before.
         Assert.Equal((2, (int?)null), (Lira.PriceScale, Lira.UnitPriceScale));
-        var legacy = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var legacy = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
         Assert.Equal(PurchasingRuleCodes.PriceScaleExceeded, Assert.Throws<PurchasingRuleException>(() =>
             legacy.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1m), null, new PurchaseOrderLinePrice(10.123m, Kg), At)).Code);
 
@@ -309,7 +311,7 @@ public sealed class PurchaseOrderPricingTests
     [Fact]
     public void A_surcharge_is_added_to_the_discounted_price_as_a_percent_of_it_or_an_amount_per_unit_like_Sales()
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
 
         // (100 − 10 %) = 90; + 5 % of 90 = 94.5 (the Sales order: discount first, then the surcharge on the discounted price).
         var percent = order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(2m), null, new PurchaseOrderLinePrice(100m, Kg, 10m, null, 5m), At);
@@ -332,7 +334,7 @@ public sealed class PurchaseOrderPricingTests
     [InlineData("10", null, "0.001", PurchasingRuleCodes.PriceScaleExceeded)]
     public void Every_surcharge_rule_is_refused_and_nothing_is_added(string unitPrice, string? percent, string? amount, string expected)
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, Lira, At, Preparer);
 
         var refused = Assert.Throws<PurchasingRuleException>(() => order.AddLine(1, Guid.NewGuid(), Product, Kg, Kilos(1m), null,
             new PurchaseOrderLinePrice(Parse(unitPrice)!.Value, Kg, null, null, Parse(percent), Parse(amount)), At));
