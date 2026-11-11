@@ -87,6 +87,20 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.invoices)).toBeNull()
   })
 
+  it('mounts UI-70b S-10 customer returns on the lane ids and routes; only the list is in the menu', () => {
+    expect(CAPABILITY.salesCustomerReturnsList).toBe(SALES_CAPABILITY.customerReturnsList)
+    expect(CAPABILITY.salesCustomerReturnsCreate).toBe(SALES_CAPABILITY.customerReturnsCreate)
+    expect(CAPABILITY.salesCustomerReturnsDetail).toBe(SALES_CAPABILITY.customerReturnsDetail)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesCustomerReturnsList]).toBe(SALES_ROUTE.customerReturns)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesCustomerReturnsCreate]).toBe(SALES_ROUTE.customerReturnCreate)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesCustomerReturnsDetail]).toBe(SALES_ROUTE.customerReturnDetail)
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesCustomerReturnsList)
+    expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesCustomerReturnsCreate)
+    expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesCustomerReturnsDetail)
+    // No return route is read as a draft id (the router table puts the static `yeni` before `:returnId`).
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.customerReturns)).toBeNull()
+  })
+
   it('names UI-80 under the Sales menu, drawn only where its own capability is granted', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesReportsView]).toBe('Satış raporları')
     expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesReportsView)

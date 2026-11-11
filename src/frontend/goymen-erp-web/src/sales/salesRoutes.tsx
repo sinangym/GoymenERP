@@ -27,6 +27,9 @@ import { SalesDispatchListPage } from './SalesDispatchListPage'
 import { SalesInvoiceCandidatesPage } from './SalesInvoiceCandidatesPage'
 import { SalesReportsPage } from './SalesReportsPage'
 import { SalesInvoiceListPage } from './SalesInvoiceListPage'
+import { SalesCustomerReturnListPage } from './SalesCustomerReturnListPage'
+import { SalesCustomerReturnCreatePage } from './SalesCustomerReturnCreatePage'
+import { SalesCustomerReturnDetailPage } from './SalesCustomerReturnDetailPage'
 import { SalesPriceControlPage } from './SalesPriceControlPage'
 import { SalesApprovalsPage } from './SalesApprovalsPage'
 import { SalesControlCenterPage } from './SalesControlCenterPage'
@@ -59,6 +62,10 @@ export const salesRoutes: RouteObject[] = [
   { path: SALES_ROUTE.invoiceCandidates.slice(1), element: gate(SALES_CAPABILITY.invoiceCandidatesList, <SalesInvoiceCandidatesPage />) },
   // UI-63 (Sales shell 1.19; SAT-D238 1.20 drops the price-read requirement): S-09 Satış faturaları on its own published id.
   { path: SALES_ROUTE.invoices.slice(1), element: gate(SALES_CAPABILITY.invoicesList, <SalesInvoiceListPage />) },
+  // UI-70b S-10 (API-40, SAT-D288): Müşteri iade faturaları on their own published ids. Static `yeni` before `:returnId`.
+  { path: SALES_ROUTE.customerReturns.slice(1), element: gate(SALES_CAPABILITY.customerReturnsList, <SalesCustomerReturnListPage />) },
+  { path: SALES_ROUTE.customerReturnCreate.slice(1), element: gate(SALES_CAPABILITY.customerReturnsCreate, <SalesCustomerReturnCreatePage />) },
+  { path: SALES_ROUTE.customerReturnDetail.slice(1), element: gate(SALES_CAPABILITY.customerReturnsDetail, <SalesCustomerReturnDetailPage />) },
   // UI-80 (Sales shell 1.11): the Sales reports screen on its own published id.
   { path: SALES_ROUTE.reports.slice(1), element: gate(SALES_CAPABILITY.reportsView, <SalesReportsPage />) },
   // UI-50 S-05: a read-only comparison of one draft, under the detail's own published id (no new capability).
