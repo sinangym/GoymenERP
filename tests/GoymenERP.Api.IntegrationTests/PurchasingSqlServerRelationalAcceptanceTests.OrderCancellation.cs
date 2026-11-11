@@ -187,7 +187,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             second = (await a.Store.StoreOrderAsync(run.Envelope("k-second"), Hash("second"), owners.Account, Day, () => builtSecond, VersionsOf(builtSecond)))
                 .Order.Order.Id;
             await a.Store.MutateOrderAsync(run.Envelope("k-first-approve", actor: Manager), Hash("first-approve"), PurchasingCommands.OrderApproveV1, first,
-                (order, now) => order.Approve(2, now), Approved);
+                (order, now) => order.Approve(2, OrderApprover, now), Approved);
         }
 
         await using (StoreScope a = run.Store(CompanyA))
@@ -205,7 +205,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         {
             // ALS-D68 (EK10): the cancelled order still holds its 60 of the request line's 100; 60 + 50 is over-sourced.
             var over = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(run.Envelope("k-second-approve", actor: Manager),
-                Hash("second-approve"), PurchasingCommands.OrderApproveV1, second, (order, now) => order.Approve(2, now), Approved));
+                Hash("second-approve"), PurchasingCommands.OrderApproveV1, second, (order, now) => order.Approve(2, OrderApprover, now), Approved));
             Assert.Equal(PurchasingStoreCodes.RequestLineOverSourced, over.Code);
         }
 
@@ -277,7 +277,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             () => order, new Dictionary<Guid, string> { [lineId] = "product-v1" });
         string approveKey = $"cancel-approve-{orderId:N}";
         var approved = await scope.Store.MutateOrderAsync(run.Envelope(approveKey), Hash(approveKey), PurchasingCommands.OrderApproveV1, orderId,
-            (candidate, now) => candidate.Approve(candidate.Version, now), Approved);
+            (candidate, now) => candidate.Approve(candidate.Version, OrderApprover, now), Approved);
         return (orderId, lineId, approved!.Order.Order.Version);
     }
 }

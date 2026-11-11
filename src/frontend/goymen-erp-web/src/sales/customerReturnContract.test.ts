@@ -11,6 +11,7 @@ import {
   decodeCustomerReturnView,
   salesCustomerReturnApiPath,
   salesCustomerReturnsListPath,
+  trimServerWhiteSpace,
 } from './customerReturnContract'
 import { customerReturnCommandPath } from './customerReturnApi'
 import { decodeSalesInvoiceDetail } from './invoiceFinalizationContract'
@@ -54,6 +55,19 @@ describe('UI-70b customer return view decoder', () => {
     expect(
       decodeCustomerReturnView(returnView('Rejected', { rejectionReason: 'x'.repeat(CUSTOMER_RETURN_REASON_MAX) }), RETURN_ID),
     ).not.toBeNull()
+  })
+
+  it('reads a reason as the server trims it (.NET char.IsWhiteSpace, not JS trim)', () => {
+    // .NET Trim() keeps U+FEFF and strips U+0085; a reason the server accepted with them is not malformed.
+    for (const reason of ['\uFEFFneden', 'neden\uFEFF', '\uFEFF']) {
+      expect(decodeCustomerReturnView(returnView('Rejected', { rejectionReason: reason }), RETURN_ID)?.rejectionReason).toBe(reason)
+    }
+    for (const reason of ['\u0085neden', 'neden\u00a0', '\u3000neden', 'neden\u2028']) {
+      expect(decodeCustomerReturnView(returnView('Cancelled', { cancellationReason: reason }), RETURN_ID)).toBeNull()
+    }
+    expect(trimServerWhiteSpace('\u0085\t neden \u00a0\u3000')).toBe('neden')
+    expect(trimServerWhiteSpace('\uFEFF neden \uFEFF')).toBe('\uFEFF neden \uFEFF')
+    expect(trimServerWhiteSpace(' \u2000\u200a ')).toBe('')
   })
 
   it('accepts a return cancelled from PendingApproval, which carries its submission', () => {

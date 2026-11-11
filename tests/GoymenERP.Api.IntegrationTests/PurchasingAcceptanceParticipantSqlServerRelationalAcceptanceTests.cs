@@ -116,6 +116,20 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using (var migrationContext = MigrationContext(run, CompanyA))
         {
             var migrator = migrationContext.GetService<IMigrator>();
+            // A2a-5a: the newer approval migration's Down refuses first while the order's approver is recorded.
+            var approvalRefusal = await Assert.ThrowsAsync<SqlException>(() =>
+                migrator.MigrateAsync(InitialPurchasingMigration));
+            Assert.Equal(51172, approvalRefusal.Number);
+        }
+
+        Assert.Equal(beforeRefusedDown, await AcceptanceDatabaseStateAsync(run, seeded.OrderId));
+
+        // With the approver cleared (the legacy, pre-A2a-5a shape the approval check allows), the acceptance guard refuses.
+        await run.ExecuteAsync("UPDATE purchasing.PurchaseOrders SET ApprovedBy = NULL, ApprovedAtUtc = NULL WHERE Id = @id",
+            ("@id", seeded.OrderId));
+        await using (var migrationContext = MigrationContext(run, CompanyA))
+        {
+            var migrator = migrationContext.GetService<IMigrator>();
             var refusal = await Assert.ThrowsAsync<SqlException>(() =>
                 migrator.MigrateAsync(InitialPurchasingMigration));
             Assert.Equal(51042, refusal.Number);
@@ -244,7 +258,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             AcceptanceHash(approveKey),
             PurchasingCommands.OrderApproveV1,
             orderId,
-            (candidate, now) => candidate.Approve(candidate.Version, now),
+            (candidate, now) => candidate.Approve(candidate.Version, OrderApprover, now),
             new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Test approval"));
         Assert.NotNull(approved);
         Assert.Equal(PurchaseOrderStatus.Approved, approved.Order.Order.Status);

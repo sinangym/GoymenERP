@@ -24,6 +24,7 @@ import {
 } from './customerReturnApi'
 import {
   CUSTOMER_RETURN_REASON_MAX,
+  trimServerWhiteSpace,
   type CustomerReturnAmounts,
   type CustomerReturnState,
   type CustomerReturnView,
@@ -339,6 +340,8 @@ const ACTIONS: readonly ReturnAction[] = ['submission', 'approval', 'finalizatio
 
 const actionOf = (path: string): ReturnAction => ACTIONS.find((action) => path.endsWith(`/${action}`)) ?? 'submission'
 
+const NO_REASONS: Readonly<Record<CustomerReturnDecision, string>> = { rejection: '', cancellation: '' }
+
 const isDecision = (action: ReturnAction): action is CustomerReturnDecision => action === 'rejection' || action === 'cancellation'
 
 /** The action whose target state a recorded answer is in (the transport accepts only the target state). */
@@ -360,7 +363,8 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
   // The code of the last 5xx answer (the attempt machine keeps none): it says why a finalization stayed unresolved.
   const [serviceCode, setServiceCode] = useState<string | null>(null)
   const [reasonFor, setReasonFor] = useState<CustomerReturnDecision | null>(null)
-  const [reason, setReason] = useState('')
+  // Each decision keeps its own reason: switching between Reddet and İptal et never carries one's text to the other.
+  const [reasons, setReasons] = useState<Record<CustomerReturnDecision, string>>(NO_REASONS)
   const [localError, setLocalError] = useState<string | null>(null)
   // Every action posts the version it read; only a decision sends its reason (the steps refuse a reason member).
   const attempt = usePoolAttempt<CustomerReturnDecisionBody, CustomerReturnMutation>(
@@ -379,7 +383,7 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
     (next) => {
       if (next.phase === 'completed') {
         setReasonFor(null)
-        setReason('')
+        setReasons(NO_REASONS)
       }
       if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onReread()
     },
@@ -420,8 +424,8 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
 
   function confirmDecision() {
     if (reasonFor === null) return
-    const trimmed = reason.trim()
-    // The server measures the trimmed text; whitespace only is no reason.
+    // The server measures the text trimmed by .NET `string.Trim()`; whitespace only is no reason.
+    const trimmed = trimServerWhiteSpace(reasons[reasonFor])
     if (trimmed.length > CUSTOMER_RETURN_REASON_MAX) {
       setLocalError(T.reasonTooLong(CUSTOMER_RETURN_REASON_MAX))
       return
@@ -467,9 +471,13 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
           <textarea
             id={reasonId}
             aria-describedby={hintId}
-            value={reason}
+            value={reasons[reasonFor]}
             disabled={attempt.frozen}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={(event) => {
+              const decision = reasonFor
+              const text = event.target.value
+              setReasons((current) => ({ ...current, [decision]: text }))
+            }}
             data-testid="customer-return-reason"
           />
           <span id={hintId} className={styles.muted}>{T.reasonHint(CUSTOMER_RETURN_REASON_MAX)}</span>

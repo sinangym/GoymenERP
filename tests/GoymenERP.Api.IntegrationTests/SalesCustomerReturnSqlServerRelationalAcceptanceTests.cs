@@ -183,6 +183,10 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
             Assert.Empty((await foreign.ListCustomerReturnsAsync(null)).Items);
             Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
                 foreign.SubmitCustomerReturnAsync(id, new SalesDraftStateCommandRequest("1"), Metadata("k-foreign-submit")))).Status);
+            Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => foreign.RejectCustomerReturnAsync(id,
+                new SalesDraftStateCommandRequest("1", "SENTETIK neden"), Metadata("k-foreign-reject")))).Status);
+            Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => foreign.CancelCustomerReturnAsync(id,
+                new SalesDraftStateCommandRequest("1", "SENTETIK neden"), Metadata("k-foreign-cancel")))).Status);
             var record = await Assert.ThrowsAsync<SalesDraftServiceException>(() => foreign.CreateCustomerReturnAsync(
                 new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-B", Day,
                     [new CreateSalesCustomerReturnLineRequest(invoice.Lines[0].Id, "1")], shipment), Metadata("k-foreign-create")));

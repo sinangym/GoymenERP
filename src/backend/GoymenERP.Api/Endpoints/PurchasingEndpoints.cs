@@ -344,6 +344,7 @@ public static class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
                 PurchasingProblemCodesV1.RequestState, PurchasingProblemCodesV1.RequestLineOverSourced,
+                PurchasingProblemCodesV1.OrderSameActor, PurchasingProblemCodesV1.OrderMakerUnknown,
                 PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()

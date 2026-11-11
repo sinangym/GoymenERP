@@ -90,6 +90,17 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)";
 
     /// <summary>
+    /// A2a-5a (ALS-D3, Fable F-015): the approver and the approval time come together; only an Approved (2) or Cancelled (3)
+    /// order carries them, and the approver is never the preparer (binary comparison, the domain's ordinal rule). An order
+    /// approved before A2a-5a keeps both null (its approver was not recorded). A CHECK passes on UNKNOWN, so every fact is
+    /// tested with IS [NOT] NULL.
+    /// </summary>
+    internal const string OrderApprovalCheck =
+        "([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) "
+        + "OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [Status] IN (2, 3) "
+        + "AND [ApprovedBy] COLLATE " + IdentityCollation + " <> [CreatedBy] COLLATE " + IdentityCollation + ")";
+
+    /// <summary>
     /// §7.2 / §13 and A1-3 (master INV-006): technical slices, the accepted share and the cancelled remainder are never negative
     /// and together never exceed the first commitment.
     /// </summary>
@@ -261,6 +272,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseOrders_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
             // A1-3 (No.161 §2): the cancellation facts match the status.
             table.HasCheckConstraint("CK_PurchaseOrders_Cancellation", OrderCancellationCheck);
+            // A2a-5a (ALS-D3, defence in depth beside the domain): the approver is never the preparer.
+            table.HasCheckConstraint("CK_PurchaseOrders_Approval", OrderApprovalCheck);
             // A2a-1 (TEK-01): the money snapshot is complete or absent.
             table.HasCheckConstraint("CK_PurchaseOrders_Money", OrderMoneyCheck);
             // A2a-1c (ALS-D72): the unit-price scale only beside a money snapshot.
@@ -276,6 +289,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CancelledBy).HasMaxLength(128);
         entity.Property(x => x.CancellationReason).HasMaxLength(4000);
+        entity.Property(x => x.ApprovedBy).HasMaxLength(128);
         entity.Property(x => x.CurrencyCode).HasMaxLength(PurchaseOrderMoney.MaximumCurrencyCodeLength);
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_Status_CreatedAtUtc_Id");
@@ -453,6 +467,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                     PurchaseOrderRow =>
                     [
                         nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc),
+                        nameof(PurchaseOrderRow.ApprovedBy), nameof(PurchaseOrderRow.ApprovedAtUtc),
                         nameof(PurchaseOrderRow.CancelledBy), nameof(PurchaseOrderRow.CancelledAtUtc), nameof(PurchaseOrderRow.CancellationReason),
                     ],
                     PurchaseOrderLineRow =>
