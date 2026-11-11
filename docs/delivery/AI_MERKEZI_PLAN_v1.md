@@ -21,6 +21,22 @@ Değişmezler: AI DB'ye veya ham SQL'e erişmez, yalnız modüllerin şemalı ar
 her AI çağrısı kaydedilir (DEC-AI-005) · dış AI'a hassas veri yalnız takma adla ve yöneticinin açtığı veri
 türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılması, veri türü izni ve rol/yetki Sinan'da.
 
+## 1a. Durum güncellemesi (2026-11-11, main@0a789a2)
+
+| Dilim | Durum | Kanıt |
+|---|---|---|
+| AI-0 | Merge edildi | Bu plan + `SINAN_KARARLARI_2026-11-03_AI.md` |
+| AI-1 (W05.1) | Merge edildi | #945; ADR-008 (yalnız sözleşme katmanı kabul), `BuildingBlocks/Ai/*`, `GoymenERP.Ai.UnitTests` |
+| AI-4a (dış AI süzgeci) | Merge edildi; sertleştirme PR #1077 (açık) | `AiExternalEgressV1.cs` (#970) |
+| AI-5 (sağ panel) | Merge edildi; panel düğmesi her sayfada görünür, açılınca her durumda "kullanılamıyor" gösterir; çalışan AI yolu yok | #947; `src/frontend/goymen-erp-web/src/ai/` |
+| AI-2 | Bekliyor: ADR-SEC-001 "Öneri"; karar paketi E1–E9 | `docs/adr/ADR-SEC-001-durable-security-event-channel.md` |
+| AI-3 | Bekliyor: AI-2 (ERP-000J §18) | — |
+| AI-4b (Ayarlar AI politikası) | Bekliyor: Ayarlar ADR-SET-002 runtime (Ayarlar şeridi) | — |
+| AI-6…AI-10 | Bekliyor: AI-3 ve modül portları (§5) | — |
+
+Açık sorular tek belgede: `docs/delivery/AI_KARAR_PAKETI_2026-11.md` (A–E). Fable 5.2 analizi bu modülü
+F-030 olarak işaretler (OPEN-020'ye bağlı, "Sonra" grubu); rol sorusu F-001 ile birlikte sorulur.
+
 ## 2. Var / eksik tablosu (main@2318317)
 
 | Alan | Var | Eksik | Dilim |
@@ -103,6 +119,8 @@ içe aktarma), termin önerisi, teklif karşılaştırma; satır/miktar revizyon
 (F7); müşteri bazlı risk ucu.
 
 ## 6. NEEDS-SINAN (Issue #66)
+
+Seçenekler, önerilen varsayılanlar ve cevapsızken davranış: `docs/delivery/AI_KARAR_PAKETI_2026-11.md`.
 
 1. Dış AI sağlayıcısı ve hesabı — veri saklamama ve eğitimde kullanmama kanıtıyla (AI-D5, OPEN-020).
 2. Yerel model ve OCR çalışma ortamı, GPU kapasitesi (OPEN-020 yerel PoC).
