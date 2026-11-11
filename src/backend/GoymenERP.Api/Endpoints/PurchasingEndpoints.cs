@@ -304,7 +304,7 @@ public static class PurchasingEndpoints
             .ProducesErpAuthenticatedProblems();
 
         // A2a-2 (plan API-20; ALS-D74): the order's totals — line amounts, VAT per line from the Settings item-type default and gross;
-        // withholding "hesaplanamıyor" until N-20. Read-only under purchasing.orders.read; amounts only with the price read (PRS-02).
+        // withholding follows Sales S5 (ALS-D78). Read-only under purchasing.orders.read; amounts only with the price read (PRS-02).
         group.MapGet("/{id:guid}/totals", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
             ICorrelationContext correlation, CancellationToken cancellationToken) =>
         {

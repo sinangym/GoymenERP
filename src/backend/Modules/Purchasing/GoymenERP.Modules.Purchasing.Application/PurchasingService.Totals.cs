@@ -17,7 +17,7 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// default in force (Settings <c>Unresolved</c>, with its reason) or an unreadable port is <c>NotComputable</c> for that line — the document VAT is then
 /// <c>NotComputable</c> with the count; nothing is guessed. Supplier exemptions come later (ALS-D74).</item>
 /// <item><b>Withholding</b> (ALS-D78, Sinan 2026-11-11 "Satış gibi hemen açılsın"; the withholding part of N-20 is closed, the supplier
-/// exemption part stays open): the item type's Settings withholding share (<c>NotApplied</c>/<c>Exempt</c> = none), taken from the ROUNDED
+/// exemption part stays open): the item type's Settings withholding share (<c>NotApplied</c> = none; any other non-<c>Resolved</c> state, <c>Exempt</c> included, is <c>NotComputable</c> like Sales), taken from the ROUNDED
 /// line VAT (SAT-D75) — exactly the Sales S5 rule: the VUK 232 threshold is NOT a gate here (it only holds an invoice later) and there is no
 /// Purchasing-only switch. A share that is not in (0, 100] is <c>NotComputable</c> (<c>tax_source_invalid</c>), never none. The accountant's
 /// confirmation and the production activation stay human gates.</item>
@@ -87,8 +87,8 @@ public sealed partial class PurchasingService
     }
 
     /// <summary>
-    /// The tax input of each general line (ALS-D74; see the class remarks). One Settings read per product; withholding is always
-    /// <c>NotComputable</c> (N-20). A denied actor is 403; an unavailable or absent port makes the VAT <c>NotComputable</c>.
+    /// The tax input of each general line (ALS-D74; see the class remarks). One Settings read per product; withholding follows Sales S5
+    /// (ALS-D78: share from the item type, no threshold gate). A denied actor is 403; an unavailable or absent port makes the VAT <c>NotComputable</c>.
     /// </summary>
     private async Task<Dictionary<Guid, CommercialLineTaxInput>> LineTaxesAsync(Scope scope, IReadOnlyList<PurchaseOrderLine> lines,
         DateOnly on, CancellationToken cancellationToken)
@@ -162,7 +162,7 @@ public sealed partial class PurchasingService
 
         return answer.WithholdingState switch
         {
-            TaxResolutionStatesV1.NotApplied or TaxResolutionStatesV1.Exempt => CommercialLineTaxInput.Vat(vat, null),
+            TaxResolutionStatesV1.NotApplied => CommercialLineTaxInput.Vat(vat, null),
             TaxResolutionStatesV1.Resolved when answer.WithholdingPercent is > 0m and <= 100m =>
                 CommercialLineTaxInput.Vat(vat, answer.WithholdingPercent.Value / 100m),
             _ => CommercialLineTaxInput.VatWithWithholdingNotComputable(vat, PurchaseOrderTaxReasonsV1.TaxSourceInvalid),

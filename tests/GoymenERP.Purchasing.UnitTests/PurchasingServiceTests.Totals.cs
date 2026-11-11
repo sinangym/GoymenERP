@@ -6,7 +6,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 
 /// <summary>
 /// A2a-2 through the service: the maturity surcharge (vade farkı; ALS-D38, ALS-D75 "Satış'la aynı", ALS-D76), the order totals
-/// (API-20; ALS-D74: VAT from the Settings item-type default with buyer situation Normal; withholding D4: item-type share + Settings threshold;
+/// (API-20; ALS-D74: VAT from the Settings item-type default with buyer situation Normal; withholding ALS-D78: item-type share like Sales S5, no threshold;
 /// PRS-02) and "fiyat bekliyor" on the list. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed partial class PurchasingServiceTests
@@ -87,16 +87,14 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task A_small_gross_is_withheld_too_because_the_threshold_is_no_gate_and_is_never_read()
+    public async Task A_small_gross_is_withheld_too_because_the_threshold_is_no_gate()
     {
         // ALS-D78 (Sinan 2026-11-11): exactly the Sales S5 rule — no VUK 232 gate here, no Purchasing-only switch.
-        var taxes = new FakeLineTaxes();
-        var world = new World { LineTaxes = taxes };
+        var world = new World { LineTaxes = new FakeLineTaxes() };
         var created = await world.Service().CreateOrderAsync(PricedOrderOf("1", new PurchaseOrderLinePriceRequest("100")), Metadata("k-totals-small"));
         var totals = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
         Assert.Equal(("120", "Computed", (string?)null, "10", "110"),
             (totals.GrossAmount, totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
-        Assert.Equal(0, taxes.ThresholdCalls);
     }
 
     [Fact]
@@ -110,6 +108,16 @@ public sealed partial class PurchasingServiceTests
             Assert.Equal(("NotApplied", (string?)null, "0", fault == "exempt" ? "100" : "120"),
                 (totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
         }
+    }
+
+    [Fact]
+    public async Task An_Exempt_withholding_state_is_unreadable_like_Sales_not_none()
+    {
+        var world = new World { LineTaxes = new FakeLineTaxes { Fault = "withholding-exempt" } };
+        var created = await world.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-wh-exempt"));
+        var totals = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
+        Assert.Equal(("NotComputable", PurchaseOrderTaxReasonsV1.TaxSourceInvalid, (string?)null, (string?)null),
+            (totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
     }
 
     [Fact]
@@ -249,7 +257,6 @@ public sealed partial class PurchasingServiceTests
         public string Fault { get; init; } = "";
         public decimal? ShareOverride { get; init; }
         public Guid? InvalidShareFor { get; init; }
-        public int ThresholdCalls { get; private set; }
         public Guid? UnresolvedProduct { get; init; }
         public int Calls { get; private set; }
         public Guid LastProduct { get; private set; }
@@ -280,8 +287,8 @@ public sealed partial class PurchasingServiceTests
             return Task.FromResult(new SettingsTaxDefaultResolutionV1(company, productId, TaxItemTypesV1.Steel, buyerSituation, on,
                 TaxResolutionStatesV1.Resolved, null, TaxDefaultSourcesV1.Catalog, Guid.NewGuid(), 0,
                 exempt ? TaxResolutionStatesV1.Exempt : TaxResolutionStatesV1.Resolved, exempt ? null : 20m,
-                TaxResolutionStatesV1.NotRequired, null, null, noWithholding ? TaxResolutionStatesV1.NotApplied : TaxResolutionStatesV1.Resolved,
-                noWithholding ? null : share, TaxResolutionStatesV1.NotRequired, null, null, null, 0, TaxBuyerSituationVatModesV1.Normal, false));
+                TaxResolutionStatesV1.NotRequired, null, null, Fault == "withholding-exempt" ? TaxResolutionStatesV1.Exempt : noWithholding ? TaxResolutionStatesV1.NotApplied : TaxResolutionStatesV1.Resolved,
+                noWithholding || Fault == "withholding-exempt" ? null : share, TaxResolutionStatesV1.NotRequired, null, null, null, 0, TaxBuyerSituationVatModesV1.Normal, false));
         }
 
         public Task<SettingsTaxDefaultResolutionV1> GetItemTypeDefaultAsync(string itemType, string buyerSituation, DateOnly on,
@@ -295,7 +302,6 @@ public sealed partial class PurchasingServiceTests
 
         public Task<SettingsWithholdingThresholdResolutionV1> GetWithholdingThresholdAsync(DateOnly on, CancellationToken cancellationToken = default)
         {
-            ThresholdCalls++;
             throw new NotSupportedException();
         }
     }
