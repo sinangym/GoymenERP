@@ -71,8 +71,10 @@ hiçbir AI izni kullanıcıya ulaşmaz; iki karar birlikte verilirse tekrar soru
 | C3. Panel ve politika tek yöneticide | Görev ayrılığı yok; AI-D6'nın hazırla → onayla → yayınla akışıyla ve `SINAN_KARARLARI_2026-10-21.md` §3.6 K15'le (yaşam döngüsü ve onaylayan ≠ hazırlayan, yayımlayan ≠ hazırlayan bütün ailelere uygulanır) çelişir (önerilmez) |
 
 **Önerilen varsayılan:** C2 (pilot), politika için onaylayan ≠ hazırlayan ve yayımlayan ≠ hazırlayan. Panel için aday izin adları
-(`ai.panel.use`, `ai.center.view`; ikisi de `ASSUMPTION`) yalnız katalogda kayıtlı olur; politika izin adları
-henüz seçilmedi (ADR-SET-002 K16: izin adı/rol/grant seçilmez). **Grant yok**, rol adı kodda yok.
+(`ai.panel.use`, `ai.center.view`; ikisi de `ASSUMPTION`) yalnız katalogda kayıtlı olur. Politika izin adları
+`SINAN_KARARLARI_2026-10-21.md` §3.6 K16 (No 133) ile konmuştur: genel aileler için `settings.policies.prepare`,
+`settings.policies.approve`, `settings.policies.publish`; kritik aileler için ek `settings.policies.publish-critical`
+(yalnız katalog kaydı). **Grant yok**, rol adı kodda yok.
 
 **Cevapsızken:** Panel açılır ama her durumda "kullanılamıyor" der (bugünkü davranış); hiçbir AI izni kimseye verilmez. Rol verme her zaman insan kapısıdır.
 
