@@ -27,7 +27,7 @@ türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılm
 |---|---|---|
 | AI-0 | Merge edildi | Bu plan + `SINAN_KARARLARI_2026-11-03_AI.md` |
 | AI-1 (W05.1) | Merge edildi | #945; ADR-008 (yalnız sözleşme katmanı kabul), `BuildingBlocks/Ai/*`, `GoymenERP.Ai.UnitTests` |
-| AI-4a (dış AI süzgeci) | Merge edildi; sertleştirme PR #1077 | `AiExternalEgressV1.cs` (#970) |
+| AI-4a (dış AI süzgeci) | Merge edildi; sertleştirme PR #1077 (açık) | `AiExternalEgressV1.cs` (#970) |
 | AI-5 (sağ panel) | Merge edildi; panel düğmesi her sayfada görünür, açılınca her durumda "kullanılamıyor" gösterir; çalışan AI yolu yok | #947; `src/frontend/goymen-erp-web/src/ai/` |
 | AI-2 | Bekliyor: ADR-SEC-001 "Öneri"; karar paketi E1–E9 | `docs/adr/ADR-SEC-001-durable-security-event-channel.md` |
 | AI-3 | Bekliyor: AI-2 (ERP-000J §18) | — |
