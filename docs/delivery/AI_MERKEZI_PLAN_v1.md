@@ -29,7 +29,7 @@ türünde gider (AI-D4) · secret repoya girmez · dış AI'ın canlıda açılm
 | AI-1 (W05.1) | Merge edildi | #945; ADR-008 (yalnız sözleşme katmanı kabul), `BuildingBlocks/Ai/*`, `GoymenERP.Ai.UnitTests` |
 | AI-4a (dış AI süzgeci) | Merge edildi; sertleştirme PR #1077 (açık) | `AiExternalEgressV1.cs` (#970) |
 | AI-5 (sağ panel) | Merge edildi; panel düğmesi her sayfada görünür, açılınca her durumda "kullanılamıyor" gösterir; çalışan AI yolu yok | #947; `src/frontend/goymen-erp-web/src/ai/` |
-| AI-2 | Bekliyor: ADR-SEC-001 "Öneri"; karar paketi E1–E9 | `docs/adr/ADR-SEC-001-durable-security-event-channel.md` |
+| AI-2 | AI-2a (yazma tarafı) PR #1093 açık. E1–E7 ve E9 BS-11/BS-15 ile kabul; açık olanlar: E8 (insan kapısı) ve ADR-SEC-001'in K3 kabulü | `docs/adr/ADR-SEC-001-durable-security-event-channel.md` |
 | AI-3 | Bekliyor: AI-2 (ERP-000J §18) | — |
 | AI-4b (Ayarlar AI politikası) | Bekliyor: Ayarlar ADR-SET-002 runtime (Ayarlar şeridi) | — |
 | AI-6…AI-10 | Bekliyor: AI-3 ve modül portları (§5) | — |
@@ -113,10 +113,12 @@ AI host mevcut HTTP uçlarını/servislerini kullanır.
 
 | Modül | Dönüş tipi / sonuç | Şirket içi (dış AI açılırsa takma adsız gidebilir; dış AI canlıya alma AI-D6 insan kapısı) | Hassas tür (AI-D4: yalnız takma ad + yöneticinin açtığı tür) | Dış AI'a hiç gitmez (cevapsızken) |
 |---|---|---|---|---|
-| Satış | `SalesOrderDraftStatusResponse`, `SalesOpenOrderReportResponse` (grup düzeyinde `SalesOpenOrderGroupView.Complete=false` = kısmi; `TooManyOrders` grubunda toplamlar null), `SalesOrderDraftRiskCheckResponse` | durum, kimlikler, miktarlar, risk sonucu/gerekçe kodları | fiyat/iskonto/tutar (Price, FinanceAmount; Withheld maskesi aynen taşınır), risk tutarları (Balance), belge no (CompanyDocument; kur/belge no eşlemesi şerit önerisi) | müşteri adı, cari kimliği (§D) |
+| Satış | `SalesOrderDraftStatusResponse`, `SalesOpenOrderReportResponse` (grup düzeyinde `SalesOpenOrderGroupView.Complete=false` = kısmi; `TooManyOrders` grubunda toplamlar null), `SalesOrderDraftRiskCheckResponse` | durum, kimlikler, miktarlar, risk sonucu/gerekçe kodları | fiyat/iskonto/tutar (Price, FinanceAmount; Withheld maskesi aynen taşınır), risk tutarları (Balance), belge no (CompanyDocument) | müşteri adı, cari kimliği (§D) |
 | Alış | `PurchaseRequestDetailView`, `PurchaseRequestListResponse` (Submitted), `PurchaseOrderListResponse` (Draft), `PurchaseOrderCancelImpactView` | kimlikler, durum, sürüm, tarihler, miktarlar, Cancellable/Blocker/HasAcceptance | sipariş fiyat/tutar/KDV/kur/ödeme planı (Price; `purchasing.orders.price.read` yoksa sahip serviste gizli, `PricePending` dahil) | ret/geri çekme gerekçesi serbest metni, SupplierPartyId/CompanyAccountId (§D), aktör kimlikleri |
 | Finans | `PartyBalanceResult`, `PartyLedgerResult` (`TooManyEntries` > 1000 satır, kesilmez), `ReadResult<FinanceOpenItemPageV1>` | Kind, Side, Status, Direction, tarihler, CurrencyId, Version, SourceKind, DocumentId/InstrumentId | bütün tutar/bakiye alanları (Balance, FinanceAmount; `.amount.read` yoksa Redacted, Money ve Status null) | PartyId/CompanyAccountId (§D); IBAN bu portlarda yok |
 | Üretim | `PlanViewV1`, `PlanPreviewViewV1` (kayıt yok), `OrderViewV1` (rulo başına kütle dengesi) | kimlikler, iş merkezi, proses, durum, sürüm, kg/mm/adet, etiket/rulo, fire, WIP, parametre snapshot'ı, tolerans | yok | ticari bağlam (commercial party/account), U2-b `salesOrderLink` (planlanan, main'de yok), aktör kimlikleri |
+
+Kur (→ Price) ve belge no (→ CompanyDocument) eşlemeleri şeritlerin önerisidir; AI-D4 listesinde ayrı kalem değildir.
 
 Uygulama kuralları (mevcut kararlardan türer, yeni politika değildir):
 
@@ -126,8 +128,8 @@ Uygulama kuralları (mevcut kararlardan türer, yeni politika değildir):
 - **Tutarlar:** Finans'ın "Gizli mi Çok gizli mi" sorusunu AI-D4 cevaplar: bakiye ve finans tutarı "Gizli" sınıfı +
   Balance/FinanceAmount türüdür ("Çok gizli" etiketlenirse kod her durumda reddeder), yalnız takma adla ve tür izni açıksa gider; izin varsayılan kapalıdır. Yeni soru açılmaz.
 - **Aktör kimlikleri ve serbest metin** (PreparedBy/ApprovedBy/…, ret gerekçesi): kişisel veri içerebilir; OPEN-020
-  KVKK zemini kapanana kadar gönderilmez (AI-D4 kişisel veri kuralının ihtiyatlı uygulaması; Sinan'ın listesinde
-  ayrı kalem değil).
+  KVKK zemini kapanana kadar gönderilmez (`ASSUMPTION-AI-ACTOR-1`: AI-D4 kişisel veri kuralının ihtiyatlı,
+  fail-closed uygulaması; Sinan'ın listesinde ayrı kalem değil, OPEN-020 kapanınca yeniden değerlendirilir).
 - **Maske:** Withheld/Redacted/`PricePending` sahip serviste uygulanır; AI maskeyi aynen taşır, açmaya çalışmaz.
 - **Hesap yok:** AI toplam, fark, aging veya "vadesi geçmiş" özeti hesaplamaz (formül tek backend calculator).
   Finans'ta ayrı vadesi geçmiş özeti ucu yoktur (aging API-90…93 Finans backlog'u); o zamana kadar
