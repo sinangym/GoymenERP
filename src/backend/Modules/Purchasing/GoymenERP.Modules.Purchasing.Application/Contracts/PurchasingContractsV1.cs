@@ -489,6 +489,12 @@ public static class PurchasingProblemCodesV1
     /// </summary>
     public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
 
+    /// <summary>409, terminal (§7; A2a-5a, ALS-D3): the actor prepared this order and cannot approve it (hazırlayan ≠ onaylayan).</summary>
+    public const string OrderSameActor = "purchasing_order_same_actor";
+
+    /// <summary>409, terminal (§7; A2a-5a fail-closed): the order's preparer is not recorded, so no one may approve it.</summary>
+    public const string OrderMakerUnknown = "purchasing_order_maker_unknown";
+
     /// <summary>409, terminal (§7; No.161 §1): an APPROVED order is bound to the request; the order is cancelled first (rejection and A1-1b withdrawal).</summary>
     public const string RequestHasApprovedOrder = "purchasing_request_has_approved_order";
 

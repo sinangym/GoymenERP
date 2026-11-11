@@ -254,7 +254,7 @@ public sealed partial class PurchasingServiceTests
         // version, and finds the key taken when recording the refusal: A's stored transition is B's answer, as a replay.
         var world = new World();
         var id = (await world.Service().CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create"))).Detail.Order.Id;
-        await world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve-a"));
+        await world.AsApprover(() => world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve-a")));
         world.Store.BeforeRefusal = (envelope, hash, command) => world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-winner");
 
         var answer = await world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve-b"));
@@ -272,7 +272,7 @@ public sealed partial class PurchasingServiceTests
         var world = new World();
         var service = world.Service();
         var id = (await service.CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create-terminal-fence"))).Detail.Order.Id;
-        await service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition"));
+        await world.AsApprover(() => service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition")));
         world.Store.BeforeMutation = () =>
         {
             switch (drift)
@@ -304,7 +304,7 @@ public sealed partial class PurchasingServiceTests
         var world = new World();
         var service = world.Service();
         var id = (await service.CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create-race-fence"))).Detail.Order.Id;
-        await service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition"));
+        await world.AsApprover(() => service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition")));
         world.Store.BeforeRefusal = (envelope, hash, command) =>
         {
             world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-protected-winner");
@@ -326,7 +326,7 @@ public sealed partial class PurchasingServiceTests
         var world = new World();
         var service = world.Service();
         var id = (await service.CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create-cancel"))).Detail.Order.Id;
-        await service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition"));
+        await world.AsApprover(() => service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition")));
         world.Store.BeforeRefusal = (envelope, hash, command) =>
         {
             world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-protected-winner");
@@ -347,7 +347,7 @@ public sealed partial class PurchasingServiceTests
         var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create"));
         var id = created.Detail.Order.Id;
 
-        var approved = await world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve"));
+        var approved = await world.AsApprover(() => world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve")));
         Assert.Equal(("Approved", "3", ApprovePermission), (approved.Detail.Order.Status, approved.Detail.Order.Version, world.Authority.LastPermission));
         Assert.Single(world.Store.Transitions);
 
@@ -366,6 +366,30 @@ public sealed partial class PurchasingServiceTests
         world.Bindings = world.Bindings with { ApprovePermission = null };
         var unbound = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("3"), Metadata("k-unbound")));
         Assert.Equal((503, PurchasingProblemCodesV1.PermissionUnregistered), (unbound.Status, unbound.Code));
+    }
+
+    [Fact]
+    public async Task The_orders_preparer_cannot_approve_it_a_recorded_terminal_409_that_replays_and_another_actor_still_can()
+    {
+        // A2a-5a (ALS-D3, Fable F-015): hazırlayan ≠ onaylayan. The preparer is the actor who created the order; the refusal is terminal (§7)
+        // under the approve name, replays under its key, and leaves the order at its version for a different actor to approve.
+        var world = new World();
+        var id = (await world.Service().CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create"))).Detail.Order.Id;
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-self-approve")));
+        Assert.Equal((409, PurchasingProblemCodesV1.OrderSameActor, false, "actor", "purchasing_order_same_actor"),
+            (refusal.Status, refusal.Code, refusal.IsReplay, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        var recorded = Assert.Single(world.Store.Refusals);
+        Assert.Equal((PurchasingCommands.OrderApproveV1, PurchasingProblemCodesV1.OrderSameActor), (recorded.Command, recorded.Refusal.Code));
+        var again = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-self-approve", correlation: "retry")));
+        Assert.Equal((409, PurchasingProblemCodesV1.OrderSameActor, true), (again.Status, again.Code, again.IsReplay));
+        Assert.Equal(("Draft", "2"), ((await world.Service().GetOrderDetailAsync(id)).Order.Status, (await world.Service().GetOrderDetailAsync(id)).Order.Version));
+        Assert.Empty(world.Store.Transitions);
+
+        var approved = await world.AsApprover(() => world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve")));
+        Assert.Equal(("Approved", "3"), (approved.Detail.Order.Status, approved.Detail.Order.Version));
     }
 
     [Fact]

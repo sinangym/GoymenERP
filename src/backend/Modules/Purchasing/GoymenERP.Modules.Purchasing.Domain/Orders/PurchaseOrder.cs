@@ -37,9 +37,10 @@ public sealed class PurchaseOrder
     private readonly List<PurchaseAcceptanceShare> acceptances = [];
 
     private PurchaseOrder(Guid id, Guid companyId, Guid supplierPartyId, Guid? sourceRequestId, DateTimeOffset now,
-        PurchaseOrderMoney? money = null)
+        PurchaseOrderMoney? money = null, string? preparedBy = null)
     {
         Money = money;
+        PreparedBy = preparedBy is null ? null : RequireActor(preparedBy, nameof(preparedBy));
         Id = Identity.Require(id, nameof(id));
         CompanyId = Identity.Require(companyId, nameof(companyId));
         SupplierPartyId = Identity.Require(supplierPartyId, nameof(supplierPartyId));
@@ -67,6 +68,19 @@ public sealed class PurchaseOrder
     public PurchaseOrderMoney? Money { get; }
     public long Version { get; private set; } = 1;
 
+    /// <summary>
+    /// A2a-5a (ALS-D3, Fable F-015): the actor who prepared (opened) the order — the maker. The approver must be a different actor
+    /// (<see cref="Approve"/>); an order whose preparer is unknown is never approved (fail-closed,
+    /// <see cref="PurchasingRuleCodes.OrderMakerUnknown"/>). The store rebuilds it from the stored creator.
+    /// </summary>
+    public string? PreparedBy { get; private set; }
+
+    /// <summary>
+    /// A2a-5a: who approved the order and when; null while Draft, and null for an order approved before A2a-5a (its approver was
+    /// not recorded; it is not invented).
+    /// </summary>
+    public PurchaseOrderApproval? Approval { get; private set; }
+
     /// <summary>A1-3 (No.161 §2): who cancelled the unaccepted remainder, when and why; null until <see cref="Cancel"/>.</summary>
     public PurchaseOrderCancellation? Cancellation { get; private set; }
 
@@ -78,12 +92,13 @@ public sealed class PurchaseOrder
 
     public IReadOnlyList<PurchaseAcceptanceShare> Acceptances => acceptances.AsReadOnly();
 
-    public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, DateTimeOffset now) =>
-        new(id, companyId, supplierPartyId, null, now);
+    public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, DateTimeOffset now, string? preparedBy = null) =>
+        new(id, companyId, supplierPartyId, null, now, preparedBy: preparedBy);
 
     /// <summary>A2a-1: an order opened in <paramref name="money"/>'s currency (null: no currency; no line may then be priced).</summary>
-    public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, PurchaseOrderMoney? money, DateTimeOffset now) =>
-        new(id, companyId, supplierPartyId, null, now, money);
+    public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, PurchaseOrderMoney? money, DateTimeOffset now,
+        string? preparedBy = null) =>
+        new(id, companyId, supplierPartyId, null, now, money, preparedBy);
 
     /// <summary>
     /// PUR-4a: an order opened towards a supplier for ONE request (A1-1: an APPROVED one, read by the service), whose lines bind to that request's
@@ -91,13 +106,14 @@ public sealed class PurchaseOrder
     /// split across several orders; the sum of the shares never exceeds the line's need — the store enforces the
     /// sum across orders at approval, this record enforces the binding shape).
     /// </summary>
-    public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, DateTimeOffset now) =>
-        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now);
+    public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, DateTimeOffset now,
+        string? preparedBy = null) =>
+        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now, preparedBy: preparedBy);
 
     /// <summary>A2a-1: <see cref="CreateForRequest(Guid, Guid, Guid, Guid, DateTimeOffset)"/> in <paramref name="money"/>'s currency.</summary>
     public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, PurchaseOrderMoney? money,
-        DateTimeOffset now) =>
-        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now, money);
+        DateTimeOffset now, string? preparedBy = null) =>
+        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now, money, preparedBy);
 
     /// <summary>
     /// Sources an order from an APPROVED request of the SAME company (A1-1, ALS-D2/ALS-D16: an order is opened only
@@ -106,7 +122,7 @@ public sealed class PurchaseOrder
     /// at approval).
     /// </summary>
     public static PurchaseOrder FromRequest(Guid id, PurchaseRequest request, Guid supplierPartyId,
-        Func<Guid> lineIds, DateTimeOffset now)
+        Func<Guid> lineIds, DateTimeOffset now, string? preparedBy = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(lineIds);
@@ -116,7 +132,7 @@ public sealed class PurchaseOrder
                 "Yalnız onaylı talepten sipariş açılabilir.");
         }
 
-        var order = new PurchaseOrder(id, request.CompanyId, supplierPartyId, request.Id, now);
+        var order = new PurchaseOrder(id, request.CompanyId, supplierPartyId, request.Id, now, preparedBy: preparedBy);
         foreach (var requestLine in request.Lines)
         {
             order.lines.Add(new PurchaseOrderLine(Identity.Require(lineIds(), nameof(lineIds)), requestLine.ProductId,
@@ -183,7 +199,61 @@ public sealed class PurchaseOrder
         return line;
     }
 
-    public void Approve(long expectedVersion, DateTimeOffset now)
+    /// <summary>
+    /// Approves a Draft order with lines. A2a-5a (ALS-D3, Fable F-015): the approver is never the preparer — compared ordinally,
+    /// as the database's binary collation does (<see cref="PurchasingRuleCodes.OrderSameActor"/>); an order whose preparer is
+    /// unknown is refused (<see cref="PurchasingRuleCodes.OrderMakerUnknown"/>, fail-closed). The approval threshold (API-96)
+    /// is A2a-5's, not this rule's.
+    /// </summary>
+    public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(approvedBy, nameof(approvedBy));
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak sipariş onaylanabilir.");
+        if (lines.Count == 0)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderWithoutLines, "Satırsız sipariş onaylanamaz.");
+        }
+
+        if (PreparedBy is null)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderMakerUnknown,
+                "Siparişi hazırlayan bilinmiyor; görev ayrılığı doğrulanamadığından onay verilmez.");
+        }
+
+        if (string.Equals(PreparedBy, actor, StringComparison.Ordinal))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderSameActor,
+                "Siparişi hazırlayan kişi aynı siparişi onaylayamaz (görev ayrılığı).");
+        }
+
+        Approval = new PurchaseOrderApproval(actor, now.ToUniversalTime());
+        Status = PurchaseOrderStatus.Approved;
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Store create only: the stored order's preparer is the actor of the create envelope. A draft built without one takes it; one built
+    /// with another actor is refused, so the row, the audit and the returned order never disagree on who prepared it.
+    /// </summary>
+    internal void StampPreparer(string actor)
+    {
+        var preparer = RequireActor(actor, nameof(actor));
+        if (PreparedBy is null)
+        {
+            PreparedBy = preparer;
+        }
+        else if (!string.Equals(PreparedBy, preparer, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Siparişin hazırlayanı açılış isteğini yapan kullanıcı olmalıdır.", nameof(actor));
+        }
+    }
+
+    /// <summary>
+    /// Store rebuild only: an order stored as approved before A2a-5a carries no approver. Its approval is replayed without one
+    /// (the fact is not invented and the rule is not applied retroactively); every other shape goes through <see cref="Approve"/>.
+    /// </summary>
+    internal void RestoreLegacyApproval(long expectedVersion, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak sipariş onaylanabilir.");
@@ -292,10 +362,7 @@ public sealed class PurchaseOrder
     public void Cancel(long expectedVersion, string cancelledBy, string? reason, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        var actor = string.IsNullOrWhiteSpace(cancelledBy) || cancelledBy.Length > MaximumActorLength
-                    || !string.Equals(cancelledBy, cancelledBy.Trim(), StringComparison.Ordinal)
-            ? throw new ArgumentException("Aktör kimliği boş, kenar boşluklu veya çok uzun olamaz.", nameof(cancelledBy))
-            : cancelledBy;
+        var actor = RequireActor(cancelledBy, nameof(cancelledBy));
         if (Status != PurchaseOrderStatus.Approved)
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.OrderNotCancellable,
@@ -473,6 +540,12 @@ public sealed class PurchaseOrder
         }
     }
 
+    private static string RequireActor(string? actor, string parameterName) =>
+        string.IsNullOrWhiteSpace(actor) || actor.Length > MaximumActorLength
+        || !string.Equals(actor, actor.Trim(), StringComparison.Ordinal)
+            ? throw new ArgumentException("Aktör kimliği boş, kenar boşluklu veya çok uzun olamaz.", parameterName)
+            : actor;
+
     private void RequireNotCancelled()
     {
         if (Status == PurchaseOrderStatus.Cancelled)
@@ -504,6 +577,9 @@ public sealed class PurchaseOrder
         Version = checked(Version + 1);
     }
 }
+
+/// <summary>A2a-5a (ALS-D3): the recorded approval of an order — who approved it (never its preparer) and when.</summary>
+public sealed record PurchaseOrderApproval(string ApprovedBy, DateTimeOffset ApprovedAtUtc);
 
 /// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
 public sealed record PurchaseOrderCancellation(string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
