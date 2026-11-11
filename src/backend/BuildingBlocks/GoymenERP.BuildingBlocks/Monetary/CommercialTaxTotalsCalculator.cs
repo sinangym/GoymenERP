@@ -36,7 +36,7 @@ public enum CommercialWithholdingState
     NotApplied = 2,
 
     /// <summary>
-    /// The withholding cannot be decided (see its reason; e.g. Alış until the mali müşavir confirms N-20): no withheld VAT and no
+    /// The withholding cannot be decided (see its reason; e.g. an unreadable item-type share): no withheld VAT and no
     /// payable amount — "hesaplanamıyor", never 0.
     /// </summary>
     NotComputable = 3,
@@ -135,7 +135,7 @@ public sealed record CommercialTotals(int AmountScale, IReadOnlyList<CommercialL
 /// maturity surcharge), rounded ONCE half away from zero to the amount scale; the net unit price is never rounded (SAT-D76).</item>
 /// <item><b>VAT</b> = net amount × VAT % / 100, rounded per line the same way (No 15).</item>
 /// <item><b>Withheld VAT</b> = the ROUNDED line VAT × the withheld share, rounded (SAT-D75). The calculator supports it; whether a
-/// consumer may ask is its own rule (Alış: never until N-20 — it passes <see cref="CommercialWithholdingState.NotComputable"/>).</item>
+/// consumer may ask is its own rule (an unreadable share — the consumer passes <see cref="CommercialWithholdingState.NotComputable"/>).</item>
 /// <item><b>Gross</b> = net + VAT; <b>payable</b> = gross − withheld VAT; exact sums, never System.Decimal's silently rounding
 /// <c>+</c>.</item>
 /// </list>

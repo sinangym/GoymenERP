@@ -968,14 +968,14 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     [Fact]
     public async Task The_totals_route_answers_the_owners_view_privately_and_refuses_a_query_before_the_service()
     {
-        // A2a-2 (plan API-20): GET …/totals reads only; withholding is "NotComputable" (N-20) and its amounts null; an unknown query
+        // A2a-2 (plan API-20): GET …/totals reads only; withholding is "NotComputable" (unreadable share, ALS-D78) and its amounts null; an unknown query
         // is a 400 before the service; 403 / 404 / 503 stay the platform's code-less shapes.
         var id = Guid.NewGuid();
         var lineId = Guid.NewGuid();
         var service = new StubService
         {
             Totals = orderId => Task.FromResult(new PurchaseOrderTotalsView(orderId, "2", "Visible", new PurchaseOrderCurrencyView(Guid.NewGuid(), "TRY", 2),
-                "Computed", 0, "100", "Computed", 0, "20", "120", "NotComputable", "withholding_unconfirmed", null, null,
+                "Computed", 0, "100", "Computed", 0, "20", "120", "NotComputable", "tax_source_invalid", null, null,
                 [new PurchaseOrderLineTotalView(lineId, 1, "Computed", "10", "100", "Computed", null, "20", "20", "120", "NotComputable")])),
         };
         using var host = CreateHost(service);
@@ -986,7 +986,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             AssertPrivateNoStore(response);
             var totals = await response.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal(("120", "NotComputable", "withholding_unconfirmed", JsonValueKind.Null),
+            Assert.Equal(("120", "NotComputable", "tax_source_invalid", JsonValueKind.Null),
                 (totals.GetProperty("grossAmount").GetString(), totals.GetProperty("withholdingState").GetString(),
                     totals.GetProperty("withholdingReason").GetString(), totals.GetProperty("payableAmount").ValueKind));
             Assert.Equal("20", totals.GetProperty("lines")[0].GetProperty("vatAmount").GetString());
