@@ -1142,7 +1142,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for TAKIP-U3a (#1004): an ArgumentException inside the Inventory stage becomes a 503 host fault; same token count (b8fe85c2 -> dabb3637).
                 [ReviewedManufacturingPlanAllocationHostPath] =
                     new(
-                        "dabb3637b90ba97359dc13e5c26fd73f21a6c621044c12971bd273564fd9720e",
+                        "80c8184c64d4e025c3374570cb8fbf7303e4298354ccdd78f61c85dc1b38f3af",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
