@@ -237,7 +237,7 @@ public static class PurchaseOrderTotalsStatesV1
     /// <summary>"hesaplanamıyor": no source answers (see the reason); never 0.</summary>
     public const string NotComputable = "NotComputable";
 
-    /// <summary>No withholding applies (item type without withholding, or the order's gross does not exceed the Settings threshold; D4).</summary>
+    /// <summary>No withholding applies (ALS-D78: the item type has no withholding).</summary>
     public const string NotApplied = "NotApplied";
 
     /// <summary>The base is missing (the line or a line of the document has no amount, or its VAT is not computed).</summary>
@@ -250,14 +250,8 @@ public static class PurchaseOrderTotalsStatesV1
 /// <summary>A2a-2: why a line's VAT or the order's withholding is <see cref="PurchaseOrderTotalsStatesV1.NotComputable"/>.</summary>
 public static class PurchaseOrderTaxReasonsV1
 {
-    /// <summary>Plan §8 N-20 (before D4): purchase withholding waited for the mali müşavir. No longer answered by the service; kept for the wire.</summary>
+    /// <summary>Legacy wire reason (N-20, before ALS-D78): no longer produced; kept so older clients keep parsing.</summary>
     public const string WithholdingUnconfirmed = "withholding_unconfirmed";
-
-    /// <summary>D4: a line carries a withholding share but Settings records no withholding threshold in force (<c>withholding_threshold_missing</c>).</summary>
-    public const string WithholdingThresholdMissing = "withholding_threshold_missing";
-
-    /// <summary>D4: the threshold in force is in another currency than the order; no conversion is done before A2a-KUR.</summary>
-    public const string WithholdingThresholdCurrencyMismatch = "withholding_threshold_currency_mismatch";
 
     /// <summary>The Settings line tax port is not composed or did not answer.</summary>
     public const string TaxSourceUnavailable = "settings_provider_unavailable";
@@ -270,7 +264,7 @@ public static class PurchaseOrderTaxReasonsV1
 /// A2a-2 (API-20): one general line's totals as exact text in the order's currency. <c>State</c>: <c>Computed</c> | <c>Unpriced</c> |
 /// <c>AmountOutOfRange</c>. <c>VatState</c>: <c>Computed</c> (with the percent, the VAT and the gross amount) | <c>NotComputable</c>
 /// (with <c>VatReason</c>: a Settings reason such as a missing item type, or <see cref="PurchaseOrderTaxReasonsV1"/>) |
-/// <c>NotComputed</c>. <c>WithholdingState</c> is <c>NotComputable</c> (N-20) whenever the VAT is computed, otherwise <c>NotComputed</c>.
+/// <c>NotComputed</c>. <c>WithholdingState</c> follows the item type's share (ALS-D78) whenever the VAT is computed, otherwise <c>NotComputed</c>.
 /// </summary>
 public sealed record PurchaseOrderLineTotalView(
     Guid LineId, int LineNo, string State, string? NetUnitPrice, string? NetAmount,
@@ -281,9 +275,8 @@ public sealed record PurchaseOrderLineTotalView(
 /// satırlardan"; a line's amount includes its maturity surcharge, and so does its VAT base — ALS-D77 "Vade farkı dahil hesaplansın"),
 /// the VAT per line from the item type's default (Settings <c>ISettingsLineTaxResolverV1</c>, buyer situation
 /// <c>Normal</c>, on the order's business date) through the shared <c>CommercialTaxTotalsCalculator</c>, and the gross amount.
-/// Purchase withholding (D4) takes the item type's share from the rounded line VAT once the gross strictly exceeds the Settings
-/// threshold; without a threshold it is <c>NotComputable</c> (<see cref="PurchaseOrderTaxReasonsV1.WithholdingThresholdMissing"/>) and
-/// the withheld VAT and the payable amount are null. A document with an unpriced line is <c>Incomplete</c> (no sum); a line whose VAT
+/// Purchase withholding follows Sales S5 (ALS-D78): the item type's share from the rounded line VAT, no threshold gate; an unreadable
+/// share is <c>NotComputable</c> and its amounts null. <see cref="PurchaseOrderTaxReasonsV1.WithholdingUnconfirmed"/> is kept for the wire only. A document with an unpriced line is <c>Incomplete</c> (no sum); a line whose VAT
 /// cannot be computed makes the document VAT <c>NotComputable</c> with the count. PRS-02: without <c>purchasing.orders.price.read</c>
 /// every state is <c>Withheld</c>, every amount null and the lines empty.
 /// </summary>

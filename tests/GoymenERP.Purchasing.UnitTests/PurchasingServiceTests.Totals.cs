@@ -60,9 +60,9 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task The_totals_sum_the_line_amounts_take_VAT_and_the_withholding_share_from_the_item_type_default_once_the_gross_exceeds_the_threshold()
+    public async Task The_totals_sum_the_line_amounts_take_VAT_and_the_withholding_share_from_the_item_type_default_with_no_threshold_gate()
     {
-        var world = new World { LineTaxes = new FakeLineTaxes { ThresholdAmount = 12000m } };
+        var world = new World { LineTaxes = new FakeLineTaxes() };
         var order = await world.Service().CreateOrderAsync(new CreatePurchaseOrderRequest(Party, Account, null, Day,
         [
             new PurchaseOrderLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "1250.5", null, new PurchaseOrderLinePriceRequest("41.25", DiscountPercent: "2.5")),
@@ -87,58 +87,55 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task A_gross_that_does_not_exceed_the_threshold_withholds_nothing_and_a_missing_or_foreign_threshold_is_not_computable()
+    public async Task A_small_gross_is_withheld_too_because_the_threshold_is_no_gate_and_is_never_read()
     {
-        var order = await new World().Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("1000")), Metadata("k-totals-threshold"));
-        Assert.NotNull(order);
-
-        // Gross is 12000.00 (10 × 1000 + 20 % VAT): the bound itself is NOT exceeded (VUK 232 "aşan"; interpretation, accountant confirms).
-        var world = new World { LineTaxes = new FakeLineTaxes { ThresholdAmount = 12000m } };
-        var created = await world.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("1000")), Metadata("k-totals-bound"));
-        var atBound = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
-        Assert.Equal(("12000", "NotApplied", (string?)null, "0", "12000"),
-            (atBound.GrossAmount, atBound.WithholdingState, atBound.WithholdingReason, atBound.WithheldVatAmount, atBound.PayableAmount));
-        Assert.Equal("NotApplied", atBound.Lines[0].WithholdingState);
-
-        world.LineTaxes = new FakeLineTaxes { ThresholdAmount = 11999.99m };
-        var above = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
-        Assert.Equal(("Computed", "1000", "11000"), (above.WithholdingState, above.WithheldVatAmount, above.PayableAmount));
-
-        world.LineTaxes = new FakeLineTaxes();
-        var missing = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
-        Assert.Equal(("NotComputable", PurchaseOrderTaxReasonsV1.WithholdingThresholdMissing, (string?)null, (string?)null, "12000"),
-            (missing.WithholdingState, missing.WithholdingReason, missing.WithheldVatAmount, missing.PayableAmount, missing.GrossAmount));
-
-        world.LineTaxes = new FakeLineTaxes { ThresholdAmount = 1m, ThresholdCurrency = "USD" };
-        var foreign = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
-        Assert.Equal((PurchaseOrderTaxReasonsV1.WithholdingThresholdCurrencyMismatch, (string?)null),
-            (foreign.WithholdingReason, foreign.PayableAmount));
-
-        world.LineTaxes = new FakeLineTaxes { ThresholdAmount = 1m, ThresholdFault = "settings_provider_unavailable" };
-        Assert.Equal(PurchaseOrderTaxReasonsV1.TaxSourceUnavailable, (await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id)).WithholdingReason);
-        world.LineTaxes = new FakeLineTaxes { ThresholdAmount = 1m, ThresholdFault = "settings_access_denied" };
-        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().GetOrderTotalsAsync(created.Detail.Order.Id));
-        Assert.Equal((403, "forbidden"), (denied.Status, denied.Code));
-    }
-
-    [Fact]
-    public async Task An_item_type_without_withholding_never_reads_the_threshold()
-    {
-        var taxes = new FakeLineTaxes { Fault = "exempt" };
+        // ALS-D78 (Sinan 2026-11-11): exactly the Sales S5 rule — no VUK 232 gate here, no Purchasing-only switch.
+        var taxes = new FakeLineTaxes();
         var world = new World { LineTaxes = taxes };
-        var created = await world.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-none"));
+        var created = await world.Service().CreateOrderAsync(PricedOrderOf("1", new PurchaseOrderLinePriceRequest("100")), Metadata("k-totals-small"));
         var totals = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
-        Assert.Equal(("NotApplied", "0", "100"), (totals.WithholdingState, totals.WithheldVatAmount, totals.PayableAmount));
+        Assert.Equal(("120", "Computed", (string?)null, "10", "110"),
+            (totals.GrossAmount, totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
         Assert.Equal(0, taxes.ThresholdCalls);
     }
 
     [Fact]
-    public async Task A_withholding_share_outside_the_range_is_unreadable_not_none()
+    public async Task An_item_type_without_withholding_is_not_applied_with_or_without_VAT()
     {
-        var world = new World { LineTaxes = new FakeLineTaxes { ShareOverride = 0m, ThresholdAmount = 1m } };
-        var created = await world.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-share"));
-        var totals = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
-        Assert.Equal(("NotComputable", PurchaseOrderTaxReasonsV1.TaxSourceInvalid), (totals.WithholdingState, totals.WithholdingReason));
+        foreach (var fault in new[] { "exempt", "no-withholding" })
+        {
+            var world = new World { LineTaxes = new FakeLineTaxes { Fault = fault } };
+            var created = await world.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-none-" + fault));
+            var totals = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
+            Assert.Equal(("NotApplied", (string?)null, "0", fault == "exempt" ? "100" : "120"),
+                (totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
+        }
+    }
+
+    [Fact]
+    public async Task A_withholding_share_outside_the_range_is_unreadable_not_none_and_one_bad_line_names_its_reason_for_the_document()
+    {
+        var other = Guid.Parse("33333333-3333-4333-8333-333333333333");
+        foreach (var share in new decimal[] { 0m, -1m, 100.01m })
+        {
+            var world = new World { LineTaxes = new FakeLineTaxes { ShareOverride = share } };
+            var created = await world.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-share-" + share));
+            var totals = await world.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
+            Assert.Equal(("NotComputable", PurchaseOrderTaxReasonsV1.TaxSourceInvalid, (string?)null, (string?)null),
+                (totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
+        }
+
+        // Mixed order: the first line is withheld, the second has an unreadable share → the document is NotComputable with that reason (never a partial sum).
+        var mixed = new World { LineTaxes = new FakeLineTaxes { InvalidShareFor = other } };
+        var order = await mixed.Service().CreateOrderAsync(new CreatePurchaseOrderRequest(Party, Account, null, Day,
+        [
+            new PurchaseOrderLineRequest(Guid.NewGuid(), Product, "1", KgUnit, "10", null, new PurchaseOrderLinePriceRequest("100")),
+            new PurchaseOrderLineRequest(Guid.NewGuid(), other, "1", KgUnit, "10", null, new PurchaseOrderLinePriceRequest("100")),
+        ], Lira), Metadata("k-totals-mixed"));
+        var mixedTotals = await mixed.Service().GetOrderTotalsAsync(order.Detail.Order.Id);
+        Assert.Equal(("NotComputable", PurchaseOrderTaxReasonsV1.TaxSourceInvalid, (string?)null),
+            (mixedTotals.WithholdingState, mixedTotals.WithholdingReason, mixedTotals.PayableAmount));
+        Assert.Equal(("Computed", "NotComputable"), (mixedTotals.Lines[0].WithholdingState, mixedTotals.Lines[1].WithholdingState));
     }
 
     [Fact]
@@ -250,10 +247,8 @@ public sealed partial class PurchasingServiceTests
     private sealed class FakeLineTaxes : ISettingsLineTaxResolverV1
     {
         public string Fault { get; init; } = "";
-        public decimal? ThresholdAmount { get; init; }
-        public string ThresholdCurrency { get; init; } = "TRY";
-        public string ThresholdFault { get; init; } = "";
         public decimal? ShareOverride { get; init; }
+        public Guid? InvalidShareFor { get; init; }
         public int ThresholdCalls { get; private set; }
         public Guid? UnresolvedProduct { get; init; }
         public int Calls { get; private set; }
@@ -280,11 +275,13 @@ public sealed partial class PurchasingServiceTests
             }
 
             var exempt = Fault == "exempt";
+            var noWithholding = exempt || Fault == "no-withholding";
+            var share = productId == InvalidShareFor ? 0m : ShareOverride ?? 50m;
             return Task.FromResult(new SettingsTaxDefaultResolutionV1(company, productId, TaxItemTypesV1.Steel, buyerSituation, on,
                 TaxResolutionStatesV1.Resolved, null, TaxDefaultSourcesV1.Catalog, Guid.NewGuid(), 0,
                 exempt ? TaxResolutionStatesV1.Exempt : TaxResolutionStatesV1.Resolved, exempt ? null : 20m,
-                TaxResolutionStatesV1.NotRequired, null, null, exempt ? TaxResolutionStatesV1.NotApplied : TaxResolutionStatesV1.Resolved,
-                exempt ? null : ShareOverride ?? 50m, TaxResolutionStatesV1.NotRequired, null, null, null, 0, TaxBuyerSituationVatModesV1.Normal, false));
+                TaxResolutionStatesV1.NotRequired, null, null, noWithholding ? TaxResolutionStatesV1.NotApplied : TaxResolutionStatesV1.Resolved,
+                noWithholding ? null : share, TaxResolutionStatesV1.NotRequired, null, null, null, 0, TaxBuyerSituationVatModesV1.Normal, false));
         }
 
         public Task<SettingsTaxDefaultResolutionV1> GetItemTypeDefaultAsync(string itemType, string buyerSituation, DateOnly on,
@@ -299,15 +296,7 @@ public sealed partial class PurchasingServiceTests
         public Task<SettingsWithholdingThresholdResolutionV1> GetWithholdingThresholdAsync(DateOnly on, CancellationToken cancellationToken = default)
         {
             ThresholdCalls++;
-            if (ThresholdFault.Length > 0)
-            {
-                return Task.FromException<SettingsWithholdingThresholdResolutionV1>(new SettingsPrerequisiteException(ThresholdFault));
-            }
-
-            return Task.FromResult(ThresholdAmount is { } amount
-                ? new SettingsWithholdingThresholdResolutionV1(Company, on, TaxResolutionStatesV1.Resolved, amount, ThresholdCurrency, Guid.NewGuid(), 1, on, null)
-                : new SettingsWithholdingThresholdResolutionV1(Company, on, TaxResolutionStatesV1.Unresolved, null, null, null, null, null,
-                    TaxResolutionReasonsV1.WithholdingThresholdMissing));
+            throw new NotSupportedException();
         }
     }
 }
