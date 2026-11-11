@@ -116,6 +116,11 @@ public static class ProductUnitConversionCalculatorV1
 
     private const decimal PercentScale = 100m;
 
+    // Geometry constant (pi to decimal precision), not a business value.
+    private const decimal Pi = 3.1415926535897932384626433833m;
+
+    private const decimal Two = 2m;
+
     private const string OverflowReason = "The inputs are too large to convert.";
 
     // A technical guard, not business policy: settings ask for 2-3 decimals (BS-13); 12 leaves room while keeping
@@ -159,6 +164,53 @@ public static class ProductUnitConversionCalculatorV1
         var w = widthMm.Value;
         var d = density.Value.GramsPerCubicCentimetre;
         return Checked(() => t * w * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
+    }
+
+    /// <summary>
+    /// F-C (round tube only): kg per metre from outer diameter and wall thickness (mm) and density. The cross-section
+    /// is the annulus area <c>pi * t * (D - t)</c> in mm2. Box and rectangular profiles have no formula by decision
+    /// (#66 6810051185 item 21): their kg per metre comes from the product's size/thickness table, never a corner model.
+    /// Where that table has a row for a round tube, the table value is the source and this result is only a suggestion.
+    /// </summary>
+    public static UnitConversionResultV1<decimal> RoundTubeKgPerMetre(decimal? outerDiameterMm, decimal? wallThicknessMm, DensityV1? density)
+    {
+        if (outerDiameterMm is null || wallThicknessMm is null || density is null)
+        {
+            return UnitConversionResultV1<decimal>.NoSource("A round tube conversion needs outer diameter, wall thickness and density.");
+        }
+
+        if (outerDiameterMm <= 0 || wallThicknessMm <= 0 || density.Value.GramsPerCubicCentimetre <= 0)
+        {
+            return UnitConversionResultV1<decimal>.Refused("Round tube conversion inputs must be positive.");
+        }
+
+        var outer = outerDiameterMm.Value;
+        var wall = wallThicknessMm.Value;
+        if (Two * wall > outer)
+        {
+            return UnitConversionResultV1<decimal>.Refused("The wall thickness cannot exceed half of the outer diameter.");
+        }
+
+        var d = density.Value.GramsPerCubicCentimetre;
+        return Checked(() => Pi * wall * (outer - wall) * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
+    }
+
+    /// <summary>F-D: kg per piece of a tube or profile from its kg per metre and the piece length (mm).</summary>
+    public static UnitConversionResultV1<decimal> ProfileKgPerPiece(decimal? kgPerMetre, decimal? pieceLengthMm)
+    {
+        if (kgPerMetre is null || pieceLengthMm is null)
+        {
+            return UnitConversionResultV1<decimal>.NoSource("A profile piece conversion needs kg per metre and piece length.");
+        }
+
+        if (kgPerMetre <= 0 || pieceLengthMm <= 0)
+        {
+            return UnitConversionResultV1<decimal>.Refused("Profile piece conversion inputs must be positive.");
+        }
+
+        var kgm = kgPerMetre.Value;
+        var length = pieceLengthMm.Value;
+        return Checked(() => kgm * length / MillimetresPerMetre);
     }
 
     /// <summary>Units to kg at full precision (no intermediate rounding).</summary>
