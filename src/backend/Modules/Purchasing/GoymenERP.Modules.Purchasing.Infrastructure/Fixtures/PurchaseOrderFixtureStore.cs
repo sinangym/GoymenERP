@@ -135,7 +135,7 @@ internal sealed class PurchaseOrderFixtureStore(PurchasingDbContext dbContext, I
 
     private static PurchaseOrder Build(PurchaseOrderFixtureRequest request)
     {
-        PurchaseOrder order = PurchaseOrder.Create(request.OrderId, request.CompanyId, request.SupplierPartyId, request.At);
+        PurchaseOrder order = PurchaseOrder.Create(request.OrderId, request.CompanyId, request.SupplierPartyId, request.At, request.CreatedBy.Trim());
         Quantity quantity = Quantity.Positive(
             request.Line.Quantity,
             request.Line.IsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece);

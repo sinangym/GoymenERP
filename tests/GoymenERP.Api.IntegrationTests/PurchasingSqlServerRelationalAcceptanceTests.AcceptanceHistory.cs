@@ -35,7 +35,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 () => order, VersionsOf(order));
             var transitioned = await scope.Store.MutateOrderAsync(
                 run.Envelope("history-order-approve"), Hash("history-order-approve"), PurchasingCommands.OrderApproveV1,
-                order.Id, (candidate, now) => candidate.Approve(2, now), Approved);
+                order.Id, (candidate, now) => candidate.Approve(2, OrderApprover, now), Approved);
             approved = Assert.IsType<StoredPurchaseOrder>(transitioned?.Order);
         }
 

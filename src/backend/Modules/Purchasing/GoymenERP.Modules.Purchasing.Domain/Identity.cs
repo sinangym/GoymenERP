@@ -49,6 +49,12 @@ public static class PurchasingRuleCodes
     /// <summary>A1-1 (fail-closed): the request's preparer or submitter is not recorded, so maker ≠ checker cannot be measured.</summary>
     public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
 
+    /// <summary>A2a-5a (ALS-D3, Fable F-015): the order's preparer cannot approve the same order (hazırlayan ≠ onaylayan).</summary>
+    public const string OrderSameActor = "purchasing_order_same_actor";
+
+    /// <summary>A2a-5a (fail-closed): the order's preparer is not recorded, so maker ≠ checker cannot be measured and no one approves it.</summary>
+    public const string OrderMakerUnknown = "purchasing_order_maker_unknown";
+
     /// <summary>A1-1 (No.161 §1): a rejection needs a reason.</summary>
     public const string RequestRejectionReasonRequired = "purchasing_request_rejection_reason_required";
 

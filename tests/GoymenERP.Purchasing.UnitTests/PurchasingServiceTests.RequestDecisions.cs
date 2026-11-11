@@ -149,7 +149,7 @@ public sealed partial class PurchasingServiceTests
         await world.ApproveRequestAsApprover(id, "3");
         var approvedOrder = (await world.Service().CreateOrderAsync(OrderOf(id, lineId, "40"), Metadata("k-order-1"))).Detail.Order.Id;
         var draftOrder = (await world.Service().CreateOrderAsync(OrderOf(id, lineId, "10"), Metadata("k-order-2"))).Detail.Order.Id;
-        await world.Service().ApproveOrderAsync(approvedOrder, new ApprovePurchaseOrderRequest("2"), Metadata("k-order-approve-1"));
+        await world.AsApprover(() => world.Service().ApproveOrderAsync(approvedOrder, new ApprovePurchaseOrderRequest("2"), Metadata("k-order-approve-1")));
 
         var blocked = await world.AsApprover(() => Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().RejectRequestAsync(id, new RejectPurchaseRequestRequest("4", "SENTETIK"), Metadata("k-reject"))));
@@ -169,8 +169,8 @@ public sealed partial class PurchasingServiceTests
         await world.AsApprover(() =>
             world.Service().RejectRequestAsync(secondId, new RejectPurchaseRequestRequest("4", "SENTETIK"), Metadata("k-reject-2")));
 
-        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
-            world.Service().ApproveOrderAsync(orphan, new ApprovePurchaseOrderRequest("2"), Metadata("k-order-approve-orphan")));
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.AsApprover(() =>
+            world.Service().ApproveOrderAsync(orphan, new ApprovePurchaseOrderRequest("2"), Metadata("k-order-approve-orphan"))));
         Assert.Equal((409, PurchasingProblemCodesV1.RequestState, "sourceRequestId", "not_approved"),
             (refused.Status, refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
         Assert.Contains(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderApproveV1);
