@@ -31,6 +31,8 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
+    /// <summary>A2a-5a: the order's approver is never its preparer (the envelope actor that created it).</summary>
+    private const string OrderApprover = "SENTETIK-order-approver";
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly DateOnly Day = new DateOnly(2026, 9, 19);
     private static readonly DateTimeOffset T0 = new DateTimeOffset(2026, 9, 19, 9, 0, 0, TimeSpan.Zero);
@@ -137,7 +139,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal((PurchaseSupplyReferenceOutcomeV1.NotApproved, "Draft"), (draft.Outcome, draft.Status));
             Assert.Null(draft.Line);
 
-            var approvedA = await a.Store.MutateOrderAsync(run.Envelope("k-approve-a"), Hash("approve-a"), PurchasingCommands.OrderApproveV1, orderA, (o, now) => o.Approve(2, now), Approved);
+            var approvedA = await a.Store.MutateOrderAsync(run.Envelope("k-approve-a"), Hash("approve-a"), PurchasingCommands.OrderApproveV1, orderA, (o, now) => o.Approve(2, OrderApprover, now), Approved);
             Assert.Equal((PurchaseOrderStatus.Approved, 3L), (approvedA!.Order.Order.Status, approvedA.Order.Order.Version));
             Assert.Equal(1L, await run.ScalarAsync<long>("SELECT SourcingVersion FROM purchasing.PurchaseRequests WHERE Id = @id", ("@id", requestId)));
 
@@ -155,7 +157,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             // 60 approved + 50 = 110 > 100: the store refuses inside the save, names the line, and writes nothing.
             PurchasingWriteEnvelope envelope = run.Envelope("k-approve-b");
             var over = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(envelope, Hash("approve-b"), PurchasingCommands.OrderApproveV1, orderB,
-                (o, now) => o.Approve(2, now), Approved));
+                (o, now) => o.Approve(2, OrderApprover, now), Approved));
             Assert.Equal((PurchasingStoreCodes.RequestLineOverSourced, "lines[0].sourceRequestLineId", PurchasingStoreCodes.RequestLineOverSourced),
                 (over.Code, over.Errors[0].Field, over.Errors[0].Code));
             // §7: the service records the refusal under the key on the same context; the same key answers it again without touching the domain.
@@ -172,7 +174,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using (StoreScope a = run.Store(CompanyA))
         {
             // 60 + 40 = 100: exactly the need is not over-sourcing; the request's sourcing version moves again.
-            var approvedC = await a.Store.MutateOrderAsync(run.Envelope("k-approve-c"), Hash("approve-c"), PurchasingCommands.OrderApproveV1, orderC, (o, now) => o.Approve(2, now), Approved);
+            var approvedC = await a.Store.MutateOrderAsync(run.Envelope("k-approve-c"), Hash("approve-c"), PurchasingCommands.OrderApproveV1, orderC, (o, now) => o.Approve(2, OrderApprover, now), Approved);
             Assert.Equal(PurchaseOrderStatus.Approved, approvedC!.Order.Order.Status);
         }
 
@@ -213,7 +215,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             await using StoreScope writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
-                var result = await writer.Store.MutateOrderAsync(run.Envelope(key), Hash(key), PurchasingCommands.OrderApproveV1, orderId, (o, now) => o.Approve(2, now), Approved);
+                var result = await writer.Store.MutateOrderAsync(run.Envelope(key), Hash(key), PurchasingCommands.OrderApproveV1, orderId, (o, now) => o.Approve(2, OrderApprover, now), Approved);
                 return result!.Outcome;
             }
             catch (PurchasingStoreException exception)
@@ -240,7 +242,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             // the service records it as terminal (§7) and the key answers it again.
             PurchasingWriteEnvelope envelope = run.Envelope(loserKey, correlation: "SENTETIK-retry");
             var over = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(envelope, Hash(loserKey), PurchasingCommands.OrderApproveV1, loser,
-                (o, now) => o.Approve(2, now), Approved));
+                (o, now) => o.Approve(2, OrderApprover, now), Approved));
             Assert.Equal((PurchasingStoreCodes.RequestLineOverSourced, "lines[0].sourceRequestLineId"), (over.Code, over.Errors[0].Field));
             await a.Store.RecordRefusalAsync(envelope, Hash(loserKey), PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestLineOverSourced, over.Errors));
@@ -267,7 +269,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             id = (await a.Store.StoreOrderAsync(run.Envelope("k-create"), Hash("create-1"), owners.Account, Day, () => built, VersionsOf(built))).Order.Order.Id;
             PurchasingWriteEnvelope envelope = run.Envelope("k-approve-stale");
             var stale = await Assert.ThrowsAsync<PurchasingVersionConflictException>(() => a.Store.MutateOrderAsync(envelope, Hash("approve-1"), PurchasingCommands.OrderApproveV1, id,
-                (o, now) => o.Approve(1, now), Approved));
+                (o, now) => o.Approve(1, OrderApprover, now), Approved));
             Assert.Equal((1L, 2L), (stale.ExpectedVersion, stale.CurrentVersion));
             await a.Store.RecordRefusalAsync(envelope, Hash("approve-1"), PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new PurchasingFieldError("expectedVersion", "version_conflict")]));
@@ -283,7 +285,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             await using StoreScope writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
-                var result = await writer.Store.MutateOrderAsync(run.Envelope("k-race"), Hash("race"), PurchasingCommands.OrderApproveV1, id, (o, now) => o.Approve(2, now), Approved);
+                var result = await writer.Store.MutateOrderAsync(run.Envelope("k-race"), Hash("race"), PurchasingCommands.OrderApproveV1, id, (o, now) => o.Approve(2, OrderApprover, now), Approved);
                 return result!.Outcome;
             }
             catch (PurchasingStoreException exception)
@@ -332,7 +334,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Empty((await b.Store.ListOrdersAsync(10, null)).Items);
             Assert.Empty((await b.Store.ListRequestsAsync(10, null)).Items);
             Assert.Null(await b.Store.FindReplayAsync(run.Envelope("k-create"), Hash("create-1"), PurchasingCommands.OrderCreateV1));
-            Assert.Null(await b.Store.MutateOrderAsync(run.Envelope("k-b-approve"), Hash("approve-b"), PurchasingCommands.OrderApproveV1, id, (o, now) => o.Approve(2, now), Approved));
+            Assert.Null(await b.Store.MutateOrderAsync(run.Envelope("k-b-approve"), Hash("approve-b"), PurchasingCommands.OrderApproveV1, id, (o, now) => o.Approve(2, OrderApprover, now), Approved));
             PurchaseSupplyReferencePort port = new PurchaseSupplyReferencePort(b.Store);
             Assert.Equal(PurchaseSupplyReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(id, Guid.NewGuid())).Outcome);
             // Company B's same key is its own attempt: a different company, a different record.
