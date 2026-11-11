@@ -7,7 +7,7 @@ seçenekleri, önerilen en güvenli varsayılanı ve cevap gelene kadar ne oldu�
 yazacağı bir `SINAN_KARARLARI_*` dosyasıyla kesinleşir. Bu belge hiçbir `OPEN-*` kaydını kapatmaz, rol
 vermez, dış AI'ı açmaz.
 
-Kaynaklar: `SINAN_KARARLARI_2026-11-03_AI.md` (AI-D1…D6), `KARAR_SICILI.md` (DEC-AI-001…009, No 134/156/157/159),
+Kaynaklar: `SINAN_KARARLARI_2026-11-03_AI.md` (AI-D1…D6), `KARAR_SICILI.md` (DEC-AI-001…009), `SINAN_KARARLARI_2026-10-21.md` (No 134/156/157/159),
 `ACIK_KARARLAR.md` (OPEN-013, OPEN-014, OPEN-018, OPEN-020), `docs/adr/ADR-SEC-001-durable-security-event-channel.md`,
 `docs/delivery/AI_MERKEZI_PLAN_v1.md` §6, Fable 5.2 analizi (F-001, F-030; karar değil, yalnız bağlam).
 
@@ -17,7 +17,7 @@ Kaynaklar: `SINAN_KARARLARI_2026-11-03_AI.md` (AI-D1…D6), `KARAR_SICILI.md` (D
 |---|---|---|
 | A. Dış AI sağlayıcısı | AI-8 canlı açılış | Adaptör kapalı kalır; dışarı sıfır istek |
 | B. Yerel AI / OCR / GPU | AI-8 yerel adaptör, AI-9 OCR | Yalnız sahte (fake) sağlayıcı ile test |
-| C. AI rolleri (F-001 ile birlikte) | AI-3/AI-5 kullanıcıya görünürlük, AI-4b politika ekranı | Capability katalogda tanımlı, kimseye verilmez; panel herkes için kapalı |
+| C. AI rolleri (F-001 ile birlikte) | AI-3/AI-5 kullanıcıya görünürlük, AI-4b politika ekranı | Capability katalogda tanımlı, kimseye verilmez; panel açılır ama "kullanılamıyor" der |
 | D. Eşlenmemiş "Gizli" kalemler | AI-6 READ araçlarının dış AI'a çıkışı | Bu alanlar her durumda reddedilir (bugünkü kod davranışı) |
 | E. Güvenlik olayı kanalı (ADR-SEC-001 1–9) | AI-2, dolayısıyla AI-3 runtime | AI-2 ve AI-3 başlamaz (ERP-000J §18) — **ana blokaj** |
 
@@ -34,7 +34,7 @@ Soru: Hangi dış AI sağlayıcısı ve hesabı kullanılsın?
 |---|---|
 | A1. Kurumsal sözleşmeli API (veri saklamama + eğitimde kullanmama sözleşmede yazılı) | AI-D5'in istediği kanıt sözleşmeyle gelir |
 | A2. Bulut sağlayıcı üzerinden bölgesel model hizmeti (veri yerleşimi seçilebilir) | KVKK yurt dışı aktarım değerlendirmesi kolaylaşabilir |
-| A3. Şimdilik dış AI yok; yalnız yerel model | B'ye bağlı; genel sorular zayıf kalır |
+| A3. Şimdilik (geçici) dış AI yok; yalnız yerel model | B'ye bağlı; genel sorular zayıf kalır. AI-D2 iki katmanı birlikte öngördüğü için kalıcı seçenek değildir |
 
 **Önerilen varsayılan:** karar verilene kadar A3 gibi davranılır: dış AI kapalı, izinli veri türü listesi boş.
 Seçim yapıldığında üç kanıt istenir: (1) saklamama, (2) eğitimde kullanmama, (3) KVKK aktarım değerlendirmesi.
@@ -50,7 +50,6 @@ Soru: Yerel model ve OCR nerede çalışsın, GPU olacak mı?
 |---|---|
 | B1. Ayrı GPU sunucusu (şirket içi) | En iyi gizlilik; donanım maliyeti |
 | B2. CPU ile küçük model + klasik OCR | Düşük maliyet; yavaş, kalite sınırlı |
-| B3. Yerel model yok; OCR dahil her şey dış AI (A'ya bağlı) | Belge içeriği dışarı çıkar → D ve AI-D4 kuralları uygulanır |
 
 **Önerilen varsayılan:** B2 ile PoC (yalnız sahte veriyle ölçüm), GPU kararı ölçüm sonrası. OCR sonucu
 hiçbir zaman kesin kayıt yazmaz (DEC-AI-008).
@@ -69,13 +68,13 @@ hiçbir AI izni kullanıcıya ulaşmaz; iki karar birlikte verilirse tekrar soru
 |---|---|
 | C1. Panel: tüm aktif kullanıcılar (araçlar zaten kullanıcının kendi yetkisiyle çalışır). Politika: hazırlayan ≠ onaylayan, iki ayrı kişi | Görev ayrılığı korunur |
 | C2. Panel: yalnız seçilen personalar (pilot). Politika: C1 gibi | Kademeli açılış |
-| C3. Panel ve politika tek yöneticide | Basit; görev ayrılığı yok (önerilmez) |
+| C3. Panel ve politika tek yöneticide | Görev ayrılığı yok; ADR-SET-002'nin hazırlayan ≠ onaylayan ≠ yayınlayan yaşam döngüsüyle çelişir (önerilmez) |
 
-**Önerilen varsayılan:** C2 (pilot), politika için hazırlayan ≠ onaylayan. Aday izin adları
-(`ai.panel.use`, `ai.center.view`, politika için Ayarlar'ın ADR-SET-002 adları) yalnız katalogda kayıtlı olur;
-**grant yok**, rol adı kodda yok.
+**Önerilen varsayılan:** C2 (pilot), politika için hazırlayan ≠ onaylayan. Panel için aday izin adları
+(`ai.panel.use`, `ai.center.view`; ikisi de `ASSUMPTION`) yalnız katalogda kayıtlı olur; politika izin adları
+henüz seçilmedi (ADR-SET-002 K16: izin adı/rol/grant seçilmez). **Grant yok**, rol adı kodda yok.
 
-**Cevapsızken:** Panel herkes için kapalı kalır (bugünkü davranış). Rol verme her zaman insan kapısıdır.
+**Cevapsızken:** Panel açılır ama her durumda "kullanılamıyor" der (bugünkü davranış); hiçbir AI izni kimseye verilmez. Rol verme her zaman insan kapısıdır.
 
 ## D. Eşlenmemiş "Gizli" kalemler
 
@@ -95,7 +94,7 @@ Soru: `AI_VERI_GUVENLIK`'te "Gizli" olup Sinan'ın AI-D4 listesinde (fiyat, baki
 ## E. Güvenlik olayı kanalı (ADR-SEC-001, "Öneri")
 
 ERP-000J §18 gereği AI runtime (AI-3) bu kanal olmadan başlamaz. ADR-SEC-001'in kabulü için K3 review ve
-aşağıdaki cevaplar gerekir. Her satırdaki öneri ADR'daki öneridir.
+aşağıdaki cevaplar gerekir. E1–E4, E6 ve E9'daki öneri ADR'daki öneridir. E5, E7 ve E8 ayrıca işaretlidir.
 
 | No | Soru | Önerilen varsayılan | Cevapsızken |
 |---|---|---|---|
@@ -103,14 +102,15 @@ aşağıdaki cevaplar gerekir. Her satırdaki öneri ADR'daki öneridir.
 | E2 | Olayları kim görsün? | Ayrı okuma izni (aday `platform.security-events.read`, grant yok); şirket kapsamlı; platform satırları ayrı izin | İzin katalogda, kimseye verilmez |
 | E3 | Nerede saklansın? | **A:** ERP veritabanında ayrı şema, append-only, şirket kapsamlı (aynı transaction atomikliği) | Kod yazılmaz |
 | E4 | Kanal ERP-000L'nin toplu paketinden (OPEN-014/015/017) ayrılıp önden kodlansın mı? | **Evet**; depo portu korunur, B seçilirse yalnız altyapı değişir | AI-2 ve AI-3 bekler |
-| E5 | IP ve tarayıcı bilgisi saklansın mı? | **Hayır** (KVKK); gerekirse sonra açılır | Saklanmaz |
+| E5 | IP ve tarayıcı bilgisi saklansın mı? | **Hayır** (KVKK); gerekirse sonra açılır. *ADR'da öneri yok, yalnız ara davranış "saklanmaz"; bu öneri AI şeridinindir* | Saklanmaz |
 | E6 | Kayıp alarmı nereye? | Önce telemetry metriği; dış hedef ERP-000L alarm matrisiyle | Yalnız metrik |
-| E7 | Reddedilen istek seli? | Aynı aktör + tür + neden için zaman penceresinde sayaçlı toplulaştırma; eşik ayardan, kod sabiti yok | Toplulaştırma kapalı |
-| E8 | Başarısız girişte kullanıcı adı hash anahtarı? | Anahtar secret deposunda; sahibi platform yöneticisi; yılda bir döndürme | Giriş olayı yazılmaz |
+| E7 | Reddedilen istek seli? | ADR: toplulaştırma **veya** hız sınırı. Toplulaştırma örneği: aynı aktör + tür + neden için zaman penceresinde sayaç; eşik ayardan, kod sabiti yok | Toplulaştırma kapalı |
+| E8 | Başarısız girişte kullanıcı adı hash anahtarı? | Anahtar yalnız secret deposunda, repoya girmez. Anahtar sahibi ve döndürme sıklığı: *ADR'da öneri yok*; Sinan seçer (güvenlik/secret politikası) | Giriş olayı yazılmaz |
 | E9 | AI kaynaklı yetki reddi 1 yıl (No 157) mı, 2 yıl (No 134) mı? | Cevaba kadar uzun olan (**2 yıl**) | 2 yıl |
 
-**En az gereken:** E1, E3, E4 ve E5. Diğerleri sonradan ayar olarak bağlanabilir; cevap gelene kadar
-tablodaki güvenli davranış uygulanır.
+**AI şeridinin önerisi (karar değil):** ADR kabulü için önerilen asgari set E1, E3, E4 ve E5'tir; diğerlerinin
+ertelenmesini Sinan onaylar. E2 (kim okur) ve E8 (anahtar sahibi) ayar değil, rol ve secret kararıdır. Cevap
+gelene kadar tablodaki güvenli davranış uygulanır.
 
 ---
 
