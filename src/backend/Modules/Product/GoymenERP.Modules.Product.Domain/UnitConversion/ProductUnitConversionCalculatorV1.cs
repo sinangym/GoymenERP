@@ -170,7 +170,8 @@ public static class ProductUnitConversionCalculatorV1
     /// F-C (round tube only): kg per metre from outer diameter and wall thickness (mm) and density. The cross-section
     /// is the annulus area <c>pi * t * (D - t)</c> in mm2. Box and rectangular profiles have no formula by decision
     /// (#66 6810051185 item 21): their kg per metre comes from the product's size/thickness table, never a corner model.
-    /// Where that table has a row for a round tube, the table value is the source and this result is only a suggestion.
+    /// Where that table has a row for a round tube, the table value is the source and this result is only a suggestion
+    /// (#66 6810163182 item 24).
     /// </summary>
     public static UnitConversionResultV1<decimal> RoundTubeKgPerMetre(decimal? outerDiameterMm, decimal? wallThicknessMm, DensityV1? density)
     {
