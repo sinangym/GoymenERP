@@ -967,7 +967,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "241e1e850db26e13c0b480d3c1ebb42f7b7ac031041c342ee00968065c1b085d",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": "0861f73739be9690ee8063766a888b26a1508ea422c4a526599669133134009b",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
-    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "43e2b056c56c0d24365561505109876a1591f2e7fb8070a59decbca812b82176",
+    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "048d396e1cb2a6bc05c01a6bb23af908d6929dd119e0ffa52e84fa43a74819a5",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
     "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "9ef41f9be8251dea708100eb2cffb4bca57a06a3fa64c410e1bc73a526a434cc",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
