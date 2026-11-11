@@ -71,9 +71,9 @@ Sinan kararları (#66 yorumları 6806579823 madde 9 ve 6806619303 madde 10; 2026
 - Kesit: ürün kartında ayrı "Ebat/kalınlık" sekmesi (hangi ürün hangi ebat/kalınlıktan üretilir);
   hesap bu tablodan yapılır, satırı olmayan ürün `NoSource`.
 - Kantar–hesap toleransı %1, ayarlanabilir.
-  Sınırın dahil olup olmadığı (`<=` / `<`) ve yüzdenin tabanı (hesaplanan / tartılan kg) Sinan kararı
-  değildir: ikisi de Ayarlar alanıdır, kodda varsayılan yoktur (`ASSUMPTION-U08-TOLERANCE-BOUNDARY`;
-  testlerde örnek seçim dahil sınır + hesaplanan taban). Etkinleştirme Sinan kararını bekler.
+  Sınır ve taban Sinan kararıdır (#66 6807311666; BS-16/BS-17): fark tam toleransa eşitse kabul (`|sapma| <= tolerans`),
+  sapma hesaplanan (teorik) kg'ye göre ölçülür; eksik tartı da mutlak sapmayla kıyaslanır. İkisi de Ayarlar'dan değişir
+  (Inclusive/Exclusive, Calculated/Weighed); kodda varsayılan yoktur, kararlar ayar varsayılanıdır.
 - Paket adet tablosu ve boya sınıfı listesi Excel'den içe aktarılır, ERP üzerinde düzenlenebilir;
   liste gelene kadar `NoSource`, tahmin yok.
 

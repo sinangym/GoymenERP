@@ -33,8 +33,8 @@ public sealed record UnitConversionResultV1<T>(UnitConversionOutcomeV1 Outcome, 
 }
 
 /// <summary>
-/// Whether a deviation exactly equal to the weighbridge tolerance passes. Not decided by Sinan
-/// (ASSUMPTION-U08-TOLERANCE-BOUNDARY): a company setting, never a code default.
+/// Whether a deviation exactly equal to the weighbridge tolerance passes. Sinan decision BS-16 (#66 6807311666):
+/// equal passes (Inclusive) as the settings default, adjustable in Settings; the calculator has no code default.
 /// </summary>
 public enum WeighbridgeToleranceBoundaryV1
 {
@@ -46,8 +46,8 @@ public enum WeighbridgeToleranceBoundaryV1
 }
 
 /// <summary>
-/// Which kg the deviation percent is measured against. Not decided by Sinan (ASSUMPTION-U08-TOLERANCE-BOUNDARY):
-/// a company setting, never a code default.
+/// Which kg the deviation percent is measured against. Sinan decision BS-17 (#66 6807311666): the calculated
+/// (theoretical) kg as the settings default, adjustable in Settings; the calculator has no code default.
 /// </summary>
 public enum WeighbridgeToleranceBaseV1
 {
@@ -80,16 +80,17 @@ public readonly record struct DensityV1
 /// <summary>
 /// Company settings for conversion rounding and the weighbridge check. Every value comes from Settings
 /// (Sinan 2026-11-11, #66 6806641583: coefficient 3 decimals, document kg total 2 decimals, tolerance 1 percent,
-/// all adjustable; BS-13). The display rounding mode, the tolerance boundary and the tolerance base are settings
-/// too (the last two are ASSUMPTION-U08-TOLERANCE-BOUNDARY, awaiting Sinan). kg to unit count is always floor
-/// (BS-13). The calculator has no built-in default, so a missing setting cannot be silently replaced. A later
-/// settings slice scopes these per CompanyId.
+/// kg to unit count rounds down; all adjustable, BS-13). The display rounding mode, the kg-to-units rounding mode
+/// (Settings default ToNegativeInfinity = floor, BS-13), the tolerance boundary (BS-16) and the tolerance base
+/// (BS-17, #66 6807311666) are settings too. The calculator has no built-in default, so a missing setting cannot be
+/// silently replaced. A later settings slice scopes these per CompanyId.
 /// </summary>
 public sealed record UnitConversionSettingsV1(
     int CoefficientDecimals,
     int DocumentTotalDecimals,
     decimal WeighbridgeTolerancePercent,
     MidpointRounding DisplayRounding,
+    MidpointRounding WholeUnitRounding,
     WeighbridgeToleranceBoundaryV1 ToleranceBoundary,
     WeighbridgeToleranceBaseV1 ToleranceBase);
 
@@ -111,6 +112,8 @@ public static class ProductUnitConversionCalculatorV1
 
     private const decimal PercentScale = 100m;
 
+    private const string OverflowReason = "The inputs are too large to convert.";
+
     // A technical guard, not business policy: settings ask for 2-3 decimals (BS-13); 12 leaves room while keeping
     // results far inside decimal's 28-29 significant digits for kg values, so rounding never silently saturates.
     private const int MaxRoundingDecimals = 12;
@@ -128,8 +131,11 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<decimal>.Refused("Sheet conversion inputs must be positive.");
         }
 
-        return UnitConversionResultV1<decimal>.Computed(
-            thicknessMm.Value * widthMm.Value * lengthMm.Value * density.Value.GramsPerCubicCentimetre * CubicMillimetreGramPerCubicCentimetreToKilogram);
+        var t = thicknessMm.Value;
+        var w = widthMm.Value;
+        var l = lengthMm.Value;
+        var d = density.Value.GramsPerCubicCentimetre;
+        return Checked(() => t * w * l * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
     }
 
     /// <summary>F-B: kg per metre of coil or slit coil from thickness, width (mm) and density.</summary>
@@ -145,8 +151,10 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<decimal>.Refused("Coil conversion inputs must be positive.");
         }
 
-        return UnitConversionResultV1<decimal>.Computed(
-            thicknessMm.Value * widthMm.Value * MillimetresPerMetre * density.Value.GramsPerCubicCentimetre * CubicMillimetreGramPerCubicCentimetreToKilogram);
+        var t = thicknessMm.Value;
+        var w = widthMm.Value;
+        var d = density.Value.GramsPerCubicCentimetre;
+        return Checked(() => t * w * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
     }
 
     /// <summary>Units to kg at full precision (no intermediate rounding).</summary>
@@ -162,16 +170,21 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<decimal>.Refused("Units must not be negative and the coefficient must be positive.");
         }
 
-        return UnitConversionResultV1<decimal>.Computed(units * kgPerUnit.Value);
+        var coefficient = kgPerUnit.Value;
+        return Checked(() => units * coefficient);
     }
 
     /// <summary>
-    /// kg to whole units, rounded down (BS-13, #66 6806641583); the remainder stays visible to the caller.
+    /// kg to whole units with the settings' <see cref="UnitConversionSettingsV1.WholeUnitRounding"/> (BS-13: rounds
+    /// down by default, adjustable; #66 6806641583); the remainder stays visible to the caller.
     /// <paramref name="kgPerUnit"/> is the full-precision coefficient, not the 3-decimal stored/displayed one:
-    /// intermediate steps are never rounded (BS-13), so callers pass the unrounded value.
+    /// intermediate steps are never rounded (BS-13), so callers pass the unrounded value. A count too large for the
+    /// result is refused, not thrown.
     /// </summary>
-    public static UnitConversionResultV1<long> KgToWholeUnits(decimal kg, decimal? kgPerUnit)
+    public static UnitConversionResultV1<long> KgToWholeUnits(decimal kg, decimal? kgPerUnit, UnitConversionSettingsV1 settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        var mode = RequireMode(settings.WholeUnitRounding);
         if (kgPerUnit is null)
         {
             return UnitConversionResultV1<long>.NoSource("No kg-per-unit coefficient exists.");
@@ -182,7 +195,14 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<long>.Refused("Kg must not be negative and the coefficient must be positive.");
         }
 
-        return UnitConversionResultV1<long>.Computed((long)decimal.Floor(kg / kgPerUnit.Value));
+        try
+        {
+            return UnitConversionResultV1<long>.Computed(checked((long)decimal.Round(kg / kgPerUnit.Value, 0, mode)));
+        }
+        catch (OverflowException)
+        {
+            return UnitConversionResultV1<long>.Refused(OverflowReason);
+        }
     }
 
     /// <summary>Coefficient as stored/displayed: the setting's decimals and midpoint rounding mode.</summary>
@@ -200,9 +220,11 @@ public static class ProductUnitConversionCalculatorV1
     }
 
     /// <summary>
-    /// Weighbridge vs calculated kg: deviation percent = |weighed - calculated| / base * 100, where the base and
-    /// whether the tolerance itself passes come from the settings (ASSUMPTION-U08-TOLERANCE-BOUNDARY). A
-    /// non-positive base, negative kg, negative tolerance or unknown setting is refused, not passed.
+    /// Weighbridge vs calculated kg. BS-17 defines the signed deviation (weighed - theoretical) / base; the check
+    /// compares its absolute value, so a short weighing fails exactly like an over weighing:
+    /// |weighed - calculated| / base * 100 &lt;= tolerance (Inclusive, BS-16) or &lt; tolerance (Exclusive). The base
+    /// and the boundary come from the settings (#66 6807311666). A non-positive base, negative kg, negative
+    /// tolerance or a deviation too large to compute is refused; an unknown setting throws.
     /// </summary>
     public static UnitConversionResultV1<bool> WithinWeighbridgeTolerance(decimal weighedKg, decimal calculatedKg, UnitConversionSettingsV1 settings)
     {
@@ -224,13 +246,34 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<bool>.Refused("The kg the tolerance is measured against must be positive.");
         }
 
-        var deviationPercent = decimal.Abs(weighedKg - calculatedKg) / baseKg * PercentScale;
+        decimal deviationPercent;
+        try
+        {
+            deviationPercent = decimal.Abs(weighedKg - calculatedKg) / baseKg * PercentScale;
+        }
+        catch (OverflowException)
+        {
+            return UnitConversionResultV1<bool>.Refused(OverflowReason);
+        }
+
         return UnitConversionResultV1<bool>.Computed(settings.ToleranceBoundary switch
         {
             WeighbridgeToleranceBoundaryV1.Inclusive => deviationPercent <= settings.WeighbridgeTolerancePercent,
             WeighbridgeToleranceBoundaryV1.Exclusive => deviationPercent < settings.WeighbridgeTolerancePercent,
             _ => throw new ArgumentOutOfRangeException(nameof(settings), "Unknown weighbridge tolerance boundary."),
         });
+    }
+
+    private static UnitConversionResultV1<decimal> Checked(Func<decimal> compute)
+    {
+        try
+        {
+            return UnitConversionResultV1<decimal>.Computed(compute());
+        }
+        catch (OverflowException)
+        {
+            return UnitConversionResultV1<decimal>.Refused(OverflowReason);
+        }
     }
 
     private static MidpointRounding RequireMode(MidpointRounding mode)

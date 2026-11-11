@@ -10,6 +10,7 @@ public sealed class ProductUnitConversionCalculatorV1Tests
         2,
         1m,
         MidpointRounding.AwayFromZero,
+        MidpointRounding.ToNegativeInfinity,
         WeighbridgeToleranceBoundaryV1.Inclusive,
         WeighbridgeToleranceBaseV1.Calculated);
 
@@ -62,7 +63,11 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     public void A_missing_or_non_positive_coil_input_is_NoSource_or_refused()
     {
         Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.CoilKgPerMetre(null, 1000m, Steel).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, null, Steel).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 1000m, null).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.CoilKgPerMetre(0m, 1000m, Steel).Outcome);
         Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 0m, Steel).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.CoilKgPerMetre(-2m, 1000m, Steel).Outcome);
     }
 
     [Fact]
@@ -76,15 +81,37 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     }
 
     [Fact]
-    public void Kg_to_whole_units_rounds_down_and_never_up()
+    public void Kg_to_whole_units_rounds_down_with_the_default_setting_and_never_up()
     {
         // 99.99 kg at 10 kg per piece is 9 pieces, not 10.
-        var result = ProductUnitConversionCalculatorV1.KgToWholeUnits(99.99m, 10m);
+        var result = ProductUnitConversionCalculatorV1.KgToWholeUnits(99.99m, 10m, Settings);
 
         Assert.Equal(9L, result.Value);
-        Assert.Equal(10L, ProductUnitConversionCalculatorV1.KgToWholeUnits(100m, 10m).Value);
-        Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.KgToWholeUnits(1m, null).Outcome);
-        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.KgToWholeUnits(1m, 0m).Outcome);
+        Assert.Equal(10L, ProductUnitConversionCalculatorV1.KgToWholeUnits(100m, 10m, Settings).Value);
+        Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.KgToWholeUnits(1m, null, Settings).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.KgToWholeUnits(1m, 0m, Settings).Outcome);
+    }
+
+    [Fact]
+    public void Kg_to_whole_units_keeps_an_exact_count_and_follows_the_rounding_setting()
+    {
+        // 30 kg at 0.3 kg per piece is exactly 100: floor must not lose a piece.
+        Assert.Equal(100L, ProductUnitConversionCalculatorV1.KgToWholeUnits(30m, 0.3m, Settings).Value);
+        Assert.Equal(99L, ProductUnitConversionCalculatorV1.KgToWholeUnits(29.999999m, 0.3m, Settings).Value);
+        var up = Settings with { WholeUnitRounding = MidpointRounding.ToPositiveInfinity };
+        Assert.Equal(10L, ProductUnitConversionCalculatorV1.KgToWholeUnits(99.99m, 10m, up).Value);
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.KgToWholeUnits(
+            1m, 1m, Settings with { WholeUnitRounding = (MidpointRounding)99 }));
+    }
+
+    [Fact]
+    public void Too_large_inputs_are_refused_not_thrown()
+    {
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.SheetKgPerPiece(decimal.MaxValue, decimal.MaxValue, 1m, Steel).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.CoilKgPerMetre(decimal.MaxValue, decimal.MaxValue, Steel).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.UnitsToKg(decimal.MaxValue, 2m).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.KgToWholeUnits(decimal.MaxValue, 1m, Settings).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(decimal.MaxValue, 0.0001m, Settings).Outcome);
     }
 
     [Fact]
@@ -111,6 +138,10 @@ public sealed class ProductUnitConversionCalculatorV1Tests
         Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101m, 100m, Settings).Value);
         Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(99m, 100m, Settings).Value);
         Assert.False(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101.01m, 100m, Settings).Value);
+        Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100.99m, 100m, Settings).Value);
+        // A short weighing is compared by its absolute deviation (BS-17 signed formula, |deviation| <= tolerance).
+        Assert.False(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(98.99m, 100m, Settings).Value);
+        Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(99.01m, 100m, Settings).Value);
         Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 0m, Settings).Outcome);
         Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 100m, Settings with { WeighbridgeTolerancePercent = -1m }).Outcome);
     }
