@@ -181,6 +181,11 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Version = 2 AND AmountText = N'50.00'"));
 
+        // No cash movement: the receipt's single money event is still exactly one, with its original amount.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.MoneyEvents WHERE AmountText = N'50.00' AND Kind = 1"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+
         // The same confirmed cancellation replays; the unconfirmed payload under the same id is an identity conflict.
         var replay = await run.CancelAsync("confirm-cancel", confirmation);
         Assert.True(replay.IsReplay);
@@ -273,6 +278,14 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3 AND Version = 2",
             ("@id", invoice.InvoiceId)));
+
+        // Afterwards a third cancellation under a new id is a stable, specific refusal (not a race outcome).
+        var late = await run.CancelAsync("race-late", Cancellation(invoice));
+        Assert.Equal(CommandOutcome.ValidationFailed, late.Outcome);
+        Assert.Contains(late.Issues,
+            issue => issue.Code == FinanceInvoiceOpenItemCancellationService.AlreadyCancelledCode);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellations"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.InvoiceCancellationItems"));
     }
 
     [SqlServerFact]
@@ -456,6 +469,26 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
                 Version = 2,
                 UpdatedBy = "synthetic-f2b-fixture",
                 UpdatedAtUtc = now,
+            });
+            // The receipt's one money event: an allocation and its cancellation release never add or change a movement.
+            db.MoneyEvents.Add(new MoneyEventRow
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = CompanyA,
+                SourceId = sourceId,
+                Kind = MoneyEventKinds.ManualBankReceiptRecorded,
+                PartyId = Party,
+                CompanyAccountId = Account,
+                TreasuryAccountId = Guid.NewGuid(),
+                CurrencyId = Lira,
+                AmountText = "50.00",
+                ProfileId = Guid.NewGuid().ToString("D"),
+                ProfileVersion = "1",
+                OccurredOn = DateOnly.FromDateTime(now.UtcDateTime),
+                ValueOn = DateOnly.FromDateTime(now.UtcDateTime),
+                RecordedAtUtc = now,
+                RecordedBy = "synthetic-f2b-fixture",
+                CorrelationId = "synthetic-f2b-fixture",
             });
             var item = await db.OpenItems.SingleAsync(row => row.Id == openItemId);
             item.OutstandingAmountText = FinanceExactDecimalText.TryParseNonNegative(item.OriginalAmountText, out var original)
