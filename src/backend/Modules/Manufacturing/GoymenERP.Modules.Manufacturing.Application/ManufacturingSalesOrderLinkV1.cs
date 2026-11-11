@@ -118,6 +118,10 @@ public sealed partial class ManufacturingCommandService
     /// revision does. The line is read from Sales (through the host) before the save: NotApproved / NotFound are 422, an
     /// unavailable Sales is 503 and nothing is linked. A cancelled plan, a closed order, no change and a customer-owned input
     /// of another party are 422; a moved link revision is 409. ADR-011 as the other plan commands.
+    /// <para>U5-b / API-36 (URT-D16, URT-D22): a plan with a customer-owned input is linked only to an open, approved
+    /// subcontract service order of that customer whose usable basis carries the line (422
+    /// <see cref="ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder"/>); Sales unreadable is 503. A plan without
+    /// customer goods links to any approved line as before.</para>
     /// </summary>
     public Task<ManufacturingApiResult<PlanViewV1>> ChangePlanSalesOrderLinkAsync(Guid planId,
         ChangePlanSalesOrderLinkRequestV1? request, string idempotencyKey, string permission,
@@ -195,6 +199,12 @@ public sealed partial class ManufacturingCommandService
                             return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null,
                                 false, ManufacturingRuleCodes.PlanSalesOrderLineUnavailable);
                     }
+
+                    if (await RefuseCustomerGoodsLinkAsync(planId, request.ExpectedVersion, link, permission, companyId,
+                            actor, cancellationToken) is { } refused)
+                    {
+                        return refused;
+                    }
                 }
 
                 // The Draft's answer uses the profile in force today, read once before the save (as the plan read).
@@ -212,5 +222,60 @@ public sealed partial class ManufacturingCommandService
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(changed, live), false,
                     null);
             }, stored => PlanView((ProductionPlan)stored, live), cancellationToken);
+    }
+
+    /// <summary>
+    /// U5-b / API-36: when the plan (at the caller's expected version) carries a customer-owned input, the order must be an
+    /// open, approved subcontract service order of that customer — party and company account — whose usable basis carries the
+    /// line. Null when the link may proceed. A plan read at another version is left to the store's version fence; a plan
+    /// without customer goods asks nothing. Sales is read before a fresh fence; any unreadable answer is 503.
+    /// </summary>
+    private async Task<ManufacturingApiResult<PlanViewV1>?> RefuseCustomerGoodsLinkAsync(Guid planId, long expectedVersion,
+        PlanSalesOrderLink link, string permission, Guid companyId, Guid actor, CancellationToken cancellationToken)
+    {
+        if (await plans.FindPlanAsync(planId, cancellationToken) is not { } current || current.Version != expectedVersion
+            || current.Inputs.Select(input => input.CommercialContext).FirstOrDefault(context => context is not null)
+                is not { } customer)
+        {
+            return null;
+        }
+
+        if (subcontractServiceOrders is null)
+        {
+            return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                ManufacturingRuleCodes.PlanSalesOrderLineUnavailable);
+        }
+
+        ManufacturingSubcontractServiceOrderAnswerV1? answer;
+        try
+        {
+            answer = await subcontractServiceOrders.GetAsync(link.SalesOrderId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            answer = null;
+        }
+
+        if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actor, cancellationToken) is { } fenced)
+        {
+            return fenced;
+        }
+
+        return answer switch
+        {
+            { Outcome: ManufacturingSubcontractServiceOrderOutcomeV1.Found, Order: { } order }
+                when order.CompanyId == companyId && order.SalesOrderId == link.SalesOrderId =>
+                order.Admits(link.SalesOrderLineId, customer.PartyId, customer.CompanyPartyAccountId)
+                    ? null
+                    : CustomerGoodsRefusal(),
+            { Outcome: ManufacturingSubcontractServiceOrderOutcomeV1.NotSubcontractService
+                or ManufacturingSubcontractServiceOrderOutcomeV1.NotFound, Order: null } => CustomerGoodsRefusal(),
+            _ => new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                ManufacturingRuleCodes.PlanSalesOrderLineUnavailable),
+        };
+
+        static ManufacturingApiResult<PlanViewV1> CustomerGoodsRefusal() =>
+            new(ManufacturingApiStatus.Unprocessable, null, false,
+                ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder);
     }
 }

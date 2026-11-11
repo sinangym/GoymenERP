@@ -51,6 +51,7 @@ public static class ManufacturingModuleExtensions
         // Üretim U2-b / API-16: the plan's sales order link and Sales's linked-supply read, the same DbContext as the plan.
         services.AddScoped<IManufacturingPlanSalesOrderLinkStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
+        services.AddScoped<IManufacturingSalesOrderBindingReadPortV1, ManufacturingSalesOrderBindingReadPort>();
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // ADR-011: the command log shares the store's DbContext, so a success joins the business save.
         services.AddScoped<IManufacturingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
