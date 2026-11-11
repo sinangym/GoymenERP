@@ -271,8 +271,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #1006 takip: +1 multi-allocation cancellation fact, ordinal-sorted (19001373… -> 7634c7da…).
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
+            // API-23: +3 payment reversal facts, ordinal-sorted (36413356… -> 4684446d…).
             ["tools/relational_inventory/finance.txt"] =
-                "3641335616cf9e1e8f00b26efa4f748648583e7c3c5332f5f36ede493b7c604d",
+                "4684446d189159731ae104479a7697d48d2cdb6f0257b7ecda497a1848c44d2c",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -742,7 +743,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CK_OpenItems_Status admits 3 = Cancelled (973395d3… -> 578e4f20…).
             // F3a / API-20: PaymentAllocations / PaymentAllocationStates carry the CompanyId filter, company-leading
             // keys to ManualBankPayments and OpenItems, and a release-only write guard (578e4f20… -> 95024798…).
-            "950247983a8a0742e9ce5aed9b14d527f92e5f9a507ad745637a8d01ff0d52b6",
+            // API-23: PaymentReversalProposals / OutgoingMoneyEventReversals carry the CompanyId filter, company-leading
+            // keys to ManualBankPayments and OutgoingMoneyEvents, and an append-only reversal guard (95024798… -> 61b34a3d…).
+            "61b34a3d518e3d9efec34ce79529599073ccb95c5a626affc77c637999a37b48",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1261,11 +1264,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
                 // items, no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for F3a /
                 // API-20: the payment allocation writer and read service registrations; token counts unchanged.
+                // Re-fingerprinted for API-23: the payment reversal service registration and its two audit envelopes;
+                // token counts unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "8b1954b128e2250150ae17f60f2f3955d43209940a863fb59730fa8e84a719a5",
+                        "58ddb6596d6a72a26f4497d959329eef47cc26420118bb927aa6f2d36f7f614a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1326,7 +1331,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinancePaymentAllocationService.cs"] =
                     new(
-                        "8fdf328ab45447718739ad839a916758e7d71f8e754a76c1a89c09458c949b5b",
+                        // Re-fingerprinted for API-23: a reversed payment is refused with its own code
+                        // (finance_source_already_reversed) through one tracked read; token counts unchanged.
+                        "c982b49e6d2fc4ce05a157d9b4528920a6c07540a4a5b130e8d99a73f0d422bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // API-23: the payment reversal maker-checker writer has the same shape as the allocation writer. SqlClient
+                // is referenced only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/PaymentReversalProposalService.cs"] =
+                    new(
+                        "a2b0ef1a2acc1c3ff220816a6a4365af97d37ddbe255e3345c96b5b1f5b5b096",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2774,6 +2791,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // API-23: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
+                // reversal proposal or recorded payment reversal is stored; the THROW precedes the table drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261111184316_AddPaymentReversals.cs"] =
+                    new("a17ae3ac73ad47179d26ac7d8a05b3b6d21efa289a3e5fcc54ff127910ede1a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
                 // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107154419_AddPaymentAllocations.cs"] =

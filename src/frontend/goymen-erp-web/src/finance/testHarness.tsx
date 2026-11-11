@@ -37,6 +37,11 @@ import type {
   RecordManualBankPaymentRequest,
 } from './manualBankPaymentContract'
 import type {
+  ApprovePaymentReversalRequest,
+  ProposePaymentReversalRequest,
+  RejectPaymentReversalRequest,
+} from './paymentReversalContract'
+import type {
   CustomerInstrumentCollectRequest,
   CustomerInstrumentReceiveRequest,
   CustomerInstrumentStatusChangeRequest,
@@ -80,6 +85,9 @@ type CommandName =
   | 'saveManualBankPaymentDraft'
   | 'approveManualBankPayment'
   | 'recordManualBankPayment'
+  | 'proposePaymentReversal'
+  | 'approvePaymentReversal'
+  | 'rejectPaymentReversal'
   | 'receiveCustomerInstrument'
   | 'changeCustomerInstrumentStatus'
   | 'collectCustomerInstrument'
@@ -94,6 +102,8 @@ type ReadName =
   | 'reversalProposal'
   | 'listManualBankPayments'
   | 'manualBankPaymentDetail'
+  | 'pendingPaymentReversals'
+  | 'paymentReversalProposal'
   | 'listCustomerInstruments'
   | 'customerInstrumentDetail'
   | 'customerInstrumentRisk'
@@ -116,6 +126,9 @@ export interface CommandCall {
     | ManualBankPaymentDraftSaveRequest
     | ApproveManualBankPaymentRequest
     | RecordManualBankPaymentRequest
+    | ProposePaymentReversalRequest
+    | ApprovePaymentReversalRequest
+    | RejectPaymentReversalRequest
     | CustomerInstrumentReceiveRequest
     | CustomerInstrumentStatusChangeRequest
     | CustomerInstrumentCollectRequest
@@ -187,6 +200,11 @@ export function recordingPort(respond: ReadResponder) {
     saveManualBankPaymentDraft: command('saveManualBankPaymentDraft'),
     approveManualBankPayment: command('approveManualBankPayment'),
     recordManualBankPayment: command('recordManualBankPayment'),
+    proposePaymentReversal: command('proposePaymentReversal'),
+    approvePaymentReversal: command('approvePaymentReversal'),
+    rejectPaymentReversal: command('rejectPaymentReversal'),
+    pendingPaymentReversals: read('pendingPaymentReversals') as FinanceReceiptPort['pendingPaymentReversals'],
+    paymentReversalProposal: read('paymentReversalProposal') as FinanceReceiptPort['paymentReversalProposal'],
     listCustomerInstruments: read('listCustomerInstruments') as FinanceReceiptPort['listCustomerInstruments'],
     customerInstrumentDetail: read('customerInstrumentDetail') as FinanceReceiptPort['customerInstrumentDetail'],
     customerInstrumentRisk: read('customerInstrumentRisk') as FinanceReceiptPort['customerInstrumentRisk'],

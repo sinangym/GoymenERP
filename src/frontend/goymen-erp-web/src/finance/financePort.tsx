@@ -29,6 +29,13 @@ import {
   type ValidationIssue,
 } from './contract'
 import { decodeDraftContext, type DraftContext, type DraftContextRequest } from './draftContext'
+import {
+  decodePaymentReversalCommandResult,
+  type ApprovePaymentReversalRequest,
+  type PaymentReversalProposalView,
+  type ProposePaymentReversalRequest,
+  type RejectPaymentReversalRequest,
+} from './paymentReversalContract'
 import type { HttpReadReply } from './http'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import {
@@ -396,51 +403,108 @@ export type ReversalRequest =
   | { readonly operation: 'approve'; readonly body: ApproveReversalRequest }
   | { readonly operation: 'reject'; readonly body: RejectReversalRequest }
 
-export type ReversalCommandState =
-  | { readonly phase: 'idle' }
-  | { readonly phase: 'submitting'; readonly key: string; readonly request: ReversalRequest }
-  | { readonly phase: 'unknown'; readonly key: string; readonly request: ReversalRequest; readonly reason: 'no-reply' | 'malformed' | 'unavailable' }
-  | { readonly phase: 'conflicted'; readonly key: string; readonly request: ReversalRequest }
-  | { readonly phase: 'refused'; readonly request: ReversalRequest; readonly reason: 'denied' | 'validation' | 'version-conflict'; readonly issues: readonly ValidationIssue[] }
-  | { readonly phase: 'succeeded'; readonly resource: ReversalProposalView; readonly replayed: boolean }
+/** API-23: the same maker-checker commands for a recorded manual bank payment. */
+export type PaymentReversalRequest =
+  | { readonly operation: 'propose'; readonly body: ProposePaymentReversalRequest }
+  | { readonly operation: 'approve'; readonly body: ApprovePaymentReversalRequest }
+  | { readonly operation: 'reject'; readonly body: RejectPaymentReversalRequest }
 
 type ReversalUnknownReason = 'no-reply' | 'malformed' | 'unavailable'
 
-interface StoredReversalAttempt {
+export type ProposalCommandState<Req, View> =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'submitting'; readonly key: string; readonly request: Req }
+  | { readonly phase: 'unknown'; readonly key: string; readonly request: Req; readonly reason: ReversalUnknownReason }
+  | { readonly phase: 'conflicted'; readonly key: string; readonly request: Req }
+  | { readonly phase: 'refused'; readonly request: Req; readonly reason: 'denied' | 'validation' | 'version-conflict'; readonly issues: readonly ValidationIssue[] }
+  | { readonly phase: 'succeeded'; readonly resource: View; readonly replayed: boolean }
+
+export type ReversalCommandState = ProposalCommandState<ReversalRequest, ReversalProposalView>
+export type PaymentReversalCommandState = ProposalCommandState<PaymentReversalRequest, PaymentReversalProposalView>
+
+interface StoredProposalAttempt {
   readonly key: string
-  readonly request: ReversalRequest
+  readonly request: unknown
   readonly reason: ReversalUnknownReason
   readonly unresolvedSince?: ReversalUnknownReason
 }
 
-const reversalAttempts = new Map<string, StoredReversalAttempt>()
+/** One store for every maker-checker family; the slot names the family, so attempts never cross. */
+const reversalAttempts = new Map<string, StoredProposalAttempt>()
 
 export function clearReversalAttemptStore(): void {
   reversalAttempts.clear()
 }
 
-function reversalTarget(request: ReversalRequest): string {
-  return request.operation === 'propose' ? request.body.sourceId : request.body.proposalId
-}
-
-export interface ReversalCommand {
-  readonly state: ReversalCommandState
+export interface ProposalCommand<Req, View> {
+  readonly state: ProposalCommandState<Req, View>
   readonly available: boolean
-  submit(request: ReversalRequest): SubmitResult
+  submit(request: Req): SubmitResult
   resend(): SubmitResult
   abandon(): void
 }
 
+export type ReversalCommand = ProposalCommand<ReversalRequest, ReversalProposalView>
+export type PaymentReversalCommand = ProposalCommand<PaymentReversalRequest, PaymentReversalProposalView>
+
+type ProposalDecoded<View> =
+  | { readonly ok: false }
+  | { readonly ok: true; readonly value: { readonly outcome: string; readonly resource: View | null; readonly isReplay: boolean; readonly issues: readonly ValidationIssue[] } }
+
+interface ProposalFamily<Req extends { readonly operation: ReversalOperation }, View> {
+  readonly name: string
+  readonly target: (request: Req) => string
+  readonly send: (port: FinanceReceiptPort, scope: FinanceScope, key: string, request: Req) => Promise<PortReply>
+  readonly decode: (body: unknown) => ProposalDecoded<View>
+}
+
+const RECEIPT_REVERSAL_FAMILY: ProposalFamily<ReversalRequest, ReversalProposalView> = {
+  name: 'finance-reversal',
+  target: (request) => (request.operation === 'propose' ? request.body.sourceId : request.body.proposalId),
+  send: (port, scope, key, request) =>
+    request.operation === 'propose'
+      ? port.proposeReversal(scope, key, request.body)
+      : request.operation === 'approve'
+        ? port.approveReversal(scope, key, request.body)
+        : port.rejectReversal(scope, key, request.body),
+  decode: decodeReversalProposalCommandResult,
+}
+
+const PAYMENT_REVERSAL_FAMILY: ProposalFamily<PaymentReversalRequest, PaymentReversalProposalView> = {
+  name: 'finance-payment-reversal',
+  target: (request) => (request.operation === 'propose' ? request.body.paymentId : request.body.proposalId),
+  send: (port, scope, key, request) =>
+    request.operation === 'propose'
+      ? port.proposePaymentReversal(scope, key, request.body)
+      : request.operation === 'approve'
+        ? port.approvePaymentReversal(scope, key, request.body)
+        : port.rejectPaymentReversal(scope, key, request.body),
+  decode: decodePaymentReversalCommandResult,
+}
+
 export function useReversalCommand(operation: ReversalOperation, target: string): ReversalCommand {
+  return useProposalCommand(RECEIPT_REVERSAL_FAMILY, operation, target)
+}
+
+export function usePaymentReversalCommand(operation: ReversalOperation, target: string): PaymentReversalCommand {
+  return useProposalCommand(PAYMENT_REVERSAL_FAMILY, operation, target)
+}
+
+function useProposalCommand<Req extends { readonly operation: ReversalOperation }, View>(
+  family: ProposalFamily<Req, View>,
+  operation: ReversalOperation,
+  target: string,
+): ProposalCommand<Req, View> {
+  type State = ProposalCommandState<Req, View>
   const port = useContext(FinancePortContext)
   const bound = useFinanceBinding()
-  const slot = bound === null ? null : JSON.stringify([bound.namespace, 'finance-reversal', operation, target])
+  const slot = bound === null ? null : JSON.stringify([bound.namespace, family.name, operation, target])
   const stored = slot === null ? undefined : reversalAttempts.get(slot)
   const [state, setState] = useReducer(
-    (_: ReversalCommandState, next: ReversalCommandState) => next,
+    (_: State, next: State) => next,
     stored === undefined
       ? { phase: 'idle' }
-      : { phase: 'unknown', key: stored.key, request: stored.request, reason: stored.reason },
+      : { phase: 'unknown', key: stored.key, request: stored.request as Req, reason: stored.reason },
   )
   const shownSlot = useRef(slot)
   useEffect(() => {
@@ -451,40 +515,37 @@ export function useReversalCommand(operation: ReversalOperation, target: string)
     }
     setState(current === undefined
       ? { phase: 'idle' }
-      : { phase: 'unknown', key: current.key, request: current.request, reason: current.reason })
+      : { phase: 'unknown', key: current.key, request: current.request as Req, reason: current.reason })
   }, [slot])
 
-  const run = useCallback((key: string, request: ReversalRequest, currentSlot: string, companyId: string) => {
+  const run = useCallback((key: string, request: Req, currentSlot: string, companyId: string) => {
     if (port === null) return
     const scope = { companyId }
     let pending: Promise<PortReply>
     try {
-      pending = request.operation === 'propose'
-        ? port.proposeReversal(scope, key, request.body)
-        : request.operation === 'approve'
-          ? port.approveReversal(scope, key, request.body)
-          : port.rejectReversal(scope, key, request.body)
+      pending = family.send(port, scope, key, request)
     } catch {
       pending = Promise.resolve({ kind: 'no-reply' })
     }
     void pending.catch((): PortReply => ({ kind: 'no-reply' })).then((reply) => {
       const active = reversalAttempts.get(currentSlot)
       const unresolvedSince = active?.unresolvedSince
+      const keepUnknown = (reason: ReversalUnknownReason) => {
+        reversalAttempts.set(currentSlot, { key, request, reason, unresolvedSince: unresolvedSince ?? reason })
+        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason })
+      }
       if (reply.kind === 'no-reply') {
-        reversalAttempts.set(currentSlot, { key, request, reason: 'no-reply', unresolvedSince: unresolvedSince ?? 'no-reply' })
-        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason: 'no-reply' })
+        keepUnknown('no-reply')
         return
       }
-      const decoded = decodeReversalProposalCommandResult(reply.body)
+      const decoded = family.decode(reply.body)
       if (!decoded.ok) {
-        reversalAttempts.set(currentSlot, { key, request, reason: 'malformed', unresolvedSince: unresolvedSince ?? 'malformed' })
-        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason: 'malformed' })
+        keepUnknown('malformed')
         return
       }
       const result = decoded.value
       if (result.outcome === 'Unavailable') {
-        reversalAttempts.set(currentSlot, { key, request, reason: 'unavailable', unresolvedSince: unresolvedSince ?? 'unavailable' })
-        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason: 'unavailable' })
+        keepUnknown('unavailable')
         return
       }
       if (unresolvedSince !== undefined && !result.isReplay
@@ -497,7 +558,7 @@ export function useReversalCommand(operation: ReversalOperation, target: string)
       }
       reversalAttempts.delete(currentSlot)
       if (shownSlot.current !== currentSlot) return
-      if (result.outcome === 'Succeeded') {
+      if (result.outcome === 'Succeeded' && result.resource !== null) {
         setState({ phase: 'succeeded', resource: result.resource, replayed: result.isReplay })
       } else if (result.outcome === 'IdempotencyConflict') {
         setState({ phase: 'conflicted', key, request })
@@ -511,11 +572,11 @@ export function useReversalCommand(operation: ReversalOperation, target: string)
         })
       }
     })
-  }, [port])
+  }, [port, family])
 
-  const submit = (request: ReversalRequest): SubmitResult => {
+  const submit = (request: Req): SubmitResult => {
     if (port === null || bound === null || slot === null || request.operation !== operation
-      || reversalTarget(request) !== target || state.phase === 'submitting' || state.phase === 'unknown'
+      || family.target(request) !== target || state.phase === 'submitting' || state.phase === 'unknown'
       || state.phase === 'conflicted') return 'blocked'
     const previous = reversalAttempts.get(slot)
     // State updates are asynchronous. The store reservation is synchronous, so a second submit

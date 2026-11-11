@@ -32,6 +32,11 @@ import type {
   CustomerInstrumentStatusChangeRequest,
 } from './customerInstrumentContract'
 import type { DraftContextRequest } from './draftContext'
+import type {
+  ApprovePaymentReversalRequest,
+  ProposePaymentReversalRequest,
+  RejectPaymentReversalRequest,
+} from './paymentReversalContract'
 import type { PartyBalanceRequest, PartyLedgerRequest } from './partyLedgerContract'
 import type { HttpReadReply } from './http'
 import type {
@@ -68,6 +73,14 @@ export interface FinanceReceiptPort {
     idempotencyKey: string,
     request: RecordManualBankPaymentRequest,
   ): Promise<PortReply>
+  /** API-23: `POST /finance/manual-bank-payments/{paymentId}/reversal-proposals` → `PaymentReversalProposalCommandResult`. */
+  proposePaymentReversal(scope: FinanceScope, idempotencyKey: string, request: ProposePaymentReversalRequest): Promise<PortReply>
+  /** API-23: approval by another person creates the counter money event (never the original payment changed). */
+  approvePaymentReversal(scope: FinanceScope, idempotencyKey: string, request: ApprovePaymentReversalRequest): Promise<PortReply>
+  rejectPaymentReversal(scope: FinanceScope, idempotencyKey: string, request: RejectPaymentReversalRequest): Promise<PortReply>
+  /** API-23: `GET /finance/manual-bank-payments/reversal-proposals/pending` → `PaymentReversalProposalPage`. */
+  pendingPaymentReversals(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
+  paymentReversalProposal(scope: FinanceScope, proposalId: string, signal: AbortSignal): Promise<PortReply>
 
   /** DEC-FIN-016: `GET /finance/customer-instruments?cursor=` → `ReadResult<CustomerInstrumentPage>`. */
   listCustomerInstruments(
