@@ -40,7 +40,7 @@ Yalnız yapı önerilir; sayısal değer ve yuvarlama kuralı yazılmaz.
 | Aday | Çevrim | Girdi özellikleri | Yapı |
 | --- | --- | --- | --- |
 | F-A | Kesilmiş sac/levha kg ↔ adet | kalınlık, en, boy, yoğunluk | `adet başına kg = kalınlık × en × boy × yoğunluk` (birim dönüşümü açık) |
-| F-B | Rulo / dilimli rulo kg ↔ metre | kalınlık, en, yoğunluk | `metre başına kg = kalınlık × en × yoğunluk` |
+| F-B | Rulo / dilinmiş bant kg ↔ metre | kalınlık, en, yoğunluk | `metre başına kg = kalınlık × en × yoğunluk` |
 | F-C | Boru/profil kg ↔ metre | kesit alanı (ya da dış ölçü + et kalınlığı) , yoğunluk | `metre başına kg = kesit alanı × yoğunluk`; kesit tipi (yuvarlak/kutu/…) ayrı aile |
 | F-D | Boru/profil kg ↔ adet | F-C + parça boyu | `adet başına kg = metre başına kg × boy` |
 | F-E | Paket içi adet (**formül değil, sabit sınıf**) | paket standardı (adet/paket) | öneri planda değişebilir (URT-D27); zincir: paket → adet (F-E) → kg (F-A/F-D) |
@@ -63,9 +63,19 @@ Rulo/dilinmiş bant çevriminde kenar kırpma (`EdgeTrimMm`) ve kerf etkisi de a
 Açık sorular #66'da: `NEEDS-SINAN` yorumu 6803883711 (Sinan kararı: yorum 6794787903 — Issue #66 yorumu, repo dışı).
 Kesit alanı ölçü girişi (tablo/hesap) OPEN-007 metninde açıkça sayılmaz; yeni `OPEN-*` kimliği gerekirse Sinan açar (burada yalnız etiket, kapatma değil).
 
-Açık noktalar: yoğunluğun kaynağı (Ürün kartı mı, Ayarlar profili mi, malzeme kalitesi başına mı),
-kaplama/galvaniz ağırlık payının katsayıya girip girmediği, kesit alanı için ölçü girişi (tablo mu,
-hesap mı), yuvarlama ve tolerans. Bunlar `OPEN-007` kapsamındadır; tahminle seçilmez.
+Sinan kararları (#66 yorumları 6806579823 madde 9 ve 6806619303 madde 10; 2026-11-11):
+
+- Yoğunluk: tek genel ayar (Settings, şirket bazlı). Değer burada yazılmaz.
+- Kaplama/galvaniz payı hesaba katılmaz.
+- Kesit: ürün kartında ayrı "Ebat/kalınlık" sekmesi (hangi ürün hangi ebat/kalınlıktan üretilir);
+  hesap bu tablodan yapılır, satırı olmayan ürün `NoSource`.
+- Kantar–hesap toleransı %1, ayarlanabilir.
+- Paket adet tablosu ve boya sınıfı listesi Excel'den içe aktarılır, ERP üzerinde düzenlenebilir;
+  liste gelene kadar `NoSource`, tahmin yok.
+
+Hâlâ açık: yuvarlama basamağı (öneri #66 6806590261, ASSUMPTION adayı, Sinan teyidi bekler);
+`OPEN-007`'nin resmi kapatılması ayrı insan kararıdır. Kesit mm² mi m² mi sorusu "Ebat/kalınlık"
+tablosunun alan tanımına bağlanır (tablo tasarımında netleşir).
 
 ## 4. Port ve etki sınırı (karar sonrası, K3)
 
