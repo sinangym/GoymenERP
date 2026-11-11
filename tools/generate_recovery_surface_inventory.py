@@ -90,7 +90,7 @@ EXPECTED_DURABLE_STORE_COUNT = 32
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 642
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "2195a7c8cb1d2cae3fc060f7fa800627969a48de446688e54f84017edb857841"
+    "1e3713be872c1cfb5a393ab761d8a0894ab36434da89da66d023f67fd58c7cb7"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -981,7 +981,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs": "695a4d2fe5fbcfc1209290390011eaf92f84ced0b20ce33b4679717478ce6fab",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs": "8083fdb75c3b41f6342939a5dfd11731eb00dfd41cc500061a73ba551b2d74c9",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs": "c785617e0b938428647482f80a4ba3a3cc0548e7235c0b68fd49feb90e987c7e",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
 
