@@ -62,7 +62,8 @@ internal sealed class ManufacturingPlanAllocationHost(
             var request = new InventoryManufacturingPlanAllocationRequestV1(companyId, plan.Id,
                 plan.Version.ToString(CultureInfo.InvariantCulture), lines, AllocationReason,
                 timeProvider.GetUtcNow().ToUniversalTime());
-            var result = await inventory.StagePlanInputAllocationAsync(request, inventoryMetadata, token);
+            var result = await InventoryFaultAsync(() =>
+                inventory.StagePlanInputAllocationAsync(request, inventoryMetadata, token));
             if (result.IsReplay || result.CompanyId != companyId || result.PlanId != plan.Id
                 || result.Allocations.Count != lines.Length)
             {
@@ -104,7 +105,7 @@ internal sealed class ManufacturingPlanAllocationHost(
 
         return RunAsync(planId, write, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
         {
-            var result = await inventory.StagePlanRemainderReleaseAsync(
+            var result = await InventoryFaultAsync(() => inventory.StagePlanRemainderReleaseAsync(
                 new InventoryManufacturingPlanReleaseRequestV1(companyId, plan.Id,
                     plan.Version.ToString(CultureInfo.InvariantCulture),
                     reason == ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled
@@ -115,12 +116,28 @@ internal sealed class ManufacturingPlanAllocationHost(
                 {
                     IdempotencyKey = $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}",
                 },
-                token);
+                token));
             if (result.IsReplay || result.CompanyId != companyId || result.PlanId != plan.Id)
             {
                 throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
             }
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// TAKIP-U3a (#1004): an <see cref="ArgumentException"/> raised by an Inventory participant call is this host's
+    /// contract fault (503, logged by the caller's mapping), never the HTTP caller's 400.
+    /// </summary>
+    internal static async Task<TResult> InventoryFaultAsync<TResult>(Func<Task<TResult>> inventoryCall)
+    {
+        try
+        {
+            return await inventoryCall();
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        }
     }
 
     private async Task<T> RunAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
@@ -160,19 +177,14 @@ internal sealed class ManufacturingPlanAllocationHost(
                 metadata.SourceChannel,
                 metadata.ClientIpAddress,
                 metadata.UserAgent);
-            try
-            {
-                await using var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
+            // TAKIP-U3a (#1004): only an argument fault raised by Inventory's own enlistment is this host's contract
+            // fault (503); the stage delegate wraps just its Inventory calls (InventoryFaultAsync), so Manufacturing's
+            // own write keeps its ArgumentException (400).
+            await using var inventory = await InventoryFaultAsync(() =>
+                InventoryManufacturingRealizationParticipant.EnlistAsync(
                     manufacturing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
-                    settings, cancellationToken);
-                await stage(companyId, plan, inventory, inventoryMetadata, cancellationToken);
-            }
-            catch (ArgumentException)
-            {
-                // TAKIP-U3a (#1004): an argument fault inside the Inventory stage is this host's contract fault (503),
-                // never the caller's 400; the caller's own write above keeps its ArgumentException (400).
-                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
-            }
+                    settings, cancellationToken));
+            await stage(companyId, plan, inventory, inventoryMetadata, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
             committed = true;
