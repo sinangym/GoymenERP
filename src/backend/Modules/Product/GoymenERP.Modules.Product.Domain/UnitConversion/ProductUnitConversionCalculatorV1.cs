@@ -35,9 +35,13 @@ public sealed record UnitConversionResultV1<T>(UnitConversionOutcomeV1 Outcome, 
 /// <summary>
 /// Company settings for conversion rounding and the weighbridge check. Every value comes from Settings
 /// (Sinan 2026-11-11, #66 6806641583: coefficient 3 decimals, document kg total 2 decimals, tolerance 1 percent,
-/// all adjustable); the calculator has no built-in default, so a missing setting cannot be silently replaced.
+/// all adjustable; the display rounding mode is a setting too, so no mode is hard-coded; kg to unit count is always floor, BS-13); the calculator has no built-in default, so a missing setting cannot be silently replaced.
 /// </summary>
-public sealed record UnitConversionSettingsV1(int CoefficientDecimals, int DocumentTotalDecimals, decimal WeighbridgeTolerancePercent);
+public sealed record UnitConversionSettingsV1(
+    int CoefficientDecimals,
+    int DocumentTotalDecimals,
+    decimal WeighbridgeTolerancePercent,
+    MidpointRounding DisplayRounding);
 
 /// <summary>
 /// Deterministic unit-conversion calculator, version 1 (DEC-PRD-006, B-07). Pure decimal maths shared by the UI,
@@ -125,14 +129,14 @@ public static class ProductUnitConversionCalculatorV1
     public static decimal RoundCoefficient(decimal coefficient, UnitConversionSettingsV1 settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return decimal.Round(coefficient, RequireDecimals(settings.CoefficientDecimals), MidpointRounding.AwayFromZero);
+        return decimal.Round(coefficient, RequireDecimals(settings.CoefficientDecimals), RequireMode(settings.DisplayRounding));
     }
 
     /// <summary>Document kg total as displayed: the setting's decimals, midpoint away from zero.</summary>
     public static decimal RoundDocumentTotal(decimal kg, UnitConversionSettingsV1 settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return decimal.Round(kg, RequireDecimals(settings.DocumentTotalDecimals), MidpointRounding.AwayFromZero);
+        return decimal.Round(kg, RequireDecimals(settings.DocumentTotalDecimals), RequireMode(settings.DisplayRounding));
     }
 
     /// <summary>
@@ -149,6 +153,16 @@ public static class ProductUnitConversionCalculatorV1
 
         var deviationPercent = decimal.Abs(weighedKg - calculatedKg) / calculatedKg * 100m;
         return UnitConversionResultV1<bool>.Computed(deviationPercent <= settings.WeighbridgeTolerancePercent);
+    }
+
+    private static MidpointRounding RequireMode(MidpointRounding mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode), "Unknown rounding mode.");
+        }
+
+        return mode;
     }
 
     private static int RequireDecimals(int decimals)

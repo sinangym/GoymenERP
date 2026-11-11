@@ -5,7 +5,7 @@ namespace GoymenERP.Product.UnitTests;
 
 public sealed class ProductUnitConversionCalculatorV1Tests
 {
-    private static readonly UnitConversionSettingsV1 Settings = new(3, 2, 1m);
+    private static readonly UnitConversionSettingsV1 Settings = new(3, 2, 1m, MidpointRounding.AwayFromZero);
 
     [Fact]
     public void A_sheet_of_2mm_by_1000mm_by_2000mm_at_density_7_85_weighs_31_4_kg()
@@ -84,8 +84,17 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     {
         Assert.Equal(1.235m, ProductUnitConversionCalculatorV1.RoundCoefficient(1.2345m, Settings));
         Assert.Equal(12.35m, ProductUnitConversionCalculatorV1.RoundDocumentTotal(12.345m, Settings));
-        Assert.Equal(1.2m, ProductUnitConversionCalculatorV1.RoundCoefficient(1.2345m, new UnitConversionSettingsV1(1, 2, 1m)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundCoefficient(1m, new UnitConversionSettingsV1(13, 2, 1m)));
+        Assert.Equal(1.2m, ProductUnitConversionCalculatorV1.RoundCoefficient(1.2345m, new UnitConversionSettingsV1(1, 2, 1m, MidpointRounding.AwayFromZero)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundCoefficient(1m, new UnitConversionSettingsV1(13, 2, 1m, MidpointRounding.AwayFromZero)));
+    }
+
+    [Fact]
+    public void The_rounding_mode_comes_from_the_settings_and_an_unknown_mode_is_refused()
+    {
+        var toEven = new UnitConversionSettingsV1(3, 2, 1m, MidpointRounding.ToEven);
+        Assert.Equal(12.34m, ProductUnitConversionCalculatorV1.RoundDocumentTotal(12.345m, toEven));
+        Assert.Equal(12.35m, ProductUnitConversionCalculatorV1.RoundDocumentTotal(12.345m, Settings));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundDocumentTotal(1m, new UnitConversionSettingsV1(3, 2, 1m, (MidpointRounding)99)));
     }
 
     [Fact]
@@ -95,7 +104,7 @@ public sealed class ProductUnitConversionCalculatorV1Tests
         Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(99m, 100m, Settings).Value);
         Assert.False(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101.01m, 100m, Settings).Value);
         Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 0m, Settings).Outcome);
-        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 100m, new UnitConversionSettingsV1(3, 2, -1m)).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 100m, new UnitConversionSettingsV1(3, 2, -1m, MidpointRounding.AwayFromZero)).Outcome);
     }
 
     private static decimal? ToDecimal(double? value) => value is null ? null : (decimal)value.Value;
