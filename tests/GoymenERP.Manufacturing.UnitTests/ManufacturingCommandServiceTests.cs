@@ -2410,6 +2410,31 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
     }
 
+    [Fact]
+    public async Task An_approved_plan_is_refused_cancellation_with_503_when_the_allocation_port_is_absent()
+    {
+        // TAKIP-U3a (#1004): no allocation port means nothing can release what the approved plan holds, so the
+        // cancellation refuses (503) before the lifecycle store runs (it would throw) instead of failing open.
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        plan.RecordPreparer(OtherActor.ToString("D"));
+        plan.Approve(plan.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
+        fixture.Store.Plans[plan.Id] = plan;
+        var version = plan.Version;
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            planLifecycle: new ThrowingLifecycleStore());
+
+        var result = await service.CancelPlanAsync(plan.Id, new CancelPlanRequestV1(version, "Vazgecildi"), "key-1",
+            "manufacturing.plans.cancel", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingPlanAllocationCodesV1.Incomplete),
+            (result.Status, result.Code));
+        Assert.Equal((PlanStatus.Approved, version), (plan.Status, plan.Version));
+    }
+
     private sealed class ThrowingLifecycleStore : IManufacturingPlanLifecycleStore
     {
         public Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId,
