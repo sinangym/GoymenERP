@@ -2,7 +2,10 @@ using System.Net;
 using GoymenERP.Api.Startup;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -75,5 +78,30 @@ public sealed class DatabaseStartupModeTests
         var businessBody = await business.Content.ReadAsStringAsync();
         Assert.DoesNotContain(secret, businessBody, StringComparison.Ordinal);
         Assert.DoesNotContain("missing", businessBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WorkModule_IsComposedInHost_WithOutboxDispatcherOffByDefault()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.UseSetting(
+                    "DB_CONNECTION_STRING",
+                    "Server=127.0.0.1,1;Database=missing;User Id=missing;"
+                    + "Password=x;Encrypt=True;TrustServerCertificate=True;"
+                    + "Connect Timeout=1;");
+                builder.UseSetting(
+                    DatabaseStartupModeResolver.ConfigurationKey,
+                    "ValidateOnly");
+            });
+        using var client = factory.CreateClient();
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        Assert.NotNull(scope.ServiceProvider.GetService<WorkDbContext>());
+        Assert.DoesNotContain(
+            factory.Services.GetServices<IHostedService>(),
+            service => service.GetType().Name == "WorkOutboxDispatcherHostedService");
     }
 }
