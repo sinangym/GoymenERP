@@ -7,6 +7,13 @@ public enum InventoryLabelTransformationKind
 {
     Split = 1,
     Merge = 2,
+
+    /// <summary>
+    /// B-03 (DEC-PRDCT-003/007): a Manufacturing output label descends from the input labels issued to the same
+    /// manufacturing order. Only the Manufacturing realization participant records it; the repack workflow here
+    /// refuses it, because a production edge carries raw kilograms without the split/merge mass balance.
+    /// </summary>
+    Manufacturing = 3,
 }
 
 public sealed record InventoryLabelTransformationSource(
@@ -42,7 +49,7 @@ public sealed class InventoryLabelTransformation
     {
         Id = RequireId(id, "Dönüşüm");
         CompanyId = RequireId(companyId, "Şirket");
-        Kind = Enum.IsDefined(kind)
+        Kind = Enum.IsDefined(kind) && kind != InventoryLabelTransformationKind.Manufacturing
             ? kind
             : throw Invalid("Etiket dönüşüm türü tanımsız.");
         if (occurredAtUtc.Offset != TimeSpan.Zero)
