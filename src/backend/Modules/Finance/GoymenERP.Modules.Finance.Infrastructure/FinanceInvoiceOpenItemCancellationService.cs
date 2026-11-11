@@ -16,8 +16,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// F2b / API-11 (SAT-D96, FNS-D14): closes the open items of an admitted invoice that its producer cancelled, with a
 /// reversal and without deleting anything. One save writes the cancellation receipt (key hash, payload hash, actor,
 /// answer), one reversal row per open item (its original amount), the items' new status (Cancelled, outstanding zero)
-/// and the audit event, all or nothing. An item with an active allocation is refused: what happens to an allocated
-/// invoice is undecided (Issue #66 NEEDS-SINAN). No host registration yet: the producers' cancellation commands wire it
+/// and the audit event, all or nothing. An item with an active allocation is refused unless the command carries the
+/// explicit confirmation (FNS-D14): then each allocation is released once and the advance stays. No host registration yet: the producers' cancellation commands wire it
 /// when they exist; until then nothing calls it.
 /// </summary>
 public sealed class FinanceInvoiceOpenItemCancellationService(
