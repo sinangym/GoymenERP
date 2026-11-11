@@ -42,6 +42,16 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
     }
 
     [Fact]
+    public void SecurityEventMapping_IsAppliedOnlyByTheModuleDbContext()
+    {
+        // A second same-transaction writer (ADR-SEC-001 decision 2) maps this configuration with
+        // ExcludeFromMigrations in its own DbContext; adding it must extend this allowlist in review.
+        Assert.Equal(
+            new[] { DbContextPath },
+            FindProductionSourcesContaining(".ConfigureSecurityEvent("));
+    }
+
+    [Fact]
     public void SecurityEventStore_IsUsedOnlyByTheWriterAndItsRegistration()
     {
         Assert.Equal(
