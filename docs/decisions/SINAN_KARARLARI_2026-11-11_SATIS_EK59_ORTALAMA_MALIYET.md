@@ -134,6 +134,24 @@ yeni Ürün portu açılmaz; değiştirmek istenirse ayrı karar gerekir. Kod PR
 AwayFromZero yuvarlama (mevcut defter kuralı), `AverageCostPosition.cs` yorumundaki `NEEDS-SINAN` ibaresinin kaldırılması;
 katsayı kaynağı gelmeden calculator'a katsayı girişi eklenmez.
 
+## Ek karar: ALS-D58 Ürün birim çevrim portu için kalkar (SAT-D299; 11 Kasım 2026)
+
+**Kaynak:** Sinan'ın koordinatör oturumundaki cevabı (EVET); koordinatörün Issue #66'ya yazdığı kayıt: yorum
+[6794527264](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6794527264). Kayıt metni: "Stok ortalama maliyeti
+için ALS-D58 erteleme kararı kalkar; ürün kartı birim çevrim katsayısını okuyan `IProductPurchaseUnitConversionV1` Ürün
+şeridinde açılabilir (katsayı yoksa NoSource kuralı değişmez, elle kg girişi yok). Kalan Modüller K3 kod PR'ını
+başlatabilir (iki bağımsız exact-head review)."
+
+| No | Konu | Karar | Etkilenen yer |
+|---|---|---|---|
+| SAT-D299 | ALS-D58 ve Ürün çevrim portu | (1) ALS-D58'in "Ürün için yeni port açılmaz" erteleme sınırı, **yalnız ürün kartı birim çevrim katsayısını okuyan `IProductPurchaseUnitConversionV1`** için kalkar; ALS-D58'in diğer kalemleri (Stok/Ayarlar/Cari yeni port-tablo-ekran, Lojistik ALS-D65) **değişmez**. (2) Port Ürün şeridinde açılır. (3) Katsayı yoksa `NoSource` kuralı ve "elle kg girişi yok" değişmez (SAT-D298). | `ALIS_URUN_DEVIR_v1.md` U-A1, Ürün modülü, Stok maliyet okuma portu |
+
+**Açık kalan (yazarın tespiti; Sinan kararı değildir):** Ürün kartında bugün çevrim verisi yoktur ve çevrim politikası
+(U-08: hangi ürün sınıfında sabit, formül bağlı veya fiilî katsayı; hangi birim çifti) **kabul edilmemiştir** (`Product/README.md`:
+"No offered-unit or conversion policy is accepted (U-08)"). Port açılması, katsayının nerede saklanacağını ve hangi
+sınıfların v1'de okunacağını seçmez; bu bir işletme/model politikasıdır ve tahminle seçilmez (`NEEDS-SINAN`, #66).
+Politika cevaplanana kadar Stok kodu katsayı girişi eklemez; çevrim gerektiren satır `NoSource` kalır.
+
 ## Sınırlar
 
 - **Kod ve veri değişmez.** Bu belge kod, manifest, migration, OpenAPI, rol seed'i veya Ayarlar verisi değiştirmez; grant
