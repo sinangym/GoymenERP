@@ -1,17 +1,18 @@
-# Sinan Kararları — 2026-11-11 (bekleyen sorular: maliyet kuru, iade belge no, tevkifat tabanı, F-005, OC-3, F-001, OPEN-013, Alış A3, U-08 ve yuvarlaması, paket/boya verisi, AI Grup E, Work Plan 9)
+# Sinan Kararları — 2026-11-11 (bekleyen sorular: maliyet kuru, iade belge no, tevkifat tabanı, F-005, OC-3, F-001, OPEN-013, Alış A3, U-08 ve yuvarlaması, paket/boya verisi, AI Grup E, Work Plan 9, UsableRemnant etiket sınıfı, AI E7 toplulaştırma, U-08 kantar toleransı sınırı ve tabanı)
 
-Bu belge önceki karar dosyalarını silmez; 11 Kasım 2026'da cevaplanan 15 bekleyen soruyu tek yerde kaydeder. Bu
-maddeler için şeritler ayrı karar dosyası yazmaz, bu dosyaya referans verir. Belge içinde maddeler `BS-1` … `BS-15`
+Bu belge önceki karar dosyalarını silmez; 11 Kasım 2026'da cevaplanan 17 bekleyen soruyu tek yerde kaydeder. Bu
+maddeler için şeritler ayrı karar dosyası yazmaz, bu dosyaya referans verir. Belge içinde maddeler `BS-1` … `BS-17`
 diye anılır. Satış maddesi BS-2'ye ayrıca `SAT-D300` kimliği verilir (SAT-D299'un devamı). Daha önceki kimlikler
 (SAT-D295…SAT-D299, DEC-PRDCT-007, ALS-D*, URT-D25/D27 vb.) geçerliliğini korur. Bu belge `KARAR_SICILI` satırı eklemez.
 
-**Kaynak:** Sinan, cevapları 11 Kasım 2026'da koordinatör oturumunda (`AskUserQuestion`) verdi; koordinatör dört
-yoruma kaydetti. Dört yorum da Issue #66'da `sinangym` hesabındandır:
+**Kaynak:** Sinan, cevapları 11 Kasım 2026'da koordinatör oturumunda (`AskUserQuestion`) verdi; koordinatör beş
+yoruma kaydetti. Beş yorum da Issue #66'da `sinangym` hesabındandır:
 
 - [`6806579823`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806579823) (2026-11-11T20:36Z, madde 1–9)
 - [`6806619303`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806619303) (2026-11-11T20:39Z, madde 10–12)
 - [`6806641583`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806641583) (2026-11-11T20:40Z, 3. kısım: U-08 yuvarlama, bu belgede madde 13)
-- [`6806860620`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806860620) (#1087 takipleri: madde 14 BS-5 artık sınıfı, madde 15 AI Grup E7)
+- [`6806860620`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806860620) (2026-11-11T20:56Z, #1087 takipleri: madde 14 BS-5 artık sınıfı, madde 15 AI Grup E7)
+- [`6807311666`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6807311666) (2026-11-11T21:21Z, U-08 kantar toleransı ayrıntıları: madde 16 sınır, madde 17 yüzde tabanı; soru kaynağı #1089 K3-REVIEW-B [`6807279931`](https://github.com/sinangym/GoymenERP/pull/1089#issuecomment-6807279931))
 
 Cevap metinleri bu yorumlardan anlam korunarak aktarılmıştır. Soruların kaydı her satırda parantezle verilen #66 yorumlarındadır.
 Seçenek listeleri bu kayıtta yoksa, satırda yalnız seçilen cevap yazılıdır. Sorulup seçilmeyen seçenek için
@@ -34,8 +35,10 @@ ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
 | BS-11 | AI karar paketi Grup E (6804270247, `docs/delivery/AI_KARAR_PAKETI_2026-11.md`). | "**Paketteki öneriler kabul edildi.** E8 (hash anahtarı sahibi ve rotasyonu, yani secret) ile harici AI'nin canlıya alınması insan kapısı olarak kalır." | Paketteki önerilen seçenekler kabul edildi. E8 ve canlıya alma hariçtir. E7'de tek öneri yoktu; BS-15 ile karara bağlandı. |
 | BS-12 | Work "Plan 9 iş onayı sözleşmesi" için kaynak belge. (6804046604) | "Ayrı bir kaynak belge beklenmez. Work şeridi kapsamı repodaki onay akışı kararlarına göre yazar, #66'da gösterir ve **mevcut kapsamla devam eder**." | Ayrı kaynak belge beklenmez; Work mevcut kapsamla devam eder. |
 | BS-13 | U-08 yuvarlama: BS-9'da araştırılıp önerilecek denen basamak değerleri (Ürün şeridinin önerisi). | "Sinan, Ürün şeridinin önerisini **onayladı**: Çevrim katsayısı 3 ondalık tutulur, ara adımlarda yuvarlama yapılmaz. kg'dan adede çevirirken aşağı yuvarlanır (floor). Belgedeki kg toplamı 2 ondalık gösterilir. Kantar–hesap toleransı %1. Bu değerlerin hepsi Ayarlar'dan değiştirilebilir." | Ürün şeridinin önerisi aynen kabul edildi. |
-| BS-14 | BS-5 takibi: UsableRemnant çıktısının etiket sınıfı ne olsun? (#1087 takibi, koordinatör sordu) | "Bence üretimde seçilsin, varsayılan 2.kalite gibi duruyor" | Üretim çıktısında operatör sınıfı seçer (Standard / SecondQuality); varsayılan SecondQuality. `ASSUMPTION-BS5-REMNANT-MAPPING` geçersizdir. |
-| BS-15 | BS-11 takibi: AI Grup E7 reddedilen istek seli; toplulaştırma mı, hız sınırı mı? (#1087 takibi) | "Bunu bilemedim mantıklı olan hangisi ise, topla sayaç tut olabilir" | Toplulaştırma seçildi; hız sınırı seçilmedi. |
+| BS-14 | BS-5 takibi: UsableRemnant çıktısının etiket sınıfı ne olsun? (#1087 takibi, koordinatör sordu; 6806860620) | "Bence üretimde seçilsin, varsayılan 2.kalite gibi duruyor" | Üretim çıktısında operatör sınıfı seçer (Standard / SecondQuality); varsayılan SecondQuality. `ASSUMPTION-BS5-REMNANT-MAPPING` geçersizdir. |
+| BS-15 | BS-11 takibi: AI Grup E7 reddedilen istek seli; toplulaştırma mı, hız sınırı mı? (#1087 takibi; 6806860620) | "Bunu bilemedim mantıklı olan hangisi ise, topla sayaç tut olabilir" | Toplulaştırma seçildi; hız sınırı seçilmedi. |
+| BS-16 | BS-9/BS-13 takibi: kantar–hesap farkı tam %1 olduğunda kabul mü, uyarı mı? (#1089 K3-REVIEW-B P1; 6807311666) | "Fark **tam %1 ise kabul** edilir (tolerans içi, `<=`); uyarı yalnız %1 aşılınca. Ayarlar'dan değiştirilebilir." | Sınır dahil (`<=`); önerilen seçenek seçildi. |
+| BS-17 | BS-9/BS-13 takibi: tolerans yüzdesinin tabanı hesaplanan kg mı, kantar kg'si mi? (#1089 K3-REVIEW-B P1; 6807311666) | "Yüzde tabanı: **hesaplanan (teorik) kg** — sapma = (kantar − teorik) / teorik. Ayarlar'dan değiştirilebilir." | Taban hesaplanan kg; önerilen seçenek seçildi. |
 
 ## Kararlar
 
@@ -56,6 +59,8 @@ ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
 | BS-13 | U-08 yuvarlama | Çevrim katsayısı **3 ondalık** tutulur; **ara adımlarda yuvarlama yoktur**. kg→adet çevriminde **aşağı yuvarlanır (floor)**. Belgedeki kg toplamı **2 ondalık** gösterilir. Kantar–hesap toleransı **%1** (BS-9 ile aynı). Bu değerlerin **hepsi Ayarlar'dan değiştirilebilir**; kodda sabit olarak yazılmaz. | Ürün birim çevrim calculator'ı, Settings; BS-9 |
 | BS-14 | UsableRemnant etiket sınıfı (BS-5 takibi) | Üretim çıktısında **operatör UsableRemnant'ın etiket sınıfını seçer: Standard veya SecondQuality**. **Varsayılan SecondQuality**. Üretim durumu alanı (= UsableRemnant) ayrıca taşınır (BS-5). `ASSUMPTION-BS5-REMNANT-MAPPING` (Standard eşlemesi) **geçersizdir**. Alan adı ve şema Stok K3 dilimidir; seçim Üretim çıktı beyanında yapılır. | Inventory etiket sözleşmesi (Stok K3); Üretim çıktı beyanı ekranı ve isteği |
 | BS-15 | AI Grup E7 reddedilen istek seli | **Toplulaştırma** seçildi: aynı aktör + tür + neden için zaman penceresinde sayaç tutulur. **Pencere ve eşik Ayarlar'dan** değişir, kodda sabit yoktur; ilk değer ölçümden sonra önerilir. Hız sınırı seçilmedi. | AI şeridi (ADR-SEC-001 güvenlik olayı kanalı), Settings |
+| BS-16 | U-08 kantar toleransı sınırı | Kantar–hesap farkı toleransa **eşitse kabul** edilir (`sapma <= tolerans`); uyarı yalnız tolerans **aşılınca** verilir. Sınır davranışı **Ayarlar'dan değiştirilebilir**; varsayılan dahil (`<=`). `ASSUMPTION-U08-TOLERANCE-BOUNDARY` gerekmez. | Ürün birim çevrim calculator'ı (#1089), Settings; BS-9, BS-13 |
+| BS-17 | U-08 tolerans yüzde tabanı | Sapma **hesaplanan (teorik) kg**'ye göre ölçülür: `sapma = (kantar − teorik) / teorik`. Taban **Ayarlar'dan değiştirilebilir**; varsayılan teorik kg. | Ürün birim çevrim calculator'ı (#1089), Settings; BS-9, BS-13 |
 
 ## Sınırlar
 
@@ -63,8 +68,8 @@ ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
   kapılarıyla uygulanır. Örnekler: BS-5 etiket alanı (K3: şema + sözleşme), BS-1 fatura kuru girdisi (K3:
   para + modüller arası sözleşme).
 - Hâlâ açık (#66 6806619303): Fason (Fable Soru 4); B-06 Ürün runtime için secret ve grant; sızan `sk-ant-usr`
-  anahtarının iptali (Sinan'ın konsol işlemi); grant ve production aktivasyonları. U-08 yuvarlama BS-13 ile karara
-  bağlandı.
+  anahtarının iptali (Sinan'ın konsol işlemi); grant ve production aktivasyonları. U-08 yuvarlama BS-13 ile, kantar toleransının sınırı
+  ve tabanı BS-16/BS-17 ile karara bağlandı.
 - Hâlâ açık (`SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md` "Kapatılan ve kapanmayan `OPEN-INV-AVGCOST-*` kimlikleri" bölümü):
   `OPEN-INV-AVGCOST-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK`. `-ZERO-STOCK` ve
   `-UNIT-CONVERSION` EK59'da kapandı.
