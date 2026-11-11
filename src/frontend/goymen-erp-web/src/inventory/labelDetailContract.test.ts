@@ -167,6 +167,22 @@ describe('Inventory label detail contract', () => {
     expect(decode([first, { ...second, outputQuantityKg: '249.99' }])).toBeNull()
   })
 
+  it('decodes a manufacturing group without mass balance and keeps its shape closed', () => {
+    const input = {
+      transformationId: TRANSFORMATION, kind: 'Manufacturing', occurredAtUtc: '2026-09-24T07:59:00Z',
+      sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
+      outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '1', outputQuantityKg: '1200',
+    }
+    const second = { ...input, sourceLabelId: OUTPUT_LABEL, sourceCode: 'LBL-101', sourceQuantityKg: '10' }
+    const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')
+
+    expect(decode([input])?.edges[0].kind).toBe('Manufacturing')
+    expect(decode([input, second])?.edges).toHaveLength(2)
+    expect(decode([input, { ...input, outputLabelId: OUTPUT_LABEL, outputCode: 'LBL-101' }])).toBeNull()
+    expect(decode([input, { ...second, kind: 'Merge' }])).toBeNull()
+    expect(decode([{ ...input, kind: 'Production' }])).toBeNull()
+  })
+
   it('rejects negative quantities, non-positive positions and totals that do not match their positions', () => {
     expect(decodeInventoryLabelBalances({ ...balances(), physicalKg: '-1250.5' })).toBeNull()
     expect(decodeInventoryLabelBalances({ ...balances(), freeKg: '-1' })).toBeNull()
