@@ -371,8 +371,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // empty-store rollback) (69a1024a… -> 84945670…).
                 // AI-2a (ADR-SEC-001): +4 security event SQL facts (company isolation and hash; append-only trigger and checks;
                 // Down refusal; empty Down/Up round trip) (84945670… -> 006edd9c…).
-                // AI-2a hardening: +1 security event SQL fact (duplicate EventId retry/conflict) (006edd9c… -> e3ed24d3…).
-                "e3ed24d341ed2fc8b577f4db68c6c29489bbdf12be6d6ee0a1d19175536df57b",
+                // AI-2a hardening: +2 security event SQL facts (duplicate EventId retry/conflict; code-list checks and
+                // their migration round trip) (006edd9c… -> 769b48fb…).
+                "769b48fb4870a8c9c07bd2800142e5ff94d770502b179149aa084bf8cd2f9e10",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).

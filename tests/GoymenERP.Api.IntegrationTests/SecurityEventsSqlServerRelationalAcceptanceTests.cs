@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.SecurityEvents.Domain.Events;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -125,6 +126,81 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
                 Assert.Equal(547, Sql(refused).Number);
             }
         });
+    }
+
+    [SqlServerFact]
+    public async Task Code_list_checks_refuse_unknown_codes_and_their_migration_rolls_back_and_reapplies_on_real_sql()
+    {
+        await WithHostAsync(async (services, connectionString) =>
+        {
+            var writer = services.GetRequiredService<ISecurityEventWriterV1>();
+            Assert.True((await writer.WriteAsync(Denial(TestCompanyIds.CompanyA), CancellationToken.None)).Recorded);
+
+            await ExecAsync(connectionString, RawInsert(new Dictionary<string, string>()));
+            foreach (var bad in new Dictionary<string, string>[]
+            {
+                new() { ["ActorType"] = "'Robot'" },
+                new() { ["ActorType"] = "'Anonymous'" },
+                new() { ["ActorId"] = "NULL" },
+                new() { ["Severity"] = "'Critical'" },
+                new() { ["SourceChannel"] = "'Email'" },
+                new() { ["ReasonCode"] = "'made_up'" },
+                new() { ["AiRiskClass"] = "'Delete'" },
+                new() { ["AiDataClass"] = "'Secret'" },
+            })
+            {
+                var refused = await Assert.ThrowsAnyAsync<Exception>(() => ExecAsync(connectionString, RawInsert(bad)));
+                Assert.Equal(547, Sql(refused).Number);
+            }
+
+            Assert.Equal("2", await ScalarAsync(connectionString, "SELECT COUNT(*) FROM [security].[SecurityEvents]"));
+            await using var context = Db(connectionString, TestCompanyIds.CompanyA);
+            await context.GetService<IMigrator>().MigrateAsync(nameof(InitialSecurityEvents));
+            Assert.True(string.IsNullOrEmpty(await ScalarAsync(connectionString,
+                "SELECT OBJECT_ID(N'[security].[CK_SecurityEvents_ActorType]')")));
+            Assert.Equal("2", await ScalarAsync(connectionString, "SELECT COUNT(*) FROM [security].[SecurityEvents]"));
+
+            await context.Database.MigrateAsync();
+            Assert.False(string.IsNullOrEmpty(await ScalarAsync(connectionString,
+                "SELECT OBJECT_ID(N'[security].[CK_SecurityEvents_ActorType]')")));
+            Assert.Equal("1", await ScalarAsync(connectionString,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_SecurityEvents_SourceChannel' AND [is_not_trusted] = 0"));
+        });
+    }
+
+    private static string RawInsert(IReadOnlyDictionary<string, string> overrides)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Id"] = $"'{Guid.NewGuid()}'",
+            ["SchemaVersion"] = "1",
+            ["OccurredAtUtc"] = "SYSUTCDATETIME()",
+            ["ScopeKind"] = "'Company'",
+            ["CompanyId"] = $"'{TestCompanyIds.CompanyA}'",
+            ["ActorType"] = "'User'",
+            ["ActorId"] = "'7c4f2b1e-3d5a-4e6f-8a9b-00000000051b'",
+            ["EventType"] = "'authz.denied'",
+            ["Phase"] = "'Single'",
+            ["Outcome"] = "'Denied'",
+            ["ReasonCode"] = "'permission_missing'",
+            ["Severity"] = "'Warning'",
+            ["CorrelationId"] = "'corr-raw'",
+            ["SourceChannel"] = "'Web'",
+            ["AiRiskClass"] = "NULL",
+            ["AiDataClass"] = "NULL",
+            ["RetainUntilUtc"] = "DATEADD(year, 2, SYSUTCDATETIME())",
+            ["RetentionPolicyRef"] = "'X'",
+            ["LegalHold"] = "0",
+            ["OccurrenceCount"] = "1",
+            ["IntegrityHash"] = $"'{new string('A', 64)}'",
+        };
+        foreach (var (column, value) in overrides)
+        {
+            values[column] = value;
+        }
+
+        return $"INSERT INTO [security].[SecurityEvents] ({string.Join(",", values.Keys.Select(k => $"[{k}]"))}) "
+            + $"VALUES ({string.Join(",", values.Values)})";
     }
 
     [SqlServerFact]
