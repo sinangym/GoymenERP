@@ -5,8 +5,9 @@ namespace GoymenERP.Modules.Sales.Domain.CustomerReturns;
 
 /// <summary>
 /// The lifecycle of a recorded customer return invoice (API-40; SAT-D290 (2)): <c>Draft → PendingApproval → Approved → Finalized</c>,
-/// the sales invoice's flow. Only a finalised return counts as a prior return (SAT-D292 (6)) and decrements a balance (SAT-D293 (1)).
-/// Rejection and cancellation are not part of this slice (follow-up); nothing is deleted.
+/// the sales invoice's flow, with the invoice's two terminal exits: <c>PendingApproval → Rejected</c> by the approver and
+/// <c>Draft | PendingApproval → Cancelled</c> before approval. Only a finalised return counts as a prior return (SAT-D292 (6)) and
+/// decrements a balance (SAT-D293 (1)); a rejected or cancelled return never does. Nothing is deleted.
 /// </summary>
 public enum SalesCustomerReturnState
 {
@@ -14,6 +15,8 @@ public enum SalesCustomerReturnState
     PendingApproval = 2,
     Approved = 3,
     Finalized = 4,
+    Rejected = 5,
+    Cancelled = 6,
 }
 
 /// <summary>One requested return line: the original invoice line and the returned quantity (everything else is copied).</summary>
@@ -55,14 +58,20 @@ public sealed record SalesCustomerReturnHeader(
     Guid? FunctionalCurrencyId,
     int? FunctionalScale);
 
-/// <summary>Who submitted, approved and finalised a return, and when.</summary>
+/// <summary>Who submitted, approved, finalised, rejected or cancelled a return, when, and the optional reason of a rejection or cancellation.</summary>
 public sealed record SalesCustomerReturnFacts(
     string? SubmittedBy,
     DateTimeOffset? SubmittedAtUtc,
     string? ApprovedBy,
     DateTimeOffset? ApprovedAtUtc,
     string? FinalizedBy,
-    DateTimeOffset? FinalizedAtUtc)
+    DateTimeOffset? FinalizedAtUtc,
+    string? RejectedBy = null,
+    DateTimeOffset? RejectedAtUtc = null,
+    string? RejectionReason = null,
+    string? CancelledBy = null,
+    DateTimeOffset? CancelledAtUtc = null,
+    string? CancellationReason = null)
 {
     public static SalesCustomerReturnFacts None { get; } = new(null, null, null, null, null, null);
 }
@@ -85,6 +94,9 @@ public sealed class SalesCustomerReturn
     public const int MaximumLines = SalesOrderDraft.MaximumLines;
     public const int MaximumActorLength = SalesOrderDraft.MaximumActorLength;
     public const int MaximumCustomerDocumentNoLength = 64;
+
+    /// <summary>The optional rejection or cancellation reason's limit: the sales invoice's (SAT-D290 (2): the invoice's flow).</summary>
+    public const int MaximumReasonLength = SalesInvoice.MaximumReasonLength;
 
     private readonly List<SalesCustomerReturnLine> lines = [];
 
@@ -231,15 +243,54 @@ public sealed class SalesCustomerReturn
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         RequireState(SalesCustomerReturnState.PendingApproval, "Yalnız onay bekleyen iade onaylanır.");
-        if (string.Equals(actor, CreatedBy, StringComparison.Ordinal) || string.Equals(actor, Facts.SubmittedBy, StringComparison.Ordinal))
-        {
-            throw new SalesRuleException(SalesRuleCodes.CustomerReturnSelfApproval, "İadeyi hazırlayan ya da onaya gönderen onaylayamaz.");
-        }
-
+        RequireNotPreparer(actor, "İadeyi hazırlayan ya da onaya gönderen onaylayamaz.");
         State = SalesCustomerReturnState.Approved;
         Facts = Facts with { ApprovedBy = actor, ApprovedAtUtc = now.ToUniversalTime() };
         Advance(now);
     }
+
+    /// <summary>
+    /// SAT-D290 (2, 3): <c>PendingApproval → Rejected</c> with an optional reason, by someone who neither prepared nor submitted the
+    /// return (the invoice's rule). Rejected is terminal; the correction is a new return. Nothing is consumed.
+    /// </summary>
+    public void Reject(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        var text = RequireReason(reason);
+        RequireState(SalesCustomerReturnState.PendingApproval, "Yalnız onay bekleyen iade reddedilir.");
+        RequireNotPreparer(actor, "İadeyi hazırlayan ya da onaya gönderen reddedemez; başkası karar verir.");
+        State = SalesCustomerReturnState.Rejected;
+        Facts = Facts with { RejectedBy = actor, RejectedAtUtc = now.ToUniversalTime(), RejectionReason = text };
+        Advance(now);
+    }
+
+    /// <summary>
+    /// SAT-D290 (2): <c>Draft | PendingApproval → Cancelled</c> with an optional reason, before approval (the invoice's rule). An
+    /// approved or finalised return is not cancelled here: its reversal needs the Finance port (SAT-D294).
+    /// </summary>
+    public void Cancel(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        var text = RequireReason(reason);
+        if (State is not (SalesCustomerReturnState.Draft or SalesCustomerReturnState.PendingApproval))
+        {
+            throw new SalesRuleException(SalesRuleCodes.StateConflict, "Yalnız taslak ya da onay bekleyen iade iptal edilir.");
+        }
+
+        State = SalesCustomerReturnState.Cancelled;
+        Facts = Facts with { CancelledBy = actor, CancelledAtUtc = now.ToUniversalTime(), CancellationReason = text };
+        Advance(now);
+    }
+
+    /// <summary>The lowest version a stored return in <paramref name="state"/> can carry (one per command that reached it).</summary>
+    public static int MinimumVersion(SalesCustomerReturnState state) => state switch
+    {
+        SalesCustomerReturnState.Rejected => 3,
+        SalesCustomerReturnState.Cancelled => 2,
+        _ => (int)state,
+    };
 
     /// <summary>
     /// <c>Approved → Finalized</c>. Every line is computed again against the finalised returns of now (SAT-D292 (6)): a quantity
@@ -297,7 +348,7 @@ public sealed class SalesCustomerReturn
         };
         var functional = header.FunctionalCurrencyId is not null;
         if (!Enum.IsDefined(state) || storedLines.Count is 0 or > MaximumLines || !FactsAreConsistent(state, createdBy, facts)
-            || version < (int)state || functional != (header.FunctionalScale is not null) || functional != (header.Rate is not null))
+            || version < MinimumVersion(state) || functional != (header.FunctionalScale is not null) || functional != (header.Rate is not null))
         {
             throw new InvalidOperationException("Kayıtlı iade faturası durumu ya da karar bilgisi okunamadı.");
         }
@@ -351,12 +402,23 @@ public sealed class SalesCustomerReturn
         var approvedNone = facts.ApprovedBy is null && facts.ApprovedAtUtc is null;
         var finalized = facts.FinalizedBy is not null && facts.FinalizedAtUtc is not null;
         var finalizedNone = facts.FinalizedBy is null && facts.FinalizedAtUtc is null;
+        var rejected = facts.RejectedBy is not null && facts.RejectedAtUtc is not null
+            && !string.Equals(facts.RejectedBy, createdBy, StringComparison.Ordinal)
+            && !string.Equals(facts.RejectedBy, facts.SubmittedBy, StringComparison.Ordinal)
+            && facts.RejectionReason is not { Length: 0 or > MaximumReasonLength };
+        var rejectedNone = facts.RejectedBy is null && facts.RejectedAtUtc is null && facts.RejectionReason is null;
+        var cancelled = facts.CancelledBy is not null && facts.CancelledAtUtc is not null
+            && facts.CancellationReason is not { Length: 0 or > MaximumReasonLength };
+        var cancelledNone = facts.CancelledBy is null && facts.CancelledAtUtc is null && facts.CancellationReason is null;
+        var open = rejectedNone && cancelledNone;
         return state switch
         {
-            SalesCustomerReturnState.Draft => submittedNone && approvedNone && finalizedNone,
-            SalesCustomerReturnState.PendingApproval => submitted && approvedNone && finalizedNone,
-            SalesCustomerReturnState.Approved => submitted && approved && finalizedNone,
-            SalesCustomerReturnState.Finalized => submitted && approved && finalized,
+            SalesCustomerReturnState.Draft => submittedNone && approvedNone && finalizedNone && open,
+            SalesCustomerReturnState.PendingApproval => submitted && approvedNone && finalizedNone && open,
+            SalesCustomerReturnState.Approved => submitted && approved && finalizedNone && open,
+            SalesCustomerReturnState.Finalized => submitted && approved && finalized && open,
+            SalesCustomerReturnState.Rejected => submitted && approvedNone && finalizedNone && rejected && cancelledNone,
+            SalesCustomerReturnState.Cancelled => (submitted || submittedNone) && approvedNone && finalizedNone && rejectedNone && cancelled,
             _ => false,
         };
     }
@@ -368,6 +430,22 @@ public sealed class SalesCustomerReturn
             ? text
             : throw new SalesRuleException(SalesRuleCodes.CustomerReturnDocumentInvalid,
                 $"Müşterinin iade faturası numarası gereklidir ve en fazla {MaximumCustomerDocumentNoLength} karakterdir.");
+    }
+
+    private static string? RequireReason(string? reason)
+    {
+        var text = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        return text is { Length: > MaximumReasonLength }
+            ? throw new SalesRuleException(SalesRuleCodes.ApprovalReasonTooLong, $"Neden en fazla {MaximumReasonLength} karakterdir.")
+            : text;
+    }
+
+    private void RequireNotPreparer(string actor, string message)
+    {
+        if (string.Equals(actor, CreatedBy, StringComparison.Ordinal) || string.Equals(actor, Facts.SubmittedBy, StringComparison.Ordinal))
+        {
+            throw new SalesRuleException(SalesRuleCodes.CustomerReturnSelfApproval, message);
+        }
     }
 
     private static string RequireActor(string actorId) =>

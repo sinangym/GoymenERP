@@ -509,7 +509,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-40 (SAT-D288..SAT-D294): +4 SalesCustomerReturn facts (one save with attempt and audit, self-approval refusal and
                 // Finance-port finalisation, the document/step/delete and attempt guards, company isolation, the 51257 rollback refusal),
                 // kept ordinal-sorted; recomputed on the merged inventory (1628581b... -> e02ba740...).
-                "e02ba740de55b76d2d781369ac82898bd187c242b57511666f2d9119caede6d1",
+                // SAT-D290 (2, 3): +2 SalesCustomerReturn facts (the rejection by another actor and the draft's cancellation, both terminal
+                // under the 51255 guard and the maker-checker CK; the 51258 rollback refusal), kept ordinal-sorted (e02ba740... -> 6ed81bb0...).
+                "6ed81bb02a2e183a5893e787ca06a2c17616cb290121902cc5799a88ebd67e13",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -660,7 +662,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-40 (SAT-D288..SAT-D294): CustomerReturns and CustomerReturnAttempts on the same company-filtered context (FK to the
                 // original invoice, CK_CustomerReturns_MakerChecker, both guard triggers declared with HasTrigger); no query-filter bypass
                 // or direct database surface; recomputed on the merged context (8a351e15... -> 28dc8473...).
-                "28dc8473c2f4fa09e1358c2935e39fd99a0cc3dfd5fd1deaa37955f12d758550",
+                // SAT-D290 (2, 3): the facts, maker-checker and attempt-command checks admit a rejected (State 5) or cancelled (State 6)
+                // return with its decision facts; no query-filter bypass or direct database surface (28dc8473... -> e838b21d...).
+                "e838b21dd4d72a0a41d016e825e07fc3f93ed8accfdcdb4a5b26342a7fbfa9b3",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -2668,6 +2672,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // migration) while any customer return or attempt exists, before both DropTable operations.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110215452_AddCustomerReturns.cs"] =
                     new("3ad749cf9b2dd185f7acbba31d52bac1bf98103f769398c93ca8d2af8eb21cb9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 3 }),
+                // SAT-D290 (2, 3): Up replaces the 51255 guard trigger so a pending return may also move to Rejected and a draft or pending
+                // one to Cancelled (both terminal); the Down's forward-fix refusal (51258, used by no other migration) while any rejected or
+                // cancelled return or such an attempt exists, then the earlier trigger is restored.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261111090320_AddCustomerReturnRejectionAndCancellation.cs"] =
+                    new("46b15335b286b6c8f3e1d321045e43fa638d84bb8516c552215a80f29f77ce70",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 3 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

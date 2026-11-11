@@ -81,6 +81,68 @@ public sealed class SalesCustomerReturnTests
     }
 
     [Fact]
+    public void Rejecting_needs_a_pending_return_and_another_actor_and_cancelling_is_allowed_only_before_approval()
+    {
+        var pending = Create(TwoLineInvoice(), ShipmentOf(1), new SalesCustomerReturnLineInput(LineId(1), 1m));
+        Assert.Equal(SalesRuleCodes.StateConflict, Refused(() => pending.Reject(1, Approver, null, Now)));
+        pending.Submit(1, "SENTETIK-submitter", Now);
+
+        Assert.Throws<SalesVersionConflictException>(() => pending.Reject(1, Approver, null, Now));
+        Assert.Equal(SalesRuleCodes.CustomerReturnSelfApproval, Refused(() => pending.Reject(2, Preparer, null, Now)));
+        Assert.Equal(SalesRuleCodes.CustomerReturnSelfApproval, Refused(() => pending.Reject(2, "SENTETIK-submitter", null, Now)));
+        Assert.Equal(SalesRuleCodes.ApprovalReasonTooLong, Refused(() =>
+            pending.Reject(2, Approver, new string('x', SalesCustomerReturn.MaximumReasonLength + 1), Now)));
+        Assert.Equal((SalesCustomerReturnState.PendingApproval, 2L), (pending.State, pending.Version));
+
+        pending.Reject(2, Approver, "  Belge eksik  ", Now);
+        Assert.Equal((SalesCustomerReturnState.Rejected, 3L, Approver, "Belge eksik"),
+            (pending.State, pending.Version, pending.Facts.RejectedBy, pending.Facts.RejectionReason));
+        Assert.Equal(SalesRuleCodes.StateConflict, Refused(() => pending.Cancel(3, Approver, null, Now)));
+        Assert.Equal(SalesRuleCodes.StateConflict, Refused(() => pending.Approve(3, Approver, Now)));
+
+        // The preparer may cancel a draft (no maker-checker: nothing is decided), with a blank reason stored as none.
+        var draft = Create(TwoLineInvoice(), ShipmentOf(1), new SalesCustomerReturnLineInput(LineId(1), 1m));
+        draft.Cancel(1, Preparer, "   ", Now);
+        Assert.Equal((SalesCustomerReturnState.Cancelled, 2L, Preparer, (string?)null),
+            (draft.State, draft.Version, draft.Facts.CancelledBy, draft.Facts.CancellationReason));
+        Assert.Equal(SalesRuleCodes.StateConflict, Refused(() => draft.Submit(2, Preparer, Now)));
+
+        var submitted = Create(TwoLineInvoice(), ShipmentOf(1), new SalesCustomerReturnLineInput(LineId(1), 1m));
+        submitted.Submit(1, Preparer, Now);
+        submitted.Cancel(2, Preparer, "Müşteri vazgeçti", Now);
+        Assert.Equal((SalesCustomerReturnState.Cancelled, 3L), (submitted.State, submitted.Version));
+
+        var approved = Approved(Create(TwoLineInvoice(), ShipmentOf(1), new SalesCustomerReturnLineInput(LineId(1), 1m)));
+        Assert.Equal(SalesRuleCodes.StateConflict, Refused(() => approved.Cancel(3, Preparer, null, Now)));
+        Assert.Equal(SalesRuleCodes.StateConflict, Refused(() => approved.Reject(3, Approver, null, Now)));
+    }
+
+    [Fact]
+    public void A_rejected_or_cancelled_return_is_restored_only_with_its_own_decision_facts_and_version()
+    {
+        var rejected = Create(TwoLineInvoice(), ShipmentOf(1), new SalesCustomerReturnLineInput(LineId(1), 1m));
+        rejected.Submit(1, Preparer, Now);
+        rejected.Reject(2, Approver, null, Now);
+        var cancelled = Create(TwoLineInvoice(), ShipmentOf(1), new SalesCustomerReturnLineInput(LineId(1), 1m));
+        cancelled.Cancel(1, Preparer, null, Now);
+
+        SalesCustomerReturn Restore(SalesCustomerReturn source, SalesCustomerReturnFacts facts, long version) =>
+            SalesCustomerReturn.Restore(source.Id, source.CompanyId, source.Header, source.ShipmentId, source.CustomerDocumentNo,
+                source.CustomerDocumentDate, source.State, facts, source.CreatedBy, source.CreatedAtUtc, version, source.UpdatedAtUtc,
+                source.Lines);
+
+        Assert.Equal(SalesCustomerReturnState.Rejected, Restore(rejected, rejected.Facts, rejected.Version).State);
+        Assert.Equal(SalesCustomerReturnState.Cancelled, Restore(cancelled, cancelled.Facts, cancelled.Version).State);
+        Assert.Throws<InvalidOperationException>(() => Restore(rejected, rejected.Facts, 2));
+        Assert.Throws<InvalidOperationException>(() => Restore(cancelled, cancelled.Facts, 1));
+        Assert.Throws<InvalidOperationException>(() => Restore(rejected, rejected.Facts with { RejectedBy = Preparer }, 3));
+        Assert.Throws<InvalidOperationException>(() => Restore(rejected, rejected.Facts with { RejectionReason = "" }, 3));
+        Assert.Throws<InvalidOperationException>(() => Restore(rejected, rejected.Facts with { CancelledBy = Approver, CancelledAtUtc = Now }, 3));
+        Assert.Throws<InvalidOperationException>(() => Restore(cancelled, cancelled.Facts with { SubmittedBy = Preparer }, 2));
+        Assert.Throws<InvalidOperationException>(() => Restore(cancelled, cancelled.Facts with { ApprovedBy = Approver, ApprovedAtUtc = Now }, 2));
+    }
+
+    [Fact]
     public void Finalizing_recomputes_against_the_finalized_returns_of_now_and_refuses_changed_amounts_or_an_exceeded_quantity()
     {
         var invoice = TwoLineInvoice();

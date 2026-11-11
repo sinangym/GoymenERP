@@ -27,7 +27,14 @@ public static class SalesCustomerReturnCommands
     /// <summary>API-40: POST /api/v1/sales/customer-returns/{id}/finalization (SAT-D291, SAT-D294).</summary>
     public const string FinalizeV1 = "sales.customer-return.finalize.v1";
 
-    public static bool IsCustomerReturnCommand(string? name) => name is CreateV1 or SubmitV1 or ApproveV1 or FinalizeV1;
+    /// <summary>API-40: POST /api/v1/sales/customer-returns/{id}/rejection (SAT-D290 (2, 3): the invoice's flow; never the preparer or the submitter).</summary>
+    public const string RejectV1 = "sales.customer-return.reject.v1";
+
+    /// <summary>API-40: POST /api/v1/sales/customer-returns/{id}/cancellation (SAT-D290 (2): before approval only).</summary>
+    public const string CancelV1 = "sales.customer-return.cancel.v1";
+
+    public static bool IsCustomerReturnCommand(string? name) =>
+        name is CreateV1 or SubmitV1 or ApproveV1 or FinalizeV1 or RejectV1 or CancelV1;
 }
 
 /// <summary>Routes and technical bounds of API-40 (not policies).</summary>
@@ -38,6 +45,8 @@ public static class SalesCustomerReturnApiV1
     public const string SubmissionPath = "/api/v1/sales/customer-returns/{id}/submission";
     public const string ApprovalPath = "/api/v1/sales/customer-returns/{id}/approval";
     public const string FinalizationPath = "/api/v1/sales/customer-returns/{id}/finalization";
+    public const string RejectionPath = "/api/v1/sales/customer-returns/{id}/rejection";
+    public const string CancellationPath = "/api/v1/sales/customer-returns/{id}/cancellation";
 
     public const int CreatedStatus = 201;
 
@@ -65,7 +74,7 @@ public static class SalesCustomerReturnProblemCodesV1
     /// <summary>422 (not recorded): Finance refused the reversal; the return stays approved and nothing is committed.</summary>
     public const string FinanceRefused = "sales_customer_return_finance_refused";
 
-    /// <summary>409 (recorded under the key): the preparer or the submitter approves the return (SAT-D290 (3)).</summary>
+    /// <summary>409 (recorded under the key): the preparer or the submitter approves or rejects the return (SAT-D290 (3)).</summary>
     public const string SelfApproval = SalesRuleCodes.CustomerReturnSelfApproval;
 
     /// <summary>409 (not recorded): the customer's document number is already recorded for this customer.</summary>
@@ -112,7 +121,8 @@ public sealed record SalesCustomerReturnLineView(
 
 /// <summary>
 /// One customer return as the screens see it. Amounts are prices: every API-40 read and command also needs
-/// <c>sales.orders.price.read</c>. <see cref="State"/> is <c>Draft</c>, <c>PendingApproval</c>, <c>Approved</c> or <c>Finalized</c>.
+/// <c>sales.orders.price.read</c>. <see cref="State"/> is <c>Draft</c>, <c>PendingApproval</c>, <c>Approved</c>, <c>Finalized</c>,
+/// <c>Rejected</c> or <c>Cancelled</c>; the rejection and cancellation facts carry the optional reason.
 /// </summary>
 public sealed record SalesCustomerReturnView(
     Guid Id,
@@ -141,6 +151,12 @@ public sealed record SalesCustomerReturnView(
     DateTimeOffset? ApprovedAtUtc,
     string? FinalizedBy,
     DateTimeOffset? FinalizedAtUtc,
+    string? RejectedBy,
+    DateTimeOffset? RejectedAtUtc,
+    string? RejectionReason,
+    string? CancelledBy,
+    DateTimeOffset? CancelledAtUtc,
+    string? CancellationReason,
     DateTimeOffset UpdatedAtUtc,
     IReadOnlyList<SalesCustomerReturnLineView> Lines);
 
@@ -195,6 +211,9 @@ public static class SalesCustomerReturnJson
     /// <summary>Submission, approval and finalisation carry the expected version only (a reason is an unknown member).</summary>
     public static SalesDraftStateCommandRequest ReadStateCommand(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: false);
 
+    /// <summary>Rejection and cancellation carry the expected version and an optional reason (the invoice's body).</summary>
+    public static SalesDraftStateCommandRequest ReadDecisionCommand(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: true);
+
     /// <summary>The exact quantity of a validated line text (shape checked by <see cref="ReadCreate"/>).</summary>
     public static decimal Quantity(string text) => decimal.Parse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
 }
@@ -224,6 +243,19 @@ public static class SalesCustomerReturnHash
             command = commandName,
             customerReturnId,
             request.ExpectedVersion,
+        }, SalesDraftJson.Options));
+    }
+
+    /// <summary>Rejection and cancellation: the reason is part of the content, so the same key with another reason is a 409.</summary>
+    public static string ComputeDecision(string commandName, Guid customerReturnId, SalesDraftStateCommandRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Hash(JsonSerializer.Serialize(new
+        {
+            command = commandName,
+            customerReturnId,
+            request.ExpectedVersion,
+            request.Reason,
         }, SalesDraftJson.Options));
     }
 
@@ -260,7 +292,7 @@ public interface ISalesCustomerReturnStore
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Submission or approval of the company's stored return in one save (the row, the attempt, the audit). <paramref name="mutate"/>
+    /// Submission, approval, rejection or cancellation of the company's stored return in one save (the row, the attempt, the audit). <paramref name="mutate"/>
     /// is the domain's decision; a refusal writes nothing. Null when the return does not exist here.
     /// </summary>
     Task<SalesCustomerReturnStoreResult?> DecideCustomerReturnAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
@@ -294,7 +326,8 @@ public interface ISalesCustomerReturnStore
 /// API-40 (SAT-D288…D294): record, submit, approve and finalise a customer return invoice, and read one or a list. Company, actor and
 /// authority are the server's and measured afresh before anything is read, after every awaited read and right before the single save.
 /// <list type="bullet">
-/// <item>Create and submit need <c>sales.returns.write</c>; approve <c>sales.returns.approve</c> (never the preparer or the submitter);
+/// <item>Create, submit and cancel need <c>sales.returns.write</c>; approve and reject <c>sales.returns.approve</c> (never the preparer
+/// or the submitter);
 /// finalise <c>sales.returns.finalize</c>; the reads <c>sales.returns.read</c>.</item>
 /// <item>Every one of them also needs <c>sales.orders.price.read</c>: the answer carries the amounts.</item>
 /// </list>
@@ -308,6 +341,12 @@ public interface ISalesCustomerReturnService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
     Task<SalesCustomerReturnCommandResult> ApproveCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    Task<SalesCustomerReturnCommandResult> RejectCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    Task<SalesCustomerReturnCommandResult> CancelCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
     Task<SalesCustomerReturnCommandResult> FinalizeCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,

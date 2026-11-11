@@ -933,3 +933,16 @@ nothing, opens no document and writes no other module's record.
   user's own pending exception with the request capability; an unknown outcome (network error, 502/503/504) keeps its key and is
   retried with the same key. The shipment is typed as its loading instruction id (SAT-D283) until a Logistics screen offers the entry
   (NEEDS-SINAN; SAT-D159/SAT-D162, EK56 "Sınırlar").
+
+## Customer return rejection and cancellation (API-40; SAT-D290 (2, 3), EK57)
+
+SAT-D290: the return is recorded by Muhasebe and moves submit → approve → finalize; the preparer never approves. This
+slice adds the two terminal exits before approval. No new permission or shell capability: grants stay a human gate.
+
+| Concern | Rule |
+|---|---|
+| Steps | `PendingApproval → Rejected` (`POST /api/v1/sales/customer-returns/{id}/rejection`, `RejectSalesCustomerReturnV1`, `sales.returns.approve`); `Draft | PendingApproval → Cancelled` (`…/{id}/cancellation`, `CancelSalesCustomerReturnV1`, `sales.returns.write`). Body `{expectedVersion, reason}`; the reason is optional, trimmed and bounded. Approved/Finalized returns cannot be rejected or cancelled; Rejected/Cancelled take no further step. |
+| Refusals | 409 `version_conflict`, `sales_state_conflict` and (rejection only) `sales_customer_return_self_approval` — the preparer or the submitter rejecting — are recorded under the idempotency key and replayed; 422 `sales_approval_reason_too_long` is not recorded. Who/when/reason are stored (`RejectedBy/AtUtc/Reason`, `CancelledBy/AtUtc/Reason`) with an attempt and an audit row. |
+| Database | Migration `20261111090320_AddCustomerReturnRejectionAndCancellation`: the six columns, CHECK constraints (state ↔ fields, rejecter ≠ preparer) and the step trigger (51255) widened to 1→2, 2→3, 3→4, 2→5, 1→6, 2→6. Down is a forward-fix guard: it refuses with THROW 51258 while a Rejected/Cancelled return or such an attempt exists, otherwise restores the previous trigger. |
+| Effects | Neither exit creates stock, Finance or invoice effects; the Finance hand-off stays on finalization only. |
+| Evidence | Unit: `SalesCustomerReturnTests`, `SalesCustomerReturnServiceTests`, `SalesPersistenceModelTests`. Real SQL + real host: two inventoried `SalesCustomerReturnSqlServerRelationalAcceptanceTests` cases (reject/cancel flow, raw 51255/547 guards, the 51258 Down refusal through the migrator). |

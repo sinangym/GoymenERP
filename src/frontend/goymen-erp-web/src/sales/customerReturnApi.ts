@@ -5,6 +5,8 @@
  *   GET  /api/v1/sales/customer-returns/{id}              → the detail
  *   POST /api/v1/sales/customer-returns                   → 201 the recorded Draft
  *   POST /api/v1/sales/customer-returns/{id}/{command}    → 200 the moved return
+ *   POST /api/v1/sales/customer-returns/{id}/rejection    → 200 the rejected return (`{ expectedVersion, reason }`)
+ *   POST /api/v1/sales/customer-returns/{id}/cancellation → 200 the cancelled return (`{ expectedVersion, reason }`)
  *
  * `X-Company-Id` is the company frozen with the attempt and `Idempotency-Key` the attempt's key. The view carries no
  * `isReplay`: a replay is said ONLY by the `Idempotency-Replayed` header, and a replay must name its original correlation
@@ -85,7 +87,21 @@ export const CUSTOMER_RETURN_COMMAND_TARGET: Readonly<Record<CustomerReturnComma
   finalization: 'Finalized',
 }
 
-export const customerReturnCommandPath = (returnId: string, command: CustomerReturnCommand) =>
+/** The two terminal decisions of SAT-D290 (2, 3); each carries an optional reason (the invoice's body). */
+export type CustomerReturnDecision = 'rejection' | 'cancellation'
+
+/** `SalesDraftStateCommandRequest` with its reason: the version the screen read and the trimmed reason, or null for none. */
+export interface CustomerReturnDecisionBody {
+  readonly expectedVersion: string
+  readonly reason: string | null
+}
+
+export const CUSTOMER_RETURN_DECISION_TARGET: Readonly<Record<CustomerReturnDecision, CustomerReturnState>> = {
+  rejection: 'Rejected',
+  cancellation: 'Cancelled',
+}
+
+export const customerReturnCommandPath = (returnId: string, command: CustomerReturnCommand | CustomerReturnDecision) =>
   `${salesCustomerReturnApiPath(returnId)}/${command}`
 
 /** A recorded answer and whether it was the replay of an earlier send (the header, not the body). */
@@ -171,4 +187,43 @@ export async function sendCustomerReturnCommand(
     const view = decodeCustomerReturnView(value, returnId)
     return view !== null && view.state === CUSTOMER_RETURN_COMMAND_TARGET[command] ? view : null
   })
+}
+
+async function sendCustomerReturnDecision(
+  decision: CustomerReturnDecision,
+  returnId: string,
+  payload: CustomerReturnDecisionBody,
+  context: CustomerReturnCommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<CustomerReturnMutation>> {
+  const raw = await post(
+    customerReturnCommandPath(returnId, decision),
+    { expectedVersion: payload.expectedVersion, reason: payload.reason },
+    context,
+    signal,
+  )
+  return interpret(raw, STATE_COMMAND_STATUS, (value) => {
+    const view = decodeCustomerReturnView(value, returnId)
+    return view !== null && view.state === CUSTOMER_RETURN_DECISION_TARGET[decision] ? view : null
+  })
+}
+
+/** SAT-D290 (2, 3): `PendingApproval → Rejected` (`sales.returns.approve`; never the preparer or the submitter — 409). */
+export function rejectCustomerReturn(
+  returnId: string,
+  payload: CustomerReturnDecisionBody,
+  context: CustomerReturnCommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<CustomerReturnMutation>> {
+  return sendCustomerReturnDecision('rejection', returnId, payload, context, signal)
+}
+
+/** SAT-D290 (2): `Draft | PendingApproval → Cancelled` (`sales.returns.write`), before approval only. */
+export function cancelCustomerReturn(
+  returnId: string,
+  payload: CustomerReturnDecisionBody,
+  context: CustomerReturnCommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<CustomerReturnMutation>> {
+  return sendCustomerReturnDecision('cancellation', returnId, payload, context, signal)
 }

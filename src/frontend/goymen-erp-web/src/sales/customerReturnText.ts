@@ -11,6 +11,8 @@ export const CUSTOMER_RETURN_STATE_TEXT: Readonly<Record<CustomerReturnState, st
   PendingApproval: 'Onay bekliyor',
   Approved: 'Onaylandı',
   Finalized: 'Kesinleşti',
+  Rejected: 'Reddedildi',
+  Cancelled: 'İptal edildi',
 }
 
 export const CUSTOMER_RETURN_TONE: Readonly<Record<CustomerReturnState, StatusTone>> = {
@@ -18,6 +20,8 @@ export const CUSTOMER_RETURN_TONE: Readonly<Record<CustomerReturnState, StatusTo
   PendingApproval: 'warning',
   Approved: 'info',
   Finalized: 'success',
+  Rejected: 'danger',
+  Cancelled: 'neutral',
 }
 
 /** The query member (Turkish, user-visible in the address) that narrows the list to one original invoice. */
@@ -108,6 +112,11 @@ export const CUSTOMER_RETURN_TEXT = {
     submittedBy: 'Onaya gönderen',
     approvedBy: 'Onaylayan',
     finalizedBy: 'Kesinleştiren',
+    rejectedBy: 'Reddeden',
+    rejectionReason: 'Ret gerekçesi',
+    cancelledBy: 'İptal eden',
+    cancellationReason: 'İptal gerekçesi',
+    reasonNone: 'Gerekçe belirtilmedi',
     at: (who: string, when: string) => `${who} — ${when}`,
     totals: 'Tutarlar',
     functionalTotals: 'Yerel para tutarları',
@@ -132,13 +141,26 @@ export const CUSTOMER_RETURN_TEXT = {
     submit: 'Onaya gönder',
     approve: 'Onayla',
     finalize: 'Kesinleştir',
+    reject: 'Reddet',
+    cancel: 'İptal et',
+    rejectConfirm: 'İadeyi reddet',
+    cancelConfirm: 'İadeyi iptal et',
+    reasonBack: 'Vazgeç',
+    reasonLabel: 'Gerekçe (isteğe bağlı)',
+    reasonHint: (limit: number) => `En fazla ${limit} karakter. Boş bırakılırsa gerekçesiz kaydedilir.`,
+    reasonTooLong: (limit: number) => `Gerekçe en fazla ${limit} karakter olabilir.`,
+    reasonTooLongServer: 'Gerekçe sunucunun kabul ettiği uzunluğu aşıyor; işlem yapılmadı.',
+    rejectNote: 'Reddedilen iade kapanır ve iade edilebilir miktarı kullanmaz; düzeltme için yeni iade kaydedilir.',
+    cancelNote: 'İptal yalnız onaydan önce yapılır; iptal edilen iade kapanır ve iade edilebilir miktarı kullanmaz.',
     noun: 'iade işlemi',
     completed: {
       submission: 'İade faturası onaya gönderildi.',
       approval: 'İade faturası onaylandı.',
       finalization: 'İade faturası kesinleşti ve finansa iletildi.',
+      rejection: 'İade faturası reddedildi.',
+      cancellation: 'İade faturası iptal edildi.',
     },
-    approveHint: 'Hazırlayan ya da onaya gönderen kişi aynı iadeyi onaylayamaz; sunucu da reddeder.',
+    approveHint: 'Hazırlayan ya da onaya gönderen kişi aynı iadeyi onaylayamaz ya da reddedemez; sunucu da reddeder.',
     financePortUnavailable:
       'Finans kaydı şu anda alınamıyor; iade kesinleşmedi. Finans bağlantısı açıldığında aynı işlemi tekrar deneyin.',
   },
@@ -179,7 +201,7 @@ const PROBLEM_TEXT: Readonly<Record<CustomerReturnProblemCode, string>> = {
   [CUSTOMER_RETURN_PROBLEM_CODE.linesInvalid]: 'İade satırları tekrarsız ve sınır içinde olmalıdır.',
   [CUSTOMER_RETURN_PROBLEM_CODE.quantityExceeded]: 'İade miktarı satırın kalan iade edilebilir miktarını aşıyor.',
   [CUSTOMER_RETURN_PROBLEM_CODE.quantityInvalid]: 'İade miktarı geçersiz.',
-  [CUSTOMER_RETURN_PROBLEM_CODE.selfApproval]: 'İadeyi hazırlayan ya da onaya gönderen kişi onaylayamaz.',
+  [CUSTOMER_RETURN_PROBLEM_CODE.selfApproval]: 'İadeyi hazırlayan ya da onaya gönderen kişi onaylayamaz ya da reddedemez.',
   [CUSTOMER_RETURN_PROBLEM_CODE.shipmentNotOnInvoice]: 'Seçilen sevkiyat bu faturaya ait değil ya da satırları bu sevkiyattan değil.',
   [CUSTOMER_RETURN_PROBLEM_CODE.unshippedBalanceExceeded]:
     'Sevkiyata bağlanmayan iade, faturalanmış ama sevk edilmemiş bakiyeyi aşıyor. Sevkiyatı seçerek kaydedin.',

@@ -9,7 +9,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// <summary>
 /// API-40 (SAT-D288…SAT-D294): one customer return invoice as Sales records it (<c>sales.CustomerReturns</c>). The header copied
 /// from the original invoice, the customer's document and the lines never change; only the approval axis moves (Draft →
-/// PendingApproval → Approved → Finalized, one step at a time; the write guard and the checks). The totals are the sums of the
+/// PendingApproval → Approved → Finalized one step at a time, or the terminal PendingApproval → Rejected and Draft | PendingApproval
+/// → Cancelled; the write guard and the checks). The totals are the sums of the
 /// lines (SAT-D292), stored for the list; the lines are a JSON array. <see cref="FinalizationSequence"/> is the return's place
 /// among the FINALISED returns of its original invoice: UX_CustomerReturns_FinalizationSequence makes two finalisations computed
 /// against the same priors one concurrent change (SAT-D292 (6)).
@@ -47,6 +48,14 @@ internal sealed class CustomerReturnRow : ISalesTenantRow
     public DateTimeOffset? ApprovedAtUtc { get; set; }
     public string? FinalizedBy { get; set; }
     public DateTimeOffset? FinalizedAtUtc { get; set; }
+
+    /// <summary>SAT-D290: the rejecter — never the preparer or the submitter (CK_CustomerReturns_MakerChecker); the reason is optional.</summary>
+    public string? RejectedBy { get; set; }
+    public DateTimeOffset? RejectedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public string? CancellationReason { get; set; }
     public int? FinalizationSequence { get; set; }
     public decimal NetAmount { get; set; }
     public decimal VatAmount { get; set; }
@@ -141,6 +150,22 @@ internal static class SalesCustomerReturnRows
         return row;
     }
 
+    /// <summary>
+    /// SAT-D290: the only state steps a write may take — Draft → PendingApproval → Approved → Finalized, PendingApproval →
+    /// Rejected, and Draft | PendingApproval → Cancelled. Finalized, Rejected and Cancelled are terminal. The same list lives in
+    /// the save guard and in TR_CustomerReturns_Guard.
+    /// </summary>
+    public static bool IsStep(SalesCustomerReturnState from, SalesCustomerReturnState to) => (from, to) switch
+    {
+        (SalesCustomerReturnState.Draft, SalesCustomerReturnState.PendingApproval) => true,
+        (SalesCustomerReturnState.PendingApproval, SalesCustomerReturnState.Approved) => true,
+        (SalesCustomerReturnState.Approved, SalesCustomerReturnState.Finalized) => true,
+        (SalesCustomerReturnState.PendingApproval, SalesCustomerReturnState.Rejected) => true,
+        (SalesCustomerReturnState.Draft, SalesCustomerReturnState.Cancelled) => true,
+        (SalesCustomerReturnState.PendingApproval, SalesCustomerReturnState.Cancelled) => true,
+        _ => false,
+    };
+
     /// <summary>Rebuilds the domain return through its own rules; a corrupt row is refused, never repaired.</summary>
     public static SalesCustomerReturn Restore(CustomerReturnRow row)
     {
@@ -155,7 +180,8 @@ internal static class SalesCustomerReturnRows
             ?? throw new InvalidOperationException("Kayıtlı iade satırları okunamadı.");
         var lines = stored.Select(line => FromStored(line, header)).ToList();
         var facts = new SalesCustomerReturnFacts(row.SubmittedBy, row.SubmittedAtUtc, row.ApprovedBy, row.ApprovedAtUtc, row.FinalizedBy,
-            row.FinalizedAtUtc);
+            row.FinalizedAtUtc, row.RejectedBy, row.RejectedAtUtc, row.RejectionReason, row.CancelledBy, row.CancelledAtUtc,
+            row.CancellationReason);
         var item = SalesCustomerReturn.Restore(row.Id, row.CompanyId, header, row.ShipmentId, row.CustomerDocumentNo,
             row.CustomerDocumentDate, (SalesCustomerReturnState)row.State, facts, row.CreatedBy, row.CreatedAtUtc, row.Version,
             row.UpdatedAtUtc, lines);
@@ -187,6 +213,12 @@ internal static class SalesCustomerReturnRows
         row.ApprovedAtUtc = item.Facts.ApprovedAtUtc;
         row.FinalizedBy = item.Facts.FinalizedBy;
         row.FinalizedAtUtc = item.Facts.FinalizedAtUtc;
+        row.RejectedBy = item.Facts.RejectedBy;
+        row.RejectedAtUtc = item.Facts.RejectedAtUtc;
+        row.RejectionReason = item.Facts.RejectionReason;
+        row.CancelledBy = item.Facts.CancelledBy;
+        row.CancelledAtUtc = item.Facts.CancelledAtUtc;
+        row.CancellationReason = item.Facts.CancellationReason;
         row.Version = item.Version;
         row.UpdatedAtUtc = item.UpdatedAtUtc;
     }

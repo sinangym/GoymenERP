@@ -50,6 +50,12 @@ public sealed class SalesCustomerReturnService(
     private static readonly SalesDraftStateAudit ApprovedAudit =
         new("sales.customer-return.approved.v1", "ApproveCustomerReturn", "Müşteri iade faturası onaylandı");
 
+    private static readonly SalesDraftStateAudit RejectedAudit =
+        new("sales.customer-return.rejected.v1", "RejectCustomerReturn", "Müşteri iade faturası reddedildi");
+
+    private static readonly SalesDraftStateAudit CancelledAudit =
+        new("sales.customer-return.cancelled.v1", "CancelCustomerReturn", "Müşteri iade faturası iptal edildi");
+
     private static readonly SalesDraftStateAudit FinalizedAudit =
         new("sales.customer-return.finalized.v1", "FinalizeCustomerReturn", "Müşteri iade faturası kesinleşti");
 
@@ -123,6 +129,20 @@ public sealed class SalesCustomerReturnService(
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
         DecideAsync(customerReturnId, request, SalesCustomerReturnCommands.ApproveV1, ApprovePermission, metadata,
             (target, actor, version, now) => target.Approve(version, actor, now), ApprovedAudit, cancellationToken);
+
+    /// <summary>SAT-D290 (2, 3): the invoice's rejection — the approver's authority, never the preparer or the submitter, optional reason.</summary>
+    public Task<SalesCustomerReturnCommandResult> RejectCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(customerReturnId, request, SalesCustomerReturnCommands.RejectV1, ApprovePermission, metadata,
+            (target, actor, version, now) => target.Reject(version, actor, request.Reason, now), RejectedAudit, cancellationToken,
+            withReason: true);
+
+    /// <summary>SAT-D290 (2): the invoice's cancellation — the writer's authority, before approval only, optional reason.</summary>
+    public Task<SalesCustomerReturnCommandResult> CancelCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DecideAsync(customerReturnId, request, SalesCustomerReturnCommands.CancelV1, WritePermission, metadata,
+            (target, actor, version, now) => target.Cancel(version, actor, request.Reason, now), CancelledAudit, cancellationToken,
+            withReason: true);
 
     public async Task<SalesCustomerReturnCommandResult> FinalizeCustomerReturnAsync(Guid customerReturnId,
         SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -233,13 +253,16 @@ public sealed class SalesCustomerReturnService(
 
     private async Task<SalesCustomerReturnCommandResult> DecideAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
         string commandName, string permission, SalesCommandMetadata metadata,
-        Action<SalesCustomerReturn, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit, CancellationToken cancellationToken)
+        Action<SalesCustomerReturn, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit, CancellationToken cancellationToken,
+        bool withReason = false)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
         var scope = await RequireAsync(permission, cancellationToken);
         var expectedVersion = ExpectedVersion(request);
-        var requestHash = SalesCustomerReturnHash.Compute(commandName, customerReturnId, request);
+        var requestHash = withReason
+            ? SalesCustomerReturnHash.ComputeDecision(commandName, customerReturnId, request)
+            : SalesCustomerReturnHash.Compute(commandName, customerReturnId, request);
         var envelope = Envelope(scope, metadata, permission);
         var replay = await FindReplayAsync(scope, envelope, requestHash, commandName, cancellationToken, permission);
         if (replay is not null)
@@ -290,7 +313,7 @@ public sealed class SalesCustomerReturnService(
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.CustomerReturnSelfApproval)
         {
-            // SAT-D290 (3): the preparer or the submitter approves; the same actor under the same key stays refused.
+            // SAT-D290 (3): the preparer or the submitter approves or rejects; the same actor under the same key stays refused.
             terminal = new SalesDraftTerminalRefusal(409, SalesCustomerReturnProblemCodesV1.SelfApproval, [new("actor", exception.Code)]);
         }
         catch (SalesRuleException exception)
@@ -419,12 +442,18 @@ public sealed class SalesCustomerReturnService(
             SalesRuleCodes.CustomerReturnShipmentNotOnInvoice => "shipmentId",
             SalesRuleCodes.CustomerReturnDocumentInvalid => "customerDocumentNo",
             SalesRuleCodes.CustomerReturnDocumentDuplicate => "customerDocumentNo",
+            SalesRuleCodes.ApprovalReasonTooLong => "reason",
             _ => "lines",
         };
         var status = exception.Code is SalesRuleCodes.CustomerReturnAmountsChanged or SalesRuleCodes.CustomerReturnDocumentDuplicate
             ? 409
             : 422;
-        var code = exception.Code.StartsWith("sales_customer_return_", StringComparison.Ordinal) ? exception.Code : "validation_failed";
+        var code = exception.Code switch
+        {
+            SalesRuleCodes.ApprovalReasonTooLong => SalesDraftProblemCodesV1.ApprovalReasonTooLong,
+            _ when exception.Code.StartsWith("sales_customer_return_", StringComparison.Ordinal) => exception.Code,
+            _ => "validation_failed",
+        };
         return new SalesDraftServiceException(status, code, [new(field, exception.Code)]);
     }
 
@@ -503,6 +532,12 @@ public sealed class SalesCustomerReturnService(
             item.Facts.ApprovedAtUtc,
             item.Facts.FinalizedBy,
             item.Facts.FinalizedAtUtc,
+            item.Facts.RejectedBy,
+            item.Facts.RejectedAtUtc,
+            item.Facts.RejectionReason,
+            item.Facts.CancelledBy,
+            item.Facts.CancelledAtUtc,
+            item.Facts.CancellationReason,
             item.UpdatedAtUtc,
             [.. item.Lines.Select(line => new SalesCustomerReturnLineView(
                 line.LineNo,

@@ -26,7 +26,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the rest of the line (finalised priors only, SAT-D292 (6)), a third is over the remaining quantity (SAT-D293 (3)). The database
 /// itself refuses a second return of the same customer document, a changed document, a skipped step and a delete (TR 51255) and any
 /// change of an attempt (TR 51256). Another company neither sees nor decides a return; the migration refuses to roll back over a
-/// recorded return (THROW 51257, forward fix). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
+/// recorded return (THROW 51257, forward fix). SAT-D290 (2, 3): a pending return is rejected only by another actor, a draft or pending
+/// one is cancelled, both are terminal on the database too (TR 51255, CK maker-checker) and that migration's Down refuses (THROW 51258). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
 {
@@ -222,6 +223,113 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturns]"));
+    }
+
+    [SqlServerFact]
+    public async Task A_pending_customer_return_is_rejected_by_another_actor_and_a_draft_is_cancelled_and_neither_takes_another_step_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var (invoice, shipment) = await run.FinalizedInvoiceAsync("r");
+        var line = invoice.Lines.Single(item => item.LineNo == 1);
+        await using var scope = run.SalesStore(CompanyA);
+        var preparer = run.Service(scope.Store, CompanyA, Preparer, null);
+        var approver = run.Service(scope.Store, CompanyA, Approver, null);
+        var rejectedId = (await preparer.CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-R1", Day,
+            [new CreateSalesCustomerReturnLineRequest(line.Id, "3")], shipment), Metadata("k-create-r1"))).CustomerReturn.Id;
+        await preparer.SubmitCustomerReturnAsync(rejectedId, new SalesDraftStateCommandRequest("1"), Metadata("k-submit-r1"));
+
+        // SAT-D290 (3): the submitter's own rejection is refused and recorded under its key; nothing moves.
+        var self = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            preparer.RejectCustomerReturnAsync(rejectedId, new SalesDraftStateCommandRequest("2"), Metadata("k-self-reject")));
+        Assert.Equal((409, SalesCustomerReturnProblemCodesV1.SelfApproval), (self.Status, self.Code));
+
+        var rejected = await approver.RejectCustomerReturnAsync(rejectedId, new SalesDraftStateCommandRequest("2", "Belge eksik"),
+            Metadata("k-reject"));
+        Assert.Equal(("Rejected", "3", Approver, "Belge eksik"), (rejected.CustomerReturn.State, rejected.CustomerReturn.Version,
+            rejected.CustomerReturn.RejectedBy, rejected.CustomerReturn.RejectionReason));
+        var replay = await approver.RejectCustomerReturnAsync(rejectedId, new SalesDraftStateCommandRequest("2", "Belge eksik"),
+            Metadata("k-reject"));
+        Assert.True(replay.IsReplay);
+        Assert.Equal((5, "Belge eksik", 1, 1), (
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", rejectedId)),
+            await run.ScalarAsync<string>("SELECT [RejectionReason] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", rejectedId)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturnAttempts] WHERE [CommandName] = N'"
+                + SalesCustomerReturnCommands.RejectV1 + "' AND [Outcome] = 2"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.CustomerReturn' "
+                + "AND [EventType] = N'sales.customer-return.rejected.v1' AND [ActorId] = @actor", ("@actor", Approver))));
+
+        // The rejected return is terminal and consumed nothing: a new return of the whole line is recorded and cancelled by its preparer.
+        var cancelState = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            preparer.CancelCustomerReturnAsync(rejectedId, new SalesDraftStateCommandRequest("3"), Metadata("k-cancel-rejected")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (cancelState.Status, cancelState.Code));
+        var draft = await preparer.CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-R2", Day,
+            [new CreateSalesCustomerReturnLineRequest(line.Id, "3")], shipment), Metadata("k-create-r2"));
+        var cancelled = await preparer.CancelCustomerReturnAsync(draft.CustomerReturn.Id, new SalesDraftStateCommandRequest("1"),
+            Metadata("k-cancel"));
+        Assert.Equal(("Cancelled", "2", Preparer, (string?)null), (cancelled.CustomerReturn.State, cancelled.CustomerReturn.Version,
+            cancelled.CustomerReturn.CancelledBy, cancelled.CustomerReturn.CancellationReason));
+
+        // TR_CustomerReturns_Guard: a rejected or cancelled return takes no further step, even through raw SQL (51255).
+        Assert.Equal(51255, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[CustomerReturns] SET [RejectionReason] = N'SENTETIK-other', [Version] = [Version] + 1 WHERE [Id] = @id; SELECT 1",
+            ("@id", rejectedId)))).Number);
+        Assert.Equal(51255, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[CustomerReturns] SET [CancellationReason] = N'SENTETIK-other', [Version] = [Version] + 1 WHERE [Id] = @id; "
+            + "SELECT 1", ("@id", draft.CustomerReturn.Id)))).Number);
+
+        // A draft never jumps to Rejected (51255) and the preparer never rejects even through raw SQL (CK_CustomerReturns_MakerChecker).
+        var third = (await preparer.CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-R3", Day,
+            [new CreateSalesCustomerReturnLineRequest(line.Id, "1")], shipment), Metadata("k-create-r3"))).CustomerReturn.Id;
+        Assert.Equal(51255, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[CustomerReturns] SET [State] = 5, [SubmittedBy] = N'SENTETIK-s', [SubmittedAtUtc] = SYSDATETIMEOFFSET(), "
+            + "[RejectedBy] = N'SENTETIK-r', [RejectedAtUtc] = SYSDATETIMEOFFSET(), [Version] = 3 WHERE [Id] = @id; SELECT 1",
+            ("@id", third)))).Number);
+        await preparer.SubmitCustomerReturnAsync(third, new SalesDraftStateCommandRequest("1"), Metadata("k-submit-r3"));
+        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[CustomerReturns] SET [State] = 5, [RejectedBy] = [CreatedBy], [RejectedAtUtc] = SYSDATETIMEOFFSET(), "
+            + "[Version] = 3 WHERE [Id] = @id; SELECT 1", ("@id", third)))).Number);
+        Assert.Equal((5, 6, 2), (
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", rejectedId)),
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", draft.CustomerReturn.Id)),
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", third))));
+    }
+
+    [SqlServerFact]
+    public async Task The_rejection_migrations_Down_passes_with_no_rejected_or_cancelled_return_and_refuses_51258_once_one_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var (invoice, shipment) = await run.FinalizedInvoiceAsync("n");
+        var guard = Assert.IsType<SqlOperation>(new AddCustomerReturnRejectionAndCancellation().DownOperations[0]).Sql;
+        Guid id;
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            id = (await run.Service(scope.Store, CompanyA, Preparer, null).CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(
+                invoice.Id, "IADE-SENTETIK-N", Day, [new CreateSalesCustomerReturnLineRequest(invoice.Lines[0].Id, "1")], shipment),
+                Metadata("k-create"))).CustomerReturn.Id;
+        }
+
+        // An open draft does not block the rollback.
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await run.Service(scope.Store, CompanyA, Preparer, null)
+                .CancelCustomerReturnAsync(id, new SalesDraftStateCommandRequest("1"), Metadata("k-cancel"));
+        }
+
+        Assert.Equal(51258, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
+        Assert.True(index > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[index]);
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
+        Assert.Equal(51258, rollback.Number);
+        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(6, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)));
     }
 
     /// <summary>A raw copy of the stored draft return under another id with the given customer document (no attempt references it).</summary>

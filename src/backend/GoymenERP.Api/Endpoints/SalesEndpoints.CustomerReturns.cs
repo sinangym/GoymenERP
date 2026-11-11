@@ -154,19 +154,29 @@ public static partial class SalesEndpoints
             .ProducesErpAuthenticatedProblems();
 
         // SAT-D290 (2): the preparer's submission under `sales.returns.write`.
-        MapCustomerReturnStep(returns, "submission", "SubmitSalesCustomerReturnV1", finalizes: false,
+        MapCustomerReturnStep(returns, "submission", "SubmitSalesCustomerReturnV1", finalizes: false, withReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitCustomerReturnAsync(id, body, metadata, cancellationToken));
 
         // SAT-D290 (3): the approval under `sales.returns.approve`, never by the preparer or the submitter (recorded 409).
-        MapCustomerReturnStep(returns, "approval", "ApproveSalesCustomerReturnV1", finalizes: false,
+        MapCustomerReturnStep(returns, "approval", "ApproveSalesCustomerReturnV1", finalizes: false, withReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveCustomerReturnAsync(id, body, metadata, cancellationToken));
 
+        // SAT-D290 (2, 3): the rejection of a pending return under `sales.returns.approve`, never by the preparer or the submitter
+        // (recorded 409), with an optional reason (422 when too long). Rejected is terminal.
+        MapCustomerReturnStep(returns, "rejection", "RejectSalesCustomerReturnV1", finalizes: false, withReason: true,
+            (service, id, body, metadata, cancellationToken) => service.RejectCustomerReturnAsync(id, body, metadata, cancellationToken));
+
+        // SAT-D290 (2): the cancellation of a draft or pending return under `sales.returns.write`, with an optional reason. An approved
+        // return is not cancelled here (its reversal needs the Finance port, SAT-D294).
+        MapCustomerReturnStep(returns, "cancellation", "CancelSalesCustomerReturnV1", finalizes: false, withReason: true,
+            (service, id, body, metadata, cancellationToken) => service.CancelCustomerReturnAsync(id, body, metadata, cancellationToken));
+
         // SAT-D291, SAT-D294: the finalisation under `sales.returns.finalize`; Finance admits the reversal before the commit.
-        MapCustomerReturnStep(returns, "finalization", "FinalizeSalesCustomerReturnV1", finalizes: true,
+        MapCustomerReturnStep(returns, "finalization", "FinalizeSalesCustomerReturnV1", finalizes: true, withReason: false,
             (service, id, body, metadata, cancellationToken) => service.FinalizeCustomerReturnAsync(id, body, metadata, cancellationToken));
     }
 
-    private static void MapCustomerReturnStep(RouteGroupBuilder returns, string segment, string name, bool finalizes,
+    private static void MapCustomerReturnStep(RouteGroupBuilder returns, string segment, string name, bool finalizes, bool withReason,
         Func<ISalesCustomerReturnService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken,
             Task<SalesCustomerReturnCommandResult>> command)
     {
@@ -192,7 +202,8 @@ public static partial class SalesEndpoints
             try
             {
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
-                body = SalesCustomerReturnJson.ReadStateCommand(await reader.ReadToEndAsync(cancellationToken));
+                var json = await reader.ReadToEndAsync(cancellationToken);
+                body = withReason ? SalesCustomerReturnJson.ReadDecisionCommand(json) : SalesCustomerReturnJson.ReadStateCommand(json);
             }
             catch (JsonException)
             {
@@ -236,9 +247,9 @@ public static partial class SalesEndpoints
                     SalesRuleCodes.CustomerReturnAmountOutOfRange)
                 .ProducesErpServiceUnavailable(SalesCustomerReturnProblemCodesV1.FinancePortUnavailable);
         }
-        else if (string.Equals(segment, "approval", StringComparison.Ordinal))
+        else if (string.Equals(segment, "approval", StringComparison.Ordinal) || string.Equals(segment, "rejection", StringComparison.Ordinal))
         {
-            // SAT-D290 (3): only the approval refuses the preparer or the submitter.
+            // SAT-D290 (3): the approval and the rejection refuse the preparer or the submitter.
             route.ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                     SalesCustomerReturnProblemCodesV1.SelfApproval, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
                     SalesDraftProblemCodesV1.ConcurrentChange)
@@ -249,6 +260,12 @@ public static partial class SalesEndpoints
             route.ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                     SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
                 .ProducesErpServiceUnavailable();
+        }
+
+        if (withReason)
+        {
+            // The optional reason is at most SalesCustomerReturn.MaximumReasonLength characters (422, not recorded).
+            route.ProducesErpUnprocessableEntity(SalesDraftProblemCodesV1.ApprovalReasonTooLong);
         }
 
         route.ProducesErpAuthenticatedProblems();

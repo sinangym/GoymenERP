@@ -336,10 +336,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>
     /// CK_CustomerReturns_Facts (API-40, SAT-D290): the facts follow the state exactly — Draft (1) none; PendingApproval (2) the
     /// submission; Approved (3) and the approval; Finalized (4) and the finalisation with its place among the invoice's finalised
-    /// returns. The version is at least the state's ordinal.
+    /// returns; Rejected (5) the submission and the rejection, never an approval; Cancelled (6) the cancellation, with or without a
+    /// submission, never an approval (SAT-D290 (2, 3)). A reason, when present, is not blank. The version is at least the state's
+    /// lowest reachable version (<see cref="SalesCustomerReturn.MinimumVersion"/>).
     /// </summary>
     internal const string CustomerReturnFactsConstraint =
-        "([State] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        "(" + CustomerReturnNoRejection + " AND " + CustomerReturnNoCancellation + " AND (([State] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
         + "AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 1) "
         + "OR ([State] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL "
         + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL "
@@ -349,12 +351,33 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 3) "
         + "OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL "
         + "AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [FinalizedBy] IS NOT NULL "
-        + "AND LEN([FinalizedBy]) > 0 AND [FinalizedAtUtc] IS NOT NULL AND [FinalizationSequence] >= 1 AND [Version] >= 4)";
+        + "AND LEN([FinalizedBy]) > 0 AND [FinalizedAtUtc] IS NOT NULL AND [FinalizationSequence] >= 1 AND [Version] >= 4))) "
+        + "OR ([State] = 5 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL "
+        + "AND [FinalizationSequence] IS NULL AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedAtUtc] IS NOT NULL "
+        + "AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0) AND " + CustomerReturnNoCancellation + " AND [Version] >= 3) "
+        + "OR ([State] = 6 AND (([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) "
+        + "OR ([SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL)) "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL "
+        + "AND [FinalizationSequence] IS NULL AND " + CustomerReturnNoRejection + " AND [CancelledBy] IS NOT NULL "
+        + "AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL "
+        + "AND ([CancellationReason] IS NULL OR LEN([CancellationReason]) > 0) AND [Version] >= 2)";
 
-    /// <summary>CK_CustomerReturns_MakerChecker (SAT-D290): the approver is neither the preparer nor the submitter, compared ordinally.</summary>
+    private const string CustomerReturnNoRejection =
+        "[RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL";
+
+    private const string CustomerReturnNoCancellation =
+        "[CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL";
+
+    /// <summary>
+    /// CK_CustomerReturns_MakerChecker (SAT-D290): neither the approver nor the rejecter is the preparer or the submitter, compared
+    /// ordinally.
+    /// </summary>
     internal const string CustomerReturnMakerCheckerConstraint =
-        "[ApprovedBy] IS NULL OR ([ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 "
-        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)";
+        "([ApprovedBy] IS NULL OR ([ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)) "
+        + "AND ([RejectedBy] IS NULL OR ([RejectedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2))";
 
     /// <summary>CK_CustomerReturns_Rate (SAT-D289 (1)): a TL return carries no rate; a foreign-currency return all three facts and TL totals.</summary>
     internal const string CustomerReturnRateConstraint =
@@ -368,8 +391,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string CustomerReturnFinalizationSequenceFilter = "[FinalizationSequence] IS NOT NULL";
 
     /// <summary>
-    /// TR_CustomerReturns_Guard (API-40): the header, the customer's document and the lines are immutable, the state moves one step
-    /// forward, the version by exactly one, and no row is deleted (THROW 51255). Declared so EF Core does not use OUTPUT without INTO.
+    /// TR_CustomerReturns_Guard (API-40, SAT-D290): the header, the customer's document and the lines are immutable, the state takes
+    /// one allowed step (<see cref="SalesCustomerReturnRows.IsStep"/>), the version moves by exactly one, and no row is deleted (THROW 51255). Declared so EF Core does not use OUTPUT without INTO.
     /// </summary>
     internal const string CustomerReturnGuardTrigger = "TR_CustomerReturns_Guard";
 
@@ -379,7 +402,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>CK_CustomerReturnAttempts_Command: only the customer return's own versioned commands record here.</summary>
     internal const string CustomerReturnAttemptCommandConstraint =
         "[CommandName] IN (N'" + SalesCustomerReturnCommands.CreateV1 + "', N'" + SalesCustomerReturnCommands.SubmitV1 + "', N'"
-        + SalesCustomerReturnCommands.ApproveV1 + "', N'" + SalesCustomerReturnCommands.FinalizeV1 + "')";
+        + SalesCustomerReturnCommands.ApproveV1 + "', N'" + SalesCustomerReturnCommands.FinalizeV1 + "', N'"
+        + SalesCustomerReturnCommands.RejectV1 + "', N'" + SalesCustomerReturnCommands.CancelV1 + "')";
 
     /// <summary>CK_CustomerReturnAttempts_Outcome: a recorded attempt names its return; a refusal carries its JSON.</summary>
     internal const string CustomerReturnAttemptOutcomeConstraint =
@@ -1811,7 +1835,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND [OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([ShipmentId] IS NULL OR [ShipmentId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_CustomerReturns_State", "[State] IN (1, 2, 3, 4)");
+            table.HasCheckConstraint("CK_CustomerReturns_State", "[State] IN (1, 2, 3, 4, 5, 6)");
             table.HasCheckConstraint("CK_CustomerReturns_Facts", CustomerReturnFactsConstraint);
             table.HasCheckConstraint("CK_CustomerReturns_MakerChecker", CustomerReturnMakerCheckerConstraint);
             table.HasCheckConstraint("CK_CustomerReturns_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
@@ -1833,6 +1857,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         customerReturn.Property(x => x.SubmittedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
         customerReturn.Property(x => x.ApprovedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
         customerReturn.Property(x => x.FinalizedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
+        customerReturn.Property(x => x.RejectedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
+        customerReturn.Property(x => x.RejectionReason).HasMaxLength(SalesCustomerReturn.MaximumReasonLength);
+        customerReturn.Property(x => x.CancelledBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
+        customerReturn.Property(x => x.CancellationReason).HasMaxLength(SalesCustomerReturn.MaximumReasonLength);
         customerReturn.Property(x => x.NetAmount).HasPrecision(28, 8);
         customerReturn.Property(x => x.VatAmount).HasPrecision(28, 8);
         customerReturn.Property(x => x.WithholdingAmount).HasPrecision(28, 8);
@@ -2043,13 +2071,16 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(ShipmentRiskExceptionRow.ValidOn), nameof(ShipmentRiskExceptionRow.UpdatedAtUtc),
                     ],
                     ShipmentRiskExceptionAttemptRow => [],
-                    // API-40 (SAT-D290): a customer return moves only along its approval axis, one step forward (checked below);
+                    // API-40 (SAT-D290): a customer return moves only along its approval axis, one allowed step (checked below);
                     // the header, the customer's document, the lines and the totals never change; its attempts are APPEND-ONLY.
                     CustomerReturnRow =>
                     [
                         nameof(CustomerReturnRow.State), nameof(CustomerReturnRow.SubmittedBy), nameof(CustomerReturnRow.SubmittedAtUtc),
                         nameof(CustomerReturnRow.ApprovedBy), nameof(CustomerReturnRow.ApprovedAtUtc), nameof(CustomerReturnRow.FinalizedBy),
                         nameof(CustomerReturnRow.FinalizedAtUtc), nameof(CustomerReturnRow.FinalizationSequence),
+                        nameof(CustomerReturnRow.RejectedBy), nameof(CustomerReturnRow.RejectedAtUtc),
+                        nameof(CustomerReturnRow.RejectionReason), nameof(CustomerReturnRow.CancelledBy),
+                        nameof(CustomerReturnRow.CancelledAtUtc), nameof(CustomerReturnRow.CancellationReason),
                         nameof(CustomerReturnRow.UpdatedAtUtc),
                     ],
                     CustomerReturnAttemptRow => [],
@@ -2106,12 +2137,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
                 if (entry.Entity is CustomerReturnRow)
                 {
-                    // API-40: Draft → PendingApproval → Approved → Finalized, exactly one step per save; nothing else.
+                    // API-40, SAT-D290: Draft → PendingApproval → Approved → Finalized, PendingApproval → Rejected, Draft |
+                    // PendingApproval → Cancelled; exactly one allowed step per save, nothing else.
                     var returnState = entry.Property(nameof(CustomerReturnRow.State));
-                    if (!(returnState.IsModified && (int)returnState.CurrentValue! == (int)returnState.OriginalValue! + 1
-                            && (int)returnState.CurrentValue! <= (int)SalesCustomerReturnState.Finalized))
+                    if (!(returnState.IsModified && SalesCustomerReturnRows.IsStep((SalesCustomerReturnState)(int)returnState.OriginalValue!,
+                            (SalesCustomerReturnState)(int)returnState.CurrentValue!)))
                     {
-                        throw new InvalidOperationException("İade faturasının durumu yalnız bir adım ileri gider: Taslak → Onay bekliyor → Onaylı → Kesinleşti.");
+                        throw new InvalidOperationException("İade faturasının durumu yalnız izinli bir adım gider: Taslak → Onay bekliyor → Onaylı → Kesinleşti, Onay bekliyor → Reddedildi, Taslak/Onay bekliyor → İptal edildi.");
                     }
                 }
 
