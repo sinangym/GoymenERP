@@ -16,8 +16,13 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// <c>Normal</c> on the order's business date; <c>Exempt</c>/<c>ZeroRated</c> answer 0 %. A product without an item type or without a
 /// default in force (Settings <c>Unresolved</c>, with its reason) or an unreadable port is <c>NotComputable</c> for that line — the document VAT is then
 /// <c>NotComputable</c> with the count; nothing is guessed. Supplier exemptions come later (ALS-D74).</item>
-/// <item><b>Withholding</b> (plan §8 N-20, which stays open only for withholding and supplier exemptions, ALS-D77): never computed — <c>NotComputable</c>, <c>withholding_unconfirmed</c> — so the withheld VAT
-/// and the payable amount are always null.</item>
+/// <item><b>Withholding</b> (D4, configurable like Sales; interpretation, labelled): the item type's default withholding share from the same
+/// Settings answer (buyer situation <c>Normal</c>), applied per line from the rounded line VAT (SAT-D75). The VUK 232 amount threshold is
+/// the Settings dated value (never a number in code; the owner records 12.000 TL there): the whole order's gross (VAT included, never
+/// split) must EXCEED it, otherwise no line is withheld (<c>NotApplied</c>). A withholding line with no threshold in force, an unreadable
+/// threshold or a threshold in another currency than the order is <c>NotComputable</c> with that reason — never a guessed amount (the
+/// plan's fail-closed rule; the mali müşavir confirms before go-live, N-20). A line whose item type carries no withholding is
+/// <c>NotApplied</c> without reading the threshold. Supplier exemptions come later (ALS-D74).</item>
 /// <item><b>PRS-02</b>: without <c>purchasing.orders.price.read</c> every state is <c>Withheld</c>, every amount null, no line.</item>
 /// </list>
 /// The rate is read at request time for the order's business date (no snapshot is stored: the order's VAT is not recorded before the
@@ -68,13 +73,30 @@ public sealed partial class PurchasingService
                 : null,
             taxes[line.Id])).ToList();
         var totals = CommercialTaxTotalsCalculator.Calculate(inputs, Math.Min(scale, Money.MaximumScale));
+        if (totals.Document.GrossAmount is { } gross && inputs.Any(input => input.Tax.Withholding == CommercialWithholdingState.Computed))
+        {
+            var decision = await WithholdingThresholdDecisionAsync(scope, stored.EffectiveOn, order.Money?.CurrencyCode, gross, cancellationToken);
+            if (decision.Outcome != WithholdingThresholdOutcome.Exceeded)
+            {
+                inputs = [.. inputs.Select(input => input.Tax.Withholding != CommercialWithholdingState.Computed ? input : input with
+                {
+                    Tax = decision.Outcome == WithholdingThresholdOutcome.NotExceeded
+                        ? CommercialLineTaxInput.Vat(input.Tax.VatPercent!.Value, null)
+                        : CommercialLineTaxInput.VatWithWithholdingNotComputable(input.Tax.VatPercent!.Value, decision.Reason!),
+                })];
+                totals = CommercialTaxTotalsCalculator.Calculate(inputs, Math.Min(scale, Money.MaximumScale));
+            }
+        }
+
         var document = totals.Document;
         var lineNumbers = order.Lines.Select((line, index) => (line.Id, Number: index + 1)).ToDictionary(pair => pair.Id, pair => pair.Number);
         return new PurchaseOrderTotalsView(order.Id, version, PurchasingPriceDisclosureV1.Visible, CurrencyView(order.Money),
             State(document.State), document.UnpricedLineCount, Amount(document.NetAmount),
             State(document.VatState), document.VatNotComputableLineCount, Amount(document.VatAmount), Amount(document.GrossAmount),
             State(document.WithholdingState),
-            document.WithholdingState == CommercialWithholdingState.NotComputable ? PurchaseOrderTaxReasonsV1.WithholdingUnconfirmed : null,
+            document.WithholdingState == CommercialWithholdingState.NotComputable
+                ? totals.Lines.Select(line => line.WithholdingReason).FirstOrDefault(reason => reason is not null) ?? PurchaseOrderTaxReasonsV1.TaxSourceInvalid
+                : null,
             Amount(document.WithheldVatAmount), Amount(document.PayableAmount),
             [.. totals.Lines.Select(line => new PurchaseOrderLineTotalView(line.LineId, lineNumbers[line.LineId], State(line.State),
                 Amount(line.NetUnitPrice), Amount(line.NetAmount), State(line.VatState), line.VatReason, Amount(line.VatPercent),
@@ -82,8 +104,8 @@ public sealed partial class PurchasingService
     }
 
     /// <summary>
-    /// The tax input of each general line (ALS-D74; see the class remarks). One Settings read per product; withholding is always
-    /// <c>NotComputable</c> (N-20). A denied actor is 403; an unavailable or absent port makes the VAT <c>NotComputable</c>.
+    /// The tax input of each general line (ALS-D74; see the class remarks). One Settings read per product; withholding is the item type's
+    /// share (D4), the threshold is applied on the document by the caller. A denied actor is 403; an unavailable or absent port makes the VAT <c>NotComputable</c>.
     /// </summary>
     private async Task<Dictionary<Guid, CommercialLineTaxInput>> LineTaxesAsync(Scope scope, IReadOnlyList<PurchaseOrderLine> lines,
         DateOnly on, CancellationToken cancellationToken)
@@ -150,9 +172,75 @@ public sealed partial class PurchasingService
             TaxResolutionStatesV1.Exempt or TaxResolutionStatesV1.ZeroRated => 0m,
             _ => null,
         };
-        return percent is { } vat
-            ? CommercialLineTaxInput.VatWithWithholdingNotComputable(vat, PurchaseOrderTaxReasonsV1.WithholdingUnconfirmed)
-            : CommercialLineTaxInput.VatNotComputable(PurchaseOrderTaxReasonsV1.TaxSourceInvalid);
+        if (percent is not { } vat)
+        {
+            return CommercialLineTaxInput.VatNotComputable(PurchaseOrderTaxReasonsV1.TaxSourceInvalid);
+        }
+
+        // Withholding comes from the same answer: Resolved with a share in (0, 100] (the withheld part of the VAT, in percent),
+        // NotApplied, or anything else (unknown state, a share outside the range) which is unreadable, not "none".
+        return answer.WithholdingState switch
+        {
+            TaxResolutionStatesV1.NotApplied or TaxResolutionStatesV1.Exempt => CommercialLineTaxInput.Vat(vat, null),
+            TaxResolutionStatesV1.Resolved when answer.WithholdingPercent is > 0m and <= 100m =>
+                CommercialLineTaxInput.Vat(vat, answer.WithholdingPercent.Value / 100m),
+            _ => CommercialLineTaxInput.VatWithWithholdingNotComputable(vat, PurchaseOrderTaxReasonsV1.TaxSourceInvalid),
+        };
+    }
+
+    private enum WithholdingThresholdOutcome { Exceeded, NotExceeded, NotComputable }
+
+    private readonly record struct WithholdingThresholdDecision(WithholdingThresholdOutcome Outcome, string? Reason);
+
+    /// <summary>
+    /// D4: compares the order's gross (VAT included) with the Settings withholding threshold in force on the order's date. Strictly
+    /// above it → withholding applies. The threshold must be in the order's own currency (no conversion before A2a-KUR).
+    /// </summary>
+    private async Task<WithholdingThresholdDecision> WithholdingThresholdDecisionAsync(Scope scope, DateOnly on, string? orderCurrency,
+        decimal gross, CancellationToken cancellationToken)
+    {
+        if (lineTaxes is not { } resolver)
+        {
+            return new(WithholdingThresholdOutcome.NotComputable, PurchaseOrderTaxReasonsV1.TaxSourceUnavailable);
+        }
+
+        SettingsWithholdingThresholdResolutionV1 threshold;
+        try
+        {
+            threshold = await GuardedAsync(scope, bindings.ReadPermission, () => resolver.GetWithholdingThresholdAsync(on, cancellationToken),
+                cancellationToken);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == "settings_access_denied")
+        {
+            throw new PurchasingServiceException(403, "forbidden");
+        }
+        catch (SettingsPrerequisiteException)
+        {
+            return new(WithholdingThresholdOutcome.NotComputable, PurchaseOrderTaxReasonsV1.TaxSourceUnavailable);
+        }
+
+        if (threshold is null || threshold.CompanyId != scope.CompanyId)
+        {
+            throw new PurchasingServiceException(503, PurchasingProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        if (!string.Equals(threshold.State, TaxResolutionStatesV1.Resolved, StringComparison.Ordinal))
+        {
+            return new(WithholdingThresholdOutcome.NotComputable,
+                string.IsNullOrWhiteSpace(threshold.Reason) ? PurchaseOrderTaxReasonsV1.WithholdingThresholdMissing : threshold.Reason);
+        }
+
+        if (threshold.Amount is not { } amount || amount < 0m)
+        {
+            return new(WithholdingThresholdOutcome.NotComputable, PurchaseOrderTaxReasonsV1.TaxSourceInvalid);
+        }
+
+        if (orderCurrency is null || !string.Equals(threshold.CurrencyCode, orderCurrency, StringComparison.Ordinal))
+        {
+            return new(WithholdingThresholdOutcome.NotComputable, PurchaseOrderTaxReasonsV1.WithholdingThresholdCurrencyMismatch);
+        }
+
+        return new(gross > amount ? WithholdingThresholdOutcome.Exceeded : WithholdingThresholdOutcome.NotExceeded, null);
     }
 
     private static string State(Enum state) => state.ToString();

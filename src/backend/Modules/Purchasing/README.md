@@ -178,8 +178,13 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `ISettingsLineTaxResolverV1` for buyer situation `Normal` on the order's business date (ALS-D74; `Exempt`/`ZeroRated` = 0 %); a
   product without an item type or default, or an unreadable port, makes that line's VAT `NotComputable` (with the Settings reason)
   and the document VAT `NotComputable` with the count — never guessed. VAT is computed on the line amount INCLUDING the surcharge
-  (ALS-D77 "Vade farkı dahil hesaplansın"; it replaces ALS-D38's EK3 note). Purchase withholding is always `NotComputable`
-  (`withholding_unconfirmed`, N-20), so the withheld VAT and the payable amount are null; supplier exemptions are not modelled yet. An
+  (ALS-D77 "Vade farkı dahil hesaplansın"; it replaces ALS-D38's EK3 note). Purchase withholding is configurable like Sales
+  (D4; interpretation, the accountant confirms before go-live): the share is the item type's Settings withholding default (`NotApplied`/
+  `Exempt` = none), taken from the ROUNDED line VAT (SAT-D75), and it applies only when the document gross (VAT included, never split)
+  strictly exceeds the dated Settings threshold (`GetWithholdingThresholdAsync`, VUK 232, same currency as the order). No threshold
+  record → withholding `NotComputable` (`withholding_threshold_missing`, fail-closed, amounts null); a currency mismatch →
+  `withholding_threshold_currency_mismatch`; an unreadable port → `tax_source_unavailable`; `settings_access_denied` → 403. An item type
+  with no withholding never reads the threshold. Supplier exemptions are not modelled yet. An
   unpriced line makes the totals `Incomplete`. PRS-02: without `purchasing.orders.price.read` every state is `Withheld`, every amount
   null and no line is listed. The order list carries `pricePending` per item for a holder of the price read only (never written
   otherwise). Migration `20261107151838_AddPurchaseOrderLineDeferral` adds `DeferralPercent` decimal(9,6) and `DeferralAmount`
