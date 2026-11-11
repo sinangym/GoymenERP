@@ -15,6 +15,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -101,6 +102,10 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<AuditDbContext>>();
         services.AddDbContext<AuditDbContext>(options =>
             options.UseInMemoryDatabase(databaseName));
+        services.RemoveAll<DbContextOptions<SecurityEventsDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<SecurityEventsDbContext>>();
+        services.AddDbContext<SecurityEventsDbContext>(options =>
+            options.UseInMemoryDatabase($"{databaseName}-security-events"));
         services.RemoveAll<DbContextOptions<CommandExecutionDbContext>>();
         services.RemoveAll<IDbContextOptionsConfiguration<CommandExecutionDbContext>>();
         services.AddDbContext<CommandExecutionDbContext>(options =>

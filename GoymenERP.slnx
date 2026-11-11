@@ -78,6 +78,10 @@
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/GoymenERP.Modules.Sales.Domain.csproj" />
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/GoymenERP.Modules.Sales.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/SecurityEvents/">
+    <Project Path="src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Domain/GoymenERP.Modules.SecurityEvents.Domain.csproj" />
+    <Project Path="src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/GoymenERP.Modules.SecurityEvents.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Settings/">
     <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
     <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/GoymenERP.Modules.Settings.Infrastructure.csproj" />
@@ -102,6 +106,7 @@
     <Project Path="tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Purchasing.UnitTests/GoymenERP.Purchasing.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.SecurityEvents.UnitTests/GoymenERP.SecurityEvents.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.SqlServerRcsiReadiness.Tests/GoymenERP.SqlServerRcsiReadiness.Tests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Idempotency.UnitTests/GoymenERP.Idempotency.UnitTests.csproj" />

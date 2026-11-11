@@ -38,7 +38,7 @@ def make_repository(root: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative, destination)
     projects = [path for group in VERIFIER.GROUP_PROJECTS.values() for path in group]
-    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(51)]
+    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(53)]
     solution = ["<Solution>", '  <Folder Name="/tests/">']
     for path in projects:
         project = root / path
@@ -247,16 +247,16 @@ class BackendGroupVerifierTests(unittest.TestCase):
             resultHash=VERIFIER.digest([(record[0], record[2], record[3]) for record in tests]),
         )
 
-    def test_exact_seventy_two_project_solution_has_twenty_one_disjoint_testsdk_projects(self) -> None:
+    def test_exact_seventy_five_project_solution_has_twenty_two_disjoint_testsdk_projects(self) -> None:
         solution_hash, catalog_hash = VERIFIER.source_inventory(self.root)
         self.assertEqual(len(solution_hash), 64)
         self.assertEqual(len(catalog_hash), 64)
         self.assertEqual(
             [len(VERIFIER.GROUP_PROJECTS[key]) for key in ("architecture", "api", "modules")],
-            [1, 1, 19],
+            [1, 1, 20],
         )
         self.assertEqual(
-            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 21
+            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 22
         )
 
     def test_missing_extra_duplicate_and_unclassified_project_fail_closed(self) -> None:
@@ -396,11 +396,11 @@ class BackendGroupVerifierTests(unittest.TestCase):
             (artifact / f"proof-{group}.json").write_text(json.dumps(proof), encoding="utf-8")
         return directory
 
-    def test_aggregate_requires_all_workers_source_and_exact_twenty_one_project_union(self) -> None:
+    def test_aggregate_requires_all_workers_source_and_exact_twenty_two_project_union(self) -> None:
         directory = self.proof_directory()
         self.assertEqual(
             self.aggregate(directory),
-            21,
+            22,
         )
         for build, workers in (("failure", "success"), ("success", "skipped")):
             with self.subTest(build=build, workers=workers):
@@ -699,7 +699,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
         path.unlink()
         path = self.produce_group("api", directory, project, [name], [name])
-        self.assertEqual(self.aggregate(directory), 21)
+        self.assertEqual(self.aggregate(directory), 22)
         proof = json.loads(path.read_text(encoding="utf-8"))
         row = proof["projects"][0]
         row["testCases"][0][2:4] = [0, 1]
@@ -715,7 +715,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
         path.unlink()
         path = self.produce_group("api", directory, project, [name], [name], skipped=True)
-        self.assertEqual(self.aggregate(directory), 21)
+        self.assertEqual(self.aggregate(directory), 22)
         original = path.read_text(encoding="utf-8")
         for foreign in (name + "Unknown", "GoymenERP.Api.IntegrationTests.OrdinaryTests.Required"):
             with self.subTest(foreign=foreign):
@@ -767,7 +767,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
         path.unlink()
         path = self.produce_group("modules", directory, project, expected, expected)
-        self.assertEqual(self.aggregate(directory), 24)
+        self.assertEqual(self.aggregate(directory), 25)
         original = path.read_text(encoding="utf-8")
         for count in (3, 5):
             with self.subTest(aggregate_count=count):
@@ -802,7 +802,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 directory = self.proof_directory(f"exact-{number}")
                 (directory / "ci-backend-test-group-proof-architecture/proof-architecture.json").unlink()
                 self.produce_group("architecture", directory, project, expected, expected)
-                self.assertEqual(self.aggregate(directory), 21)
+                self.assertEqual(self.aggregate(directory), 22)
 
     def test_structured_discovery_requires_one_complete_native_stream(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -955,7 +955,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-architecture/proof-architecture.json"
         path.unlink()
         self.produce_group("architecture", directory, project, [name], [name])
-        self.assertEqual(self.aggregate(directory), 21)
+        self.assertEqual(self.aggregate(directory), 22)
         original = json.loads(path.read_text())
         for field in ("assemblyPath", "executorUri"):
             for replacement in (None, "/foreign/Other.dll"):
@@ -1010,7 +1010,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
             path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
             path.unlink()
             path = self.produce_group("modules", directory, project, [name], expected)
-            self.assertEqual(self.aggregate(directory), 20 + len(expected))
+            self.assertEqual(self.aggregate(directory), 21 + len(expected))
             original = path.read_text(encoding="utf-8")
             for label, rows in mutations.items():
                 with self.subTest(theory=name, aggregate=label):
