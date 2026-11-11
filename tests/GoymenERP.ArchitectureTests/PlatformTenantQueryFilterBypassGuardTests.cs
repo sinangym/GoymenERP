@@ -1369,9 +1369,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // F3a / API-20: an active payment allocation also refuses (one more tenant-filtered EF read;
                 // 2ae7b299… -> f9ef0286…).
                 // F2b K3 takip: the corrupt-state refusals use their own code (2abc569a… -> 5f81e19b…).
+                // #1000 takip: class XML summary now states the confirmed-release rule (comment only; 5f81e19b… -> 51e12213…).
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "5f81e19befe983f9b17b6d84e5b3927ec879625bb74367d6c334c4113c1d9d04",
+                        "51e122131bdd2353fd5126afb3c39b1ceb068b3a810c7f95a40974b0bff84ac5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
