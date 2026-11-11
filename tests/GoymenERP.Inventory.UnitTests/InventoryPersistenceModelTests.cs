@@ -181,6 +181,7 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryLabelProductVersion", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryAverageCostLedger", StringComparison.Ordinal));
+        Assert.Equal("RelaxInventoryAverageCostReasonToZeroCostReceipt", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -425,6 +426,19 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("THROW 51250", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[AverageCostLedger]", guard.Sql, StringComparison.Ordinal);
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_zero_cost_receipt_reason_migration_widens_the_check_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.RelaxInventoryAverageCostReasonToZeroCostReceipt();
+
+        Assert.Contains("BETWEEN 1 AND 9", InventoryDbContext.AverageCostLedgerStateCheck, StringComparison.Ordinal);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51258", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[UnreadableReason] = 9", guard.Sql, StringComparison.Ordinal);
         Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }

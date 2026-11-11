@@ -8,15 +8,16 @@ public sealed record AverageCostTransferResult(AverageCostPosition Source, Avera
 /// or caller re-implements it. Pure: no clock, no storage, no company or role. The key of a position (company, location,
 /// product) lives in the ledger; this core only computes the next state of one position.
 /// <list type="bullet">
-/// <item>A purchase receipt recalculates: <c>round4((q·a + Δ·c) / (q + Δ))</c>, rounded once, AwayFromZero.</item>
+/// <item>A purchase receipt with a positive cost recalculates: <c>round4((q·a + Δ·c) / (q + Δ))</c>, rounded once, AwayFromZero.</item>
 /// <item>An issue keeps the average and lowers the quantity; below zero is unreadable, never negative.</item>
 /// <item>A transfer enters the target at the SOURCE average (the target's own average then blends as a receipt).</item>
 /// <item>A production receipt never enters the average: the position becomes unreadable (mixed source is OPEN).</item>
 /// <item>Negative stock, unit conversion, foreign currency, landed cost and returns are NOT decided: they answer
 /// <see cref="AverageCostStatus.Unreadable"/> with their <see cref="AverageCostUnreadableReason"/>; nothing is guessed.</item>
 /// </list>
-/// A position never seen by the ledger is <c>null</c> (it reads as NoSource). OPEN-INV-AVGCOST-ZERO-STOCK (NEEDS-SINAN):
-/// a position that falls to exactly zero keeps its last average; whether that is a readable cost is not decided.
+/// A position never seen by the ledger is <c>null</c> (it reads as NoSource). A position that falls to exactly zero keeps
+/// its last average as a readable value (Sinan 2026-11-11). A zero unit cost is "cost unknown": the receipt makes the
+/// position <see cref="AverageCostStatus.Unreadable"/> (<see cref="AverageCostUnreadableReason.ZeroCostReceipt"/>).
 /// </summary>
 public static class AverageCostCalculator
 {
@@ -111,6 +112,12 @@ public static class AverageCostCalculator
         }
 
         var receiptCost = movement.UnitCostPerStockKg!.Value;
+        if (receiptCost == 0m)
+        {
+            // Sinan 2026-11-11: a zero unit cost is "cost unknown", it never enters the average.
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ZeroCostReceipt);
+        }
+
         var heldKg = current?.QuantityKg ?? 0m;
         var newKg = heldKg + movement.QuantityKg;
         if (heldKg == 0m)
