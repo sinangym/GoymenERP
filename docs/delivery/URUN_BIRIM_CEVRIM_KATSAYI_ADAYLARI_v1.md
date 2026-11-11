@@ -4,7 +4,7 @@ Durum: **ADAY — karar değildir.** Bu belge yalnız Sinan kararlarını #66 at
 hiçbir değer, formül veya eşik kilitlemez; `OPEN-007` kapatılmaz. Sinan'ın #66'daki "katsayı ürün özelliklerinden hesaplanabilir olmalı" kararını
 (yorum 6794787903) uygulanabilir adaylara açar. Etkinleştirme ancak somut onaydan sonradır.
 
-Kaynaklar: `KARAR_SICILI.md` DEC-PRD-006; `SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md`
+Kaynaklar: `KARAR_SICILI.md` DEC-PRD-006; `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` (BS-9, BS-13); `SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md`
 (SAT-D298/D299); `docs/handoffs/ALIS_URUN_DEVIR_v1.md` U-A1; `KALAN_MODULLER_HAZIRLIK_PLANI_v1.md`
 B-07/B-08/B-09; `URETIM_HAZIRLIK_PLANI_v1.md` satır 7b; `SINAN_KARARLARI_2026-11-02_URETIM_EK3.md`
 URT-D25/D27; Fable F-004 (01 numaralı analiz, OPEN-007 verileri).
@@ -51,7 +51,7 @@ Birim tutarlılığı (aday; ölçek hatasını önlemek için implementasyon bu
 | Büyüklük | Girdi birimi (aday) | Ara/sonuç birimi |
 | --- | --- | --- |
 | kalınlık, en, boy | mm | m (÷10³) |
-| yoğunluk | kg/m³ | — |
+| yoğunluk | Sinan örneği g/cm³ (7,85); kodda birim açık tip, kg/m³ ile ×10³ dönüşümü | — |
 | kesit alanı | mm² mi m² mi: **"Ebat/kalınlık" tablosunun alan tanımına bağlı (§3 son paragraf)** | m² (÷10⁶ yalnız mm² ise) |
 | sonuç | — | kg/adet, kg/m |
 
@@ -62,7 +62,7 @@ Fiilî sınıfta ölçüm yoksa veya eskiyse sonuç da "hesaplanamıyor"dur (§2
 Rulo/dilinmiş bant çevriminde kenar kırpma (`EdgeTrimMm`) ve kerf etkisi de açık noktadır.
 
 Açık sorular #66'da: `NEEDS-SINAN` yorumu 6803883711 (Sinan kararı: yorum 6794787903 — Issue #66 yorumu, repo dışı).
-Kesit alanı ölçü girişi (tablo/hesap) OPEN-007 metninde açıkça sayılmaz; yeni `OPEN-*` kimliği gerekirse Sinan açar (burada yalnız etiket, kapatma değil).
+Kesit girişi Sinan kararıyla "Ebat/kalınlık" tablosundan gelir (#66 6806579823 madde 9); bunun için ayrıca yeni `OPEN-*` gerekmez.
 
 Sinan kararları (#66 yorumları 6806579823 madde 9 ve 6806619303 madde 10; 2026-11-11):
 
@@ -76,7 +76,7 @@ Sinan kararları (#66 yorumları 6806579823 madde 9 ve 6806619303 madde 10; 2026
 
 - Yuvarlama (#66 6806641583; öneri 6806590261 onaylandı): çevrim katsayısı 3 ondalık, ara adımlarda
   yuvarlama yok; kg → adet aşağı yuvarlama (floor); belge kg toplamı 2 ondalık; hepsi Ayarlar'dan
-  değiştirilebilir. Karar metni `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` madde 13'e girecek.
+  değiştirilebilir. Karar metni BS-13'tür (`SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md`).
 
 Hâlâ açık: `OPEN-007`'nin resmi kapatılması ayrı insan kararıdır. Kesit mm² mi m² mi sorusu "Ebat/kalınlık"
 tablosunun alan tanımına bağlanır (tablo tasarımında netleşir).
