@@ -100,33 +100,34 @@ Redacted); AI bu maskeyi aynen taşır, tutarı yeniden hesaplamaz veya toplamaz
 | Modül | İlk 3 (READ/SIMULATE) | Dayanak | İzin | Hassas |
 |---|---|---|---|---|
 | Satış | `sales.order.status.explain`, `sales.open_orders.daily_summary`, `sales.customer.risk.explain` | `GET /api/v1/sales/drafts/{id}/status`, `…/{id}`, `…/{id}/line-pricing`; `GET /api/v1/sales/reports/open-orders`; `GET …/{id}/risk-check` | `sales.drafts.read`, `sales.reports.read` (+ `sales.orders.price.read`) | fiyat, iskonto, risk limiti/teminat/açık alacak |
-| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` (`GetOrderCancelImpactAsync`) | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` (main'de) | bugün yok; A2a'dan sonra birim fiyat/tutar/iskonto |
+| Alış | `purchasing.request.explain`, `purchasing.approvals.pending`, `purchasing.order.cancel-impact` (SIMULATE, #932) | `IPurchasingService` (`GetRequestDetailAsync`, `GetRequestListAsync`, `GetOrderListAsync`); `GET …/orders/{id}/cancel-impact` (`GetOrderCancelImpactAsync`) | `purchasing.orders.read` (talep okuma ayrı ad yok, ASSUMPTION-PUR4-1), `purchasing.orders.cancel` (main'de) | sipariş fiyat/tutar/KDV/kur (Price; `PricePending` maskesi main'de, ayrıntı §5a) |
 | Finans | `finance.party-balance.explain`, `finance.party-ledger.explain`, `finance.open-items.overdue-summary` | `IPartyLedgerService.ReadAuthorizedAsync`, `SummarizeAuthorizedAsync` (main'de); `IFinanceOpenItemReadServiceV1.ListAuthorizedAsync`/`DetailAuthorizedAsync` | `finance.party-ledger.read` (+ `.amount.read`), `finance.open-items.read` (+ `.amount.read`) | tüm tutarlar, cari kimliği, IBAN, çek no (Finans önerisi: IBAN dış AI'a hiç açılmasın) |
 | Üretim | `manufacturing.plan.explain`, `manufacturing.plan.simulate` (SIMULATE), `manufacturing.order.variance.explain` | `GET plans/{id}`; `POST plans/preview` (calculator, kayıt yok); `GET orders/{id}` | `manufacturing.plans.read`, `manufacturing.plans.write`, `manufacturing.orders.read` | yok (ticari bağlam müşteri adı taşıyabilir: dışarı aktarılmaz) |
 | Kalan Modüller | Liste K0 dalgasından sonra gelecek | Belgeler: `IDocumentContentReadPortV1` istendi (K6, AI-9 için) | `documents.files.read` + sahip kontrolü | şirket belgeleri |
 
 ### 5a. AI-6 veri sınıfı girdileri (11 Kasım, şeritlerin önerisi — karar değil)
 
-Kaynak: Satış, Alış, Finans ve Üretim şeritlerinin 11 Kasım cevapları (taban `main@0a789a2`…`3f60f58`). Bütün
-dayanaklar main'de mevcuttur; AI için yeni port veya izin adı açılmaz. Üretim ayrı bir AI okuma portu planlamaz;
+Kaynak: Satış, Alış, Finans ve Üretim şeritlerinin 11 Kasım cevapları (taban `main@0a789a2`…`3f60f58`). Tabloda
+"(planlanan)" işaretli olanlar dışındaki dayanaklar main'de mevcuttur; AI için yeni port veya izin adı açılmaz. Üretim ayrı bir AI okuma portu planlamaz;
 AI host mevcut HTTP uçlarını/servislerini kullanır.
 
-| Modül | Dönüş tipi / sonuç | Şirket içi (dış AI'a takma adsız gidebilir) | Hassas tür (AI-D4: yalnız takma ad + yöneticinin açtığı tür) | Dış AI'a hiç gitmez (cevapsızken) |
+| Modül | Dönüş tipi / sonuç | Şirket içi (dış AI açılırsa takma adsız gidebilir; dış AI canlıya alma AI-D6 insan kapısı) | Hassas tür (AI-D4: yalnız takma ad + yöneticinin açtığı tür) | Dış AI'a hiç gitmez (cevapsızken) |
 |---|---|---|---|---|
-| Satış | `SalesOrderDraftStatusResponse`, `SalesOpenOrderReportResponse` (`Complete=false` = kısmi), `SalesOrderDraftRiskCheckResponse` | durum, kimlikler, miktarlar, risk sonucu/gerekçe kodları | fiyat/iskonto/tutar (Price, FinanceAmount; Withheld maskesi aynen taşınır), risk tutarları (Balance), belge no (CompanyDocument) | müşteri adı, cari kimliği (§D) |
+| Satış | `SalesOrderDraftStatusResponse`, `SalesOpenOrderReportResponse` (grup düzeyinde `SalesOpenOrderGroupView.Complete=false` = kısmi; `TooManyOrders` grubunda toplamlar null), `SalesOrderDraftRiskCheckResponse` | durum, kimlikler, miktarlar, risk sonucu/gerekçe kodları | fiyat/iskonto/tutar (Price, FinanceAmount; Withheld maskesi aynen taşınır), risk tutarları (Balance), belge no (CompanyDocument; kur/belge no eşlemesi şerit önerisi) | müşteri adı, cari kimliği (§D) |
 | Alış | `PurchaseRequestDetailView`, `PurchaseRequestListResponse` (Submitted), `PurchaseOrderListResponse` (Draft), `PurchaseOrderCancelImpactView` | kimlikler, durum, sürüm, tarihler, miktarlar, Cancellable/Blocker/HasAcceptance | sipariş fiyat/tutar/KDV/kur/ödeme planı (Price; `purchasing.orders.price.read` yoksa sahip serviste gizli, `PricePending` dahil) | ret/geri çekme gerekçesi serbest metni, SupplierPartyId/CompanyAccountId (§D), aktör kimlikleri |
 | Finans | `PartyBalanceResult`, `PartyLedgerResult` (`TooManyEntries` > 1000 satır, kesilmez), `ReadResult<FinanceOpenItemPageV1>` | Kind, Side, Status, Direction, tarihler, CurrencyId, Version, SourceKind, DocumentId/InstrumentId | bütün tutar/bakiye alanları (Balance, FinanceAmount; `.amount.read` yoksa Redacted, Money ve Status null) | PartyId/CompanyAccountId (§D); IBAN bu portlarda yok |
-| Üretim | `PlanViewV1`, `PlanPreviewViewV1` (kayıt yok), `OrderViewV1` (rulo başına kütle dengesi) | kimlikler, iş merkezi, proses, durum, sürüm, kg/mm/adet, etiket/rulo, fire, WIP, parametre snapshot'ı, tolerans | yok | ticari bağlam (commercial party/account), U2-b `salesOrderLink`, aktör kimlikleri |
+| Üretim | `PlanViewV1`, `PlanPreviewViewV1` (kayıt yok), `OrderViewV1` (rulo başına kütle dengesi) | kimlikler, iş merkezi, proses, durum, sürüm, kg/mm/adet, etiket/rulo, fire, WIP, parametre snapshot'ı, tolerans | yok | ticari bağlam (commercial party/account), U2-b `salesOrderLink` (planlanan, main'de yok), aktör kimlikleri |
 
 Uygulama kuralları (mevcut kararlardan türer, yeni politika değildir):
 
 - **Cari kimliği:** Finans kimlikleri "Şirket içi" önerir, Satış "Gizli" der. AI-D4'e göre cari kimliği Sinan'ın
   listesinde olmayan "Gizli" kalemdir; karar paketi §D cevaplanana kadar dış AI'a gönderilmez (`AiEgressRulesV1`:
   eşlenmemiş Gizli → Deny). AI şeridi yeniden sınıflamaz.
-- **Tutarlar:** Finans'ın "Gizli mi Çok gizli mi" sorusunu AI-D4 cevaplar: bakiye ve finans tutarı hassas türdür,
-  yalnız takma adla ve tür izni açıksa gider; izin varsayılan kapalıdır. Yeni soru açılmaz.
+- **Tutarlar:** Finans'ın "Gizli mi Çok gizli mi" sorusunu AI-D4 cevaplar: bakiye ve finans tutarı "Gizli" sınıfı +
+  Balance/FinanceAmount türüdür ("Çok gizli" etiketlenirse kod her durumda reddeder), yalnız takma adla ve tür izni açıksa gider; izin varsayılan kapalıdır. Yeni soru açılmaz.
 - **Aktör kimlikleri ve serbest metin** (PreparedBy/ApprovedBy/…, ret gerekçesi): kişisel veri içerebilir; OPEN-020
-  KVKK zemini kapanana kadar gönderilmez (AI-D4 kişisel veri kuralı).
+  KVKK zemini kapanana kadar gönderilmez (AI-D4 kişisel veri kuralının ihtiyatlı uygulaması; Sinan'ın listesinde
+  ayrı kalem değil).
 - **Maske:** Withheld/Redacted/`PricePending` sahip serviste uygulanır; AI maskeyi aynen taşır, açmaya çalışmaz.
 - **Hesap yok:** AI toplam, fark, aging veya "vadesi geçmiş" özeti hesaplamaz (formül tek backend calculator).
   Finans'ta ayrı vadesi geçmiş özeti ucu yoktur (aging API-90…93 Finans backlog'u); o zamana kadar

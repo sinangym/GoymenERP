@@ -68,7 +68,7 @@ hiçbir AI izni kullanıcıya ulaşmaz; iki karar birlikte verilirse tekrar soru
 |---|---|
 | C1. Panel: tüm aktif kullanıcılar (araçlar zaten kullanıcının kendi yetkisiyle çalışır). Politika: onaylayan ≠ hazırlayan, yayımlayan ≠ hazırlayan (onaylayan yayımlayabilir) | Görev ayrılığı korunur |
 | C2. Panel: yalnız seçilen personalar (pilot). Politika: C1 gibi | Kademeli açılış |
-| C3. Panel ve politika tek yöneticide | Görev ayrılığı yok; AI-D6'nın hazırla → onayla → yayınla akışıyla ve ADR-SET-002'nin "onaylayan ≠ hazırlayan" kuralıyla çelişir; ADR-SET-002 K15 gereği AI politika ailesinin onay/yürürlük dayanağı da aile kararıyla verilir (önerilmez) |
+| C3. Panel ve politika tek yöneticide | Görev ayrılığı yok; AI-D6'nın hazırla → onayla → yayınla akışıyla çelişir. ADR-SET-002'nin "onaylayan ≠ hazırlayan" kuralı K15 gereği AI ailesine kendiliğinden geçmez; AI ailesinin onay/yürürlük dayanağı aile kararıyla verilir (önerilmez) |
 
 **Önerilen varsayılan:** C2 (pilot), politika için onaylayan ≠ hazırlayan ve yayımlayan ≠ hazırlayan. Panel için aday izin adları
 (`ai.panel.use`, `ai.center.view`; ikisi de `ASSUMPTION`) yalnız katalogda kayıtlı olur; politika izin adları
