@@ -221,37 +221,104 @@ Her iş ayrı PR'dır; güncel durum §9'da ve PR açıklamalarında izlenir.
 
 ---
 
-## 9. Durum (2026-10-26)
+## 9. Durum (2026-11-11)
 
-Bu bölüm yalnız iş takibidir; karar değildir. Kararlar `SINAN_KARARLARI_2026-10-25_SATIS.md` ve
-`SINAN_KARARLARI_2026-10-26_SATIS_EK.md` (SAT-D13…D19) dosyalarındadır.
+Bu bölüm yalnız iş takibidir; karar değildir. Kararlar `SINAN_KARARLARI_*_SATIS*.md` dosyalarındadır (SAT-D1…D299,
+EK59'a kadar). Durumlar 2026-11-11 `origin/main` (`0a789a2d`) git geçmişinden doğrulandı; PR numarasının yanında
+squash merge SHA'sı (8 hane) var. 2026-11-11 itibarıyla açık Satış PR'ı yok. Engeller
+`docs/delivery/FABLE_5_2_ANALIZLERI/` (#1061) bulgu kimlikleriyle (F-0xx) yazıldı.
 
-| İş | PR | Durum |
+Kısaltma: ✅ merge edildi · ◐ kod merge edildi ama başka modül veya karar yüzünden uçtan uca çalışmıyor · ☐ başlamadı.
+
+### 9.1 Teknik işler (TEK) ve kayıtlar
+
+| İş | PR · merge | Durum |
 |---|---|---|
-| Karar kaydı SAT-D1…D12 + bu plan | #799 | merge edildi |
-| Merge yetkisi kararı (M1–M3) | #812 | merge edildi |
-| SAT-D13…D18, SAT-D19 | #814, #815 | merge edildi |
-| S0 frontend temizlik (TEK-06 UI, TEK-09, TEK-10, TEK-12) | #805 | review tamam; CI bekliyor |
-| UI-10 sekmeler + UI-11 Belgeler | #806 | review tamam; CI bekliyor (#805 üzerine) |
-| TEK-11 sipariş detayında birim adları | #810 | review tamam; CI bekliyor (#806 üzerine) |
-| API-01/02 + UI-12 zorla kapatma (K3) | #807 | iki review + DELTA-OK; CI bekliyor |
-| TEK-08, TEK-13 test borcu | #808 | review tamam; #807 sonrası güncellenecek |
-| MOD-03 dilim 1: Satış politika kaydı + GSP/GIN profilleri (K3; S2 dalgasından öne alındı) | #813 | iki review + DELTA-OK; #807 sonrası yeniden sabitleme ve CI |
-| MOD-12 + UI-13 tahsis etiket seçici | #816 | review + DELTA-OK; CI bekliyor |
-| API-10 siparişte onaylı müşteri iadeleri (§3'te K2; Lojistik port SQL çeviri düzeltmesi modüller arası olduğu için K3 ele alındı) | #817 | iki review; P3 düzeltmeleri gönderildi; #807 sonrası yeniden sabitleme, delta review ve CI |
+| Karar kaydı SAT-D1…D12 + bu plan; plan durumu 2026-10-26 | #799, #818 · `cc7a7ceb`, `72d274ed` | ✅ |
+| S0 temizlik: TEK-06 UI etiketi, TEK-09, TEK-10, TEK-12 | #805 · `f87ca960` | ✅ |
+| TEK-01…03 ortak Money/ExchangeRate/Quantity, Satış fiyatları Money | #823 · `4a79e37d` | ✅ |
+| TEK-04 outbox (= MOD-09) | #986 · `cef78270` (Satış outbox tablosu), #999 · `9529be5e` (Work dağıtıcı çekirdeği) | ◐ `sales.invoice.finalized.v1` yazılıyor; Satış olaylarını okuyan dağıtıcı bağlantısı yok |
+| TEK-05 idempotency ADR | #826 · `b5dd0b16` | ✅ |
+| TEK-06 API v2 adı (`/orders`, `SalesOrder`) | – | ☐ |
+| TEK-07 büyük dosyaları bölme | – | ☐ (dosyalar büyüdü: `SalesStore.cs` 2.499, `SalesOrderDraft.cs` 2.061 satır) |
+| TEK-08 + TEK-13 test borcu | #808 · `2c5bf214`, #1020 · `e147ca77` | ✅ |
+| TEK-11 detayda birim adları | #810 · `60142c56` | ✅ |
+| PRS-01 persona grant kartı (Satış satırları) | #871 · `641af4a3`; rol taslağı SAT-D230 #1001 · `b809bb0c` | ◐ kart ve taslak hazır; gerçek atama yok — Ayarlar/Kimlik rol ekranı bekleniyor (F-001; insan kapısı) |
+| PRS-02 Sevkiyatçıya fiyatsız okuma | tek PR'a bağlı değil (#842, #850, #865, #1046) | ✅ liste fiyat taşımaz; detay, PDF, toplamlar, raporlar ve fatura listesi fiyat okuması yoksa `Withheld`/403 |
+
+### 9.2 API uçları
+
+| İş | PR · merge | Durum |
+|---|---|---|
+| API-01/02 + UI-12 zorla kapatma | #807 · `8c3b18ed` | ✅ |
+| API-03 toplamlar | #850 · `4c3075f4`; vergi #885 · `511382ae` | ✅ |
+| API-04 başlık revizyonu | #864 · `411311e8` | ✅ |
+| API-05 satır ekle/çıkar/ürün değiştir | #926 · `76225bdb` | ✅ |
+| API-06 risk kontrolü (+ MOD-01) | #839 · `a63d1def`, #854 · `edc61c3f` | ◐ Finans portu her zaman "kaynak yok" döner; kredi limiti/teminat kaynağı yok (F-018, Finans/Cari, OPEN-010) |
+| API-07 tek sevk risk istisnası | #1054 · `9b1467a9`, #1057 · `9091e7d4` | ◐ istisna kaydı ve onayı çalışır; sevkte tüketilmesi Lojistik'i bekler (F-006 ikinci dilim), iş değeri F-018 sonrası |
+| API-08 durum eksenleri | #832 · `f1b9ef8b` | ✅ |
+| API-09 Faturalar sekmesi | #982 · `d5eaf744` | ✅ |
+| API-10 siparişte müşteri iadeleri | #817 · `5ee11b08` | ✅ |
+| API-11 kaynak planı (S-2) + MOD-05 | #1040 · `c8e090c9`; bağlı tedarik portu #931 · `30392fb9`, Alış adaptörü #998 · `1009fe39` | ◐ Alış bağlı; Üretim adaptörü yok (Üretim tarafı "kaynak yok") |
+| API-12 iskonto limiti aşımı onayı | #834 · `865a892b`; limit grupları #852 · `4a87b8fc` | ✅ |
+| API-20/21 talep | #824 · `8b57c9ef` | ✅ |
+| API-22…24 teklif, kayıp, dönüşüm | #828 · `861e5238`; takip #849 · `945d8ebe`, #984 · `5f9a30e6` | ✅ |
+| API-30/31 sevkiyat listesi, faturaya hazır adaylar (+ MOD-06) | #856 · `693ceb81` | ✅ |
+| API-32 fatura taslağı ve hesaplayıcı | #975 · `bab70cb4` | ✅ |
+| API-33 fatura onay/red/iptal | #980 · `5b5baa23` | ✅ |
+| API-34 Excel dışa aktarım | #1047 · `b6099323`, #1052 · `fb2b635c` | ✅ |
+| API-35 resmî belge eşleştirme | #981 · `7664278b`; dövizli tolerans #1021 · `e3643fc9`; KDV/tevkifat ayrı #1046 · `78adcd68` | ◐ resmî fatura okuma portunu uygulayan modül yok → 503; resmî belge verisinin sahibi Sinan kararı (F-005) |
+| API-36 kesinleştirme → Finans açık kalem (+ MOD-04) | #986 · `cef78270`; Finans kabul portu #929 · `1e694aa3` | ◐ eşleşme olmadan kesinleşme yok; F-005'e bağlı |
+| API-37 Kontrol Merkezi | #983 · `40aae54a`; takip #992 · `45f654bf`, #1042 · `efe38033` | ✅ |
+| API-40 müşteri iade faturası | #1059 · `36885556`; ret/iptal #1063 · `5e6ab310` | ◐ kayıt, gönderme, onay, ret, iptal çalışır; kesinleştirme 503 (`sales_customer_return_finance_port_unavailable`) — Finans API-11 ters kayıt portu yok |
+| API-41/42 raporlar | #865 · `d7e19e4a` | ✅ |
+| API-50…52 Ayarlar politikaları (+ MOD-03 dilim 1) | #813 · `118254b0` | ✅ |
+
+### 9.3 Ekranlar ve görev notları (S-)
+
+| İş | PR · merge | Durum |
+|---|---|---|
+| UI-10 altı sekme + UI-11 Belgeler sekmesi | #806 · `5be1a9c4` | ✅ |
+| UI-13 etiket seçici (+ MOD-12 = ST-01) | #816 · `e2e981d2`, #822 · `78cdf905` | ✅ |
+| UI-14 yeni siparişte fiyat girişi | #831 · `9fc3a41a` | ✅ |
+| UI-15 toplamlar, durum eksenleri, risk kartı | #850, #836 · `ae0432e9`, #872 · `40f64ba8` | ✅ (risk kartı F-018 nedeniyle "kaynak yok" gösterir) |
+| UI-20 S-01 talep/teklif havuzu | #830 · `a543c7ce` | ✅ |
+| UI-50 S-05 kontrol + marj | #1016 · `e6e23b60`, #1045 · `ee6a8d15` | ◐ marj maliyeti Stok defterini bekler: ortalama maliyet çekirdeği var (#1044 · `184fac03`, #1062 · `6986296d`), defter yazıcısı ve Satış bağlantısı yok (F-011, Stok) |
+| UI-51 S-06 onaylar + Work "Satış" filtresi (SAT-D243) | #1016, #1024 · `f21174e1` | ✅ |
+| UI-60/61 S-07 sevkiyat, S-08 faturaya hazır | #856 · `693ceb81` | ✅ |
+| UI-62 taslak oluşturma, UI-64 taslak komutları | #1018 · `64922021`, #1025 · `d3a5c421` | ✅ |
+| UI-63 S-09 fatura listesi | #1017 · `f5cfb63e` | ✅ |
+| UI-64b eşleştirme formu, kesinleştirme ekranı | #1015 · `e817700b`, #990 · `1256156c` | ◐ ekran hazır; arka uç F-005 nedeniyle 503 |
+| UI-65 Kontrol Merkezi | #1014 · `0a5baaf0`, #1036 · `401607af` | ✅ |
+| UI-70a iade görünümü | #829 · `af15f6b4` | ✅ |
+| UI-70b iade kaydı ekranları | #1059 · `36885556`, #1063 · `5e6ab310` | ◐ kesinleştirme API-40 ile aynı nedenle kapalı |
+| UI-71 S-11 Sözleşme/Belgeler çalışma alanı | #825 · `e3928d49` | ✅ (belgeler) |
+| S-11 Satış sözleşmesi kaydı (SAT-D28) | – | ☐ SAT-D28 kaydı Satış'ta ayrı kayıt olarak tanımlar; ödeme planı ve iskonto kuralları ayrı politika kararıdır. Anlaşma fiyat kademesi (SAT-D58) bu kaydı bekler |
+| UI-80 raporlar | #865 · `d7e19e4a` | ✅ |
+| MOD-07 sipariş PDF'i | #842 · `c625ca04`, #1038 · `89e3a272` | ✅ |
+| MOD-08 kullanıcı dizini, sorumlu seçici | #827 · `dd5f20d7`, #844 · `13062ce2` | ✅ |
+| MOD-02 fiyat kademesi | #843 · `c86416e7` | ✅ |
+| MOD-10 Work onay adaptörleri | – | ☐ Work modülünde Satış'a özgü backend adaptörü yok; S-06 ve Work filtresi ekran tarafında (#1024) |
+| MOD-11 Muhasebe vergi kontrolü | – | ☐ Faz 6 sonrası (plan §7) |
+| S-1 bağlı tedarik okuma | #931 · `30392fb9` | ✅ (Üretim adaptörü yok) |
+| S-2 sipariş kaynak planı | #1040 · `c8e090c9` | ✅ |
+| S-3 fason hizmet siparişi | #898 · `8156dc78` | ✅ |
+| SAT-D17 satır eksikle kapatma, SAT-D30 fazla teslim onayı, SAT-D32 kullanıcı kapatması | #985 · `990ce28e`, #987 · `2f391006`, #963 · `2f2be741`, #952 · `ca36d045` | ◐ Lojistik sevk edeni (`ShippedBy`) bildirmediği için onaylar her zaman reddedilir (F-006, Lojistik; migration gerekir) |
+| Döviz kuru ve iş günü | #906 · `f4936c1d`, #914 · `438e87db` | ◐ kur ekranı yok, kaynak kapalı; pratikte yalnız TRY (F-025, OPEN-012) |
 
 Notlar:
 
-- **MOD-12:** yeni Stok ucu gerekmedi; mevcut ST-01 okumasının izinleri (`inventory.labels.read` +
-  `inventory.balances.read`) tahsis yeteneğinin zaten istediği izinlerin alt kümesi; yeni grant gerekmez. Codex şeridi ayrı bir etiket ucu yazmaz.
-- **API-10 sınırı:** Lojistik portu satır başına yalnız onaylı toplamı veriyor. Siparişte tek tek iade numarası,
-  tarihi ve durumu gösterilecekse portun Lojistik sahibi tarafından genişletilmesi gerekir (K3 sözleşme işi). UI-70a
-  bu sürümde satır toplamını gösterir.
-- **Açık politika notu (karar değildir):** etiket seçici, karşı tarafa ait veya kullanılabilir miktarı 0 olan
-  etiketleri de listeliyor; Stok bunları kayıtta reddediyor. Seçicide süzülmeleri Stok/Satış politika kararıdır (Issue #66'ya `NEEDS-SINAN` olarak yazıldı).
-- **CI kapasitesi:** tek self-hosted runner ve host belleği (16 GB) şu an teslimin darboğazı; PR'lar sıralı ve tek
-  push ile ilerletiliyor.
+- **Rol ve yetki:** izinler kayıtlı; çoğu hiçbir rolde değil. Rol tanımı ve atama Ayarlar rol ekranından yapılacak
+  (SAT-D282, SAT-D287); ekran yok (F-001). Atama insan kapısıdır.
+- **Satış → finans zinciri:** taslak, onay ve dışa aktarım çalışır; resmî belge eşleşmesi, kesinleşme ve alacak
+  F-005'teki Sinan kararını bekler. İade faturası kesinleşmesi ayrıca Finans API-11 ters kayıt portunu bekler
+  (SAT-D291). EK57'nin üç açık sorusu EK58'de (#1058 · `084ceb0f`, SAT-D292…D294) cevaplandı.
+- **Yeni `NEEDS-SINAN`:** reddedilen veya iptal edilen müşteri iadesinin müşteri belge numarası yeni bir iade
+  kaydında yeniden kullanılabilir mi? Cevaplanana kadar kural seçilmez.
+- **API-10 sınırı** (2026-10-26 notu) aynen geçerli: Lojistik portu satır başına yalnız onaylı toplamı verir.
 
-Sıradaki işler (S1 kalanı): UI-70a (#806 ve #817 sonrası), UI-71, MOD-07'nin backend kısmı (sipariş PDF'i, fatura
-dışa aktarım dosyası), TEK-13 kalan backend kanıtı (gerçek sahiplerle olumlu oluşturma), TEK-01…03 ve TEK-05
-(Codex şeridi), PRS-01/02.
+Sıradaki işler (Satış dışı sahiplerde): F-006 Lojistik `ShippedBy` (SAT-D17/D30/D32 ve API-07 tüketimi açılır),
+F-005 resmî fatura verisi kararı ve portu, Finans API-11 ters kayıt portu (iade kesinleşmesi), F-011 Stok maliyet
+defteri yazıcısı ve Satış marj bağlantısı, F-018 limit/teminat kaynağı (OPEN-010), F-025 kur ekranı (OPEN-012),
+F-001 rol ekranı. Satış şeridinde kalan: S-11 sözleşme kaydı (SAT-D28), TEK-06 API v2 adı, TEK-07 dosya bölme,
+TEK-04 için Satış olaylarının dağıtıcıya bağlanması, MOD-10.
