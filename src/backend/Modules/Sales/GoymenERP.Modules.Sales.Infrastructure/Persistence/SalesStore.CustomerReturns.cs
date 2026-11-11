@@ -99,9 +99,10 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         string commandName, Guid customerReturnId, Action<SalesCustomerReturn, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default)
     {
-        if (commandName is not (SalesCustomerReturnCommands.SubmitV1 or SalesCustomerReturnCommands.ApproveV1))
+        if (commandName is not (SalesCustomerReturnCommands.SubmitV1 or SalesCustomerReturnCommands.ApproveV1
+            or SalesCustomerReturnCommands.RejectV1 or SalesCustomerReturnCommands.CancelV1))
         {
-            throw new ArgumentException("Yalnız gönderme ve onay bu mağaza yöntemini kullanır.", nameof(commandName));
+            throw new ArgumentException("Yalnız gönderme, onay, ret ve iptal bu mağaza yöntemini kullanır.", nameof(commandName));
         }
 
         return await StepCustomerReturnAsync(envelope, requestHash, commandName, customerReturnId, null, mutate, audit, cancellationToken);
