@@ -455,6 +455,48 @@ public static class SalesRuleCodes
     /// <summary>API-07 (EK56 SAT-D286): only the requester withdraws their own pending exception; another actor's request is not opened.</summary>
     public const string RiskExceptionNotRequester = "sales_risk_exception_not_requester";
 
+    /// <summary>API-40 (SAT-D288 (2)): a customer return is recorded only against a finalised original sales invoice.</summary>
+    public const string CustomerReturnInvoiceNotFinalized = "sales_customer_return_invoice_not_finalized";
+
+    /// <summary>API-40 (SAT-D288 (3)): the shipment link is not a shipment of the original invoice, or a line is of another shipment.</summary>
+    public const string CustomerReturnShipmentNotOnInvoice = "sales_customer_return_shipment_not_on_invoice";
+
+    /// <summary>API-40: a return line names a line that is not on the original invoice, or names the same line twice.</summary>
+    public const string CustomerReturnLineNotOnInvoice = "sales_customer_return_line_not_on_invoice";
+
+    /// <summary>API-40: a return quantity is not a positive number of the original line's precision.</summary>
+    public const string CustomerReturnQuantityInvalid = "sales_customer_return_quantity_invalid";
+
+    /// <summary>API-40 (SAT-D293 (3)): the return quantity exceeds the original line's remaining returnable quantity (finalised returns, SAT-D292 (6)).</summary>
+    public const string CustomerReturnQuantityExceeded = "sales_customer_return_quantity_exceeded";
+
+    /// <summary>API-40 (SAT-D290 (3), SAT-D88/D204): the preparer or the submitter of a return does not approve it.</summary>
+    public const string CustomerReturnSelfApproval = "sales_customer_return_self_approval";
+
+    /// <summary>
+    /// API-40 (SAT-D293 (4)): a return without a shipment link exceeds the line's SAT-D99 invoiced-not-shipped balance; it is refused
+    /// and the balance never goes negative (link it to a shipment or correct the quantity).
+    /// </summary>
+    public const string CustomerReturnUnshippedBalanceExceeded = "sales_customer_return_unshipped_balance_exceeded";
+
+    /// <summary>API-40 (SAT-D292 (2), (6)): another return of the same line was finalised meanwhile, so the approved amounts are no longer the calculator's.</summary>
+    public const string CustomerReturnAmountsChanged = "sales_customer_return_amounts_changed";
+
+    /// <summary>API-40: an exact proportional amount cannot be held by System.Decimal (nothing is computed).</summary>
+    public const string CustomerReturnAmountOutOfRange = "sales_customer_return_amount_out_of_range";
+
+    /// <summary>API-40: the customer's return document number is empty or longer than the bound (refused, never cut).</summary>
+    public const string CustomerReturnDocumentInvalid = "sales_customer_return_document_invalid";
+
+    /// <summary>
+    /// API-40 (AGENTS.md "Fiziksel/ticari/finansal olay bir kez kaydedilir"): the customer's return document number is already
+    /// recorded for the same customer. Fail-closed implementation detail; whether a customer may reuse a number is not decided.
+    /// </summary>
+    public const string CustomerReturnDocumentDuplicate = "sales_customer_return_document_duplicate";
+
+    /// <summary>API-40: a return carries no lines, too many lines or a line twice.</summary>
+    public const string CustomerReturnLinesInvalid = "sales_customer_return_lines_invalid";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

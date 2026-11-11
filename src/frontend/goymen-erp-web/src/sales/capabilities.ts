@@ -32,7 +32,25 @@ export const SALES_CAPABILITY = {
   invoicesList: 'sales.invoices.list',
   /** UI-80 Satış raporları — API-41 / API-42 under their own `sales.reports.read` (Sales shell contract 1.11). */
   reportsView: 'sales.reports.view',
+  /**
+   * UI-70b S-10 Müşteri iade faturaları — API-40 GET list under `sales.returns.read` beside `sales.orders.price.read` (the return
+   * copies the original line's amounts; Sales shell contract 1.25). A row opens the return detail.
+   */
+  customerReturnsList: 'sales.customer-returns.list',
+  /** UI-70b S-10 yeni iade faturası kaydı — `sales.returns.write` beside `sales.orders.price.read`, single company. */
+  customerReturnsCreate: 'sales.customer-returns.create',
+  /** UI-70b S-10 iade faturası detayı — `sales.returns.read` beside `sales.orders.price.read`. */
+  customerReturnsDetail: 'sales.customer-returns.detail',
 } as const
+
+/**
+ * API-40 / SAT-D290 / SAT-D291: the three CONTROLS of the S-10 return detail (submission, approval, finalisation), each published
+ * only beside its own name (`sales.returns.write` / `sales.returns.approve` / `sales.returns.finalize`). The preparer never
+ * approves their own return; the server decides it.
+ */
+export const SALES_CUSTOMER_RETURN_SUBMIT_CAPABILITY = 'sales.customer-returns.submit' as const
+export const SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY = 'sales.customer-returns.approve' as const
+export const SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY = 'sales.customer-returns.finalize' as const
 
 /** Q9: non-routed control for recording customer acceptance of the current approved revision. */
 export const SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY = 'sales.orders.customer-acceptance.record' as const
@@ -127,6 +145,9 @@ export type SalesCapabilityId =
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY
   | typeof SALES_INVOICE_WRITE_CAPABILITY
   | typeof SALES_INVOICE_APPROVE_CAPABILITY
+  | typeof SALES_CUSTOMER_RETURN_SUBMIT_CAPABILITY
+  | typeof SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY
+  | typeof SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY
 
 /**
  * API-32 / API-33 (SAT-D202): the invoice-draft CONTROLS — "Fatura taslağı hazırla" on S-08, and submit / cancel on the draft —
@@ -160,7 +181,14 @@ export const SALES_ROUTE = {
    * the route stands on the S-08 id, published beside the same `sales.invoices.read` (./salesRoutes.tsx).
    */
   controlCenter: '/satis/kontrol-merkezi',
+  /** UI-70b S-10: static, never a draft id. */
+  customerReturns: '/satis/iadeler',
+  // Static `yeni` before the parameter route: it must never be read as a return id.
+  customerReturnCreate: '/satis/iadeler/yeni',
+  customerReturnDetail: '/satis/iadeler/:returnId',
 } as const
+
+export const salesCustomerReturnPath = (returnId: string) => `/satis/iadeler/${encodeURIComponent(returnId)}`
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
 export const salesPriceControlPath = (draftId: string) => `${salesDetailPath(draftId)}/kontrol`

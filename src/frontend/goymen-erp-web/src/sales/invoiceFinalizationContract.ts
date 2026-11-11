@@ -181,6 +181,11 @@ function decodeInstalment(value: unknown): InvoiceInstalment | null {
 export interface InvoiceLine {
   readonly lineId: string
   readonly lineNo: number
+  /** The shipment (Logistics) this line invoices, and its dispatch note number — what a customer return may name (SAT-D293). */
+  readonly shipmentId: string
+  readonly dispatchNoteNumber: string
+  readonly productId: string
+  readonly unitId: string
   readonly quantity: string
   readonly netUnitPrice: string
   readonly vatPercent: string
@@ -211,7 +216,18 @@ function decodeLine(value: unknown): InvoiceLine | null {
   ) return null
   const amounts = decodeAmounts(o.amounts)
   if (amounts === null || (o.functional !== null && decodeLineFunctional(o.functional) === null)) return null
-  return { lineId: o.lineId, lineNo: o.lineNo, quantity: o.quantity, netUnitPrice: o.netUnitPrice, vatPercent: o.vatPercent, amounts }
+  return {
+    lineId: o.lineId,
+    lineNo: o.lineNo,
+    shipmentId: o.shipmentId,
+    dispatchNoteNumber: o.dispatchNoteNumber,
+    productId: o.productId,
+    unitId: o.unitId,
+    quantity: o.quantity,
+    netUnitPrice: o.netUnitPrice,
+    vatPercent: o.vatPercent,
+    amounts,
+  }
 }
 
 export const SALES_INVOICE_DECISION_FIELDS = [

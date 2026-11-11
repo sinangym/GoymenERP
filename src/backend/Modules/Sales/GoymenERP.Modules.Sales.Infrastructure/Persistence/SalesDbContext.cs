@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.CustomerReturns;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Domain.Quotes;
@@ -284,6 +285,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-07 (ADR-011 §2): the risk exception commands' own attempt records (append-only).</summary>
     internal DbSet<ShipmentRiskExceptionAttemptRow> ShipmentRiskExceptionAttempts => Set<ShipmentRiskExceptionAttemptRow>();
 
+    /// <summary>API-40 (SAT-D288…SAT-D294): the recorded customer return invoices (the approval axis is the only change).</summary>
+    internal DbSet<CustomerReturnRow> CustomerReturns => Set<CustomerReturnRow>();
+
+    /// <summary>API-40 (ADR-011 §2): the customer return commands' own attempt records (append-only).</summary>
+    internal DbSet<CustomerReturnAttemptRow> CustomerReturnAttempts => Set<CustomerReturnAttemptRow>();
+
     /// <summary>
     /// CK_ShipmentRiskExceptions_Decision (SAT-D153/D160): Requested (1) carries no decision and no validity date; Approved (2) a
     /// decision without a reason and with its business date; Rejected (3) a decision with a non-blank reason and no validity date;
@@ -325,6 +332,59 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string ShipmentRiskExceptionAttemptOutcomeConstraint =
         "([Outcome] = 1 AND [ExceptionId] IS NOT NULL AND [RefusalJson] IS NULL) "
         + "OR ([Outcome] = 2 AND [ExceptionId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    /// <summary>
+    /// CK_CustomerReturns_Facts (API-40, SAT-D290): the facts follow the state exactly — Draft (1) none; PendingApproval (2) the
+    /// submission; Approved (3) and the approval; Finalized (4) and the finalisation with its place among the invoice's finalised
+    /// returns. The version is at least the state's ordinal.
+    /// </summary>
+    internal const string CustomerReturnFactsConstraint =
+        "([State] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 1) "
+        + "OR ([State] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [FinalizedBy] IS NULL AND [FinalizedAtUtc] IS NULL "
+        + "AND [FinalizationSequence] IS NULL AND [Version] >= 2) "
+        + "OR ([State] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [FinalizedBy] IS NULL "
+        + "AND [FinalizedAtUtc] IS NULL AND [FinalizationSequence] IS NULL AND [Version] >= 3) "
+        + "OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [FinalizedBy] IS NOT NULL "
+        + "AND LEN([FinalizedBy]) > 0 AND [FinalizedAtUtc] IS NOT NULL AND [FinalizationSequence] >= 1 AND [Version] >= 4)";
+
+    /// <summary>CK_CustomerReturns_MakerChecker (SAT-D290): the approver is neither the preparer nor the submitter, compared ordinally.</summary>
+    internal const string CustomerReturnMakerCheckerConstraint =
+        "[ApprovedBy] IS NULL OR ([ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2)";
+
+    /// <summary>CK_CustomerReturns_Rate (SAT-D289 (1)): a TL return carries no rate; a foreign-currency return all three facts and TL totals.</summary>
+    internal const string CustomerReturnRateConstraint =
+        "([ExchangeRate] IS NULL AND [FunctionalCurrencyId] IS NULL AND [FunctionalScale] IS NULL AND [FunctionalNetAmount] IS NULL "
+        + "AND [FunctionalVatAmount] IS NULL AND [FunctionalWithholdingAmount] IS NULL AND [FunctionalLineTotalAmount] IS NULL) "
+        + "OR ([ExchangeRate] > 0 AND [FunctionalCurrencyId] IS NOT NULL AND [FunctionalCurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [FunctionalScale] >= 0 AND [FunctionalScale] <= 8 AND [FunctionalNetAmount] IS NOT NULL AND [FunctionalVatAmount] IS NOT NULL "
+        + "AND [FunctionalWithholdingAmount] IS NOT NULL AND [FunctionalLineTotalAmount] IS NOT NULL)";
+
+    /// <summary>UX_CustomerReturns_FinalizationSequence (SAT-D292 (6)): a finalised return's place among its invoice's finalised returns.</summary>
+    internal const string CustomerReturnFinalizationSequenceFilter = "[FinalizationSequence] IS NOT NULL";
+
+    /// <summary>
+    /// TR_CustomerReturns_Guard (API-40): the header, the customer's document and the lines are immutable, the state moves one step
+    /// forward, the version by exactly one, and no row is deleted (THROW 51255). Declared so EF Core does not use OUTPUT without INTO.
+    /// </summary>
+    internal const string CustomerReturnGuardTrigger = "TR_CustomerReturns_Guard";
+
+    /// <summary>TR_CustomerReturnAttempts_Guard (API-40): an attempt row is append-only (THROW 51256).</summary>
+    internal const string CustomerReturnAttemptGuardTrigger = "TR_CustomerReturnAttempts_Guard";
+
+    /// <summary>CK_CustomerReturnAttempts_Command: only the customer return's own versioned commands record here.</summary>
+    internal const string CustomerReturnAttemptCommandConstraint =
+        "[CommandName] IN (N'" + SalesCustomerReturnCommands.CreateV1 + "', N'" + SalesCustomerReturnCommands.SubmitV1 + "', N'"
+        + SalesCustomerReturnCommands.ApproveV1 + "', N'" + SalesCustomerReturnCommands.FinalizeV1 + "')";
+
+    /// <summary>CK_CustomerReturnAttempts_Outcome: a recorded attempt names its return; a refusal carries its JSON.</summary>
+    internal const string CustomerReturnAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
     /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
     internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
@@ -552,6 +612,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureInvoices(modelBuilder);
         ConfigureInvoiceFinalizations(modelBuilder);
         ConfigureShipmentRiskExceptions(modelBuilder);
+        ConfigureCustomerReturns(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1739,6 +1800,92 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // API-40 (SAT-D288…SAT-D294): the recorded customer return invoices and their attempts.
+    private void ConfigureCustomerReturns(ModelBuilder modelBuilder)
+    {
+        var customerReturn = modelBuilder.Entity<CustomerReturnRow>();
+        customerReturn.ToTable("CustomerReturns", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturns_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND ([ShipmentId] IS NULL OR [ShipmentId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_CustomerReturns_State", "[State] IN (1, 2, 3, 4)");
+            table.HasCheckConstraint("CK_CustomerReturns_Facts", CustomerReturnFactsConstraint);
+            table.HasCheckConstraint("CK_CustomerReturns_MakerChecker", CustomerReturnMakerCheckerConstraint);
+            table.HasCheckConstraint("CK_CustomerReturns_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
+            table.HasCheckConstraint("CK_CustomerReturns_Rate", CustomerReturnRateConstraint);
+            table.HasCheckConstraint("CK_CustomerReturns_Lines", "ISJSON([LinesJson]) = 1 AND [LineCount] >= 1");
+            table.HasCheckConstraint("CK_CustomerReturns_Text",
+                "LEN([OriginalDocumentNo]) > 0 AND LEN([CustomerDocumentNo]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasTrigger(CustomerReturnGuardTrigger);
+        });
+        customerReturn.HasKey(x => x.Id);
+        customerReturn.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        customerReturn.Property(x => x.Id).ValueGeneratedNever();
+        customerReturn.Property(x => x.OriginalDocumentNo).HasMaxLength(SalesInvoice.MaximumDocumentNoLength).IsRequired();
+        customerReturn.Property(x => x.CustomerDocumentNo).HasMaxLength(SalesCustomerReturn.MaximumCustomerDocumentNoLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        customerReturn.Property(x => x.CustomerDocumentDate).HasColumnType("date");
+        customerReturn.Property(x => x.ExchangeRate).HasPrecision(28, 10);
+        customerReturn.Property(x => x.CreatedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength).IsRequired();
+        customerReturn.Property(x => x.SubmittedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
+        customerReturn.Property(x => x.ApprovedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
+        customerReturn.Property(x => x.FinalizedBy).HasMaxLength(SalesCustomerReturn.MaximumActorLength);
+        customerReturn.Property(x => x.NetAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.VatAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.WithholdingAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.LineTotalAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.FunctionalNetAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.FunctionalVatAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.FunctionalWithholdingAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.FunctionalLineTotalAmount).HasPrecision(28, 8);
+        customerReturn.Property(x => x.LinesJson).HasColumnType("nvarchar(max)").IsRequired();
+        customerReturn.Property(x => x.Version).IsConcurrencyToken();
+        customerReturn.Property(x => x.RowVersion).IsRowVersion();
+        customerReturn.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        customerReturn.HasIndex(x => new { x.CompanyId, x.PartyId, x.CustomerDocumentNo }).IsUnique()
+            .HasDatabaseName("UX_CustomerReturns_CustomerDocument");
+        customerReturn.HasIndex(x => new { x.CompanyId, x.OriginalInvoiceId, x.FinalizationSequence }).IsUnique()
+            .HasFilter(CustomerReturnFinalizationSequenceFilter).HasDatabaseName("UX_CustomerReturns_FinalizationSequence");
+        customerReturn.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc }).HasDatabaseName("IX_CustomerReturns_Created");
+        customerReturn.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        customerReturn.HasOne<InvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalInvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        customerReturn.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<CustomerReturnAttemptRow>();
+        attempt.ToTable("CustomerReturnAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 "
+                + "AND LEN([ActorId]) > 0 AND ([TargetId] IS NULL OR [TargetId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Command", CustomerReturnAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome", CustomerReturnAttemptOutcomeConstraint);
+            table.HasTrigger(CustomerReturnAttemptGuardTrigger);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<CustomerReturnRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CustomerReturnId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         SalesAuditEventTenantGuard.Validate(this, companyContext);
@@ -1896,6 +2043,16 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(ShipmentRiskExceptionRow.ValidOn), nameof(ShipmentRiskExceptionRow.UpdatedAtUtc),
                     ],
                     ShipmentRiskExceptionAttemptRow => [],
+                    // API-40 (SAT-D290): a customer return moves only along its approval axis, one step forward (checked below);
+                    // the header, the customer's document, the lines and the totals never change; its attempts are APPEND-ONLY.
+                    CustomerReturnRow =>
+                    [
+                        nameof(CustomerReturnRow.State), nameof(CustomerReturnRow.SubmittedBy), nameof(CustomerReturnRow.SubmittedAtUtc),
+                        nameof(CustomerReturnRow.ApprovedBy), nameof(CustomerReturnRow.ApprovedAtUtc), nameof(CustomerReturnRow.FinalizedBy),
+                        nameof(CustomerReturnRow.FinalizedAtUtc), nameof(CustomerReturnRow.FinalizationSequence),
+                        nameof(CustomerReturnRow.UpdatedAtUtc),
+                    ],
+                    CustomerReturnAttemptRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftLineRow)
@@ -1944,6 +2101,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                                 or (int)SalesShipmentRiskExceptionState.Rejected or (int)SalesShipmentRiskExceptionState.Withdrawn))
                     {
                         throw new InvalidOperationException("Risk istisnasının durumu yalnız bir kez, Onay bekliyor → Onaylı/Reddedildi/Geri çekildi yönünde değişir.");
+                    }
+                }
+
+                if (entry.Entity is CustomerReturnRow)
+                {
+                    // API-40: Draft → PendingApproval → Approved → Finalized, exactly one step per save; nothing else.
+                    var returnState = entry.Property(nameof(CustomerReturnRow.State));
+                    if (!(returnState.IsModified && (int)returnState.CurrentValue! == (int)returnState.OriginalValue! + 1
+                            && (int)returnState.CurrentValue! <= (int)SalesCustomerReturnState.Finalized))
+                    {
+                        throw new InvalidOperationException("İade faturasının durumu yalnız bir adım ileri gider: Taslak → Onay bekliyor → Onaylı → Kesinleşti.");
                     }
                 }
 

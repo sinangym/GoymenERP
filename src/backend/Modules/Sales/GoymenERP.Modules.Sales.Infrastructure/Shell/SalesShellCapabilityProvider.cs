@@ -35,11 +35,18 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// <see cref="SalesPermissionManifestV1.OrdersRiskExceptionRequest"/> and <see cref="SalesPermissionManifestV1.OrdersRiskExceptionApprove"/>
 /// (manifest v29). The request API itself does not need the draft read (SAT-D162); the detail control does, because it lives on
 /// the detail screen.</para>
+/// <para>1.25 (API-40 / UI-70b, SAT-D288–SAT-D294 / EK57–EK58; merged after the API-07 1.24): adds the three customer return screens
+/// (<see cref="CustomerReturnListCapabilityId"/>, <see cref="CustomerReturnCreateCapabilityId"/>,
+/// <see cref="CustomerReturnDetailCapabilityId"/>) and three controls of the return detail (submission, approval, finalisation), and
+/// registers <see cref="SalesPermissionManifestV1.ReturnsRead"/>, <see cref="SalesPermissionManifestV1.ReturnsWrite"/>,
+/// <see cref="SalesPermissionManifestV1.ReturnsApprove"/> and <see cref="SalesPermissionManifestV1.ReturnsFinalize"/> (manifest v30).
+/// Every API-40 read and command answers amounts, so every screen and control also needs
+/// <see cref="SalesPermissionManifestV1.OrdersPriceRead"/>: a screen that opens never meets a 403 from its own read.</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.24";
+    public const string OwnerContractVersion = "1.25";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -135,6 +142,30 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// rejecting another user's request. No other Sales name confers it (shell contract 1.24).
     /// </summary>
     public const string RiskExceptionApproveCapabilityId = "sales.orders.risk-exception.approve";
+
+    /// <summary>
+    /// API-40 / UI-70b "Müşteri iade faturaları" (shell contract 1.25; SAT-D288–SAT-D294): the recorded customer return invoices —
+    /// list, create, detail — each its own grant, and three controls of the detail: the submission (the read plus
+    /// <see cref="SalesPermissionManifestV1.ReturnsWrite"/>), the approval (<see cref="SalesPermissionManifestV1.ReturnsApprove"/>;
+    /// the service still refuses the preparer and the submitter, SAT-D290 (3)) and the finalisation
+    /// (<see cref="SalesPermissionManifestV1.ReturnsFinalize"/>). Each also needs <see cref="SalesPermissionManifestV1.OrdersPriceRead"/>
+    /// because the answer carries amounts. No order or invoice name confers any of them; no grant is made (human gate).
+    /// </summary>
+    public const string CustomerReturnListCapabilityId = "sales.customer-returns.list";
+    public const string CustomerReturnListRouteId = "sales.customer-returns.list";
+    public const string CustomerReturnListRoutePath = "/satis/iadeler";
+    public const string CustomerReturnListScreenId = "S-10";
+    public const string CustomerReturnCreateCapabilityId = "sales.customer-returns.create";
+    public const string CustomerReturnCreateRouteId = "sales.customer-returns.create";
+    public const string CustomerReturnCreateRoutePath = "/satis/iadeler/yeni";
+    public const string CustomerReturnCreateScreenId = "S-10-NEW";
+    public const string CustomerReturnDetailCapabilityId = "sales.customer-returns.detail";
+    public const string CustomerReturnDetailRouteId = "sales.customer-returns.detail";
+    public const string CustomerReturnDetailRoutePath = "/satis/iadeler/:returnId";
+    public const string CustomerReturnDetailScreenId = "S-10-DETAIL";
+    public const string CustomerReturnSubmitCapabilityId = "sales.customer-returns.submit";
+    public const string CustomerReturnApproveCapabilityId = "sales.customer-returns.approve";
+    public const string CustomerReturnFinalizeCapabilityId = "sales.customer-returns.finalize";
 
     /// <summary>
     /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
@@ -369,6 +400,73 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         .. RequestDeclarations(),
         .. QuoteDeclarations(),
         .. DispatchDeclarations(),
+        .. CustomerReturnDeclarations(),
+        ];
+    }
+
+    private static ShellCapabilityDeclaration[] CustomerReturnDeclarations()
+    {
+        var detail = new ShellCapabilityDeclaration(
+            CustomerReturnDetailCapabilityId,
+            CustomerReturnDetailRouteId,
+            CustomerReturnDetailRoutePath,
+            CustomerReturnDetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.ReturnsRead, SalesPermissionManifestV1.OrdersPriceRead],
+            ImplementationAvailable: true);
+        return
+        [
+            new ShellCapabilityDeclaration(
+                CustomerReturnListCapabilityId,
+                CustomerReturnListRouteId,
+                CustomerReturnListRoutePath,
+                CustomerReturnListScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SalesPermissionManifestV1.ReturnsRead, SalesPermissionManifestV1.OrdersPriceRead],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                CustomerReturnCreateCapabilityId,
+                CustomerReturnCreateRouteId,
+                CustomerReturnCreateRoutePath,
+                CustomerReturnCreateScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SalesPermissionManifestV1.ReturnsWrite, SalesPermissionManifestV1.OrdersPriceRead],
+                ImplementationAvailable: true),
+            detail,
+            // SAT-D290 / SAT-D291: submission, approval and finalisation are controls of the return detail, the request approve way.
+            detail with
+            {
+                CapabilityId = CustomerReturnSubmitCapabilityId,
+                ParentCapabilityId = CustomerReturnDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    SalesPermissionManifestV1.ReturnsRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.ReturnsWrite,
+                ],
+            },
+            detail with
+            {
+                CapabilityId = CustomerReturnApproveCapabilityId,
+                ParentCapabilityId = CustomerReturnDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    SalesPermissionManifestV1.ReturnsRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.ReturnsApprove,
+                ],
+            },
+            detail with
+            {
+                CapabilityId = CustomerReturnFinalizeCapabilityId,
+                ParentCapabilityId = CustomerReturnDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    SalesPermissionManifestV1.ReturnsRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.ReturnsFinalize,
+                ],
+            },
         ];
     }
 
