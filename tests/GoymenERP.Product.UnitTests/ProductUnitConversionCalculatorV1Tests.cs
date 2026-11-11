@@ -188,5 +188,46 @@ public sealed class ProductUnitConversionCalculatorV1Tests
         Assert.Throws<ArgumentOutOfRangeException>(() => DensityV1.FromKilogramsPerCubicMetre(-1m));
     }
 
+    [Fact]
+    public void A_default_density_that_bypassed_the_factory_is_refused_never_computed_as_zero_kg()
+    {
+        var uninitialised = default(DensityV1);
+
+        var sheet = ProductUnitConversionCalculatorV1.SheetKgPerPiece(2m, 1000m, 2000m, uninitialised);
+        var coil = ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 1000m, new DensityV1());
+
+        Assert.Equal(UnitConversionOutcomeV1.Refused, sheet.Outcome);
+        Assert.Null(sheet.Value);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, coil.Outcome);
+        Assert.Null(coil.Value);
+    }
+
+    [Fact]
+    public void A_short_weighing_outside_the_tolerance_fails_on_the_weighed_base_too()
+    {
+        var weighed = Settings with { ToleranceBase = WeighbridgeToleranceBaseV1.Weighed };
+
+        // 98 vs 100: 2/98 = 2.04 percent of the weighed kg; the absolute deviation fails a short weighing.
+        var shortWeighing = ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(98m, 100m, weighed);
+
+        Assert.Equal(UnitConversionOutcomeV1.Computed, shortWeighing.Outcome);
+        Assert.False(shortWeighing.Value);
+    }
+
+    [Fact]
+    public void A_one_third_coefficient_round_trips_units_to_kg_and_back_without_losing_a_unit()
+    {
+        var oneThird = 1m / 3m;
+
+        var kg = ProductUnitConversionCalculatorV1.UnitsToKg(3m, oneThird);
+        var units = ProductUnitConversionCalculatorV1.KgToWholeUnits(kg.Value!.Value, oneThird, Settings);
+        var fromOneKg = ProductUnitConversionCalculatorV1.KgToWholeUnits(1m, oneThird, Settings);
+
+        Assert.Equal(UnitConversionOutcomeV1.Computed, kg.Outcome);
+        Assert.Equal(3L, units.Value);
+        Assert.Equal(3L, fromOneKg.Value);
+        Assert.Equal(0.333m, ProductUnitConversionCalculatorV1.RoundCoefficient(oneThird, Settings));
+    }
+
     private static decimal? ToDecimal(double? value) => value is null ? null : (decimal)value.Value;
 }

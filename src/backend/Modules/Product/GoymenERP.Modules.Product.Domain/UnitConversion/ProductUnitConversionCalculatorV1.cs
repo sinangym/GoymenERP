@@ -17,7 +17,10 @@ public enum UnitConversionOutcomeV1
     /// <summary>No conversion source exists ("çevrim yok"); never a guessed or zero value (SAT-D298).</summary>
     NoSource = 2,
 
-    /// <summary>An input was present but invalid (not positive); never rounded into a result.</summary>
+    /// <summary>
+    /// An input was present but invalid (zero or negative where a positive value is required, negative kg or units,
+    /// an uninitialised density) or the result is too large to compute (overflow); never rounded into a result.
+    /// </summary>
     Refused = 3,
 }
 
@@ -60,7 +63,8 @@ public enum WeighbridgeToleranceBaseV1
 
 /// <summary>
 /// A density with an explicit unit. Stored in g/cm3 (Sinan's example 7.85, BS-9); kg/m3 input is converted
-/// (1 g/cm3 = 1000 kg/m3) so a settings value in either unit cannot be read at the wrong scale.
+/// (1 g/cm3 = 1000 kg/m3) so a settings value in either unit cannot be read at the wrong scale. A default
+/// (uninitialised) value bypasses the factories and holds zero; the calculator refuses it instead of computing 0 kg.
 /// </summary>
 public readonly record struct DensityV1
 {
@@ -126,7 +130,7 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<decimal>.NoSource("A sheet conversion needs thickness, width, length and density.");
         }
 
-        if (thicknessMm <= 0 || widthMm <= 0 || lengthMm <= 0)
+        if (thicknessMm <= 0 || widthMm <= 0 || lengthMm <= 0 || density.Value.GramsPerCubicCentimetre <= 0)
         {
             return UnitConversionResultV1<decimal>.Refused("Sheet conversion inputs must be positive.");
         }
@@ -146,7 +150,7 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<decimal>.NoSource("A coil conversion needs thickness, width and density.");
         }
 
-        if (thicknessMm <= 0 || widthMm <= 0)
+        if (thicknessMm <= 0 || widthMm <= 0 || density.Value.GramsPerCubicCentimetre <= 0)
         {
             return UnitConversionResultV1<decimal>.Refused("Coil conversion inputs must be positive.");
         }
