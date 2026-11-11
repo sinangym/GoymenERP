@@ -240,6 +240,30 @@ public sealed class SalesCustomerReturnServiceTests
     }
 
     [Fact]
+    public async Task The_submitters_recorded_self_rejection_is_answered_again_under_the_same_key_as_the_same_replayed_409()
+    {
+        var (service, store, _, _) = Build("SENTETIK-submitter");
+        var pending = Draft();
+        pending.Submit(1, "SENTETIK-submitter", Now);
+        store.Stored = pending;
+        var first = await Refused(() => service.RejectCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("2"), Metadata));
+        var (command, recorded) = Assert.Single(store.Refusals);
+        Assert.Equal((SalesCustomerReturnCommands.RejectV1, 409, SalesCustomerReturnProblemCodesV1.SelfApproval, false),
+            (command, recorded.Status, recorded.Code, first.IsReplay));
+
+        // The store answers the same key with the recorded refusal: nothing is read, decided or recorded a second time.
+        store.Calls.Clear();
+        store.Replay = new SalesCustomerReturnReplay(null, recorded, "SENTETIK-original-correlation");
+        var again = await Refused(() => service.RejectCustomerReturnAsync(ReturnId, new SalesDraftStateCommandRequest("2"), Metadata));
+
+        Assert.Equal((409, SalesCustomerReturnProblemCodesV1.SelfApproval, true, "SENTETIK-original-correlation"),
+            (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
+        Assert.Equal(["replay"], store.Calls);
+        Assert.Single(store.Refusals);
+        Assert.Equal(SalesCustomerReturnState.PendingApproval, store.Stored.State);
+    }
+
+    [Fact]
     public async Task Create_on_a_missing_or_other_companys_invoice_is_422_and_nothing_is_stored()
     {
         var (service, store, invoices, _) = Build();

@@ -94,8 +94,8 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 
 | Bağlantı | Üretici | Tüketici | Port/olay | main'de impl + DI | Test | Durum |
 |---|---|---|---|---|---|---|
-| 2a. S-1 Sipariş iptali / zorla kapatmada "bağlı üretim" | Üretim | Satış | Öneri: Satış `ISalesOrderLinkedSupplyReadPortV1` ← Üretim `IManufacturingSalesOrderLinkReadPortV1` (`docs/handoffs/URETIM_SATIS_DEVIR_v1.md` S-1) | İki arayüz de kodda yok. `LinkedProduction = "manufacturing.linked-orders"` → `NoSource` (`SalesDraftService.Cancellation.cs:270`, `SalesDraftService.ForceClosure.cs`) | — | ❌ |
-| 2b. S-2 Kaynak planı (Satış API-11, DEC-SAL-004) — Satış ekranı/kaydı | Satış | Satış / Üretim | Satır kaynak stratejisi kaydı | Yalnız başlıkta opak `SourceStrategy` sahip referansı var (`SC/SalesDraftContractsV1.cs:15`, `SalesRows.cs:70`); satır bazlı kaynak planı, ekran ve uç yok | — | ❌ |
+| 2a. S-1 Sipariş iptali / zorla kapatmada "bağlı üretim" | Üretim | Satış | Satış `ISalesOrderLinkedSupplyReadPortV1` + `ISalesOrderLinkedSupplyRecorderV1` (`SC/SalesOrderLinkedSupplyContractsV1.cs:102`, #931) ← Üretim host adaptörü (SupplyKind Production; emsal Alış #998 `GoymenERP.Api/Endpoints/PurchasingSalesLinkedSupplyHostPorts.cs`) | Satış portu ve tüketicileri (iptal, zorla kapatma, satır revizyonu, kaynak planı) main'de; Üretim adaptörü yok, bu yüzden "bağlı üretim" `NoSource` | Satış portu: `SUT/` + SQL testleri | 🟡 (Satış ✅, Üretim adaptörü yok) |
+| 2b. S-2 Kaynak planı (Satış API-11, DEC-SAL-004) — Satış ekranı/kaydı | Satış | Satış / Üretim | Satır kaynak planı (locked+stock+production+purchasing+subcontract == satır) | #1040 (`c8e090c9`, SAT-D251..D255): `SalesDraftService.SourcePlan.cs`, `SalesOrderDraft.SourcePlan.cs`; bağlı açık üretim belgesi 2a portundan okunur | Satış birim + SQL testleri (#1040) | ✅ (Satış) |
 | 2c. S-2 Üretim planı satırı ↔ sipariş satırı bağı (Üretim API-16) | Satış | Üretim | `ISalesOrderLineReferencePortV1.GetApprovedLineAsync` (`SC/ISalesOrderLineReferencePortV1.cs`) | Satış tarafı hazır: `SalesOrderLineReferencePort`, `SME:80` `AddScoped`. Üretim'de tüketici yok (Manufacturing'de `Sales` referansı yalnız yorum; Üretim U2-b) | Satış portu: `SUT/` + çok sayıda SQL testi (aşağıda 3c) | 🟡 |
 | 2d. S-3 Fason hizmet siparişi okuma (#898) | Satış | Üretim (URT-D22) | `ISalesSubcontractServiceOrderReadPortV1`, sözleşme `sales.subcontract-service-order.v1` (`SC/ISalesSubcontractServiceOrderReadPortV1.cs:28`) | `SalesSubcontractServiceOrderReadPort` (`.../Persistence/SalesSubcontractServiceOrderReadPort.cs`), `SME:83` `AddScoped`. Üretim tüketici adaptörü main'de yok (Üretim U5-b) | `SUT/SalesSubcontractServiceOrderReadPortContractTests.cs`, `SUT/SalesOrderDraftSubcontractTests.cs`, SQL: `IT/SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTests.cs` | 🟡 (Satış ✅, tüketici yok) |
 | 2e. Fason siparişin üretim/müşteri malı bağı (cari değişikliği kapısı) | Üretim (host adaptörü) | Satış (SAT-D175) | `ISalesSubcontractOrderBindingReadPortV1` (`SC/ISalesSubcontractServiceOrderReadPortV1.cs:154`) | **Uygulama ve DI kaydı yok.** `SME:175` `GetService` → null → fason siparişin carisi değiştirilemez (503, fail-closed) | Yalnız Satış birim testi (`SUT/SalesDraftServiceTests.Subcontract.cs`, sahte port); SQL yok | 🟡 |
@@ -180,9 +180,9 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 | 1c | Kredi limiti / teminat | 🟡 | Limit ve teminat master'ı (API-85; OPEN-010 açık) | **Finans** |
 | 1d | Finans olayları → Satış | ❌ | Finans outbox + Satış inbox (dağıtıcı ERP-000F) | **Finans** (üretici), Satış (tüketici; dağıtıcı sonrası) |
 | 1e | Eşleşmemiş avans (iptal etkisi) | ❌ | Siparişe bağlı avans kaydı ve okuma portu (Finans API-21) | **Finans**; Satış tarafı `NoSource` dalını porta bağlar |
-| 2a | S-1 bağlı üretim (iptal/zorla kapatma) | ❌ | Satış `ISalesOrderLinkedSupplyReadPortV1` + `SalesDraftService.Cancellation.cs` / `.ForceClosure.cs` içindeki `LinkedProduction` dalının bu porttan beslenmesi | **Satış/Claude şeridi** |
-| 2a | — | ❌ | `IManufacturingSalesOrderLinkReadPortV1` (Üretim **U5-a**); Satış portuna bağlayan host adaptörü Satış'ın onayıyla | **Üretim** (port), host adaptörü Üretim + **Satış onayı** |
-| 2b | S-2 kaynak planı ekranı/kaydı (API-11) | ❌ | Satır kaynak stratejisi kaydı + ekran; "üretim" seçeneği Satış **S6** dalgasında | **Satış/Claude şeridi** |
+| 2a | S-1 bağlı üretim (iptal/zorla kapatma) | ✅ | Satış `ISalesOrderLinkedSupplyReadPortV1` + tüketiciler (#931) | **Satış/Claude şeridi** (tamam) |
+| 2a | — | ❌ | Üretim host adaptörü (SupplyKind Production) + `ISalesOrderLinkedSupplyRecorderV1` beyanı (Üretim **U5-a**; emsal Alış #998). Satış'ta kod değişikliği gerekmez | **Üretim** |
+| 2b | S-2 kaynak planı kaydı (API-11) | ✅ | #1040 (`c8e090c9`); üretim payı dahil | **Satış/Claude şeridi** (tamam) |
 | 2c | Üretim planı ↔ sipariş satırı | 🟡 | `ISalesOrderLineReferencePortV1.GetApprovedLineAsync` tüketicisi (Üretim API-16, **U2-b**); Satış tarafı hazır | **Üretim** |
 | 2d | Fason hizmet siparişi okuma | 🟡 | Üretim tüketici adaptörü (URT-D22, **U5-b**); Satış tarafı hazır | **Üretim** |
 | 2e | Fason bağ portu | 🟡 | `ISalesSubcontractOrderBindingReadPortV1` host adaptörü + DI kaydı + SQL testi (**U5-b**) | **Üretim + Lojistik/Stok** (host adaptörü; müşteri malı anahtarı Stok'ta). Stok'ta yeni anahtar/tablo gerekiyorsa o kısım **ertelendi: Lojistik/Stok başlayınca**; o zamana kadar 503 fail-closed |
@@ -201,9 +201,9 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 
 | Konu | Durum | Sorumlu ve dalga |
 |---|---|---|
-| S-1 bağlı üretim | ❌ | Satış: `ISalesOrderLinkedSupplyReadPortV1` + `LinkedProduction` dalı (**Satış/Claude**). Üretim: `IManufacturingSalesOrderLinkReadPortV1` (**Üretim U5-a**). Host adaptörü Satış'ın onayıyla bağlanır |
+| S-1 bağlı üretim | 🟡 | Satış portu ✅ (#931). Kalan: Üretim host adaptörü + recorder beyanı (**Üretim U5-a**) |
 | `ISalesSubcontractOrderBindingReadPortV1` | 🟡 | Host adaptörü **Üretim + Stok, U5-b**; o zamana kadar fason siparişin carisi değişmez (503) |
-| S-2 kaynak planı "üretim" seçeneği | ❌ | **Satış/Claude, S6 dalgası** |
+| S-2 kaynak planı "üretim" seçeneği | ✅ | #1040 (`c8e090c9`, SAT-D251..D255) |
 | S-2 plan satırı ↔ sipariş satırı | 🟡 | **Üretim U2-b**, `ISalesOrderLineReferencePortV1.GetApprovedLineAsync` ile (Satış portu ✅) |
 | `ISalesSubcontractServiceOrderReadPortV1` tüketimi | 🟡 | **Üretim U5-b** (Satış portu ✅) |
 
