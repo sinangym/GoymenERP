@@ -1,0 +1,80 @@
+# Sinan Kararları — 2026-11-11 (bekleyen sorular: maliyet kuru, iade belge no, tevkifat tabanı, F-005, OC-3, F-001, OPEN-013, Alış A3, U-08 ve yuvarlaması, paket/boya verisi, AI Grup E, Work Plan 9, UsableRemnant etiket sınıfı, AI E7 toplulaştırma, U-08 kantar toleransı sınırı ve tabanı)
+
+Bu belge önceki karar dosyalarını silmez; 11 Kasım 2026'da cevaplanan 17 bekleyen soruyu tek yerde kaydeder. Bu
+maddeler için şeritler ayrı karar dosyası yazmaz, bu dosyaya referans verir. Belge içinde maddeler `BS-1` … `BS-17`
+diye anılır. Satış maddesi BS-2'ye ayrıca `SAT-D300` kimliği verilir (SAT-D299'un devamı). Daha önceki kimlikler
+(SAT-D295…SAT-D299, DEC-PRDCT-007, ALS-D*, URT-D25/D27 vb.) geçerliliğini korur. Bu belge `KARAR_SICILI` satırı eklemez.
+
+**Kaynak:** Sinan, cevapları 11 Kasım 2026'da koordinatör oturumunda (`AskUserQuestion`) verdi; koordinatör beş
+yoruma kaydetti. Beş yorum da Issue #66'da `sinangym` hesabındandır:
+
+- [`6806579823`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806579823) (2026-11-11T20:36Z, madde 1–9)
+- [`6806619303`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806619303) (2026-11-11T20:39Z, madde 10–12)
+- [`6806641583`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806641583) (2026-11-11T20:40Z, 3. kısım: U-08 yuvarlama, bu belgede madde 13)
+- [`6806860620`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6806860620) (2026-11-11T20:56Z, #1087 takipleri: madde 14 BS-5 artık sınıfı, madde 15 AI Grup E7)
+- [`6807311666`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6807311666) (2026-11-11T21:21Z, U-08 kantar toleransı ayrıntıları: madde 16 sınır, madde 17 yüzde tabanı; soru kaynağı #1089 K3-REVIEW-B [`6807279931`](https://github.com/sinangym/GoymenERP/pull/1089#issuecomment-6807279931))
+
+Cevap metinleri bu yorumlardan anlam korunarak aktarılmıştır. Soruların kaydı her satırda parantezle verilen #66 yorumlarındadır.
+Seçenek listeleri bu kayıtta yoksa, satırda yalnız seçilen cevap yazılıdır. Sorulup seçilmeyen seçenek için
+ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
+
+## Soru ve cevaplar
+
+| # | Soru (kaynak #66 yorumu) | Cevap (Sinan, kayıttaki metin) | Seçilen seçeneğin açıklaması |
+|---|---|---|---|
+| BS-1 | `OPEN-INV-AVGCOST-FX`: Alış sipariş satırı dövizli olduğunda stok maliyetinin TL karşılığı hangi kurla hesaplanır? (6791808196; EK59 "Doğrulama" `NEEDS-SINAN`) | "TL ortalama maliyet **tedarikçi faturasındaki resmi kurla** hesaplanır. Fatura gelene kadar TL maliyet `Unavailable` görünür, geçici kur ve düzeltme hareketi yoktur." | Seçilmeyen yol (EK59'daki soruda): fatura gelmeden ERP kontrol kuruyla (ALS-D6/D14) geçici hesaplayıp sonra faturadaki kurla düzeltmek. |
+| BS-2 | Satış iadesinde müşteri belge numarası düzeltilebilir mi? (6793862024) | "**Her zaman kilitli** (bugünkü 409 davranışı korunur)." Sinan "kullanılamamalı" dedi ve araştırma istedi. Koordinatörün kaydettiği araştırma: e-fatura/e-arşiv belge numarası iptal veya ret sonrasında yeniden kullanılmaz; düzeltilmiş iade yeni belge numarasıyla gelir. | Bugünkü davranış: değiştirme isteği 409 ile reddedilir. |
+| BS-3 | Alış tevkifat eşiği hangi tutara bakar, "aşarsa" nasıl kıyaslanır? (6794888600 madde 3) | "Eşik, **fatura/belgenin KDV dahil tutarına** bakılarak uygulanır. 'Aşarsa' kesin büyüktür (`>`) demektir. Taban ve kıyas ayar olarak değiştirilebilir kalır. Production aktivasyonu yine insan kapısıdır." | Taban: belgenin KDV dahil tutarı. Kıyas: `>`. |
+| BS-4 | F-005: Resmî fatura verisi ERP'ye nasıl girer? (6803867595 Soru 3) | "**İkisi birden.** Birincil yol, muhasebenin kontrollü dosya aktarımıdır (numara, ETTN, matrah, KDV, tevkifat). Dosya aktarılamadığında **elle giriş + ikinci kişi onayı** (maker≠approver) yapılır." | Dosya aktarımı birincil yoldur; elle giriş yedek yoldur ve iki kişi gerektirir. |
+| BS-5 | OC-3: Üretimde kullanılabilir artık (UsableRemnant) çıktısının Stok etiketinde nasıl gösterileceği. (6804976107) | "Etiket sınıfı değişmez. **Etikete ayrı üretim-durumu alanı** eklenir (seçenek b)." | Seçenek (b): etiket sınıfı (Standard/SecondQuality/Scrap) aynı kalır. Üretim durumu ayrı bir alanda taşınır (DEC-PRDCT-007). |
+| BS-6 | F-001: Rol atama mekanizması. | "**İki kişi kuralı + tek seferlik kurucu admin.** Bu, mekanizmanın tasarım kararıdır. Gerçek grant/rol ataması ve Critical, insan kapısı olarak kalır." | Rol atamasında iki kişi kuralı uygulanır. İlk kurulum için bir kez kullanılan kurucu admin vardır. |
+| BS-7 | OPEN-013: Production giriş yöntemi. | "Yön seçildi: **mevcut kurumsal hesap (M365 vb.) OIDC + MFA + dış erişim VPN.** OPEN-013'ün resmi kapatılması ve production kurulumu insan kapısıdır." | OIDC sağlayıcısı kurumun mevcut hesabıdır; MFA zorunludur; dış erişim VPN üzerindendir. |
+| BS-8 | Alış A3: Kapatılan PR'lar ne olacak? (6799866464) | "Kapatılan #750 ve #772–776 **yeniden başlatılır**. Alış şeridi bu PR'ları yalnız referans alır, işi bugünkü main'e göre yeniden yazar ve kör kopya yapmaz." | Yeniden başlatma. İş bugünkü main üzerinde yeniden yazılır. |
+| BS-9 | U-08: Ürün birim çevrim verisi. (6803883711) | Yoğunluk: tek genel ayar (Settings, şirket bazlı, örn. 7,85 g/cm³). Kaplama/galvaniz payı: hesaba **katılmaz**. Kesit: ürün kartında ayrı bir **"Ebat/kalınlık" sekmesi** olur; hangi ürünün hangi ebat ve kalınlıktan üretileceği bu tabloda tutulur, hesaplama buradan yapılır; satırı olmayan ürün `NoSource` döner. Yuvarlama: basamak sayısı boru/profil pratiğine göre **araştırılıp önerilecek**; Ürün şeridi öneriyi ayarlanabilir değerle getirir. Kantar–hesap toleransı: **%1**, ayarlanabilir. Paket tablosu ve boya sınıfı listesi: ayrıca sorulacak (→ BS-10). | Alt maddeler cevaptaki gibidir. |
+| BS-10 | Paket adet tablosu ve boya ürün sınıfı listesinin veri kaynağı (URT-D25/D27, OPEN-007). | "Veri **Excel'den içe aktarılır** ve sonra **ERP üzerinde düzenlenebilir**. Liste gelene kadar sistem tahmin yapmaz, veri `NoSource` kalır. OPEN-007'nin resmi kapatılması ayrı bir insan kararıdır." | Veri Excel'den içe aktarılır, sonra ERP'de düzenlenir. Veri yoksa `NoSource`. |
+| BS-11 | AI karar paketi Grup E (6804270247, `docs/delivery/AI_KARAR_PAKETI_2026-11.md`). | "**Paketteki öneriler kabul edildi.** E8 (hash anahtarı sahibi ve rotasyonu, yani secret) ile harici AI'nin canlıya alınması insan kapısı olarak kalır." | Paketteki önerilen seçenekler kabul edildi. E8 ve canlıya alma hariçtir. E7'de tek öneri yoktu; BS-15 ile karara bağlandı. |
+| BS-12 | Work "Plan 9 iş onayı sözleşmesi" için kaynak belge. (6804046604) | "Ayrı bir kaynak belge beklenmez. Work şeridi kapsamı repodaki onay akışı kararlarına göre yazar, #66'da gösterir ve **mevcut kapsamla devam eder**." | Ayrı kaynak belge beklenmez; Work mevcut kapsamla devam eder. |
+| BS-13 | U-08 yuvarlama: BS-9'da araştırılıp önerilecek denen basamak değerleri (Ürün şeridinin önerisi). | "Sinan, Ürün şeridinin önerisini **onayladı**: Çevrim katsayısı 3 ondalık tutulur, ara adımlarda yuvarlama yapılmaz. kg'dan adede çevirirken aşağı yuvarlanır (floor). Belgedeki kg toplamı 2 ondalık gösterilir. Kantar–hesap toleransı %1. Bu değerlerin hepsi Ayarlar'dan değiştirilebilir." | Ürün şeridinin önerisi aynen kabul edildi. |
+| BS-14 | BS-5 takibi: UsableRemnant çıktısının etiket sınıfı ne olsun? (#1087 takibi, koordinatör sordu; 6806860620) | "Bence üretimde seçilsin, varsayılan 2.kalite gibi duruyor" | Üretim çıktısında operatör sınıfı seçer (Standard / SecondQuality); varsayılan SecondQuality. `ASSUMPTION-BS5-REMNANT-MAPPING` geçersizdir. |
+| BS-15 | BS-11 takibi: AI Grup E7 reddedilen istek seli; toplulaştırma mı, hız sınırı mı? (#1087 takibi; 6806860620) | "Bunu bilemedim mantıklı olan hangisi ise, topla sayaç tut olabilir" | Toplulaştırma seçildi; hız sınırı seçilmedi. |
+| BS-16 | BS-9/BS-13 takibi: kantar–hesap farkı tam %1 olduğunda kabul mü, uyarı mı? (#1089 K3-REVIEW-B P1; 6807311666) | "Fark **tam %1 ise kabul** edilir (tolerans içi, `<=`); uyarı yalnız %1 aşılınca. Ayarlar'dan değiştirilebilir." | Sınır dahil (`<=`); önerilen seçenek seçildi. |
+| BS-17 | BS-9/BS-13 takibi: tolerans yüzdesinin tabanı hesaplanan kg mı, kantar kg'si mi? (#1089 K3-REVIEW-B P1; 6807311666) | "Yüzde tabanı: **hesaplanan (teorik) kg** — sapma = (kantar − teorik) / teorik. Ayarlar'dan değiştirilebilir." | Taban hesaplanan kg; önerilen seçenek seçildi. |
+
+## Kararlar
+
+| No | Konu | Karar | Etkilenen yer |
+|---|---|---|---|
+| BS-1 | Dövizli alışta TL ortalama maliyet kuru | TL karşılığı **tedarikçi faturasındaki resmî kurla** hesaplanır. Fatura gelene kadar TL maliyet `Unavailable` okunur. Geçici kur ve düzeltme hareketi **yoktur**. Döviz cinsi değer SAT-D295'teki gibi okunur. `OPEN-INV-AVGCOST-FX`: **Sinan kararıyla karara bağlandı (2026-11-11, #66 6806579823).** `OPEN-INV-AVGCOST-ZERO-STOCK` ve `-UNIT-CONVERSION` EK59'da kapanmıştı. `-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK` açık kalır. | Stok maliyet defteri, `IInventoryAverageCostReadPortV1` (TL değer), `AverageCostPosition`; fatura kuru girdisi Alış/Finans fatura sözleşmesinden gelir (ayrı dilim, `Modül bağlantıları` satırıyla) |
+| SAT-D300 (BS-2) | Satış iadesinde müşteri belge numarası | Belge numarası **her zaman kilitlidir**; değiştirme isteği bugünkü gibi 409 ile reddedilir. Düzeltilmiş iade yeni belge numarasıyla gelir. | Satış iade belge numarası alanı ve mevcut 409 davranışı (kod değişikliği gerekmez) |
+| BS-3 | Alış tevkifat eşiği | Eşik **belgenin KDV dahil tutarına** uygulanır, kıyas **kesin büyüktür (`>`)**. Taban ve kıyas **ayar** olarak değiştirilebilir kalır. Production aktivasyonu insan kapısıdır. | Alış tevkifat eşik kontrolü ve ilgili ayar (Alış şeridi) |
+| BS-4 | F-005 resmî fatura verisi | Birincil yol, muhasebenin **kontrollü dosya aktarımıdır** (numara, ETTN, matrah, KDV, tevkifat). Yedek yol **elle giriş + ikinci kişi onayıdır** (maker≠approver). | F-005 resmî fatura kaydı (Finans/Alış) |
+| BS-5 | OC-3 UsableRemnant etiketi | Stok etiket sınıfı **değişmez** (Standard/SecondQuality/Scrap). Etikete **ayrı bir üretim-durumu alanı** eklenir. Seçilmeyen yol: (a) etikete 4. sınıf `Remnant` eklemek (#66 6804976107). UsableRemnant çıktısının etiket sınıfı BS-14'e göre üretimde seçilir (varsayılan SecondQuality); önceki `ASSUMPTION-BS5-REMNANT-MAPPING` (Standard eşlemesi) BS-14 ile geçersizdir. Alan adı, değer listesi ve şema Stok şeridinin K3 dilimidir. Alan gelene kadar Üretim UsableRemnant çıktısını fail-closed reddeder. Satılabilirlik bu alandan ayrı karar verilir (DEC-PRDCT-007). | Inventory `MaterialLabel`, etiket sözleşmesi; Üretim çıktı→etiket eşlemesi (§5.3a) okuma portuyla |
+| BS-6 | F-001 rol atama | Mekanizma: **iki kişi kuralı + tek seferlik kurucu admin**. Bu bir tasarım yönüdür; gerçek grant/rol ataması ve Critical insan kapısıdır. | F-001 kimlik/rol atama tasarımı |
+| BS-7 | OPEN-013 production girişi | Yön: **mevcut kurumsal hesap (M365 vb.) OIDC + MFA + dış erişim VPN**. Yön seçildi; **resmi kapatma insan kapısıdır**, `OPEN-013` açık kalır. Production kurulumu insan kapısıdır. | Kimlik doğrulama tasarımı (`ACIK_KARARLAR.md` `OPEN-013`; `SINAN_KARARLARI_2026-08-31.md` §2) |
+| BS-8 | Alış A3 | Kapatılan #750 ve #772–776 **yeniden başlatılır**. Bu PR'lar yalnız referanstır; iş bugünkü main'e göre yeniden yazılır, kör kopya yapılmaz. | Alış şeridi A3 dilimleri |
+| BS-9 | U-08 çevrim verisi | Yoğunluk: tek, şirket bazlı Settings ayarı (örn. 7,85 g/cm³). Kaplama/galvaniz payı hesaba katılmaz. Kesit: ürün kartında "Ebat/kalınlık" sekmesi; hesap buradan yapılır, satırı olmayan ürün `NoSource`. Yuvarlama: Ürün şeridinin önerisi onaylandı, değerler BS-13'tedir. Kantar–hesap toleransı: %1, ayarlanabilir. | Ürün birim çevrim (SAT-D298/D299 "Açık kalan"), Settings; aday belge PR #1086 |
+| BS-10 | Paket adet tablosu ve boya ürün sınıfı listesi | Veri **Excel'den içe aktarılır**, sonra **ERP'de düzenlenebilir**. Liste gelene kadar sistem tahmin yapmaz, veri `NoSource` kalır. Yön seçildi; **`OPEN-007`'nin resmi kapatılması insan kapısıdır**, `OPEN-007` açık kalır. | URT-D25/D27 veri kaynağı |
+| BS-11 | AI karar paketi Grup E | `docs/delivery/AI_KARAR_PAKETI_2026-11.md` Grup E önerileri **kabul edildi**. Hariç ve insan kapısında kalanlar: **E8** (hash anahtarı sahibi ve rotasyonu, secret) ve harici AI'nin canlıya alınması. **E7** BS-15 ile karara bağlandı (toplulaştırma). E2'deki izin adı (`platform.security-events.read`) adaydır, grant içermez. | AI şeridi |
+| BS-12 | Work Plan 9 iş onayı | Ayrı kaynak belge beklenmez. Work şeridi kapsamı repodaki onay akışı kararlarından yazar, #66'da gösterir ve mevcut kapsamla devam eder. | Work şeridi |
+| BS-13 | U-08 yuvarlama | Çevrim katsayısı **3 ondalık** tutulur; **ara adımlarda yuvarlama yoktur**. kg→adet çevriminde **aşağı yuvarlanır (floor)**. Belgedeki kg toplamı **2 ondalık** gösterilir. Kantar–hesap toleransı **%1** (BS-9 ile aynı). Bu değerlerin **hepsi Ayarlar'dan değiştirilebilir**; kodda sabit olarak yazılmaz. | Ürün birim çevrim calculator'ı, Settings; BS-9 |
+| BS-14 | UsableRemnant etiket sınıfı (BS-5 takibi) | Üretim çıktısında **operatör UsableRemnant'ın etiket sınıfını seçer: Standard veya SecondQuality**. **Varsayılan SecondQuality**. Üretim durumu alanı (= UsableRemnant) ayrıca taşınır (BS-5). `ASSUMPTION-BS5-REMNANT-MAPPING` (Standard eşlemesi) **geçersizdir**. Alan adı ve şema Stok K3 dilimidir; seçim Üretim çıktı beyanında yapılır. | Inventory etiket sözleşmesi (Stok K3); Üretim çıktı beyanı ekranı ve isteği |
+| BS-15 | AI Grup E7 reddedilen istek seli | **Toplulaştırma** seçildi: aynı aktör + tür + neden için zaman penceresinde sayaç tutulur. **Pencere ve eşik Ayarlar'dan** değişir, kodda sabit yoktur; ilk değer ölçümden sonra önerilir. Hız sınırı seçilmedi. | AI şeridi (ADR-SEC-001 güvenlik olayı kanalı), Settings |
+| BS-16 | U-08 kantar toleransı sınırı | Kantar–hesap farkı toleransa **eşitse kabul** edilir (`sapma <= tolerans`); uyarı yalnız tolerans **aşılınca** verilir. Sınır davranışı **Ayarlar'dan değiştirilebilir**; varsayılan dahil (`<=`). `ASSUMPTION-U08-TOLERANCE-BOUNDARY` gerekmez. | Ürün birim çevrim calculator'ı (#1089), Settings; BS-9, BS-13 |
+| BS-17 | U-08 tolerans yüzde tabanı | Sapma **hesaplanan (teorik) kg**'ye göre ölçülür: `sapma = (kantar − teorik) / teorik`. Taban **Ayarlar'dan değiştirilebilir**; varsayılan teorik kg. | Ürün birim çevrim calculator'ı (#1089), Settings; BS-9, BS-13 |
+
+## Sınırlar
+
+- Bu belge kod, şema veya migration değiştirmez. Her madde ilgili şeridin ayrı dilim PR'ında, o PR'ın K seviyesi ve
+  kapılarıyla uygulanır. Örnekler: BS-5 etiket alanı (K3: şema + sözleşme), BS-1 fatura kuru girdisi (K3:
+  para + modüller arası sözleşme).
+- Hâlâ açık (#66 6806619303): Fason (Fable Soru 4); B-06 Ürün runtime için secret ve grant; sızan `sk-ant-usr`
+  anahtarının iptali (Sinan'ın konsol işlemi); grant ve production aktivasyonları. U-08 yuvarlama BS-13 ile, kantar toleransının sınırı
+  ve tabanı BS-16/BS-17 ile karara bağlandı.
+- Hâlâ açık (`SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md` "Kapatılan ve kapanmayan `OPEN-INV-AVGCOST-*` kimlikleri" bölümü):
+  `OPEN-INV-AVGCOST-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK`. `-ZERO-STOCK` ve
+  `-UNIT-CONVERSION` EK59'da kapandı.
+- AI Grup E (`docs/delivery/AI_KARAR_PAKETI_2026-11.md`): E7 BS-15 ile karara bağlandı; E8 insan kapısında kalır.
+- `OPEN-013` ve `OPEN-007` için yön seçildi; resmi kapatma insan kapısıdır.
+- BS-6, BS-7 ve BS-11 tasarım yönüdür. Grant, rol ataması, Critical, secret veya production değildir.
+- Deployment, environment, secret, Settings'te etkinleştirme, grant/rol/Critical, production aktivasyonu, `OPEN-*`
+  kapatma ve `.claude/settings.json` kapıları değişmez.
