@@ -51,7 +51,7 @@ Birim tutarlılığı (aday; ölçek hatasını önlemek için implementasyon bu
 | Büyüklük | Girdi birimi (aday) | Ara/sonuç birimi |
 | --- | --- | --- |
 | kalınlık, en, boy | mm | m (÷10³) |
-| yoğunluk | Sinan örneği g/cm³ (7,85); kodda birim açık tip, kg/m³ ile ×10³ dönüşümü | — |
+| yoğunluk | g/cm³ (Sinan örneği 7,85); kodda birimi açık `DensityV1` (kg/m³ girişi ÷10³ ile g/cm³'e çevrilir) | — |
 | kesit alanı | mm² mi m² mi: **"Ebat/kalınlık" tablosunun alan tanımına bağlı (§3 son paragraf)** | m² (÷10⁶ yalnız mm² ise) |
 | sonuç | — | kg/adet, kg/m |
 
@@ -71,6 +71,9 @@ Sinan kararları (#66 yorumları 6806579823 madde 9 ve 6806619303 madde 10; 2026
 - Kesit: ürün kartında ayrı "Ebat/kalınlık" sekmesi (hangi ürün hangi ebat/kalınlıktan üretilir);
   hesap bu tablodan yapılır, satırı olmayan ürün `NoSource`.
 - Kantar–hesap toleransı %1, ayarlanabilir.
+  Sınırın dahil olup olmadığı (`<=` / `<`) ve yüzdenin tabanı (hesaplanan / tartılan kg) Sinan kararı
+  değildir: ikisi de Ayarlar alanıdır, kodda varsayılan yoktur (`ASSUMPTION-U08-TOLERANCE-BOUNDARY`;
+  testlerde örnek seçim dahil sınır + hesaplanan taban). Etkinleştirme Sinan kararını bekler.
 - Paket adet tablosu ve boya sınıfı listesi Excel'den içe aktarılır, ERP üzerinde düzenlenebilir;
   liste gelene kadar `NoSource`, tahmin yok.
 

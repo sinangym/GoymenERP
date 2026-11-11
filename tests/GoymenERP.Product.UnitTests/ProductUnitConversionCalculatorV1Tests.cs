@@ -5,12 +5,20 @@ namespace GoymenERP.Product.UnitTests;
 
 public sealed class ProductUnitConversionCalculatorV1Tests
 {
-    private static readonly UnitConversionSettingsV1 Settings = new(3, 2, 1m, MidpointRounding.AwayFromZero);
+    private static readonly UnitConversionSettingsV1 Settings = new(
+        3,
+        2,
+        1m,
+        MidpointRounding.AwayFromZero,
+        WeighbridgeToleranceBoundaryV1.Inclusive,
+        WeighbridgeToleranceBaseV1.Calculated);
+
+    private static readonly DensityV1 Steel = DensityV1.FromGramsPerCubicCentimetre(7.85m);
 
     [Fact]
     public void A_sheet_of_2mm_by_1000mm_by_2000mm_at_density_7_85_weighs_31_4_kg()
     {
-        var result = ProductUnitConversionCalculatorV1.SheetKgPerPiece(2m, 1000m, 2000m, 7.85m);
+        var result = ProductUnitConversionCalculatorV1.SheetKgPerPiece(2m, 1000m, 2000m, Steel);
 
         Assert.Equal(UnitConversionOutcomeV1.Computed, result.Outcome);
         Assert.Equal(31.4m, result.Value);
@@ -19,7 +27,7 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     [Fact]
     public void A_coil_of_2mm_by_1000mm_at_density_7_85_weighs_15_7_kg_per_metre()
     {
-        var result = ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 1000m, 7.85m);
+        var result = ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 1000m, Steel);
 
         Assert.Equal(UnitConversionOutcomeV1.Computed, result.Outcome);
         Assert.Equal(15.7m, result.Value);
@@ -32,19 +40,19 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     [InlineData(2.0, 1000.0, 2000.0, null)]
     public void A_missing_sheet_input_is_NoSource_never_zero(double? t, double? w, double? l, double? d)
     {
-        var result = ProductUnitConversionCalculatorV1.SheetKgPerPiece(ToDecimal(t), ToDecimal(w), ToDecimal(l), ToDecimal(d));
+        var result = ProductUnitConversionCalculatorV1.SheetKgPerPiece(ToDecimal(t), ToDecimal(w), ToDecimal(l), d is null ? null : DensityV1.FromGramsPerCubicCentimetre((decimal)d.Value));
 
         Assert.Equal(UnitConversionOutcomeV1.NoSource, result.Outcome);
         Assert.Null(result.Value);
     }
 
     [Theory]
-    [InlineData(0.0, 1000.0, 2000.0, 7.85)]
-    [InlineData(2.0, -1.0, 2000.0, 7.85)]
-    [InlineData(2.0, 1000.0, 2000.0, 0.0)]
-    public void A_non_positive_sheet_input_is_refused(double t, double w, double l, double d)
+    [InlineData(0.0, 1000.0, 2000.0)]
+    [InlineData(2.0, -1.0, 2000.0)]
+    [InlineData(2.0, 1000.0, 0.0)]
+    public void A_non_positive_sheet_input_is_refused(double t, double w, double l)
     {
-        var result = ProductUnitConversionCalculatorV1.SheetKgPerPiece((decimal)t, (decimal)w, (decimal)l, (decimal)d);
+        var result = ProductUnitConversionCalculatorV1.SheetKgPerPiece((decimal)t, (decimal)w, (decimal)l, Steel);
 
         Assert.Equal(UnitConversionOutcomeV1.Refused, result.Outcome);
         Assert.Null(result.Value);
@@ -53,8 +61,8 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     [Fact]
     public void A_missing_or_non_positive_coil_input_is_NoSource_or_refused()
     {
-        Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.CoilKgPerMetre(null, 1000m, 7.85m).Outcome);
-        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 0m, 7.85m).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.NoSource, ProductUnitConversionCalculatorV1.CoilKgPerMetre(null, 1000m, Steel).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.CoilKgPerMetre(2m, 0m, Steel).Outcome);
     }
 
     [Fact]
@@ -84,27 +92,69 @@ public sealed class ProductUnitConversionCalculatorV1Tests
     {
         Assert.Equal(1.235m, ProductUnitConversionCalculatorV1.RoundCoefficient(1.2345m, Settings));
         Assert.Equal(12.35m, ProductUnitConversionCalculatorV1.RoundDocumentTotal(12.345m, Settings));
-        Assert.Equal(1.2m, ProductUnitConversionCalculatorV1.RoundCoefficient(1.2345m, new UnitConversionSettingsV1(1, 2, 1m, MidpointRounding.AwayFromZero)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundCoefficient(1m, new UnitConversionSettingsV1(13, 2, 1m, MidpointRounding.AwayFromZero)));
+        Assert.Equal(1.2m, ProductUnitConversionCalculatorV1.RoundCoefficient(1.2345m, Settings with { CoefficientDecimals = 1 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundCoefficient(1m, Settings with { CoefficientDecimals = 13 }));
     }
 
     [Fact]
     public void The_rounding_mode_comes_from_the_settings_and_an_unknown_mode_is_refused()
     {
-        var toEven = new UnitConversionSettingsV1(3, 2, 1m, MidpointRounding.ToEven);
+        var toEven = Settings with { DisplayRounding = MidpointRounding.ToEven };
         Assert.Equal(12.34m, ProductUnitConversionCalculatorV1.RoundDocumentTotal(12.345m, toEven));
         Assert.Equal(12.35m, ProductUnitConversionCalculatorV1.RoundDocumentTotal(12.345m, Settings));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundDocumentTotal(1m, new UnitConversionSettingsV1(3, 2, 1m, (MidpointRounding)99)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.RoundDocumentTotal(1m, Settings with { DisplayRounding = (MidpointRounding)99 }));
     }
 
     [Fact]
-    public void The_weighbridge_check_is_inclusive_at_the_tolerance_and_refuses_bad_inputs()
+    public void An_inclusive_calculated_base_weighbridge_check_passes_at_the_tolerance_and_refuses_bad_inputs()
     {
         Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101m, 100m, Settings).Value);
         Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(99m, 100m, Settings).Value);
         Assert.False(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101.01m, 100m, Settings).Value);
         Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 0m, Settings).Outcome);
-        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 100m, new UnitConversionSettingsV1(3, 2, -1m, MidpointRounding.AwayFromZero)).Outcome);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100m, 100m, Settings with { WeighbridgeTolerancePercent = -1m }).Outcome);
+    }
+
+    [Fact]
+    public void An_exclusive_boundary_fails_a_deviation_equal_to_the_tolerance()
+    {
+        var exclusive = Settings with { ToleranceBoundary = WeighbridgeToleranceBoundaryV1.Exclusive };
+
+        Assert.False(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101m, 100m, exclusive).Value);
+        Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(100.99m, 100m, exclusive).Value);
+    }
+
+    [Fact]
+    public void A_weighed_base_measures_the_deviation_against_the_weighed_kg_and_refuses_zero_weighed()
+    {
+        var weighed = Settings with { ToleranceBase = WeighbridgeToleranceBaseV1.Weighed };
+
+        // 99 vs 100: 1/99 = 1.0101 percent of the weighed kg, over 1 percent; against the calculated kg it is exactly 1.
+        Assert.False(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(99m, 100m, weighed).Value);
+        Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(99m, 100m, Settings).Value);
+        // 101 vs 100: 1/101 = 0.990 percent of the weighed kg, inside.
+        Assert.True(ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(101m, 100m, weighed).Value);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(0m, 100m, weighed).Outcome);
+    }
+
+    [Fact]
+    public void An_unknown_tolerance_boundary_or_base_is_refused_not_defaulted()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(
+            100m, 100m, Settings with { ToleranceBoundary = (WeighbridgeToleranceBoundaryV1)0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductUnitConversionCalculatorV1.WithinWeighbridgeTolerance(
+            100m, 100m, Settings with { ToleranceBase = (WeighbridgeToleranceBaseV1)0 }));
+    }
+
+    [Fact]
+    public void Density_in_kg_per_cubic_metre_converts_to_the_same_value_and_a_non_positive_density_is_refused()
+    {
+        var fromKgPerCubicMetre = DensityV1.FromKilogramsPerCubicMetre(7850m);
+
+        Assert.Equal(Steel, fromKgPerCubicMetre);
+        Assert.Equal(31.4m, ProductUnitConversionCalculatorV1.SheetKgPerPiece(2m, 1000m, 2000m, fromKgPerCubicMetre).Value);
+        Assert.Throws<ArgumentOutOfRangeException>(() => DensityV1.FromGramsPerCubicCentimetre(0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DensityV1.FromKilogramsPerCubicMetre(-1m));
     }
 
     private static decimal? ToDecimal(double? value) => value is null ? null : (decimal)value.Value;
