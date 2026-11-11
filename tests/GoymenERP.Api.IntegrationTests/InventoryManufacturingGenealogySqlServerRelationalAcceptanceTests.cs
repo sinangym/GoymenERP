@@ -210,7 +210,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var parentA = await SeedManufacturingParentAsync(run, "SYN-MFG-GEN-ISO-A", 30m);
-        var parentB = await SeedManufacturingParentForAsync(run, CompanyB, "SYN-MFG-GEN-ISO-B", 30m);
+        // GSP/CompanyB's Settings kilogram profile is in effect only from 2026-10-26 (SAT-D18), so the
+        // foreign company's parent stock and issue use a date inside its profile window.
+        var parentB = await SeedManufacturingParentForAsync(run, CompanyB, "SYN-MFG-GEN-ISO-B", 30m,
+            CompanyBManufacturingAt);
         var orderId = Guid.NewGuid();
 
         var issuedA = await CommitIssueAsync(run, IssueRequest(orderId, parentA.Label.Id, "2", "10"),
@@ -223,7 +226,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                              connection, transaction, CompanyB, ManufacturingSettingsFor(run, CompanyB)))
             {
                 await participant.StageInputIssueAsync(
-                    IssueRequest(orderId, parentB.Id, "2", "10") with { CompanyId = CompanyB },
+                    IssueRequest(orderId, parentB.Id, "2", "10") with
+                    {
+                        CompanyId = CompanyB, OccurredAtUtc = CompanyBManufacturingAt.AddMinutes(1),
+                    },
                     ManufacturingMetadata(run, "gen-iso-issue-b"));
             }
 
@@ -315,15 +321,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         return new ApprovedSettingsPrerequisiteProvider(companyContext, new FixedCurrentUser(run.Actor, company));
     }
 
+    private static readonly DateTimeOffset CompanyBManufacturingAt =
+        new(2026, 10, 27, 16, 0, 0, TimeSpan.Zero);
+
     private static async Task<MaterialLabel> SeedManufacturingParentForAsync(
-        Run run, Guid company, string code, decimal quantity)
+        Run run, Guid company, string code, decimal quantity, DateTimeOffset at)
     {
         var location = await run.LocationOfAsync(company);
         var label = NewLabel(company, code);
         await using var store = run.Store(company);
         await store.Labels.SaveLabelAsync(label,
             Metadata(run) with { CorrelationId = $"manufacturing-parent-label-{Guid.NewGuid():N}" });
-        var receipt = new StockMovement(Guid.NewGuid(), company, StockMovementKind.Receipt, ManufacturingAt,
+        var receipt = new StockMovement(Guid.NewGuid(), company, StockMovementKind.Receipt, at,
             new StockSourceReference("synthetic.manufacturing-parent", Guid.NewGuid()),
             [new StockMovementLine(Position(company, location, label, BlockState.Free),
                 StockDirection.In, Kilograms.Positive(quantity))]);
