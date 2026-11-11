@@ -106,6 +106,11 @@ public sealed class FinancePaymentAllocationSqlServerRelationalAcceptanceTests
         var big = await run.RecordPaymentAsync("900.00");
         var overItem = await run.CreateAsync("refuse-item", Allocate(big, payable, "500.001"));
         Assert.Contains(overItem.Issues, issue => issue.Code == "finance_allocation_exceeds_open_item");
+        // An amount that fits but carries more decimal places than the payment's balance and the item's outstanding
+        // amount do is refused, so an allocation never changes the scale the stored balances were recorded with.
+        var extraScale = await run.CreateAsync("refuse-scale", Allocate(big, payable, "100.000"));
+        Assert.Contains(extraScale.Issues, issue => issue.Code == "finance_allocation_amount_invalid"
+            && issue.Field == "amount");
 
         var approved = await run.RecordPaymentAsync("100.00", ManualBankPaymentStatuses.Approved);
         var notRecorded = await run.CreateAsync("refuse-approved", Allocate(approved, payable, "1"));
@@ -125,7 +130,7 @@ public sealed class FinancePaymentAllocationSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND Status = 1 AND Version = 1 "
             + "AND OutstandingAmountText = '500.00'", ("@id", payable)));
-        Assert.Equal(7, await run.ScalarAsync<int>(
+        Assert.Equal(8, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = 'finance.payment-allocation.create.v1'"));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE 'finance.payment-allocation.%'"));

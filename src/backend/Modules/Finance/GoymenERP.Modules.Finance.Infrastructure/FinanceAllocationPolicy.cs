@@ -245,6 +245,12 @@ internal static class FinanceAllocationPolicy
         {
             throw Failure("amount", "finance_allocation_exceeds_open_item");
         }
+        // The stored balances keep the scale their own facts were recorded with: an allocation can never add decimal
+        // places that neither the payment's balance nor the item's outstanding amount already carries.
+        if (amount.Scale > Math.Max(sourceAvailable.Scale, itemOutstanding.Scale))
+        {
+            throw Failure("amount", "finance_allocation_amount_invalid");
+        }
 
         var sourceAfter = sourceAvailable.Subtract(amount);
         var itemAfter = itemOutstanding.Subtract(amount);
