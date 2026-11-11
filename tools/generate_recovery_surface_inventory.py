@@ -937,6 +937,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "RecordRiskExceptionRefusalAsync",
     ): "ade77a294e3c768b7f939b445fca42e6ade3f12060ebc87f8830c2f436743328",
     (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs",
+        "RecordCustomerReturnRefusalAsync",
+    ): "028e5839e5cdf22c05ae85b6501e603e9cac1986c173951dfdb88dfe379c1f98",
+    (
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
         "ReconcileAsync",
     ): "0c760ebfe36fce642faa069b72637e699f16e1d14a04f0d154f43357be542657",
