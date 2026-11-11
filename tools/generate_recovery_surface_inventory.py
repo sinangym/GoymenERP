@@ -49,9 +49,9 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 157
+EXPECTED_MIGRATION_COUNT = 158
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "8b42387b5ee14ea77c8fe249890b79b64abf04af3b255347bcf845ebd0e1fcf9"
+    "9d52902658d4b23957f52cd6b7c9a2266e5a0db6043f1d045542424be44abe8c"
 )
 EXPECTED_DURABLE_STORE_COUNT = 32
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 32
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 646
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 648
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "38b228f4f78fb6f6ec2fb3a5ecfbab6d14febb9d8f4f14c45492cb98ce61648c"
+    "26620f0a9cf357a257cf031d8968dc72d16a4623ad451a94b1e60ffc6198933f"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
