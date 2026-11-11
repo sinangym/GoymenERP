@@ -270,8 +270,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F2b K3 takip: +1 not-understood-code fact, ordinal-sorted (33dcc442… -> 19001373…).
             // #1006 takip: +1 multi-allocation cancellation fact, ordinal-sorted (19001373… -> 7634c7da…).
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
+            // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
             ["tools/relational_inventory/finance.txt"] =
-                "cbae4f24879814f62171e0120db678e945b65c2e4f4de2cae9515182dc48bab2",
+                "3641335616cf9e1e8f00b26efa4f748648583e7c3c5332f5f36ede493b7c604d",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
