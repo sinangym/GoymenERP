@@ -45,6 +45,9 @@ Yalnız yapı önerilir; sayısal değer ve yuvarlama kuralı yazılmaz.
 | F-D | Boru/profil kg ↔ adet | F-C + parça boyu | `adet başına kg = metre başına kg × boy` |
 | F-E | Paket içi adet | paket standardı (adet/paket) | sabit sınıf; öneri planda değişebilir (URT-D27) |
 
+Açık sorular #66'da: `NEEDS-SINAN` yorumu 6803883711 (Sinan kararı: yorum 6794787903 — Issue #66 yorumu, repo dışı).
+Kesit alanı ölçü girişi (tablo/hesap) OPEN-007 metninde açıkça sayılmaz; yeni `OPEN-*` kimliği gerekirse Sinan açar (burada yalnız etiket, kapatma değil).
+
 Açık noktalar: yoğunluğun kaynağı (Ürün kartı mı, Ayarlar profili mi, malzeme kalitesi başına mı),
 kaplama/galvaniz ağırlık payının katsayıya girip girmediği, kesit alanı için ölçü girişi (tablo mu,
 hesap mı), yuvarlama ve tolerans. Bunlar `OPEN-007` kapsamındadır; tahminle seçilmez.
