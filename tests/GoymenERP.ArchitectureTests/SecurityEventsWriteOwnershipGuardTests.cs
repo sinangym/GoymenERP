@@ -19,12 +19,13 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
     private const string ModuleExtensionsPath = InfrastructureRoot + "SecurityEventsModuleExtensions.cs";
     private const string StorePath = InfrastructureRoot + "Writing/SecurityEventStore.cs";
     private const string WriterPath = InfrastructureRoot + "Writing/SecurityEventWriter.cs";
+    private const string QueryServicePath = InfrastructureRoot + "Reading/SecurityEventQueryService.cs";
 
     [Fact]
     public void SecurityEventsDbContext_IsReferencedOnlyByReviewedModuleFiles()
     {
         Assert.Equal(
-            new[] { DbContextPath, DesignTimeFactoryPath, StorePath, ModuleExtensionsPath }
+            new[] { DbContextPath, DesignTimeFactoryPath, StorePath, ModuleExtensionsPath, QueryServicePath }
                 .Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("SecurityEventsDbContext")
                 .Where(path => !path.StartsWith(MigrationsRoot, StringComparison.Ordinal)));
@@ -66,6 +67,26 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
             new[] { ModelBuilderPath },
             FindProductionSourcesContaining("\"SecurityEvents\"")
                 .Where(path => !path.StartsWith(MigrationsRoot, StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void SecurityEventsRead_IsServedOnlyByTheModuleQueryServiceAndOneEndpoint()
+    {
+        // ADR-SEC-001 section 5: the only read of the channel is the query service, which records
+        // security.events.read before it reads. A second reader must extend this allowlist in review.
+        Assert.Equal(
+            new[] { QueryServicePath },
+            FindProductionSourcesContaining(".SecurityEvents.AsNoTracking("));
+        Assert.Equal(
+            new[] { "src/backend/GoymenERP.Api/Endpoints/SecurityEventsEndpoints.cs", ModuleExtensionsPath, QueryServicePath }
+                .Order(StringComparer.Ordinal),
+            FindProductionSourcesContaining("ISecurityEventQueryServiceV1")
+                .Where(path => !path.EndsWith("/Reading/SecurityEventQueryContractsV1.cs", StringComparison.Ordinal)));
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), QueryServicePath));
+        Assert.True(
+            source.IndexOf("RecordReadAsync(companyId", StringComparison.Ordinal)
+                < source.IndexOf(".ToListAsync(", StringComparison.Ordinal),
+            "The read must be recorded before the rows are read.");
     }
 
     [Theory]

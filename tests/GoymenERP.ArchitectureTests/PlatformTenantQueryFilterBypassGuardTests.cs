@@ -141,7 +141,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
         // AI-2a (ADR-SEC-001): registers AddSecurityEventsModule and runs InitializeSecurityEventsModuleAsync with the other
         // module initializers; no OpenAPI-generation, network or hosted-service change (a1562dc1… -> e14040f1…).
-        "e14040f1b25f1e39e03f45c068e7180c84dc43fe40d6ebbc5ae8d3f4cb02452d";
+        // AI-2b (ADR-SEC-001 section 5): maps the read-only security event route; no registration, generation, network or
+        // hosted-service change (e14040f1… -> a9342556…).
+        "a9342556150917990f57c9a6e763d0e9dab3a1d7e3ff5444b38d91f8fd24bd7d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -373,7 +375,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Down refusal; empty Down/Up round trip) (84945670… -> 006edd9c…).
                 // AI-2a hardening: +2 security event SQL facts (duplicate EventId retry/conflict; code-list checks and
                 // their migration round trip) (006edd9c… -> 769b48fb…).
-                "769b48fb4870a8c9c07bd2800142e5ff94d770502b179149aa084bf8cd2f9e10",
+                // AI-2b (ADR-SEC-001 section 5): +1 security event read SQL fact (own-company rows only; the read is
+                // recorded as security.events.read) (769b48fb… -> 34869d7b…).
+                "34869d7b0a79f97d449044192887c3fb7effe127f45fcd56a14dcb13f4b9de66",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -1007,10 +1011,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // AI-2a (ADR-SEC-001): security event channel bootstrap; migrates its own schema like Audit.
                 // AI-2a hardening: registers TimeProvider.System for server-clock retention (4fa27691… -> 308b6836…).
+                // AI-2b: registers the scoped read service ISecurityEventQueryServiceV1 (DI only; same token counts)
+                // (308b6836… -> e27292d7…).
                 ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
                  + "SecurityEventsModuleExtensions.cs"] =
                     new(
-                        "308b683660230a6381ddce54746b3d9c0bd1822c8fe43d0489099480984596d1",
+                        "e27292d733da372c2fcf8997ef4306c0242509103637815f635d0e19d0670227",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -1011,6 +1011,12 @@ public static class ErpPermissions
     /// company-wide only (user decision 2026-09-28); no seeded role holds it.
     /// </summary>
     public const string IdentityAssignmentsRead = "identity.assignments.read";
+    /// <summary>
+    /// ADR-SEC-001 section 5 read of the company's security event channel (security.SecurityEvents). Company-wide
+    /// only; platform rows need a separate platform permission. Registration only: no seeded role holds it, and
+    /// granting it or marking it Critical is a human decision (BS-11, 2026-11-11).
+    /// </summary>
+    public const string PlatformSecurityEventsRead = "platform.security-events.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1178,6 +1184,7 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
 
@@ -1348,6 +1355,7 @@ public static class ErpPermissions
             SettingsManufacturingToleranceProfilesPublish,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
 

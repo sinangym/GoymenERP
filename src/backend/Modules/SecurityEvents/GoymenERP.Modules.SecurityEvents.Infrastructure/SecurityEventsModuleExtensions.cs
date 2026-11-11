@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Writing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -43,6 +44,8 @@ public static class SecurityEventsModuleExtensions
         services.AddSingleton(aggregation);
         services.AddSingleton<ISecurityEventStore, StandaloneSecurityEventStore>();
         services.AddSingleton<ISecurityEventWriterV1, SecurityEventWriter>();
+        // ADR-SEC-001 section 5 company read; it records security.events.read before reading (fail-closed).
+        services.AddScoped<ISecurityEventQueryServiceV1, SecurityEventQueryService>();
 
         return services;
     }

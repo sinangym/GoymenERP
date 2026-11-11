@@ -485,6 +485,247 @@
         ]
       }
     },
+    "/api/v1/security-events": {
+      "get": {
+        "tags": [
+          "Security"
+        ],
+        "operationId": "GetSecurityEventsV1",
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "x-erp-normalized-minimum": 1,
+              "x-erp-normalized-maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 64
+            }
+          },
+          {
+            "name": "correlationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityEventPageV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/price-lists": {
       "get": {
         "tags": [
@@ -133604,6 +133845,210 @@
           }
         }
       },
+      "SecurityEventItemV1": {
+        "required": [
+          "id",
+          "schemaVersion",
+          "occurredAtUtc",
+          "companyId",
+          "requestedCompanyId",
+          "actorType",
+          "actorId",
+          "eventType",
+          "phase",
+          "outcome",
+          "reasonCode",
+          "severity",
+          "permissionCode",
+          "policyId",
+          "policyVersion",
+          "correlationId",
+          "causationId",
+          "sourceChannel",
+          "aiToolId",
+          "aiToolVersion",
+          "aiRiskClass",
+          "aiDataClass",
+          "retainUntilUtc",
+          "occurrenceCount",
+          "aggregationWindowStartUtc",
+          "aggregationWindowEndUtc",
+          "integrityHash"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedCompanyId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "actorId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "permissionCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "policyId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "policyVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "causationId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sourceChannel": {
+            "type": "string"
+          },
+          "aiToolId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "aiToolVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "aiRiskClass": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "aiDataClass": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "retainUntilUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "occurrenceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "aggregationWindowStartUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "aggregationWindowEndUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "integrityHash": {
+            "type": "string"
+          }
+        }
+      },
+      "SecurityEventPageV1": {
+        "required": [
+          "items",
+          "pageSize",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecurityEventItemV1"
+            }
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SetCompanyPartyAccountActiveState": {
         "required": [
           "isActive",
@@ -135220,6 +135665,9 @@
     },
     {
       "name": "Audit"
+    },
+    {
+      "name": "Security"
     },
     {
       "name": "Product"

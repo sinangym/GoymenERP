@@ -1,9 +1,18 @@
+using System.Net;
+using System.Net.Http.Json;
+using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.SecurityEvents.Domain.Events;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -166,6 +175,91 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
             Assert.Equal("1", await ScalarAsync(connectionString,
                 "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_SecurityEvents_SourceChannel' AND [is_not_trusted] = 0"));
         });
+    }
+
+    /// <summary>
+    /// AI-2b (ADR-SEC-001 section 5): GET /api/v1/security-events on real SQL Server. A test-local role holds the
+    /// read permission (no shipped role does). The reader sees only its own company's company-scoped rows (never
+    /// Company B or platform rows), and its read is stored as security.events.read before the rows are returned.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_security_events_read_returns_only_own_company_rows_and_is_recorded_as_a_read_event_on_real_sql()
+    {
+        var baseConnection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        await using var factory = new SqlServerRelationalApiFactory(
+            baseConnection, databaseName: $"GoymenERP_SecurityEventsRead_{Guid.NewGuid():N}");
+        try
+        {
+            using (var health = await factory.CreateClient().GetAsync("/health/live"))
+            {
+                health.EnsureSuccessStatusCode();
+            }
+
+            var reader = await GrantReaderAsync(factory, TestUsers.CompanyA, TestCompanyIds.CompanyA);
+            var writer = factory.Services.GetRequiredService<ISecurityEventWriterV1>();
+            var companyA = Denial(TestCompanyIds.CompanyA);
+            Assert.True((await writer.WriteAsync(companyA, CancellationToken.None)).Recorded);
+            Assert.True((await writer.WriteAsync(Denial(TestCompanyIds.CompanyB), CancellationToken.None)).Recorded);
+            Assert.True((await writer.WriteAsync(PlatformLoginFailure(), CancellationToken.None)).Recorded);
+
+            using var client = factory.CreateClientFor(TestUsers.CompanyA, TestCompanyIds.CompanyA);
+            var readCorrelation = $"se-read-{Guid.NewGuid():N}";
+            client.DefaultRequestHeaders.Remove("X-Correlation-Id");
+            client.DefaultRequestHeaders.Add("X-Correlation-Id", readCorrelation);
+            using var response = await client.GetAsync("/api/v1/security-events?pageSize=100");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var page = Assert.IsType<SecurityEventPageV1>(await response.Content.ReadFromJsonAsync<SecurityEventPageV1>());
+            Assert.All(page.Items, item => Assert.Equal(TestCompanyIds.CompanyA, item.CompanyId));
+            Assert.Contains(page.Items, item => item.Id == companyA.EventId);
+            // The read event was committed before the rows were read, so it is on the page it guards.
+            var readEvent = Assert.Single(page.Items, item => item.EventType == SecurityEventTypesV1.SecurityEventsRead);
+            Assert.Equal(readCorrelation, readEvent.CorrelationId);
+            Assert.Equal(reader.ToString("D"), readEvent.ActorId);
+            Assert.Equal(ErpPermissions.PlatformSecurityEventsRead, readEvent.PermissionCode);
+            Assert.Equal(2, page.Items.Count);
+
+            Assert.Equal("1", await ScalarAsync(factory.DatabaseConnectionString,
+                "SELECT COUNT(*) FROM [security].[SecurityEvents] WHERE [EventType] = N'security.events.read' "
+                + $"AND [CompanyId] = '{TestCompanyIds.CompanyA:D}' AND [Outcome] = N'allowed'"));
+            Assert.Equal("4", await ScalarAsync(factory.DatabaseConnectionString,
+                "SELECT COUNT(*) FROM [security].[SecurityEvents]"));
+        }
+        finally
+        {
+            await using var cleanupScope = factory.Services.CreateAsyncScope();
+            await cleanupScope.ServiceProvider.GetRequiredService<SecurityEventsDbContext>().Database.EnsureDeletedAsync();
+        }
+    }
+
+    private static async Task<Guid> GrantReaderAsync(SqlServerRelationalApiFactory factory, string subject, Guid company)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var link = await identity.ExternalIdentities.SingleOrDefaultAsync(
+            x => x.Issuer == BootstrapIdentityOptions.Issuer && x.Subject == subject);
+        Guid actor;
+        if (link is null)
+        {
+            actor = Guid.NewGuid();
+            identity.Users.Add(new UserAccount(actor, "Synthetic security events reader", null));
+            identity.ExternalIdentities.Add(new ExternalIdentityLink(Guid.NewGuid(), actor, BootstrapIdentityOptions.Issuer, subject));
+        }
+        else
+        {
+            actor = link.UserId;
+        }
+
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(roleId, $"SE-READ-{roleId:N}", "Synthetic security events reader role", false);
+        role.AddPermission(ErpPermissions.PlatformSecurityEventsRead);
+        var assignment = new RoleAssignment(Guid.NewGuid(), actor, roleId, company,
+            DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, company);
+        identity.Roles.Add(role);
+        identity.RoleAssignments.Add(assignment);
+        await identity.SaveChangesAsync();
+        return actor;
     }
 
     private static string RawInsert(IReadOnlyDictionary<string, string> overrides)
