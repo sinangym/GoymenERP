@@ -37,12 +37,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     /// <summary>
     /// SAT-D262: a known row holds both numbers (kg >= 0, average >= 0) and no reason; an unreadable row holds a reason
-    /// (1..8, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
+    /// (1..9, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
     /// </summary>
     internal const string AverageCostLedgerStateCheck =
         "[Version] >= 1 AND (([Status] = 1 AND [UnreadableReason] IS NULL AND [QuantityKg] IS NOT NULL AND [QuantityKg] >= 0 "
         + "AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) "
-        + "OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 8 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
+        + "OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 9 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
 
     internal DbSet<LotRow> Lots => Set<LotRow>();
 

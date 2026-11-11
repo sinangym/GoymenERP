@@ -45,6 +45,7 @@ public sealed class InventoryAverageCostReadContractTests
             [
                 "negative_stock", "unit_conversion_undecided", "foreign_currency_undecided", "additional_cost_undecided",
                 "return_effect_undecided", "mixed_source_undecided", "transfer_source_unreadable", "uncosted_stock_on_hand",
+                "zero_cost_receipt",
             ],
             InventoryAverageCostUnreadableCodesV1.All);
 
@@ -52,7 +53,7 @@ public sealed class InventoryAverageCostReadContractTests
             .Select(reason => InventoryAverageCostReadPort.CodeOf((int)reason)).ToArray();
         Assert.Equal(InventoryAverageCostUnreadableCodesV1.All.Order(StringComparer.Ordinal), mapped.Order(StringComparer.Ordinal));
         Assert.Throws<ArgumentOutOfRangeException>(() => InventoryAverageCostReadPort.CodeOf(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => InventoryAverageCostReadPort.CodeOf(9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => InventoryAverageCostReadPort.CodeOf(10));
     }
 
     [Fact]
