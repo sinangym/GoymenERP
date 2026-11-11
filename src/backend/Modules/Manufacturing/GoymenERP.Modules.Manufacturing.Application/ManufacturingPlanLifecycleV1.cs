@@ -72,7 +72,7 @@ public sealed partial class ManufacturingCommandService
     /// <c>POST /plans/{planId}/cancellation</c> (API-11) under <c>manufacturing.plans.cancel</c> (registered centrally,
     /// granted to no role — a human gate): a Draft, or an approved plan that opened no order, is cancelled with a reason
     /// and kept (never deleted). A plan with an order is refused (<c>manufacturing_plan_has_order</c>); a cancelled plan
-    /// again is <c>manufacturing_plan_cancelled</c>. Stock allocation does not exist yet (U3), so nothing is released.
+    /// again is <c>manufacturing_plan_cancelled</c>. An approved plan's stock allocation is released through the allocation port in the same transaction; with no port bound the cancellation is refused (503 <c>manufacturing_plan_allocation_incomplete</c>).
     /// </summary>
     public Task<ManufacturingApiResult<PlanViewV1>> CancelPlanAsync(Guid planId, CancelPlanRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken)
@@ -114,6 +114,14 @@ public sealed partial class ManufacturingCommandService
 
                 // U3-a (URT-D21): an approved plan holds its inputs' allocation; its cancellation releases what remains in
                 // the same transaction. A draft holds no allocation and is cancelled as before.
+                // TAKIP-U3a (#1004): an approved plan without the allocation port refuses (503) instead of cancelling
+                // without releasing what it holds (no fail-open).
+                if (planAllocations is null && found is { Status: PlanStatus.Approved })
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
                 var cancelled = planAllocations is not null && found is { Status: PlanStatus.Approved }
                     ? await planAllocations.WriteAndReleaseAsync(planId,
                         ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled, Cancel, metadata, cancellationToken)
