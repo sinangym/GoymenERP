@@ -444,7 +444,7 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 
 | No | Soru | Durum |
 |---|---|---|
-| N-20 | Alışta tevkifat ve tedarikçi (satıcı) muafiyeti (ihraç kayıtlı/teşvikli KDV dahil; "ödenecek tutar" tanımı tevkifatla birlikte). Vade farkının KDV matrahına girişi **kapandı**: ALS-D77 (EK13; KDV vade farkı dahil hesaplanır; EK3 ALS-D38 yorumundaki "teyide kadar vergi hesaplamaz" ifadesinin yerini alır) | Mali müşavir; teyide kadar tevkifat ve muafiyet satırları "hesaplanamıyor" |
+| N-20 | Alışta tevkifat ve tedarikçi (satıcı) muafiyeti (ihraç kayıtlı/teşvikli KDV dahil; "ödenecek tutar" tanımı tevkifatla birlikte). Vade farkının KDV matrahına girişi **kapandı**: ALS-D77 (EK13; KDV vade farkı dahil hesaplanır; EK3 ALS-D38 yorumundaki "teyide kadar vergi hesaplamaz" ifadesinin yerini alır) | Mali müşavir; **tevkifat kısmı ALS-D78 ile kapandı** (EK14, Sinan 2026-11-11: "Satış gibi hemen açılsın"; Satış S5 ile birebir, eşik kapı değil); tedarikçi muafiyeti satırları teyide kadar "hesaplanamıyor"; mali müşavir teyidi ve production aktivasyonu insan kapısı |
 | – | Sipariş numarası algoritmasının parçaları (ALS-D36) | MIG-01 alan eşlemesinde hubvogal kayıtlarından çıkarılır |
 | – | N-19: hubvogal erişimi göç (MIG-01) için yeniden gerekecek (karar değil, bağımlılık) | MIG-01'den önce |
 | – | API-98 Ayarlar listeleri ALS-D63 istisnasına girer mi | NEEDS-SINAN (Issue #66, EK9 ALS-D63); o zamana kadar ertelenmiş ve fail-closed (yorum) |

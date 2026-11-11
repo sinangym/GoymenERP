@@ -178,8 +178,11 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `ISettingsLineTaxResolverV1` for buyer situation `Normal` on the order's business date (ALS-D74; `Exempt`/`ZeroRated` = 0 %); a
   product without an item type or default, or an unreadable port, makes that line's VAT `NotComputable` (with the Settings reason)
   and the document VAT `NotComputable` with the count — never guessed. VAT is computed on the line amount INCLUDING the surcharge
-  (ALS-D77 "Vade farkı dahil hesaplansın"; it replaces ALS-D38's EK3 note). Purchase withholding is always `NotComputable`
-  (`withholding_unconfirmed`, N-20), so the withheld VAT and the payable amount are null; supplier exemptions are not modelled yet. An
+  (ALS-D77 "Vade farkı dahil hesaplansın"; it replaces ALS-D38's EK3 note). Purchase withholding follows Sales S5 exactly (ALS-D78, EK14, Sinan 2026-11-11 "Satış gibi hemen açılsın"; no
+  Purchasing-only switch): the share is the item type's Settings withholding default (`NotApplied`/`Exempt` = none), taken from the
+  ROUNDED line VAT (SAT-D75); the VUK 232 threshold is NOT a gate and is never read here. A share outside (0, 100] makes the line, and
+  the document, `NotComputable` (`tax_source_invalid`; the document names the first line's reason), never none. Accountant confirmation
+  and production activation stay human gates. Supplier exemptions are not modelled yet. An
   unpriced line makes the totals `Incomplete`. PRS-02: without `purchasing.orders.price.read` every state is `Withheld`, every amount
   null and no line is listed. The order list carries `pricePending` per item for a holder of the price read only (never written
   otherwise). Migration `20261107151838_AddPurchaseOrderLineDeferral` adds `DeferralPercent` decimal(9,6) and `DeferralAmount`

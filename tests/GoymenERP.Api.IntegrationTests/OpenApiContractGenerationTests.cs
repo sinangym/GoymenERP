@@ -4632,7 +4632,7 @@ public sealed partial class OpenApiContractGenerationTests
                     // A2a-2 (ALS-D38, ALS-D75): the maturity surcharge as given.
                     ("deferralPercent", "type:null|string"),
                     ("deferralAmount", "type:null|string")),
-                // A2a-2 (plan API-20; ALS-D74, ALS-D77): the order totals; withholding never computed (N-20).
+                // A2a-2 (plan API-20; ALS-D74, ALS-D77): the order totals; withholding follows Sales S5 (ALS-D78).
                 ["PurchaseOrderTotalsView"] = ObjectSchema(
                     ["orderId", "version", "priceDisclosure", "currency", "state", "unpricedLineCount", "netAmount", "vatState",
                         "vatNotComputableLineCount", "vatAmount", "grossAmount", "withholdingState", "withholdingReason", "withheldVatAmount",
