@@ -165,7 +165,7 @@ public sealed partial class PurchasingServiceTests
         await world.Service().SubmitRequestAsync(requestId, new SubmitPurchaseRequestRequest("2"), Metadata("k-submit"));
         await world.ApproveRequestAsApprover(requestId, "3");
         var orderId = (await world.Service().CreateOrderAsync(OrderOf(requestId, created.Detail.Lines[0].LineId, "40"), Metadata("k-order"))).Detail.Order.Id;
-        await world.Service().ApproveOrderAsync(orderId, new ApprovePurchaseOrderRequest("2"), Metadata("k-order-approve"));
+        await world.AsApprover(() => world.Service().ApproveOrderAsync(orderId, new ApprovePurchaseOrderRequest("2"), Metadata("k-order-approve")));
 
         var blocked = await world.AsApprover(() => Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().RejectRequestAsync(requestId, new RejectPurchaseRequestRequest("4", "SENTETIK"), Metadata("k-reject-1"))));
@@ -199,7 +199,7 @@ public sealed partial class PurchasingServiceTests
     private static async Task<(Guid Order, Guid Line)> ApprovedOrderAsync(World world, string quantity)
     {
         var created = await world.Service().CreateOrderAsync(OrderOf(null, null, quantity), Metadata($"k-create-{Guid.NewGuid():N}"));
-        await world.Service().ApproveOrderAsync(created.Detail.Order.Id, new ApprovePurchaseOrderRequest("2"), Metadata($"k-approve-{Guid.NewGuid():N}"));
+        await world.AsApprover(() => world.Service().ApproveOrderAsync(created.Detail.Order.Id, new ApprovePurchaseOrderRequest("2"), Metadata($"k-approve-{Guid.NewGuid():N}")));
         return (created.Detail.Order.Id, created.Detail.Lines[0].LineId);
     }
 }

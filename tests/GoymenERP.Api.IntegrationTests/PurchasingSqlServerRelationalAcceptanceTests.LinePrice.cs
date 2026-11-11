@@ -52,7 +52,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             var price = rebuilt.Lines[0].Price!;
             Assert.Equal((41.25m, 40.21875m, 50293.55m), (price.UnitPrice, price.NetUnitPrice, price.LineAmount(rebuilt.Lines[0].Quantity.Value, rebuilt.Money)));
             var approved = await a.Store.MutateOrderAsync(run.Envelope("k-priced-approve", actor: Manager), Hash("priced-approve"),
-                PurchasingCommands.OrderApproveV1, orderId, (order, now) => order.Approve(2, now), Approved);
+                PurchasingCommands.OrderApproveV1, orderId, (order, now) => order.Approve(2, OrderApprover, now), Approved);
             Assert.Equal((PurchaseOrderStatus.Approved, 41.25m), (approved!.Order.Order.Status, approved.Order.Order.Lines[0].Price!.UnitPrice));
         }
 

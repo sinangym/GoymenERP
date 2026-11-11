@@ -58,8 +58,15 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
   approvalReplayed: 'Önceki onay yanıtı yeniden gösterildi.',
   approvalApplied: 'Sipariş onaylandı ve yeniden okundu.',
   approvalFailed: (code: string | number) => `Onay kaydedilmedi (${code}). Kayıt yeniden okundu.`,
+  approvalRefused: (text: string, code: string) => `Onay kaydedilmedi: ${text} (${code}). Kayıt yeniden okundu.`,
   approvalUnknown: 'Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.',
   approvalSending: 'Gönderiliyor…',
   approvalRetry: 'Aynı onayı yeniden gönder',
   approve: 'Onayla',
 } as const
+
+/** A2a-5a (ALS-D3): known order-approval refusals in user words; any other code keeps the generic text with the code. */
+export const ORDER_APPROVAL_PROBLEM_TEXT: Readonly<Record<string, string>> = {
+  purchasing_order_same_actor: 'Siparişi hazırlayan kişi aynı siparişi onaylayamaz; onayı başka bir yetkili vermelidir.',
+  purchasing_order_maker_unknown: 'Siparişi hazırlayan bilinmiyor; görev ayrılığı doğrulanamadığından onay verilemez.',
+}

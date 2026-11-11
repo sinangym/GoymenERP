@@ -97,7 +97,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             approvedOrder = (await a.Store.StoreOrderAsync(run.Envelope("k-order-a"), Hash("order-a"), owners.Account, Day, () => builtA, VersionsOf(builtA))).Order.Order.Id;
             PurchaseOrder builtB = Order(owners, rejectedId, rejectedLine, 50m);
             orphanOrder = (await a.Store.StoreOrderAsync(run.Envelope("k-order-b"), Hash("order-b"), owners.Account, Day, () => builtB, VersionsOf(builtB))).Order.Order.Id;
-            await a.Store.MutateOrderAsync(run.Envelope("k-approve-a"), Hash("approve-a"), PurchasingCommands.OrderApproveV1, approvedOrder, (o, now) => o.Approve(2, now), Approved);
+            await a.Store.MutateOrderAsync(run.Envelope("k-approve-a"), Hash("approve-a"), PurchasingCommands.OrderApproveV1, approvedOrder, (o, now) => o.Approve(2, OrderApprover, now), Approved);
         }
 
         await using (StoreScope a = run.Store(CompanyA))
@@ -125,7 +125,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         {
             // ALS-D2 (fail-closed): the rejected request's draft order never becomes a commitment; nothing is written.
             var refused = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(run.Envelope("k-approve-orphan"), Hash("approve-orphan"),
-                PurchasingCommands.OrderApproveV1, orphanOrder, (o, now) => o.Approve(2, now), Approved));
+                PurchasingCommands.OrderApproveV1, orphanOrder, (o, now) => o.Approve(2, OrderApprover, now), Approved));
             Assert.Equal((PurchasingStoreCodes.SourceRequestNotApproved, "sourceRequestId", "not_approved"),
                 (refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
         }
@@ -175,7 +175,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             try
             {
                 var result = await writer.Store.MutateOrderAsync(run.Envelope("k-race-order"), Hash("race-order"), PurchasingCommands.OrderApproveV1, orderId,
-                    (o, now) => o.Approve(2, now), Approved);
+                    (o, now) => o.Approve(2, OrderApprover, now), Approved);
                 return result!.Outcome;
             }
             catch (PurchasingStoreException exception)
@@ -199,7 +199,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             if (rejected)
             {
                 var retry = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(run.Envelope("k-race-order"), Hash("race-order"),
-                    PurchasingCommands.OrderApproveV1, orderId, (o, now) => o.Approve(2, now), Approved));
+                    PurchasingCommands.OrderApproveV1, orderId, (o, now) => o.Approve(2, OrderApprover, now), Approved));
                 Assert.Equal(PurchasingStoreCodes.SourceRequestNotApproved, retry.Code);
             }
             else

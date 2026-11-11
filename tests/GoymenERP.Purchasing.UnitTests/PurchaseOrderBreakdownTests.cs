@@ -10,15 +10,17 @@ public sealed class PurchaseOrderBreakdownTests
     private static readonly DateTimeOffset T0 = new(2026, 9, 18, 9, 0, 0, TimeSpan.FromHours(3));
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Supplier = Guid.Parse("22222222-2222-4222-8222-222222222222");
+    private const string Preparer = "SENTETIK-hazirlayan";
+    private const string Approver = "SENTETIK-onaylayan";
     private static readonly Guid KgUnit = Guid.Parse("55555555-5555-4555-8555-555555555555");
 
     private static Quantity Kg(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
 
     private static (PurchaseOrder Order, PurchaseOrderLine General) ApprovedGeneral(decimal kilograms)
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         var general = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(kilograms), T0);
-        order.Approve(2, T0);
+        order.Approve(2, Approver, T0);
         return (order, general);
     }
 
@@ -80,12 +82,12 @@ public sealed class PurchaseOrderBreakdownTests
         // §7.2: a general purchase is broken into technical lines when they become known — before
         // or after the commitment. The total never changes; whether a post-approval breakdown
         // needs re-approval is §8 policy and is not chosen here (README).
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         var general = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(1_000m), T0);
         var whileDraft = order.BreakDown(2, general.Id, Guid.NewGuid(), Guid.NewGuid(), Kg(100m), T0);
         Assert.Equal((PurchaseOrderStatus.Draft, KgUnit), (order.Status, whileDraft.UnitId));
 
-        order.Approve(3, T0);
+        order.Approve(3, Approver, T0);
         var afterApproval = order.BreakDown(4, general.Id, Guid.NewGuid(), Guid.NewGuid(), Kg(200m), T0);
         Assert.Equal((PurchaseOrderStatus.Approved, KgUnit, Kg(700m)), (order.Status, afterApproval.UnitId, general.CommittedQuantity));
         Assert.Equal(Kg(1_000m), order.RemainingCommitment(QuantityUnit.Kilogram));

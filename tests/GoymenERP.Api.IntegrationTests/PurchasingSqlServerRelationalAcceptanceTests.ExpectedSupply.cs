@@ -42,7 +42,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 AcceptanceHash(approveKey),
                 PurchasingCommands.OrderApproveV1,
                 orderId,
-                (candidate, now) => candidate.Approve(candidate.Version, now),
+                (candidate, now) => candidate.Approve(candidate.Version, OrderApprover, now),
                 Approved);
             Assert.NotNull(approved);
             Assert.Equal(PurchaseOrderStatus.Approved, approved!.Order.Order.Status);
