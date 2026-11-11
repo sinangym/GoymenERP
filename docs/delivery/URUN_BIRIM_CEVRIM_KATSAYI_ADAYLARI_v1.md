@@ -1,7 +1,7 @@
 # Ürün Birim Çevrim Katsayısı — Aday Modeller (U-08 / DEC-PRD-006) v1
 
-Durum: **ADAY — karar değildir.** Hiçbir değer, formül veya eşik burada kilitlenmez; `OPEN-007`
-kapatılmaz. Sinan'ın #66'daki "katsayı ürün özelliklerinden hesaplanabilir olmalı" kararını
+Durum: **ADAY — karar değildir.** Bu belge yalnız Sinan kararlarını #66 atfıyla aktarır, kendisi
+hiçbir değer, formül veya eşik kilitlemez; `OPEN-007` kapatılmaz. Sinan'ın #66'daki "katsayı ürün özelliklerinden hesaplanabilir olmalı" kararını
 (yorum 6794787903) uygulanabilir adaylara açar. Etkinleştirme ancak somut onaydan sonradır.
 
 Kaynaklar: `KARAR_SICILI.md` DEC-PRD-006; `SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md`
@@ -35,7 +35,8 @@ tahmin üretilmez.
 
 ## 3. Formül ve paket adayları (özellik girdileriyle; değerler Sinan/OPEN-007'den gelir)
 
-Yalnız yapı önerilir; sayısal değer ve yuvarlama kuralı yazılmaz.
+Yalnız yapı önerilir; sayısal değer yazılmaz. Yuvarlama ve tolerans kuralları §3 "Sinan kararları"
+listesindedir (#66 6806641583); değerler Ayarlar'dan değişir.
 
 | Aday | Çevrim | Girdi özellikleri | Yapı |
 | --- | --- | --- | --- |
@@ -51,10 +52,10 @@ Birim tutarlılığı (aday; ölçek hatasını önlemek için implementasyon bu
 | --- | --- | --- |
 | kalınlık, en, boy | mm | m (÷10³) |
 | yoğunluk | kg/m³ | — |
-| kesit alanı | mm² mi m² mi: **açık, Sinan seçer** | m² (÷10⁶ yalnız mm² ise) |
+| kesit alanı | mm² mi m² mi: **"Ebat/kalınlık" tablosunun alan tanımına bağlı (§3 son paragraf)** | m² (÷10⁶ yalnız mm² ise) |
 | sonuç | — | kg/adet, kg/m |
 
-Ters yön (kg → adet/metre = kg ÷ katsayı) aynı calculator'dan gelir; adet için tam sayı yuvarlaması OPEN-007'dir.
+Ters yön (kg → adet/metre = kg ÷ katsayı) aynı calculator'dan gelir; adet için aşağı yuvarlama (floor) Sinan kararıdır (#66 6806641583, ayarlanabilir).
 Ton/kg gibi sabit ölçek tanımları katsayı sınıfı değildir (birim kataloğu); kapsam dışıdır.
 Terim: bu belgede "çevrim" tek terimdir (SAT-D298'deki "dönüşüm" aynı anlamdadır).
 Fiilî sınıfta ölçüm yoksa veya eskiyse sonuç da "hesaplanamıyor"dur (§2).
@@ -73,8 +74,11 @@ Sinan kararları (#66 yorumları 6806579823 madde 9 ve 6806619303 madde 10; 2026
 - Paket adet tablosu ve boya sınıfı listesi Excel'den içe aktarılır, ERP üzerinde düzenlenebilir;
   liste gelene kadar `NoSource`, tahmin yok.
 
-Hâlâ açık: yuvarlama basamağı (öneri #66 6806590261, ASSUMPTION adayı, Sinan teyidi bekler);
-`OPEN-007`'nin resmi kapatılması ayrı insan kararıdır. Kesit mm² mi m² mi sorusu "Ebat/kalınlık"
+- Yuvarlama (#66 6806641583; öneri 6806590261 onaylandı): çevrim katsayısı 3 ondalık, ara adımlarda
+  yuvarlama yok; kg → adet aşağı yuvarlama (floor); belge kg toplamı 2 ondalık; hepsi Ayarlar'dan
+  değiştirilebilir. Karar metni `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` madde 13'e girecek.
+
+Hâlâ açık: `OPEN-007`'nin resmi kapatılması ayrı insan kararıdır. Kesit mm² mi m² mi sorusu "Ebat/kalınlık"
 tablosunun alan tanımına bağlanır (tablo tasarımında netleşir).
 
 ## 4. Port ve etki sınırı (karar sonrası, K3)
@@ -88,5 +92,6 @@ tablosunun alan tanımına bağlanır (tablo tasarımında netleşir).
 
 ## 5. Bu belge neyi yapmaz
 
-Değer, yoğunluk, paket tablosu veya boya sınıfı listesi yazmaz; rol/grant/production aktivasyonu
+Sinan kararlarını yalnız #66 atfıyla aktarır; yoğunluk değeri, paket tablosu veya boya sınıfı
+listesi yazmaz; rol/grant/production aktivasyonu
 açmaz; `OPEN-007`'yi kapatmaz; kod veya migration eklemez.
