@@ -308,6 +308,43 @@ public sealed class FinancePaymentAllocationSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_confirmed_cancellation_releases_every_active_payment_allocation_of_the_invoice_and_each_payment_once()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = await run.AdmitAsync(FinanceInvoiceProducerV1.Purchasing, "250.00", "250.00");
+        var firstPayment = await run.RecordPaymentAsync("100.00");
+        var secondPayment = await run.RecordPaymentAsync("150.00");
+        var first = Allocate(firstPayment, invoice.Installments[0].OpenItemId, "100");
+        var second = Allocate(secondPayment, invoice.Installments[1].OpenItemId, "150");
+        Assert.Equal(CommandOutcome.Succeeded, (await run.CreateAsync("multi-a", first)).Outcome);
+        Assert.Equal(CommandOutcome.Succeeded, (await run.CreateAsync("multi-b", second)).Outcome);
+
+        Assert.Equal(CommandOutcome.Succeeded,
+            (await run.CancelAsync("multi-cancel", invoice, releaseActiveAllocations: true)).Outcome);
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentAllocations WHERE Status = 2 AND Id IN (@a, @b)",
+            ("@a", first.AllocationId), ("@b", second.AllocationId)));
+        Assert.Equal("100.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", firstPayment)));
+        Assert.Equal("150.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", secondPayment)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Status = 3", ("@id", invoice.InvoiceId)));
+        // Cancelling the already cancelled invoice again is not a success and releases nothing a second time.
+        var again = await run.CancelAsync("multi-cancel-again", invoice, releaseActiveAllocations: true);
+        Assert.NotEqual(CommandOutcome.Succeeded, again.Outcome);
+        Assert.Equal("100.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", firstPayment)));
+        Assert.Equal("150.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", secondPayment)));
+    }
+
+    [SqlServerFact]
     public async Task The_payment_allocations_migrations_Down_passes_on_an_empty_store_and_refuses_while_an_allocation_exists()
     {
         await using var run = await Run.StartAsync();
