@@ -100,6 +100,7 @@ internal static class FinanceAllocationPolicy
         {
             throw Failure("amount", "finance_allocation_exceeds_open_item");
         }
+        RequireScaleWithinBalances(amount, source.AmountText, itemOutstanding);
 
         var sourceAfter = sourceAvailable.Subtract(amount);
         var itemAfter = itemOutstanding.Subtract(amount);
@@ -196,7 +197,7 @@ internal static class FinanceAllocationPolicy
         }
 
         return Apply(paymentState?.UnallocatedAmountText ?? payment.AmountText, openItem.OutstandingAmountText,
-            request.Amount);
+            request.Amount, payment.AmountText);
     }
 
     public static FinanceAllocationMutation ReleasePayment(
@@ -229,7 +230,8 @@ internal static class FinanceAllocationPolicy
             openItem.OutstandingAmountText, openItem.OriginalAmountText);
     }
 
-    private static FinanceAllocationMutation Apply(string available, string outstanding, string requested)
+    private static FinanceAllocationMutation Apply(
+        string available, string outstanding, string requested, string sourceOriginal)
     {
         if (!FinanceExactDecimalText.TryParsePositive(requested, out var amount)
             || !FinanceExactDecimalText.TryParseNonNegative(available, out var sourceAvailable)
@@ -245,6 +247,7 @@ internal static class FinanceAllocationPolicy
         {
             throw Failure("amount", "finance_allocation_exceeds_open_item");
         }
+        RequireScaleWithinBalances(amount, sourceOriginal, itemOutstanding);
 
         var sourceAfter = sourceAvailable.Subtract(amount);
         var itemAfter = itemOutstanding.Subtract(amount);
@@ -252,6 +255,22 @@ internal static class FinanceAllocationPolicy
             sourceAfter.Text,
             itemAfter.Text,
             itemAfter.IsZero ? FinanceOpenItemStatuses.Closed : FinanceOpenItemStatuses.Open);
+    }
+
+    /// <summary>
+    /// FNS-D16 (Sinan 2026-11-11): the payment and receipt paths share one rule — an allocation amount never carries more
+    /// decimal places than its source (payment/receipt) and, as an implementation detail, never more than the open item's
+    /// outstanding text, so neither stored balance text grows in scale. The check follows the exceeds checks, so an
+    /// amount that is too large keeps its more specific code.
+    /// </summary>
+    private static void RequireScaleWithinBalances(
+        FinanceExactDecimalText amount, string sourceOriginal, FinanceExactDecimalText itemOutstanding)
+    {
+        if (!FinanceExactDecimalText.TryParsePositive(sourceOriginal, out var source)
+            || amount.Scale > source.Scale || amount.Scale > itemOutstanding.Scale)
+        {
+            throw Failure("amount", "finance_allocation_amount_invalid");
+        }
     }
 
     private static FinanceAllocationMutation Restore(

@@ -89,6 +89,54 @@ public sealed class FinancePaymentAllocationTests
     }
 
     [Theory]
+    [InlineData("100.000", "100.00", "100.00")]
+    [InlineData("10.5", "100", "100.00")]
+    [InlineData("10.5", "100.00", "100")]
+    [InlineData("0.001", "100.00", "100.00")]
+    public void An_amount_with_more_decimals_than_the_payment_or_the_open_item_is_refused(
+        string amount, string paymentAmount, string outstanding)
+    {
+        // FNS-D16 (Sinan 2026-11-11): the allocation scale never exceeds the source scale and never grows a balance's scale.
+        var payment = Payment(paymentAmount);
+        var item = Payable(outstanding);
+
+        var failure = Assert.Throws<FinanceAllocationPolicyException>(() =>
+            FinanceAllocationPolicy.CreatePayment(payment, item, null, Request(payment, item, amount)));
+
+        Assert.Equal("finance_allocation_amount_invalid", failure.Code);
+        Assert.Equal("amount", failure.Field);
+    }
+
+    [Theory]
+    [InlineData("10", "100.00", "100.00", "90.00", "90.00")]
+    [InlineData("10.5", "100.00", "100.00", "89.50", "89.50")]
+    [InlineData("10.50", "100.00", "100.00", "89.50", "89.50")]
+    [InlineData("10", "100", "100", "90", "90")]
+    public void An_amount_within_the_payment_and_open_item_scale_keeps_both_balance_scales(
+        string amount, string paymentAmount, string outstanding, string sourceAfter, string itemAfter)
+    {
+        var payment = Payment(paymentAmount);
+        var item = Payable(outstanding);
+
+        var result = FinanceAllocationPolicy.CreatePayment(payment, item, null, Request(payment, item, amount));
+
+        Assert.Equal(sourceAfter, result.SourceUnallocated);
+        Assert.Equal(itemAfter, result.OpenItemOutstanding);
+    }
+
+    [Fact]
+    public void An_exceeding_amount_keeps_its_specific_code_before_the_scale_rule()
+    {
+        var payment = Payment("100");
+        var item = Payable("100");
+
+        var failure = Assert.Throws<FinanceAllocationPolicyException>(() =>
+            FinanceAllocationPolicy.CreatePayment(payment, item, null, Request(payment, item, "100.5")));
+
+        Assert.Equal("finance_allocation_exceeds_source", failure.Code);
+    }
+
+    [Theory]
     [InlineData("payment-draft")]
     [InlineData("payment-approved")]
     [InlineData("other-account")]
