@@ -125,7 +125,7 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
         ScopeKind = SecurityEventScopeKindsV1.Company,
         CompanyId = companyId,
         ActorType = SecurityEventActorTypesV1.User,
-        ActorId = "user-sql-1",
+        ActorId = "7c4f2b1e-3d5a-4e6f-8a9b-00000000051a",
         EventType = SecurityEventTypesV1.AuthorizationDenied,
         Outcome = SecurityEventOutcomesV1.Denied,
         ReasonCode = SecurityEventReasonCodesV1.PermissionMissing,

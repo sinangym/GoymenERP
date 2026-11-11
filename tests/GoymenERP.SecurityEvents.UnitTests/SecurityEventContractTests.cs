@@ -156,6 +156,12 @@ public sealed class SecurityEventContractTests
         { "anonymous_with_actor", "anonymous_actor_forbids_actor_id" },
         { "actor_free_text", "actor_id_invalid" },
         { "actor_email", "actor_id_looks_like_email" },
+        { "user_actor_username", "user_actor_id_not_internal_id" },
+        { "user_actor_uppercase_guid", "user_actor_id_not_internal_id" },
+        { "user_actor_compact_guid", "user_actor_id_not_internal_id" },
+        { "user_actor_empty_guid", "user_actor_id_not_internal_id" },
+        { "login_failed_with_user_actor", "login_failed_requires_anonymous_actor" },
+        { "login_failed_with_system_actor", "login_failed_requires_anonymous_actor" },
         { "unknown_type", "event_type_unknown" },
         { "phase_on_single_type", "phase_not_allowed_for_event_type" },
         { "denial_allowed", "outcome_not_allowed_for_event_type" },
@@ -181,6 +187,31 @@ public sealed class SecurityEventContractTests
     }
 
     [Fact]
+    public void Failed_login_is_valid_only_with_an_anonymous_actor_and_no_actor_id()
+    {
+        var failedLogin = Denial(SecurityEventTypesV1.LoginFailed) with
+        {
+            ActorType = SecurityEventActorTypesV1.Anonymous,
+            ActorId = null,
+            PermissionCode = null,
+            ReasonCode = SecurityEventReasonCodesV1.CredentialsInvalid,
+        };
+
+        Assert.Empty(SecurityEventV1Validator.Validate(failedLogin));
+    }
+
+    [Fact]
+    public void User_actor_accepts_the_canonical_internal_user_id_and_system_actor_keeps_its_token()
+    {
+        Assert.Empty(SecurityEventV1Validator.Validate(Denial() with { ActorId = Guid.NewGuid().ToString("D") }));
+        Assert.Empty(SecurityEventV1Validator.Validate(Denial() with
+        {
+            ActorType = SecurityEventActorTypesV1.System,
+            ActorId = "system.scheduler",
+        }));
+    }
+
+    [Fact]
     public void Missing_envelope_is_invalid()
     {
         Assert.Equal(["event_missing"], SecurityEventV1Validator.Validate(null));
@@ -196,6 +227,16 @@ public sealed class SecurityEventContractTests
         "anonymous_with_actor" => Denial() with { ActorType = SecurityEventActorTypesV1.Anonymous },
         "actor_free_text" => Denial() with { ActorId = "Ali Veli" },
         "actor_email" => Denial() with { ActorId = "ali@example.com" },
+        "user_actor_username" => Denial() with { ActorId = "ali.veli" },
+        "user_actor_uppercase_guid" => Denial() with { ActorId = UserActorId.ToUpperInvariant() },
+        "user_actor_compact_guid" => Denial() with { ActorId = Guid.Parse(UserActorId).ToString("N") },
+        "user_actor_empty_guid" => Denial() with { ActorId = Guid.Empty.ToString("D") },
+        "login_failed_with_user_actor" => Denial(SecurityEventTypesV1.LoginFailed),
+        "login_failed_with_system_actor" => Denial(SecurityEventTypesV1.LoginFailed) with
+        {
+            ActorType = SecurityEventActorTypesV1.System,
+            ActorId = "system.scheduler",
+        },
         "unknown_type" => Denial() with { EventType = "auth.unknown" },
         "phase_on_single_type" => Denial() with { Phase = SecurityEventPhasesV1.Started },
         "denial_allowed" => Denial() with { Outcome = SecurityEventOutcomesV1.Allowed, ReasonCode = null },
