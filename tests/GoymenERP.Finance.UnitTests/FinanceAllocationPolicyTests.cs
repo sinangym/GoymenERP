@@ -41,6 +41,36 @@ public sealed class FinanceAllocationPolicyTests
         Assert.Equal(code, failure.Code);
     }
 
+    [Theory]
+    [InlineData("100.000", "100.00", "100.00")]
+    [InlineData("10.5", "100", "100.00")]
+    [InlineData("10.5", "100.00", "100")]
+    public void Create_refuses_an_amount_with_more_decimals_than_the_receipt_or_the_open_item(
+        string amount, string receiptAmount, string outstanding)
+    {
+        // FNS-D16 (Sinan 2026-11-11): the receipt path applies the same scale rule as the payment path.
+        var source = Source(receiptAmount);
+        var item = OpenItem(outstanding);
+
+        var failure = Assert.Throws<FinanceAllocationPolicyException>(() =>
+            FinanceAllocationPolicy.Create(source, item, null, CreateRequest(source, item, amount)));
+
+        Assert.Equal("finance_allocation_amount_invalid", failure.Code);
+        Assert.Equal("amount", failure.Field);
+    }
+
+    [Fact]
+    public void Create_accepts_an_amount_within_the_scale_and_keeps_the_balance_scales()
+    {
+        var source = Source("100.00");
+        var item = OpenItem("100.00");
+
+        var result = FinanceAllocationPolicy.Create(source, item, null, CreateRequest(source, item, "10.5"));
+
+        Assert.Equal("89.50", result.SourceUnallocated);
+        Assert.Equal("89.50", result.OpenItemOutstanding);
+    }
+
     [Fact]
     public void Create_refuses_a_payable_open_item_because_a_receipt_closes_only_a_receivable()
     {
