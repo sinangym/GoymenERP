@@ -366,6 +366,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            // AddLoadingShareRecordedBy refuses Down (51260) while a share names its recorder; this test is about the lifecycle guard.
+            await run.ExecuteAsync("UPDATE logistics.LoadingShares SET RecordedBy = NULL");
             await context.GetService<IMigrator>().MigrateAsync(LifecycleMigration);
             var checkpoint = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             Assert.Equal(LifecycleMigration, checkpoint[^1]);
