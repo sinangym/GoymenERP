@@ -880,6 +880,70 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_receipt_allocation_amount_with_more_decimals_than_the_receipt_or_the_receivable_is_a_durable_refusal_and_a_boundary_amount_is_accepted()
+    {
+        // FNS-D16 (Sinan 2026-11-11), receipt Create path: the allocation scale never exceeds the receipt's
+        // or the receivable's stored text scale; the refusal is durable and replays without a second effect.
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var draft = await run.SaveDraftAsync(owners, "300.00");
+        CommandResult recorded;
+        await using (var recording = run.Service(CompanyA, owners))
+        {
+            recorded = await recording.Service.RecordAsync(recording.Context, Key("scale-record"),
+                new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+        var openItem = await run.SeedOpenItemAsync(CompanyA, owners.Account, Currency, "500.00");
+        var actor = Guid.NewGuid().ToString("D");
+        var allocationId = Guid.NewGuid();
+        var tooPrecise = new CreateFinanceAllocationRequest(
+            allocationId, draft.Id, recorded.Resource!.Source.Version,
+            openItem.Id, openItem.Version, "100.000", " SENTETIK scale refusal ");
+
+        FinanceAllocationCommandResult refused;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            refused = await allocation.Service.CreateAsync(allocation.Context, Key("scale-refused"),
+                tooPrecise, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.False(refused.IsReplay);
+        Assert.Equal(new ValidationIssue("amount", "finance_allocation_amount_invalid"), Assert.Single(refused.Issues));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @command AND DraftId = @source "
+            + "AND FinanceAllocationId IS NULL",
+            ("@command", FinanceAllocationService.CreateCommandName), ("@source", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id", ("@id", allocationId)));
+
+        FinanceAllocationCommandResult replay;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            replay = await allocation.Service.CreateAsync(allocation.Context, Key("scale-refused"),
+                tooPrecise, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, replay.Outcome);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(refused.OriginalCorrelationId, replay.OriginalCorrelationId);
+        Assert.Equal(refused.Issues.ToArray(), replay.Issues.ToArray());
+
+        // The boundary: the same request with a scale-2 amount succeeds under a new key and keeps both texts at scale 2.
+        FinanceAllocationCommandResult accepted;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            accepted = await allocation.Service.CreateAsync(allocation.Context, Key("scale-boundary"),
+                tooPrecise with { Amount = "100.00" }, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, accepted.Outcome);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = '400.00'",
+            ("@id", openItem.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id AND Status = 1", ("@id", allocationId)));
+    }
+
+    [SqlServerFact]
     public async Task Concurrent_allocation_create_and_reversal_approval_commit_exactly_one_complete_outcome()
     {
         await using var run = await Run.StartAsync();
