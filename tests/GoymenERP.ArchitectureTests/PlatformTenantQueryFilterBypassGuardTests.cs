@@ -1141,7 +1141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure open one Manufacturing
                 // transaction and enlist Inventory's plan-allocation participant on its connection; no context is built.
-                // Re-fingerprinted for TAKIP-U3a (#1004): an ArgumentException inside the Inventory stage becomes a 503 host fault; same token count (b8fe85c2 -> dabb3637).
+                // Re-fingerprinted for TAKIP-U3a (#1004): an ArgumentException inside the Inventory stage becomes a 503 host fault; same token count (b8fe85c2 -> 80c8184c).
                 [ReviewedManufacturingPlanAllocationHostPath] =
                     new(
                         "80c8184c64d4e025c3374570cb8fbf7303e4298354ccdd78f61c85dc1b38f3af",

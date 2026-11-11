@@ -72,7 +72,7 @@ public sealed partial class ManufacturingCommandService
     /// <c>POST /plans/{planId}/cancellation</c> (API-11) under <c>manufacturing.plans.cancel</c> (registered centrally,
     /// granted to no role — a human gate): a Draft, or an approved plan that opened no order, is cancelled with a reason
     /// and kept (never deleted). A plan with an order is refused (<c>manufacturing_plan_has_order</c>); a cancelled plan
-    /// again is <c>manufacturing_plan_cancelled</c>. Stock allocation does not exist yet (U3), so nothing is released.
+    /// again is <c>manufacturing_plan_cancelled</c>. An approved plan's stock allocation is released through the allocation port in the same transaction; with no port bound the cancellation is refused (503 <c>manufacturing_plan_allocation_incomplete</c>).
     /// </summary>
     public Task<ManufacturingApiResult<PlanViewV1>> CancelPlanAsync(Guid planId, CancelPlanRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken)
