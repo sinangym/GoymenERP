@@ -416,6 +416,37 @@ describe('UI-70b S-10 rejection and cancellation (SAT-D290 (2, 3))', () => {
     expect(fetch.posts()).toHaveLength(0)
   })
 
+  it('keeps each decision its own reason when switching between Reddet and İptal et', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['PendingApproval', 'Cancelled'], () => json(returnView('Cancelled', { cancellationReason: null })))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.reject }))
+    await user.type(screen.getByLabelText(T.detail.reasonLabel), REJECTION_REASON)
+    // The rejection's text does not follow the switch to cancellation.
+    await user.click(screen.getByRole('button', { name: T.detail.cancel }))
+    expect((screen.getByLabelText(T.detail.reasonLabel) as HTMLTextAreaElement).value).toBe('')
+    await user.click(screen.getByRole('button', { name: T.detail.reject }))
+    expect((screen.getByLabelText(T.detail.reasonLabel) as HTMLTextAreaElement).value).toBe(REJECTION_REASON)
+    await user.click(screen.getByRole('button', { name: T.detail.cancel }))
+    await user.click(screen.getByRole('button', { name: T.detail.cancelConfirm }))
+    expect((await screen.findByTestId('customer-return-notice')).textContent).toBe(T.detail.completed.cancellation)
+    const [post] = fetch.posts()
+    expect(post.url).toBe(`${DETAIL_URL}/cancellation`)
+    expect(post.body).toEqual({ expectedVersion: '2', reason: null })
+    expect(fetch.posts()).toHaveLength(1)
+  })
+
+  it('trims a reason as the server does: U+FEFF stays, U+0085 goes', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['PendingApproval', 'Rejected'], () => json(returnView('Rejected')))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await user.click(await screen.findByRole('button', { name: T.detail.reject }))
+    fireEvent.change(screen.getByLabelText(T.detail.reasonLabel), { target: { value: '\u0085\uFEFFneden ' } })
+    await user.click(screen.getByRole('button', { name: T.detail.rejectConfirm }))
+    await waitFor(() => expect(fetch.posts()).toHaveLength(1))
+    expect(fetch.posts()[0].body).toEqual({ expectedVersion: '2', reason: '\uFEFFneden' })
+  })
+
   it('refuses a reason over the bound locally and sends nothing', async () => {
     const user = userEvent.setup()
     const fetch = serveDetail(['PendingApproval'], unexpected)
