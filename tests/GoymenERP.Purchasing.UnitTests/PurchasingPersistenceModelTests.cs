@@ -233,14 +233,14 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_and_A2a_2_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_and_A2a_5a_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
         Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
                 "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
                 "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale",
-                "20261107151838_AddPurchaseOrderLineDeferral"],
-            context.Database.GetMigrations().TakeLast(7));
+                "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval"],
+            context.Database.GetMigrations().TakeLast(8));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -356,6 +356,34 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
+    public void The_A2a_5a_approval_is_two_nullable_facts_never_the_preparer_with_a_Down_that_refuses_while_an_approver_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var orders = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseOrderRow))!;
+        Assert.Equal((128, true), (orders.FindProperty(nameof(PurchaseOrderRow.ApprovedBy))!.GetMaxLength(),
+            orders.FindProperty(nameof(PurchaseOrderRow.ApprovedBy))!.IsNullable));
+        Assert.True(orders.FindProperty(nameof(PurchaseOrderRow.ApprovedAtUtc))!.IsNullable);
+        var check = Assert.Single(orders.GetCheckConstraints(), candidate => candidate.Name == "CK_PurchaseOrders_Approval");
+        Assert.Equal(PurchasingDbContext.OrderApprovalCheck, check.Sql);
+        Assert.Contains("([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL)", check.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] IN (2, 3)", check.Sql, StringComparison.Ordinal);
+        // ALS-D3: maker ≠ checker compares binary, the domain's ordinal rule (the #900 P3 lesson).
+        Assert.Contains("[ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2", check.Sql,
+            StringComparison.Ordinal);
+
+        // Up adds two nullable columns and the check (no SQL, no backfill); Down refuses (51172) before any drop while an approver exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderApproval();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var columns = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>().ToArray();
+        Assert.Equal([nameof(PurchaseOrderRow.ApprovedAtUtc), nameof(PurchaseOrderRow.ApprovedBy)], columns.Select(column => column.Name).Order(StringComparer.Ordinal));
+        Assert.All(columns, column => Assert.True(column.IsNullable));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51172", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[ApprovedBy] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
     public void The_A2a_2_surcharge_columns_have_their_check_precisions_and_a_Down_that_refuses_while_a_surcharge_exists()
     {
         using PurchasingDbContext context = Context();
@@ -462,6 +490,29 @@ public sealed class PurchasingPersistenceModelTests
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task The_write_guard_lets_the_A2a_5a_approval_facts_move_but_not_the_preparer()
+    {
+        await using PurchasingDbContext context = Context();
+        var order = new PurchaseOrderRow
+        {
+            Id = Guid.NewGuid(), CompanyId = CompanyA, SupplierPartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), Status = 1, Version = 2,
+            EffectiveOn = new DateOnly(2026, 11, 11), CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow,
+            CreatedBy = "SENTETIK-preparer", CorrelationId = "SENTETIK",
+        };
+        context.Orders.Attach(order);
+        order.Status = 2;
+        order.ApprovedBy = "SENTETIK-approver";
+        order.ApprovedAtUtc = DateTimeOffset.UtcNow;
+        // The approval facts are on the allow-list: the guard passes them (only the database is unreachable here).
+        var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+        Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
+        order.CreatedBy = "SENTETIK-approver"; // not allowed: the preparer never moves (it would launder maker ≠ checker)
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
     }
 
     [Fact]

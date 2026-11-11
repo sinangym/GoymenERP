@@ -188,6 +188,15 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   otherwise). Migration `20261107151838_AddPurchaseOrderLineDeferral` adds `DeferralPercent` decimal(9,6) and `DeferralAmount`
   decimal(24,6) and `CK_PurchaseOrderLines_Deferral` (none, or one in bounds beside a unit price above 0; `CK_PurchaseOrderLines_Price`
   unchanged, no backfill); its Down refuses (`THROW 51171`) while any line carries a surcharge.
+- **Order approval separation of duties (A2a-5a, ALS-D3, Fable F-015):** the order's preparer is the create envelope's actor
+  (`CreatedBy`; the store stamps it on the order and refuses a different one) and never approves the same order: the approval of
+  the preparer is the terminal, recorded and replayed 409 `purchasing_order_same_actor` (field `actor`; ordinal — the database
+  agrees in binary collation); an order whose preparer is unknown is never approved (409 `purchasing_order_maker_unknown`,
+  fail-closed). The approval records who and when (`ApprovedBy`, `ApprovedAtUtc`) on the order, in the audit and on reload;
+  an order approved before A2a-5a keeps no approver (none is invented, no backfill). P-03-DETAIL names both refusals in user
+  words and re-reads the order. Migration `20261111182351_AddPurchaseOrderApproval` adds both columns and
+  `CK_PurchaseOrders_Approval` (both or neither, only on Approved/Cancelled, approver ≠ `CreatedBy`); its Down refuses
+  (`THROW 51172`) while any approver is recorded. The approval amount threshold (API-96) stays in A2a-5.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
@@ -231,7 +240,7 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   (AT-025, below), `IPurchaseAcceptanceSourceV1`; the Document Vault reads purchase-order ownership through the host
   adapter `GoymenERP.Api/DocumentsRuntime/PurchasingDocumentOwnerLinkPort.cs`.
 - **Still absent:** tax/withholding, the informational exchange rate (A2a-KUR), payment plan, totals, expense lines and the
-  Settings lists (later A2a slices), order approval policy and the order's preparer ≠ approver rule (ALS-D3),
+  Settings lists (later A2a slices), the order approval amount threshold (API-96, A2a-5),
   revision, line closure after a short delivery (API-11, ALS-D10/D12; A3), delivery schedule and "in transit", service lines and service acceptance, outgoing
   subcontracting (A-1), incoming invoice and three-way match, supplier return, outbox events, breakdown over the API
   (domain only), count/metre units (Settings approves kilograms only).
@@ -272,7 +281,7 @@ Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-
 
 ## What this module is not
 - No physical effect: no lot, label, location or stock movement; not a second allocation engine (Inventory T09). **Superseded in part (2026-11-02):** Purchasing itself still writes no lot, label, location or stock movement; a goods receipt now stages Inventory's lot/label/movement in the same host transaction, through Inventory's own participant (`PurchaseGoodsReceiptHost`); those rows remain Inventory's.
-- No tax or exchange rate (later A2a slices); no approval policy (`Approve` is a transition; §8). *(A2a-1 added the manual line price, the discount and the order's currency; see "Current state".)*
+- No tax or exchange rate (later A2a slices); no approval policy (`Approve` is a transition; §8). *(A2a-1 added the manual line price, the discount and the order's currency; see "Current state".)* *(A2a-5a added the preparer ≠ approver rule; the amount threshold is still absent.)*
 - No offers, delivery schedules, invoice matching, HTTP, DI, persistence or permissions. **Superseded (2026-11-02):** HTTP, DI, persistence and permissions exist since PUR-4a (see below and "Current state"); offers, delivery schedules and invoice matching are still absent.
 
 

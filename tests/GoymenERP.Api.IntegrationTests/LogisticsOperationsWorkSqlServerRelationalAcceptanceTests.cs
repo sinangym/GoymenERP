@@ -361,7 +361,7 @@ public sealed class LogisticsOperationsWorkSqlServerRelationalAcceptanceTests
             if (approve)
             {
                 await scope.Store.MutateOrderAsync(PurchasingEnvelope($"{keyPrefix}-p-approve"), Hash($"{keyPrefix}-p-approve"), PurchasingCommands.OrderApproveV1,
-                    stored.Order.Id, (o, now) => o.Approve(stored.Order.Version, now), PurchaseApproved);
+                    stored.Order.Id, (o, now) => o.Approve(stored.Order.Version, "SENTETIK-order-approver", now), PurchaseApproved);
             }
 
             return new PurchaseLineRef(stored.Order.Id, Assert.Single(stored.Order.Lines).Id);

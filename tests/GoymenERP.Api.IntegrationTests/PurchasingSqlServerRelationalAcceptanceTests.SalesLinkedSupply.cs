@@ -124,7 +124,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     private static async Task ApproveOrderAsync(Run run, StoreScope scope, Guid orderId, string key)
     {
         var approved = await scope.Store.MutateOrderAsync(run.Envelope(key), Hash(key), PurchasingCommands.OrderApproveV1, orderId,
-            (order, now) => order.Approve(order.Version, now), Approved);
+            (order, now) => order.Approve(order.Version, OrderApprover, now), Approved);
         Assert.Equal(PurchaseOrderStatus.Approved, approved!.Order.Order.Status);
     }
 
