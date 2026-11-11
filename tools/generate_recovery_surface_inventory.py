@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 154
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "55a9c84580833fa86d3ef03383b290a778cbe78bfd0dc320691a50b6c659262c"
 )
-EXPECTED_DURABLE_STORE_COUNT = 31
+EXPECTED_DURABLE_STORE_COUNT = 32
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -202,6 +202,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("product", "ProductItemTypeAttempts"),
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
+    ("sales", "CustomerReturnAttempts"),
     ("sales", "DraftAttempts"),
     ("sales", "InvoiceAttempts"),
     ("sales", "QuoteAttempts"),
@@ -575,6 +576,15 @@ DURABLE_STORE_SPECS = (
         ("dbContext.Attempts.Add(Attempt(",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "sales.customer-return-attempts", "Sales", "idempotency", "SalesDbContext",
+        "CustomerReturnAttemptRow",
+        "sales", "CustomerReturnAttempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261110215452_AddCustomerReturns.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs",
+        ("dbContext.CustomerReturnAttempts.Add(NewCustomerReturnAttempt(",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "sales.draft-attempts", "Sales", "idempotency", "SalesDbContext", "DraftAttemptRow",
         "sales", "DraftAttempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
@@ -734,6 +744,10 @@ WRITER_METHOD_SCOPES = {
         "purchasing.purchase-attempts",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs",
     ): "StoreRequestAsync",
+    (
+        "sales.customer-return-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs",
+    ): "RecordCustomerReturnRefusalAsync",
     (
         "sales.draft-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
