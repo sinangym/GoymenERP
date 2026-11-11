@@ -241,7 +241,7 @@ class ReleaseManifestTests(unittest.TestCase):
         expected = [
             "Accounting", "Audit", "Counterparty", "Documents", "Finance",
             "Idempotency", "Identity", "Inventory", "Logistics", "Manufacturing",
-            "Organization", "Product", "Purchasing", "Sales", "Settings", "Work",
+            "Organization", "Product", "Purchasing", "Sales", "SecurityEvents", "Settings", "Work",
         ]
         self.assertEqual(expected, [item["id"] for item in self.manifest["features"]])
         for feature in self.manifest["features"]:
