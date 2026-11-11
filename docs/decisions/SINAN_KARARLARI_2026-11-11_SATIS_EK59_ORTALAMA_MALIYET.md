@@ -40,7 +40,7 @@ sonrası kullanan karar dosyası yoktur.
 |---|---|---|---|
 | SAT-D295 | Fiyat girdisi ve döviz cinsi maliyet (soru 1) | (1) Hareketli ortalama alış maliyetinin **fiyat girdisi Alış sipariş satırıdır**. (2) Satır döviz (USD) birim fiyatlıysa maliyet **hem USD olarak hem faturalanmış kurla TL karşılığı olarak** okunur; iki değer birlikte tutulur. (3) **Birim dönüşümü açık kalır:** stok birimi ≠ alış birimi olan kayıtlarda port `NoSource` kalır (`NEEDS-SINAN`, aşağıda). (4) Kurun hangi belgeden geldiği ("faturalanmış kur") Sinan'ın kendi cevabında Kalan Modüller şeridince doğrulanacak diye bırakıldı; bulgu "Doğrulama"dadır ve kur kaynağı **doğrulanana kadar** `OPEN-INV-AVGCOST-FX` açık kalır. | Stok maliyet defteri girdisi, `IInventoryAverageCostReadPortV1` (dövizli değer), Alış sipariş satırı sözleşmesi |
 | SAT-D296 | Sıfır stokta ortalama (soru 2) | Stok tam sıfıra düştüğünde **son ortalama okunabilir değer olarak kalır** (Value). Pozisyon bu nedenle Unreadable'a çevrilmez. Negatif stok bu karardan **etkilenmez** (açık). | `AverageCostCalculator` (sıfır stok), okuma portu |
-| SAT-D297 | Sıfır birim maliyetli alış girişi (soru 3) | Birim maliyeti **sıfır** olan alış girişi **"maliyet bilinmiyor" (Unreadable)** sayılır ve **ortalamaya katılmaz**. Pozisyonun halihazırda okunabilir olup bu girişle ne olacağı (mevcut ortalama korunur mu, pozisyon Unreadable'a mı döner) Sinan'ın cevabında ayrıca yazılı değildir; "ortalamaya katılmaz" ifadesi uygulamada **mevcut ortalamayı değiştirmeyen** okuma olarak gerçeklenir ve kod PR'ında ayrıca belirtilir (aşağıda). | `AverageCostCalculator`, `AverageCostUnreadableReason`, okuma portu |
+| SAT-D297 | Sıfır birim maliyetli alış girişi (soru 3) | Birim maliyeti **sıfır** olan alış girişi **"maliyet bilinmiyor" (Unreadable)** sayılır ve **ortalamaya katılmaz**. Uygulama okunuşu: pozisyon, mevcut Unreadable davranışı gibi **yapışkan** olarak okunamaz olur (`ZeroCostReceipt`); sıfır, ortalamayı sulandırmaz ve sessizce kabul edilmez. Bu okunuş geri alınabilir uygulama ayrıntısıdır, kod PR'ında yazılıdır; Sinan farklı isterse (ör. mevcut ortalamayı koru) ayrı karar gerekir. | `AverageCostCalculator`, `AverageCostUnreadableReason`, okuma portu |
 
 ## Doğrulama (yazarın repo taraması; Sinan kararı değildir)
 
@@ -98,10 +98,8 @@ Bunlar ayrı **K3** kod PR'larıdır (para/formül, cross-module sözleşme; iki
 kanıtı). Bu belge kod değiştirmez.
 
 - **SAT-D297:** yeni `AverageCostUnreadableReason.ZeroCostReceipt = 9`; okuma portunun halka açık nedenler listesine yeni kod
-  eklenir (sürümlü sözleşme testi, OpenAPI/okuma portu etkisi kontrol edilir). Sıfır maliyetli alış girişi ortalamaya
-  girmez. Pozisyonun bu girişten sonraki durumu için Uygulama ayrıntısı (geri alınabilir) seçimi: mevcut ortalama
-  korunur ve giriş miktarı için maliyet bilinmediğinden defter-stok uyuşmazlığı (`LedgerStockMismatch`) ile çakışma
-  incelenir; seçim PR gövdesinde yazılır, tahmini politika kilitlenmez.
+  `zero_cost_receipt` eklenir (sürümlü sözleşme testi). Sıfır maliyetli alış girişi ortalamaya girmez; pozisyon yapışkan
+  Unreadable olur (geri alınabilir uygulama okunuşu; kod PR'ında ve CHECK 1..9 forward-fix migration'ında belirtilir).
 - **SAT-D296:** `AverageCostCalculator` sıfır stokta son ortalamayı **okunabilir** (Value) döndürür; mevcut davranış
   ("last average is kept") korunur, yalnız "okunabilir mi" sorusundaki yorum ve test yorumu (`OPEN-INV-AVGCOST-ZERO-STOCK`)
   güncellenir; port sıfır stokta Value cevabını testle sabitler.
