@@ -149,9 +149,36 @@ const isState = (v: unknown): v is CustomerReturnState =>
   typeof v === 'string' && (CUSTOMER_RETURN_STATES as readonly string[]).includes(v)
 const isNullableText = (v: unknown): v is string | null => v === null || isText(v)
 const isNullableInstant = (v: unknown): v is string | null => v === null || isInstant(v)
-/** The server stores a reason trimmed, never blank, within its bound; whitespace-only is stored as none (null). */
+/**
+ * .NET `char.IsWhiteSpace` (Unicode Zs/Zl/Zp plus U+0009..U+000D and U+0085), the set `string.Trim()` and
+ * `string.IsNullOrWhiteSpace` use on the server. JS `trim()` differs: it also strips U+FEFF and keeps U+0085.
+ */
+const isServerWhiteSpace = (code: number): boolean =>
+  (code >= 0x09 && code <= 0x0d)
+  || code === 0x20
+  || code === 0x85
+  || code === 0xa0
+  || code === 0x1680
+  || (code >= 0x2000 && code <= 0x200a)
+  || code === 0x2028
+  || code === 0x2029
+  || code === 0x202f
+  || code === 0x205f
+  || code === 0x3000
+
+/** The text as the server's `string.Trim()` leaves it (outer .NET whitespace removed, nothing else). */
+export function trimServerWhiteSpace(text: string): string {
+  let start = 0
+  let end = text.length
+  while (start < end && isServerWhiteSpace(text.charCodeAt(start))) start += 1
+  while (end > start && isServerWhiteSpace(text.charCodeAt(end - 1))) end -= 1
+  return text.slice(start, end)
+}
+
+/** The server stores a reason trimmed (.NET `Trim()`), never blank, within its bound; whitespace-only is stored as none (null). */
 const isNullableReason = (v: unknown): v is string | null =>
-  v === null || (typeof v === 'string' && v.length > 0 && v.length <= CUSTOMER_RETURN_REASON_MAX && v.trim() === v)
+  v === null
+  || (typeof v === 'string' && v.length > 0 && v.length <= CUSTOMER_RETURN_REASON_MAX && trimServerWhiteSpace(v) === v)
 
 const AMOUNT_FIELDS = [
   'netAmount',
