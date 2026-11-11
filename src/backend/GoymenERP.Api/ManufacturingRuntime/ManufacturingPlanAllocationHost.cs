@@ -160,11 +160,18 @@ internal sealed class ManufacturingPlanAllocationHost(
                 metadata.SourceChannel,
                 metadata.ClientIpAddress,
                 metadata.UserAgent);
-            await using (var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
-                             manufacturing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
-                             settings, cancellationToken))
+            try
             {
+                await using var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
+                    manufacturing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
+                    settings, cancellationToken);
                 await stage(companyId, plan, inventory, inventoryMetadata, cancellationToken);
+            }
+            catch (ArgumentException)
+            {
+                // TAKIP-U3a (#1004): an argument fault inside the Inventory stage is this host's contract fault (503),
+                // never the caller's 400; the caller's own write above keeps its ArgumentException (400).
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
             }
 
             await transaction.CommitAsync(cancellationToken);

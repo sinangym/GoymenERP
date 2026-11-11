@@ -114,6 +114,14 @@ public sealed partial class ManufacturingCommandService
 
                 // U3-a (URT-D21): an approved plan holds its inputs' allocation; its cancellation releases what remains in
                 // the same transaction. A draft holds no allocation and is cancelled as before.
+                // TAKIP-U3a (#1004): an approved plan without the allocation port refuses (503) instead of cancelling
+                // without releasing what it holds (no fail-open).
+                if (planAllocations is null && found is { Status: PlanStatus.Approved })
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
                 var cancelled = planAllocations is not null && found is { Status: PlanStatus.Approved }
                     ? await planAllocations.WriteAndReleaseAsync(planId,
                         ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled, Cancel, metadata, cancellationToken)
