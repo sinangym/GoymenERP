@@ -1439,10 +1439,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // FIN-T06: the reversal workflow is the module's third writer. SqlClient is used only
                 // to recognise unique-key violations (2601/2627) after SaveChanges; there is no
                 // connection, command, raw SQL or query-filter bypass.
+                // Re-fingerprinted for the #66 round-20 reversal date rule applied to FIN-T06: one PolicyRefusal arm
+                // (finance_reversal_before_receipt); same SqlClient use (5c391ebb... -> 70ca258a...).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs"] =
                     new(
-                        "5c391ebb303e5e031e2c912b777a9b934446177e797e1e226fed7d74e4268f76",
+                        "70ca258a382fe8375eb0a976f33f24f0eb6ea2fea1dc61b6ff2597becfa50e54",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
