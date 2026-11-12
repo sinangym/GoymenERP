@@ -6,9 +6,11 @@ namespace GoymenERP.Modules.Purchasing.Application;
 
 /// <summary>
 /// A3 API-30 (ALS-D33, ALS-D21 "sıra", master §7.3): a purchase order line's delivery schedule (termin dilimleri) — the quantity
-/// slices of a general line with their delivery dates, summing exactly to the line's ordered quantity. Recorded under the create name
-/// <c>purchasing.orders.create</c> (no new permission name; the ALS-D60 precedent of order data written under the create name) on the
-/// same fences as every Purchasing command (#276), ADR-011 replay first. Each POST replaces the line's schedule whole as a new revision
+/// slices of a general line with their delivery dates, summing exactly to the line's ordered quantity. Recorded under the revise name
+/// <c>purchasing.orders.revise</c> (ALS-D94, Sinan #66 6824883445: a termin change is a revision of the order; the plan's API-12/API-17
+/// name, registered, not granted; the create name alone is refused 403) on the same fences as every Purchasing command (#276), ADR-011
+/// replay first. On an Approved order a termin-only change keeps the order Approved and asks no re-approval (ALS-D94); a slice total
+/// other than the line's quantity is the domain's non-terminal 422 on <c>slices</c>, so the ordered total never changes here. Each POST replaces the line's schedule whole as a new revision
 /// at the next order version; the earlier revisions stay (append only). A Draft or an Approved order is scheduled; a Cancelled one is
 /// refused (terminal 409), as is a stale version. The schedule rules are the domain's 422; an unknown line is a 404 (the line is a
 /// path resource). Delay flagging (API-32) and the schedule screen are not part of this slice.
@@ -21,7 +23,7 @@ public sealed partial class PurchasingService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
-        var permission = bindings.CreatePermission;
+        var permission = bindings.RevisePermission;
         const string commandName = PurchasingCommands.OrderLineScheduleV1;
         var scope = await RequireAsync(permission, cancellationToken);
         var disclosure = await DiscloseAsync(scope, cancellationToken);

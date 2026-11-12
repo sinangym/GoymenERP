@@ -202,7 +202,10 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(8, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(9, PurchasingPermissionManifestV1.Names.Count);
+        // A3 API-30 (ALS-D94): the revise name measures the schedule command only; the schedule screen (UI-07) brings its control.
+        Assert.Contains("purchasing.orders.revise", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
         // A2a-1 (PRS-02): the price read governs disclosure only; no shell control or route is measured with it.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead));

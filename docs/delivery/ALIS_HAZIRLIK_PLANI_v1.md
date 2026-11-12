@@ -259,7 +259,7 @@ eklenir. İzin adları öneridir; sahip modül koyar (No P5).
 
 | ID | Uç | Amaç | Karar | Sev. |
 |---|---|---|---|---|
-| API-30 | `POST orders/{id}/lines/{lineId}/schedule` | Miktar bazlı termin dilimleri (toplam = satır miktarı; yeni tablo + kısıt); hubvogal'deki bağlantının "sıra"ları (ALS-D21) | §7.3, ALS-D33; **ALS-D81 (EK16): kısmi kabulden sonra yalnız kalan miktarın termini değişir, teslim alınan kısım kilitli** | K3 |
+| API-30 | `POST orders/{id}/lines/{lineId}/schedule` | Miktar bazlı termin dilimleri (toplam = satır miktarı; yeni tablo + kısıt); hubvogal'deki bağlantının "sıra"ları (ALS-D21) | §7.3, ALS-D33; **ALS-D81 (EK16): kısmi kabulden sonra yalnız kalan miktarın termini değişir, teslim alınan kısım kilitli**; **ALS-D94 (EK16): yetki `purchasing.orders.revise`; onaylı siparişte yalnız termin değişikliği yeniden onay istemez, toplam miktar değişikliği 422** | K3 |
 | API-31 | `POST orders/{id}/shipment-notices` | Tedarikçi sevk bildirimi (araç, plaka, şoför, irsaliye no, kg) → "yolda"; taşıma durumu (master §7.3); ayrıca **tedarikçide hazır** miktarı (U.S Hazır / Bülten Hazır) ve düzeltmesi (ALS-D22); şoför ad/telefon/TC/plaka (ALS-D39: yetkili, maskeli, audit'li; 10 yıl saklama, imha ayrı insan kapısı) | §7.3, ALS-D22, ALS-D33, ALS-D39 | K3 |
 | API-32 | `GET expected-deliveries` | Beklenen teslimatlar; geciken termin | ST-08, L-09 | K2 |
 

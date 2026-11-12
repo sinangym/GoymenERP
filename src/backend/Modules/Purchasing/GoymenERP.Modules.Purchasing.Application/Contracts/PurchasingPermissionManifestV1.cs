@@ -67,6 +67,16 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string OrdersPriceRead = "purchasing.orders.price.read";
 
+    /// <summary>
+    /// A3 API-30 (ALS-D94, EK16; the plan's API-12/API-17 name): revise an existing order — today only a line's delivery schedule;
+    /// on an APPROVED order a schedule-only change needs no re-approval while the total and the price stay (ALS-D94). The header
+    /// and line revision (ALS-D9, Rev+1 and re-approval) and the breakdown take this name when they come. Apart from entering,
+    /// approving, receiving and cancelling; none confers another. Company-wide, not critical. Registered only: the grant is a human
+    /// gate (only SENTETIK browser-suite personas in disposable stacks hold it).
+    /// </summary>
+    public const string OrdersRevise = "purchasing.orders.revise";
+
     public static readonly IReadOnlyList<string> Names =
-        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead];
+        [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
+            OrdersRevise];
 }

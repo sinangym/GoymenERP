@@ -31,6 +31,7 @@ public sealed class PurchasingPermissionRegistrationTests
         ErpPermissions.PurchasingRequestsWithdraw,
         ErpPermissions.PurchasingOrdersCancel,
         ErpPermissions.PurchasingOrdersPriceRead,
+        ErpPermissions.PurchasingOrdersRevise,
     };
 
     [Fact]
@@ -43,6 +44,7 @@ public sealed class PurchasingPermissionRegistrationTests
         Assert.Equal("purchasing.requests.withdraw", ErpPermissions.PurchasingRequestsWithdraw);
         Assert.Equal("purchasing.orders.cancel", ErpPermissions.PurchasingOrdersCancel);
         Assert.Equal("purchasing.orders.price.read", ErpPermissions.PurchasingOrdersPriceRead);
+        Assert.Equal("purchasing.orders.revise", ErpPermissions.PurchasingOrdersRevise);
     }
 
     [Theory]

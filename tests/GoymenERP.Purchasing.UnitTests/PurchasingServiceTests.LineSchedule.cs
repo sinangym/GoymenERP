@@ -7,7 +7,7 @@ using GoymenERP.Modules.Purchasing.Domain.Quantities;
 namespace GoymenERP.Purchasing.UnitTests;
 
 /// <summary>
-/// A3 API-30 (ALS-D33, ALS-D21, master §7.3): a purchase order line's delivery schedule through the service — the create name, the
+/// A3 API-30 (ALS-D33, ALS-D21, ALS-D94, master §7.3): a purchase order line's delivery schedule through the service — the revise name, the
 /// detail's deliverySchedule, the replay under the key (the line id is in the replay identity), the terminal refusals (cancelled
 /// order, stale version) replayed, the domain rules' 422 (not terminal), the unknown line's 404, the quantity texts' 400 and the
 /// strict wire shape. SENTETIK / NOT_ENV.
@@ -21,7 +21,7 @@ public sealed partial class PurchasingServiceTests
         new(version, [.. slices.Select(slice => new PurchaseOrderDeliverySliceRequest(Guid.NewGuid(), slice.Quantity, slice.Date))]);
 
     [Fact]
-    public async Task A_draft_lines_schedule_is_recorded_under_the_create_binding_shown_on_the_detail_and_the_same_key_replays()
+    public async Task A_draft_lines_schedule_is_recorded_under_the_revise_binding_shown_on_the_detail_and_the_same_key_replays()
     {
         var world = new World();
         var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "10"), Metadata("k-create"));
@@ -34,10 +34,10 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(("Draft", "3", false), (set.Detail.Order.Status, set.Detail.Order.Version, set.IsReplay));
         Assert.Equal([(request.Slices[0].SliceId, 1, "6.5", ScheduleD2), (request.Slices[1].SliceId, 2, "3.5", ScheduleD1)],
             set.Detail.Lines[0].DeliverySchedule.Select(slice => (slice.SliceId, slice.SliceNo, slice.Quantity, slice.DeliveryDate)).ToArray());
-        Assert.Equal(CreatePermission, world.Authority.LastPermission);
+        Assert.Equal(RevisePermission, world.Authority.LastPermission);
         Assert.Equal(("purchasing.purchase-order.line-schedule-set.v1", "Schedule"),
             (world.Store.Audits.Last().EventType, world.Store.Audits.Last().Operation));
-        Assert.Equal((Actor, CreatePermission, "k-schedule"),
+        Assert.Equal((Actor, RevisePermission, "k-schedule"),
             (world.Store.Envelopes.Last().ActorId, world.Store.Envelopes.Last().PermissionCode, world.Store.Envelopes.Last().IdempotencyKey));
 
         var replay = await world.Service().SetOrderLineScheduleAsync(orderId, lineId, request, Metadata("k-schedule", correlation: "schedule-2"));
@@ -73,6 +73,49 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal((409, PurchasingProblemCodesV1.OrderState, true), (again.Status, again.Code, again.IsReplay));
         Assert.Equal(2, world.Store.Refusals.Count(item => item.Command == PurchasingCommands.OrderLineScheduleV1));
         Assert.Equal(2, world.Store.Transitions.Count(item => item.Command == PurchasingCommands.OrderLineScheduleV1));
+    }
+
+    [Fact]
+    public async Task On_an_approved_order_a_termin_only_change_keeps_it_approved_and_a_changed_total_is_a_non_terminal_422()
+    {
+        // ALS-D94 (Sinan #66 6824883445): a termin-only revision asks no re-approval; the ordered total does not move through API-30.
+        var world = new World();
+        var (orderId, lineId) = await ApprovedOrderAsync(world, "10");
+        var approvalsBefore = world.Store.Transitions.Count(item => item.Command == PurchasingCommands.OrderApproveV1);
+
+        var retimed = await world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("3", ("4", ScheduleD1), ("6", ScheduleD2)),
+            Metadata("k-retime"));
+        Assert.Equal(("Approved", "4", "10"), (retimed.Detail.Order.Status, retimed.Detail.Order.Version, retimed.Detail.Lines[0].Ordered));
+        Assert.Equal(approvalsBefore, world.Store.Transitions.Count(item => item.Command == PurchasingCommands.OrderApproveV1));
+
+        foreach (var (key, slices) in new[] { ("k-more", new[] { ("4", ScheduleD1), ("7", ScheduleD2) }), ("k-less", new[] { ("9", ScheduleD1) }) })
+        {
+            var changed = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+                world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("4", slices), Metadata(key)));
+            Assert.Equal((422, "validation_failed", "slices", PurchasingRuleCodes.ScheduleTotalMismatch, false),
+                (changed.Status, changed.Code, changed.Errors[0].Field, changed.Errors[0].Code, changed.IsReplay));
+        }
+
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        var order = (await world.Store.FindOrderAsync(orderId))!.Order;
+        Assert.Equal((PurchaseOrderStatus.Approved, 4, 10m), (order.Status, order.Version, order.Lines[0].Quantity.Value));
+    }
+
+    [Fact]
+    public async Task The_create_name_alone_is_refused_403_on_the_schedule_and_nothing_is_written()
+    {
+        // ALS-D94: the schedule is a revision; holding purchasing.orders.create without purchasing.orders.revise is not enough.
+        var world = new World();
+        var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "10"), Metadata("k-create"));
+        world.Authority.Denied.Add(RevisePermission);
+
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().SetOrderLineScheduleAsync(created.Detail.Order.Id,
+            created.Detail.Lines[0].LineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-create-only")));
+
+        Assert.Equal((403, "forbidden", RevisePermission), (denied.Status, denied.Code, world.Authority.LastPermission));
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.Equal(2, (await world.Store.FindOrderAsync(created.Detail.Order.Id))!.Order.Version);
     }
 
     [Fact]
@@ -164,7 +207,7 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task The_create_name_is_measured_first_an_anonymous_caller_is_401_a_refused_one_403_and_an_unbound_name_503_nothing_written()
+    public async Task The_revise_name_is_measured_first_an_anonymous_caller_is_401_a_refused_one_403_and_an_unbound_name_503_nothing_written()
     {
         // k3-command-skeleton: the schedule command's own 401 / 403 / 503 fences, each before the replay read and the store.
         var world = new World();
@@ -182,10 +225,10 @@ public sealed partial class PurchasingServiceTests
         world.Authority.Granted = false;
         var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-denied")));
-        Assert.Equal((403, "forbidden", CreatePermission), (denied.Status, denied.Code, world.Authority.LastPermission));
+        Assert.Equal((403, "forbidden", RevisePermission), (denied.Status, denied.Code, world.Authority.LastPermission));
         world.Authority.Granted = true;
 
-        world.Bindings = world.Bindings with { CreatePermission = null };
+        world.Bindings = world.Bindings with { RevisePermission = null };
         var unbound = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-unbound")));
         Assert.Equal((503, PurchasingProblemCodesV1.PermissionUnregistered), (unbound.Status, unbound.Code));

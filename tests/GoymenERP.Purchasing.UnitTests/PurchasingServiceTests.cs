@@ -30,6 +30,7 @@ public sealed partial class PurchasingServiceTests
     private const string CreatePermission = ErpPermissions.CounterpartyPartiesCreate;
     private const string ReadPermission = ErpPermissions.CounterpartyPartiesRead;
     private const string ApprovePermission = ErpPermissions.CounterpartyAccountsCreate;
+    private const string RevisePermission = ErpPermissions.PurchasingOrdersRevise;
 
     [Fact]
     public async Task A_request_and_an_order_bound_to_it_are_stored_once_with_the_owners_product_version_and_the_fences_measured()
@@ -516,7 +517,7 @@ public sealed partial class PurchasingServiceTests
 
         /// <summary>A4b: the Sales approved-line port the service is composed with (null: not composed, Sales lines stay closed).</summary>
         public IPurchaseRequestSalesSourcePortV1? SalesSources { get; set; }
-        public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
+        public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {

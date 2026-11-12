@@ -198,10 +198,12 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `CK_PurchaseOrders_Approval` (both or neither, only on Approved/Cancelled, approver ≠ `CreatedBy`); its Down refuses
   (`THROW 51172`) while any approver is recorded. The approval amount threshold (API-96) stays in A2a-5.
 - **Order line delivery schedule (A3 API-30, ALS-D33, ALS-D21, master §7.3):** `POST /api/v1/purchasing/orders/{id}/lines/{lineId}/schedule`
-  (`purchasing.orders.create`, ADR-011 replay; the line id is in the replay identity) replaces a GENERAL line's termin dilimleri
+  (`purchasing.orders.revise`, ALS-D94 / Sinan #66 6824883445 — the create name alone is 403; ADR-011 replay; the line id is in
+  the replay identity) replaces a GENERAL line's termin dilimleri
   (hubvogal's "sıra") whole: 1..500 slices, each a distinct `sliceId`, a quantity above zero in the line's unit and a
   `deliveryDate`, numbered 1..n in the given order, summing exactly to the line's ordered quantity (422 `validation_failed` on
-  `slices` with the rule code otherwise). Draft and Approved orders are scheduled; a cancelled order (409
+  `slices` with the rule code otherwise, so the ordered total never changes through API-30). Draft and Approved orders are
+  scheduled; on an Approved order a termin-only change keeps it Approved and asks no re-approval (ALS-D94); a cancelled order (409
   `purchasing_order_state`) and a stale version (409 `version_conflict`) are terminal and replayed; an unknown line is a 404. Each
   call appends the new set as a revision at the next order version (append only, history kept) and books nothing. The detail's
   line carries `deliverySchedule` (the latest revision). Migration `20261112014446_AddPurchaseOrderLineDeliverySchedule` adds
@@ -233,9 +235,10 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `cancel-impact`, `cancellation` (A1-3); `references/currencies` (A2a-1);
   goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
-- **Permissions (8):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
+- **Permissions (9):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
   `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b), `purchasing.orders.cancel` (A1-3),
-  `purchasing.orders.price.read` (A2a-1, disclosure only) (`PurchasingPermissionManifestV1`,
+  `purchasing.orders.price.read` (A2a-1, disclosure only), `purchasing.orders.revise` (A3 API-30 termin change, ALS-D94; no shell
+  control yet) (`PurchasingPermissionManifestV1`,
   `ErpPermissions`; company-wide, not critical, registered only).
 - **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.7`) declares P-01 request
   list/new/detail (+ submit, since A1-1 the `purchasing.requests.approve` decision child and since A1-1b the
