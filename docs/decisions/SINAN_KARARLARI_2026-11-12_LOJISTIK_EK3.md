@@ -31,7 +31,9 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 **LOJ-D11 devamı (#66 6821569022, koordinatör kaydı, birebir):**
 
-> **SINAN KARARI (2026-11-12, AskUserQuestion):** Kantar zorunlu depodan e-İrsaliye'li transferde iptal penceresi **"hangisi önce gelirse"** orada kapanır: çıkış tartısı **veya** e-İrsaliye'nin GİB'e gönderimi — hangisi önce olursa. (Stok KLN-D25 (7) devamı, Lojistik LOJ-D11 için; şeritler karar dosyasına bu metinle işler.)
+> **SINAN KARARI (2026-11-12, AskUserQuestion):** Kantar zorunlu depodan e-İrsaliye'li transferde iptal penceresi **"hangisi önce gelirse"** orada kapanır: çıkış tartısı **veya** e-İrsaliye'nin GİB'e gönderimi — hangisi önce olursa.
+
+Koordinatör notu (alıntı dışı): Stok KLN-D25 (7) devamıdır; Lojistik LOJ-D11 için şeritler karar dosyasına bu metinle işler.
 
 **17. tur, m.1 — N-5, risk okunamazsa sevk (#1119):**
 
@@ -41,7 +43,7 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| LOJ-D11 | Transfer "yola çıktı" ayırıcısı = depo ayarı | Settings'te depo başına "bu depodan çıkan transferler kantardan geçer" ayarı vardır; **varsayılan kapalı**. Açıksa: sevk kaydedildikten sonra iptal **çıkış tartısına kadar açık** kalır, çıkış tartısı kaydedilince mal yola çıkmış sayılır (LOJ-D10). Kapalıysa (diğer depolar): **sevk kaydı kapanış anıdır**, iptal kapanır. Her sevkte kullanıcıya ek soru yoktur. **Devamı (#66 6821569022, Sinan):** kantarlı depoda e-İrsaliye'li transferin iptal penceresi **hangisi önce gelirse** kapanır: çıkış tartısı ya da e-İrsaliye'nin GİB'e gönderimi (Stok KLN-D25 (7) ile aynı cevap). | Settings (depo ayarı), Stok transfer iptali, LOJ-D10 (KLN-D25 (7) ile aynı cevap) |
+| LOJ-D11 | Transfer "yola çıktı" ayırıcısı = depo ayarı | Settings'te depo başına "bu depodan çıkan transferler kantardan geçer" ayarı vardır; **varsayılan kapalı**. Açıksa: sevk kaydedildikten sonra iptal **çıkış tartısına kadar açık** kalır, çıkış tartısı kaydedilince mal yola çıkmış sayılır (LOJ-D10). Kapalıysa (diğer depolar): **e-İrsaliyesiz** transferde **sevk kaydı kapanış anıdır**, iptal kapanır; **e-İrsaliye'li** transferde iptal GİB gönderimine kadar açıktır (6. tur m.1, KLN-D25 (6), KLN-D27 (3)). Her sevkte kullanıcıya ek soru yoktur. **Devamı (#66 6821569022, Sinan):** kantarlı depoda e-İrsaliye'li transferin iptal penceresi **hangisi önce gelirse** kapanır: çıkış tartısı ya da e-İrsaliye'nin GİB'e gönderimi (Stok KLN-D25 (7) ve KLN-D27 ile aynı cevap). | Settings (depo ayarı), Stok transfer iptali, LOJ-D10 (KLN-D25 (7), KLN-D27 ile aynı cevap) |
 | LOJ-D12 | Fason net kg paylaşımı ve tartısız teslim | Tek tartı aynı araçtaki birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır. **Tartısı olmayan fason teslim kaydedilemez.** Bedel kg'ı LOJ-D9'daki gibi teslim tartısı net kg'ıdır. | F-012 (spec 04), Satış fason hizmet siparişi: Satış tarafında SAT-D309 (kg kaynağı) ve SAT-D312 (1)-(2) (oranla bölme) aynı cevaptır (Satış #1119; #1119 henüz main'de değildir) |
 | LOJ-D13 | Çıkış sonrası tartı düzeltmesi = gerekçeli düzeltme | Araç çıktıktan sonra tartı yanlış girildiği anlaşılırsa **yetkili kişi gerekçe yazarak düzeltme kaydı** girer. Eski değer silinmez, denetim izinde kalır. Fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır; Lojistik fatura kesmez. Yeni izin adı önerilebilir; **grant/rol insan kapısıdır**. | Lojistik tartı kaydı, denetim izi, Satış fark faturası (SAT-D312 (3)) |
 

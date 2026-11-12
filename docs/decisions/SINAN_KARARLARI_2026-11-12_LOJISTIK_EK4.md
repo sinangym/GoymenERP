@@ -28,9 +28,10 @@ alıntı dışındadır.
   main'de yoktur): spec 04 "Fason teslimde müşteri riski kapısı" bölümünde. Kapı kuralı satış sevk kapısıyla aynı
   fonksiyondur (`Within` geçer; `Over`/`CreditLimitNotSet`/`SourceUnavailable` yalnız `Valid` istisnayla; diğer durumlar ve
   port hatası durur). Tek kullanım Lojistik'in kesin sevk transaction'ında `(CompanyId, orderId, ExceptionNo)` başına tekil kayıtla zorlanır (`ExceptionNo` yalnız sipariş
-  içinde tekildir). Talimattaki bir fason siparişi durursa talimatın tamamı durur (kısmi sevk yok; yazar okuması). Tartı öncesi
-  risk tutarı Sinan'ın #66 6822767886 m.1 kararıyla "Sevk plan miktarı x onaylı fiyat"tır; Satış hesaplar, Lojistik yalnız
-  kapıyı uygular.
+  içinde tekildir). Talimattaki bir fason siparişi durursa talimatın tamamı durur (kısmi sevk yok; yazar okuması). Fason
+  sevk-plan risk tutarı Sinan'ın #66 6822767886 m.1 kararıyla "Sevk plan miktarı x onaylı fiyat"tır; Satış hesaplar,
+  Lojistik kapıyı yalnız kesin sevk anında uygular. Kapı durdurursa (port hatası dahil) hiçbir siparişin istisna tüketimi
+  yazılmaz.
   Port main'e girene kadar fason teslim kesin sevki 503 `Unavailable` ile kapalıdır (fail-closed).
 - İstisnanın izin adı, kaynağı ve ekranı Satış'ın kapsamıdır; grant/rol insan kapısıdır.
 
