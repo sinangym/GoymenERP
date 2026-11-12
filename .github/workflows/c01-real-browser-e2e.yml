@@ -47,7 +47,18 @@ jobs:
           set -euo pipefail
           actual_head="$(git rev-parse HEAD)"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
-          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+          # CIH-D9: the head must contain the base. The one exception is a base that moved only in
+          # the paths this workflow's own pull_request trigger ignores (paths-ignore above; the
+          # contract test keeps the two lists identical). Any other drift, or any git error, fails.
+          if ! git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD; then
+            fork_point="$(git merge-base "$EXPECTED_BASE_SHA" HEAD)"
+            git diff --quiet "$fork_point" "$EXPECTED_BASE_SHA" -- . \
+              ':(exclude,glob)docs/**' ':(exclude,glob)AGENTS.md' ':(exclude,glob).claude/**' || {
+              echo "C01_BASE_NOT_IN_HEAD: merge the base branch into this branch" >&2
+              exit 1
+            }
+            echo "C01_BASE_DRIFT_IN_IGNORED_PATHS_ONLY fork_point=$fork_point"
+          fi
 
           compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
