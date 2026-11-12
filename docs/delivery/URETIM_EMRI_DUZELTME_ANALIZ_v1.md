@@ -2,7 +2,7 @@
 
 Bu belge Sinan'ın 12 Kasım 2026 F-009 kararını (URT-D28,
 `docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md`) bugünkü kodla karşılaştırır. Sinan'ın istediği
-gibi uygulamadan önce yazılmıştır. Sinan'ın takip cevapları (N1–N9, URT-D30…URT-D38) da bu belgeye işlenmiştir. Kod gerçekleri `origin/main` `cf0ae197f` üzerinden okunmuştur. Kod bu belge merge
+gibi uygulamadan önce yazılmıştır. Sinan'ın takip cevapları (N1–N11, URT-D30…URT-D38) da bu belgeye işlenmiştir. Kod gerçekleri `origin/main` `cf0ae197f` üzerinden okunmuştur. Kod bu belge merge
 edilmeden başlamaz.
 
 ## 1. Kararın kurallara çevrilmesi
@@ -186,15 +186,20 @@ ayrılmış demektir (Manufacturing README U3-a). D5'te plan iptalinin `PlanCanc
 bırakılacak kalan bulmamalı ve hata vermemelidir; plan görünümü (API-14) bu durumu ayırmalıdır. D5/D6 kabulünde ayrıca
 URT-D34'ün "eksik girdiler açıkça gösterilir" kısmı Stok'un Free kg portuyla sağlanır. D5 bu port ve Stok'un
 `OrderCancelled=3` dilimi main'e girmeden başlamaz (§5); bu yüzden eksik girdiyi göstermeyen, yalnız çıplak 409 dönen
-bir ara dönem yoktur. Yetersizlikte emir açılmaz (all-or-nothing, kısmi ayırma yok). D5 artık bir `NEEDS-SPEC`
-beklemez: etiket seçimi URT-D35, farklı etiket URT-D37, sahiplik URT-D38 ile kapandı.
+bir ara dönem yoktur. Yetersizlikte emir açılmaz (all-or-nothing, kısmi ayırma yok). Etiket seçimi (URT-D35), farklı
+etiket (URT-D37), sahiplik (URT-D38), kısmi dilme ve yeniden onayda ayırma anı (26. tur
+[`6823809221`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823809221) m.1/m.2, N10/N11) iş sorusu olarak cevaplandı. Farklı etiketin uygulaması (Onaylı plandan
+yeniden onaya geçiş) ayrı bir K3 dilimidir (§5 D5b); main'deki kısıt o dilim gelene kadar yerinde kalır (§4.7 (e)).
 
 **Yeni emirde girdi ayırması (URT-D34, 20. tur m.1):** Plan Onaylı'ya döndükten sonra yeni emir açılırken stok yeniden
 kontrol edilir ve Stok'un plan ayırma portu üzerinden yeniden ayrılır. Eski emrin ayırmasının kalanı iptalde `OrderCancelled`
 sebebiyle bırakılmıştır. Ayrılacak etiketleri her girdi ürünü için kullanıcı seçer (URT-D35); sistem FIFO veya plan etiketiyle
 seçmez. Plandakinden farklı etiket seçilirse plan yeni etikete göre yeniden hesaplanır ve yeniden onaya düşer; uymuyorsa
-seçim reddedilir (URT-D37). Seçilen etiketin sahipliği plan girdisininkiyle aynı olmalıdır: şirket malı yerine şirket
-malı, müşteri malı yerine aynı müşterinin malı; farklıysa reddedilir (URT-D38). Seçilen etiketlerin serbest kg'ı yetmezse emir açılmaz ve eksik girdiler (ürün, istenen kg, ayrılabilen kg)
+seçim reddedilir (URT-D37). Bu yolda ayırma yeniden onayda yapılır (N11): emir açılışı ayrıca ayırmaz, yeniden onaylanan
+planın ayırmasını kullanır. Hiçbir girdi değişmediyse yeniden onay yoktur ve ayırma emir açılışında yapılır (yazar
+okuması, geri alınabilir). Seçilen etiketin sahipliği plan girdisininkiyle aynı olmalıdır: şirket malı yerine şirket
+malı, müşteri malı yerine aynı müşterinin malı; farklıysa reddedilir (URT-D38; karşılaştırma `CommercialContext.PartyId`
+ile, §4.7 (e)). Seçilen etiketlerin serbest kg'ı yetmezse emir açılmaz ve eksik girdiler (ürün, istenen kg, ayrılabilen kg)
 cevapta açıkça gösterilir; kısmi ayırma yoktur. Port kayıtlı değil veya okunamıyorsa emir açılmaz (fail-closed, kodsuz 503). Cross-module sözleşme ve
 stok kuralı olduğu için K3'tür.
 
@@ -228,21 +233,43 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
   üzerine yazılmaz (URT-D3 izi korunur). Girdi çıkışı yalnız etkin emrin ayırmasını okur. Migration, mevcut satırları
   ilk emirlerine bağlayan backfill ve forward-fix Down (birden çok kuşak varken geri alınmaz) gerekir.
 - (c) URT-D35/URT-D37 bu şemayı da etkiler. Bugünkü plan girdisi ana etiket anahtarlıdır (`PlannedInput.ParentRollId`,
-  `ExpectedLabelVersion`, `TechnicalSnapshot`, `CommercialContext`; `PlannedInput.cs:9-60`) ve plan, o bobinin eni ve
+  `ExpectedLabelVersion`, `TechnicalSnapshot`, `PlannedMass`, `CommercialContext`; `PlannedInput.cs:9-60`) ve plan, o bobinin eni ve
   teknik değerleriyle hesaplanmıştır (ör. `SlittingSpecRequestV1.NetUsableWidthMm` planlanan ana bobin genişliğini
   aşamaz). Bu yüzden başka etiket bir ayırma ayrıntısı değildir: URT-D37'ye göre plan girdisi yeni etikete geçer, plan
-  hesap motoruyla yeniden hesaplanır (en, fire, kütle dengesi) ve yeniden onaya düşer; ayırma yeniden onaydan sonra
-  yeni etiketle yapılır. Eski plan girdisi değerleri silinmez, URT-D3 etiket izi korunur. İlk emirde URT-D21/URT-D3 aynen
+  hesap motoruyla yeniden hesaplanır (en, fire, kütle dengesi) ve yeniden onaya düşer; ayırma yeniden onayda yeni
+  etiketle yapılır (N11). Değişen alanlar `ParentRollId`, `ExpectedLabelVersion`, `TechnicalSnapshot` ve `PlannedMass`'tır;
+  `CommercialContext` değişmez (URT-D38). Eski plan girdisi değerleri silinmez: main'deki taslak revizyon tarihçesi
+  (`PlanRevisions` / `PlanRevisionInputs`, MFG-PLAN-EDIT, `ManufacturingDbContext.cs:22-24`) deseniyle yeni revizyon
+  eklenir, plan satırı ilk içeriğini korur; URT-D3 etiket izi korunur. İlk emirde URT-D21/URT-D3 aynen
   sürer (yazar okuması): plan onayında planı hazırlayan kullanıcının planda seçtiği etiket ayrılır.
 - (d) Emir açma (Üretim yazımı) ile Stok ayırması tek işlemde yapılır (bugünkü `RunAsync` katılımcı deseni).
 - (e) URT-D37/URT-D38 K3 noktaları: `PlannedInput` etiket alanlarının değişimi ve izi; motor üzerinden yeniden hesap;
   yeniden onay; kütle dengesi; motorun reddettiği seçimde ret; sahiplik kontrolü backend'de (Stok etiket okumasından,
-  okunamazsa ret). Stok'un plan ayırma sözleşmesi plan girdisini ana etiketle anahtarlar
+  okunamazsa ret).
+  - **Uygulama ayrı K3 dilimidir (§5 D5b).** Main'de yalnız taslak plan revize edilir (`ProductionPlan.RequireRevisable`,
+    `ProductionPlan.cs:761-775`, `PlanNotDraft`) ve dilme ayrıntılı plan `manufacturing_plan_slitting_spec_fixed` ile
+    kilitlidir (:772, AT-044). D5b şunları getirir: Onaylı → yeniden onay geçişi; `PlanRevisions` tarihçesi (eski değerler
+    (c)'deki gibi); kısıtın kaldırılması; HamKg ≤ etiketin güncel bakiyesi (N10: planlanan kg etiket bakiyesini aşamaz,
+    kalan aynı etikette düşmüş bakiyeyle kalır, yeni etiket basılmaz; bakiye Stok portundan okunur, aşan plan reddedilir,
+    okunamazsa ret). Kısıt D5b main'e gelene kadar yerinde kalır.
+  - **Yeniden onayda ayırma (N11).** URT-D21 yolu kullanılır: anahtar yeni plan sürümünden türer
+    (`manufacturing-plan-allocation:{company}:{plan}:{version}`, `ManufacturingPlanAllocationHost.cs:176`); emir
+    açılışı ayrıca ayırmaz. `OrderCancelled` ile serbest kalan değişmemiş girdiler de yeniden onayda tekrar ayrılır.
+    URT-D2 (hazırlayan ≠ onaylayan) ve DEC-PRDCT-008 ayar snapshot'ı yeniden onayda da uygulanır.
+  - **Sahiplik anahtarı (URT-D38).** Karşılaştırma `CommercialContext.PartyId` iledir, `CompanyPartyAccountId` ile değil.
+    `CommercialContext` null olan girdi şirket malıdır ve müşteri malı etiket reddedilir; dolu girdi için etiketin sahibi
+    aynı `PartyId` olmalıdır. Main'de Stok'un plan ayırması bunu zaten uygular (URT-D22, `OwnedAsPlanned`,
+    `InventoryManufacturingRealizationParticipant.PlanAllocations.cs:284-299`; Üretim `CustomerPartyId =
+    CommercialContext.PartyId` gönderir, `ManufacturingPlanAllocationHost.cs:52-60`). Yeni Stok alanı veya okuması
+    gerekmez; Üretim'in ekran ve komut kontrolü yalnız erken ret içindir. Stok'un plan ayırma sözleşmesi plan girdisini ana etiketle anahtarlar
   (`DemandLineId = parent.Label.Id`, `InventoryManufacturingRealizationParticipant.PlanAllocations.cs:94`; etkin ayırma
   tekilliği `UX_Allocations_ActivePlanInput` (CompanyId, DemandId, DemandLineId), `InventoryDbContext.cs:500-503`).
   Plan girdisi yeni etikete geçince talep satırı da değişir; bu Stok sözleşmesinin ele alınması gereken noktasıdır (§6).
 - (f) Testler: aynı planda art arda iki iptal (her kuşak tam bir kez serbest bırakılır), iptal → yeni emir → girdi
-  çıkışı yeni ayırmayı tüketir, D8'de yeniden açılıp yeniden kapanan emir, gerçek SQL ile.
+  çıkışı yeni ayırmayı tüketir, D8'de yeniden açılıp yeniden kapanan emir, gerçek SQL ile. D5b için ayrıca: yeniden onay
+  ve emir açılışı aynı girdiyi iki kez ayıramaz (çift ayırma; `UX_Allocations_ActivePlanInput`); iptal ile yeniden onay
+  arasında etiketin başka talebe ayrılması ve yeniden onayın tutarlı reddi (aradaki boşluk); HamKg güncel bakiyeyi aşan
+  planın reddi; müşteri malı ↔ şirket malı ve farklı `PartyId` reddi.
 
 ### 4.8 Ortalama maliyete etkisi (SAT-D305 / SAT-D307 / SAT-D308)
 
@@ -263,7 +290,8 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
 | D2 | Üretim | Domain: çıktı ters olgusu, net çıktı, kütle dengesinde ters olgu, kapalı emirde ret, çıktı beyanına plan çıktı satırı referansı (§3) | Migration (yeni tablo), forward-fix Down |
 | D3 | Üretim | Uygulama + host + uç: API-25 çıktı düzeltmesi; istekte emrin `ExpectedVersion`'ı; `manufacturing.facts.correct` yalnız kayıt | Komut iskeleti, yetki adı, idempotency, Stok katılımcısıyla tek işlem |
 | D4 | Üretim | İade sınırının net çıktıyla sıkılaştırılması (§4.4) | Kural değişikliği (para/stok) |
-| D5 | Üretim | `OrderStatus.Cancelled`, iptal komutu (istekte emrin `ExpectedVersion`'ı), `manufacturing.orders.cancel` yalnız kayıt, ayırma serbest bırakma sebebi `OrderCancelled`, planın Onaylı'ya dönmesi (URT-D33), filtreli tekil indeks ve `PlanOrderExists` değişikliği, yeni emirde yeniden ayırma (URT-D34/URT-D35, §4.7); farklı etikette planın yeniden hesabı ve yeniden onayı, aynı sahiplik kontrolü (URT-D37/URT-D38); emir açma ile Stok ayırması tek işlemde | Migration (durum kontrolü genişler, filtreli tekil indeks, forward-fix Down), yarış testi, Stok ayırma portu sebep listesi; ayırma/serbest bırakma kimliği emir (kuşak) başına; `PlanInputAllocations` şema değişikliği + backfill + forward-fix Down; `CK_Orders_Close` iptal dalı; aynı planda art arda iki iptal testi; `PlannedInput` `ParentRollId`/`ExpectedLabelVersion`/`TechnicalSnapshot`/`CommercialContext` değişimi, motor üzerinden yeniden hesap, yeniden onay, kütle dengesi, URT-D3 etiket izi, sahiplik kontrolü (§4.7 (e)) |
+| D5 | Üretim | `OrderStatus.Cancelled`, iptal komutu (istekte emrin `ExpectedVersion`'ı), `manufacturing.orders.cancel` yalnız kayıt, ayırma serbest bırakma sebebi `OrderCancelled`, planın Onaylı'ya dönmesi (URT-D33), filtreli tekil indeks ve `PlanOrderExists` değişikliği, yeni emirde yeniden ayırma (URT-D34/URT-D35, §4.7); aynı sahiplik kontrolü (URT-D38); emir açma ile Stok ayırması tek işlemde | Migration (durum kontrolü genişler, filtreli tekil indeks, forward-fix Down), yarış testi, Stok ayırma portu sebep listesi; ayırma/serbest bırakma kimliği emir (kuşak) başına; `PlanInputAllocations` şema değişikliği + backfill + forward-fix Down; `CK_Orders_Close` iptal dalı; aynı planda art arda iki iptal testi; sahiplik kontrolü (§4.7 (e)) |
+| D5b | Üretim | Farklı etikette planın yeniden hesabı ve yeniden onayı (URT-D37, N10/N11): Onaylı → yeniden onay geçişi, `PlanRevisions` tarihçesi, `manufacturing_plan_slitting_spec_fixed` kısıtının kaldırılması, HamKg ≤ etiketin güncel bakiyesi, yeniden onayda URT-D21 yolundan ayırma | `PlannedInput` `ParentRollId`/`ExpectedLabelVersion`/`TechnicalSnapshot`/`PlannedMass` değişimi ve izi, motor üzerinden yeniden hesap, kütle dengesi, URT-D2 ve DEC-PRDCT-008 snapshot'ı yeniden onayda, Stok bakiye okuması (fail-closed), çift ayırma ve aradaki boşluk testleri (§4.7 (e), (f)); kısıt bu dilim main'e gelene kadar yerinde kalır |
 | D6 | Üretim | Ekran: UI-14 düzeltme formu, iptal düğmesi, ret kodlarının Türkçe metinleri | — |
 | D7 | Üretim + Satış | İptal edilen emrin satış bağı okumasında görünmesi (MOD-03) | Satış'ın okuma tüketicisi Satış'ındır |
 | D8 | Üretim | Yeniden açma: `ReopenOrder` komutu (istekte emrin `ExpectedVersion`'ı), gerekçe ve denetim kaydı, `manufacturing.orders.reopen` yalnız kayıt, Muhasebe'nin `IAccountingPeriodStatusPortV1` tüketimi (§4.6) | Migration (yeniden açma olgusu), yetki adı, çapraz modül port; `OrderClosed` serbest bırakma anahtarının emir/kuşak başına olması (yeniden açılıp kapanan emir, §4.7) |
@@ -271,7 +299,7 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
 Sıra gerekçesi: D2 ve D3, D1'in ters hareketi ve okuma portu olmadan stok tutarlılığını koruyamaz. D1 bitmeden D2
 domain olarak yazılabilir, ama D3 uç olarak açılmaz. D5, D2–D4'e dayanır, çünkü iptalin ön koşulu net çıktının ve
 net çıkışın sıfır olmasıdır. D5'in iki dış bağımlılığı da vardır (§6, §4.7): Stok'un `OrderCancelled=3` K3 dilimi main'e girmeden ve Stok'un Free kg okuma
-portu gelmeden D5 başlamaz. D8, D2–D3'e ve Muhasebe'nin main'deki dönem portuna dayanır; port kayıtlı değilse veya okunamıyorsa D8 fail-closed kalır.
+portu gelmeden D5 başlamaz. D5b, D5'e (iptal ve yeniden emir yolu) ve Stok'un etiket bakiye okumasına dayanır; gelene kadar farklı etiket seçimi reddedilir ve `manufacturing_plan_slitting_spec_fixed` kısıtı yerinde kalır. D8, D2–D3'e ve Muhasebe'nin main'deki dönem portuna dayanır; port kayıtlı değilse veya okunamıyorsa D8 fail-closed kalır.
 
 ## 6. Başka şeritlere aktarılanlar
 
@@ -279,8 +307,11 @@ portu gelmeden D5 başlamaz. D8, D2–D3'e ve Muhasebe'nin main'deki dönem port
   ayırma serbest bırakma sebebi `OrderCancelled` (Stok'un `InventoryManufacturingPlanReleaseReasonV1` listesine) ve
   yeni emirde yeniden ayırmanın eksik girdi cevabı (URT-D34). URT-D37 ile Stok'un plan ayırma sözleşmesi etkilenir:
   sözleşme plan girdisini ana etiketle anahtarlar (`DemandLineId = parent.Label.Id`); yeni emirde plan girdisi başka
-  etikete geçince talep satırı değişir. URT-D38'in sahiplik kontrolü için Stok'un etiket okumasından sahiplik bilgisi
-  gerekir. İkisi Stok'a ayrıca iletilir (Stok makbuzu bunları içermez).
+  etikete geçince talep satırı değişir. Stok'a iletildi; cevap [#66 `6823794908`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823794908): yeni etiket
+  yeni `DemandLineId` alır, eski ayırma `OrderCancelled` ile serbest kalır, V1 yeterlidir. URT-D38 için yeni okuma
+  gerekmez: Stok'un plan ayırması sahipliği zaten `OwnedAsPlanned` ile denetler (§4.7 (e)); erken ret için sahiplik
+  `IInventoryLabelDetailsV1` `Balances.Positions[]` (`OwnerKind`, `OwnerId`) içinden okunur, okunamazsa veya pozisyon
+  yoksa/birden çok sahip varsa ret (fail-closed). D5b'nin bakiye okuması da aynı porttandır.
 - **Satış:** D7 tüketicisi. Üretim yalnız emir durumunu okuma portunda yayınlar.
 - **Stok (ek):** D1 portu satışa ayrılmış kg'ı da döner (URT-D31). Yeniden açılan emirde çıktının ters hareketi ve
   ortalamanın yeniden hesabı Stok'un kodudur. Kural 11. tur m.2 ile karara bağlıdır ve 22. tur m.2 ile teyit edilmiştir
@@ -337,3 +368,5 @@ uygulama ayrıntısıdır.
 | N7 | Yeniden açılan emrin çıktısı hangi maliyetle ters harekete alınır? | "Emrin kendi maliyeti (Önerilen)" ([`6822949341`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822949341) m.2) | URT-D36, §4.6, §6 |
 | N8 | İptal sonrası yeni emirde planlanandan farklı etiket seçilirse ne olsun? | "Plan yeniden hesaplanır (Önerilen)" ([`6823484848`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823484848) m.1) | URT-D37, §4.7 |
 | N9 | Yeni emirde seçilen etiketin sahipliği farklı olabilir mi? | "Aynı sahiplik zorunlu (Önerilen)" ([`6823484848`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823484848) m.2) | URT-D38, §4.7 |
+| N10 | Dilmede ana bobin kısmen dilinebilir mi? (AT-044) | "Kısmi dilinir, kalan aynı etikette (Önerilen)" ([`6823809221`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823809221) m.1) | URT-D37 uygulama sınırı, §4.7 (e), §5 D5b |
+| N11 | İptal sonrası yeniden onayda ayırma ne zaman? | "Yeniden onayda ayrılır (Önerilen)" ([`6823809221`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823809221) m.2) | URT-D37 uygulama sınırı, §4.7 (e), §5 D5b |
