@@ -47,7 +47,10 @@ jobs:
           set -euo pipefail
           actual_head="$(git rev-parse HEAD)"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
-          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+          if ! git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD; then
+            echo "::error::C01_BASE_NOT_ANCESTOR: PR base $EXPECTED_BASE_SHA is not an ancestor of HEAD $actual_head; main moved past the PR base. Update the branch from main (non-empty merge commit) and re-run."
+            exit 1
+          fi
 
           compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
@@ -358,6 +361,11 @@ jobs:
         if: always()
         shell: bash
         run: |
+          if [ -z "${C01_E2E_COMPOSE_PROJECT:-}" ]; then
+            echo "::notice::C01_E2E_COMPOSE_PROJECT is unset (source binding failed before any container started); nothing to capture."
+            exit 0
+          fi
+          mkdir -p artifacts/container-logs
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
             -f "$C01_E2E_COMPOSE_FILE" \
@@ -378,6 +386,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${C01_E2E_COMPOSE_PROJECT:-}" ]; then
+            echo "::notice::C01_E2E_COMPOSE_PROJECT is unset (source binding failed before any container started); nothing to remove."
+            exit 0
+          fi
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
             -f "$C01_E2E_COMPOSE_FILE" \
