@@ -73,8 +73,8 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **Ne (FNS-D27 (3)):** Onaya gönderme (ve/veya kaydet) anında aynı hesap (`EvaluateRiskAsync`) çalışır; sonuç `Over` ise
   **sipariş kaydı durmaz**, uyarı kayda geçer. Siparişte ayrı onay adımı açılmaz (#1117 plan §3 Satış satırı).
 - **Kayıt:** Satış'ın kendi tablosunda ekle-yalnız uyarı kaydı + audit olayı (`sales.order.risk-warning.recorded.v1` adayı).
-  Alanlar, tetik anı, görünürlük → **N-1…N-3** (tahminle seçilmez; dilim bu cevaplara kadar yalnız taslak spec).
-- **`Unavailable`'da ne olur** (limit tanımsız, kaynak yok) → **N-4**.
+  Alanlar, tetik anı, görünürlük → §4a `ASSUMPTION-SAT-RISK-1…3` (geri alınabilir teknik/UX tercihleri).
+- **`Unavailable`'da ne olur** (limit tanımsız, kaynak yok) → §4a `ASSUMPTION-SAT-RISK-4`.
 - **Dosyalar:** `SA/SalesDraftService.*` (submit/approve yolu), yeni `SD/Drafts/SalesOrderRiskWarning.cs`, `SI/Persistence/*`,
   migration (forward-fix Down, `ef-migration-forward-fix`), `SR` bölümü, OpenAPI (sipariş detayında uyarı listesi).
 - **Testler:** uyarı varken kayıt başarılı (davranış testi), `Within`'de kayıt yok, idempotent replay'de çift uyarı yok,
@@ -128,10 +128,11 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **Modül bağlantıları:** Finans limit öneri ucu (#1117 L1/L3, ❌); Satış API-07 (✅).
 
 ### F0 — Karar dosyası (docs, governance)
-- #66 `6820601088` m.4'ün Satış EK karar dosyasına yazılması (sıradaki SAT-D numarası; main'de son SAT-D307). Kod öncesi şart.
+- **Yapıldı (bu PR):** #66 `6820601088` m.4 → `docs/decisions/SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`, **SAT-D309**
+  (= LOJ-D9, #1115; metin birebir). SAT-D308 #1108'de (Stok) kullanıldığı için 309 alındı.
 - **Modül bağlantıları:** yok.
 
-### F1 — Teslim tartımı net kg portu (K3: modüller arası sözleşme; sahibi Lojistik veya Stok → **N-7**)
+### F1 — Teslim tartımı net kg portu (K3: modüller arası sözleşme; sahibi Lojistik — SAT-D309/LOJ-D9)
 - **Öneri:** Satış'ın beyan ettiği, sahibin cevapladığı `ISalesSubcontractDeliveryWeighingReadPortV1`
   (`sales.subcontract-delivery-weighing.v1`): girdi (şirket, fason sipariş, sevk/irsaliye payı), cevap: net kg tam ondalık
   metin, ölçüm türü, tartım kimliği, durum (`Available/NoSource/Unavailable`; asla sıfır). Mevcut AT-053 tartımı talimat
@@ -172,22 +173,31 @@ seçilmedi; kurallar FNS-D27 (4)/FNS-D30/SAT-D154/D160'tır.
 | L-7 | Unavailable | Fail-closed, sevk kaydı yazılmaz; kullanıcı aynı idempotency anahtarıyla yeniden dener, otomatik tekrar yok. |
 | L-8 | Fason tartım | Karar Lojistik'in değil; okuma portu anahtarı (loadingInstructionId, weighingId); teslim tartısı = talimatın tek tartı kaydı, fason teslim dilimi spec'inde netleşir (F1, N-7). |
 
-## 4. Açık noktalar (tahminle seçilmez)
+## 4. Açık noktalar
 
-| Kimlik | Soru | Neden tahmin edilemez |
+Koordinatör ayıklaması (2026-11-12): geri alınabilir teknik/UX seçimleri gerekçeli `ASSUMPTION` olarak yazılır; yalnız para/risk
+ve bölüşüm politikası Sinan'a gider (#66, tek satır, öneri ilk sırada).
+
+### 4a. Gerekçeli teknik/UX tercihleri (`ASSUMPTION-SAT-RISK-*`, geri alınabilir; Sinan farklı isterse kod değişir, karar değişmez)
+
+| Kimlik | Tercih | Gerekçe |
 |---|---|---|
-| N-0 (`NEEDS-SINAN` değil; koordinatör işi) | #66 `6820601088` m.4 için Satış EK karar dosyası yok; F1/F2 kodu bu dosyadan önce başlamaz. | Karar kaydı governance kapısıdır |
-| N-1 `NEEDS-SINAN` | Sipariş uyarısı kaydı hangi alanları taşır (kim, ne zaman, hangi revizyon, sonuç/sebep kategorisi; tutar/limit anlık görüntüsü yazılsın mı)? | Saklama ve tutar görünürlüğü politikası (SAT-D162) |
-| N-2 `NEEDS-SINAN` | Uyarı ne zaman üretilir: her kaydet, onaya gönder, onay, revizyon onayı? Kullanıcı uyarıyı "okudum" diye onaylamak zorunda mı? | FNS-D27 (3) yalnız "kayıt alınır, uyarı kayda geçer" der; DEC-FIN-009 "uyarı/onay"un onay kısmı #1117'de açılmadı |
-| N-3 `NEEDS-SINAN` | Uyarıyı kim görür (Satış Destek/Uzman/Müdür/Muhasebe/Finans)? Uyarıda tutar görünür mü? Ayrı izin adı gerekir mi? | Rol/izin = insan kapısı |
-| N-4 `NEEDS-SINAN` | Siparişte sonuç `Unavailable` (limit tanımsız veya kaynak yok) ise uyarı kaydı yazılır mı, ayrı tür mü? | FNS-D30 yalnız sevki söyler |
-| N-5 `NEEDS-SINAN` | Teknik `Unavailable` (Finans/kur/fatura kaynağı okunamadı) sevkte tek sevk istisnasıyla geçebilir mi, yoksa yalnız `Over` ve "limit tanımsız" mı? Bugün talep `Unavailable`'da kabul ediliyor (`SalesRiskExceptionService.cs:97-99`). | DEC-FIN-009 fail-closed vs. istisna kapsamı; para/risk politikası |
-| N-6 `NEEDS-SINAN` (gerekirse) | Finans kabulü bekleyen fatura tutarı brüt riskte hangi bileşende durur (S0)? | `SATIS_MODUL_BAGLANTILARI_v1.md:45` açık bırakmış; formül |
-| N-7 `NEEDS-SINAN` | Teslim tartımı net kg'ın sahibi Lojistik mi (AT-053 kantar kaydı; Lojistik okuma portu öneriyor, L-8), Stok mu (müşteri malı çıkışı, URT-D16/D22)? Kantar sahipliği ("kimin kantarı") alanı gerekir mi? | Modül sahipliği; stok miktar kaynağı P0 politikası (`LR:60`, master §28.12) |
-| N-8 `NEEDS-SINAN` | Bir tartım birden çok fason satırı/siparişi kapsarsa net kg nasıl dağıtılır? Kısmi teslimlerde her teslim ayrı fatura mı? Tartım düzeltmesi (AT-053'te yok) faturayı nasıl etkiler? | Para/stok politikası |
-| N-9 `NEEDS-SINAN` / `OPEN-004` ilişkili | Net kg faturaya yuvarlanmadan mı girer (≤3 ondalık)? Satır tutarı SAT-D11 (2 ondalık yarı-yukarı) aynen mi? Net kg ile sipariş kg'ı arasındaki fark tolerans (OPEN-004) uyarısı/blok doğurur mu? | Formül/tolerans |
-| N-10 `NEEDS-SINAN` (onay) | Sevkiyatçı ekranında "limit tanımlı değil" ve "risk okunamadı" ayrı metin mi, SAT-D162'deki tek metin mi? Lojistik üç ayrı metni resource dosyasında öneriyor (L-6); metin değişikliği kod değiştirmez. | SAT-D162 metni yalnız "aşıldı" der |
-| N-11 (#1117 ile hizalama) | Limit tanımsız sebebi: Finans portu `finance_credit_limit_not_set` (#1117 plan L1), devir tablosu `credit_limit_not_defined` diyor (o kod Satış hesabının "tek tutar değil" kodudur, `SalesCustomerRisk.cs:113`). S2 eşlemesi Finans kodunu esas alır; #1117 metni düzeltilmeli. | Sözleşme tutarlılığı |
+| N-1 → `ASSUMPTION-SAT-RISK-1` | Uyarı kaydı: sipariş + revizyon, kullanıcı, zaman (UTC + iş günü), sonuç (`Over`/`Unavailable`) ve sebep kategorisi, Finans port sürümü. **Tutar/limit/bakiye anlık görüntüsü yazılmaz.** | SAT-D162 tutarı sevk tarafında göstermez; Satış limit tutmaz (SAT-D51, FNS-D27 (5)). Tutar Finans'ta sürümlü okunur; kayıt yalnız "uyarı verildi" olgusudur. Saklama genel audit politikasına bağlıdır, yeni süre seçilmez. |
+| N-2 → `ASSUMPTION-SAT-RISK-2` | Uyarı **onaya gönder** ve **onay/revizyon onayı** anında üretilir; taslak kaydında yalnız ekranda gösterilir, kayıt yazılmaz. Kullanıcıdan "okudum" onayı istenmez; sipariş durmaz. | FNS-D27 (3): "kayıt alınır, uyarı kayda geçer"; blok yok. Taslakta her kaydette kayıt üretmek gürültüdür; karar anları onay akışıdır. |
+| N-3 → `ASSUMPTION-SAT-RISK-3` | Uyarıyı siparişi okuma izni olan herkes görür; uyarıda tutar yok, yalnız "limit aşıldı / limit tanımlı değil / risk okunamadı". Yeni izin adı yok, grant yok. | Tutar gösterilmediği için ayrı görünürlük izni gerekmez; rol/grant insan kapısı korunur. |
+| N-4 → `ASSUMPTION-SAT-RISK-4` | Siparişte `Unavailable` (limit tanımsız veya kaynak yok) da uyarı kaydı olarak yazılır, sebep kategorisi ayrı; sipariş durmaz. | FNS-D30 "limitsiz/sıfır sayılmaz": sessiz geçmek limit varmış gibi davranmaktır. Kayıt yalnız olgu; para etkisi yok. |
+| N-7 → kapandı | Net kg'ı Lojistik okuma portuyla sunar. | SAT-D309 = LOJ-D9 metni: "Lojistik fatura kesmez, yalnız net kg olgusunu okuma portuyla sunar." Port anahtarı L-8. |
+| N-9 → `ASSUMPTION-SAT-RISK-5` | Net kg tartı kaydındaki hassasiyetle, yuvarlanmadan girer; satır tutarı mevcut SAT-D11 kuralıyla (2 ondalık, yarı yukarı) yuvarlanır. Sipariş kg'ı ile fark için tolerans uyarısı/bloğu **yok** (`OPEN-004` etkinleşmez). | Yeni yuvarlama kuralı icat edilmez, mevcut fatura kuralı kullanılır; tolerans açık karar olduğu için etkinleştirilmez. |
+| N-10 → `ASSUMPTION-SAT-RISK-6` | Sevkiyatçı ekranında üç ayrı metin (L-6), Lojistik resource dosyasında. | Metin UX'tir, kod değiştirmeden değişir; tutar göstermez (SAT-D162 korunur). |
+
+### 4b. Sinan'a giden politika soruları (`NEEDS-SINAN`, #66)
+
+| Kimlik | Soru (önerim ilk sırada) | Neden tahmin edilemez |
+|---|---|---|
+| N-5 | Risk okunamazsa (Finans/kur/fatura kaynağı yok) sevk tek sevk istisnasıyla geçebilsin mi? Öneri: **hayır, yalnız `Over` ve "limit tanımsız" istisnayla geçer; okunamayan risk durur.** Bugün istisna talebi `Unavailable`'da kabul ediliyor (`SalesRiskExceptionService.cs:97-99`). | DEC-FIN-009 fail-closed vs. istisna kapsamı; risk politikası |
+| N-6 | Finans kabulü bekleyen kesilmiş fatura riskte nerede sayılsın? Öneri: **Finans kabul edene kadar "faturalanmamış sevk" bileşeninde kalsın** (iki bileşen arasında boşluk/çift sayım olmasın). | Risk formülü (`SATIS_MODUL_BAGLANTILARI_v1.md:45`) |
+| N-8 | Bir teslim tartısı birden çok fason satırını/siparişini kapsarsa net kg nasıl bölüşülür? Öneri: **bir talimatta tek fason satırı olsun; çok satır gerekirse sevk payı kg oranında bölünsün.** Kısmi teslimde her teslim ayrı fatura; tartım düzeltmesi faturalanmışsa iade/ek faturayla. | Para/stok politikası |
+| N-11 (Finans hizalama) | Koordinatör #1117 metnini (`credit_limit_not_defined` → `finance_credit_limit_not_set`) Finans'a iletti. | Sözleşme tutarlılığı |
 
 ## 5. Sınırlar
 - Bu plan `OPEN-*` kapatmaz, rol/izin/grant seçmez, eşik/tolerans/yuvarlama koymaz. Satış limit hesaplamaz ve tutmaz (SAT-D51,
