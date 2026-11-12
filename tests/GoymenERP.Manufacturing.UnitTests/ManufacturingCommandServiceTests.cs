@@ -2457,6 +2457,43 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task Without_the_allocation_port_only_a_plan_the_stored_state_refuses_for_good_reaches_the_store()
+    {
+        // TAKIP-U3a P3-1: a missing plan or an older stored version could still become the requested draft before the
+        // store's write, so without the port it answers 503 and the store never runs. A newer stored version, or the
+        // requested version in a non-draft status, is refused by the store (this fake store refuses every approval).
+        var fixture = new Fixture(withPlanAllocations: false);
+        var older = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        older.RecordPreparer(OtherActor.ToString("D"));
+        fixture.Store.Plans[older.Id] = older;
+
+        foreach (var (planId, expectedVersion) in new[] { (Guid.NewGuid(), 1L), (older.Id, older.Version + 1) })
+        {
+            var result = await fixture.Service.ApprovePlanAsync(planId, new ApprovePlanRequestV1(expectedVersion),
+                $"key-{planId:N}", "manufacturing.plans.approve", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingPlanAllocationCodesV1.Incomplete),
+                (result.Status, result.Code));
+        }
+
+        Assert.Equal((PlanStatus.Draft, 1L), (older.Status, older.Version));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+
+        var approved = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        approved.RecordPreparer(OtherActor.ToString("D"));
+        approved.Approve(approved.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
+        fixture.Store.Plans[approved.Id] = approved;
+        foreach (var expectedVersion in new[] { approved.Version - 1, approved.Version })
+        {
+            await Assert.ThrowsAsync<NotSupportedException>(() => fixture.Service.ApprovePlanAsync(approved.Id,
+                new ApprovePlanRequestV1(expectedVersion), $"key-approved-{expectedVersion}",
+                "manufacturing.plans.approve", CancellationToken.None));
+        }
+    }
+
+    [Fact]
     public async Task An_approved_plan_is_refused_cancellation_with_503_when_the_allocation_port_is_absent()
     {
         // TAKIP-U3a (#1004): no allocation port means nothing can release what the approved plan holds, so the

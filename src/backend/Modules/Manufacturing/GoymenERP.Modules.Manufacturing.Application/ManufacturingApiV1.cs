@@ -1254,10 +1254,22 @@ public sealed partial class ManufacturingCommandService(
 
                 }
 
+                // TAKIP-U3a P3-1: without the port the store runs only when the stored state already refuses the
+                // approval for good: a newer version than requested, or the requested version in a non-draft status
+                // (every transition bumps the version). A missing plan or an older stored version could still become
+                // the requested draft before the store's write, so it answers 503 like the draft itself (no
+                // unallocated approval through a race, and no recorded not-found for a plan saved later).
+                if (planAllocations is null && !(current is not null && (current.Version > request.ExpectedVersion
+                    || (current.Version == request.ExpectedVersion && current.Status != PlanStatus.Draft))))
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
                 var approvedAt = timeProvider.GetUtcNow();
                 Task<ProductionPlan> Approve(CancellationToken token) => plans.ApprovePlanAsync(planId,
                     request.ExpectedVersion, actor, approvedAt, snapshot, labelUsable, metadata, token);
-                // Without the port only a missing, stale or non-draft plan reaches here, and the store refuses it.
+                // Without the port only a plan the stored state already refuses for good reaches the store here.
                 var approved = planAllocations is null
                     ? await Approve(cancellationToken)
                     : await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Approve, metadata,
