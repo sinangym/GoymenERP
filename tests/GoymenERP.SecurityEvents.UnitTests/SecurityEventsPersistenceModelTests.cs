@@ -45,7 +45,46 @@ public sealed class SecurityEventsPersistenceModelTests
         Assert.All(SecurityEventTypesV1.All, type => Assert.Contains($"'{type}'", checks["CK_SecurityEvents_EventType"], StringComparison.Ordinal));
         Assert.All(SecurityEventPhasesV1.All, phase => Assert.Contains($"'{phase}'", checks["CK_SecurityEvents_Phase"], StringComparison.Ordinal));
         Assert.All(SecurityEventOutcomesV1.All, outcome => Assert.Contains($"'{outcome}'", checks["CK_SecurityEvents_Outcome"], StringComparison.Ordinal));
-        Assert.Equal(9, checks.Count);
+        Assert.Equal("[ActorType] IN ('User', 'System', 'Ai', 'Anonymous')", checks["CK_SecurityEvents_ActorType"]);
+        Assert.Equal(
+            "([ActorType] = 'Anonymous' AND [ActorId] IS NULL) OR ([ActorType] <> 'Anonymous' AND [ActorId] IS NOT NULL)",
+            checks["CK_SecurityEvents_ActorId"]);
+        Assert.Equal("[Severity] IN ('Info', 'Warning', 'High')", checks["CK_SecurityEvents_Severity"]);
+        Assert.Equal(
+            "[SourceChannel] IN ('Web', 'Mobile', 'Import', 'Integration', 'AiAssisted', 'System')",
+            checks["CK_SecurityEvents_SourceChannel"]);
+        Assert.Equal(
+            "[AiRiskClass] IS NULL OR [AiRiskClass] IN ('Read', 'Draft', 'Simulate', 'Write')",
+            checks["CK_SecurityEvents_AiRiskClass"]);
+        Assert.Equal(
+            "[AiDataClass] IS NULL OR [AiDataClass] IN ('Public', 'Internal', 'Confidential', 'StrictlyConfidential')",
+            checks["CK_SecurityEvents_AiDataClass"]);
+        Assert.StartsWith("[ReasonCode] IS NULL OR [ReasonCode] IN (", checks["CK_SecurityEvents_ReasonCode"], StringComparison.Ordinal);
+        Assert.All(SecurityEventReasonCodesV1.All, code => Assert.Contains($"'{code}'", checks["CK_SecurityEvents_ReasonCode"], StringComparison.Ordinal));
+        Assert.Equal(16, checks.Count);
+    }
+
+    [Fact]
+    public void Code_check_migration_is_pure_ddl_and_its_down_only_loosens_checks()
+    {
+        var migration = new HardenSecurityEventCodeChecks();
+
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Equal(7, migration.UpOperations.OfType<AddCheckConstraintOperation>().Count());
+        Assert.All(migration.UpOperations, op => Assert.IsType<AddCheckConstraintOperation>(op));
+        // Down drops only CHECK constraints; no row can lose data, so no forward-fix guard is needed.
+        Assert.All(migration.DownOperations, op => Assert.IsType<DropCheckConstraintOperation>(op));
+        Assert.Equal(7, migration.DownOperations.Count);
+    }
+
+    [Fact]
+    public void Migrations_are_ordered_and_the_snapshot_matches_the_model()
+    {
+        using var context = Context();
+        Assert.Equal(
+            ["20261111205852_InitialSecurityEvents", "20261111222917_HardenSecurityEventCodeChecks"],
+            context.Database.GetMigrations());
+        Assert.False(context.Database.HasPendingModelChanges());
     }
 
     [Fact]

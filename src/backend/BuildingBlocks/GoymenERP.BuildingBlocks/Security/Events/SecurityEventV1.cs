@@ -127,7 +127,24 @@ public static partial class SecurityEventV1Validator
             // Defence in depth for E8: an internal actor id is never an e-mail address.
             errors.Add("actor_id_looks_like_email");
         }
+        else if (e.ActorType == SecurityEventActorTypesV1.User && !IsCanonicalInternalUserId(e.ActorId))
+        {
+            // E8: a user actor is the internal user id (Guid "D", as issued by the claims transformation), never a
+            // username, login name or display name typed by someone.
+            errors.Add("user_actor_id_not_internal_id");
+        }
+
+        if (e.EventType == SecurityEventTypesV1.LoginFailed && e.ActorType != SecurityEventActorTypesV1.Anonymous)
+        {
+            // E8: a failed login has no authenticated actor; the attempted username must never reach ActorId.
+            errors.Add("login_failed_requires_anonymous_actor");
+        }
     }
+
+    private static bool IsCanonicalInternalUserId(string actorId) =>
+        Guid.TryParseExact(actorId, "D", out var userId)
+        && userId != Guid.Empty
+        && string.Equals(userId.ToString("D"), actorId, StringComparison.Ordinal);
 
     private static void ValidateEvent(SecurityEventV1 e, List<string> errors)
     {

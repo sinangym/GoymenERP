@@ -116,6 +116,40 @@ public sealed class SecurityEventRecord
         return new SecurityEventRecord(securityEvent, retainUntilUtc, retentionPolicyRef);
     }
 
+    /// <summary>
+    /// True when <paramref name="other"/> carries the same caller-supplied envelope (every field copied from
+    /// <see cref="SecurityEventV1"/>). Server-derived columns (retention, legal hold, aggregation, integrity hash) are
+    /// not compared: retention is resolved from the server clock, so a retry of the same event resolves it again.
+    /// </summary>
+    public bool HasSameCallerContent(SecurityEventRecord other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return Id == other.Id
+            && SchemaVersion == other.SchemaVersion
+            && OccurredAtUtc.UtcTicks == other.OccurredAtUtc.UtcTicks
+            && OccurredAtUtc.Offset == other.OccurredAtUtc.Offset
+            && string.Equals(ScopeKind, other.ScopeKind, StringComparison.Ordinal)
+            && CompanyId == other.CompanyId
+            && RequestedCompanyId == other.RequestedCompanyId
+            && string.Equals(ActorType, other.ActorType, StringComparison.Ordinal)
+            && string.Equals(ActorId, other.ActorId, StringComparison.Ordinal)
+            && string.Equals(EventType, other.EventType, StringComparison.Ordinal)
+            && string.Equals(Phase, other.Phase, StringComparison.Ordinal)
+            && string.Equals(Outcome, other.Outcome, StringComparison.Ordinal)
+            && string.Equals(ReasonCode, other.ReasonCode, StringComparison.Ordinal)
+            && string.Equals(Severity, other.Severity, StringComparison.Ordinal)
+            && string.Equals(PermissionCode, other.PermissionCode, StringComparison.Ordinal)
+            && string.Equals(PolicyId, other.PolicyId, StringComparison.Ordinal)
+            && PolicyVersion == other.PolicyVersion
+            && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
+            && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
+            && string.Equals(SourceChannel, other.SourceChannel, StringComparison.Ordinal)
+            && string.Equals(AiToolId, other.AiToolId, StringComparison.Ordinal)
+            && string.Equals(AiToolVersion, other.AiToolVersion, StringComparison.Ordinal)
+            && string.Equals(AiRiskClass, other.AiRiskClass, StringComparison.Ordinal)
+            && string.Equals(AiDataClass, other.AiDataClass, StringComparison.Ordinal);
+    }
+
     /// <summary>The canonical envelope the integrity hash covers: every persisted column except the hash.</summary>
     public SecurityEventIntegrityEnvelope ToIntegrityEnvelope() => new(
         Id, SchemaVersion, OccurredAtUtc, ScopeKind, CompanyId, RequestedCompanyId, ActorType, ActorId, EventType,
