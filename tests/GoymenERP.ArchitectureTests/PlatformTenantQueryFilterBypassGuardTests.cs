@@ -312,8 +312,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             // I01.2: +3 transfer outgoing-document schema/idempotency/version SQL facts (459c5cf8… -> e8a7ea83…).
             // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): +1 shipment-time Sales cap fact (e8a7ea83… -> 576e58f6…).
+            // F-020: +3 loading-instruction cancel SQL facts (576e58f6... -> 991fa70f...).
             ["tools/relational_inventory/logistics.txt"] =
-                "576e58f6c9fe6c9925d85c3979eb02f53bf38825fe0adfe766bba5919f84e4d1",
+                "991fa70f58ca50b7bfcdc15ebd1b0a87753f9ed235b6c3e43bd0ac2e407b6fa6",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -696,7 +697,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // query filter and company-leading keys; the transfer link remains unique inside one company.
             // Re-measured for SAT-D216 / SAT-D222: LoadingShares.RecordedBy (nullable, binary collation, non-blank check); the same
             // CompanyId query filter and keys, no new entity.
-                "5a6e1fbf958a6f600a7062c8c0dbefd0125a6b33eed401552b31eb9c9d6ebb25",
+            // Re-measured for F-020: LoadingInstructions.CancelledBy/CancelledAtUtc/CancelReason (nullable), the Cancelled status in
+            // the status check and the cancel-facts check; the same CompanyId query filter and keys, no new entity.
+                "0a6d41e6c99ce5c8db84fb99a8dc0af500ebb90b0f82f07200b896cdd2a4f2ed",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
@@ -1610,7 +1613,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // a Sales line's shipped total through the filtered context; no new database API, SqlClient count unchanged.
                         // Re-fingerprinted for SAT-D216 / SAT-D222: a shipment share records its actor (RecordedBy) in the same
                         // save; no new database API and SqlClient count unchanged.
-                        "048d396e1cb2a6bc05c01a6bb23af908d6929dd119e0ffa52e84fa43a74819a5",
+                        // Re-fingerprinted for F-020: the instruction cancel is stored in the same save as its attempt and audit;
+                        // no new database API and SqlClient count unchanged.
+                        "db79e948e0cad094174aa57249223fcfd5e50cb271c38a3a5ed10586fb3655b8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2783,6 +2788,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // while any share records its shipper; the THROW precedes the drops, unnamed legacy shares roll back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261111182437_AddLoadingShareRecordedBy.cs"] =
                     new("7238460d4c8a64dd7f93bc47d9edc1fde0eb401a05d54f8a744e59d79951b753",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F-020: the Down's only raw SQL is Logistics' module refusal (51265, used by no other migration) while any
+                // loading instruction is cancelled; the THROW precedes the drops, so an empty store rolls back freely (forward fix).
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261112090000_AddLoadingInstructionCancel.cs"] =
+                    new("0f18b6d0ae4a74f59139647884290faf6896778ea9d7e9e3a148d9044d2c2e12",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =

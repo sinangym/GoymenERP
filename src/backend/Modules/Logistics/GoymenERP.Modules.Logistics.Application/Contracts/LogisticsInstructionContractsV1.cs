@@ -66,6 +66,12 @@ public sealed record ApproveDispatchNoteRequest(string ExpectedVersion);
 public sealed record CancelDispatchNoteRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
+/// POST …/{id}/cancel (F-020, LOJ-D6..D8): a Draft or Issued instruction with no recorded shipment is cancelled — never deleted —
+/// with the reason (trimmed text, 1–500 characters). Loads, weighings and notes stay as recorded.
+/// </summary>
+public sealed record CancelInstructionRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
 /// POST …/{id}/dispatch-notes/{dispatchNoteId}/e-dispatch-number (AT-055, user decision 2026-09-30): the official e-İrsaliye
 /// number of an approved note, entered by the user (a later integration writes the same field); the GİB shape
 /// (<see cref="LogisticsJson.EDispatchNumberPattern"/>), set once, unique per company, kept apart from the system number.
@@ -184,6 +190,9 @@ public static class LogisticsProblemCodesV1
     /// <summary>409, terminal (§7): the instruction is not in the state the command needs (a Draft cannot take a load; an Issued one cannot be issued again).</summary>
     public const string InstructionState = "logistics_instruction_state";
 
+    /// <summary>409, terminal (F-020): a recorded shipment makes the instruction's cancel final-refused.</summary>
+    public const string InstructionShipped = "logistics_instruction_shipped";
+
     /// <summary>409, terminal (§7, D5): the loaded share would exceed the instructed remainder (§13 cap).</summary>
     public const string LoadExceedsInstructed = "logistics_load_exceeds_instructed";
 
@@ -263,7 +272,8 @@ public sealed record LogisticsInstructionServiceBindings(
     string? WeighingPermission = LogisticsPermissionManifestV1.WeighingsRecord,
     string? DispatchNotePermission = LogisticsPermissionManifestV1.DispatchNotesCreate,
     string? DispatchNoteApprovePermission = LogisticsPermissionManifestV1.DispatchNotesApprove,
-    string? DispatchNoteCancelPermission = LogisticsPermissionManifestV1.DispatchNotesCancel);
+    string? DispatchNoteCancelPermission = LogisticsPermissionManifestV1.DispatchNotesCancel,
+    string? InstructionCancelPermission = LogisticsPermissionManifestV1.InstructionsCancel);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record LogisticsCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -283,6 +293,9 @@ public static class LogisticsApiV1
 
     /// <summary>AT-055: approve a draft (the system number is assigned).</summary>
     public const string ApproveDispatchNotePath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/approve";
+
+    /// <summary>F-020: cancel an instruction with no recorded shipment.</summary>
+    public const string CancelInstructionPath = "/api/v1/logistics/loading-instructions/{id}/cancel";
 
     /// <summary>AT-055: cancel a draft or an approved note (its shipments are released).</summary>
     public const string CancelDispatchNotePath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/cancel";
@@ -408,6 +421,20 @@ public static class LogisticsJson
         var request = JsonSerializer.Deserialize<ApproveDispatchNoteRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersionShape(request.ExpectedVersion);
+        return request;
+    }
+
+    public static CancelInstructionRequest ReadCancelInstruction(string json)
+    {
+        var request = JsonSerializer.Deserialize<CancelInstructionRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (string.IsNullOrWhiteSpace(request.Reason) || !string.Equals(request.Reason, request.Reason.Trim(), StringComparison.Ordinal)
+            || request.Reason.Length > CancelReasonMaximumLength)
+        {
+            throw new JsonException("Invalid cancellation reason.");
+        }
+
         return request;
     }
 

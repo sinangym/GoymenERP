@@ -373,6 +373,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         row.Status = (int)instruction.Status;
         row.Version = instruction.Version;
         row.UpdatedAtUtc = instruction.UpdatedAtUtc;
+        row.CancelledBy = instruction.CancelledBy;
+        row.CancelledAtUtc = instruction.CancelledAtUtc;
+        row.CancelReason = instruction.CancelReason;
         foreach (var lineRow in lineRows)
         {
             var line = instruction.Lines.Single(candidate => candidate.Id == lineRow.LineId);
@@ -821,7 +824,15 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 line.ProductId, line.UnitId, line.AllocationId, Quantity.Of(line.Instructed, unit), row.CreatedAtUtc);
         }
 
-        if (row.Status == (int)LoadingInstructionStatus.Issued)
+        // F-020: a Cancelled row was Draft or Issued when it was cancelled. A Draft cancel took exactly one step after the lines and
+        // the blocks (the cancel itself); anything more means the instruction had been issued, so the rebuild issues it first and
+        // cancels it last, after every share, weighing and dispatch-note step.
+        var blockedCount = lines.Count(line => line.IsBlocked);
+        var cancelledFromDraft = row.Status == (int)LoadingInstructionStatus.Cancelled
+            && shares.Count == 0 && weighing is null && notes.Count == 0
+            && row.Version == instruction.Version + blockedCount + 1;
+        if (row.Status == (int)LoadingInstructionStatus.Issued
+            || (row.Status == (int)LoadingInstructionStatus.Cancelled && !cancelledFromDraft))
         {
             instruction.Issue(instruction.Version, row.UpdatedAtUtc);
         }
@@ -894,7 +905,18 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             instruction.BlockLine(instruction.Version, line.LineId, row.UpdatedAtUtc);
         }
 
-        if (instruction.Version != row.Version || instruction.Status != (LoadingInstructionStatus)row.Status)
+        if (row.Status == (int)LoadingInstructionStatus.Cancelled)
+        {
+            if (row.CancelledBy is null || row.CancelledAtUtc is null || row.CancelReason is null)
+            {
+                throw new InvalidOperationException("Kayıtlı iptal edilmiş talimatın iptal bilgileri eksik.");
+            }
+
+            instruction.CancelInstruction(instruction.Version, row.CancelledBy, row.CancelReason, row.CancelledAtUtc.Value);
+        }
+
+        if (instruction.Version != row.Version || instruction.Status != (LoadingInstructionStatus)row.Status
+            || instruction.CancelledBy != row.CancelledBy || instruction.CancelReason != row.CancelReason)
         {
             throw new InvalidOperationException("Kayıtlı talimatın sürümü paylarından yeniden kurulan sürümle uyuşmuyor.");
         }
@@ -1071,6 +1093,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             status = instruction.Status.ToString(),
             version = instruction.Version,
+            cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
                 lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
@@ -1110,6 +1133,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             status = instruction.Status.ToString(),
             version = instruction.Version,
+            cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
                 lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,

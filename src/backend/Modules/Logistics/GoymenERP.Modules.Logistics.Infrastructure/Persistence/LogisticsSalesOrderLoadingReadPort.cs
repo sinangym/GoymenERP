@@ -41,16 +41,31 @@ internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbCo
             return new SalesOrderLoadingReadAnswerV1(companyId, orderId, []);
         }
 
-        var totals = await dbContext.Lines.AsNoTracking()
-            .Where(line => line.CompanyId == companyId && line.SourceOrderId == orderId)
+        // F-020: a cancelled instruction still counts as a bound line (Count, as before) but no longer holds instructed/loaded
+        // quantity; a cancel is refused once a shipment exists, so its shipped/delivered totals are always zero.
+        var totals = await (
+                from line in dbContext.Lines.AsNoTracking()
+                join instruction in dbContext.Instructions.AsNoTracking()
+                    on new { line.CompanyId, line.InstructionId } equals new { instruction.CompanyId, InstructionId = instruction.Id }
+                where line.CompanyId == companyId && line.SourceOrderId == orderId
+                select new
+                {
+                    line.SourceOrderLineId,
+                    line.UnitId,
+                    Cancelled = instruction.Status == (int)LoadingInstructionStatus.Cancelled,
+                    line.Instructed,
+                    line.Loaded,
+                    line.Shipped,
+                    line.Delivered,
+                })
             .GroupBy(line => new { line.SourceOrderLineId, line.UnitId })
             .Select(group => new
             {
                 group.Key.SourceOrderLineId,
                 group.Key.UnitId,
                 Count = group.Count(),
-                Instructed = group.Sum(line => line.Instructed),
-                Loaded = group.Sum(line => line.Loaded),
+                Instructed = group.Where(line => !line.Cancelled).Sum(line => line.Instructed),
+                Loaded = group.Where(line => !line.Cancelled).Sum(line => line.Loaded),
                 Shipped = group.Sum(line => line.Shipped),
                 Delivered = group.Sum(line => line.Delivered),
             })
