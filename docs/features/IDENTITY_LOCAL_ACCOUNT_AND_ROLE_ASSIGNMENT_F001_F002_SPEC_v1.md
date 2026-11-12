@@ -8,7 +8,7 @@
 - Not: Bu spec `OPEN-013`'ü veya başka bir `OPEN-*` kaydını **kapatmaz**; hiçbir role, seed'e veya
   gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararları (1. ve 8. tur,
   #66 `6818566934`, `6820046672`) aynı PR'daki
-  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6` ve `KIM-D9` olarak yazıldı (10. tur `6820237902` dahil).
+  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6`, `KIM-D9` (10. tur `6820237902`) ve `KIM-D12`…`KIM-D16` (14.–15. tur `6820838938`) olarak yazıldı.
 
 ## Amaç
 
@@ -58,6 +58,7 @@
 | `OPEN-013` | KISMEN, açık kalır | Yerel hesap = geçici yol; OIDC soyutlaması korunur (ADR-004). |
 | `DEC-TEC-008` | Kilitli | Dev/test/staging/prod ayrı; weak-password istisnası yalnız Development. |
 | ADR-004 §1–§6 | Uygulandı | Kimlik doğrulama ≠ yetkilendirme; `(issuer, subject)` → yerel kullanıcı; Critical talepte talep eden/hedef onaylayamaz. |
+| #66 `6820838938` (2026-11-12, 14.–15. tur) | Kilitli | KIM-D12…KIM-D16: karakter sınıfı ve dönemsel değişim yok, PBKDF2 framework varsayılanı; kilit 15 dk; oturum mutlak 12 saat; Critical rol geri alma tek adım + audit; grup geneli sıfırlama/kilit açma yalnız her üyelik şirketinde `identity.users.manage` ile. |
 | ADR-SEC-001 | PR #1093 açık | `auth.login.failed/succeeded`, `identity.permission.changed` olayları; E8 insan kapısı. |
 | NEEDS-SINAN #66 `5738113623` | Açık blok | Atama yazma rotası bugün bilerek yok (`IdentityEndpoints.MapAccessView` yorumu); 2026-11-12 kararı mekanizmayı seçer, ama gerçek grant yine insan kapısıdır. |
 
@@ -83,7 +84,9 @@
   şirkette `identity.access.approve` taşımalıdır. Şirket sunucu tarafında çözülür (`RequireCompanyContext`).
 - Parola sıfırlama/kilit açma/hesap pasifleştirme grup geneli etkiler (kullanıcı birden çok şirkette
   çalışabilir). `identity.users.manage` Critical değildir (KIM-D9, 10. tur); bu eylemin hangi şirket kapsamıyla
-  yetkilendirileceği → `NEEDS-SINAN-ID-07b`.
+  yetkilendirileceği KIM-D16 ile kararlıdır: işlemi yapan, hedef kullanıcının üye olduğu **her** şirkette
+  `identity.users.manage` iznini şirket genelinde taşımalıdır; biri eksikse `403` (fail-closed, sunucuda
+  hedefin aktif atamalarından çözülür).
 
 **Persona (öneri, grant değildir):** Kurucu Admin (bootstrap), Admin (maker), İkinci onaylayıcı (checker),
 sıradan kullanıcı. Persona → rol eşlemesi `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md` gibi insan
@@ -141,7 +144,7 @@ Pending → Withdrawn (yalnız requester; öneri — yeni enum değeri, ID-3)
 ```
 
 **Atama:** `RoleAssignmentStatus` `Active → Revoked | Expired` (mevcut). Critical rolün geri alınmasının
-da iki kişi isteyip istemediği → `NEEDS-SINAN-ID-05` (öneri: tek adım + audit; yetki azaltır).
+tek adımdır, ikinci onay yoktur (KIM-D15); audit ve `identity.permission.changed` yazılır.
 
 ## Birim/formül/yuvarlama/tolerans
 
@@ -152,13 +155,13 @@ okunur. Değer seçimi güvenlik politikasıdır ve insan kararıdır:
 | Parametre | Ayar anahtarı (öneri) | Öneri (yalnız referans, seçim değil) | Karar |
 |---|---|---|---|
 | Asgari parola uzunluğu | `PasswordPolicy:MinimumLength` | **Başlangıç 8** (KIM-D4; Ayarlar'dan değişir). Azami ≥ 64 kabul edilmeli (NIST SP 800-63B) | Karar verildi |
-| Karakter sınıfı kuralı | `PasswordPolicy:RequireCharacterClasses` | NIST kompozisyon kuralı önermez; Sinan "güçlü parola" dedi | `NEEDS-SINAN-ID-02b` |
+| Karakter sınıfı kuralı | `PasswordPolicy:RequireCharacterClasses` | **Varsayılan kapalı** (KIM-D12); Ayarlar'dan açılabilir. NIST kompozisyon kuralı önermez | Karar verildi |
 | Yasaklı/sık parola listesi | `PasswordPolicy:BlocklistEnabled` | NIST: zorunlu karşılaştırma; liste `admin`, kullanıcı adı, şirket adı türevlerini içerir | Açık olması önerilir |
-| Periyodik zorunlu değişim | `PasswordPolicy:MaximumAgeDays` | NIST önermez (yalnız ihlal şüphesinde) | `NEEDS-SINAN-ID-02b` |
+| Periyodik zorunlu değişim | `PasswordPolicy:MaximumAgeDays` | **Varsayılan kapalı** (KIM-D12); değişim yalnız sızıntı şüphesinde; Ayarlar'dan açılabilir | Karar verildi |
 | Kilit eşiği | `Lockout:MaxFailedAttempts` | **Başlangıç 10** ardışık hata (KIM-D4; Ayarlar'dan değişir) | Karar verildi |
-| Kilit süresi | `Lockout:Duration` | ASP.NET Core Identity varsayılanı 5 dk | `NEEDS-SINAN-ID-03b` |
-| Oturum boşta kalma / mutlak süre | `Session:IdleTimeout`, `Session:AbsoluteLifetime` | Boşta **başlangıç 8 saat** (KIM-D4; Ayarlar'dan değişir); mutlak süre seçilmedi | Boşta: karar verildi; mutlak süre `NEEDS-SINAN-ID-06` |
-| Hash algoritması ve maliyet | `PasswordHashing:Algorithm`, `:Pbkdf2Iterations` | Öneri A: ASP.NET Core Identity `PasswordHasher<T>` (PBKDF2-HMAC-SHA512, V3 biçim, sürümlü hash, yeniden hash desteği); OWASP önerisi PBKDF2-SHA512 ≥ 210 000 iterasyon. Öneri B: Argon2id (OWASP: m=19 MiB, t=2, p=1) — üçüncü taraf paket ister (tedarik zinciri incelemesi). **Öneri: A** (framework içi, yeni bağımlılık minimal). | Maliyet `NEEDS-SINAN-ID-02b` |
+| Kilit süresi | `Lockout:Duration` | **Başlangıç 15 dk**, sonra kendiliğinden açılır (KIM-D13; Ayarlar'dan değişir); `identity.users.manage` sahibi daha erken açabilir | Karar verildi |
+| Oturum boşta kalma / mutlak süre | `Session:IdleTimeout`, `Session:AbsoluteLifetime` | Boşta **başlangıç 8 saat** (KIM-D4), mutlak **başlangıç 12 saat** (KIM-D14); ikisi de Ayarlar'dan değişir | Karar verildi |
+| Hash algoritması ve maliyet | `PasswordHashing:Algorithm`, `:Pbkdf2Iterations` | Öneri A: ASP.NET Core Identity `PasswordHasher<T>` (PBKDF2-HMAC-SHA512, V3 biçim, sürümlü hash, yeniden hash desteği); OWASP önerisi PBKDF2-SHA512 ≥ 210 000 iterasyon. Öneri B: Argon2id (OWASP: m=19 MiB, t=2, p=1) — üçüncü taraf paket ister (tedarik zinciri incelemesi). **Seçilen: A** (KIM-D12; framework içi, yeni bağımlılık yok); iterasyon sayısı teknik ayardır. | Karar verildi |
 | 2FA | `TwoFactor:Methods`, `TwoFactor:Required` | **Herkese isteğe bağlı**, kimseye zorunlu değil (KIM-D3; pilot sonrası yeniden bakılır). Yöntem önerisi TOTP (RFC 6238) + kurtarma kodları; SMS önerilmez | Zorunluluk: karar verildi; yöntem uygulama ayrıntısı (ID-5 review'unda) |
 
 Hash sürümü satırda tutulur (`HashFormatVersion`); parametre artırıldığında başarılı girişte yeniden hash'lenir
@@ -173,7 +176,7 @@ Hash sürümü satırda tutulur (`HashFormatVersion`); parametre artırıldığ�
 | Atamaları görme | `identity.assignments.read` | Var, Critical, şirket geneli |
 | Critical olmayan rol atama / geri alma, Critical talep açma (maker) | `identity.roles.manage` | Var, Critical |
 | Critical talebi onaylama/reddetme (checker) | `identity.access.approve` | Var, Critical |
-| Yerel kullanıcı oluşturma, parola sıfırlama, kilit açma, pasifleştirme | `identity.users.manage` | **Yeni ad (öneri)**; Critical **değil** (KIM-D9); kapsam `NEEDS-SINAN-ID-07b` |
+| Yerel kullanıcı oluşturma, parola sıfırlama, kilit açma, pasifleştirme | `identity.users.manage` | **Yeni ad (öneri)**; Critical **değil** (KIM-D9); grup geneli etkide kapsam KIM-D16 |
 
 `identity.access.request` mevcut adının bu akışta rolü (ör. kullanıcının kendisi için talep) bu spec'te
 kullanılmaz; kullanılacaksa ayrı karar.
@@ -241,7 +244,7 @@ kodları sürümlü; OpenAPI `openapi-regenerate` ile yeniden üretilir. Adlar �
 | POST | `/access/users/{userId}/password-reset` | `identity.users.manage` | |
 | POST | `/access/users/{userId}/unlock` | `identity.users.manage` | |
 | POST | `/access/assignments` | `identity.roles.manage` | Critical olmayan rol; Critical rolde `409 second_approval_required`. |
-| POST | `/access/assignments/{id}/revoke` | `identity.roles.manage` | `NEEDS-SINAN-ID-05` (8. turda sorulmadı). |
+| POST | `/access/assignments/{id}/revoke` | `identity.roles.manage` | Tek adım, Critical rolde de ikinci onay yok (KIM-D15); audit + `identity.permission.changed`. |
 | POST | `/access/grant-requests` | `identity.roles.manage` | Critical rol talebi. |
 | POST | `/access/grant-requests/{id}/approve` · `/reject` · `/withdraw` | approve/reject: `identity.access.approve`; withdraw: requester | |
 | GET | `/access/grant-requests?status=pending` | `identity.access.approve` veya `identity.assignments.read` | |
@@ -428,9 +431,9 @@ K3 dilimleri iki bağımsız exact-head review ister.
 |---|---|---|---|---|
 | **ID-1** | `LocalCredential` + migration, `PasswordHasher` (PBKDF2, sürümlü), `LocalAccount` kimlik modu, `/session/login`·`/logout`, hız sınırı, kilitleme, `auth.login.*` olayları, ayar doğrulaması, varsayılan kimlik bilgisi guard testi | Codex | K3 (migration + güvenlik) | PR #1093 (olay kanalı) merge'ü veya geçici no-op writer; `account_locked` kodu ADR-SEC-001 sözleşme değişikliği |
 | **ID-1F** | Giriş ekranı, auth sınırı entegrasyonu, yerel modda dev başlığının kapanması | Claude | K2 | ID-1 OpenAPI |
-| **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` komutu (etkileşimli parola), `/me` sözleşme sürümü | Codex | K3 | ID-1; `NEEDS-SINAN-ID-08` (ikinci onaylayıcı) |
+| **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` komutu (etkileşimli parola), `/me` sözleşme sürümü | Codex | K3 | ID-1; kurucu Admin istisnası KIM-D5 |
 | **ID-2F** | Zorunlu parola değiştirme ekranı | Claude | K2 | ID-2 |
-| **ID-3** | Atama/geri alma, Critical talep/onay/ret/geri çekme API'si, `AccessGrantRequest` migration'ı, `identity.users.manage` kaydı (grant yok), shell capability'leri, audit + `identity.permission.changed` | Codex | K3 (permission/rol + migration) | ID-1; `NEEDS-SINAN-ID-04/05/07` |
+| **ID-3** | Atama/geri alma, Critical talep/onay/ret/geri çekme API'si, `AccessGrantRequest` migration'ı, `identity.users.manage` kaydı (grant yok), shell capability'leri, audit + `identity.permission.changed` | Codex | K3 (permission/rol + migration) | ID-1; KIM-D9, KIM-D15, KIM-D16 |
 | **ID-4** | "Kullanıcılar ve yetkiler" ekranına atama, onay kuyruğu, kullanıcı oluştur/sıfırla/kilit aç eylemleri | Claude | K2 | ID-3 |
 | **ID-5** | İsteğe bağlı TOTP 2FA + kurtarma kodları + migration; UI kayıt akışı ayrı Claude alt dilimi | Codex (+Claude) | K3 | ID-1; zorunluluk KIM-D3 ile kararlı (isteğe bağlı) |
 | **ID-6** | `Authentication:Providers` çoklu şema; OIDC varsayılan kapalı; yerel kullanıcıya dış kimlik bağlama (Admin eylemi) | Codex | K2 (migration yoksa; güvenlik yüzeyi nedeniyle iki review önerilir) | ID-1; production sağlayıcısı `OPEN-013` insan kapısı |
@@ -440,14 +443,10 @@ K3 dilimleri iki bağımsız exact-head review ister.
 8. tur (#66 `6820046672`) ile kapananlar: ID-01 (2FA herkese isteğe bağlı), ID-02/03/06'nın başlangıç
 değerleri (8 karakter, 10 hata, boşta 8 saat; Ayarlar'dan değişir), ID-08 (kurucu Admin istisnası), ID-09
 (admin/admin yalnız Sinan'ın Development ortamında). 10. tur (#66 `6820237902`) ile kapananlar: ID-04 ve ID-07'nin
-Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critical değil). Açık kalanlar (5–10.
-turlarda sorulmadı):
+Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critical değil). 14.–15. tur (#66
+`6820838938`) ile kapananlar: ID-02b (KIM-D12), ID-03b (KIM-D13), ID-06b (KIM-D14), ID-05 (KIM-D15), ID-07b
+(KIM-D16). Bu spec'te açık kimlik politikası sorusu kalmadı.
 
-- `NEEDS-SINAN-ID-02b`: Karakter sınıfı kuralı, periyodik değişim ve hash maliyeti (öneri: sınıf kuralı yok,
-  periyodik değişim yok, PBKDF2 framework varsayılanı).
-- `NEEDS-SINAN-ID-03b`: Kilit süresi ve kilidi kim açar (öneri: 15 dk otomatik + `identity.users.manage`).
-- `NEEDS-SINAN-ID-05`: Critical rolün geri alınması da iki kişi ister mi? (8. turda sorulmadı.)
-- `NEEDS-SINAN-ID-06b`: Oturum mutlak süresi.
-- `NEEDS-SINAN-ID-07b`: Grup geneli etkili parola sıfırlama/kilit açma hangi şirket kapsamıyla yetkilendirilir
-  (öneri: kullanıcının üye olduğu her şirkette `identity.users.manage` şirket genelinde)?
-- (Mevcut) ADR-SEC-001 NEEDS-SINAN-8 / E8: başarısız giriş kullanıcı adı hash anahtarı.
+- (Mevcut, bu spec'in kararı değil) ADR-SEC-001 NEEDS-SINAN-8 / E8: başarısız giriş kullanıcı adı hash
+  anahtarı. Anahtar bir secret olduğundan insan kapısıdır (secret yönetimi); gelene kadar hash yazılmaz,
+  aktör `Anonymous` kalır (fail-safe, ID-1'i durdurmaz).

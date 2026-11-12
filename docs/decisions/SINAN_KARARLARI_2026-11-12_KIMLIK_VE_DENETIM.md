@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-12 (yerel hesap, rol atama, reddedilen denemelerin denetim kaydı)
 
-Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D11` kararlarını ekler.
+Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D16` kararlarını ekler.
 `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (tek seferlik kurucu admin) geçerli kalır.
 BS-7'deki "production'da MFA zorunlu" yönü, 2FA zorunluluğu bakımından `KIM-D3` ile şimdilik yerini
 "herkese isteğe bağlı" kararına bırakır (Sinan: "12 Kasım kararı geçerli"); BS-7'nin OIDC/VPN yönü ve
@@ -26,6 +26,10 @@ koordinatör tarafından yazıldı:
 - [`6820237902`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820237902)
   (2026-11-12 09:46Z, 10. tur) madde 1, 3, 4. Serbest metin cevap aynen: "Bilemiyorum ama bence şuanda
   hiçbiri". Madde 2 (F-029 N4) bu dosyanın konusu değildir.
+- [`6820838938`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820838938)
+  (2026-11-12 10:15Z, 14.–15. tur) madde 1-5 — AI Merkezi NEEDS-SINAN
+  [`6820649209`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820649209) üzerine; altı
+  maddenin hepsinde önerilen seçenek seçildi. Madde 6 (F-029 N6) bu dosyanın konusu değildir.
 
 AskUserQuestion seçeneklerinin tam metni koordinatör oturumundadır; aşağıdaki "seçilmeyen" bilgisi #66
 yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
@@ -45,6 +49,11 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | 9 | ID-04/07 Critical işlem listesi? (10. tur) | Serbest metin: "Bilemiyorum ama bence şuanda hiçbiri" | Koordinatörün okuması ("geri alınabilir" diye işaretli): şimdilik yeni işlem Critical'e eklenmez; ödeme/tahsilat onayı, `identity.users.manage`, resmî fatura içe aktarma, manuel makbuz Critical sayılmaz; mevcut Critical sınıflandırmalar kaldırılmaz. Seçilmeyen öneri: bu dördünün Critical olması. |
 | 10 | F023-2/3 yetki retleri nerede tutulur, kim görür? (10. tur) | Önerilen | Tek kayıt güvenlik olay kanalında; yalnız güvenlik olayı okuma yetkisi olan görür. |
 | 11 | F023-4 tekrarlayan 400/422 retleri? (10. tur) | Önerilen | Başta her ret ayrı yazılır; gerçek kullanım ölçüldükten sonra toplulaştırma açılır, eşikleri Sinan girer. F023-5 ve F023-6 teknik varsayılan olarak AI önerisiyle kalır. |
+| 12 | ID-02b parola kuralı? (14.–15. tur) | Önerilen | Karakter sınıfı zorunluluğu yok, düzenli zorunlu değişim yok; yalnız en az 8 karakter (8. tur); değişim yalnız sızıntı şüphesinde; iki kural Ayarlar'dan açılabilir. Hash maliyeti teknik ayrıntı: framework PBKDF2 varsayılanı (spec önerisi A). Seçilmeyen: karakter sınıfı ve/veya dönemsel değişim zorunlu; Argon2id (öneri B). |
+| 13 | ID-03b kilit süresi ve kilidi kim açar? (14.–15. tur) | Önerilen | Kilit 15 dk sonra kendiliğinden açılır; `identity.users.manage` sahibi daha erken açabilir; süre Ayarlar'dan değişir. |
+| 14 | ID-06b oturum üst süresi? (14.–15. tur) | Önerilen | 12 saat mutlak; boşta kalma 8 saat (8. tur); değer Ayarlar'dan değişir. |
+| 15 | ID-05 Critical rolün geri alınması? (14.–15. tur) | Önerilen | Tek adımda, ikinci onay yok; denetim kaydı yazılır. Seçilmeyen: geri almada da ikinci kişi onayı. |
+| 16 | ID-07b grup geneli parola sıfırlama ve kilit açma? (14.–15. tur) | Önerilen | Yalnız, kullanıcının üye olduğu her şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir. Seçilmeyen: tek şirkette yetki yeterli; yalnız Admin. |
 
 ## Kararlar
 
@@ -61,16 +70,19 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | KIM-D9 | Critical işlem listesi | Şimdilik yeni işlem Critical'e eklenmez: ödeme/tahsilat onayı, `identity.users.manage`, resmî fatura içe aktarma ve manuel makbuz Critical değildir. Bugünkü `ErpPermissions.Critical` sınıflandırmaları kaldırılmaz (ayrı karar ister). Kaynakta koordinatörün okuması olarak "geri alınabilir" diye işaretlidir; liste ileride karar ile genişletilebilir. | Kimlik spec'i, maker-checker bölümü |
 | KIM-D10 | F-023 yetki retleri | Yetki retleri tek kayıt olarak güvenlik olay kanalında tutulur (denetim kaydına ikinci satır yazılmaz); yalnız güvenlik olayı okuma yetkisi olan görür. Yetki adı kaydı grant değildir. | F-023 spec, §Sınır ve ekran |
 | KIM-D11 | F-023 hacim, replay, yazım hatası | Başta her ret ayrı satır; toplulaştırma ölçümden sonra, eşikleri Sinan girerek açılır. Aynı idempotency anahtarıyla gelen ret tekrarı yeni kayıt değildir, yalnız metrik. Ret kaydı yazılamazsa ret geçerli kalır ve alarm metriği üretilir. Son ikisi kaynağa göre teknik varsayılandır. | F-023 spec, §Hacim kontrolü ve §Yazım hatası |
+| KIM-D12 | Parola kuralı ve hash | Karakter sınıfı zorunluluğu ve düzenli zorunlu değişim yok (ikisi de varsayılan kapalı, Ayarlar'dan açılabilir); değişim yalnız sızıntı şüphesinde. Hash: ASP.NET Core Identity `PasswordHasher<T>` (PBKDF2) framework varsayılanı; iterasyon ayarı uygulama ayrıntısıdır (geri alınabilir). | Kimlik spec'i, politika tablosu |
+| KIM-D13 | Kilit | Kilit 15 dk sonra kendiliğinden açılır (başlangıç değeri, Ayarlar'dan değişir); `identity.users.manage` sahibi daha erken açabilir (KIM-D16 kapsamıyla); her açma denetim kaydına yazılır. | Aynı spec, politika tablosu ve `/unlock` |
+| KIM-D14 | Oturum mutlak süresi | 12 saat (başlangıç değeri, Ayarlar'dan değişir); boşta kalma 8 saat (KIM-D4). | Aynı spec, politika tablosu |
+| KIM-D15 | Critical rol geri alma | Tek adımda, ikinci onay yok; denetim kaydı ve `identity.permission.changed` olayı yazılır. Atama tarafındaki iki kişi kuralı (KIM-D1/D5) değişmez. | Aynı spec, atama durumları ve `/revoke` |
+| KIM-D16 | Grup geneli parola sıfırlama/kilit açma kapsamı | Yalnız hedef kullanıcının üye olduğu **her** şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir; tek bir şirkette eksikse istek reddedilir (fail-closed). | Aynı spec, hedef kapsam ve izin tablosu |
 
 ## Sınırlar
 
-- Karara bağlanmayanlar `NEEDS-SINAN` olarak açık kalır (5–10. turlarda sorulmadı):
-  - ID-02b: karakter sınıfı, periyodik değişim ve hash maliyeti.
-  - ID-03b: kilit süresi ve kilidi kimin açtığı.
-  - ID-05: Critical rol geri alımında ikinci kişi onayı.
-  - ID-06b: oturum mutlak süresi.
-  - ID-07b: grup geneli parola sıfırlamanın şirket kapsamı.
-  - Otomatik imhanın açılması (ayrı onay) ve toplulaştırma eşik değerleri.
+- Karara bağlanmayanlar `NEEDS-SINAN` olarak açık kalır: otomatik imhanın açılması (ayrı onay ve ADR) ve
+  toplulaştırma eşik değerleri (ölçümden sonra). ID-02b/03b/05/06b/07b 14.–15. turda karara bağlandı
+  (KIM-D12…D16).
+- ADR-SEC-001 E8 (başarısız girişte kullanıcı adı hash'inin anahtarı) bu dosyanın konusu değildir: anahtar
+  bir secret olduğundan insan kapısıdır; o gelene kadar hash yazılmaz.
 - Bu dosya `OPEN-013`'ü veya başka bir `OPEN-*` kaydını kapatmaz; grant/rol ataması, ilk Admin'in
   oluşturulması, Critical küme değişikliği veya production aktivasyonu değildir.
 - İnsan kapıları değişmez: deployment, environment, secret, Settings etkinleştirmesi, grant/rol/Critical,
