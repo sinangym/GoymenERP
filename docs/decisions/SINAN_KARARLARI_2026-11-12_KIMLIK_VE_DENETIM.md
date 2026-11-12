@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-12 (yerel hesap, rol atama, reddedilen denemelerin denetim kaydı)
 
-Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D16` kararlarını ekler.
+Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D18` kararlarını ekler.
 `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (tek seferlik kurucu admin) geçerli kalır.
 BS-7'deki "production'da MFA zorunlu" yönü, 2FA zorunluluğu bakımından `KIM-D3` ile şimdilik yerini
 "herkese isteğe bağlı" kararına bırakır (Sinan: "12 Kasım kararı geçerli"); BS-7'nin OIDC/VPN yönü ve
@@ -30,9 +30,17 @@ koordinatör tarafından yazıldı:
   (2026-11-12 10:15Z, 14.–15. tur) madde 1-5 — AI Merkezi NEEDS-SINAN
   [`6820649209`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820649209) üzerine; altı
   maddenin hepsinde önerilen seçenek seçildi. Madde 6 (F-029 N6) bu dosyanın konusu değildir.
+- [`6821105608`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821105608)
+  (2026-11-12 10:27Z, 16. tur) madde 4 — #1112 `NEEDS-SINAN-ID-10` (son Admin). Cevap aynen: "Sistem
+  engellesin." Madde 1-3 (transfer, fason tartı) bu dosyanın konusu değildir.
+- [`6821262098`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098)
+  (2026-11-12 10:35Z, 17. tur) madde 4 — #1112 (çok şirkette ilk Admin). Cevap aynen: "Kurucu hepsinde
+  Admin." Madde 1-3 ve 5-8 bu dosyanın konusu değildir.
 
 AskUserQuestion seçeneklerinin tam metni koordinatör oturumundadır; aşağıdaki "seçilmeyen" bilgisi #66
-yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
+yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır. 12-16. satırlardaki "Seçilmeyen"
+hücreleri yazar özetidir: soru metni ve öneri `6820649209`'dadır, seçilmeyen seçeneklerin metni koordinatör
+oturumundadır.
 
 ## Soru ve cevaplar
 
@@ -53,7 +61,9 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | 13 | ID-03b kilit süresi ve kilidi kim açar? (14.–15. tur) | Önerilen | Kilit 15 dk sonra kendiliğinden açılır; `identity.users.manage` sahibi daha erken açabilir; süre Ayarlar'dan değişir. |
 | 14 | ID-06b oturum üst süresi? (14.–15. tur) | Önerilen | 12 saat mutlak; boşta kalma 8 saat (8. tur); değer Ayarlar'dan değişir. |
 | 15 | ID-05 Critical rolün geri alınması? (14.–15. tur) | Önerilen | Tek adımda, ikinci onay yok; denetim kaydı yazılır. Seçilmeyen: geri almada da ikinci kişi onayı. |
-| 16 | ID-07b grup geneli parola sıfırlama ve kilit açma? (14.–15. tur) | Önerilen | Yalnız, kullanıcının üye olduğu her şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir. Seçilmeyen: tek şirkette yetki yeterli; yalnız Admin. |
+| 16 | ID-07b grup geneli parola sıfırlama ve kilit açma? (14.–15. tur) | Önerilen | Yalnız, kullanıcının üye olduğu her şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir. Seçilmeyen (yazar özeti): tek şirkette yetki yeterli; yalnız Admin. |
+| 17 | ID-10 şirketteki son Admin kendi Admin rolünü kaldırmaya çalışırsa? (16. tur) | "Sistem engellesin." | Şirkette en az bir aktif Admin kalmak zorunda; son Admin'in rolü kaldırılamaz ve pasifleştirilemez; önce başka birine Admin verilir. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
+| 18 | Çok şirkette ilk Admin? (17. tur) | "Kurucu hepsinde Admin." | İlk kurulumda kurucuya o anda tanımlı bütün şirketlerde Admin atanır; sonradan açılan şirkette şirketi açan kişi ilk Admin olur; sonra başkalarına devredilebilir. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
 
 ## Kararlar
 
@@ -62,8 +72,8 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | KIM-D1 | F-001 rol atama | Admin rolleri ekrandan atar; Critical rollerde ikinci kişi onayı zorunlu (istisnası KIM-D5); ilk Admin kurulumda bir kez tanımlanır; her atama audit'e yazılır. | `docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md` |
 | KIM-D2 | F-002 giriş | Şimdilik yerel hesap + güçlü parola politikası + isteğe bağlı 2FA; OIDC sonra ayar olarak eklenebilir. `OPEN-013` kapanmaz. | Aynı spec |
 | KIM-D3 | 2FA zorunluluğu | Şimdilik herkese isteğe bağlı, kimseye zorunlu değil; pilot sonrası yeniden bakılır. BS-7 ile çelişki bu kararla çözülür. Yöntem (TOTP önerisi) uygulama ayrıntısıdır (geri alınabilir). | Aynı spec, ID-5 dilimi |
-| KIM-D4 | Parola/kilit/oturum başlangıç değerleri | En az 8 karakter, 10 hatalı denemede kilit, boşta 8 saat oturum; hepsi Ayarlar'dan değiştirilebilir. Sızmış/yasaklı parola listesi ve admin/admin yasağı korunur. Kilit süresi, kilidi kim açar, mutlak oturum süresi, karakter sınıfı, periyodik değişim ve hash maliyeti seçilmedi. | Aynı spec, politika tablosu |
-| KIM-D5 | Kurucu Admin istisnası | Kurulumu yapan Admin, Critical rol atamasını ikinci kişi onayı olmadan her zaman yapabilir; diğer atayanlarda ikinci onay sürer. Kaynakta koordinatörün okuması olarak "geri alınabilir" diye işaretlidir. Critical işlem listesi seçilmedi: AI önerisi taslak kalır, etkinleştirme Sinan'ın liste onayını bekler. | Aynı spec, maker-checker bölümü |
+| KIM-D4 | Parola/kilit/oturum başlangıç değerleri | En az 8 karakter, 10 hatalı denemede kilit, boşta 8 saat oturum; hepsi Ayarlar'dan değiştirilebilir. Sızmış/yasaklı parola listesi ve admin/admin yasağı korunur. Kilit süresi, kilidi kim açar, mutlak oturum süresi, karakter sınıfı, periyodik değişim ve hash maliyeti 8. turda seçilmedi (KIM-D12…D14 ile seçildi). | Aynı spec, politika tablosu |
+| KIM-D5 | Kurucu Admin istisnası | Kurulumu yapan Admin, Critical rol atamasını ikinci kişi onayı olmadan her zaman yapabilir; diğer atayanlarda ikinci onay sürer. Kaynakta koordinatörün okuması olarak "geri alınabilir" diye işaretlidir. Critical işlem listesi 8. turda seçilmedi; KIM-D9 (10. tur) ile kapandı. | Aynı spec, maker-checker bölümü |
 | KIM-D6 | admin/admin | Yalnız Sinan'ın bilgisayarındaki Development ortamında kabul edilir; repoya, örnek dosyaya, seed'e, `appsettings*`'e yazılmaz; test ve canlı ortamda hiç kabul edilmez; başka kullanıcı bağlanmadan önce değiştirilir. Açan ayarın yalnız yerel kullanıcı-gizli dosyasında durması uygulama ayrıntısıdır (geri alınabilir). | Aynı spec, "Varsayılan kimlik bilgisi yasağı" |
 | KIM-D7 | F-023 reddedilen denemeler | Yetki ve iş kuralı retleri dahil reddedilen tüm işlem denemeleri denetim kaydına yazılır (kim, ne zaman, hangi işlem, ret nedeni); kişisel veri/şifre/secret yazılmaz; saklama süresi ayrı politikadır (KIM-D8). | `docs/features/AUDIT_REFUSED_ATTEMPTS_F023_SPEC_v1.md` |
 | KIM-D8 | F-023 saklama | Reddedilen işlem denemesi kayıtları 2 yıl saklanır; süre Ayarlar'dan değiştirilebilir; süre dolunca otomatik imha ayrı onayla açılır (bu karar imhayı açmaz). Ayar adları uygulama ayrıntısıdır (geri alınabilir). | Aynı spec, §Saklama |
@@ -74,13 +84,17 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | KIM-D13 | Kilit | Kilit 15 dk sonra kendiliğinden açılır (başlangıç değeri, Ayarlar'dan değişir); `identity.users.manage` sahibi daha erken açabilir (KIM-D16 kapsamıyla); her açma denetim kaydına yazılır. | Aynı spec, politika tablosu ve `/unlock` |
 | KIM-D14 | Oturum mutlak süresi | 12 saat (başlangıç değeri, Ayarlar'dan değişir); boşta kalma 8 saat (KIM-D4). | Aynı spec, politika tablosu |
 | KIM-D15 | Critical rol geri alma | Tek adımda, ikinci onay yok; denetim kaydı ve `identity.permission.changed` olayı yazılır. Atama tarafındaki iki kişi kuralı (KIM-D1/D5) değişmez. | Aynı spec, atama durumları ve `/revoke` |
-| KIM-D16 | Grup geneli parola sıfırlama/kilit açma kapsamı | Yalnız hedef kullanıcının üye olduğu **her** şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir; tek bir şirkette eksikse istek reddedilir (fail-closed). | Aynı spec, hedef kapsam ve izin tablosu |
+| KIM-D16 | Grup geneli parola sıfırlama/kilit açma kapsamı | Yalnız hedef kullanıcının üye olduğu **her** şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir; tek bir şirkette eksikse istek reddedilir (fail-closed). Yazar okuması (geri alınabilir): "üye" = bugün geçerli (başlamış, süresi dolmamış) ataması olan şirket; site/lokasyon kapsamlı atama o şirkette üyeliktir; hiç ataması olmayan kullanıcıda işlemi yalnız kurucu Admin veya **bütün** şirketlerde şirket geneli `identity.users.manage` taşıyan yapabilir; aynı kapsam pasifleştirmeye de uygulanır. | Aynı spec, hedef kapsam ve izin tablosu |
+| KIM-D17 | Son Admin koruması | Her şirkette en az bir aktif Admin kalır. Şirketteki son aktif Admin'in Admin ataması geri alınamaz ve o kullanıcı pasifleştirilemez (kendisi veya başkası yapsa da); sistem reddeder, önce başka birine Admin verilir. "Admin" = mevcut Admin persona tanımına eşlenen rol; kodda rol adı sabiti yok. Problem kodu ve eşzamanlılık kilidi uygulama ayrıntısıdır (geri alınabilir). | Kimlik spec'i, görev ayrılığı, `/revoke`, `/deactivate` |
+| KIM-D18 | Çok şirkette ilk Admin | Bootstrap, kurucuya o anda tanımlı **bütün** şirketlerde Admin atar. Sonradan açılan şirkette şirketi açan kişi o şirketin ilk Admin'i olur. Admin sonra başkalarına devredilebilir (KIM-D17 sınırıyla). Şirket açma akışının Identity'ye nasıl bildirildiği uygulama ayrıntısıdır (cross-module sözleşme, K3). | Kimlik spec'i, bootstrap ve görev ayrılığı |
 
 ## Sınırlar
 
 - Karara bağlanmayanlar `NEEDS-SINAN` olarak açık kalır: otomatik imhanın açılması (ayrı onay ve ADR) ve
-  toplulaştırma eşik değerleri (ölçümden sonra). ID-02b/03b/05/06b/07b 14.–15. turda karara bağlandı
-  (KIM-D12…D16).
+  toplulaştırma eşik değerleri (ölçümden sonra). ID-02b/03b/05/06b/07b 14.–15. turda (KIM-D12…D16),
+  ID-10 16. turda (KIM-D17), çok şirkette ilk Admin 17. turda (KIM-D18) karara bağlandı.
+- Şirket açma yetkisinin kimde olduğu bu dosyanın konusu değildir (Organization modülü); KIM-D18 yalnız
+  açan kişinin ilk Admin olmasını söyler, şirket açma izni vermez.
 - ADR-SEC-001 E8 (başarısız girişte kullanıcı adı hash'inin anahtarı) bu dosyanın konusu değildir: anahtar
   bir secret olduğundan insan kapısıdır; o gelene kadar hash yazılmaz.
 - Bu dosya `OPEN-013`'ü veya başka bir `OPEN-*` kaydını kapatmaz; grant/rol ataması, ilk Admin'in

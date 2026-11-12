@@ -57,7 +57,7 @@ zorunludur (`AuditEvent.cs` `RequireText`).
 - Başarılı girişler, izin değişikliği, dışa aktarım vb. güvenlik olayları (ADR-SEC-001'in kendi kapsamı).
 - Başarılı audit satırlarındaki mevcut IP/User-Agent alanının değiştirilmesi (bkz. §Açık gözlem).
 - Okuma (GET) retleri: v1 yalnız **işlem** (komut, yazma) denemelerini kapsar. GET 403'leri güvenlik kanalında
-  `authz.denied` olarak zaten yer alır (F023-2); denetim kaydına ayrıca yazılmaz.
+  `authz.denied` olarak F023-2 ile yer alacak; denetim kaydına ayrıca yazılmaz.
 - Grant, rol ataması, yeni izin adının kesinleşmesi (insan kapısı).
 
 ## Karar ve açık politika ID'leri
@@ -178,6 +178,10 @@ ERP-000L §6 üç kanalı ayırır; aynı olgu iki kanala ayrı satır olarak ya
 - **Seçenek B (reddedilen):** her yetki reddini iki depoya yazmak — aynı olgu iki kez kaydedilir (AGENTS.md ihlali),
   anonim/şirketsiz retler zaten audit CHECK'ine takılır.
 - Ayrım kuralı tektir: **ret, permission çitinden önce/çitte mi doğdu?** Evet → güvenlik kanalı; hayır → denetim.
+  "Permission çiti" iki yerden birini anlar: endpoint'in yetki politikası (`RequireAuthorization` ile bağlı izin
+  politikası, şirket bağlamı çözümü dahil) **veya** servis içindeki ilk izin kontrolü (`RequireAsync`/eşdeğeri,
+  korumalı okumalardan önce). Bu iki noktadan dönen `401/403` ve şirket bağlamı retleri "çitte" sayılır (tablodaki
+  "çit kaybı" da budur); çitten sonra doğan her ret (doğrulama, iş kuralı, sürüm, idempotency) denetime gider.
   Bir istek yalnız bir ret üretir (ilk ret cevabı döner), dolayısıyla çift kayıt oluşmaz. Mimari test: aynı
   `CorrelationId` için hem `audit.AuditEvents(Outcome=Refused)` hem `security.SecurityEvents(EventType=authz.denied)`
   satırı oluşmaz (SQL kabul testi).
