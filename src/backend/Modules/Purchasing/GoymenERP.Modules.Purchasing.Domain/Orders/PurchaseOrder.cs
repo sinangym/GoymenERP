@@ -407,7 +407,8 @@ public sealed class PurchaseOrder
     /// Open while Draft and Approved (the §8.2 flow "onay → termin/yolda"; the breakdown precedent), refused on a cancelled order
     /// (<see cref="PurchasingRuleCodes.OrderCancelled"/>). A technical line is not scheduled on its own
     /// (<see cref="PurchasingRuleCodes.ScheduleOnTechnicalLine"/>): its quantity is already counted in its general line, whose
-    /// schedule covers it. Between 1 and <see cref="MaximumScheduleSlices"/> slices, each with a distinct non-empty id, a quantity
+    /// schedule covers it. After a partial acceptance the received part's slices are locked (<see cref="RequireReceivedPortionKept"/>,
+    /// ALS-D81). Between 1 and <see cref="MaximumScheduleSlices"/> slices, each with a distinct non-empty id, a quantity
     /// above zero in the line's unit and a delivery date; nothing is rounded, merged or reordered. Delay flagging (API-32) and who
     /// may write a schedule are not this record's rules.
     /// </para>
@@ -479,9 +480,43 @@ public sealed class PurchaseOrder
                 "Termin dilimlerinin toplamı satırın sipariş miktarına eşit olmalıdır.");
         }
 
+        RequireReceivedPortionKept(line, recorded);
         line.ReplaceDeliverySchedule(recorded);
         Touch(now);
         return line.DeliverySchedule;
+    }
+
+    /// <summary>
+    /// A3 API-30, Sinan #66 6816723313 madde 3 (ALS-D81): after a partial goods acceptance the schedule changes only for the remaining
+    /// (not yet received) quantity; the received part is locked. A receipt names no slice, so the line's accepted share is read as
+    /// covering the current schedule's slices in slice order (implementation reading, reversible): every slice the share covers whole
+    /// stays in the new schedule at the same place with the same id, quantity and date; the slice the share ends in keeps its place,
+    /// id and date and at least the received part of its quantity (only its unreceived rest may move to other slices or dates).
+    /// Anything else is refused fail-closed (<see cref="PurchasingRuleCodes.ScheduleReceivedPortionLocked"/>). With no acceptance, or
+    /// with no earlier schedule (the received part has no termin to lock), nothing is locked.
+    /// </summary>
+    private static void RequireReceivedPortionKept(PurchaseOrderLine line, IReadOnlyList<PurchaseOrderDeliverySlice> next)
+    {
+        var received = line.AcceptedQuantity;
+        var current = line.DeliverySchedule;
+        var covered = Quantity.Zero(received.Unit);
+        for (var index = 0; index < current.Count && received.IsGreaterThan(covered); index++)
+        {
+            var before = current[index];
+            var locked = received.Subtract(covered);
+            // A slice the share passes over (received whole, with more received after it) is kept exactly; the slice the share
+            // ends in keeps at least its received part — its unreceived rest may shrink or grow on the same date.
+            var whole = locked.IsGreaterThan(before.Quantity);
+            var after = index < next.Count ? next[index] : null;
+            if (after is null || after.SliceId != before.SliceId || after.DeliveryDate != before.DeliveryDate
+                || (whole ? after.Quantity.Value != before.Quantity.Value : locked.IsGreaterThan(after.Quantity)))
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleReceivedPortionLocked,
+                    "Teslim alınan miktarın termini kilitlidir; yalnız kalan miktarın termini değiştirilebilir.");
+            }
+
+            covered = covered.Add(whole ? before.Quantity : locked);
+        }
     }
 
     /// <summary>A3 API-30: the most slices one line's schedule holds (the Sales order-line slice bound, <c>MaximumSlicesPerLine</c>).</summary>

@@ -62,7 +62,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await StageAndCommitAsync(run, CompanyA, AcceptanceRequest(seed, Guid.NewGuid(), "30"),
             Envelope($"schedule-accept-{orderId:N}", $"correlation-schedule-accept-{orderId:N}"));
         long acceptedVersion = scheduledVersion + 1;
-        var second = new[] { KgSlice(30m, ScheduleD1), KgSlice(50m, ScheduleD2), KgSlice(20m, ScheduleD2) };
+        // ALS-D81: the received 30 kg stay on the first slice (same id and date); only the unreceived rest is re-planned.
+        var second = new[] { first[0] with { Quantity = Quantity.Of(30m, QuantityUnit.Kilogram) }, KgSlice(50m, ScheduleD2), KgSlice(20m, ScheduleD2) };
         await using (StoreScope a = run.Store(CompanyA))
         {
             // A domain refusal (Σ ≠ ordered) writes nothing.
@@ -70,6 +71,11 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 PurchasingCommands.OrderLineScheduleV1, orderId,
                 (order, now) => order.SetLineDeliverySchedule(acceptedVersion, lineId, [KgSlice(70m, ScheduleD1)], run.Actor, now), LineScheduleSet));
             Assert.Equal(PurchasingRuleCodes.ScheduleTotalMismatch, refused.Code);
+            // ALS-D81: re-dating the received part is refused and writes nothing.
+            var locked = await Assert.ThrowsAsync<PurchasingRuleException>(() => a.Store.MutateOrderAsync(run.Envelope("k-locked"), Hash("k-locked"),
+                PurchasingCommands.OrderLineScheduleV1, orderId,
+                (order, now) => order.SetLineDeliverySchedule(acceptedVersion, lineId, [KgSlice(100m, ScheduleD2)], run.Actor, now), LineScheduleSet));
+            Assert.Equal(PurchasingRuleCodes.ScheduleReceivedPortionLocked, locked.Code);
             await a.Store.MutateOrderAsync(run.Envelope("k-schedule-2"), Hash("k-schedule-2"), PurchasingCommands.OrderLineScheduleV1, orderId,
                 (order, now) => order.SetLineDeliverySchedule(acceptedVersion, lineId, second, run.Actor, now), LineScheduleSet);
         }

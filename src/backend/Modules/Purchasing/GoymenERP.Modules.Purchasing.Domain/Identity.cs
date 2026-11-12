@@ -113,6 +113,10 @@ public static class PurchasingRuleCodes
     /// <summary>A3 API-30 (plan API-30 "toplam = satır miktarı"): the slices together equal the line's ordered quantity exactly.</summary>
     public const string ScheduleTotalMismatch = "purchasing_schedule_total_mismatch";
 
+    /// <summary>A3 API-30, ALS-D81 (Sinan #66 6816723313 madde 3): after a partial acceptance only the remaining quantity's termin
+    /// changes; a new schedule that moves, re-dates, renames or shrinks below the received part a slice the acceptance covers is refused.</summary>
+    public const string ScheduleReceivedPortionLocked = "purchasing_schedule_received_portion_locked";
+
     public const string DuplicateLineId = "purchasing_duplicate_line_id";
     public const string LineNotFound = "purchasing_line_not_found";
     public const string TechnicalLineNotBreakable = "purchasing_technical_line_not_breakable";

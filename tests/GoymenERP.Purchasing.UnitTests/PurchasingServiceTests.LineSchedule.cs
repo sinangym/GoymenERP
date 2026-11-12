@@ -76,6 +76,30 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task After_a_partial_acceptance_re_dating_the_received_part_is_a_non_terminal_422_and_the_remaining_part_moves()
+    {
+        // ALS-D81 (Sinan #66 6816723313 madde 3): the received part's termin is locked; only the remaining quantity's changes.
+        var world = new World();
+        var (orderId, lineId) = await ApprovedOrderAsync(world, "10");
+        var first = Schedule("3", ("10", ScheduleD1));
+        await world.Service().SetOrderLineScheduleAsync(orderId, lineId, first, Metadata("k-s1"));
+        (await world.Store.FindOrderAsync(orderId))!.Order.RecordAcceptance(4, Guid.NewGuid(), lineId, Quantity.Of(4m, QuantityUnit.Kilogram),
+            DateTimeOffset.UtcNow);
+
+        var locked = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("5", ("10", ScheduleD2)), Metadata("k-locked")));
+        Assert.Equal((422, "validation_failed", "slices", PurchasingRuleCodes.ScheduleReceivedPortionLocked, false),
+            (locked.Status, locked.Code, locked.Errors[0].Field, locked.Errors[0].Code, locked.IsReplay));
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+
+        var kept = first.Slices[0] with { Quantity = "4" };
+        var moved = await world.Service().SetOrderLineScheduleAsync(orderId, lineId,
+            new SetPurchaseOrderLineScheduleRequest("5", [kept, new(Guid.NewGuid(), "6", ScheduleD2)]), Metadata("k-moved"));
+        Assert.Equal([(kept.SliceId, "4", ScheduleD1), (moved.Detail.Lines[0].DeliverySchedule[1].SliceId, "6", ScheduleD2)],
+            moved.Detail.Lines[0].DeliverySchedule.Select(slice => (slice.SliceId, slice.Quantity, slice.DeliveryDate)).ToArray());
+    }
+
+    [Fact]
     public async Task The_domain_rules_are_a_422_on_slices_an_unknown_line_a_404_and_a_bad_quantity_text_a_400_none_terminal()
     {
         var world = new World();

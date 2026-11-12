@@ -61,11 +61,13 @@ public sealed class PurchaseOrderLineScheduleTests
     public void A_new_schedule_replaces_the_previous_set_whole_on_an_approved_order_and_after_a_partial_acceptance()
     {
         var (order, line) = Draft();
-        order.SetLineDeliverySchedule(2, line.Id, [Slice(Kg(100m), D1)], Planner, T0);
+        var whole = Slice(Kg(100m), D1);
+        order.SetLineDeliverySchedule(2, line.Id, [whole], Planner, T0);
         order.Approve(3, Approver, T0);
         order.RecordAcceptance(4, Guid.NewGuid(), line.Id, Kg(30m), T0);
 
-        var replaced = order.SetLineDeliverySchedule(5, line.Id, [Slice(Kg(30m), D1), Slice(Kg(70m), D2)], Planner, T0);
+        // ALS-D81: the received 30 kg stay on the same slice and date; only the unreceived 70 kg move to a new date.
+        var replaced = order.SetLineDeliverySchedule(5, line.Id, [whole with { Quantity = Kg(30m) }, Slice(Kg(70m), D2)], Planner, T0);
 
         Assert.Equal((6L, 2), (order.Version, replaced.Count));
         Assert.Equal([Kg(30m), Kg(70m)], line.DeliverySchedule.Select(slice => slice.Quantity).ToArray());
@@ -171,13 +173,18 @@ public sealed class PurchaseOrderLineScheduleTests
             AcceptanceId = Guid.NewGuid(), CompanyId = Company, OrderId = orderId, LineId = lineId, Quantity = 4m, OrderVersionAfter = 5, RecordedAtUtc = at,
             IdempotencyKeyHash = new string('A', 64), RequestHash = new string('B', 64), ActorId = "SENTETIK", CorrelationId = "SENTETIK", ResultJson = "{}",
         };
-        PurchaseOrderLineDeliverySliceRow SliceRow(long version, int no, decimal quantity, DateOnly date) => new()
+        PurchaseOrderLineDeliverySliceRow SliceRow(long version, int no, decimal quantity, DateOnly date, Guid? sliceId = null) => new()
         {
-            CompanyId = Company, OrderId = orderId, LineId = lineId, OrderVersionAfter = version, SliceNo = no, SliceId = Guid.NewGuid(),
+            CompanyId = Company, OrderId = orderId, LineId = lineId, OrderVersionAfter = version, SliceNo = no, SliceId = sliceId ?? Guid.NewGuid(),
             Quantity = quantity, DeliveryDate = date, RecordedBy = Planner, RecordedAtUtc = at, CorrelationId = "SENTETIK",
         };
         // v2: line; v3: Draft schedule; v4: approval; v5: acceptance; v6: the Approved revision.
-        var slices = new List<PurchaseOrderLineDeliverySliceRow> { SliceRow(6, 2, 6m, D2), SliceRow(3, 1, 10m, D1), SliceRow(6, 1, 4m, D1) };
+        // ALS-D81: the Approved revision keeps the received 4 kg on the Draft's first slice (same id and date).
+        var receivedSlice = Guid.NewGuid();
+        var slices = new List<PurchaseOrderLineDeliverySliceRow>
+        {
+            SliceRow(6, 2, 6m, D2), SliceRow(3, 1, 10m, D1, receivedSlice), SliceRow(6, 1, 4m, D1, receivedSlice),
+        };
 
         var rebuilt = PurchasingStore.RestoreOrder(row, [line], [acceptance], slices);
 
@@ -198,5 +205,70 @@ public sealed class PurchaseOrderLineScheduleTests
         slices[0].SliceNo = 2;
         slices[1].OrderVersionAfter = 7;
         Assert.Throws<InvalidOperationException>(() => PurchasingStore.RestoreOrder(row, [line], [acceptance], slices));
+        slices[1].OrderVersionAfter = 3;
+
+        // A stored revision after the acceptance that re-dates the received part is refused by the domain on rebuild (ALS-D81).
+        slices[2].DeliveryDate = D2;
+        Assert.Equal(PurchasingRuleCodes.ScheduleReceivedPortionLocked,
+            Assert.Throws<PurchasingRuleException>(() => PurchasingStore.RestoreOrder(row, [line], [acceptance], slices)).Code);
+    }
+
+    [Fact]
+    public void After_a_partial_acceptance_only_the_remaining_quantity_is_rescheduled_and_the_received_slices_are_locked()
+    {
+        // ALS-D81 (Sinan #66 6816723313 madde 3): 100 kg as 40 @D1 + 60 @D2, then 55 kg received — the share covers the first
+        // slice whole and 15 kg of the second (in slice order).
+        var (order, line) = Draft();
+        var first = Slice(Kg(40m), D1);
+        var second = Slice(Kg(60m), D2);
+        order.SetLineDeliverySchedule(2, line.Id, [first, second], Planner, T0);
+        order.Approve(3, Approver, T0);
+        order.RecordAcceptance(4, Guid.NewGuid(), line.Id, Kg(55m), T0);
+        var later = new DateOnly(2027, 3, 1);
+
+        foreach (var refused in new PurchaseOrderDeliverySliceInput[][]
+                 {
+                     [first with { DeliveryDate = later }, second],                                   // a whole-received slice re-dated
+                     [first with { Quantity = Kg(30m) }, second with { Quantity = Kg(70m) }],         // a whole-received slice shrunk
+                     [Slice(Kg(40m), D1), second],                                                   // a whole-received slice renamed
+                     [second, first],                                                                // received slices reordered
+                     [first, second with { DeliveryDate = later }],                                  // the part-received slice re-dated
+                     [first, second with { Quantity = Kg(10m) }, Slice(Kg(50m), later)],             // shrunk below its received 15 kg
+                     [Slice(Kg(100m), later)],                                                       // the whole line re-planned
+                 })
+        {
+            Assert.Equal(PurchasingRuleCodes.ScheduleReceivedPortionLocked,
+                CodeOf(() => order.SetLineDeliverySchedule(5, line.Id, refused, Planner, T0)));
+            Assert.Equal(5L, order.Version);
+            Assert.Equal([first.SliceId, second.SliceId], line.DeliverySchedule.Select(slice => slice.SliceId).ToArray());
+        }
+
+        // The unreceived 45 kg of the part-received slice move freely: split off to two later dates, the received 15 kg stay on D2.
+        var rest = Slice(Kg(25m), later);
+        var last = Slice(Kg(20m), later.AddDays(10));
+        order.SetLineDeliverySchedule(5, line.Id, [first, second with { Quantity = Kg(15m) }, rest, last], Planner, T0);
+        Assert.Equal([(first.SliceId, Kg(40m), D1), (second.SliceId, Kg(15m), D2), (rest.SliceId, Kg(25m), later), (last.SliceId, Kg(20m), later.AddDays(10))],
+            line.DeliverySchedule.Select(slice => (slice.SliceId, slice.Quantity, slice.DeliveryDate)).ToArray());
+
+        // The part-received slice may also grow again on its own date, and every unreceived slice is free.
+        order.SetLineDeliverySchedule(6, line.Id, [first, second with { Quantity = Kg(60m) }], Planner, T0);
+        Assert.Equal((7L, Kg(55m), Kg(45m)), (order.Version, line.AcceptedQuantity, line.RemainingQuantity));
+    }
+
+    [Fact]
+    public void Without_an_acceptance_or_without_an_earlier_schedule_nothing_is_locked()
+    {
+        var (order, line) = Draft();
+        order.Approve(2, Approver, T0);
+        order.RecordAcceptance(3, Guid.NewGuid(), line.Id, Kg(30m), T0);
+
+        // No earlier schedule: the received part has no termin to lock.
+        order.SetLineDeliverySchedule(4, line.Id, [Slice(Kg(100m), D2)], Planner, T0);
+        Assert.Equal(5L, order.Version);
+
+        var (draft, draftLine) = Draft();
+        draft.SetLineDeliverySchedule(2, draftLine.Id, [Slice(Kg(100m), D1)], Planner, T0);
+        draft.SetLineDeliverySchedule(3, draftLine.Id, [Slice(Kg(50m), D2), Slice(Kg(50m), D2)], Planner, T0);
+        Assert.Equal(4L, draft.Version);
     }
 }
