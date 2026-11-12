@@ -56,7 +56,7 @@
 | Issue #66 `6818566934` (2026-11-12) | Son kullanıcı kararı | F-001 mekanizması ve F-002 "şimdilik yerel hesap" yönü bağlayıcıdır. |
 | BS-6 (2026-11-11) | Kilitli tasarım yönü | İki kişi kuralı + tek seferlik kurucu admin; grant/Critical insan kapısı. |
 | BS-7 (2026-11-11) | Yön; `OPEN-013` açık | Production yönü "kurumsal hesap OIDC + **MFA zorunlu** + VPN". 2026-11-12 kararı "şimdilik yerel + **isteğe bağlı** 2FA" der; çelişki 8. turda (KIM-D3) 12 Kasım kararı lehine çözüldü. |
-| #66 `6820046672` (2026-11-12, 8. tur) | Kilitli | KIM-D3…KIM-D6: 2FA herkese isteğe bağlı; başlangıç parola/kilit/oturum değerleri Ayarlar'dan değişir; kurucu Admin Critical atamayı ikinci onaysız yapabilir, Critical liste seçilmedi; varsayılan/zayıf kimlik bilgisi yalnız karar sahibinin belirttiği tek yerel geliştirme bilgisayarında (repoda kişi veya makine adı tutulmaz; sınır prosedüreldir), yalnız Development ortamında, kullanıcı gizli ayarıyla. Karar dosyası: `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md`. |
+| #66 `6820046672` (2026-11-12, 8. tur) | Kilitli | KIM-D3…KIM-D6: 2FA herkese isteğe bağlı; başlangıç parola/kilit/oturum değerleri Ayarlar'dan değişir; kurucu Admin Critical atamayı ikinci onaysız yapabilir, Critical liste seçilmedi; varsayılan/zayıf kimlik bilgisi yalnız karar sahibinin belirttiği tek yerel geliştirme bilgisayarında (repoda kişi veya makine adı tutulmaz; yazar okuması: sınır prosedüreldir), yalnız Development ortamında, kullanıcı gizli ayarıyla. Karar dosyası: `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md`. |
 | `OPEN-013` | KISMEN, açık kalır | Yerel hesap = geçici yol; OIDC soyutlaması korunur (ADR-004). |
 | `DEC-TEC-008` | Kilitli | Dev/test/staging/prod ayrı; weak-password istisnası yalnız Development. |
 | ADR-004 §1–§6 | Uygulandı | Kimlik doğrulama ≠ yetkilendirme; `(issuer, subject)` → yerel kullanıcı; Critical talepte talep eden/hedef onaylayamaz. |
@@ -179,7 +179,8 @@ hedefin üye olduğu her şirkette `identity.users.manage` taşıyan (KIM-D13/D1
   değişikliklerinde artar (parola değişimi/sıfırlama, `MustChangePassword`, 2FA, `SecurityStamp`, kilit açma).
   Koşullu `UPDATE` okunan `PasswordHash`, `SecurityStamp` ve `TemporaryPasswordIssuedAtUtc` değerleriyle
   karşılaştırır; `TemporaryPasswordIssuedAtUtc` karşılaştırması null-güvenlidir
-  (`(TemporaryPasswordIssuedAtUtc = @okunanIssuedAt OR (TemporaryPasswordIssuedAtUtc IS NULL AND @okunanIssuedAt IS NULL))`;
+  (`(TemporaryPasswordIssuedAtUtc = @readIssuedAt OR (TemporaryPasswordIssuedAtUtc IS NULL AND @readIssuedAt IS NULL))`;
+  `@read*` parametreleri girişin başında okunan değerlerdir;
   dış parantez, koşul diğer `AND` terimleriyle birleşirken `OR`'un önceliğini sabitler), çünkü normal hesapta alan null'dır ve düz eşitlik 0 satır etkileyip kilitlemeyi kapatır,
   doğru girişi de reddederdi; sayaç göreli yazılır (`FailedAccessCount = FailedAccessCount + 1`); etkilenen satır 0 ise giriş
   genel hatayla reddedilir. Böylece başarılı girişteki yeniden hash veya tüketim, arada yazılmış yeni bir hash'i
@@ -546,7 +547,8 @@ her iki alt yol için geçerlidir; `reset-password`'a özgü kurallar ayrı baş
   Tüketim atomiktir: komut `TemporaryPasswordIssuedAtUtc`'yi ve `TemporaryPasswordExpiresAtUtc`'yi yazar,
   `TemporaryPasswordConsumedAtUtc`'yi null'lar; oturum açılırken tek koşullu
   `UPDATE … SET TemporaryPasswordConsumedAtUtc = now WHERE TemporaryPasswordConsumedAtUtc IS NULL AND
-  TemporaryPasswordIssuedAtUtc = @okunan AND PasswordHash = @okunan AND SecurityStamp = @okunan` çalışır
+  TemporaryPasswordIssuedAtUtc = @readIssuedAt AND PasswordHash = @readPasswordHash AND SecurityStamp = @readSecurityStamp`
+  çalışır (bu yolda geçici parola verilmiş olduğundan `@readIssuedAt` doludur)
   (yeniden hash gerekiyorsa aynı `UPDATE`'te yazılır),
   etkilenen satır 1 değilse oturum açılmaz (genel hata); arada verilmiş yeni bir sıfırlama böylece ezilmez. İki eşzamanlı girişten yalnız biri geçer. 2FA açıksa
   tüketim parola adımında değil, 2FA da geçip oturum açılırken sayılır (yarım kalan giriş parolayı tüketmez).
@@ -631,12 +633,16 @@ kaynak dosyasında; klavye ile tam erişim, odak yönetimi, `aria-live` hata bö
    durumudur; test (`Testing`/Staging) ve canlı (Production) ortamda liste kapatılamaz ve varsayılan/zayıf kimlik
    bilgisi hiç kabul edilmez.
 4. **Yerel Development istisnası (KIM-D6, 8. tur):** varsayılan/zayıf kimlik bilgisi yalnız karar sahibinin
-   belirttiği tek yerel geliştirme bilgisayarında (repoda kişi veya makine adı tutulmaz; tek makine sınırı teknik
-   değil prosedüreldir, uygulama makineyi tanımaz), yalnız Development ortamında, kullanıcı gizli ayarı
-   (user-secrets) ile kabul edilebilir; repoya, örnek dosyaya, seed'e,
+   belirttiği tek yerel geliştirme bilgisayarında (repoda kişi veya makine adı tutulmaz; yazar okuması: tek makine
+   sınırı teknik değil prosedüreldir, uygulama makineyi tanımaz), yalnız Development ortamında, kullanıcı gizli ayarı
+   (user-secrets) ile kabul edilir; repoya, örnek dosyaya, seed'e,
    `appsettings*`'e girmez; Development dışında hiç kabul edilmez. Bunu açan ayar
    (`Identity:LocalAccount:DevelopmentAllowWeakPassword=true`, öneri ad) yalnız yerel kullanıcı-gizli dosyasında
-   (`dotnet user-secrets`) durur; ortam değişkeni, `appsettings*` veya başka bir yapılandırma kaynağı kullanılmaz. Ayar Development dışında `true` ise uygulama
+   (`dotnet user-secrets`) durur; ortam değişkeni, `appsettings*` veya başka bir yapılandırma kaynağı kullanılmaz.
+   Bu teknik olarak uygulanır (yazar okuması, geri alınabilir teknik tasarım): startup kontrolü anahtarı
+   `IConfigurationRoot.Providers` içinde yalnız user-secrets sağlayıcısından (`secrets.json` kaynaklı JSON
+   sağlayıcısı) okur; anahtar başka bir sağlayıcıda (ortam değişkeni, komut satırı, `appsettings*`) bulunursa
+   değeri ne olursa olsun uygulama **başlamaz**. Ayar Development dışında `true` ise uygulama
    **başlamaz** (mevcut `DevelopmentBootstrap` startup kontrolünün deseni). İstisna yalnız madde 3'teki listeyi
    gevşetir; bootstrap yine operatörün etkileşimli girdiği parolayı ister (madde 2) ve ilk girişteki zorunlu
    değişim yine çalışır. Karar gereği başka kullanıcı bağlanmadan önce zayıf parola kalmaz; öneri uygulama:
@@ -652,7 +658,9 @@ kaynak dosyasında; klavye ile tam erişim, odak yönetimi, `aria-live` hata bö
      görünür.
    - Integration: `Production`/`Staging`/`Testing` ortamında `DevelopmentAllowWeakPassword=true` ile startup
      hatası; bu ortamlarda yasaklı listedeki parola hem bootstrap'ta hem zorunlu değişimde reddedilir; bootstrap ikinci
-     kez reddedilir; Development'ta `WeakPasswordAccepted` dururken ikinci kullanıcı oluşturma reddedilir.
+     kez reddedilir; Development'ta `WeakPasswordAccepted` dururken ikinci kullanıcı oluşturma reddedilir;
+     Development'ta anahtar ortam değişkeni, komut satırı veya `appsettings*` sağlayıcısından gelirse startup hatası,
+     yalnız user-secrets sağlayıcısından gelirse kabul.
    - Integration: boş veritabanında hiçbir giriş başarılı olmaz (bootstrap öncesi kullanıcı yok).
 
 ## Kabul senaryoları
@@ -846,7 +854,10 @@ And `TemporaryPassword*` alanları null olan normal hesapta yanlış parola `Fai
 çalışır, doğru parolayla giriş başarılıdır (null-güvenli koşullu `UPDATE`; başarısız ve başarılı girişte etkilenen
 satır sayısı tam `1`'dir); geçici parolayla girişte yeniden hash
 gerekse de aynı geçici parola ikinci kez kullanılamaz; TTL ayarı verilişten sonra değişse de süre saklanan
-`TemporaryPasswordExpiresAtUtc`'ye göre hesaplanır;
+`TemporaryPasswordExpiresAtUtc`'ye göre hesaplanır; giriş yolunun koşullu `UPDATE`'i başka kullanıcının satırını
+değiştirmez (aynı anda giriş yapan iki kullanıcıda her satır yalnız kendi sayacını/hash'ini alır);
+And başarılı girişteki yeniden hash ∥ `reset-password` yarışında girişin koşullu `UPDATE`'i 0 satır etkiler, giriş
+genel hatayla reddedilir ve sıfırlamanın yazdığı hash, `SecurityStamp` ve `TemporaryPassword*` değerleri aynen kalır;
 And onay beklerken kurucu adına başarısız giriş denemeleri koşumu `concurrent_change`'e düşürmez;
 And kurucu geçici parolayla girip değiştirmeden çıkarsa aynı geçici parolayla yeni giriş reddedilir;
 And iki eşzamanlı `reset-password` koşumundan biri başarılı olur, diğeri `identity.founder_recovery.concurrent_change`
@@ -871,7 +882,9 @@ doğrulanır); komut parolayı argüman, ortam değişkeni veya dosyadan kabul e
   `FounderDirect`, eşzamanlı çift teslim; tek atama ve tek `first_admin_assigned.v1`), `recover-founder` ret yolları (`founder_active`, `founder_inactive`,
   `not_needed`, alt yol yok, eşzamanlı yazma), `reset-password` bölünmüş Admin ön koşulu (çalışır / `not_needed`
   çifti), `not_needed` ile HTTP `password-reset` `200` sonucu (KIM-D16 çiti + KIM-D19 sonrası) parity testi, normal hesapta
-  null-güvenli koşullu `UPDATE` (sayaç/kilit çalışır; etkilenen satır tam `1`), TTL ayarı verilişten sonra değiştiğinde
+  null-güvenli koşullu `UPDATE` (sayaç/kilit çalışır; etkilenen satır tam `1`; başka kullanıcının satırı
+  değişmez), yeniden hash ∥ `reset-password` yarışında 0 satır ve sıfırlama değerlerinin korunması,
+  zayıf parola anahtarının yalnız user-secrets sağlayıcısından kabulü, TTL ayarı verilişten sonra değiştiğinde
   sürenin saklanan `TemporaryPasswordExpiresAtUtc`'ye göre hesaplanması, geçici parolada yeniden hash + tüketimin tek `UPDATE` olması, atamasız kurucuda Platform başarı
   olayı, geçici parolanın atomik tüketimi (iki eşzamanlı giriş), TTL ayarı yokken ret, başarısız girişin
   `Version`'ı değiştirmediği, iki eşzamanlı `reset-password` (biri `concurrent_change`), iki alt yolun kilitli ön koşul yeniden doğrulaması, onay beklerken kilit
