@@ -202,7 +202,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for CI-HIZ: SHARD_MODULES gains a fourth SQL shard D (Sinan #66 2026-11-12, item 4;
     // wall-clock balance only); the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "56ecdce4e4316e050df3999e257c7824322f0f63ea3739badba0d1eaeb3219b6";
+        "301c30d994f8d3db23cfadf3de1f1a0df4646333620562448014f69740f2bfcf";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

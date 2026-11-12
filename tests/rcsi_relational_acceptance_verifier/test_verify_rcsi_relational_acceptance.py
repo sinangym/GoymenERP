@@ -869,24 +869,24 @@ class ShardedRelationalProofTests(unittest.TestCase):
     def test_shard_trx_refuses_missing_extra_theory_and_nonpassed_results(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "shard.trx"
-            expected = VERIFIER.shard_executions("C")
+            expected = VERIFIER.shard_executions("B")
             path.write_text(broad_trx(expected), encoding="utf-8")
-            VERIFIER.verify_shard_trx_results(path, "C")
+            VERIFIER.verify_shard_trx_results(path, "B")
             multi = next(name for name, count in expected.items() if count > 1)
             for delta in (-1, 1):
                 broken = dict(expected)
                 broken[multi] += delta
                 path.write_text(broad_trx(broken), encoding="utf-8")
                 with self.subTest(delta=delta), self.assertRaisesRegex(RuntimeError, "exact"):
-                    VERIFIER.verify_shard_trx_results(path, "C")
+                    VERIFIER.verify_shard_trx_results(path, "B")
             missing = dict(expected)
             missing.pop(next(iter(missing)))
             path.write_text(broad_trx(missing), encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "exact"):
-                VERIFIER.verify_shard_trx_results(path, "C")
+                VERIFIER.verify_shard_trx_results(path, "B")
             path.write_text(broad_trx(expected, outcome="NotExecuted"), encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "not Passed"):
-                VERIFIER.verify_shard_trx_results(path, "C")
+                VERIFIER.verify_shard_trx_results(path, "B")
 
     def test_aggregate_requires_exact_proofs_and_successful_workers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
