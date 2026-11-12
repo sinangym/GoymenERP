@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-12 (Üretim: başlamış üretim emrinde düzeltme ve iptal (F-009); elle termin (F-010))
 
-Bu belge önceki karar dosyalarını silmez. URT-D28…URT-D34'ü ekler. URT-D1…URT-D27 geçerli kalır
+Bu belge önceki karar dosyalarını silmez. URT-D28…URT-D36'yı ekler. URT-D1…URT-D27 geçerli kalır
 (`SINAN_KARARLARI_2026-11-01_URETIM.md`, `…_2026-11-02_URETIM_EK1.md`, `…_EK2.md`, `…_EK3.md`). Ana dosyanın §0 yetki ve
 sınır kuralları aynen geçerlidir. `KARAR_SICILI` satırı eklemez.
 
@@ -29,8 +29,13 @@ Finans'ın işidir.
 [`6820601088`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820601088) (11. tur) madde 2. Geri alınan
 çıktı, kendi giriş birim maliyetiyle ters hareketle stoktan çıkar. Kalan stoğun ortalaması yeniden hesaplanır. Geçmiş
 geriye dönük düzeltilmez. Bu kural Stok'undur. Hangi karar dosyasına ve kimliğe yazılacağı Stok + Üretim için
-`NEEDS-SPEC`'tir (`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`, Seçilmeyenler). Bu belge de
-kimlik açmaz, yalnız atıf verir (URT-D32).
+`NEEDS-SPEC`'tir (`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`, Seçilmeyenler). Bu kuralın
+yeniden açılan emre uygulanışı 22. turda URT-D36 olarak kararlaştırıldı (aşağıda).
+
+**Kaynak (etiket seçimi ve ters hareket maliyeti):** Issue #66 yorumu
+[`6822949341`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822949341) ("SİNAN KARARI — 22. tur").
+Sorular `NEEDS-SPEC` [`6822790075`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822790075) ile
+soruldu (analiz §6, Stok ST-F009-D1 cevabı). Madde 1 URT-D35 olarak yazılır. Madde 2, 11. tur m.2'yi yeniden açılan emir için teyit eder ve iki kaynakla birlikte URT-D36 olarak yazılır.
 
 **Kaynak (fire maliyeti):** Aynı gün Issue #66 yorumu
 [`6818566934`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6818566934), madde 4. Stok şeridi bu maddeyi **SAT-D308** olarak
@@ -47,6 +52,9 @@ notu cevaplar. Burada karar olarak yeniden yazılmaz, yalnız Üretim tarafında
 | 4 (N2) | Sevk dışında başka emre girdi olarak verilmiş, transfer edilmiş veya satışa ayrılmış çıktı da kilitli sayılsın mı? | **Evet, hepsi kilitli** (önerilen) | Düzeltmeden önce o iş geri alınır: ayırma bırakılır, transfer geri alınır. |
 | 5 (N3) | Kapalı emirde düzeltme gerekirse emir yeniden açılabilsin mi? | **Yetkili kişi gerekçeyle yeniden açabilir** (önerilen) | Düzeltme ters kayıtla yapılır ve denetim kaydına düşer. Muhasebe dönemi kapanmışsa emir yeniden açılamaz. |
 | 6 (N4) | İptal edilen emrin planına ne olsun? | **Plan Onaylı'ya döner** (önerilen) | Aynı plandan yeniden üretim emri açılabilir. |
+| 7 (N5, 20. tur m.1) | İptalden sonra yeni emirde girdi nasıl ayrılsın? | **Yeni emirde yeniden ayır** (önerilen) | Plan Onaylı'ya döner. Yeni emir açılırken stok yeniden kontrol edilip ayrılır. Yetmezse emir açılmaz ve eksik girdiler açıkça gösterilir. |
+| 8 (22. tur m.1) | Emir açılırken girdi ürünü hangi etiketlerden ayrılır? | "Etiket önemli, kullanıcı kendisi seçer" (aynen) | Seçilmeyen: otomatik FIFO, planda kayıtlı etiketler. |
+| 9 (22. tur m.2) | Yeniden açılan emrin çıktısı hangi maliyetle ters harekete alınır? | "Emrin kendi maliyeti (Önerilen)" (aynen) | Seçilmeyen: güncel ortalama maliyet. |
 
 Sinan'ın 2. sorudaki metni (aynen):
 
@@ -82,24 +90,29 @@ emir iptal edilebilir.
 | URT-D31 | Kilitli çıktı (N2) | Sinan'ın sözü: sevk edilmiş çıktıya ek olarak **başka emre girdi olarak verilmiş, transfer edilmiş veya satışa ayrılmış** çıktı da kilitlidir. Düzeltmeden önce o iş geri alınır (ayırma bırakılır, transfer geri alınır). **Yazar okuması (geri alınabilir):** bu işleri Üretim kendisi geri almaz, kendi modüllerinin komutları yapar. | Stok etiket durum okuma portu; analiz §4.2, §4.5 |
 | URT-D32 | Kapalı emri yeniden açma (N3) | Sinan'ın sözü: kapalı üretim emrini **yetkili kişi gerekçeyle yeniden açabilir**. Düzeltme ters kayıtla yapılır ve denetim kaydına düşer. **Muhasebe dönemi kapanmışsa** emir yeniden açılamaz. Yeni yetki adı yalnız kayıt olarak eklenir; grant insan kapısıdır. Dönemin nasıl okunacağı §Sınırlar'dadır. Yeniden açılan emirde geri alınan çıktının Stok maliyeti 11. tur m.2'ye bağlıdır (Kaynak). | Üretim emir aggregate'i; analiz §4.6; yeni yetki adı |
 | URT-D33 | İptal edilen emrin planı (N4) | Sinan'ın sözü: emir iptal edilince plan **Onaylı'ya döner** ve aynı plandan yeniden üretim emri açılabilir. **URT-D1 ile ilişkisi:** URT-D1 "tek plan = tek emir" der. URT-D33 daha yeni karardır ve URT-D1'i iptal edilmiş emir için daraltır. **Yazar okuması (geri alınabilir):** bir planın aynı anda en çok bir **iptal edilmemiş** emri olur. İptal edilmiş emirler planın geçmişinde kalır. Bugünkü kodda bu kural tam tekil indeksle (`ManufacturingDbContext.cs:508`, `(CompanyId, PlanId)` unique) ve `PlanOrderExists` ret koduyla tutulur. D5, iptal edilmemiş emirle sınırlı filtreli tekil indekse geçer: migration, forward-fix Down ve yarış testi gerekir, K3'tür (analiz §4.7, §5). | Üretim planı ve emri; analiz §4.7 |
-| URT-D34 | İptal sonrası yeni emirde girdi ayırması (20. tur m.1) | Sinan'ın sözü: **yeni emirde yeniden ayrılır**. Plan Onaylı'ya döner. Yeni emir açılırken stok yeniden kontrol edilip ayrılır. Yetmezse emir açılmaz ve eksik girdiler açıkça gösterilir. Ayırma Stok'un ayırma portu üzerinden yapılır ve fail-closed'dır: port okunamazsa emir açılmaz. Cross-module sözleşme ve stok kuralı olduğu için K3'tür. | Üretim emir açma; Stok ayırma portu; analiz §4.7 |
+| URT-D34 | İptal sonrası yeni emirde girdi ayırması (20. tur m.1) | Sinan'ın seçtiği seçenek: **Yeni emirde yeniden ayır** (önerilen). Açıklaması: plan Onaylı'ya döner; yeni emir açılırken stok yeniden kontrol edilip ayrılır; yetmezse emir açılmaz ve eksik girdiler açıkça gösterilir. **Yazar okuması (geri alınabilir; mimari değişmezden ve K3 tanımından gelir, politika seçmez):** ayırma Stok'un ayırma portu üzerinden yapılır ve fail-closed'dır: port okunamazsa emir açılmaz. Cross-module sözleşme ve stok kuralı olduğu için K3'tür. | Üretim emir açma; Stok ayırma portu; D5'te emir/kuşak başına ayırma kimliği ve `PlanInputAllocations` şema değişikliği (K3); analiz §4.7 |
+| URT-D35 | Emir açılırken girdi etiketinin seçimi (22. tur m.1) | Sinan'ın sözü: "Etiket önemli, kullanıcı kendisi seçer". Koordinatör okuması (lafzi): emir açılırken her girdi ürünü için ayrılacak etiketleri **kullanıcı seçer**; sistem otomatik FIFO veya planda kayıtlı etiket seçimi yapmaz. URT-D34 aynen sürer: seçilen etiketlerin serbest kg'ı ihtiyacı karşılamıyorsa emir açılmaz, eksik girdi/kg gösterilir; kısmi ayırma yoktur, ayırma all-or-nothing ve fail-closed'dır. Ekrandaki etiket/serbest kg listesi (Stok'un önerdiği yan etkisiz okuma portu) bu kararın aracıdır, karar kaynağı değildir; nihai kontrol Stok'un ayırma komutundadır. Seçilmeyen: otomatik FIFO, planda kayıtlı etiketler. Cross-module, K3. | Üretim emir açma ekranı ve komutu; Stok Free kg okuma portu ve ayırma komutu; analiz §4.7, §6 |
+| URT-D36 | Yeniden açılan emrin çıktısının ters hareket maliyeti (11. tur m.2; 22. tur m.2 teyit) | İki kaynak birlikte: (a) 11. tur m.2 ([`6820601088`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820601088)): "Kendi giriş maliyetiyle ters hareket"; geri alınan çıktı kendi giriş birim maliyetiyle ters hareketle stoktan çıkar, kalan stoğun ortalaması yeniden hesaplanır, **geçmiş çıkış maliyetleri geriye dönük düzeltilmez**. (b) 22. tur m.2 ([`6822949341`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822949341)) aynı kuralı yeniden açılan emir için teyit eder: "Emrin kendi maliyeti (Önerilen)". İçerik aynıdır; 22. tur yeni bir kural koymaz. Anlamı: geri alınan çıktı, **girişte kaydedildiği maliyetle aynen** ters harekete alınır; kalan stoğun ortalaması bu girişin etkisi çıkarılarak yeniden hesaplanır (deterministik backend calculator). Geçmiş çıkış maliyetleri geriye dönük düzeltilmez. URT-D8 aynen sürer: maliyeti ortalamaya girmiş emir yeniden açılmaz. Ters hareket ve ortalama hesabı Stok'un kodudur; Üretim yalnız komutu tetikler. Seçilmeyen: güncel ortalama maliyet. Para ve stok değeri etkisi olduğu için K3; kod PR'ı golden örnek taşır. | Stok ters hareketi ve ortalama calculator'ı; Üretim yeniden açma (D8); analiz §4.6 |
 
 ## Bağlı kararlar (başka şeridin kimliği)
 
 | Kimlik | Karar | Üretim tarafındaki uygulama |
 |---|---|---|
-| SAT-D308 (#1108; SAT-D307 (3) notunu cevaplar) | Fire maliyete yükleme anahtarı **kapalıyken** fire ürün maliyetine yüklenmez; **ayrı fire/dönem gideri** olarak raporlanır. Anahtar açıkken SAT-D307 (1)-(2) geçerlidir. Hesap eşlemesi `NEEDS-SPEC`; gelene kadar gider kaydı açılmaz, yalnız raporlanır. | Üretim alış maliyeti hesaplayıcısının anahtar kapalı yolu SAT-D308'e göre yazılır. Bu belge formül yazmaz. Formül `NEEDS-SPEC`'tir: ChatGPT golden örneği ve gerekirse `NEEDS-SINAN` ile gelir. Kod PR'ı K3'tür ve golden örnek taşır. Fire tutarının Stok ortalamasında ve maliyet portunda nasıl taşınacağı Stok'un kararıdır (SAT-D308 (5)–(6)); burada yazılmaz. |
+| SAT-D308 (#1108; SAT-D307 (3) notunu cevaplar) | Fire maliyete yükleme anahtarı **kapalıyken** fire ürün maliyetine yüklenmez; **ayrı fire/dönem gideri** olarak raporlanır. Anahtar açıkken SAT-D307 (1)-(2) geçerlidir. Hesap eşlemesi `NEEDS-SPEC`; gelene kadar gider kaydı açılmaz, yalnız raporlanır (SAT-D308 (5)–(6) kaynakta "yazarın okumasıdır, geri alınabilir" etiketlidir). | Üretim alış maliyeti hesaplayıcısının anahtar kapalı yolu SAT-D308'e göre yazılır. Bu belge formül yazmaz. Formül `NEEDS-SPEC`'tir: ChatGPT golden örneği ve gerekirse `NEEDS-SINAN` ile gelir. Kod PR'ı K3'tür ve golden örnek taşır. Fire tutarının Stok ortalamasında ve maliyet portunda nasıl taşınacağı Stok'un işidir (SAT-D308 karar dosyası, "SAT-D308 — Üretim maliyet portu dilimi"); burada yazılmaz. |
 
 ## Sınırlar
 
-- URT-D28'in açık bıraktığı dört soru (N1–N4) URT-D30…URT-D33 ile cevaplandı. Bunlardan doğan yeni emirde ayırma sorusu URT-D34 ile cevaplandı. Çıktı ürün satırının bugünkü kodda
+- URT-D28'in açık bıraktığı dört soru (N1–N4) URT-D30…URT-D33 ile cevaplandı. Bunlardan doğan yeni emirde ayırma sorusu URT-D34 ile, etiket seçimi URT-D35 ile, yeniden açılan emirde ters hareket maliyeti URT-D36 ile cevaplandı. Çıktı ürün satırının bugünkü kodda
   karşılığı olmaması (çıktı beyanı plan çıktı satırına bağlı değil) bir uygulama ayrıntısıdır; analiz belgesi §3'te
   `ASSUMPTION-URT-F009-1` olarak yazılır ve geri alınabilir.
 - "Muhasebe dönemi kapalı" bilgisinin sahibi Muhasebe'dir. Yeni port açılmaz. Üretim, main'deki
   `IAccountingPeriodStatusPortV1`'i (`src/backend/Modules/Accounting/…/Contracts/IAccountingPeriodStatusPortV1.cs`) kullanır.
   Port bir tarih için `Open` / `NotOpen` / `None` / `Denied` döner (Finans planı: `FINANS_F018_KREDI_LIMITI_PLANI_v1.md` §3,
-  Üretim satırı). Yeniden açma yalnız `Open`'da yapılır. `NotOpen` "dönem kapalı" diye reddedilir. `None` ve `Denied` ayrı
-  ret kodlarıyla reddedilir (fail-closed). **`Denied` "dönem kapalı" diye gösterilmez.** Port aktörün `accounting.periods.read`
+  Üretim satırı). **Eşleme yazar okumasıdır (fail-closed, geri alınabilir):** yeniden açma yalnız `Open`'da yapılır. `NotOpen` reddedilir;
+  port belgesine göre `NotOpen` önerilmiş (onaylanmamış) veya kapalı dönemi kapsar, bu yüzden ret kodu nötr adlandırılır
+  ("muhasebe dönemi açık değil") ve ret metni portun `Status` alanına göre `Proposed` ile `Closed`'u ayırır. Sinan'ın
+  kuralı yalnız kapalı dönemi söyler; `Proposed` ve `None`'da ret kuralı fail-closed yönde daraltır. `None` ve `Denied` ayrı
+  ret kodlarıyla reddedilir. **`Denied` "dönem kapalı" diye gösterilmez.** Port aktörün `accounting.periods.read`
   yetkisiyle okur. Üretim kullanıcısına bu yetkinin verilmesi grant kararıdır (insan kapısı). Hangi tarihin dönemi
   belirlediği Üretim'in kuralıdır (analiz §4.6).
 - Yeni yetki adları (düzeltme, iptal, yeniden açma) yalnız kayıt olarak eklenir. Rol, grant ve Critical işaretleme insan kapısıdır.
