@@ -250,6 +250,22 @@ export interface ProductionPlanView {
    * never a name.
    */
   readonly preparedBy: string | null
+  /** U2-b / API-16 (SAT-D219): the approved sales order line the plan supplies; null when none or legacy JSON. */
+  readonly salesOrderLink: PlanSalesOrderLinkView | null
+  /** U2-b: how many times the link was set or removed; the next link request sends it back. 0 for legacy JSON. */
+  readonly salesOrderLinkRevision: number
+}
+
+/** U2-b: the sales order line as Sales answered for it when the link was made, and who linked it, when (an id only). */
+export interface PlanSalesOrderLinkView {
+  readonly salesOrderId: string
+  readonly salesOrderLineId: string
+  readonly customerPartyId: string
+  readonly customerAccountId: string
+  readonly productId: string
+  readonly lineRevision: number
+  readonly linkedBy: string
+  readonly linkedAtUtc: string
 }
 
 export interface ProductionOrderView {
@@ -745,6 +761,13 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   const cancellation = decodeCancellation(body.cancellation)
   const processSpec = decodePlanProcessSpec(body.processSpec)
   const preparedBy = decodePreparedBy(body.preparedBy)
+  const salesOrderLink = decodePlanSalesOrderLink(body.salesOrderLink)
+  const salesOrderLinkRevision = body.salesOrderLinkRevision === undefined
+    ? 0
+    : typeof body.salesOrderLinkRevision === 'number' && Number.isSafeInteger(body.salesOrderLinkRevision)
+      && body.salesOrderLinkRevision >= 0
+      ? body.salesOrderLinkRevision
+      : undefined
   if (
     planId === null ||
     companyId === null ||
@@ -762,6 +785,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     cancellation === undefined ||
     processSpec === undefined ||
     preparedBy === undefined ||
+    salesOrderLink === undefined ||
+    salesOrderLinkRevision === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved' && body.status !== 'Cancelled') ||
@@ -777,6 +802,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   if (approvedByUserId === null && parameterSnapshot !== null) return null
   if (body.status !== 'Approved' && orderId !== null) return null
   if ((body.status === 'Cancelled') !== (cancellation !== null)) return null
+  // CK_Plans_SalesOrderLinkRevision: a link exists only after at least one link change.
+  if (salesOrderLink !== null && salesOrderLinkRevision === 0) return null
   const inputs: PlannedInput[] = []
   for (const raw of body.inputs) {
     const input = decodePlannedInput(raw)
@@ -819,6 +846,50 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     cancellation,
     processSpec,
     preparedBy,
+    salesOrderLink,
+    salesOrderLinkRevision,
+  }
+}
+
+const SALES_ORDER_LINK_KEYS = [
+  'salesOrderId',
+  'salesOrderLineId',
+  'customerPartyId',
+  'customerAccountId',
+  'productId',
+  'lineRevision',
+  'linkedBy',
+  'linkedAtUtc',
+] as const
+
+/**
+ * U2-b / API-16: an omitted member or null is no link (legacy JSON, an unlinked plan). Otherwise exactly these eight keys:
+ * non-empty ids, a non-negative line revision, the linking actor id (as the preparer) and an instant. Anything else is
+ * `undefined` and refuses the plan.
+ */
+function decodePlanSalesOrderLink(value: unknown): PlanSalesOrderLinkView | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, SALES_ORDER_LINK_KEYS)) return undefined
+  const salesOrderId = guid(value.salesOrderId)
+  const salesOrderLineId = guid(value.salesOrderLineId)
+  const customerPartyId = guid(value.customerPartyId)
+  const customerAccountId = guid(value.customerAccountId)
+  const productId = guid(value.productId)
+  const linkedBy = decodePreparedBy(value.linkedBy)
+  const linkedAtUtc = nullableInstant(value.linkedAtUtc)
+  if (salesOrderId === null || salesOrderLineId === null || customerPartyId === null || customerAccountId === null
+    || productId === null || linkedBy === undefined || linkedBy === null || linkedAtUtc === undefined
+    || linkedAtUtc === null || typeof value.lineRevision !== 'number' || !Number.isSafeInteger(value.lineRevision)
+    || value.lineRevision < 0) return undefined
+  return {
+    salesOrderId,
+    salesOrderLineId,
+    customerPartyId,
+    customerAccountId,
+    productId,
+    lineRevision: value.lineRevision,
+    linkedBy,
+    linkedAtUtc,
   }
 }
 
