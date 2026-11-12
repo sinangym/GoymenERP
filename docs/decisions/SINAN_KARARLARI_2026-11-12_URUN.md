@@ -1,7 +1,7 @@
 # Sinan Kararları — 2026-11-12 (Ürün modülü açılışı B-06 / F-003; politika katalogları F-029)
 
 Bu belge önceki karar dosyalarını silmez; Ürün modülünün **test ortamında** açılma koşulunu
-(`URN-D1`) ve F-029 politika kataloglarının yönetim kurallarını (`URN-D2`–`URN-D5`) ekler. Önceki Ürün/birim kararları (#66 6810163182 m.21 ve m.24 dahil) aynen geçerlidir.
+(`URN-D1`) ve F-029 politika kataloglarının yönetim kurallarını (`URN-D2`–`URN-D6`) ekler. Önceki Ürün/birim kararları (#66 6810163182 m.21 ve m.24 dahil) aynen geçerlidir.
 `URN-D*` yeni bir seridir; daha önce Ürün alanına ait bir karar kimliği serisi yoktu.
 
 **Kaynak:** Sinan, Issue #66, 2026-11-12, yorum
@@ -32,6 +32,16 @@ Madde 2'deki serbest metin aynen: "Yetkili tek kişi, ilgili müdürler". Aynı 
 Aynı yorumun 1, 3 ve 4. maddeleri (F-001 Critical listesi, F-023 ret görünürlüğü ve toplulaştırma) başka
 şeritlerindir ve bu dosyaya yazılmamıştır.
 
+**Kaynak (F-029 N6):** Sinan, Issue #66, 2026-11-12, 14.–15. tur, koordinatör oturumunda AskUserQuestion ile alındı,
+yorum [6820838938](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820838938), madde 6. Soru Ürün
+şeridinin NEEDS-SINAN yorumundandır
+([6820502714](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820502714)). Metin aynen:
+
+> "6. **F-029 N6:** 9. tur URN-D3 (yetkili müdür tek başına yayımlar, ikinci onay yok, denetim kaydı var) **üretim parametre ve tolerans profillerine de uygulanır**. Ekranda tek akış olur."
+
+Aynı yorumun 1–5. maddeleri (ID-02b, ID-03b, ID-06b, ID-05, ID-07b kimlik kuralları) AI Merkezi şeridinindir ve bu
+dosyaya yazılmamıştır.
+
 ## Soru ve cevaplar
 
 | # | Soru | Cevap | Seçilen seçeneğin açıklaması |
@@ -42,6 +52,7 @@ Aynı yorumun 1, 3 ve 4. maddeleri (F-001 Critical listesi, F-023 ret görünür
 | 4 | F-029 N3: Bir değer geçmiş tarihten geçerli olabilir mi? | **Geçmişe etki yok** — yeni değer yalnız bugünden ileri geçerli; geçmiş tarihten geçerlilik yok. | Önerilen seçenek: `ValidFrom` yalnız bugün veya ileri bir iş tarihi olabilir. Seçilmeyen: geçmiş tarihten geçerlilik (kapalı dönemle etkileşim kuralıyla). |
 | 5 | F-029 N5: Bir değer değişince bekleyen belgeler yeniden değerlendirilsin mi? | Onay bekleyen belgeler eski değerle kalır, **yeniden hesaplanmaz**. | Önerilen seçenek: yeni değer yalnız yayımlandıktan sonraki komutlara uygulanır. Seçilmeyen: bekleyen belgelerin yeni değerle yeniden değerlendirilmesi veya bildirim/ek onay. |
 | 6 | F-029 N4: Kodda duran C sınıfı başlangıç değerleri (S7, S8, S10, S11) tabloya bir kez aktarılsın mı, derlenmiş fallback olarak mı kalsın? | Başlangıç değerleri **değer değişmeden, denetim kaydıyla bir kez tabloya aktarılır**; sonra tek kaynak tablodur. | Önerilen seçenek: idempotent, değer değiştirmeyen, denetimli tek seferlik aktarım; aktarımdan sonra derlenmiş katalog kaynak olmaz. Seçilmeyen: derlenmiş katalogun sürüm 0 tabanı/fallback olarak kalması. |
+| 7 | F-029 N6: URN-D3 (tek yetkili müdür, ikinci onay yok) mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı? | URN-D3 **üretim parametre ve tolerans profillerine de uygulanır**; ekranda tek akış olur. | Önerilen seçenek: bütün politika kataloglarında tek akış (yetkili müdür hazırlar ve yayımlar, denetim kaydı). Seçilmeyen: üretim profillerinde hazırlayan ≠ onaylayan ayrımının korunması. |
 
 ## Kararlar
 
@@ -54,6 +65,7 @@ Aynı yorumun 1, 3 ve 4. maddeleri (F-001 Critical listesi, F-023 ret görünür
 | URN-D3 | F-029: değişiklik yetkisi | Politika değerini **ilgili alanın yetkili müdürü tek başına** hazırlar ve yayımlar; ikinci onaylayıcı (maker ≠ checker) aranmaz. Her değişiklik denetim kaydı bırakır (aktör, zaman, eski/yeni sürüm, gerekçe). İzin adları kaydedilir; hangi kişinin/rolün "ilgili müdür" olduğu grant/rol insan kapısıdır, ajan atamaz. "İlgili müdür" ifadesinin yetki modeline çevrilmesi (politika başına ayrı yayımla izni) koordinatör okumasıdır (geri alınabilir). | Settings komutları, `ErpPermissions` (yalnız ad kaydı) |
 | URN-D4 | F-029: geçmişe etki | Yeni değer yalnız **bugünden ileri** geçerlidir: `ValidFrom` bugünden önce olamaz. Yayımlanmış değer, yalnız yayımdan sonraki komutlara uygulanır. Onay bekleyen ve geçmiş belgeler hesaplandıkları değeri korur; **yeniden hesaplanmaz**, bildirim veya ek onay üretilmez. | Settings sağlayıcıları; Satış, Alış, Üretim, Finans tüketici snapshot'ları |
 | URN-D5 | F-029: başlangıç değerlerinin aktarımı | Kodda duran başlangıç değerleri (vergi kalem tipi, vergi alıcı durumu, üretim parametre ve toleransları; envanter S7, S8, S10, S11) **değer değişmeden** ve **denetim kaydıyla** bir kez tabloya aktarılır. Aktarımdan sonra tek kaynak tablodur; derlenmiş katalog fallback olarak kullanılmaz. Aktarımın tekniği (idempotent aktarım komutu veya migration, sağlayıcı yanıtlarının bayt bayt eşitlik testi) uygulama ayrıntısıdır (geri alınabilir). | Settings ve Üretim sağlayıcıları, F029-C dilimi |
+| URN-D6 | F-029: üretim profillerinde tek akış | URN-D3 üretim parametre ve tolerans profillerine (S10, S11) de uygulanır: ilgili yetkili müdür tek başına hazırlar ve yayımlar, ikinci onay aranmaz, denetim kaydı tutulur; ekranda bütün kataloglar için tek akış vardır. Mevcut hazırla/onayla kayıtları geçmiş olarak korunur; geriye dönük işlem yapılmaz (URN-D4). Mevcut `approve` izninin ve durumunun nasıl emekliye ayrılacağı (izin adı korunup kullanılmaz hale gelmesi veya forward-fix migration) uygulama ayrıntısıdır (geri alınabilir); grant değişikliği insan kapısıdır. | Settings üretim profil komutları ve izinleri, F029-C dilimi |
 
 ## Sınırlar
 
@@ -64,8 +76,7 @@ Aynı yorumun 1, 3 ve 4. maddeleri (F-001 Critical listesi, F-023 ret görünür
 - Pilot ürün verisinin kim tarafından, hangi kaynaktan, hangi kapsamda (kaç aile/ebat) girileceği bu kararda yoktur:
   `NEEDS-SINAN: Pilot ürün verisi kimin tarafından, hangi kaynak/kapsamla girilir? URN-D1 koşulu (b) ne zaman sağlanmış sayılır?`
 - URN-D5 yalnız mevcut değerlerin aktarımıdır; hiçbir değer, eşik veya tolerans değiştirilmez ya da yeni seçilmez.
-- URN-D3, mevcut üretim parametre ve tolerans profillerindeki (S10/S11) prepare/approve ayrımını bu dosyayla
-  değiştirmez. Bu profillerin de tek yetkili kişi akışına geçirilip geçirilmeyeceği ayrı sorudur:
-  `NEEDS-SINAN: URN-D3 (tek yetkili müdür, ikinci onay yok) mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı?`
+- URN-D6 kod değişikliği değildir; S10/S11 akışını teke indiren dilim (F029-C) ayrı K3 PR'dır ve migration/izin
+  etkisini kendi review'unda taşır.
 - İnsan kapıları değişmez: deployment, environment, secret, Settings → Actions'ta workflow etkinleştirme,
   grant/rol/Critical, ilk Admin oluşturma, production aktivasyonu, `OPEN-*` kapatma ve `.claude/settings.json`.

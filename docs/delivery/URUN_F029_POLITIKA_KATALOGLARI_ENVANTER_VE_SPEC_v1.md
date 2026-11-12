@@ -143,7 +143,8 @@ modüllerde kod değişmez. Değişirse V2 port açılır ve V1 korunur.
 3. **F029-S3:** para profili. Birim fiyat ölçeği para hesabını etkiler; K3 kapsamındadır ve iki review gerekir.
 4. **F029-S1/S2:** birim profili ve birim kimliği. Ürün B-07/B-08/B-09 tüketir; bunun için Ürün şeridiyle sözleşme
    gerekir (öneri P2).
-5. **F029-C:** C sınıfı tabanların değer değişmeden, denetimli tek seferlik aktarımı (URN-D5).
+5. **F029-C:** C sınıfı tabanların değer değişmeden, denetimli tek seferlik aktarımı (URN-D5); S10/S11'de
+   hazırla/onayla/yayımla akışının hazırla → yayımla tek akışına indirilmesi (URN-D6).
 
 ### 5.5 Sabit şirket kimlikleri
 
@@ -167,8 +168,9 @@ Sorular Issue #66'ya NEEDS-SINAN olarak yazıldı
 ([6819528621](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6819528621)); N1, N2, N3 ve N5 Sinan'ın 9.
 tur kararıyla ([6820161788](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820161788)), N4 10. tur
 kararıyla ([6820237902](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820237902)) cevaplandı ve
-`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` içinde URN-D2–URN-D5 olarak kayıtlıdır. N6 bu turlardan sonra
-sorulmuştur ([6820502714](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820502714)).
+`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` içinde URN-D2–URN-D5 olarak kayıtlıdır. N6 sonradan sorulmuş
+([6820502714](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820502714)) ve 14.–15. tur kararıyla
+([6820838938](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820838938) m.6) URN-D6 olarak cevaplanmıştır.
 
 | No | Soru | Durum |
 |---|---|---|
@@ -177,10 +179,11 @@ sorulmuştur ([6820502714](https://github.com/sinangym/goymenerp/issues/66#issue
 | N3 | Yayımlanan bir değer geçmiş tarihten geçerli olabilir mi? | **Karar (URN-D4):** hayır; yalnız bugünden ileri. |
 | N4 | C sınıfı tabanlar (S7, S8, S10, S11) tabloya tek seferlik "sürüm 0" olarak aktarılsın mı, yoksa derlenmiş fallback olarak mı kalsın? | **Karar (URN-D5):** değer değişmeden, denetim kaydıyla bir kez tabloya aktarılır; sonra tek kaynak tablodur. |
 | N5 | Değer değişince bekleyen belgeler yeniden değerlendirilsin mi? | **Karar (URN-D4):** hayır; onay bekleyen belgeler eski değerle kalır. |
-| N6 | URN-D3 mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı? | **Açık** (NEEDS-SINAN). O zamana kadar bu profillerin mevcut akışı değişmez. |
+| N6 | URN-D3 mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı? | **Karar (URN-D6):** evet; üretim profilleri de tek akış (yetkili müdür hazırlar ve yayımlar, ikinci onay yok, denetim kaydı). Mevcut hazırla/onayla kayıtları geçmiş olarak kalır, geriye dönük işlem yok. |
 
-Bütün dilimler (F029-C dahil) URN-D2–D5 ile açılabilir; her dilim yine ayrı K3 PR'dır. N6 cevaplanana kadar S10/S11
-üretim profillerinin hazırla/onayla akışı değiştirilmez; F029-C bu profillerde yalnız değer aktarır.
+Bütün sorular cevaplanmıştır. Bütün dilimler (F029-C dahil) URN-D2–D6 ile açılabilir; her dilim yine ayrı K3
+PR'dır. F029-C, S10/S11'de değer aktarımına ek olarak akışı da teke indirebilir; mevcut `approve` izni ve kayıtları
+forward-fix ile emekliye ayrılır, silinmez; grant değişikliği insan kapısıdır.
 
 ## 7. Port / sözleşme önerileri (ilgili şeritlere)
 
