@@ -61,7 +61,10 @@ def validate_lease(root: Path, profile: str, path: Path, expected_head: str) -> 
     if path.stat().st_size > 4096:
         raise ValueError("Invalid launcher lease size")
     lease = json.loads(path.read_text(encoding="utf-8-sig"))
-    if (lease.get("host") != "DESKTOP-11CDRHD" or lease.get("status") != "ACTIVE"
+    configured_host = os.environ.get("GOYMEN_LOCAL_CI_HOST", "")
+    if not configured_host:
+        raise ValueError("GOYMEN_LOCAL_CI_HOST is not configured; local lease check fails closed")
+    if (lease.get("host") != configured_host or lease.get("status") != "ACTIVE"
             or lease.get("repository") != str(root) or lease.get("expectedHead") != expected_head
             or lease.get("profile") != profile or lease.get("nonce") != path.stem[6:]):
         raise ValueError("Launcher lease context mismatch")
