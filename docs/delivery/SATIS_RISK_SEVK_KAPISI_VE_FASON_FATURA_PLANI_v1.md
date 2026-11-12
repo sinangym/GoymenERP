@@ -190,8 +190,8 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   merge `26ad52f7`).
 - **Hata (L-7):** port hatası veya zaman aşımı → sevk kaydı yazılmaz (503 benzeri ret), ret kaydedilmez; yeniden deneme kullanıcının aynı
   idempotency anahtarıyla komutu yeniden yürütür; otomatik tekrar yok. Kapının 409 reddi ise terminaldir: kaydedilir, aynı
-  anahtar aynı reddi döner, yeniden okuma yeni anahtar ister (Okuma anı). Karışık durumda bütün siparişler değerlendirilir
-  (ilk 409'da kısa devre yok); bir 503 varsa 503 kazanır, hiçbir şey kaydedilmez. Testler: 409 sonrası aynı anahtar aynı ret;
+  anahtar aynı reddi döner, yeniden okuma yeni anahtar ister (Okuma anı). Karışık durumda (koordinatör kararı r2) bütün siparişler
+  değerlendirilir (ilk 409'da kısa devre yok); bir 503 varsa 503 kazanır, hiçbir şey kaydedilmez. Kapsam: fason teslim zaten hep-ya-hiçtir; satış sevkinde tek 503 bütün talimatın sevk kaydını durdurur, L-4 bağımsızlığı yalnız 409'lar içindir. Testler: 409 sonrası aynı anahtar aynı ret;
   503 sonrası aynı anahtar yeniden yürür, kayıt yok; karışık 409 + 503 → 503, kayıt yok. `Unavailable` **sonucu** bir hata değildir: yalnız `Valid` istisna yoksa
   durur (SAT-D310).
 - **Dosyalar:** `SA/Contracts/ISalesShipmentRiskGateReadPortV1.cs` (yeni), `SI/Persistence/SalesShipmentRiskGateReadPort.cs`,
@@ -265,18 +265,24 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **Ne:** gelecek tedarikten ayrılmış satış satırı iptal edilir veya azaltılırsa Satış komutu aynı işlemde Stok bırakma
   portunu çağırır; artan gelecek ayırma kalmaz; audit'li. Satış, ayırma var diye "önce elle bırak" şartıyla reddetmez
   (seçilmeyen yön); ayırma yüzünden reddetmez, fail-closed, SAT-D104/D112 tabanı ve port hatası ayrı ret sebepleridir. Stok metni KLN-D28 (#1116), Stok modeli KLN-D26 (main `e165aaee`); X1 yalnız Satış tarafıdır.
-- **Ölçü (yazar okuması, #1116 rev4 §3.2 adım 5 ile hizalı):** yeni açık miktar = yeni satır miktarı − sevk
+- **Ölçü (yazar okuması, #1116 merge `1af6ffea` §3.2 adım 5 ile hizalı):** yeni açık miktar = yeni satır miktarı − sevk
   edilen/yüklenen toplam (SAT-D104/D112 tabanı); bırakılacak fazla = max(0, aktif fiziksel tahsis + aktif gelecek ayırma −
   yeni açık miktar) (koordinatörün 25. tur düzeltmesi, `6823547103`; SAT-D314 (1)). Golden: 100/40 sevk/60 gelecek → 80 ⇒
   20; fiziksel 10 + gelecek 10, 20 → 15 ⇒ gelecekten 5; 20 → 5 ⇒ gelecekten 10 + fiziksel 5 (ara dönemde ret). İptal bütün
   aktif gelecek ayırmayı bırakır. Satır kaldırma (koordinatör kararı r2; SAT-D167 metnini ve uygulama ayrıntısını değiştirmez): (a) satırda
   sevk/irsaliye, yükleme talimatı veya aktif fiziksel tahsis varsa → port çağrılmadan kalıcı Satış 422
   `sales_line_revision_line_shipped` (SAT-D167, EK24:52; README :792); (b) SAT-D167 anlamında sevk edilmemiş, yalnız gelecek
-  ayırmalı satır kaldırılır: Stok portuna yeni miktar 0 ile azaltma, bütün gelecek ayırma bırakılır (#1116 §5.1 (a)).
-  KLN-D32 (3) ara 409'u yalnız fiziksel bırakma gerektiren miktar azaltmadadır; satır kaldırmaya uygulanmaz.
+  ayırmalı satır kaldırılır: Stok portuna yeni miktar 0 ile azaltma, bütün gelecek ayırma bırakılır (#1116 §5.1 (c)).
+  Normal yol (a)'dır; KLN-D32 (3) ara 409'u fiziksel bırakma gerektiren azaltmaya aittir. *Yarış penceresi (koordinatör kararı
+  r3):* Satış (a) okumasını Stok kilitleri dışında yapar, fiziksel tahsis oluşturma satış satırı kilidini almaz (#1116 §3.2);
+  okuma ile port çağrısı arasında fiziksel tahsis oluşursa Stok kilit altında görür ve 0'a azaltma fiziksel bırakma
+  gerektirdiğinden ara 409 `inventory_future_allocation_physical_release_unavailable` döner (KLN-D32 (3)); bu 409 terminaldir
+  ((c) aşağıda). *Hizalama notu (koordinatör kararı r3):* main'deki #1116 metni (spec §5.1 (c), §8 "fiziksel tahsisli → 409";
+  KLN-D28 satır kaldırmada yalnız "sevkli → 422") bu ayrımdan sapar; Stok tarafı #1126 (açık) ile hizalanır. Hizalanana kadar
+  Satış ön-kapısı (a) geçerlidir.
 - **Sıra (SAT-D315, Sinan 23. tur):** birden çok alışa yayılan ayırmada en geç gelecek alıştan başlanır; fiziksel tahsis ve
   gelecek ayırma birlikteyse önce gelecek ayırma bırakılır; kullanıcının komuttaki açık seçimi varsayılandan üstündür.
-  Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31/KLN-D32 (#1116 head `19095be0`); sıra Stok portunda hesaplanır,
+  Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31/KLN-D32 (#1116 merge `1af6ffea`); sıra Stok portunda hesaplanır,
   Satış yalnız açık seçimi iletir. "En geç gelen" tarihi Alış `GetLineScheduleAsync`'ten okunur (Stok yazar okuması; #1110 F17-1b, #1101;
   KLN-D30 (2), (4)): teslim alınmamış en geç `DeliveryDate`; dilimsiz satır tarihsiz (en geç); `Unreadable`/hata → komut
   yazılmaz, 503 fail-closed. F017-s termin okuması (#1110/#1101) main'e gelmeden sürülmez. Gelecek ayırma yetmezse fazla fiziksel tahsisten otomatik bırakılır (Sinan 25. tur,
@@ -284,14 +290,18 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   "Fiziksel bırakma ekranı hazır olana kadar böyle bir azaltma reddedilir". *Koordinatör notu:* Sinan'ın "ekran" sözü aynen korunur; KLN-D32 (3) bunu "fiziksel bırakma yolu … main'e gelene kadar" diye okur. *Koordinatör/yazar fail-closed türetmesi (KLN-D32 (3)):* ret tamdır (açık fiziksel
   seçim dahil), hiçbir şey yazılmaz, gelecek ayırma da bırakılmaz. Reddi Stok portu #1116 §3.2 adım 0 kilitleri altında
   tespit eder; problem kodu (#1116 KLN-D32 (3), spec §7/§8; öneri kodu `inventory_future_allocation_physical_release_unavailable`, F017-s'de kesinleşir).
-- **Satış komut iskeleti (`k3-command-skeleton`; yazar önerisi):** (a) Satış Stok'a yeni açık miktarı, sevk tabanını ve
+- **Satış komut iskeleti (`k3-command-skeleton`; (a)/(b) yazar önerisi, (c) koordinatör kararı r2/r3):** (a) Satış Stok'a yeni açık miktarı, sevk tabanını ve
   açık seçimi iletir; bırakılacak miktarı ve sırayı Stok, #1116 §3.2 adım 0'daki alış satırı kilitleri altında hesaplar
   (RCSI anlık görüntüsünden değil); Satış miktar/sıra hesaplamaz. (b) Expected version + `Idempotency-Key`; replay ikinci
-  Stok çağrısı yapmaz. (c) **409** (KLN-D32 (3) ara red, KLN-D30 (3) seçim reddi): Satış revizyon/iptal komutunun kendi terminal
-  ret kaydıdır; Stok portu 409 için hiçbir şey yazmaz, tüm komut geri alınır; aynı anahtar Stok'u çağırmadan aynı reddi
-  döner, yeniden okuma (ör. fiziksel bırakma yolu geldikten sonra) yeni anahtar ister. **503** (bırakma portu hatası/zaman
-  aşımı, termin okuması `Unreadable`, Satış `revision_impact_unavailable`): kaydedilmez, aynı anahtar komutu yeniden
-  yürütür; aynı yürütmede 409 ve 503 birlikte doğarsa 503 geçer, hiçbir şey kaydedilmez. Stok'un problem kodu Satış
+  Stok çağrısı yapmaz. (c) **Terminal, kayıtlı:** 409 (KLN-D32 (3) ara red, yarış penceresi dahil; KLN-D30 (3) bayat seçim
+  `inventory_allocation_version_conflict`) ve 422 (KLN-D30 (3) fazlayı aşan seçim, öneri
+  `inventory_future_allocation_release_selection_invalid`; kayıt/replay sınıfı *yazar okuması*: karar (c) gibi terminal ve
+  kayıtlı). Bunlar Satış revizyon/iptal komutunun kendi terminal ret kaydıdır; Stok portu bunlar için hiçbir şey yazmaz,
+  tüm komut geri alınır; aynı anahtar Stok'u çağırmadan aynı reddi
+  döner, yeniden okuma (ör. fiziksel bırakma yolu geldikten sonra) yeni anahtar ister. **Terminal değil, kaydedilmez:** 503 (bırakma portu
+  hatası/zaman aşımı, termin okuması `Unreadable`, Satış `revision_impact_unavailable`) ve satış satırı kilidi meşgul 409
+  (#1116 spec §5.1 (c); kodu F017-s'te): aynı anahtar komutu yeniden yürütür. Aynı yürütmede terminal ret (409/422) ile
+  503 birlikte doğarsa 503 geçer, hiçbir şey kaydedilmez. Stok'un problem kodu Satış
   cevabına **aynen taşınır** (#1116 spec §7 "Satış problemine taşınır"; çevrilmez); kesin ad F017-s'te.
 - **Satış komutlarına eşleme:**
   - DEC-SAL-005 sipariş iptali (README :296-302): önizleme fiziksel tahsiste reddetmeye devam eder; gelecek ayırma
@@ -308,14 +318,17 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   aynı-işlem yazmadır (host participant; emsal `InventoryManufacturingRealizationParticipant.StagePlanRemainderReleaseAsync`).
 - **Fail-closed:** bırakma portu hata verir veya okunamazsa iptal/azaltma yazılmaz (aynı işlem); idempotent replay ikinci
   bırakma üretmez.
-- **Testler:** iptalde ayırma `Released`; azaltmada yalnız açık miktarı aşan kısım bırakılır; kısmi sevkli satırda
+- **Testler:** iptalde ayırma `Released` (önceden tüketim varsa `Consumed`, #1116 §4.1); azaltmada yalnız açık miktarı aşan kısım bırakılır; kısmi sevkli satırda
   azaltma (100/40 sevk/60 ayırma → 80: 20 bırakılır); aşan kısım birden çok ayırmaya yayılıyor, seçim yok → en geç
   gelen alışın ayırması önce bırakılır (30 t → 20 t; 15 Aralık 10 t / 5 Ocak 20 t → 5 Ocak'tan 10 t); seçim varsa seçim
   uygulanır; fiziksel tahsis + gelecek ayırma birlikte → önce gelecek ayırma bırakılır (fiziksel 10 + gelecek 10, 20 → 15: gelecekten
   5, fiziksel 10 kalır); fiziksel bırakma gereken azaltma (20 → 5 veya açık fiziksel seçim) ara dönemde tamamen reddedilir,
-  hiçbir şey yazılmaz; satır kaldırma: sevkli, yükleme talimatlı veya fiziksel tahsisli satır 422 `sales_line_revision_line_shipped` (Stok portu çağrılmaz), yalnız gelecek ayırmalı satır kaldırılır ve bütün ayırma `Released`; açık seçim fazlayı aşarsa ret (KLN-D30 (3)); termin okuması `Unreadable` → Satış komutu yazılmaz, 503; golden: dilimsiz alış satırı en geç sayılır; port hatasında satır değişmez; Stok reddi tüm komutu
+  hiçbir şey yazılmaz; satır kaldırma: sevkli, yükleme talimatlı veya fiziksel tahsisli satır 422 `sales_line_revision_line_shipped` (Stok portu çağrılmaz), yalnız gelecek ayırmalı satır kaldırılır, bütün ayırmanın kalanı 0 (durum #1116 §4.1'e göre `Released`/`Consumed`);
+  yarış: Satış okumasından sonra fiziksel tahsis oluşursa satır kaldırma ara 409, terminal kayıt, hiçbir şey yazılmaz; açık
+  seçim fazlayı aşarsa 422, terminal kayıt; bayat seçim 409 (KLN-D30 (3)); termin okuması `Unreadable` → Satış komutu yazılmaz, 503; golden: dilimsiz alış satırı en geç sayılır; port hatasında satır değişmez; Stok reddi tüm komutu
   geri alır, denetimde yalnız Satış'ın terminal ret kaydı; ara 409 sonrası aynı anahtar → aynı 409, Stok çağrısı yok; 503
-  sonrası aynı anahtar → komut yeniden yürür, kayıt yok; aynı yürütmede 409 + 503 → 503, kayıt yok; replay tek bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem) ve
+  sonrası aynı anahtar → komut yeniden yürür, kayıt yok; aynı yürütmede 409 + 503 veya 422 + 503 → 503, kayıt yok; satış satırı kilidi meşgul 409 → kayıt yok, aynı anahtar
+  yeniden yürür; replay tek bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem) ve
   gerçek-SQL yarış testleri "Satış azaltma/iptal × alış kabul dönüşümü" ve "Satış iptali/azaltması × oluşturma"
   (#1116 spec §8).
 - **Modül bağlantıları:** Stok bırakma portu (Stok → Satış tüketimi, ❌ #1116), gelecek ayırma okuma türü (❌ #1116 F017-s).
@@ -335,7 +348,7 @@ seçilmedi; kurallar FNS-D27 (4)/FNS-D30/SAT-D154/D160'tır.
 | L-4 | Anahtar | `(loadingInstructionId, orderId)`; sipariş başına ayrı sorgu; duran sipariş diğerlerini etkilemez. Talimatta tek müşteri. **Fason istisnası:** fason teslim talimat düzeyinde hep-ya-hiçtir (S2 Tüketiciler; #1115 `26ad52f7` spec 04:138-151). #1115 04:143-148 metni L-7'den sapar; #1122 ile hizalanıyor (koordinatör notu). |
 | L-5 | Tüketim/iptal | Satış kendi istisna kaydında tutar; Lojistik sevk commit'inde outbox olayı, iptalde ters olay yayınlar (S2b). |
 | L-6 | Ekran metni | Lojistik'te, resource dosyasında üç ayrı metin (aşıldı / limit tanımlı değil / risk okunamadı). Metin değişikliği kod değiştirmez (N-10). |
-| L-7 | Port hatası | Fail-closed, sevk kaydı yazılmaz, ret kaydedilmez (terminal değil); kullanıcı aynı idempotency anahtarıyla yeniden dener ve komut yeniden yürür, otomatik tekrar yok. 409 iş/istisna reddi bundan ayrıdır ve terminaldir (L-1). Karışık durum: talimattaki bütün siparişler değerlendirilir (ilk 409'da kısa devre yok); bir 503 varsa 503 kazanır, hiçbir şey kaydedilmez. Lojistik cevabı `Unavailable` sonucunu da durduruyordu; **SAT-D310** ile `Unavailable` sonucu yalnız `Valid` istisna yoksa durur, port hatası her zaman durur (Lojistik'e bildirilir). |
+| L-7 | Port hatası | Fail-closed, sevk kaydı yazılmaz, ret kaydedilmez (terminal değil); kullanıcı aynı idempotency anahtarıyla yeniden dener ve komut yeniden yürür, otomatik tekrar yok. 409 iş/istisna reddi bundan ayrıdır ve terminaldir (L-1). Karışık durum (koordinatör kararı r2): talimattaki bütün siparişler değerlendirilir (ilk 409'da kısa devre yok); bir 503 varsa 503 kazanır, hiçbir şey kaydedilmez. Kapsam: fason teslim zaten hep-ya-hiçtir; satış sevkinde tek 503 bütün talimatın sevk kaydını durdurur, L-4 bağımsızlığı yalnız 409'lar içindir. Lojistik cevabı `Unavailable` sonucunu da durduruyordu; **SAT-D310** ile `Unavailable` sonucu yalnız `Valid` istisna yoksa durur, port hatası her zaman durur (Lojistik'e bildirilir). |
 | L-8 | Fason tartım | Karar Lojistik'in değil; okuma portu anahtarı (loadingInstructionId, weighingId); teslim tartısı = talimatın tek tartı kaydı, fason teslim dilimi spec'inde netleşir (F1, N-7). |
 
 ## 4. Açık noktalar
