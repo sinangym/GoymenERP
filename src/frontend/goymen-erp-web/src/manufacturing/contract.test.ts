@@ -518,6 +518,48 @@ describe('decodePlan', () => {
     }
   })
 
+  it('reads the U2-b sales order link with its revision and refuses any other shape', () => {
+    const link = {
+      salesOrderId: '50000000-0000-0000-0000-00000000a001',
+      salesOrderLineId: '50000000-0000-0000-0000-00000000a002',
+      customerPartyId: '50000000-0000-0000-0000-00000000a003',
+      customerAccountId: '50000000-0000-0000-0000-00000000a004',
+      productId: '50000000-0000-0000-0000-00000000a005',
+      lineRevision: 2,
+      linkedBy: '40000000-0000-0000-0000-00000000d001',
+      linkedAtUtc: '2026-11-11T09:30:00+00:00',
+    }
+    const linked = decodePlan(plan({ salesOrderLink: link, salesOrderLinkRevision: 1 }))
+    expect(linked?.salesOrderLink).toEqual(link)
+    expect(linked?.salesOrderLinkRevision).toBe(1)
+    // Legacy JSON without the members, and an unlinked plan after a removal, are no link.
+    const legacy: Record<string, unknown> = plan()
+    delete legacy.salesOrderLink
+    delete legacy.salesOrderLinkRevision
+    expect(decodePlan(legacy)).toMatchObject({ salesOrderLink: null, salesOrderLinkRevision: 0 })
+    expect(decodePlan(plan({ salesOrderLink: null, salesOrderLinkRevision: 2 }))?.salesOrderLinkRevision).toBe(2)
+    // A link is never shown with revision 0 (the server's check constraint), nor a broken revision.
+    expect(decodePlan(plan({ salesOrderLink: link, salesOrderLinkRevision: 0 }))).toBeNull()
+    for (const revision of [-1, 1.5, '1', null]) {
+      expect(decodePlan(plan({ salesOrderLinkRevision: revision }))).toBeNull()
+    }
+    const missing = Object.fromEntries(Object.entries(link).filter(([key]) => key !== 'linkedBy'))
+    for (const broken of [
+      missing,
+      { ...link, extra: true },
+      { ...link, salesOrderLineId: 'not-a-guid' },
+      { ...link, lineRevision: -1 },
+      { ...link, lineRevision: 1.5 },
+      { ...link, linkedBy: ' padded ' },
+      { ...link, linkedBy: null },
+      { ...link, linkedAtUtc: null },
+      { ...link, linkedAtUtc: 'yesterday' },
+      42,
+    ]) {
+      expect(decodePlan(plan({ salesOrderLink: broken, salesOrderLinkRevision: 1 }))).toBeNull()
+    }
+  })
+
   it.each([
     ['an empty line list', { lines: [], windingTargetKg: null }],
     ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],
