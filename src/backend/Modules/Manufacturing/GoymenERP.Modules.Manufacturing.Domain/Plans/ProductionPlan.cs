@@ -180,6 +180,16 @@ public sealed class ProductionPlan
     /// </summary>
     public Guid? OrderId { get; private set; }
 
+    /// <summary>
+    /// Üretim U2-b / API-16 (SAT-D219): the approved sales order line this plan supplies, or null. Not part of the plan's
+    /// content and not a change of the plan (its version does not move): the link has its own revision
+    /// (<see cref="SalesOrderLinkRevision"/>), which every link or unlink advances.
+    /// </summary>
+    public PlanSalesOrderLink? SalesOrderLink { get; private set; }
+
+    /// <summary>Üretim U2-b / API-16: how many times the sales order link was set or removed (0 = never linked).</summary>
+    public long SalesOrderLinkRevision { get; private set; }
+
     /// <summary>The longest preparer identity the store keeps (the actor id column's length).</summary>
     public const int PreparedByMaximumLength = 128;
 
@@ -253,7 +263,9 @@ public sealed class ProductionPlan
         PlanCancellation? cancellation = null,
         Guid? orderId = null,
         PlanProcessSpec? processSpec = null,
-        string? preparedBy = null)
+        string? preparedBy = null,
+        PlanSalesOrderLink? salesOrderLink = null,
+        long salesOrderLinkRevision = 0)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -412,6 +424,26 @@ public sealed class ProductionPlan
             }
         }
 
+        // U2-b / API-16: the link is not a step of the plan (its version does not move); it is set after the replay and must
+        // still meet the rules a new link meets: a revision for every stored link, the inputs' party.
+        if (salesOrderLinkRevision < 0 || (salesOrderLink is not null && salesOrderLinkRevision < 1))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı satış siparişi bağının revizyonu geçersiz.");
+        }
+
+        if (salesOrderLink is not null)
+        {
+            if (!salesOrderLink.IsWellFormed() || !plan.InputsMatchParty(salesOrderLink.CustomerPartyId))
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı satış siparişi bağı planın kurallarını karşılamıyor.");
+            }
+
+            plan.SalesOrderLink = salesOrderLink;
+        }
+
+        plan.SalesOrderLinkRevision = salesOrderLinkRevision;
         return plan;
     }
 
@@ -531,6 +563,67 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
+    /// Üretim U2-b / API-16 (SAT-D219): links this plan to an approved sales order line, moves the link to another line, or
+    /// removes it (<paramref name="link"/> null). The plan's version does not move; the link revision advances by one.
+    /// In order, and nothing is applied on a refusal: the version fence; cancelled
+    /// (<see cref="ManufacturingRuleCodes.PlanCancelled"/>); the link revision the caller read
+    /// (<see cref="ManufacturingRuleCodes.PlanSalesOrderLinkChanged"/>); the plan's order is closed
+    /// (<see cref="ManufacturingRuleCodes.PlanSalesOrderLinkOrderClosed"/>); no change
+    /// (<see cref="ManufacturingRuleCodes.PlanSalesOrderLinkNoChange"/>); the customer-owned inputs' party
+    /// (<see cref="ManufacturingRuleCodes.PlanSalesOrderPartyMismatch"/>).
+    /// </summary>
+    public void ChangeSalesOrderLink(long expectedVersion, long expectedLinkRevision, PlanSalesOrderLink? link,
+        bool orderClosed)
+    {
+        RequireFence(expectedVersion);
+        if (Status == PlanStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanCancelled, "İptal edilmiş planın bağı değişmez.");
+        }
+
+        if (expectedLinkRevision != SalesOrderLinkRevision)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderLinkChanged,
+                "Planın satış siparişi bağı siz okuduktan sonra değişti; planı yeniden okuyun.");
+        }
+
+        if (orderClosed)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderLinkOrderClosed,
+                "Planın emri kapanmış; satış siparişi bağı artık değişmez.");
+        }
+
+        if (link is not null && !link.IsWellFormed())
+        {
+            throw new ArgumentException("Satış siparişi bağı eksik veya geçersiz.", nameof(link));
+        }
+
+        if (link is null ? SalesOrderLink is null : SalesOrderLink?.SalesOrderLineId == link.SalesOrderLineId)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderLinkNoChange,
+                "İstek planın satış siparişi bağında hiçbir şeyi değiştirmiyor.");
+        }
+
+        if (link is not null && !InputsMatchParty(link.CustomerPartyId))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
+                "Plandaki müşteri malı girdiler sipariş satırının müşterisine ait değil.");
+        }
+
+        SalesOrderLink = link;
+        SalesOrderLinkRevision++;
+    }
+
+    /// <summary>
+    /// U2-b / API-16: true when no customer-owned input names another party than <paramref name="partyId"/>. Inputs
+    /// without commercial provenance (company-owned or legacy) never conflict.
+    /// </summary>
+    private bool InputsMatchParty(Guid partyId) => InputsMatchParty(_inputs, partyId);
+
+    private static bool InputsMatchParty(IEnumerable<PlannedInput> inputs, Guid partyId) =>
+        inputs.All(input => input.CommercialContext is not { } context || context.PartyId == partyId);
+
+    /// <summary>
     /// The numbers this plan entered itself for its engines: the line speed (U2-a) and the process spec's values (U2-b1).
     /// </summary>
     public IReadOnlyList<PlanEnteredValue> PlanEnteredValues()
@@ -635,6 +728,12 @@ public sealed class ProductionPlan
         RequireConsistentCommercialContext(newInputs, nameof(inputs));
         RequireLineSpeed(Process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
         processSpec?.RequireAllowedFor(Process, nameof(processSpec));
+        if (SalesOrderLink is { } salesLink && !InputsMatchParty(newInputs, salesLink.CustomerPartyId))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
+                "Plan bir satış siparişi satırına bağlı; müşteri malı girdiler o satırın müşterisine ait olmalıdır.");
+        }
+
 
         if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs)
             && CutSpecsEqual(cutToLengthSpec, CutToLengthSpec) && lineSpeedMetresPerMinute == LineSpeedMetresPerMinute
