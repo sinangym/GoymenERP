@@ -1,7 +1,8 @@
 # F-017 — Gelecek tedarikten satış siparişine ayırma: spec ve dilim planı v1
 
 Tarih: 2026-11-12 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir)
-Karar: `docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md` ALS-D82 (#66 6819147253 madde 2); ALS-D30 (EK3); ALS-D22/D25;
+Karar: `docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md` ALS-D82 (#66 6819147253 madde 2), ALS-D83/ALS-D84 (#66 6819640816
+madde 3–4); Stok KLN-D26 (#1108); ALS-D30 (EK3); ALS-D22/D25;
 SAT-D298 (birim çevrim kaynağı ürün kartı katsayısı).
 Bağlam: `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` MOD-14, MOD-16, A3-0; Fable analizi F-017
 (`docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md`). Stok karşı belgesi: PR #1116
@@ -14,6 +15,9 @@ Revizyon 2 (2026-11-12): Stok şeridi PORT-REVIEW (#1110 review 5871928090) bulg
 kaldırıldı, birim kuralı SAT-D298'e bağlandı, sipariş sürümü yalnız gözlem oldu, modüller arası yarış için ortak satır kilidi
 eklendi (§3.4), F17-1 K3 oldu, genel/teknik satır kuralı yazıldı, termin dilimleri ayrı okumaya alındı, kabul geri alma
 maddesi NEEDS-SINAN'a taşındı, kabul replay çiti çevirmeyi kapsar.
+
+Revizyon 3 (2026-11-12): Sinan S1/S2 cevapları işlendi (ALS-D83 bağ düşürme §3.5; ALS-D84 kabulde sıra §3.3). Satır/sipariş
+iptali yeni NEEDS-SINAN S4 oldu.
 
 ## 1. Bugün (main `58b96aa2`)
 
@@ -95,7 +99,7 @@ Kurallar:
 
 ### 3.2 Stok → Alış: `IInventoryFutureAllocationReadPortV1` (Stok sahibi; #1116 F017-b)
 
-ALS-D30 "Alış okuma portu ayrılan miktarı da gösterir" ve §5 S1 için. Alış Stok'a referans vermez; host adaptörü çevirir
+ALS-D30 "Alış okuma portu ayrılan miktarı da gösterir" ve §3.5 (ALS-D83) için. Alış Stok'a referans vermez; host adaptörü çevirir
 (mevcut `PurchasingSalesLinkedSupplyHostPorts` deseni).
 
 ```csharp
@@ -113,6 +117,13 @@ Task<FutureAllocationSumV1> GetAllocatedOnPurchaseLineAsync(Guid orderId, Guid l
   satır kimliğini verir. Kabul genel satıra yapılırsa iki kimlik aynıdır.
 - Stok aynı işlemde genel satırın ayırmalarını kabul edilen miktar kadar fiziksel tahsise çevirir ve etiketi satış sipariş satırına
   atar (ALS-D82 "etiket ataması o zaman yapılır"). İşlem tek başarı ya da tek geri alma olur. Çevirmenin hatada davranışı #1116 S7.
+- **Sıra (ALS-D84):** satıra birden çok ayırma varken kabul edilen miktar varsayılan olarak **satış sipariş satırının termini en
+  yakın** ayırmaya önce gider; eşitse ayırma zamanı önce. Kabul eden kullanıcı sırayı **değiştirebilir veya ayırma seçebilir**: host
+  mal kabul komutuna isteğe bağlı `AllocationOrder` (genel satır başına sıralı ayırma kimlikleri) eklenir ve Stok'a iletilir. Boşsa
+  varsayılan sıra uygulanır. Listedeki her kimlik o genel satırın aktif ayırması olmalıdır; değilse 422, hiçbir şey yazılmaz.
+  Listede olmayan ayırmalar listedekilerden sonra varsayılan sırayla gelir. Seçilen sıra kabul yük hash'ine girer (replay).
+  Termin satış sipariş satırı portundan okunur; Alış satış terminini saklamaz. Ekran varsayılan sırayı gösterir, kullanıcı
+  sürükleyerek veya seçerek değiştirir (F17-5/kabul ekranı).
 - **Replay çiti çevirmeyi kapsar:** kabulün mevcut idempotency kaydı (anahtar hash + yük hash) çevirmeyi de kapsar. Aynı anahtarla
   tekrar gelen kabul yeniden çevirme yapmaz; saklanan sonucu döndürür. Katılımcının saklanan sonuç özeti çevirme sonucunu içerir
   (tüketilen ayırma kimlikleri ve miktarları, oluşan fiziksel tahsis kimlikleri). Aynı anahtar + farklı sonuç = 409
@@ -141,9 +152,27 @@ token'ı yalnız Stok'un iki ayırmasını sıralar; Alış yazısını görmez.
   Kilit dönüş kodu < 0 ise asla devam edilmez (fail-closed).
 - Kilit işlem bitince (commit/rollback) kendiliğinden bırakılır. Uzun süreli kilit yoktur.
 - Kilit alındıktan sonra Stok Alış'ı aynı işlemde okur; ayrılmış + yeni ≤ ayrılabilir değilse 409 `insufficient_future_supply`.
-  Alış tarafı kilit altında §3.2 portuyla ayrılmış toplamı okur; S1 cevabına göre reddeder veya izin verir.
+  Alış tarafı kilit altında §3.2 portuyla ayrılmış toplamı okur; yeni kalan ayrılmışın altına düşecekse reddeder (§3.5).
 - Gerçek SQL testi: iki eşzamanlı işlem (Stok ayırma + Alış kalan iptali) aynı satırda; biri bekler veya 409 alır, sonuçta
   ayrılmış ≤ ayrılabilir. Kilit kaynağı adı contract testine bağlanır.
+
+### 3.5 Satınalma tarafından bağ düşürme (ALS-D83)
+
+- Satınalma kullanıcısı, bir satınalma genel satırına bağlı satış ayırmasını **Alış ekranından** düşürebilir. Bu, ayırmanın Stok'ta
+  bırakılmasıdır (`Released`); Alış Stok tablosuna yazmaz. Alış komutu host adaptörü üzerinden Stok'un yazma portunu çağırır
+  (öneri: `IInventoryFutureAllocationReleasePortV1.ReleaseAsync(allocationId, expectedAllocationVersion, reason, origin =
+  "purchasing")`, Stok sahibi; #1116 §3.3 bırakma akışının aynısı). Şirket sunucu bağlamından gelir.
+- **Satınalma miktarı azalmaz.** Committed, accepted, cancelled değişmez; ayrılabilir miktar bağ kadar yeniden serbest kalır.
+  Serbest miktar başka satış siparişine ayrılabilir veya stok için alınır (ayrı işlem gerekmez; ayrılmamış miktar zaten stok
+  içindir).
+- Neden zorunludur. Sessiz bırakma yoktur (DEC-STK-005): Stok `inventory.future-allocation.released.v1` olayını `origin =
+  purchasing` ile yazar; satış ekranı bunu inbox/dedup ile tüketip satış sipariş satırında "kaynak düştü" uyarısı gösterir.
+- Komut §3.4 kilidini alır, idempotency anahtarı ve audit (önce/sonra, neden, aktör) taşır. İzin adı önerisi
+  `purchasing.future-allocation.release` (ad kaydı teknik; grant insan kapısı).
+- **Satır azaltma** (ileride F17-4): yeni kalan, ayrılmış toplamın altına düşecekse Alış işlemi reddeder ve kullanıcıya önce bağ
+  düşürmesini söyler (ALS-D83 okuması: miktar bağ yüzünden kendiliğinden azalmaz; bağ önce açıkça düşürülür).
+- **Satır/sipariş iptali** bu bölümün konusu değildir (ALS-D83 "ayrı bir durum"): §5 S4. Cevaba kadar ayırması olan satırın kalan
+  iptali ve siparişin iptali reddedilir (fail-closed); kullanıcı önce bağları düşürür.
 
 ## 4. Dilim planı
 
@@ -155,24 +184,29 @@ Sıra: #1101 kuyruğu bitmeden kod yok (koordinatör, 2026-11-12).
 | F17-1 | Alış (+host) | `IPurchaseFutureSupplyReadPortV1` (tek satır + ürün listesi, satış niyeti, teknik→genel eşleme) + Infrastructure okuması; `IPurchaseLineSerializationLockV1` host uygulaması; Alış kabul/iptal yollarında kilit; kabul sonucuna genel satır kimliği; birim/servis/contract testleri + gerçek SQL kabulü (eşzamanlılık dahil); A3-0'ı kapatır | **K3** (yeni modüller arası sözleşme + kilit; migration yok, gerekirse ürün+durum indeksi) | — |
 | F17-1b | Alış | Termin dilimi okuması `GetLineScheduleAsync` | K2 | #1101 |
 | F17-2 | Stok | Gelecek ayırma kaydı (#1116 F017-b), değişmez (§3.4 kilidi + aynı işlemde F17-1 okuması), bırakma | K3 | F17-1 |
-| F17-3 | Stok | Mal kabulünde gelecek ayırma → fiziksel tahsis + etiket ataması (aynı host işlemi, replay çiti §3.3) (#1116 F017-c) | K3 | F17-2 |
-| F17-4 | Alış | Satır azaltma/iptalinde ayrılmış miktar kontrolü (§3.2 portu, host adaptörü, §3.4 kilidi) — §5 S1 cevabına göre | K3 | F17-2, §5 S1 |
+| F17-3 | Stok (+host) | Mal kabulünde gelecek ayırma → fiziksel tahsis + etiket ataması (aynı host işlemi, replay çiti, ALS-D84 sırası ve `AllocationOrder` §3.3) (#1116 F017-c) | K3 | F17-2 |
+| F17-4 | Alış (+host) | Bağ düşürme komutu ve ekranı (§3.5, Stok bırakma portu üzerinden); kalan iptali/sipariş iptali/satır azaltmada ayrılmış miktar kontrolü (§3.2 portu, §3.4 kilidi; iptal S4 cevabına kadar ret) | K3 | F17-2 |
 | F17-5 | Satış/UI | Satış kaynak planında "alıştan" seçimi (MOD-16) | Satış şeridi | F17-2 |
 
 ## 5. NEEDS-SINAN (cevaba kadar ilgili davranış fail-closed)
 
 Ortak sorular #1116 §9 ile tek cevapla kapanır: S1 = #1116 S2, S2 = #1116 S4, S3 = #1116 S12, genel/teknik satır = #1116 S9.
 
-- **S1 — Ayrılmış miktarın altına inen satır azaltma/iptal:** satınalma satırı azaltılırsa veya kalan iptal edilirse ve yeni kalan
-  ayrılmış miktarın altına düşerse ne olur? Önerilen: **Alış işlemi reddeder**; önce Stok'ta ayırma azaltılır/bırakılır.
-  Alternatif: işlem yapılır, açıkta kalan ayırma Stok'ta "karşılıksız" işaretlenir ve satışa uyarı düşer. Cevaba kadar F17-4 açılmaz
-  ve F17-2 ayırma komutu, satır azaltma/iptal yolları korunana kadar etkinleştirilmez.
-- **S2 — Kısmi kabulde ayırmaların sırası:** satıra birden çok satış ayırması varken kısmi kabul gelirse, kabul edilen miktar hangi
-  ayırmaya önce gider? Önerilen: **satış siparişinin termini en yakın olan önce**, eşitse ayırma zamanı önce; depocu kabul ekranında
-  değiştirebilir. Alternatif: ayırma zamanı sırası (ilk ayıran ilk alır).
+- **S1 — Cevaplandı (ALS-D83):** satınalma tarafı bağı düşürür, satınalma miktarı azalmaz; serbest miktar başka satışa ayrılır veya
+  stoğa alınır. Uygulama §3.5.
+- **S2 — Cevaplandı (ALS-D84):** termini en yakın satış önce; sıra elle değiştirilebilir/seçilebilir. Uygulama §3.3.
 - **S3 — Kabul geri alınırsa / iade:** kabul reddi, düzeltme veya iade olursa fiziksel tahsis ve etiket ataması geri döner mi,
   gelecek ayırma yeniden açılır mı? Cevaba kadar otomatik geri dönüş yoktur; kabul geri alma yolu ayırma çevrilmiş satırda
   reddeder ve kullanıcıya önce tahsisin elle çözülmesi gerektiğini söyler.
+- **S4 — Ayırması olan satınalma satırının veya siparişin iptali (ALS-D83 "ayrı bir durum"):** satış ayırması bağlı bir satırın
+  kalanı iptal edilirse veya sipariş komple iptal edilirse ne olur?
+  - **Önerilen:** iptal, bağlı aktif ayırma varken **reddedilir**. Ekran bağlı satış siparişlerini listeler ve "bağları düşür ve
+    iptal et" seçeneği sunar. Kullanıcı tek bir açık onayla (neden zorunlu) önce bağları düşürür (§3.5), sonra iptal aynı işlemde
+    yapılır. Satışa "kaynak iptal edildi" uyarısı düşer.
+  - **Alternatif A:** iptal yapılır, bağlı ayırmalar Stok'ta otomatik bırakılır ve satış uyarılır. Bu yolda açık onay yoktur.
+  - **Alternatif B:** iptal yapılır, ayırmalar "karşılıksız" işaretlenip açık kalır; satış başka kaynak bulana kadar görünür kalır.
+  - Cevaba kadar ayırması olan satırda kalan iptali ve sipariş iptali reddedilir.
+- **Stok tarafı açık kalanlar:** az/fazla gelme, blokta gelen etiket, süre ve izin soruları #1116 §9'da; KLN-D26 (6) ile tutarlıdır.
 
 ## 6. Kabul ölçütleri (F-017 testi)
 
@@ -183,4 +217,9 @@ Ortak sorular #1116 §9 ile tek cevapla kapanır: S1 = #1116 S2, S2 = #1116 S4, 
 - Ürün kartında katsayı yoksa kg/ton girdisi satır birimine çevrilemez ve ayırma reddedilir (tahmin yok).
 - Mal kabulünde ayrılan miktar fiziksel tahsise döner ve etiket satış sipariş satırına atanır; aynı kabul isteğinin tekrarı ikinci
   çevirme yapmaz.
+- Kısmi kabulde varsayılan sıra termini en yakın satış; kullanıcının verdiği `AllocationOrder` varsayılanı geçer; geçersiz kimlik
+  422 ve yazma yok (ALS-D84).
+- Satınalma tarafı bağı düşürünce ayırma Stok'ta `Released` olur, satınalma committed/accepted/cancelled değişmez, ayrılabilir miktar
+  aynı kadar artar ve satışa uyarı olayı yazılır (ALS-D83).
+- Ayırması olan satırın kalan iptali ve sipariş iptali S4 cevabına kadar reddedilir.
 - Ayrılabilir miktar her zaman Alış'ın kalanıdır; tüketici yeniden hesaplamaz.
