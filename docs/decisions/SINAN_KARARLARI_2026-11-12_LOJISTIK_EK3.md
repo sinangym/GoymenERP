@@ -25,11 +25,11 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 > **Cevap: Gerekçeli düzeltme.** Yetkili kişi gerekçe yazarak düzeltme kaydı girer. Eski değer silinmez, denetim izinde kalır. Fatura kesilmişse fark Satış'tan fark faturasıyla kapatılır.
 
-**16. tur, notlar:**
+**16. tur, notlar (koordinatör metni, Sinan metni değildir):**
 
 > "Yetkili kişi" (m.3) için yeni izin adı önerilebilir; grant/rol insan kapısıdır. "Kantardan geçer" depo ayarının varsayılanı kapalıdır (ayar açılmadıkça sevk kaydı anı geçerli).
 
-Koordinatör notu (alıntı dışı, #66 6821105608): açık kalanlar N-5, N-6 (6821077996) ve URN-D1 (b) (6821058038) sıradaki turda sorulacaktır; bu turda hiçbir `OPEN-*` kapanmamıştır.
+Koordinatör notu (koordinatör metni, Sinan metni değildir; alıntı dışı, #66 6821105608): açık kalanlar N-5, N-6 (6821077996) ve URN-D1 (b) (6821058038) sıradaki turda sorulacaktır; bu turda hiçbir `OPEN-*` kapanmamıştır.
 
 **LOJ-D11 devamı (#66 6821569022, koordinatör kaydı, birebir):**
 
