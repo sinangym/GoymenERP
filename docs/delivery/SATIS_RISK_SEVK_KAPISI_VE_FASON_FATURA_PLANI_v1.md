@@ -7,7 +7,7 @@ kararı değildir, karar sicilini değiştirmez).
 OPEN-003/004/010; EK21 SAT-D153…D162; EK55 SAT-D281; EK56 SAT-D283…D287; EK7 SAT-D46…D53, SAT-D80; EK25 SAT-D175/D176; EK29
 SAT-D195; EK31 SAT-D201; URT-D16; Finans devri **PR #1117** (main'de, `1a994cbe`): `SINAN_KARARLARI_2026-11-12_FINANS_KREDI_LIMITI.md`
 FNS-D27/D27a/D30/D31 ve `docs/delivery/FINANS_F018_KREDI_LIMITI_PLANI_v1.md` §2 L1, §3. Fason fatura kuralı: Issue #66 yorumu
-`6820601088` (11. tur) madde 4; karar dosyası bu PR'da: `SINAN_KARARLARI_2026-11-12_SATIS_EK60.md` SAT-D309…D313 (F0).
+`6820601088` (11. tur) madde 4; karar dosyası bu PR'da: `SINAN_KARARLARI_2026-11-12_SATIS_EK60.md` SAT-D309…D314 (F0).
 #1117 `1a994cbe` ile main'dedir.
 
 Kısaltmalar: `SA` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application`, `SD` = `…Sales.Domain`, `SI` =
@@ -80,20 +80,38 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
     `RiskCheck.cs:412-430`) ile
     faturalanmamış sevk (`ISalesInvoiceableShipmentReadPortV1` onaylı irsaliye payı) aynı Lojistik olgusuna dayanmalıdır.
     Test: kesin sevk var, irsaliye onaysız → tutar tam olarak bir bileşende.
-  - (d) Pay anahtarı taşımayan faturalarda (F2 fason hizmet faturası; SAT-D94 (2) önce-fatura/depo teslim) "faturalandı"
-    **sipariş satırı başına**, faturalanan miktar sevk edilen miktarla karşılaştırılarak ölçülür
-    (`ISalesDispatchReadPortsV1.cs:102-106`: "invoiced … measured by the invoice owner per order line"); tutar tam olarak
-    bir bileşende kalır. LOJ-D14 fason teslimi kapıya aldığı için bu sınır kapı sonucunu doğrudan etkiler. Testler:
-    "F2 fason faturası kesilince fason payı tam olarak bir bileşende", "önce-fatura: kesilmiş, sevk edilmemiş tutar tam
-    olarak bir bileşende".
-- **SAT-D313 (Sinan, #66 `6822385722` + `6822674443`):** risk onaylı siparişin tamamından sayılmaz; **sevk planına açılan
-  miktar × birim fiyat** ile başlar (satış ve fason aynı; fason tartı öncesi de böyle), irsaliye/fatura kesilene kadar.
+  - (d) Pay anahtarı taşımayan faturalar (review B P2-1, A P3-1):
+    - **F2 fason hizmet faturası:** "faturalandı" miktar karşılaştırmasıyla **ölçülmez**. Sevk payındaki miktar beyan/mal
+      miktarıdır (`ISalesDispatchReadPortsV1.cs:97-101`), fatura miktarı tartı net kg payıdır (SAT-D309/D312); iki taban
+      farklıdır. Fason faturası kendi anahtarına (F2 "ayrı anahtar": talimat + tartım + fason sipariş) bağlıdır ve kesilince
+      o `(fason orderId, loadingInstructionId)` altındaki sevk paylarını **tamamen** kapatır; net ile beyan farkı artık
+      bırakmaz, negatif fark doğurmaz. Faturalanmamış fason sevkin tutarı da aynı tabanda, net kg payı × onaylı kg fiyatı
+      olarak `SalesInvoiceCalculator`'dan gelir. Çok siparişli talimatta pay hesaplanamıyorsa (paylaştırma artığı kuralı F2
+      açık noktası) bileşen `Unavailable` olur, sıfır sayılmaz.
+    - **SAT-D94 (2) önce-fatura/depo teslim:** "faturalandı" **sipariş satırı başına**, faturalanan miktar sevk edilen
+      miktarla karşılaştırılarak ölçülür (`ISalesDispatchReadPortsV1.cs:102-106`: "invoiced … measured by the invoice owner
+      per order line"). Kesilmiş ama sevk edilmemiş kısım, satır başına `max(0, faturalanan − sevk edilen)`, sevk planı
+      bileşeninden (c) düşülür; çünkü aynı tutar SAT-D311 satırında veya `OpenReceivables`'tadır.
+    - LOJ-D14 fason teslimi kapıya aldığı için bu sınır kapı sonucunu doğrudan etkiler. Testler: "F2 fason faturası kesilince
+      fason payı tam olarak bir bileşende", "fason net < Σ beyan ve net > Σ beyan: faturadan sonra faturalanmamış fason
+      sevk 0", "çok siparişli talimatta pay yoksa bileşen `Unavailable`", "önce-fatura: kesilmiş, sevk edilmemiş tutar tam
+      olarak bir bileşende".
+- **SAT-D313 (Sinan, #66 `6822385722` + `6822674443`; koordinatör sorusunda `6822767886` m.1: "Sevk plan miktarı x onaylı
+  fiyat"):** risk onaylı siparişin tamamından sayılmaz; **sevk planına açılan miktar × onaylı birim fiyat** ile başlar (satış ve fason aynı; fason tartı öncesi de böyle), irsaliye/fatura kesilene kadar.
   Tutar durumuna göre görünür: sevk planına alınan → sevk olan (faturalanmamış sevk) → faturası kesilen (SAT-D311 satırı,
   Finans işleyince açık bakiye). Plana alınmamış sipariş kalanı riske girmez (yazar okuması). Bu, bugünkü "onaylı kalan
   sipariş" bileşenini (`RiskCheck.cs:412-430`, DEC-FIN-007 ilk aşaması) değiştirir; S0 K3 PR'ı uygular, Finans'a
   bildirilir. Test: plan → sevk → fatura geçişinin her adımında tutar tam olarak bir durumda; plana alınmamış kalan
   riskte yok. *Açık (S0 spec önerir):* sevk planı miktarının kaynağı (Lojistik okuma portu, mevcut/yeni), fasonda plan
-  kg'ı, plan iptali/azaltmasında düşme, durum adları; para etkisi varsa `NEEDS-SINAN`.
+  kg'ı, plan iptali/azaltmasında düşme, durum adları; para etkisi varsa `NEEDS-SINAN`. Plansız fason sipariş için ek yöntem
+  seçilmedi; yazar eklemez.
+- **SAT-D175 ve ara davranış (review B P2-2, A P3-3):** SAT-D175 fason siparişin risk kontrolünü normal siparişle aynı
+  tutar; SAT-D313 de satış ve fason için aynı kuralı koyar, çelişki yoktur. Bugün main'deki `ListOpenApprovedOrdersAsync`
+  (`SI/Persistence/SalesStore.cs:1945`) fason siparişi ayırmaz; "onaylı kalan sipariş" onun onaylı miktar × fiyatını sayar.
+  S0 K3 PR'ı merge olana kadar bu statüko değişmez (zararsız: "faturalanmamış sevk" `NoSource` olduğu için toplam risk hiç
+  `Within` dönmez). S0 bu bileşeni sevk planı bileşeniyle değiştirir. Sevk planı kaynağı okunamazsa bileşen `Unavailable`
+  olur, sıfır veya tahmin sayılmaz; risk `Within` dönmez ve kapı yalnız `Valid` istisnayla geçer (DEC-FIN-009, SAT-D310).
+  Test: "sevk planı kaynağı yok → risk `Unavailable`, fason dahil asla `Within`".
 - **Dosyalar:** `SA/SalesDraftService.RiskCheck.cs`, `SD/Drafts/SalesCustomerRisk.cs` (gerekirse yeni sebep kodu); frontend
   tüketicisi: sıkı decoder figür listesi ve `riskText.ts:54,73` etiketleri (yeni bileşen; S3 ile).
 - **Testler:** hesap birim testleri (aşama sınırı, faturalanmış pay düşer, iptal edilen fatura geri döner), gerçek SQL
@@ -150,9 +168,9 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   olarak listelenir (yeni sürüm).
 - **Tüketiciler (LOJ-D14, #66 `6821949043`):** kapının iki tüketicisi vardır: Lojistik kesin sevk ve fason teslim
   (F-012). İkisi aynı port ve yukarıdaki aynı kuralı kullanır; fason teslim anahtarı `(fason orderId, loadingInstructionId)`.
-  Tek kullanım iki yolu birlikte kapsar: bir `ExceptionNo` sevk veya fason teslimde toplam bir kez tüketilir. #1115 spec 04
-  kapı satırı (`SourceUnavailable` + `Valid`) yukarıdaki kuraldan dar okunuyor (`Over`/`CreditLimitNotSet` + `Valid` de
-  geçer); Lojistik'e bildirilir.
+  Tek kullanım iki yolu birlikte kapsar: bir `ExceptionNo` sevk veya fason teslimde toplam bir kez tüketilir; `ExceptionNo`
+  sipariş içinde tekil olduğundan tekil anahtar `(CompanyId, orderId, ExceptionNo)`'dur. #1115 `6980ae0b` spec 04:132-150
+  aynı kuralı ve anahtarı taşır (yalnız referans; açık PR).
 - **Hata (L-7):** port hatası veya zaman aşımı → sevk kaydı yazılmaz (503 benzeri ret); yeniden deneme kullanıcının aynı
   idempotency anahtarıyla; otomatik tekrar yok. `Unavailable` **sonucu** bir hata değildir: yalnız `Valid` istisna yoksa
   durur (SAT-D310).
@@ -179,19 +197,22 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 ### F0 — Karar dosyası (docs, governance)
 - **Yapıldı (bu PR):** #66 `6820601088` m.4 → `docs/decisions/SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`, **SAT-D309**
   (LOJ-D9 ile aynı cevap, #1115). SAT-D308 main'de (#1108, Stok) olduğu için 309 alındı.
-  Aynı dosyaya #66 16.–17. tur cevaplarıyla **SAT-D310** (N-5), **SAT-D311** (N-6), **SAT-D312** (N-8) eklendi; #66 `6822385722`/`6822674443` ile **SAT-D313** (sevk planı esaslı risk tutarı).
+  Aynı dosyaya #66 16.–17. tur cevaplarıyla **SAT-D310** (N-5), **SAT-D311** (N-6), **SAT-D312** (N-8) eklendi; #66 `6822385722`/`6822674443` ile **SAT-D313** (sevk planı esaslı risk tutarı; `6822767886` m.1 aynı yön), `6822767886` m.2 ile **SAT-D314** (iptal/azaltmada gelecek tedarik ayırması otomatik bırakılır).
 - **Modül bağlantıları:** yok.
 
 ### F1 — Teslim tartımı net kg portu (K3: modüller arası sözleşme; sahibi Lojistik — SAT-D309/LOJ-D9)
 - **Öneri:** Satış'ın beyan ettiği, sahibin cevapladığı `ISalesSubcontractDeliveryWeighingReadPortV1`
-  (`sales.subcontract-delivery-weighing.v1`): girdi (şirket, talimat, tartım kimliği; #1115 spec 04 anahtarı
-  `(CompanyId, LoadingInstructionId, VehicleWeighingId)`, L-8 ile aynı), cevap: talimatın toplam net kg'ı tam ondalık
+  (`sales.subcontract-delivery-weighing.v1`): girdi (şirket, talimat, tartım kimliği; L-8 anahtarı
+  `(LoadingInstructionId, WeighingId)`, şirket bağlamıyla; #1115 `4f96492a` aynı anahtarı `(CompanyId, LoadingInstructionId,
+  VehicleWeighingId)` diye adlandırıyordu, `6980ae0b`:105 L-8 adını kullanır; kesin ad F1 spec'inde), cevap: talimatın toplam net kg'ı tam ondalık
   metin, sevk satırı başına beyan kg, düzeltme `Version`, ölçüm türü, durum (`Available/NoSource/Unavailable`; asla sıfır).
   Mevcut AT-053 tartımı talimat başınadır (`LR:52,56`); siparişe dağıtımı **SAT-D312** (N-8; Lojistik LOJ-D12/D13): sevk
   satırlarındaki beyan kg oranında; tartısız fason teslim yok. **Lojistik bölme yapmaz;** paylaştırma, artık ve para yalnız
   `SalesInvoiceCalculator`'dadır (AGENTS tek hesaplayıcı; #1115 spec 04 `4f96492a` ile hizalı).
 - **Fason teslim kapısı (LOJ-D14):** fason teslim S2 portu ve kuralıyla aynen geçer, anahtar `(fason orderId,
-  loadingInstructionId)`; kapı net kg okumasından önce çalışır (#1115 spec 04).
+  loadingInstructionId)`. Kapı kesin teslim transaction'ında okunur (L-1); net kg okuması ve tartı sırası kontrolleri kapıdan
+  önce yapılır (#1115 `6980ae0b` spec 04:135-136). İki okuma aynı transaction'da fail-closed'dır; kesin sıra F1 spec'inde
+  Lojistik metniyle tek ifadeye bağlanır.
 - **Fason satır bağı — öneri (F1 spec + K3 cross-module; karar değil):** Lojistik "tartısız fason teslim kaydedilemez"
   kapısı için satırın fason olduğunu `ISalesSubcontractServiceOrderReadPortV1`'den (`sales.subcontract-service-order.v1`)
   okuyabilir. Sözleşme değişmez; ancak main'deki port dokümanı host adapter'ı Üretim şeridine veriyor, Lojistik bağlantısı
@@ -219,6 +240,17 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   gerçek SQL, OpenAPI.
 - **Modül bağlantıları:** F1 portu (❌), `ISalesSubcontractServiceOrderReadPortV1` (değişmez), `sales.invoice.finalized.v1`
   hedefi (Finans, `SATIS_MODUL_BAGLANTILARI_v1.md:87`, ❌).
+
+### X1 — SAT-D314: satır iptal/azaltmada gelecek tedarik ayırmasının bırakılması (K3: cross-module; #1116 F017-s ile)
+- **Ne:** gelecek tedarikten ayrılmış satış satırı iptal edilir veya azaltılırsa Satış komutu aynı işlemde Stok bırakma
+  portunu çağırır; satır miktarını aşan ayırma kalmaz; audit'li. Komut reddetmez (seçilmeyen yön).
+- **Bağımlılık:** Stok bırakma portu (#1116 F017-b) ve Satış tahsis okumasında gelecek ayırma türü (#1116 F017-s). Port
+  main'de yokken Satış komutuna bağlanmaz; dilim F017-s içinde ya da hemen ardından Satış şeridinde açılır.
+- **Fail-closed:** bırakma portu hata verir veya okunamazsa iptal/azaltma yazılmaz (aynı işlem); idempotent replay ikinci
+  bırakma üretmez.
+- **Testler:** iptalde ayırma `Released`, azaltmada yalnız aşan kısım bırakılır, port hatasında satır değişmez, replay tek
+  bırakma, şirket filtresi, gerçek SQL (iki modül tek işlem).
+- **Modül bağlantıları:** Stok bırakma portu (Stok → Satış tüketimi, ❌ #1116), gelecek ayırma okuma türü (❌ #1116 F017-s).
 
 ---
 
