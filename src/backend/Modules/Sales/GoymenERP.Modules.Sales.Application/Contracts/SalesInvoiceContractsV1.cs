@@ -641,8 +641,10 @@ public sealed record SalesFinanceInstalmentV1(Guid OpenItemId, Guid InstallmentI
 /// F-005 D5 / FNS-D19 (<c>SINAN_KARARLARI_2026-11-11_FINANS_F005.md</c>): <paramref name="OfficialInvoiceNo"/> and <paramref name="Ettn"/>
 /// are the official number and ETTN of the matched official document (API-35), copied unchanged from the invoice's match so Finance can
 /// refuse a second open receivable for the same official document. Both are optional and appended last (additive, still V1): a caller
-/// that does not set them sends <c>null</c>, and the owner leaves a null value out of its idempotency fingerprint, so an offer made
-/// before these fields existed replays under its key. Sales sets both, or neither, on every offer of a finalised invoice.
+/// that does not set them sends <c>null</c>. Sales sets both, or neither, on every offer of a finalised invoice. Today the host adapter
+/// does not pass them on (Finance's admission contract has no such fields yet; that is Finance's D5 slice). When Finance takes them in,
+/// a re-drive of an offer that Finance accepted or saw before these fields existed must still replay under its key and must not become
+/// a key conflict; how Finance ensures that (for example a uniqueness check kept outside its payload hash) is the Finance owner's choice.
 /// </para>
 /// </summary>
 public sealed record SalesFinanceAdmissionRequestV1(Guid CompanyId, string ActorId, string CorrelationId, string? CausationId,
