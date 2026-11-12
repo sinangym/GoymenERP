@@ -304,8 +304,10 @@ kaynak dosyasında; klavye ile tam erişim, odak yönetimi, `aria-live` hata bö
    dosyaları, test fixture'ları ve dokümanlarda kullanılabilir kullanıcı adı + parola çifti bulunmaz. Testler
    parolayı çalışma anında rastgele üretir.
 2. **Bootstrap operatör girdisi ister:** varsayılan parola yoktur; boş/argümanla verilen parola reddedilir.
-3. **Yasaklı liste:** `admin`, `password`, kullanıcı adının kendisi vb. politika tarafından her ortamda
-   reddedilir.
+3. **Yasaklı liste:** `admin`, `password`, kullanıcı adının kendisi vb. politika tarafından reddedilir. Tek
+   istisna madde 4'teki yalnız-Development ayarıdır; Staging/Production'da bu liste kapatılamaz. Zorunlu parola
+   değişikliğinde (`/session/password`) yeni parola istisna açık olsa bile yasaklı listeden geçmek zorundadır;
+   yani `admin/admin` hiçbir ortamda ilk girişten sonra kullanılamaz.
 4. **Sinan'ın yerel geçici hesabı:** Yalnız `Development` ortamında, açık bir ayarla
    (`Identity:LocalAccount:DevelopmentAllowWeakPassword=true`, öneri ad) zayıf parola kabul edilebilir. Ayar
    Development dışında `true` ise uygulama **başlamaz** (mevcut `DevelopmentBootstrap` startup kontrolünün
@@ -314,9 +316,12 @@ kaynak dosyasında; klavye ile tam erişim, odak yönetimi, `aria-live` hata bö
    yine `MustChangePassword=true` doğar. Bu istisnanın hiç olmaması da seçilebilir (Sinan geliştirmede
    `DevelopmentBootstrap` başlığını kullanır) → `NEEDS-SINAN-ID-09`.
 5. **Guard testleri (ID-1/ID-2 ile birlikte):**
-   - Repo taraması (öneri `tests/default_credential_guard/`): seed/appsettings/`.env.example`/compose ve
-     fixture dosyalarında `admin`/`admin` vb. bilinen varsayılan çiftler ve `Password`/`PasswordHash`
-     alanlı yerel kimlik bilgisi satırları bulunursa kırmızı.
+   - Repo taraması (öneri `tests/default_credential_guard/`): kod, seed, `appsettings*.json`, `.env.example`,
+     `infra/**` compose ve test fixture dosyalarında `admin`/`admin` vb. bilinen varsayılan çiftler ve
+     `Password`/`PasswordHash` alanlı yerel kimlik bilgisi satırları bulunursa kırmızı. Bu spec gibi yasağı
+     yalnız **adıyla anan** dokümanlar (`docs/**`) kimlik bilgisi değildir; taramanın doküman istisnası dar
+     tutulur (yalnız `docs/**/*.md`, kullanılabilir yapılandırma biçiminde değil) ve istisna listesi review'da
+     görünür.
    - Integration: `Production`/`Staging` ortamında `DevelopmentAllowWeakPassword=true` ile startup hatası;
      `admin` parolası politika tarafından reddedilir; bootstrap ikinci kez reddedilir.
    - Integration: boş veritabanında hiçbir giriş başarılı olmaz (bootstrap öncesi kullanıcı yok).
