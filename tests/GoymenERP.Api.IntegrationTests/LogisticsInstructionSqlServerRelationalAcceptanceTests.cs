@@ -1091,6 +1091,13 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
+    private sealed class ReadScope(LogisticsDbContext dbContext, CompanyContext company) : IAsyncDisposable
+    {
+        public ISalesOrderLoadingReadPortV1 Port { get; } = new LogisticsSalesOrderLoadingReadPort(dbContext, company);
+
+        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
@@ -1139,6 +1146,15 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
             var dbContext = new LogisticsDbContext(builder.Options, companyContext);
             return new StoreScope(dbContext, new LogisticsStore(dbContext, companyContext, collector, TimeProvider.System));
+        }
+
+        public ReadScope LogisticsContext(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var builder = new DbContextOptionsBuilder<LogisticsDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema));
+            return new ReadScope(new LogisticsDbContext(builder.Options, companyContext), companyContext);
         }
 
         public async Task<string> GrantAsync(string developmentUser, Guid company, params string[] permissions)
