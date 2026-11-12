@@ -55,7 +55,7 @@ public sealed class ProductionReceiptCostCalculatorTests
     public void Scrap_out_of_cost_prices_by_consumed_kilograms_and_reports_scrap_as_a_period_expense()
     {
         // 1000 kg x 40 = 40000 TL; 1000 kg consumed, 950 kg produced: 40 TL/kg on the product and
-        // 50 kg x 40 = 2000 TL of scrap and process loss reported separately (SAT-D307 (3)).
+        // 50 kg x 40 = 2000 TL of scrap and process loss reported separately (SAT-D308).
         var result = ProductionReceiptCostCalculatorV1.Calculate(Input(scrap: ScrapCostSettingStatus.Off));
 
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);

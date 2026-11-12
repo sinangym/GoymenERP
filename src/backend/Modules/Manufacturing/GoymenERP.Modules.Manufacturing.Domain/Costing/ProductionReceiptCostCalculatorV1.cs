@@ -85,7 +85,7 @@ public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Sta
 /// <item>net input cost = sum(issued kg x stamped issue cost) - sum(returned kg x the linked issue's stamped cost);</item>
 /// <item>scrap in cost (default): cost per kg = net / (good product kg + second quality kg), so scrap and
 /// process loss raise the cost of what was produced;</item>
-/// <item>scrap out of cost (SAT-D307 (3), Sinan #66 6818566934 item 4): scrap is not loaded on the product, so
+/// <item>scrap out of cost (SAT-D308 answering the SAT-D307 (3) note, Sinan #66 6818566934 item 4): scrap is not loaded on the product, so
 /// cost per kg = net / consumed kg (issued - returned) and the scrap and process loss share,
 /// net - cost per kg x produced kg, is reported as a separate scrap / period expense;</item>
 /// <item>no labour or overhead in v1. The quotient is not rounded here: the precision and rounding rule are the
