@@ -121,6 +121,33 @@ public sealed class LogisticsPersistenceModelTests
     }
 
     [Fact]
+    public void A_loading_share_records_who_made_it_in_a_nullable_binary_collated_column_and_the_migration_down_refuses_with_51260()
+    {
+        using var context = Context();
+        var shares = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LoadingShareRow))!;
+        var column = shares.FindProperty(nameof(LoadingShareRow.RecordedBy))!;
+        // Old shares have no actor and are never back-filled (SAT-D222): the column stays nullable.
+        Assert.True(column.IsNullable);
+        Assert.Equal(128, column.GetMaxLength());
+        Assert.Equal("Latin1_General_100_BIN2", column.GetCollation());
+        Assert.Contains(shares.GetCheckConstraints(), check => check.Name == "CK_LoadingShares_RecordedBy"
+            && check.Sql == LogisticsDbContext.ShareRecordedByCheck);
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLoadingShareRecordedBy", StringComparison.Ordinal));
+        Assert.Equal("AddLoadingShareRecordedBy", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLoadingShareRecordedBy();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("[RecordedBy] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51260,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(down[1]);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropColumnOperation>(down[2]);
+    }
+
+    [Fact]
     public void A_shipment_is_on_at_most_one_dispatch_note_line_by_a_unique_key_and_the_drafts_are_tenant_rows_of_their_instruction()
     {
         using var context = Context();
