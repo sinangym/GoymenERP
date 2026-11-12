@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
@@ -162,7 +163,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var refused = await client.PostWithKeyAsync($"{Base}/plans/{planId}/sales-order-link",
             new ChangePlanSalesOrderLinkRequestV1(1, 0, LinkSalesOrder, LinkSalesLine), "revoked");
 
-        await AssertSalesLinkCodeLessAsync(refused, HttpStatusCode.Forbidden);
+        // The in-service permission fence answers 403 with the shared `forbidden` code (only 404 is code-less here).
+        await AssertSalesLinkProblemAsync(refused, HttpStatusCode.Forbidden, ErpProblemCodes.Forbidden);
         Assert.Equal(1, sales.Reads);
         Assert.Equal(0L, await SalesLinkRevisionAsync(run, planId));
         Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM manufacturing.Plans WHERE Id = @id", ("@id", planId)));
@@ -208,7 +210,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
     }
 
-    /// <summary>401/403/404 carry no problem code on the wire: an empty body or a problem without <c>code</c>.</summary>
+    /// <summary>404 carries no problem code on the wire: an empty body or a problem without <c>code</c>.</summary>
     private static async Task AssertSalesLinkCodeLessAsync(HttpResponseMessage response, HttpStatusCode status)
     {
         Assert.Equal(status, response.StatusCode);
