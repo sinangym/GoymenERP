@@ -91,6 +91,7 @@ public static partial class InventoryEndpoints
         MapLabelClassificationEndpoint(endpoints);
         endpoints.MapInventoryStockCountEndpoints();
         endpoints.MapInventoryStockScrapEndpoints();
+        MapInventoryTransferEndpoints(endpoints);
         return endpoints;
     }
 

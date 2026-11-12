@@ -391,7 +391,7 @@ public sealed class InventoryTransferTests
     [Fact]
     public async Task Revocation_at_the_writer_fence_refuses_without_recording_the_command()
     {
-        var world = new CommandWorld();
+        var world = new CommandWorld().Dispatchable();
         world.Writer.BeforeFence = () => world.Authority.Granted = false;
 
         await Refused(world.Service().DispatchAsync(Guid.NewGuid(), DispatchRequest(), Transport("actor")),
@@ -485,7 +485,7 @@ public sealed class InventoryTransferTests
     }
 
     [Fact]
-    public void Owner_registration_adds_no_destination_adapter_or_grant()
+    public void Owner_registration_adds_no_destination_or_proof_adapter_or_grant()
     {
         var services = new ServiceCollection().AddInventoryTransfers();
 
@@ -494,7 +494,189 @@ public sealed class InventoryTransferTests
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IInventoryTransferCommandV1)
             && descriptor.ImplementationType == typeof(InventoryTransferCommandService));
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IInventoryTransferDestinationPortV1));
+        Assert.DoesNotContain(services,
+            descriptor => descriptor.ServiceType == typeof(IInventoryTransferOutgoingDocumentProofPortV1));
         Assert.Equal("inventory.stock-transfer.write", InventoryPermissionManifestV1.StockTransferWrite);
+    }
+
+    [Fact]
+    public async Task Dispatch_moves_only_on_the_current_effective_proof_of_the_complete_stored_line_order()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var world = new CommandWorld().Dispatchable(second, first);
+
+        await world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest("3"), Transport("actor"));
+
+        var query = Assert.Single(world.Proof.Queries);
+        Assert.Equal((Company, world.Reader.Result.TransferId, OutgoingDocument, 3),
+            (query.CompanyId, query.TransferId, query.DocumentId, query.ExpectedDocumentVersion));
+        Assert.Equal([second, first], query.OrderedTransferLineIds);
+        var binding = Assert.Single(world.Writer.DispatchBindings);
+        Assert.Equal([second, first], binding.OrderedTransferLineIds);
+        Assert.Equal(3, binding.DocumentVersion);
+        Assert.Equal("dispatch", Assert.Single(world.Writer.Calls).Operation);
+        Assert.Empty(world.Writer.RecordedRefusals);
+    }
+
+    [Theory]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.Missing, 422,
+        InventoryTransferCodesV1.OutgoingDocumentNotFound, false)]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.BindingMismatch, 422,
+        InventoryTransferCodesV1.OutgoingDocumentBindingMismatch, false)]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.Draft, 409,
+        InventoryTransferCodesV1.OutgoingDocumentNotFinal, true)]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.Cancelled, 409,
+        InventoryTransferCodesV1.OutgoingDocumentCancelled, true)]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.Reversed, 409,
+        InventoryTransferCodesV1.OutgoingDocumentReversed, true)]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.Stale, 409,
+        InventoryTransferCodesV1.OutgoingDocumentVersionConflict, true)]
+    [InlineData(InventoryTransferDocumentProofOutcomeV1.Unavailable, 503,
+        InventoryTransferCodesV1.Unavailable, false)]
+    public async Task Non_effective_outgoing_document_proof_never_moves_stock_and_records_only_terminal_409(
+        InventoryTransferDocumentProofOutcomeV1 outcome,
+        int status,
+        string code,
+        bool recorded)
+    {
+        var world = new CommandWorld().Dispatchable();
+        world.Proof.Outcome = outcome;
+
+        await Refused(world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest(),
+            Transport("actor")), status, code);
+
+        Assert.Empty(world.Writer.DispatchBindings);
+        if (recorded)
+        {
+            var refusal = Assert.Single(world.Writer.RecordedRefusals);
+            Assert.Equal((status, code), (refusal.Status, refusal.Code));
+        }
+        else
+        {
+            Assert.Empty(world.Writer.RecordedRefusals);
+            Assert.Empty(world.Writer.Calls);
+        }
+    }
+
+    [Fact]
+    public void Unknown_outgoing_document_outcome_fails_closed_as_unavailable()
+    {
+        var refusal = InventoryTransferCommandService.OutgoingDocumentRefusal((InventoryTransferDocumentProofOutcomeV1)99);
+
+        Assert.Equal((503, InventoryTransferCodesV1.Unavailable), (refusal.Status, refusal.Code));
+    }
+
+    [Theory]
+    [InlineData("no-port")]
+    [InlineData("throws")]
+    [InlineData("null")]
+    [InlineData("foreign-effective-binding")]
+    public async Task Missing_failing_or_foreign_proof_is_unavailable_without_a_stock_effect(string fault)
+    {
+        var world = new CommandWorld { WithProofPort = fault != "no-port" }.Dispatchable();
+        world.Proof.Answer = fault switch
+        {
+            "throws" => _ => throw new InvalidOperationException("synthetic proof owner failure"),
+            "null" => _ => null,
+            "foreign-effective-binding" => query =>
+            {
+                var other = new InventoryTransferOutgoingDocumentProofQueryV1(query.CompanyId, query.TransferId,
+                    query.DocumentId, query.ExpectedDocumentVersion + 1, query.OrderedTransferLineIds);
+                return InventoryTransferOutgoingDocumentProofV1.Match(other, new(other.CompanyId, other.TransferId,
+                    other.DocumentId, other.ExpectedDocumentVersion, other.OrderedTransferLineIds));
+            },
+            _ => null,
+        };
+
+        await Refused(world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest(),
+            Transport("actor")), 503, InventoryTransferCodesV1.Unavailable);
+
+        Assert.Empty(world.Writer.Calls);
+        Assert.Empty(world.Writer.RecordedRefusals);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("01")]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    [InlineData("")]
+    [InlineData("2147483648")]
+    public async Task Non_canonical_outgoing_document_version_is_refused_before_any_read_or_proof(string version)
+    {
+        var world = new CommandWorld().Dispatchable();
+
+        await Refused(world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest(version),
+            Transport("actor")), 400, InventoryTransferCodesV1.ValidationFailed);
+
+        Assert.Equal(0, world.Reader.Calls);
+        Assert.Empty(world.Proof.Queries);
+        Assert.Empty(world.Writer.Calls);
+    }
+
+    [Fact]
+    public async Task Stored_dispatch_answer_replays_before_the_transfer_read_or_proof()
+    {
+        var world = new CommandWorld().Dispatchable();
+        world.Proof.Outcome = InventoryTransferDocumentProofOutcomeV1.Unavailable;
+        world.Writer.ReplayResult = new(TransferView(Company), true, "original-correlation");
+
+        var result = await world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest(),
+            Transport("actor"));
+
+        Assert.True(result.IsReplay);
+        Assert.Equal("original-correlation", result.OriginalCorrelationId);
+        Assert.Equal(0, world.Reader.Calls);
+        Assert.Empty(world.Proof.Queries);
+        Assert.Equal("dispatch", Assert.Single(world.Writer.ReplayCalls));
+    }
+
+    [Fact]
+    public async Task Concurrent_refusal_recording_returns_the_key_winner_answer()
+    {
+        var world = new CommandWorld().Dispatchable();
+        world.Proof.Outcome = InventoryTransferDocumentProofOutcomeV1.Draft;
+        world.Writer.RefusalWinner = new(TransferView(Company), true, "winner-correlation");
+
+        var result = await world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest(),
+            Transport("actor"));
+
+        Assert.Same(world.Writer.RefusalWinner, result);
+        Assert.Empty(world.Writer.DispatchBindings);
+    }
+
+    [Theory]
+    [InlineData("revoked", InventoryTransferDocumentProofOutcomeV1.CurrentEffective)]
+    [InlineData("company", InventoryTransferDocumentProofOutcomeV1.Draft)]
+    [InlineData("actor", InventoryTransferDocumentProofOutcomeV1.Missing)]
+    public async Task Authority_or_context_change_during_the_proof_read_hides_the_outcome_and_writes_nothing(
+        string fault,
+        InventoryTransferDocumentProofOutcomeV1 outcome)
+    {
+        var world = new CommandWorld().Dispatchable();
+        world.Proof.Outcome = outcome;
+        world.Proof.During = fault switch
+        {
+            "revoked" => () => world.Authority.Granted = false,
+            "company" => () => world.Context.CompanyId = Guid.NewGuid(),
+            _ => () => world.User.UserId = "other",
+        };
+
+        await Refused(world.Service().DispatchAsync(world.Reader.Result!.TransferId, DispatchRequest(),
+            Transport("actor")), 403, InventoryTransferCodesV1.Forbidden);
+
+        Assert.Empty(world.Writer.Calls);
+        Assert.Empty(world.Writer.RecordedRefusals);
+    }
+
+    [Fact]
+    public void Transfer_write_permission_is_registered_company_wide_without_critical_marking()
+    {
+        Assert.Equal(InventoryPermissionManifestV1.StockTransferWrite, ErpPermissions.InventoryStockTransferWrite);
+        Assert.True(ErpPermissions.IsKnown(ErpPermissions.InventoryStockTransferWrite));
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(ErpPermissions.InventoryStockTransferWrite));
+        Assert.False(ErpPermissions.IsCritical(ErpPermissions.InventoryStockTransferWrite));
     }
 
     [Fact]
@@ -563,8 +745,16 @@ public sealed class InventoryTransferTests
         Destination, "Counterparty", TargetCustodian, At,
         [new(Guid.NewGuid(), Guid.NewGuid(), "7", "10")]);
 
-    private static DispatchInventoryTransferV1 DispatchRequest() =>
-        new("1", At.AddHours(1), new("inventory.transfer.outgoing", Guid.NewGuid(), null));
+    private static readonly Guid OutgoingDocument = Guid.Parse("70000000-0000-0000-0000-000000000001");
+
+    private static DispatchInventoryTransferV1 DispatchRequest(string documentVersion = "1") =>
+        new("1", At.AddHours(1), OutgoingDocument, documentVersion);
+
+    private static InventoryTransferViewV1 DispatchableTransfer(params Guid[] lineIds) => TransferView(Company) with
+    {
+        Lines = lineIds.Select(lineId => new InventoryTransferLineViewV1(lineId, Guid.NewGuid(), "1", "7", null, null,
+            "Planned")).ToArray(),
+    };
 
     private static AcceptInventoryTransferLineV1 AcceptRequest() =>
         new("2", At.AddHours(2), new("inventory.transfer.incoming", Guid.NewGuid(), null));
@@ -595,10 +785,18 @@ public sealed class InventoryTransferTests
         public TestDestination Destination { get; } = new();
         public TestWriter Writer { get; } = new();
         public TestReader Reader { get; } = new();
+        public TestProof Proof { get; } = new();
         public bool Known { get; init; } = true;
+        public bool WithProofPort { get; init; } = true;
 
         public InventoryTransferCommandService Service() =>
-            new(Context, User, Authority, Destination, Reader, Writer, _ => Known);
+            new(Context, User, Authority, Destination, Reader, Writer, _ => Known, WithProofPort ? Proof : null);
+
+        public CommandWorld Dispatchable(params Guid[] lineIds)
+        {
+            Reader.Result = DispatchableTransfer(lineIds.Length == 0 ? [Guid.NewGuid(), Guid.NewGuid()] : lineIds);
+            return this;
+        }
 
         public InventoryTransferQueryService Query() => new(Context, User, Authority, Reader);
     }
@@ -673,10 +871,34 @@ public sealed class InventoryTransferTests
             CancellationToken cancellationToken = default) =>
             Answer("plan", metadata, freshAuthorityFence, cancellationToken);
 
+        public List<InventoryTransferOutgoingDocumentOwnerSnapshotV1> DispatchBindings { get; } = [];
+        public List<InventoryTransferException> RecordedRefusals { get; } = [];
+        public InventoryTransferResultV1? RefusalWinner { get; set; }
+
+        public Task<InventoryTransferResultV1?> ReplayDispatchAsync(Guid transferId,
+            DispatchInventoryTransferV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Replay("dispatch", freshAuthorityFence, cancellationToken);
+
         public Task<InventoryTransferResultV1> DispatchAsync(Guid transferId, DispatchInventoryTransferV1 request,
+            InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
             InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
-            CancellationToken cancellationToken = default) =>
-            Answer("dispatch", metadata, freshAuthorityFence, cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            DispatchBindings.Add(effectiveOutgoingDocument);
+            return Answer("dispatch", metadata, freshAuthorityFence, cancellationToken);
+        }
+
+        public async Task<InventoryTransferResultV1?> RecordDispatchRefusalAsync(Guid transferId,
+            DispatchInventoryTransferV1 request, InventoryTransferException refusal, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default)
+        {
+            BeforeFence?.Invoke();
+            await freshAuthorityFence(cancellationToken);
+            RecordedRefusals.Add(refusal);
+            Calls.Add(("dispatch-refusal", metadata));
+            return RefusalWinner;
+        }
 
         public Task<InventoryTransferResultV1?> ReplayAcceptLineAsync(Guid transferId, Guid lineId,
             AcceptInventoryTransferLineV1 request, InventoryCommandMetadata metadata,
@@ -705,6 +927,29 @@ public sealed class InventoryTransferTests
             BeforeReplayFence?.Invoke();
             await freshAuthorityFence(cancellationToken);
             return ReplayResult;
+        }
+    }
+
+    private sealed class TestProof : IInventoryTransferOutgoingDocumentProofPortV1
+    {
+        public InventoryTransferDocumentProofOutcomeV1 Outcome { get; set; } =
+            InventoryTransferDocumentProofOutcomeV1.CurrentEffective;
+        public Func<InventoryTransferOutgoingDocumentProofQueryV1, InventoryTransferOutgoingDocumentProofV1?>? Answer
+        { get; set; }
+        public List<InventoryTransferOutgoingDocumentProofQueryV1> Queries { get; } = [];
+        public Action? During { get; set; }
+
+        public Task<InventoryTransferOutgoingDocumentProofV1> ReadAsync(
+            InventoryTransferOutgoingDocumentProofQueryV1 query,
+            CancellationToken cancellationToken = default)
+        {
+            Queries.Add(query);
+            During?.Invoke();
+            if (Answer is not null) return Task.FromResult(Answer(query)!);
+            return Task.FromResult(Outcome == InventoryTransferDocumentProofOutcomeV1.CurrentEffective
+                ? InventoryTransferOutgoingDocumentProofV1.Match(query, new(query.CompanyId, query.TransferId,
+                    query.DocumentId, query.ExpectedDocumentVersion, query.OrderedTransferLineIds))
+                : InventoryTransferOutgoingDocumentProofV1.Refused(Outcome));
         }
     }
 

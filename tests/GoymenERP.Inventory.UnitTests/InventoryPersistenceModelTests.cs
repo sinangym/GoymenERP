@@ -181,7 +181,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryLabelProductVersion", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryAverageCostLedger", StringComparison.Ordinal));
-        Assert.Equal("RelaxInventoryAverageCostReasonToZeroCostReceipt", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_RelaxInventoryAverageCostReasonToZeroCostReceipt", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryTransferDispatchDocumentVersion", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -439,6 +441,24 @@ public sealed class InventoryPersistenceModelTests
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51258", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[UnreadableReason] = 9", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_dispatch_document_version_migration_adds_a_checked_nullable_column_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferDispatchDocumentVersion();
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(InventoryTransferDispatchRow))!;
+
+        Assert.True(design.FindProperty(nameof(InventoryTransferDispatchRow.DocumentVersion))!.IsNullable);
+        Assert.Equal(InventoryDbContext.TransferDispatchDocumentVersionCheck,
+            Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_TransferDispatches_DocumentVersion").Sql);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51272", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferDispatches]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DocumentVersion] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }

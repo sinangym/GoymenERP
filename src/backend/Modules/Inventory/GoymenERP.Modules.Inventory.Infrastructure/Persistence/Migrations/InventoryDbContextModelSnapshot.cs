@@ -794,6 +794,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("DocumentLineId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("DocumentVersion")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("MovementId")
                         .HasColumnType("uniqueidentifier");
 
@@ -818,6 +821,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.ToTable("TransferDispatches", "inventory", t =>
                         {
+                            t.HasCheckConstraint("CK_TransferDispatches_DocumentVersion", "[DocumentVersion] IS NULL OR [DocumentVersion] >= 1");
+
                             t.HasCheckConstraint("CK_TransferDispatches_Identity", "[MovementId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND ([DocumentLineId] IS NULL OR [DocumentLineId] <> '00000000-0000-0000-0000-000000000000')");
 
                             t.HasCheckConstraint("CK_TransferDispatches_Text", "LEN([DocumentKind]) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
