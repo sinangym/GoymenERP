@@ -24,8 +24,11 @@ alıntı dışındadır.
 
 ## Yazarın okumaları (geri alınabilir, karar değil)
 
-- Kapının Lojistik'e bağlanma şekli (Satış'ın okuma portunu tüketme; port adı ve şekli Satış #1119'dadır, port main'de
-  yoktur): spec 04 "Fason teslimde müşteri riski kapısı" bölümünde. Port main'e girene kadar bu dilim kapıyı kodlamaz.
+- Kapının Lojistik'e bağlanma şekli (Satış'ın okuma portunu tüketme; port adı ve şekli Satış #1119 S2 önerisidir, port
+  main'de yoktur): spec 04 "Fason teslimde müşteri riski kapısı" bölümünde. Kapı kuralı satış sevk kapısıyla aynı
+  fonksiyondur (`Within` geçer; `Over`/`CreditLimitNotSet`/`SourceUnavailable` yalnız `Valid` istisnayla; diğer durumlar ve
+  port hatası durur). Tek kullanım Lojistik'in kesin sevk transaction'ında `ExceptionNo` başına tekil kayıtla zorlanır.
+  Port main'e girene kadar fason teslim kesin sevki 503 `Unavailable` ile kapalıdır (fail-closed).
 - İstisnanın izin adı, kaynağı ve ekranı Satış'ın kapsamıdır; grant/rol insan kapısıdır.
 
 ## Sınırlar

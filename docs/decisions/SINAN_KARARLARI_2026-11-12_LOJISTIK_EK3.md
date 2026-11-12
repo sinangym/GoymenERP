@@ -51,7 +51,7 @@ kapı veya ayrı istisna kaynağı icat etmez.
 için izin adı; düzeltme kaydının Lojistik içindeki tablo/alan karşılığı (spec 04: bugün tartı tek kayıttır, düzeltme
 model değişikliği ve migration/K3 gerektirir; SAT-D209 Lojistik'i bağlamaz, KLN-D5 ile kalkmıştır). Bunlar ayrı bir
 `ASSUMPTION-*` kimliği taşımaz; "yazar okuması" olarak işaretlidir ve etkinleştirmeden önce kod PR'ında gerekçelendirilir.
-Yuvarlama artığı `ASSUMPTION-LOJ-1` (spec 04) golden gelene kadar etkinleşmez.
+Yuvarlama artığı ve oran paydası kuralı Satış F2 spec'inin/`SalesInvoiceCalculator`'ın konusudur (#1119); Lojistik seçmez.
 
 ## Sınırlar
 
