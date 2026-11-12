@@ -1,10 +1,34 @@
 name: CI
 
 on:
+  # CIH-D5: prose that no CI job reads does not start this workflow. Only *.md files in four
+  # folders are ignored; the Markdown files a validator reads are re-included by name. The last
+  # matching pattern decides, and both events carry the same list. Pinned by
+  # tests/ci_safe_trx_summary/test_workflow_path_filters.py.
   pull_request:
+    paths:
+      - '**'
+      - '!docs/decisions/**/*.md'
+      - 'docs/decisions/KARAR_SICILI.md'
+      - 'docs/decisions/ACIK_KARARLAR.md'
+      - 'docs/decisions/SINAN_KARARLARI_2026-08-31.md'
+      - '!docs/delivery/**/*.md'
+      - 'docs/delivery/DECISION_PACK.md'
+      - '!docs/handoffs/**/*.md'
+      - '!docs/operations/**/*.md'
   push:
     branches:
       - main
+    paths:
+      - '**'
+      - '!docs/decisions/**/*.md'
+      - 'docs/decisions/KARAR_SICILI.md'
+      - 'docs/decisions/ACIK_KARARLAR.md'
+      - 'docs/decisions/SINAN_KARARLARI_2026-08-31.md'
+      - '!docs/delivery/**/*.md'
+      - 'docs/delivery/DECISION_PACK.md'
+      - '!docs/handoffs/**/*.md'
+      - '!docs/operations/**/*.md'
 
 permissions:
   contents: read
