@@ -397,6 +397,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 Measurement = share.Measurement is { } measurement ? (int)measurement : null,
                 SourceShipmentId = share.SourceShipmentId,
                 RecordedAtUtc = share.RecordedAtUtc,
+                RecordedBy = actorId,
             });
         }
 
