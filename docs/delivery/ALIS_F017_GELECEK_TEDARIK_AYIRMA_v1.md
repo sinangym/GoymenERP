@@ -55,7 +55,12 @@ yok): §3.7 host işlemi tutarlılık kontrolü host'un Alış sonucuna bağland
 başka her cevap, bayat `NotAllocatable` dahil, işlemin tamamını geri alır; Stok iş reddi de Alış yazısını geri alır); §3.1'e
 işlem içi tutarlılık kontrolü istisnası; §3.8 canlanma tek düzeltmedeki **net** açılan miktara bağlandı (net 0 ise durum
 değişmez); iptal geçmişi deposu iki seçenekte de zorunlu ve forward-fix `Down` davranışı yazıldı; alıntı ve satır atıfları
-düzeltildi.
+düzeltildi. #1116 hizalaması (koordinatör kararı, #1116 review B 6824169369 (d)): kabul geri almada `Consumed → Active` yeniden
+açma önce satış satırı kilidini, sonra alış satırlarını artan `lineId` ile alır; kilit sonrası satış satırı yeniden okunur,
+iptal/kapalıysa aktif gelecek oluşmaz (§3.4, §3.7, §6). Aynı kararın (a) satır kaldırmanın Stok portuna 0'a azaltma olarak
+gelmesi, (b) fiziksel tahsise dokunan bırakmaya ara 409 KLN-D32 (3), (c) terminal ret kaydı ve replay'in Satış revizyon
+komutunda olması Satış/Stok tarafıdır; bu belgede onlarla çelişen metin yoktur. #1116'nın yeni head'i sonrası metin yeniden
+karşılaştırılır.
 
 ## 1. Bugün (main `58b96aa2`)
 
@@ -235,7 +240,11 @@ token'ı yalnız Stok'un iki ayırmasını sıralar; Alış yazısını görmez.
   kalanı iptali ve "bağları düşür ve iptal et" (etkilenen her genel satır), (5) ileride Alış satır azaltma (F17-4), (6) API-11
   satır kapanışı ve yeniden açma (§3.6), (7) kabul düzeltmesi ve tedarikçiye iade (§3.7; Alış payı ve Stok geri alması aynı
   işlemde, aynı sahip).
-- **Sıra:** birden çok satır kilitlenecekse `lineId` artan sırayla alınır (kilitlenme önlemi).
+- **Sıra:** birden çok satır kilitlenecekse `lineId` artan sırayla alınır (kilitlenme önlemi). Satış satırı kilidi gereken
+  yollarda önce satış satırı, sonra alış satırları artan `lineId` ile alınır (#1116 §3.2 adım 0, §4.3): Stok ayırma oluşturma,
+  Satış satır iptali/azaltması ve kabul geri almada tüketilmiş ayırmanın `Consumed → Active` yeniden açılması (koordinatör
+  kararı, #1116 review B 6824169369 (d)). Satış satırı kilidinin arayüzü de host/BuildingBlocks'tadır; modüller birbirine
+  referans vermez.
 - **Zaman aşımı:** kısa (öneri 5 sn). Alınamazsa işlem yazmadan 409 `purchasing_line_busy` ile biter; replay değilse istemci yeniler.
   Kilit dönüş kodu < 0 ise asla devam edilmez (fail-closed).
 - Kilit işlem bitince (commit/rollback) kendiliğinden bırakılır. Uzun süreli kilit yoktur.
@@ -347,7 +356,8 @@ iade) dilimleridir. Bu bölüm o dilimlerin F-017 kurallarıdır; uygulama F17-6
 - **"Yerine yenisi gelecek" işaretinin yeri:** API-60 isteğinde zorunlu alan (`ReplacementExpected`, bool; öneri). Audit'e ve
   idempotency istek hash'ine girer; iade yazıldıktan sonra değiştirilemez (düzeltme ters iade + yeni iade ile).
 - **Host işlemi sırası (teknik, kabul akışı §3.3 ile aynı yön):**
-  1. §3.4 kilidi.
+  1. §3.4 kilitleri. Tüketilmiş ayırma `Consumed → Active` yeniden açılabilecekse önce bağlı satış satırı kilidi, sonra alış
+     satırları artan `lineId` ile (§3.4 Sıra).
   2. Alış geri alma/iade payını ve varsa canlanmayı (§3.8) yazar ve aynı `DbTransaction` içinde flush eder. Alış sonucu host'a
      döner: yeni sipariş sürümü, canlandı mı, satırın yeni kalanı (beklenen ayrılabilir miktar).
   3. Stok, Alış portunu (§3.1 `AllocatableText`) ve kendi tüketilmiş kaydını (§3.2) aynı işlemde okur. Host 2. adımdaki Alış
@@ -377,7 +387,8 @@ iade) dilimleridir. Bu bölüm o dilimlerin F-017 kurallarıdır; uygulama F17-6
   - Etiket satışa sevk edildiyse veya tüketildiyse o etiket için geri alma 409 `inventory_future_allocation_already_fulfilled` ile reddedilir;
     önce satış/sevk tarafında ters işlem gerekir.
   - Satış tarafı fiziksel tahsisi bıraktıysa veya satış satırı iptal edildiyse yeniden açılacak ayırma yoktur: yalnız etiket
-    geri alınır, ayırma açılmaz, uyarı gerekmez. "Aynı kimlikle yeniden açılır" yalnız fiziksel tahsis hâlâ aktifse geçerlidir.
+    geri alınır, ayırma açılmaz, uyarı gerekmez. Satış satırı kilit alındıktan sonra yeniden okunur; satır iptal veya kapalıysa
+    yeniden açma aktif gelecek ayırma oluşturmaz (koordinatör kararı, #1116 review B 6824169369 (d)). "Aynı kimlikle yeniden açılır" yalnız fiziksel tahsis hâlâ aktifse geçerlidir.
   - Kısmi geri almada önce geri alınan etiketlerin bağlı olduğu tahsisler geri alınır. Etiket ayrımı yoksa ALS-D84 sırasının
     tersi uygulanır: termini en uzak satış önce geri alınır, termini en yakın olan korunur. Yeniden açma da aynı sırayla yapılır.
 - **API-44 ters + yeni çevirme sırası:** aynı düzeltmede ters kayıt bir ayırmayı yeniden açarsa yeni kabul önce o ayırmaları
@@ -570,6 +581,9 @@ Ortak sorular #1116 §9 ile tek cevapla kapanır: S1 + S4 = #1116 S2, S2 = #1116
   `NotAllocatable`, `Line` null, farklı sürüm, `Unreadable`) işlemin tamamı yazmadan geri alınır; ayırma bırakılmaz,
   `acceptance-reversed-no-supply` yazılmaz. Stok iş reddi (ör. 409 `inventory_future_allocation_already_fulfilled`) Alış geri
   alma/iade payını ve canlanmayı da geri alır.
+- Kabul geri almada `Consumed → Active` yeniden açma önce satış satırı kilidini, sonra alış satırlarını artan `lineId` ile alır;
+  kilit sonrası satış satırı iptal/kapalı okunursa aktif gelecek ayırma oluşmaz, yalnız etiket geri alınır (gerçek SQL: satış
+  satırı iptali ile eşzamanlı geri alma kilitlenmeden biter).
 - Cancelled siparişte / API-11 kapalı satırda miktarı değişmeyen API-44 düzeltmesi (ters X + yeni X, net 0): sipariş Cancelled,
   satır kapalı kalır; `Approved`'a dönüş, canlanma olayı ve "canlandı" bildirimi yok; iptal/kapanış kaydı değişmez; Stok'ta
   ayırma aynı kimlikle `Consumed` kalır ve `acceptance-reversed-no-supply` yazılmaz. Net > 0 ise yalnız net miktar açılır.
