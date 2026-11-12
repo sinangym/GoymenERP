@@ -237,7 +237,7 @@ jobs:
   backend:
     name: Backend build, test and migration
     needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -506,7 +506,7 @@ jobs:
     needs:
       - frontend-static
       - frontend-test
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require static job and test shards
@@ -705,7 +705,7 @@ jobs:
   relational:
     name: SQL Server relational acceptance
     needs: [relational-shard, relational-rcsi]
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
