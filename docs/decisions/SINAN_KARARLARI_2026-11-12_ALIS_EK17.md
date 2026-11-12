@@ -4,7 +4,8 @@ Kaynak: Sinan Göymen'in koordinatör oturumunda AskUserQuestion ile verdiği ke
 https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819147253 madde 2 (F-017; önerilen seçenek) ve
 https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819640816 madde 3–4 (F-017 S1/S2) ve
 https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820601088 madde 1, 3, 6, 7, 8, 9 (11.–13. tur) ve
-https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098 madde 7 (18. tur). Bu dosya o kaydı
+https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098 madde 7 (18. tur) ve
+https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822140358 madde 1 (19. tur). Bu dosya o kaydı
 Alış şeridi için numaralandırır; yeni karar üretmez. Uygulama planı: `docs/delivery/ALIS_F017_GELECEK_TEDARIK_AYIRMA_v1.md`.
 
 ## 0. Yetki ve sınır
@@ -26,6 +27,7 @@ Alış şeridi için numaralandırır; yeni karar üretmez. Uygulama planı: `do
 | ALS-D89 | Kabulde bağlama başarısızsa (12. tur m.8; #1116 S7, S8 dahil) | "Mal kabulü durmaz, mal stoğa girer. Satış ayırması bırakılır ve satış uyarılır. Bloklu etiket (S8) de bu kurala girer." | Plan §3.3 "#1116 S7" | ALS-D82, DEC-STK-005 |
 | ALS-D90 | Ayırma süresi (13. tur m.9; #1116 S11) | "Ayırmanın son tarihi yoktur. Satınalma termini geçerse satış ve satınalma kullanıcısı uyarılır, ayırma açık kalır. Süre ileride ayarlardan tanımlanabilir." | #1116 §9 | ALS-D82 |
 | ALS-D91 | Kabul geri alma / iade nedene göre (18. tur m.7; ALS-D86'yı ayrıntılandırır) | "Hatalı kabul geri alınırsa miktar siparişe geri açılır. Tedarikçiye iadede kullanıcı 'yerine yenisi gelecek' işaretlerse açılır, işaretlemezse sipariş kapalı kalır." | ALS-D86 "gelecek miktar varsa" koşulu açıktı (#1110 review B P2-3) | ALS-D86, master INV-006, API-44, API-60 |
+| ALS-D92 | İptal edilmiş sipariş / API-11 kapalı satırda kabul geri alma veya işaretli iade (19. tur m.1; ALS-D91'i bu iki durumda koşulsuz kılar) | "Açılır, sipariş canlanır." Koordinatör kaydındaki açıklama: miktar siparişe geri açılır; iptal/kapalı satır yeniden açık olur ve gelecek tedarikten ayrılabilir. Canlanmanın teknik biçimi Alış spec'inde K3 dilimidir. | Öneri "Açılmaz, kapalı kalır" idi; #1110 rev6 yazar okuması ve geçici 409 (review A 6822067504 / B 6822096001 P2-1) | ALS-D91, ALS-D10, API-11, API-44, API-60 |
 
 ## 2. İş bölümü (koordinatör kaydı, 2026-11-12)
 
@@ -36,7 +38,8 @@ Alış şeridi için numaralandırır; yeni karar üretmez. Uygulama planı: `do
 
 ## 3. Açık kalanlar
 
-- S1–S4 ALS-D83..ALS-D86 ile cevaplandı; ALS-D86'nın "gelecek miktar" koşulu ALS-D91 ile nedene bağlandı; #1116 S1/S3, S5, S7/S8, S11 ALS-D87..ALS-D90 ile kayda alındı. Alış tarafında açık
+- S1–S4 ALS-D83..ALS-D86 ile cevaplandı; ALS-D86'nın "gelecek miktar" koşulu ALS-D91 ile nedene bağlandı; Cancelled/API-11
+  kapalı satır kesişimi ALS-D92 ile cevaplandı; #1116 S1/S3, S5, S7/S8, S11 ALS-D87..ALS-D90 ile kayda alındı. Alış tarafında açık
   iş kararı kalmadı.
 - #1116 S6 (izin adı) ve S9 (teknik/genel satır eşlemesi) koordinatör notuna göre teknik konulardır; şerit PR'da gerekçelendirir.
   S10 SAT-D298 ile kilitlidir. Hiçbir `OPEN-*` bu kayıtla kapanmaz.
