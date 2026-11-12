@@ -36,7 +36,7 @@ Değişenler:
 - **Satış satırı iptali/azaltması (KLN-D28):** §5.1 (c)'deki "iptal reddedilir" kapalı yönü kalktı. Satış iptal/azaltma
   komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada max(0, ayırma − (yeni
   miktar − sevk edilen)) bırakılır; bırakma exactly-once'dır; başarısızsa Satış komutu da yazılmaz (§3.3, §4.3, §5, §5.1, §7). Satış
-  karşılığı SAT-D314 (#1119, merge bekliyor). F017-s kapsamı bu çağrıyı
+  karşılığı SAT-D314 (#1119, `main` `c93433f6`). F017-s kapsamı bu çağrıyı
   içerir (§10). Testler §8'de.
 - **Canlanmada bırakılmış ayırmalar (KLN-D29):** geri gelmez; canlanan miktar serbest açık miktardır, kullanıcı gerekirse
   yeniden ayırır, sistem "canlandı" bildirimi gösterir. §3.6'daki "yazarın okuması" Sinan kararına bağlandı; §3.7, §8.
@@ -68,6 +68,14 @@ m.1 "Otomatik bırakılır (Önerilen)" ve aynı yorumdaki koordinatör formül 
   `released.v1` bırakılan ve kalan miktarı taşır (§3.3, §3.4, §4.1, §4.2).
 - **Talep tarafı çapası (B P2-4):** satış satırı kilidi; sıra satış satırı → alış satırları (artan); yarış testi
   değişmezleri (§3.2 adım 0 ve 5, §4.3, §8).
+
+Revizyon 7 (2026-11-12): koordinatör notu (oturum mesajı, 6823760388 sonrası). #1119 (SAT-D314/SAT-D315 25. tur hizası)
+`main`de `c93433f6`. Değişenler:
+- **Ara red kodu ve sahibi (KLN-D32 (3)):** ret Stok bırakma portunundur; §3.2 kilitleri (satış satırı, sonra alış
+  satırları) alındıktan sonra, hiçbir yazmadan önce tespit edilir. Kod 409 `inventory_future_allocation_physical_release_unavailable` (öneri,
+  F017-s'de kesinleşir); Satış problemine taşınır (§5.1 (c), §7). §8'e test eklendi.
+- #1119 "merge bekliyor" atıfları `main` `c93433f6`'ya çevrildi; SAT-D314/SAT-D315 25. tur ek kaynağıyla tek tanıma ve
+  ara redde hizalıdır.
 - **P3:** açık seçim `ExpectedAllocationVersion` taşır; fazlayı aşan seçim tek kod 422; termin değişikliği sırayı yalnız
   aynı işlemde okunan tarihle etkiler, sıra audit'e yazılır; §9 S17, §9.1, §10, §11.
 
@@ -402,7 +410,7 @@ gevşetmek fiziksel tahsis kısıtlarını zayıflatır. Öneri: **ayrı tablola
 - **Termin:** satınalma satırı termini bu portta yoktur. Ayrı okuma `GetLineScheduleAsync` ile gelir (#1110 §3.1, F17-1b,
   #1101'e bağlı; dilim kimliği, teslim tarihi, miktar, kalan). KLN-D30 sırası bu okumayı kilit altında, aynı işlemde
   kullanır; satırın tarihi teslim alınmamış kalanı olan dilimlerin en geç `DeliveryDate`'idir, dilimi olmayan satır
-  tarihsizdir, `Unreadable`/hata fail-closed 503'tür (KLN-D30 (2), (4)). #1119 SAT-D315 aynı alan ve kaynakla hizalanır. §3.5 sırası ise **satış** sipariş satırı terminini kullanır; onu satış satırı portundan okur. Stok
+  tarihsizdir, `Unreadable`/hata fail-closed 503'tür (KLN-D30 (2), (4)). SAT-D315 (`main` `c93433f6`) sırayı Stok portuna bırakır. §3.5 sırası ise **satış** sipariş satırı terminini kullanır; onu satış satırı portundan okur. Stok
   terminleri saklamaz.
 - **Mal kabulde Alış alanları:** genel satıra yapılan kabulde yeni alan gerekmez; `InventoryGoodsReceiptRequestV1`
   satınalma sipariş ve satır kimliğini taşır (`InventoryGoodsReceiptContractsV1.cs:62-66`). Teknik dilime yapılan kabul
@@ -425,7 +433,7 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
   onaylanan iptal ayırmayı (c)'ye göre bırakır (KLN-D28 (9)).
 - **(c) Satış satırı iptal edilir veya azaltılırsa (KLN-D28):** gelecek ayırma **otomatik bırakılır** (Sinan 21. tur
   m.2). Satış iptal/azaltma komutu aynı host işleminde Stok bırakma portunu (§5) çağırır; artan ayırma kalmaz; bırakma
-  audit'lidir (koordinatör anlamı). Satış tarafı karşılığı: SAT-D314, #1119 — merge bekliyor. Ayrıntılar (**yazarın
+  audit'lidir (koordinatör anlamı). Satış tarafı karşılığı: SAT-D314 (#1119, `main` `c93433f6`). Ayrıntılar (**yazarın
   okuması, geri alınabilir**; KLN-D28 (3)–(8), SAT-D314 yazar okuması):
   - Satış Stok tablosuna yazmaz; bırakmayı Stok kendi portuyla, §3.2 adım 0'daki satır kilidi altında, sürüm, audit ve
     `released.v1` olayıyla yapar. Modüller birbirine referans vermez; host participant/port deseniyle bağlanır.
@@ -439,8 +447,8 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
     bırakır ve "artan ayırma kalmaz"ı bozar. Örnekler: satır 100, sevk 0, ayırma 60, 30 azaltma → açık 70 ≥ 60 →
     bırakılan 0 (min formülü yanlışlıkla 30 bırakırdı); satır 100, sevk 40, ayırma 60, satır 80'e iner → açık 40 →
     bırakılan 20. Açık miktar içinde kalan ayırma aktif kalır. Golden satırlar §8'dedir. Fiziksel tahsis de varsa
-    sıra ve ara durum aşağıda (KLN-D31, KLN-D32). #1119 SAT-D314/SAT-D315'in bu tanıma ve KLN-D32 ara reddine hizası
-    koordinatörden istenir (#1119 `8f2fe696` SAT-D314 (1) yalnız-gelecek formülünü koşulsuz yazar).
+    sıra ve ara durum aşağıda (KLN-D31, KLN-D32). SAT-D314/SAT-D315 `main`de (`c93433f6`) 25. tur ek kaynağıyla bu
+    tanıma ve KLN-D32 ara reddine hizalıdır.
   - **Birden çok gelecek ayırma (KLN-D30, Sinan 23. tur m.1):** bırakılacak miktar birden çok ayırmaya (alış satırına)
     yayılıyorsa **en geç gelen önce** bırakılır: ayırmanın bağlı olduğu alış satırının beklenen teslim tarihine göre
     azalan sırada (tarih kaynağı §5 Termin; yazarın okuması); son ayırmadan gerektiği kadar kısmi bırakılır (§3.4).
@@ -459,7 +467,11 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
   - **Gelecek yetmezse fiziksel fazla (KLN-D32, Sinan 25. tur m.1):** kalan kısım depodaki fiziksel tahsisten otomatik
     bırakılır; kullanıcı komutta seçerse onun seçimi geçer. **Ara durum:** fiziksel bırakma yolu main'e gelene kadar,
     fiziksel tahsisten bırakma gerektiren azaltma bütünüyle reddedilir: gelecek ayırma da bırakılmaz, Satış komutu
-    yazılmaz (kod F017-s'de adlandırılır; (b)'deki fiziksel iptal reddiyle aynı yön). Fiziksel bırakma Stok'un fiziksel
+    yazılmaz ((b)'deki fiziksel iptal reddiyle aynı yön). **Reddin sahibi Stok bırakma portudur:** §3.2 adım 0
+    kilitleri (önce satış satırı, sonra alış satırları artan `lineId`) alındıktan ve satıra bağlı ayırma kümesi
+    okunduktan sonra, hiçbir yazmadan önce fazla hesaplanır; gelecekten bırakılabilecek < fazla ise port 409
+    `inventory_future_allocation_physical_release_unavailable` döner (öneri, F017-s'de kesinleşir), audit/outbox yazılmaz, Satış komutu
+    geri alınır ve kod Satış problemine taşınır. Fiziksel bırakma Stok'un fiziksel
     tahsis yazıcısıyla, aynı host işleminde ve satış satırı kilidi altında yapılır (yazarın okuması). Etiket bazlı
     tahsisin kısmi bırakılma yolu F017-s'de `NEEDS-SPEC`'tir; tahminle seçilmez, cevap gelene kadar ara red sürer.
   - Bırakma portu okunamaz, hata verir, kilit alınamaz veya bırakma başarısız olursa Satış iptali/azaltması da yazılmaz
@@ -510,7 +522,7 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
 | Alış portu okunamıyor | 503 (kapalı başarısızlık; asla "sıfır ayrılmış" sayılmaz) |
 | Satış azaltmasında açık bırakma seçimi bırakılacak miktarı (fazla) aşıyor (§5.1 (c), KLN-D30) | 422 (öneri `inventory_future_allocation_release_selection_invalid`; yazma yok) |
 | Açık seçimdeki ayırma sürümü bayat (KLN-D30 (3)) | 409 `inventory_allocation_version_conflict` |
-| Azaltma fiziksel tahsisten bırakma gerektiriyor, fiziksel bırakma yolu yok (KLN-D32 (3)) | 409 (kod F017-s'de adlandırılır; yazma yok, gelecek ayırma da bırakılmaz) |
+| Azaltma fiziksel tahsisten bırakma gerektiriyor, fiziksel bırakma yolu yok (KLN-D32 (3)) | 409 `inventory_future_allocation_physical_release_unavailable` (öneri, F017-s'de kesinleşir; Stok bırakma portu §3.2 kilitleri altında tespit eder; yazma yok, gelecek ayırma da bırakılmaz; Satış problemine taşınır) |
 | Alış termin okuması `Unreadable`/hata (KLN-D30 (4)) | 503 (Satış komutu yazılmaz; "tarihsiz" sayılmaz) |
 | Satış satırı kilidi alınamadı (§3.2 adım 0) | 409 (kod F017-b'de adlandırılır) |
 | Satış iptali/azaltmasında Stok bırakması başarısız (§5.1 (c)) | Satış komutu yazılmaz; Stok'un ret kodu (409/503) Satış problemine taşınır |
@@ -569,7 +581,9 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
   bırakılır, açık seçim varsayılanı geçer, bayat seçim 409, fazlayı aşan seçim 422, eşitlik kuralı deterministiktir,
   termin okunamazsa komut yazılmaz, çok dilimli satırda teslim alınmamış en geç dilim tarihi kullanılır (KLN-D30); fiziksel
   tahsis de varsa önce gelecek ayırma bırakılır (KLN-D31); fiziksel bırakma gerekirse ara durumda komut bütünüyle
-  reddedilir ve hiçbir ayırma değişmez (KLN-D32); bırakma başarısızsa,
+  reddedilir ve hiçbir ayırma değişmez (KLN-D32; test: fiziksel 10 + gelecek 10, satır 20 → 5 → Stok portu 409
+  `inventory_future_allocation_physical_release_unavailable`, gelecek ayırmanın `Version`/`ReleasedQuantity`'si, fiziksel tahsis, audit, outbox
+  ve Satış satırı değişmez; aynı anahtarla tekrar aynı reddi döner; 20 → 15 aynı kurulumda kabul edilir); bırakma başarısızsa,
   port okunamazsa veya kilit alınamazsa Satış komutu da yazılmaz (satır iptal edilmiş, ayırma aktif durumu oluşmaz);
   aynı Satış komut anahtarıyla replay ikinci bırakma üretmez; bırakma stok bakiyesini değiştirmez. Gerçek SQL: Satış iptali × mal
   kabul çevirmesi ve Satış iptali × oluşturma yarışında sonuç tutarlıdır.
@@ -642,7 +656,7 @@ tur 6820601088; 18. tur 6821262098; 21. tur 6822767886). Uygulama yeri parantezd
   F017-e.
 - **S13 — Satış satırı iptali veya azaltması:** "Otomatik bırakılır (Önerilen)" (21. tur m.2, 6822767886; KLN-D28).
   Satış komutu aynı işlemde Stok bırakma portunu çağırır; artan ayırma kalmaz; audit'li. Satış tarafı karşılığı SAT-D314
-  (#1119, merge bekliyor). Eski §9.1 aday 1. §5.1 (c), F017-s.
+  (#1119, `main` `c93433f6`). Eski §9.1 aday 1. §5.1 (c), F017-s.
 - **S14 — Canlanmada bırakılmış ayırmalar:** "Geri gelmez, yeniden ayrılır (Önerilen)" (21. tur m.3, 6822767886;
   KLN-D29). Canlanan miktar serbest açık miktardır; kullanıcı gerekirse yeniden ayırır; "canlandı" bildirimi. Eski §9.1
   aday 2. §3.6, §3.7, F017-e.

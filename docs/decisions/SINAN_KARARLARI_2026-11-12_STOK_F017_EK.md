@@ -9,9 +9,9 @@ DEC-SAL-005'in "önizleme olmadan iptal yok" kuralını kaldırmaz (önizleme ge
 iptalin parçası olur). 11-12 Stok karar dosyası (#1121) `main`dedir (`e165aaee`); bu belge o dosyayı düzenlemez.
 `KARAR_SICILI` ve `ACIK_KARARLAR` değişmez.
 
-**Kimlikler:** KLN-D serisinde `main`deki (`e165aaee`, 2026-11-12) son kimlik KLN-D27'dir (#1121 merge edildi).
+**Kimlikler:** KLN-D serisinde `main`deki (`c93433f6`, 2026-11-12) son kimlik KLN-D27'dir (#1121 merge edildi).
 `git grep -ohE "KLN-D(2[89]|3[0-9])" origin/main` boştur. Açık PR dallarının `origin/main...head` eklemelerinde KLN-D28…KLN-D32
-başka bir tanımla geçmez; #1119 (`8f2fe696`) KLN-D28, KLN-D30 ve KLN-D31'e yalnız atıf yapar, KLN-D32+ hiçbir açık dalda
+başka bir tanımla geçmez; #1119 (`main` `c93433f6`) KLN-D28, KLN-D30 ve KLN-D31'e yalnız atıf yapar, KLN-D32+ hiçbir açık dalda
 yoktur (yazar taraması, 2026-11-12, bütün açık PR'lar). Gelecek tedarik ayırması Kalan Modüller (Stok) şeridinin işi olduğu
 için KLN-D kullanıldı; yeni ön ek icat edilmedi.
 
@@ -104,14 +104,23 @@ için KLN-D kullanıldı; yeni ön ek icat edilmedi.
   teslim alınmamış en geç dilim tarihi; fiziksel 10 + gelecek 10, satır 20 → 15 → gelecekten 5. F017-s, #1110 F17-1b
   (`GetLineScheduleAsync`, #1101) main'e gelmeden sürülmez.
 - **KLN-D32 — F017-s.** Fiziksel fazla, fiziksel bırakma yolu gelene kadar ara redle korunur: fiziksel 10 + gelecek 10,
-  20 → 5 komutu yazılmaz ve hiçbir ayırma değişmez. Yol `NEEDS-SPEC` cevabıyla geldiğinde aynı golden gelecekten 10 +
+  20 → 5 komutu yazılmaz ve hiçbir ayırma değişmez. Reddin sahibi Stok bırakma portudur: spec §3.2 kilitleri altında,
+  yazmadan önce tespit eder ve 409 `inventory_future_allocation_physical_release_unavailable` döner (öneri, F017-s'de kesinleşir; spec §7,
+  §8); Satış bu kodu kendi problemine taşır (koordinatör notu). Yol `NEEDS-SPEC` cevabıyla geldiğinde aynı golden gelecekten 10 +
   fiziksel 5 bırakır. Talep tarafı yarış testi: satış satırı azaltması × aynı satıra başka alış satırından oluşturma;
   sonuçta iptal satırda aktif gelecek ayırma yoktur ve aktif gelecek ayırma ≤ yeni açık miktar.
 - **Satış şeridi karşılığı.** Satış tarafının karar satırı (Satış iptal/azaltma komutunun Stok portunu çağırması) Satış
   şeridinindir; bu belge SAT-D kimliği açmaz. Satış tarafı karşılığı: **SAT-D314**
-  (`SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`, #1119 — merge bekliyor). #1119 `8f2fe696`'da SAT-D314 (1) yalnız-gelecek
-  formülünü koşulsuz yazar ve SAT-D315 "fiziksel tahsisi bırakmaz" der; KLN-D28 (4) tek tanımına ve KLN-D32 ara redde
-  hizalanması koordinatörden istenir (koordinasyon notu). Hizalanana kadar Stok metni bu belgedir.
+  (`SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`, #1119, `main` `c93433f6`). SAT-D314/SAT-D315'in "Ek kaynak (25. tur)"
+  paragrafı KLN-D28 (4) tek tanımını ve KLN-D32 ara reddini aynı #66 6823547103 yorumundan yazar; hiza tamamdır.
+- **F-017 dışı port notu (Sinan 26. tur m.1, #66 6823809221, AT-044; KLN kararı değildir).** "Kısmi dilinir, kalan
+  aynı etikette": dilme planında planlanan kg etiketin güncel bakiyesini aşamaz, kalan aynı etiket numarasıyla düşmüş
+  bakiyeyle kalır. Stok tarafında **yeni port veya alan gerekmez**: Üretim'de zaten enjekte olan
+  `IInventoryLabelDetailsV1.GetAsync(labelId)` aynı version-fenced okumada `LabelVersion`, `Balances.PhysicalKg/FreeKg/BlockedKg`
+  ve pozisyonları (`OwnerKind`, `OwnerId`) döner. Okunamazsa (503/409/404/401/403) plan reddedilir, "bakiye yok/sıfır"
+  sayılmaz. Hangi bakiyenin (fiziksel / serbest) üst sınır olduğu, planın kendi etiket ayırmasının (etiket bazlı,
+  `DemandLineId = Label.Id`) kısmi dilmede kalan kg için nasıl davrandığı ve tüketim katılımcısının kısmi tüketimi
+  Üretim K3 diliminde yazılır ve test edilir; Stok tahminle seçmez. Uygulama o dilimle birlikte yapılır.
 - **KLN-D29 — Alış canlanma dilimi.** Alış karşılığı #1110 §3.8'dir (canlanma K3 dilimi). Stok tarafında yeni kod
   gerekmez: canlanan miktar Alış portundan ayrılabilir okunur ve normal oluşturma yolu çalışır (spec §3.6, §3.7, F017-e).
   "Canlandı" bildirimi Alış canlanma olayına bağlanır; Stok bir işaret saklamaz.
