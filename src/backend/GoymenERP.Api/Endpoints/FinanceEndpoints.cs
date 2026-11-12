@@ -27,6 +27,7 @@ public static class FinanceEndpoints
     public const string PartyBalancePath = "/api/v1/finance/party-balance";
     public const string OfficialInvoiceImportsPath = "/api/v1/finance/official-invoice-imports";
     public const string OfficialInvoiceImportBatchesPath = "/api/v1/finance/official-invoice-import-batches";
+    public const string OfficialSalesInvoicesPath = "/api/v1/finance/official-sales-invoices";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -90,6 +91,7 @@ public static class FinanceEndpoints
         MapCustomerInstrumentEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
+        MapOfficialSalesInvoiceEndpoints(endpoints);
         return endpoints;
     }
 
@@ -373,6 +375,131 @@ public static class FinanceEndpoints
     /// event). Each command needs an <c>Idempotency-Key</c> and answers like every Finance command (200 / 422 / 409;
     /// 403 / 503 code-less); the route's instrument id and the body's must agree, else 400.
     /// </summary>
+    // F-005 D1 (FNS-D17…FNS-D21, FNS-D26): manual official sales invoice record. Record and approve only; there is no
+    // edit, cancel or withdraw route.
+    private static void MapOfficialSalesInvoiceEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(OfficialSalesInvoicesPath, async (
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialSalesInvoiceRecordRequestV1>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.RecordAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RecordFinanceOfficialSalesInvoiceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<FinanceOfficialSalesInvoiceRecordRequestV1>("application/json")
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(OfficialSalesInvoicesPath, async (
+                [FromQuery] bool? pendingOnly,
+                [FromQuery] string? cursor,
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ListAsync(Context(companyContext, currentUser, correlation),
+                    pendingOnly ?? false, cursor, cancellationToken));
+            })
+            .WithName("ListFinanceOfficialSalesInvoicesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialSalesInvoicePageV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet($"{OfficialSalesInvoicesPath}/{{invoiceId:guid}}", async (
+                Guid invoiceId,
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.GetAsync(Context(companyContext, currentUser, correlation), invoiceId,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceOfficialSalesInvoiceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialSalesInvoiceViewV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost($"{OfficialSalesInvoicesPath}/{{invoiceId:guid}}/approval", async (
+                Guid invoiceId,
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialSalesInvoiceApproveRequestV1>(httpContext, cancellationToken)
+                    is not { } request || request.InvoiceId != invoiceId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceOfficialSalesInvoiceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<FinanceOfficialSalesInvoiceApproveRequestV1>("application/json")
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+    }
+
     private static void MapCustomerInstrumentEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(CustomerInstrumentsPath, async (

@@ -486,3 +486,30 @@ because it sums the outstanding of open payables.
 
 Not in this slice: the payment allocation screen (the receipt allocation UI is the model), a payment reversal (API-23,
 which must refuse while a payment allocation is active), advances (API-21) and cross-currency allocation (API-22).
+
+## F-005 D1: official sales invoice record — FNS-D17…FNS-D21, FNS-D26
+
+Finance owns the official sales invoice (e-Fatura / e-Arşiv) that was issued outside the ERP. One person records it
+by hand with its PDF, a different person approves it. Only an `Approved` record is the official fact; the Sales read
+port (`ISalesOfficialInvoiceReadPortV1`, D3) will read approved records only. No edit, cancel or withdraw in D1.
+
+| Permission | Scope | Critical | Granted |
+|---|---|---|---|
+| `finance.official-sales-invoices.record` | Company-wide | No | Nobody (registered only) |
+| `finance.official-sales-invoices.approve` | Company-wide | No | Nobody (registered only) |
+
+FNS-D26: the Finance and Accounting roles may later receive both permissions; the grant is a human gate and no role or
+seed receives either here. Reading is not a third permission: a holder of either may read.
+
+| Part | What |
+|---|---|
+| HTTP | `POST /api/v1/finance/official-sales-invoices` (`RecordFinanceOfficialSalesInvoiceV1`), `POST …/{invoiceId}/approval` (`ApproveFinanceOfficialSalesInvoiceV1`, body carries the expected version), `GET` list (window of 50, `pendingOnly=true` lists records waiting for approval) and `GET …/{invoiceId}` detail. Commands need the `Idempotency-Key` header; replay answers 200 |
+| Record | Customer party, ETTN, official number, currency and the exact decimal text amounts (DEC-FIN-014): payable in the invoice currency, then payable, **tax base (`taxBaseFunctionalAmount`, required, FNS-D21)**, VAT and withholding in TL (functional). Amounts are validated as exact decimal text; the tax base, like VAT, must be non-negative. It is stored and shown only: no comparison with the Sales draft and no tolerance (FNS-D21) |
+| PDF (FNS-D18) | `IFinanceOfficialSalesInvoiceDocumentPortV1` asks Documents with the actor's own read authority. The version must be a clean, downloadable `application/pdf` in the same company, linked to the customer party (`counterparty.party` — Documents has no Finance owner kind yet). The checked version and SHA-256 are kept; approval re-checks the same version (`document_changed` otherwise). Any failure fails closed |
+| Approval (FNS-D19) | The approver must differ from the recorder (`approver_must_differ_from_recorder`), checked per person in the service and again by `CK_OfficialSalesInvoices_Approval` in the database |
+| Uniqueness | One record per company and ETTN (`ettn_already_recorded`) and per company and official number (`official_no_already_recorded`) |
+| Idempotency / audit | `finance.OfficialSalesInvoiceCommands` holds key hash, payload hash, actor and answer in the same save as the row and the audit event (`Finance.OfficialSalesInvoice`). Refusals are not recorded |
+| Migration `20261111233047_AddOfficialSalesInvoices` | Pure DDL up (two tables). `Down` refuses with `THROW 51051` while any official sales invoice or its command is stored (forward fix) |
+
+Not in this slice: the screen, the Sales read port (D3), withdrawing a pending record, correcting or cancelling an
+approved record (FNS-D20) and PDF retention.

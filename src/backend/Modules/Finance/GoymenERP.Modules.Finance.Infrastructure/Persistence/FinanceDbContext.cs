@@ -73,6 +73,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<CustomerInstrumentMovementRow> CustomerInstrumentMovements => Set<CustomerInstrumentMovementRow>();
 
+    /// <summary>F-005 D1: the manual official sales invoice record (maker≠approver) and its command receipts.</summary>
+    internal DbSet<FinanceOfficialSalesInvoiceRow> OfficialSalesInvoices => Set<FinanceOfficialSalesInvoiceRow>();
+
+    internal DbSet<FinanceOfficialSalesInvoiceCommandRow> OfficialSalesInvoiceCommands => Set<FinanceOfficialSalesInvoiceCommandRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -98,6 +103,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureCustomerInstrumentMovements(modelBuilder);
         ConfigurePaymentAllocations(modelBuilder);
         ConfigurePaymentAllocationStates(modelBuilder);
+        ConfigureOfficialSalesInvoices(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -703,6 +709,98 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>Maximum official invoice number length; mirrors Sales' SalesInvoice.MaximumOfficialNoLength.</summary>
+    internal const int OfficialSalesInvoiceMaximumOfficialNoLength = 64;
+
+    /// <summary>Canonical lowercase "D" GUID text of an ETTN; mirrors Sales' SalesInvoice.EttnLength.</summary>
+    internal const int OfficialSalesInvoiceEttnLength = 36;
+
+    /// <summary>
+    /// FNS-D20 + maker≠approver: a pending row carries no approval and is at version 1; an approved row names a
+    /// DIFFERENT actor than the recorder, compared byte-exact whatever the column collation is.
+    /// </summary>
+    internal const string OfficialSalesInvoiceApprovalCheck =
+        "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1) OR "
+        + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 "
+        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2)";
+
+    private void ConfigureOfficialSalesInvoices(ModelBuilder modelBuilder)
+    {
+        var invoice = modelBuilder.Entity<FinanceOfficialSalesInvoiceRow>();
+        invoice.ToTable("OfficialSalesInvoices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[PdfDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Text",
+                "LEN([OfficialNo]) > 0 AND DATALENGTH([Ettn]) = 36 "
+                + "AND [Ettn] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%' "
+                + "AND LEN([PayableAmountText]) > 0 AND LEN([PayableFunctionalAmountText]) > 0 "
+                + "AND LEN([TaxBaseFunctionalAmountText]) > 0 "
+                + "AND LEN([VatFunctionalAmountText]) > 0 AND LEN([WithholdingFunctionalAmountText]) > 0 "
+                + "AND [PdfDocumentVersionNo] >= 1 AND DATALENGTH([PdfSha256]) = 64 "
+                + "AND [PdfSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' "
+                + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", OfficialSalesInvoiceApprovalCheck);
+        });
+        invoice.HasKey(x => x.Id);
+        invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.OfficialNo).HasMaxLength(OfficialSalesInvoiceMaximumOfficialNoLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.Ettn).HasMaxLength(OfficialSalesInvoiceEttnLength).IsUnicode(false).IsFixedLength()
+            .UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.PayableAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.PayableFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.TaxBaseFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.VatFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.WithholdingFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.PdfSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength()
+            .UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.Version).IsConcurrencyToken();
+        invoice.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.HasIndex(x => new { x.CompanyId, x.OfficialNo }).IsUnique()
+            .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo");
+        invoice.HasIndex(x => new { x.CompanyId, x.Ettn }).IsUnique()
+            .HasDatabaseName("UX_OfficialSalesInvoices_Ettn");
+        invoice.HasIndex(x => new { x.CompanyId, x.Status, x.RecordedAtUtc, x.Id })
+            .HasDatabaseName("IX_OfficialSalesInvoices_List");
+        invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<FinanceOfficialSalesInvoiceCommandRow>();
+        command.ToTable("OfficialSalesInvoiceCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceCommands_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[InvoiceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceCommands_Content",
+                "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 "
+                + "AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+        });
+        command.HasKey(x => x.Id);
+        command.Property(x => x.Id).ValueGeneratedNever();
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ResultJson).IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     internal const string PaymentAllocationIdentityCheck =
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
         + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
@@ -998,6 +1096,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             throw new InvalidOperationException("Resmî fatura import kaynak, onay ve komut kayıtları append-only'dir.");
         }
 
+        if (ChangeTracker.Entries<FinanceOfficialSalesInvoiceCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Resmî satış faturası komut kayıtları append-only'dir.");
+        }
+
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -1065,8 +1169,22 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Müşteri çeki/senedi yalnız izinli bir durum adımıyla, sürümü bir artarak değişir.");
                 }
 
+                if (entry.Entity is FinanceOfficialSalesInvoiceRow officialSalesInvoice
+                    && !IsAllowedOfficialSalesInvoiceApproval(entry, officialSalesInvoice))
+                {
+                    // FNS-D20: the only change is PendingApproval → Approved by a different actor; an approved
+                    // record never changes and there is no edit, cancel or withdraw.
+                    throw new InvalidOperationException(
+                        "Resmî satış faturası kaydı yalnız bekleyen durumdan başka bir kişinin onayıyla değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
+                    FinanceOfficialSalesInvoiceRow =>
+                    [
+                        nameof(FinanceOfficialSalesInvoiceRow.Status), nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy),
+                        nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc),
+                    ],
                     ReceiptDraftRow =>
                     [
                         nameof(ReceiptDraftRow.PartyId), nameof(ReceiptDraftRow.CompanyAccountId),
@@ -1161,6 +1279,22 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
             }
         }
+    }
+
+    private static bool IsAllowedOfficialSalesInvoiceApproval(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        FinanceOfficialSalesInvoiceRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.Status)]!;
+        var originalVersion = (long)entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.Version)]!;
+        return originalStatus == (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
+               && current.Status == (int)FinanceOfficialSalesInvoiceStatusV1.Approved
+               && current.Version == originalVersion + 1
+               && entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy)] is null
+               && entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc)] is null
+               && !string.IsNullOrWhiteSpace(current.ApprovedBy)
+               && !string.Equals(current.ApprovedBy, current.RecordedBy, StringComparison.Ordinal)
+               && current.ApprovedAtUtc is not null;
     }
 
     private static bool IsAllowedManualBankPaymentTransition(

@@ -198,6 +198,18 @@ public static class ErpPermissions
     public const string FinanceOfficialInvoiceImportApprove = "finance.official-invoice-import.approve";
 
     /// <summary>
+    /// F-005 D1 (FNS-D17…FNS-D21): the manual official sales invoice record. Registered, not granted (FNS-D26: the
+    /// Finance and Accounting roles may later receive both; no role or seed receives either here, the grant is a
+    /// human gate). Both are company-wide because the record belongs to the server-resolved company
+    /// and has no narrower scope dimension. They are not Critical; the owner service and a database check enforce
+    /// recorder/approver separation per person (FNS-D26).
+    /// </summary>
+    public const string FinanceOfficialSalesInvoicesRecord = "finance.official-sales-invoices.record";
+
+    /// <inheritdoc cref="FinanceOfficialSalesInvoicesRecord"/>
+    public const string FinanceOfficialSalesInvoicesApprove = "finance.official-sales-invoices.approve";
+
+    /// <summary>
     /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
     /// #254 5654539215), accepted by the coordinator (K-1). Registering the names makes them KNOWN,
     /// not granted: no role and no user receives them here; the grant is a human gate (K-3).
@@ -1135,6 +1147,8 @@ public static class ErpPermissions
             FinanceBankAccountApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
+            FinanceOfficialSalesInvoicesRecord,
+            FinanceOfficialSalesInvoicesApprove,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -1309,6 +1323,8 @@ public static class ErpPermissions
             FinanceBankAccountApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
+            FinanceOfficialSalesInvoicesRecord,
+            FinanceOfficialSalesInvoicesApprove,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
