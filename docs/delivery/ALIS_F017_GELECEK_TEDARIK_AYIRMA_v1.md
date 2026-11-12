@@ -1,96 +1,149 @@
 # F-017 — Gelecek tedarikten satış siparişine ayırma: spec ve dilim planı v1
 
 Tarih: 2026-11-12 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir)
-Karar: `docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md` ALS-D82 (#66 6819147253 madde 2); ALS-D30 (EK3); ALS-D22/D25.
+Karar: `docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md` ALS-D82 (#66 6819147253 madde 2); ALS-D30 (EK3); ALS-D22/D25;
+SAT-D298 (birim çevrim kaynağı ürün kartı katsayısı).
 Bağlam: `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` MOD-14, MOD-16, A3-0; Fable analizi F-017
-(`docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md`).
+(`docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md`). Stok karşı belgesi: PR #1116
+`docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md`.
 
-Bu belge yalnız plan ve sözleşme taslağıdır. Kod yoktur. Stok tarafındaki model Stok şeridinin işidir. Buradaki Stok
+Bu belge yalnız plan ve sözleşme taslağıdır. Kod yoktur. Stok tarafındaki model Stok şeridinin işidir (#1116). Buradaki Stok
 maddeleri **öneri**dir; Stok şeridi kendi kapılarıyla değiştirebilir. Arayüz adları öneridir.
+
+Revizyon 2 (2026-11-12): Stok şeridi PORT-REVIEW (#1110 review 5871928090) bulguları işlendi: `companyId` parametresi
+kaldırıldı, birim kuralı SAT-D298'e bağlandı, sipariş sürümü yalnız gözlem oldu, modüller arası yarış için ortak satır kilidi
+eklendi (§3.4), F17-1 K3 oldu, genel/teknik satır kuralı yazıldı, termin dilimleri ayrı okumaya alındı, kabul geri alma
+maddesi NEEDS-SINAN'a taşındı, kabul replay çiti çevirmeyi kapsar.
 
 ## 1. Bugün (main `58b96aa2`)
 
 | Parça | Durum | Kanıt |
 |---|---|---|
-| Onaylı satırın kalan taahhüdü (tek satır) | Var: `IPurchaseSupplyReferencePortV1.GetApprovedLineAsync` (committed − accepted, gelecek arz; Draft/Cancelled = NotApproved) | `…Purchasing.Application/Contracts/IPurchaseSupplyReferencePortV1.cs` |
+| Onaylı satırın kalan taahhüdü (tek satır) | Var: `IPurchaseSupplyReferencePortV1.GetApprovedLineAsync` (committed − accepted, gelecek arz; Draft/Cancelled = NotApproved; şirket sunucu bağlamından) | `…Purchasing.Application/Contracts/IPurchaseSupplyReferencePortV1.cs`; `…Purchasing.Infrastructure/Persistence/PurchaseSupplyReferencePort.cs:22-30` |
 | Onaylı açık satır listesi (operasyon listesi) | Var: `IPurchaseOpenLineReadPortV1` (şirket geneli, sayfalı; ürün süzgeci yok) | `IPurchaseOpenLineReadPortV1.cs` |
 | Satış siparişi için alınan satırlar | Var: `IPurchaseSalesLinkedSupplyReadPortV1` (talep satırı kaynağı = satış siparişi; iptal önizlemesi için) | `IPurchaseSalesLinkedSupplyReadPortV1.cs` |
 | Mal kabulünde Stok'a giden kayıt | Var: aynı host işleminde `InventoryGoodsReceiptRequestV1` (satınalma siparişi + satır kimliği, etiket, lot) | `…Inventory.Application/InventoryGoodsReceiptContractsV1.cs` |
 | Fiziksel stoktan tahsis | Var: `DemandKind = SalesOrderLine` | `…Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs` |
+| Modüller arası satır kilidi | **Yok** (kodda uygulama kilidi kullanımı yok) | §3.4 |
 | Gelecek tedarikten ayırma | **Yok** | F-017 |
 
 ## 2. Kavramlar
 
-- **Ayrılabilir miktar (Alış'ın söylediği):** onaylı satırın kalanı = committed − accepted − cancelled. Teknik dilimler genel satırın
-  içindedir; iki kez sayılmaz (mevcut kural). Draft ve Cancelled siparişin satırı ayrılamaz.
-- **Ayrılmış miktar (Stok'un tuttuğu):** bir satınalma satırına bağlı, henüz kabul edilmemiş satış ayırmalarının toplamı.
+- **Ayrılabilir miktar (Alış'ın söylediği):** onaylı **genel** satırın kalanı = committed − accepted − cancelled. Teknik dilimler genel
+  satırın içindedir; iki kez sayılmaz (mevcut kural). Draft ve Cancelled siparişin satırı ayrılamaz.
+- **Ayrılmış miktar (Stok'un tuttuğu):** bir satınalma genel satırına bağlı, henüz kabul edilmemiş satış ayırmalarının toplamı.
 - **Değişmez (ALS-D82):** bir satınalma satırı için ayrılmış ≤ ayrılabilir. Aynı miktar iki satış siparişine verilemez. Değişmezin
-  sahibi Stok'tur. Alış ayrılmış miktarı hesaplamaz ve saklamaz.
+  sahibi Stok'tur. Alış ayrılmış miktarı hesaplamaz ve saklamaz. Değişmezin iki modül arasında korunması §3.4 kilidiyle olur.
 - **Satış talebi bağlantısı (Alış'ın bildiği):** satırın talep satırı bir satış siparişinden geldiyse (`SourceKind = Sales`), satır
   o siparişin niyetini taşır. Bu bir **niyet**tir, ayırma değildir. Ayırma kaydı her zaman Stok'ta açıkça kurulur. Alış, satış
   kaynaklı bir satır onaylanınca kendiliğinden ayırma oluşturmaz (okuma, geri alınabilir).
+- **Genel / teknik satır (yazarın önerisi, geri alınabilir; #1116 S9):** ayırma **genel satıra** yapılır, teknik dilime yapılmaz.
+  Ayrılabilir miktar genel satır düzeyindedir. Kabul teknik dilimden gelirse Alış kabul payı o dilimin bağlı olduğu genel satır
+  kimliğini bildirir (§3.3); Stok çevirmeyi genel satırdaki ayırmalar üzerinden yapar. Teknik dilimin kendi kimliği Stok'ta
+  yalnız izlenebilirlik alanıdır. Sinan S9'u farklı cevaplarsa bu madde değişir; cevaba kadar F17-2 bu kuralla çalışır.
 
 ## 3. Port sözleşmesi taslağı (Alış ↔ Stok ortak yazar)
 
 ### 3.1 Alış → Stok: `IPurchaseFutureSupplyReadPortV1` (Alış sahibi; A3-0'ın yerine geçer)
 
-A3-0'daki "`IPurchaseSupplyReferencePortV1` v2" ihtiyacını karşılar. v1 port değişmez; yeni port onu genişletir.
+A3-0'daki "`IPurchaseSupplyReferencePortV1` v2" ihtiyacını karşılar. v1 port değişmez; yeni port ayrı sürümlü arayüzdür.
 
 ```csharp
 public interface IPurchaseFutureSupplyReadPortV1
 {
-    // Stok'un ayırma kaydından hemen önce, aynı istekte okuduğu tek satır.
-    Task<PurchaseFutureSupplyAnswerV1> GetAllocatableLineAsync(Guid companyId, Guid orderId, Guid lineId, CancellationToken ct = default);
+    // Stok'un ayırma kaydında, §3.4 kilidi alındıktan sonra aynı işlemde okuduğu tek genel satır.
+    // lineId teknik dilim kimliği ise sonuç NotAllocatable (Status = "technical-line") döner; genel satır kimliği ParentLineId'dedir.
+    Task<PurchaseFutureSupplyAnswerV1> GetAllocatableLineAsync(Guid orderId, Guid lineId, CancellationToken ct = default);
 
-    // Ayırma ekranının seçenek listesi: bir ürün için ayrılabilir satırlar, en yakın termin önce.
-    Task<PurchaseFutureSupplyPageV1> ListAllocatableLinesAsync(Guid companyId, Guid productId, int pageSize, string? cursor, CancellationToken ct = default);
+    // Ayırma ekranının seçenek listesi: bir ürün için ayrılabilir genel satırlar, sipariş tarihi/satır no sırasıyla.
+    Task<PurchaseFutureSupplyPageV1> ListAllocatableLinesAsync(Guid productId, int pageSize, string? cursor, CancellationToken ct = default);
 }
 
 public enum PurchaseFutureSupplyOutcomeV1 { Allocatable = 1, NotAllocatable = 2, NotFound = 3 }
 
-public sealed record PurchaseFutureSupplyAnswerV1(PurchaseFutureSupplyOutcomeV1 Outcome, PurchaseFutureSupplyLineV1? Line, string? Status);
+public sealed record PurchaseFutureSupplyAnswerV1(
+    PurchaseFutureSupplyOutcomeV1 Outcome, PurchaseFutureSupplyLineV1? Line, string? Status, Guid? ParentLineId);
 
 public sealed record PurchaseFutureSupplyLineV1(
     Guid CompanyId, Guid OrderId, Guid LineId, int LineNo,
     Guid SupplierPartyId, Guid CompanyAccountId,
     Guid ProductId, string ProductVersion, Guid UnitId, string Kind,
     string CommittedText, string AcceptedText, string CancelledText,
-    string AllocatableText,                       // committed − accepted − cancelled (Ö2 tam ondalık metin)
-    IReadOnlyList<PurchaseFutureSupplySliceV1> Schedule, // API-30 termin dilimleri; termin yoksa boş
+    string AllocatableText,                                 // committed − accepted − cancelled; satırın birimi (UnitId), Ö2 tam ondalık metin
     Guid? SalesSourceOrderId, Guid? SalesSourceOrderLineId, // satış talebi niyeti (§2), yoksa null
-    long Version);                                // sipariş sürümü: Stok kayıtta bunu saklar
+    long ObservedOrderVersion);                             // yalnız gözlem; kilit/expected-version değildir
 
-public sealed record PurchaseFutureSupplySliceV1(Guid SliceId, DateOnly DeliveryDate, string QuantityText, string RemainingText);
+public sealed record PurchaseFutureSupplyPageV1(IReadOnlyList<PurchaseFutureSupplyLineV1> Items, string? NextCursor);
 ```
 
 Kurallar:
 
+- **Şirket parametre değildir.** Şirket sunucu bağlamından ve tenant filtresinden gelir (`PurchaseSupplyReferencePort.cs:22-30`
+  deseni). Bağlamda şirket yoksa port `NotFound` döner (fail-closed). Başka şirketin siparişi `NotFound`'dur; 403 dönmez.
+  `CompanyId` alanı yalnız yanıtın hangi bağlamda okunduğunu gösterir.
 - Fiyat, iskonto, döviz, ödeme alanı yoktur (T28).
-- Başka şirketin siparişi `NotFound`'dur. 403 dönmez.
 - Okuma hiçbir şey oluşturmaz. Port yetki taşımaz; tüketici kendi yetkisini ölçer (LOG-4 D6).
-- Birim Settings birim kimliğidir. kg/ton çevrimi Stok/Settings çevrimiyle yapılır; Alış metni satırın kendi birimindedir.
-- Dilim `RemainingText`: kalan miktarın dilimlere dilim sırasıyla dağılımı (EK16 §2 okuması). Kabul belirli bir dilime bağlanınca
-  (API-31/32) bu dağılım o kayıttan okunur.
+- **Birim (SAT-D298):** `AllocatableText` ve diğer miktarlar satınalma satırının kendi birimindedir (`UnitId`, Settings birim
+  kimliği). Alış çevirmez. Karşılaştırma satınalma satırı biriminde yapılır: Stok kullanıcının kg/ton girdisini merkezi birim
+  çevrim servisiyle (kaynak ürün kartı katsayısı) satırın birimine çevirir. Katsayı yoksa çevrim `NoSource`'tur ve ayırma
+  reddedilir; tahmin veya ekran katsayısı yoktur (#1116 §3.2 adım 3, S10).
+- **`ObservedOrderVersion` yalnız gözlemdir.** Stok bunu kayıtta saklayabilir; hiçbir modül onu modüller arası kilit veya
+  expected-version olarak kullanmaz. Eşzamanlılık koruması §3.4'tedir.
+- **Termin dilimleri bu portta yoktur.** API-30 dilimleri (#1101) ayrı bir okuma olarak eklenir (F17-1b:
+  `GetLineScheduleAsync(orderId, lineId)` → dilim kimliği, teslim tarihi, miktar, kalan). Böylece F17-1 ve F17-2 #1101'i
+  beklemez. Ayırma kararı dilime bağlı değildir; dilim yalnız ekran bilgisidir.
 
-### 3.2 Stok → Alış: `IInventoryFutureAllocationReadPortV1` (Stok sahibi; öneri)
+### 3.2 Stok → Alış: `IInventoryFutureAllocationReadPortV1` (Stok sahibi; #1116 F017-b)
 
 ALS-D30 "Alış okuma portu ayrılan miktarı da gösterir" ve §5 S1 için. Alış Stok'a referans vermez; host adaptörü çevirir
 (mevcut `PurchasingSalesLinkedSupplyHostPorts` deseni).
 
 ```csharp
-// Bir satınalma satırına bağlı, henüz kabul edilmemiş ayırmaların toplamı (satırın birimiyle, tam ondalık metin).
-Task<FutureAllocationSumV1> GetAllocatedOnPurchaseLineAsync(Guid companyId, Guid orderId, Guid lineId, CancellationToken ct = default);
+// Bir satınalma genel satırına bağlı, aktif ayırmaların toplamı (satırın birimiyle, tam ondalık metin). Şirket bağlamdan.
+Task<FutureAllocationSumV1> GetAllocatedOnPurchaseLineAsync(Guid orderId, Guid lineId, CancellationToken ct = default);
 // Present(text) / None / Unreadable. Unreadable hiçbir zaman "sıfır" sayılmaz (fail-closed).
 ```
 
 ### 3.3 Mal kabulü (aynı host işlemi)
 
 - Alış'ın kabul payı (`IPurchaseAcceptanceParticipantV1.StageAsync`) ve Stok'un mal girişi (`InventoryGoodsReceiptRequestV1`)
-  zaten aynı host işlemindedir ve ikisi de satınalma satırı kimliğini taşır. Yeni bir Alış alanı gerekmez.
-- Stok aynı işlemde o satırın ayırmalarını kabul edilen miktar kadar fiziksel tahsise çevirir ve etiketi satış sipariş satırına
-  atar (ALS-D82 "etiket ataması o zaman yapılır"). İşlem tek başarı ya da tek geri alma olur.
-- **Alış tarafı:** kabul sonucu (`PurchaseAcceptanceStageResultV1`) satırın kabul sonrası ayrılabilir kalanını zaten döndürür
-  (`RemainingQuantity`). Satış talebi niyeti (§2) gerektiğinde `GetAllocatableLineAsync` ile okunur.
+  zaten aynı host işlemindedir ve ikisi de satınalma satırı kimliğini taşır.
+- **Teknik dilim eşlemesi:** kabul teknik dilim satırına yapılırsa Alış kabul sonucu (`PurchaseAcceptanceStageResultV1`) dilimin
+  genel satır kimliğini de taşır (F17-1'de eklenen alan; v1 sözleşmesi sürüm artırılarak genişletilir). Host, Stok'a bu genel
+  satır kimliğini verir. Kabul genel satıra yapılırsa iki kimlik aynıdır.
+- Stok aynı işlemde genel satırın ayırmalarını kabul edilen miktar kadar fiziksel tahsise çevirir ve etiketi satış sipariş satırına
+  atar (ALS-D82 "etiket ataması o zaman yapılır"). İşlem tek başarı ya da tek geri alma olur. Çevirmenin hatada davranışı #1116 S7.
+- **Replay çiti çevirmeyi kapsar:** kabulün mevcut idempotency kaydı (anahtar hash + yük hash) çevirmeyi de kapsar. Aynı anahtarla
+  tekrar gelen kabul yeniden çevirme yapmaz; saklanan sonucu döndürür. Katılımcının saklanan sonuç özeti çevirme sonucunu içerir
+  (tüketilen ayırma kimlikleri ve miktarları, oluşan fiziksel tahsis kimlikleri). Aynı anahtar + farklı sonuç = 409
+  `idempotency_conflict`.
+- **Alış tarafı:** kabul sonucu satırın kabul sonrası kalanını zaten döndürür (`RemainingQuantity`). Satış talebi niyeti (§2)
+  gerektiğinde `GetAllocatableLineAsync` ile okunur.
+
+### 3.4 Modüller arası yarış: ortak satır kilidi (P1)
+
+Sorun: Stok "Alış'tan oku → ayrılmış toplamı kontrol et → yaz" yapar. Bu arada Alış aynı satırın kalanını (kabul, kalan iptali,
+ileride azaltma) değiştirirse ayrılmış > ayrılabilir olabilir (check-then-write yarışı). Stok'un kendi defter satırı concurrency
+token'ı yalnız Stok'un iki ayırmasını sıralar; Alış yazısını görmez.
+
+Öneri (teknik; geri alınabilir):
+
+- Host düzeyinde `(şirket, satınalma genel satırı)` anahtarlı **işlem kapsamlı özel uygulama kilidi** (SQL Server
+  `sp_getapplock`, `@LockOwner = 'Transaction'`, `@LockMode = 'Exclusive'`). Kaynak adı:
+  `goymen:purchase-line:{companyId:N}:{lineId:N}`. Şirket kimliği sunucu bağlamından alınır.
+- Arayüz host/BuildingBlocks'ta tek yerde durur (öneri ad: `IPurchaseLineSerializationLockV1.AcquireAsync(Guid lineId, ct)`);
+  iki modül de host adaptörü üzerinden çağırır, birbirine referans vermez.
+- **Kilidi kim alır:** (1) Stok ayırma oluşturma (Alış okumasından **önce**), (2) Stok ayırma bırakma, (3) Alış kabul payı
+  (kabul edilen her genel satır için; aynı işlemdeki Stok çevirmesi aynı sahipte olduğu için yeniden kilitlemez), (4) Alış kalan
+  iptali ve sipariş iptali (etkilenen her genel satır), (5) ileride Alış satır azaltma (F17-4).
+- **Sıra:** birden çok satır kilitlenecekse `lineId` artan sırayla alınır (kilitlenme önlemi).
+- **Zaman aşımı:** kısa (öneri 5 sn). Alınamazsa işlem yazmadan 409 `purchase_line_busy` ile biter; replay değilse istemci yeniler.
+  Kilit dönüş kodu < 0 ise asla devam edilmez (fail-closed).
+- Kilit işlem bitince (commit/rollback) kendiliğinden bırakılır. Uzun süreli kilit yoktur.
+- Kilit alındıktan sonra Stok Alış'ı aynı işlemde okur; ayrılmış + yeni ≤ ayrılabilir değilse 409 `insufficient_future_supply`.
+  Alış tarafı kilit altında §3.2 portuyla ayrılmış toplamı okur; S1 cevabına göre reddeder veya izin verir.
+- Gerçek SQL testi: iki eşzamanlı işlem (Stok ayırma + Alış kalan iptali) aynı satırda; biri bekler veya 409 alır, sonuçta
+  ayrılmış ≤ ayrılabilir. Kilit kaynağı adı contract testine bağlanır.
 
 ## 4. Dilim planı
 
@@ -99,26 +152,35 @@ Sıra: #1101 kuyruğu bitmeden kod yok (koordinatör, 2026-11-12).
 | Dilim | Şerit | İçerik | Kapı | Bağımlılık |
 |---|---|---|---|---|
 | F17-0 | Alış | Bu belge + EK17 (docs) | K1 | — |
-| F17-1 | Alış | `IPurchaseFutureSupplyReadPortV1` + Infrastructure okuması (tek satır + ürün listesi, termin dilimleri, satış niyeti) + birim/servis testleri + gerçek SQL kabulü; A3-0'ı kapatır | K2 (migration yok; gerekirse ürün+durum indeksi K3) | #1101 (termin dilimleri) |
-| F17-2 | Stok | Gelecek ayırma kaydı (`SourceKind = purchasing.order-line`), değişmez (aynı istekte F17-1 okuması + Stok'ta satınalma satırı anahtarında kilit), bırakma | K3 | F17-1 |
-| F17-3 | Stok | Mal kabulünde gelecek ayırma → fiziksel tahsis + etiket ataması (aynı host işlemi) | K3 | F17-2 |
-| F17-4 | Alış | Satır azaltma/iptalinde ayrılmış miktar kontrolü (§3.2 portu, host adaptörü) — §5 S1 cevabına göre | K2/K3 | F17-2, §5 S1 |
+| F17-1 | Alış (+host) | `IPurchaseFutureSupplyReadPortV1` (tek satır + ürün listesi, satış niyeti, teknik→genel eşleme) + Infrastructure okuması; `IPurchaseLineSerializationLockV1` host uygulaması; Alış kabul/iptal yollarında kilit; kabul sonucuna genel satır kimliği; birim/servis/contract testleri + gerçek SQL kabulü (eşzamanlılık dahil); A3-0'ı kapatır | **K3** (yeni modüller arası sözleşme + kilit; migration yok, gerekirse ürün+durum indeksi) | — |
+| F17-1b | Alış | Termin dilimi okuması `GetLineScheduleAsync` | K2 | #1101 |
+| F17-2 | Stok | Gelecek ayırma kaydı (#1116 F017-b), değişmez (§3.4 kilidi + aynı işlemde F17-1 okuması), bırakma | K3 | F17-1 |
+| F17-3 | Stok | Mal kabulünde gelecek ayırma → fiziksel tahsis + etiket ataması (aynı host işlemi, replay çiti §3.3) (#1116 F017-c) | K3 | F17-2 |
+| F17-4 | Alış | Satır azaltma/iptalinde ayrılmış miktar kontrolü (§3.2 portu, host adaptörü, §3.4 kilidi) — §5 S1 cevabına göre | K3 | F17-2, §5 S1 |
 | F17-5 | Satış/UI | Satış kaynak planında "alıştan" seçimi (MOD-16) | Satış şeridi | F17-2 |
 
 ## 5. NEEDS-SINAN (cevaba kadar ilgili davranış fail-closed)
 
+Ortak sorular #1116 §9 ile tek cevapla kapanır: S1 = #1116 S2, S2 = #1116 S4, S3 = #1116 S12, genel/teknik satır = #1116 S9.
+
 - **S1 — Ayrılmış miktarın altına inen satır azaltma/iptal:** satınalma satırı azaltılırsa veya kalan iptal edilirse ve yeni kalan
   ayrılmış miktarın altına düşerse ne olur? Önerilen: **Alış işlemi reddeder**; önce Stok'ta ayırma azaltılır/bırakılır.
   Alternatif: işlem yapılır, açıkta kalan ayırma Stok'ta "karşılıksız" işaretlenir ve satışa uyarı düşer. Cevaba kadar F17-4 açılmaz
-  ve F17-2 ayırma kaydı, satır azaltma/iptal yolları korunana kadar etkinleştirilmez.
+  ve F17-2 ayırma komutu, satır azaltma/iptal yolları korunana kadar etkinleştirilmez.
 - **S2 — Kısmi kabulde ayırmaların sırası:** satıra birden çok satış ayırması varken kısmi kabul gelirse, kabul edilen miktar hangi
   ayırmaya önce gider? Önerilen: **satış siparişinin termini en yakın olan önce**, eşitse ayırma zamanı önce; depocu kabul ekranında
   değiştirebilir. Alternatif: ayırma zamanı sırası (ilk ayıran ilk alır).
+- **S3 — Kabul geri alınırsa / iade:** kabul reddi, düzeltme veya iade olursa fiziksel tahsis ve etiket ataması geri döner mi,
+  gelecek ayırma yeniden açılır mı? Cevaba kadar otomatik geri dönüş yoktur; kabul geri alma yolu ayırma çevrilmiş satırda
+  reddeder ve kullanıcıya önce tahsisin elle çözülmesi gerektiğini söyler.
 
 ## 6. Kabul ölçütleri (F-017 testi)
 
 - Aynı satınalma satırı miktarı iki satış siparişine verilemez. İki eşzamanlı ayırma isteğinden toplamı aşan ikincisi reddedilir.
-- Draft ve Cancelled siparişin satırı ayrılamaz. Başka şirketin satırı `NotFound`'dur.
-- Mal kabulünde ayrılan miktar fiziksel tahsise döner ve etiket satış sipariş satırına atanır; kabul geri alınırsa (kabul reddi/iade)
-  tahsis ve etiket ataması da geri döner.
+- Stok ayırması ile Alış kabul/kalan iptali aynı satırda eşzamanlı olduğunda sonuç her zaman ayrılmış ≤ ayrılabilir (§3.4).
+- Draft ve Cancelled siparişin satırı ayrılamaz. Teknik dilim satırına doğrudan ayırma yapılamaz. Başka şirketin satırı ve
+  bağlamda şirket yokken okuma `NotFound`'dur.
+- Ürün kartında katsayı yoksa kg/ton girdisi satır birimine çevrilemez ve ayırma reddedilir (tahmin yok).
+- Mal kabulünde ayrılan miktar fiziksel tahsise döner ve etiket satış sipariş satırına atanır; aynı kabul isteğinin tekrarı ikinci
+  çevirme yapmaz.
 - Ayrılabilir miktar her zaman Alış'ın kalanıdır; tüketici yeniden hesaplamaz.

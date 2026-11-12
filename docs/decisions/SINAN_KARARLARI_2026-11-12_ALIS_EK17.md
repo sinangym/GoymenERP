@@ -24,4 +24,5 @@ Alış şeridi için numaralandırır; yeni karar üretmez. Uygulama planı: `do
 
 ## 3. Açık kalanlar
 
-- Satır azaltma/iptal ile ayrılmış miktar çakışması ve kısmi kabulde ayırmaların sırası: plan §5'teki NEEDS-SINAN.
+- Satır azaltma/iptal ile ayrılmış miktar çakışması, kısmi kabulde ayırmaların sırası ve kabul geri alınırsa tahsisin durumu:
+  plan §5'teki NEEDS-SINAN (S1–S3; Stok #1116 §9 S2/S4/S12 ile ortak).
