@@ -32,7 +32,7 @@ Kiracı (şirket üstü) katmanı F-029 önerisine uygun olarak **kapsam dışı
   tanımlıdır ve 9 Settings kataloğunda, 5 Ürün fixture deposunda ve `GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs`
   içinde kullanılır.
 - Settings'te prepare → approve → publish yaşam döngüsünü izin adlarıyla uygulayan bir örnek zaten var: üretim
-  parametre ve tolerans profilleri. Hedef tasarım bu örneği genelleştirir; yeni bir desen icat etmez.
+  parametre ve tolerans profilleri. Hedef tasarım bu örneği temel alır; URN-D3 gereği ayrı onay adımı olmadan (prepare → publish).
 
 ## 2. Envanter — Settings (Ayarlar modülü, Codex backend şeridi)
 
@@ -102,10 +102,10 @@ Her politika tablosunda ortak çekirdek sütunlar bulunur:
 | `PolicyKey` / iş anahtarı | Örnekler: para birimi, işlem, limit grubu |
 | `ProfileVersion` | İş sürümü (1, 2, …). Yayımlanmış bir sürüm **değişmez**; değişiklik yeni sürümdür |
 | `ValidFrom` / `ValidTo` | `DateOnly`, iş tarihi; UTC kayıt zamanı değildir |
-| `Status` | Draft → Approved → Published → Retired (silme yoktur) |
+| `Status` | Draft → Published → Retired (silme yoktur; ayrı onay adımı yok, URN-D3) |
 | `DecisionReference` | Kaynak karar kimliği (SAT-D5 gibi) veya değişiklik gerekçesi |
 | `StateVersion` | İyimser eşzamanlılık sürümü (`ProfileVersion`'dan ayrıdır) |
-| `PreparedBy/ApprovedBy/PublishedBy` + zaman | Sunucunun çözdüğü aktör ve zaman; istek yükünden gelmez |
+| `PreparedBy/PublishedBy` + zaman | Sunucunun çözdüğü aktör ve zaman; istek yükünden gelmez |
 | `SourceKind` | `CompiledBaselineV0` veya `UserMaintained` |
 
 Tipli değer sütunları politikaya özgüdür. Örneğin teslim toleransı için oran/miktar ve tür, onay eşiği için para
@@ -115,15 +115,19 @@ birimi ve tutar kullanılır.
 
 Kritik komut iskeleti uygulanır (`k3-command-skeleton`): authorization, expected version, idempotency key,
 correlation/causation, audit ve tek kayıtta deneme + denetim. Önerilen eylemler, üretim profili örneğiyle aynıdır:
-`settings.<politika>.read | prepare | approve | publish`.
+`settings.<politika>.read | prepare | publish` (URN-D3 gereği ayrı bir `approve` adımı yoktur).
 
-- Hazırlayan kişi onaylayamaz (maker ≠ checker). Bu ayrımın her politikada zorunlu olup olmayacağı N2'dir.
+- **URN-D3:** değeri ilgili alanın yetkili müdürü tek başına hazırlar ve yayımlar; ikinci onaylayıcı aranmaz. Her
+  değişiklik denetim kaydı bırakır. Durum akışı Draft → Published → Retired olur. Mevcut üretim profillerindeki
+  hazırla/onayla ayrımı bu kararla değişmez (açık soru, karar dosyası "Sınırlar").
 - İzin adları kayıt altına alınır, ama **hiçbir role grant edilmez**. Grant/rol/Critical insan kapısıdır
   (`permission-capability-registration`).
-- Yayımlama geriye dönük değildir. Geçmiş bir tarihe `ValidFrom` verilmesi, kapalı dönem politikasıyla birlikte N3'te
-  karara bağlanır.
+- **URN-D4:** yayımlama geriye dönük değildir; `ValidFrom` bugünden önce olamaz (komut ve DB tarafında reddedilir).
+- **URN-D2:** para profili ve birim profili de ekrandan yönetilir; bu iki profilde ekran, değişikliği kaydetmeden önce
+  etkisini gösterir.
 - Tüketiciler (Satış, Alış, Üretim, Finans) uygulanan profil kimliğini ve sürümünü kendi komut kayıtlarında snapshot
-  olarak saklar. Bu zaten V1 kuralıdır. Değer değişince **geçmiş belgeler yeniden hesaplanmaz**.
+  olarak saklar. Bu zaten V1 kuralıdır. Değer değişince geçmiş ve onay bekleyen belgeler **yeniden hesaplanmaz**
+  (URN-D4).
 
 ### 5.3 Okuma portları
 
@@ -157,18 +161,24 @@ modüllerde kod değişmez. Değişirse V2 port açılır ve V1 korunur.
 - Settings yönetim ekranları (Claude frontend şeridi; kalıcı sağlayıcı ve izinler merge olduktan sonra).
 - Yeni bir politika değeri, eşik veya tolerans seçmek.
 
-## 6. Açık noktalar (NEEDS-SINAN; Issue #66'ya tek satır olarak yazılır)
+## 6. Açık noktalar ve kararlar
 
-| No | Soru |
-|---|---|
-| N1 | Hangi kataloglar kullanıcı tarafından yönetilebilir olsun? Öneri: A ve B sınıfının tamamı (S1, S3, S4-D5/D6, S5, S6). Para profili (S3) ve birim profili (S1) kod incelemesiyle mi kalsın, ekrandan mı değiştirilebilsin? |
-| N2 | Değişikliği kim yapar ve onaylar? Her politikada maker ≠ checker zorunlu mu, yoksa yalnız para/tolerans politikalarında mı? (İzin adları kaydedilir, grant yine insan kapısıdır.) |
-| N3 | Yayımlanan bir değer geçmiş tarihten (`ValidFrom` < bugün) geçerli olabilir mi? Kapalı dönemle etkileşimi nasıl olacak? |
-| N4 | C sınıfı tabanlar (S7, S8, S10, S11) tabloya tek seferlik "sürüm 0" olarak aktarılsın mı, yoksa derlenmiş fallback olarak mı kalsın? |
-| N5 | Bir değer değişikliği bildirim veya ek onay gerektirir mi (örneğin onay eşiği düşürülünce bekleyen siparişler)? Varsayılan: hiçbir bekleyen belge yeniden değerlendirilmez. |
+Sorular Issue #66'ya NEEDS-SINAN olarak yazıldı
+([6819528621](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6819528621)); N1, N2, N3 ve N5 Sinan'ın 9.
+tur kararıyla cevaplandı ([6820161788](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820161788)) ve
+`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` içinde URN-D2–URN-D4 olarak kayıtlıdır.
 
-Bu kararlar gelmeden yalnız **değer değiştirmeyen** altyapı dilimleri açılabilir: tablo, sürüm 0 aktarımı ve okuma
-sağlayıcısı. Komutlar (prepare/approve/publish) N1–N3 olmadan açılmaz.
+| No | Soru | Durum |
+|---|---|---|
+| N1 | Hangi kataloglar kullanıcı tarafından yönetilebilir olsun? | **Karar (URN-D2):** hepsi ekrandan, para ve birim profili dahil. Para/birim profilinde ekran etkiyi değişiklikten önce gösterir. |
+| N2 | Değişikliği kim yapar ve onaylar? | **Karar (URN-D3):** ilgili alanın yetkili müdürü tek başına değiştirir ve yayımlar; ikinci onay yok; denetim kaydı var. İzin adları kaydedilir, grant insan kapısıdır. |
+| N3 | Yayımlanan bir değer geçmiş tarihten geçerli olabilir mi? | **Karar (URN-D4):** hayır; yalnız bugünden ileri. |
+| N4 | C sınıfı tabanlar (S7, S8, S10, S11) tabloya tek seferlik "sürüm 0" olarak aktarılsın mı, yoksa derlenmiş fallback olarak mı kalsın? | **Açık** (Sinan'ın sonraki turu). Öneri: denetimli, değer değiştirmeyen tek seferlik aktarım. |
+| N5 | Değer değişince bekleyen belgeler yeniden değerlendirilsin mi? | **Karar (URN-D4):** hayır; onay bekleyen belgeler eski değerle kalır. |
+| N6 | URN-D3 mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı? | **Açık** (NEEDS-SINAN). O zamana kadar bu profillerin mevcut akışı değişmez. |
+
+N4 gelene kadar F029-C dilimi (§5.4 madde 5) açılmaz. Diğer dilimlerin komutları (prepare/publish) artık URN-D2–D4
+ile açılabilir; her dilim yine ayrı K3 PR'dır.
 
 ## 7. Port / sözleşme önerileri (ilgili şeritlere)
 
