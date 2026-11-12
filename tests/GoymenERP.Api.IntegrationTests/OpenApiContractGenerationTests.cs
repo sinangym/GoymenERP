@@ -440,6 +440,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/plans/{planId}/cancellation", "CancelManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/CancelPlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        // Üretim U2-b / API-16 (SAT-D219): the plan's sales order link under the plan write grant.
+        new("post", "/api/v1/manufacturing/plans/{planId}/sales-order-link", "ChangeManufacturingPlanSalesOrderLinkV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/ChangePlanSalesOrderLinkRequestV1", ["path:planId:true:type:string;format:uuid"]),
         // MFG-PLAN-EDIT: a Draft plan is revised under the plan write (the save's rules); its history under the plan read.
         new("post", "/api/v1/manufacturing/plans/{planId}/revision", "ReviseManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
@@ -1494,6 +1498,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
             ["RejectManufacturingPlanV1"] = "ref:PlanViewV1",
             ["CancelManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["ChangeManufacturingPlanSalesOrderLinkV1"] = "ref:PlanViewV1",
             ["ReviseManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ListManufacturingPlanRevisionsV1"] = "ref:PlanRevisionListViewV1",
             ["CreateManufacturingOrderV1"] = "ref:OrderViewV1",
@@ -1868,6 +1873,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ReviseManufacturingPlanV1",
         "RejectManufacturingPlanV1",
         "CancelManufacturingPlanV1",
+        "ChangeManufacturingPlanSalesOrderLinkV1",
         "ListManufacturingPlanRevisionsV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
@@ -2177,6 +2183,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ReviseManufacturingPlanV1",
         "RejectManufacturingPlanV1",
         "CancelManufacturingPlanV1",
+        "ChangeManufacturingPlanSalesOrderLinkV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -2406,6 +2413,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ReviseManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["RejectManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CancelManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ChangeManufacturingPlanSalesOrderLinkV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status404NotFound],
                 ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
@@ -2705,6 +2713,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ReviseManufacturingPlanV1",
         "RejectManufacturingPlanV1",
         "CancelManufacturingPlanV1",
+        "ChangeManufacturingPlanSalesOrderLinkV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -2954,6 +2963,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ReviseManufacturingPlanV1:404",
         "RejectManufacturingPlanV1:404",
         "CancelManufacturingPlanV1:404",
+        "ChangeManufacturingPlanSalesOrderLinkV1:404",
         "ListManufacturingPlanRevisionsV1:404",
         "CreateManufacturingOrderV1:404",
         "IssueManufacturingInputV1:404",
@@ -3142,6 +3152,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ReviseManufacturingPlanV1:400",
         "RejectManufacturingPlanV1:400",
         "CancelManufacturingPlanV1:400",
+        "ChangeManufacturingPlanSalesOrderLinkV1:400",
         "CreateManufacturingOrderV1:400",
         "IssueManufacturingInputV1:400",
         "ReturnManufacturingInputV1:400",
@@ -3516,6 +3527,15 @@ public sealed partial class OpenApiContractGenerationTests
             ["CancelManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["CancelManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
+            // Üretim U2-b / API-16: a moved link revision is 409; the line and link refusals are 422.
+            ["ChangeManufacturingPlanSalesOrderLinkV1:400"] = ["manufacturing_request_invalid"],
+            ["ChangeManufacturingPlanSalesOrderLinkV1:409"] =
+                [.. ManufacturingConflictCodes, "manufacturing_plan_sales_order_link_changed"],
+            ["ChangeManufacturingPlanSalesOrderLinkV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled",
+                    "manufacturing_plan_sales_order_link_no_change", "manufacturing_plan_sales_order_link_order_closed",
+                    "manufacturing_plan_sales_order_line_not_approved", "manufacturing_plan_sales_order_line_not_found",
+                    "manufacturing_plan_sales_order_party_mismatch"],
             // URT-D1: one plan opens exactly one order.
             ["CreateManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CreateManufacturingOrderV1:409"] = ManufacturingConflictCodes,
@@ -7210,7 +7230,21 @@ public sealed partial class OpenApiContractGenerationTests
                     ("cancellation", "oneOf:ref:PlanCancellationViewV1|type:null"),
                     ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null"),
                     // Üretim U2-d (URT-D2): who prepared the current version, an actor id (additive, optional).
-                    ("preparedBy", "type:null|string")),
+                    ("preparedBy", "type:null|string"),
+                    // Üretim U2-b / API-16: the sales order link and its own revision (additive, optional).
+                    ("salesOrderLink", "oneOf:ref:PlanSalesOrderLinkViewV1|type:null"),
+                    ("salesOrderLinkRevision", "type:integer|string;format:int64")),
+                ["PlanSalesOrderLinkViewV1"] = ObjectSchema(
+                    ["salesOrderId", "salesOrderLineId", "customerPartyId", "customerAccountId", "productId", "lineRevision",
+                        "linkedBy", "linkedAtUtc"],
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"),
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("customerAccountId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("lineRevision", "type:integer|string;format:int32"),
+                    ("linkedBy", "type:string"),
+                    ("linkedAtUtc", "type:string;format:date-time")),
                 // Üretim U2-b1 (API-12): the plan-entered Tube / Profile, Paint and Cold Rolling values (all members emitted).
                 ["PlanProcessSpecViewV1"] = ObjectSchema(
                     ["packageCount", "piecesPerPackage", "pieceLengthMm", "unitKg", "perimeterMm", "targetThicknessMm",
@@ -9428,6 +9462,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion", "reason"],
                     ("expectedVersion", "type:integer|string;format:int64"),
                     ("reason", "type:null|string")),
+                ["ChangePlanSalesOrderLinkRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "expectedLinkRevision", "salesOrderId", "salesOrderLineId"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("expectedLinkRevision", "type:integer|string;format:int64"),
+                    ("salesOrderId", "type:null|string;format:uuid"),
+                    ("salesOrderLineId", "type:null|string;format:uuid")),
                 ["CreateOrderRequestV1"] = ObjectSchema(
                     ["orderId", "planId"],
                     ("orderId", "type:string;format:uuid"),

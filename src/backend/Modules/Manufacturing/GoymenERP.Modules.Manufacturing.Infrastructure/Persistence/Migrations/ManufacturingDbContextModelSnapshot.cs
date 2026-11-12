@@ -1230,6 +1230,36 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<Guid?>("SalesCustomerAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SalesCustomerPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SalesOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SalesOrderLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("SalesOrderLineRevision")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SalesOrderLinkRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<DateTimeOffset?>("SalesOrderLinkedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SalesOrderLinkedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("SalesProductId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -1264,6 +1294,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CompanyId", "SalesOrderId")
+                        .HasDatabaseName("IX_Plans_SalesOrder")
+                        .HasFilter("[SalesOrderId] IS NOT NULL");
+
                     b.HasIndex("CompanyId", "WorkCenterId");
 
                     b.ToTable("Plans", "manufacturing", t =>
@@ -1285,6 +1319,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Plans_ProcessSpecProcess", "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) AND ([UnitKg] IS NULL OR [Process] = 3) AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL OR [Process] = 4) AND ([TargetThicknessMm] IS NULL OR [Process] = 2) AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL AND [PaintColorCode] IS NULL))");
 
                             t.HasCheckConstraint("CK_Plans_ProcessSpecValues", "([PackageCount] IS NULL OR [PackageCount] >= 1) AND ([PiecesPerPackage] IS NULL OR [PiecesPerPackage] >= 1) AND ([PieceLengthMm] IS NULL OR [PieceLengthMm] > 0) AND ([UnitKg] IS NULL OR [UnitKg] > 0) AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
+
+                            t.HasCheckConstraint("CK_Plans_SalesOrderLink", "([SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [SalesCustomerPartyId] IS NULL AND [SalesCustomerAccountId] IS NULL AND [SalesProductId] IS NULL AND [SalesOrderLineRevision] IS NULL AND [SalesOrderLinkedBy] IS NULL AND [SalesOrderLinkedAtUtc] IS NULL) OR ([SalesOrderId] IS NOT NULL AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderLineId] IS NOT NULL AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [SalesCustomerPartyId] IS NOT NULL AND [SalesCustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [SalesCustomerAccountId] IS NOT NULL AND [SalesCustomerAccountId] <> '00000000-0000-0000-0000-000000000000' AND [SalesProductId] IS NOT NULL AND [SalesProductId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderLineRevision] IS NOT NULL AND [SalesOrderLineRevision] >= 0 AND [SalesOrderLinkedBy] IS NOT NULL AND LEN([SalesOrderLinkedBy]) > 0 AND [SalesOrderLinkedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_Plans_SalesOrderLinkRevision", "[SalesOrderLinkRevision] >= 0 AND ([SalesOrderLineId] IS NULL OR [SalesOrderLinkRevision] >= 1)");
 
                             t.HasCheckConstraint("CK_Plans_Target", "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
 
