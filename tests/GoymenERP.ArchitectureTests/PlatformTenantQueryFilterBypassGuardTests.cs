@@ -139,9 +139,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        // AI-2a (ADR-SEC-001): registers AddSecurityEventsModule and runs InitializeSecurityEventsModuleAsync with the other
-        // module initializers; no OpenAPI-generation, network or hosted-service change (a1562dc1… -> e14040f1…).
-        "e14040f1b25f1e39e03f45c068e7180c84dc43fe40d6ebbc5ae8d3f4cb02452d";
+        // Üretim U2-b (API-16, SAT-D219): registers the two host-side Manufacturing/Sales order-line adapters (DI only); no
+        // generation, network or hosted-service change (a1562dc1… -> a5bb99f0…).
+        // AI-2a (ADR-SEC-001), after the main merge: also registers AddSecurityEventsModule and runs
+        // InitializeSecurityEventsModuleAsync with the other module initializers (a5bb99f0… -> 015f177e…).
+        "015f177e9d33c66f241310299c5288591deef978a88f5dbe71dd07839b487413";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -371,9 +373,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (026f3c54… -> 69a1024a…).
                 // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
                 // empty-store rollback) (69a1024a… -> 84945670…).
-                // AI-2a (ADR-SEC-001): +4 security event SQL facts (company isolation and hash; append-only trigger and checks;
-                // Down refusal; empty Down/Up round trip) (84945670… -> 006edd9c…).
-                "006edd9c5d15a565cecc890b2f04b2ea44cfee87af2fed5dd3d3bd66c8de1bf8",
+                // F-022: +2 readiness SQL facts (Settings/Documents history drift; price-list drift only while the
+                // Product runtime is on) (84945670… -> 912a850f…).
+                // AI-2a (ADR-SEC-001), after the main merge: +4 security event SQL facts (company isolation and hash;
+                // append-only trigger and checks; Down refusal; empty Down/Up round trip) (912a850f… -> 70eab799…).
+                "70eab7996ea177463e8f1b1c1324ab0709b864821cd238ce2b6b4f253b0d047d",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
