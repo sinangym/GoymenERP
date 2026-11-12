@@ -3,15 +3,15 @@
 - Tarih: `2026-11-12`
 - Durum: **taslak spec; kod yok, grant yok, production aktivasyonu yok**
 - Kaynak karar: Sinan, Issue #66 yorumları `6818566934` (F-001, F-002/OPEN-013), `6820046672`, `6820237902`,
-  `6820838938`, `6821105608` (m.4), `6821262098` (m.4), `6821897620` — hepsi 2026-11-12; karar dosyası
-  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` (`KIM-D1`…`KIM-D21`)
+  `6820838938`, `6821105608` (m.4), `6821262098` (m.4), `6821897620`, `6822303233` (m.2) — hepsi 2026-11-12; karar dosyası
+  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` (`KIM-D1`…`KIM-D22`)
 - Önceki ilgili kararlar: `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (F-001) ve BS-7
   (OPEN-013 yönü); `SINAN_KARARLARI_2026-08-31.md` §2 (OPEN-013 → GECICI_VARSAYIM); ADR-004
 - Not: Bu spec `OPEN-013`'ü veya başka bir `OPEN-*` kaydını **kapatmaz**; hiçbir role, seed'e veya
   gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararları (1. ve 8. tur,
   #66 `6818566934`, `6820046672`) aynı PR'daki
   `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6`, `KIM-D9` (10. tur `6820237902`), `KIM-D12`…`KIM-D16` (14.–15. tur `6820838938`), `KIM-D17` (16. tur `6821105608`), `KIM-D18` (17. tur
-  `6821262098`) ve `KIM-D19`…`KIM-D21` (18. tur `6821897620`) olarak yazıldı.
+  `6821262098`) ve `KIM-D19`…`KIM-D21` (18. tur `6821897620`) ve `KIM-D22` (20. tur `6822303233` m.2) olarak yazıldı.
 
 ## Amaç
 
@@ -65,6 +65,7 @@
 | #66 `6820838938` (2026-11-12, 14.–15. tur) | Kilitli | KIM-D12…KIM-D16: karakter sınıfı ve dönemsel değişim yok, PBKDF2 framework varsayılanı; kilit 15 dk; oturum mutlak 12 saat; Critical rol geri alma tek adım + audit; grup geneli sıfırlama/kilit açma yalnız her üyelik şirketinde `identity.users.manage` ile. |
 | #66 `6821105608` m.4 (16. tur) ve `6821262098` m.4 (17. tur) | Kilitli | KIM-D17: her şirkette en az bir aktif Admin; son Admin'in rolü geri alınamaz, kullanıcı pasifleştirilemez. KIM-D18: bootstrap kurucuya o anda tanımlı bütün şirketlerde Admin atar; sonradan açılan şirkette açan kişi ilk Admin olur; Admin devredilebilir. |
 | #66 `6821897620` (18. tur, #1112 review P2'leri) | Kilitli | KIM-D18 "bütün şirketler" pasif şirketleri de kapsar. KIM-D19: hiçbir şirkette rolü olmayan kullanıcıda önce şirkete atama; özel/kurucu yetkisi yok. KIM-D20: açana Admin ataması arızalanırsa şirket "kurulum bekliyor"da kalır, işlem kabul etmez, alarm çıkar, kurucu Admin elle atar (audit'li). KIM-D21: şirket açma izni Critical. |
+| #66 `6822303233` (20. tur, m.2) | Kilitli | KIM-D22: Admin'i olmayan ve kurucusu da pasif şirkette sunucu kurtarma komutu; yalnız sunucuya erişimi olan kişi kurucuyu yeniden aktif eder, şifre değiştirme zorunlu, ekrandan yapılamaz, her kullanım audit'e yazılır. |
 | ADR-SEC-001 | PR #1093 açık | `auth.login.failed/succeeded`, `identity.permission.changed` olayları; E8 insan kapısı. |
 | NEEDS-SINAN #66 `5738113623` | Açık blok | Atama yazma rotası bugün bilerek yok (`IdentityEndpoints.MapAccessView` yorumu); 2026-11-12 kararı mekanizmayı seçer, ama gerçek grant yine insan kapısıdır. |
 
@@ -318,9 +319,11 @@ kullanılmaz; kullanılacaksa ayrı karar.
    sayısı" ölçülebilir metrik olarak yayınlanır. Kurtarma: kurucu Admin (`FounderUserId`, aktif) o şirkete elle
    Admin atar; bu, kural 6'daki `FounderDirect` yoludur (ikinci onaysız, audit'li). Kurucu o şirkette üye
    olmasa da bu yol yalnız `SetupPending` şirkette ve yalnız Admin rolü ataması için açıktır; `Active` şirkette
-   kural 6'nın normal koşulları geçerlidir. Kurucu da pasifse: KIM-D20 bu durum için ayrı yol
-   tanımlamaz; yazar okuması (Sinan kararı değil, koordinatör #66'da soruyor): şirket "kurulum bekliyor"da kalır
-   ve alarm sürer, kurtarma yolu Sinan'ın cevabına kadar açık değildir. Bu cross-module sözleşmedir (K3).
+   kural 6'nın normal koşulları geçerlidir. Kurucu da pasifse (KIM-D22, 20. tur: "Sunucu kurtarma
+   komutu"): yalnız sunucuya erişimi olan kişi kurucu kurtarma komutuyla (aşağıda) kurucuyu yeniden aktif eder;
+   kurucu ilk girişte parolasını değiştirmek zorundadır, sonra yukarıdaki `FounderDirect` yoluyla Admin atar.
+   Bu yol ekrandan veya HTTP'den yapılamaz; o zamana kadar şirket "kurulum bekliyor"da kalır ve alarm sürer.
+   Bu cross-module sözleşmedir (K3).
    **Şirket açma izni Critical (KIM-D21, 18. tur: "Evet, Critical"):** şirket açma izni Critical sınıfındadır;
    verilmesi Critical rol kurallarına (KIM-D1 ikinci kişi onayı, KIM-D5 kurucu istisnası, KIM-D15 geri alma)
    tabidir. Bu bir sınıflandırmadır: iznin adı ve kaydı Organization'ın şirket açma diliminde yapılır; mevcut
@@ -401,6 +404,26 @@ reddeder.
 - `IdentityBootstrapState` satırı varsa veya herhangi bir şirkette etkin Admin rolü ataması
   (`Identity:AdminRoleCode`) varsa reddeder; tek transaction içinde kullanıcı + kimlik bilgisi + `ExternalIdentityLink` + her şirket
   için bir Admin ataması + işaret + audit yazar.
+- Production'da çalıştırılması insan kapısıdır.
+
+**Kurucu kurtarma komutu (KIM-D22, ID-2):** Kurucu pasifken ve kurtarılacak bir şirkette etkin
+Admin yokken kurucuyu yeniden aktif eden sunucu komutu (öneri:
+`GoymenERP.Api identity recover-founder`). HTTP ucu, ekran veya AI aracı yoktur.
+
+- Yalnız `IdentityBootstrapState` satırı varsa çalışır ve yalnız oradaki `FounderUserId` hesabını hedefler;
+  kullanıcı adı veya kullanıcı kimliği argümanı almaz, başka hesabı aktif edemez.
+- Ön koşul (yazar okuması, review'da değişebilir): en az bir şirkette (aktif, pasif veya `SetupPending`) KIM-D17 anlamında etkin Admin yoktur; her
+  şirkette etkin Admin varsa `identity.founder_recovery.not_needed` ile reddeder (o şirketlerin Admin'i
+  kurucuyu ekrandan yeniden aktif edebilir). Kontrol, KIM-D17/kural 7'deki şirket kilitleriyle aynı sırada
+  kilitli okumayla yapılır.
+- Yeni parola **etkileşimli** ve yankısız okunur (argüman, ortam değişkeni, dosya yok), ortam politikasından
+  geçer; hesap `IsActive=true`, `MustChangePassword=true`, kilit sıfırlanır, security stamp yenilenir (eski
+  oturumlar düşer). Kurucuya yeni rol ataması yapmaz; Admin ataması ancak giriş + parola değişiminden sonra
+  `FounderDirect` ile yapılır.
+- Varsayılan kimlik bilgisi içermez; repo, seed, `appsettings*` veya örnek dosyaya kullanıcı/parola yazılmaz.
+- Her çalıştırma, ret dahil, audit'e yazılır (`identity.founder.recovered` / `Outcome=Refused`; aktör
+  `System` + işletim sistemi kullanıcısı ve makine adı bağlam alanı; parola yazılmaz) ve güvenlik olayı
+  kanalına bilgi kaydı düşer. Tek transaction: kullanıcı güncellemesi + kimlik bilgisi + audit.
 - Production'da çalıştırılması insan kapısıdır.
 
 ## UI durumları ve erişilebilirlik
@@ -609,10 +632,21 @@ Given Can iki cihazda oturum açmış
 When Can parolasını değiştirir ya da yetkili Can'ın parolasını sıfırlar veya hesabını pasifleştirir
 Then diğer cihazdaki oturumun bir sonraki isteği `401` alır (security stamp uyuşmaz).
 
+**KS-22 — Kurucu pasif ve şirkette Admin yokken sunucu kurtarma komutu (KIM-D22)**
+Given kurucu pasifleştirilmiş, Şirket E `SetupPending` ve hiç etkin Admin'i yok
+When sunucuya erişimi olan operatör `recover-founder` komutunu çalıştırıp yeni parolayı etkileşimli girer
+Then kurucu hesabı aktif olur, `MustChangePassword=true`, eski oturumları `401` alır ve audit'te
+`identity.founder.recovered` kaydı vardır (parola yok); kurucu parolasını değiştirmeden başka işlem yapamaz,
+değiştirdikten sonra Şirket E'ye `FounderDirect` ile Admin atar ve şirket `Active` olur;
+And her şirkette etkin Admin varken komut `identity.founder_recovery.not_needed` ile reddeder ve ret audit'e
+yazılır; `IdentityBootstrapState` yokken reddeder;
+And aynı işlemi yapan HTTP ucu veya ekran yoktur (OpenAPI'de ve shell kayıtlarında bulunmadığı testle
+doğrulanır); komut parolayı argüman, ortam değişkeni veya dosyadan kabul etmez.
+
 ## Definition of Done
 
 - Karar referansı (#66 `6818566934`, `6820046672`, `6820237902`, `6820838938`, `6821105608`, `6821262098`,
-  `6821897620`; `SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` KIM-D1…D21; BS-6, BS-7, ADR-004, ADR-SEC-001) PR gövdesinde.
+  `6821897620`, `6822303233`; `SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` KIM-D1…D22; BS-6, BS-7, ADR-004, ADR-SEC-001) PR gövdesinde.
 - CompanyId ve yetki testleri (şirket dışı, kapsam dışı, izin yok, SoD).
 - Gerçek SQL kanıtı: check constraint'ler, Down reddi, bootstrap tekilliği, doğrudan Critical yazma yolunun
   olmadığı, `Bootstrap`/`FounderDirect`/`CompanyOpener` modlarının kendi yolları dışında yazılamadığı, son Admin
@@ -635,7 +669,7 @@ K3 dilimleri iki bağımsız exact-head review ister.
 |---|---|---|---|---|
 | **ID-1** | `LocalCredential` + migration, `PasswordHasher` (PBKDF2, sürümlü), `LocalAccount` kimlik modu, `/session/login`·`/logout`, hız sınırı, kilitleme, `auth.login.*` olayları, ayar doğrulaması, varsayılan kimlik bilgisi guard testi | Codex | K3 (migration + güvenlik) | PR #1093 (olay kanalı) merge'ü veya geçici no-op writer; `account_locked` kodu ADR-SEC-001 sözleşme değişikliği |
 | **ID-1F** | Giriş ekranı, auth sınırı entegrasyonu, yerel modda dev başlığının kapanması | Claude | K2 | ID-1 OpenAPI |
-| **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` komutu (etkileşimli parola), `/me` sözleşme sürümü | Codex | K3 | ID-1; kurucu Admin istisnası KIM-D5; bütün şirketlerde Admin KIM-D18 |
+| **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` ve `recover-founder` komutları (etkileşimli parola; KIM-D22, KS-22), `/me` sözleşme sürümü | Codex | K3 | ID-1; kurucu Admin istisnası KIM-D5; bütün şirketlerde Admin KIM-D18 |
 | **ID-2F** | Zorunlu parola değiştirme ekranı | Claude | K2 | ID-2 |
 | **ID-3** | Atama/geri alma, Critical talep/onay/ret/geri çekme API'si, `AccessGrantRequest` migration'ı, `identity.users.manage` kaydı (grant yok), shell capability'leri, audit + `identity.permission.changed` | Codex | K3 (permission/rol + migration) | ID-1; KIM-D9, KIM-D15, KIM-D16, son Admin KIM-D17 |
 | **ID-3b** | Şirket açılış olayıyla açan kişiye ilk Admin ataması (KIM-D18, KIM-D20): Organization `SetupPending` durumu ve şirket bağlamı reddi, `organization.company.opened.v1` outbox olayı + Identity inbox tüketicisi, açan kullanıcı aktiflik kontrolü, retry → dead-letter → alarm, "kurulum bekleyen şirket" metriği, kurucunun `SetupPending` şirkete elle Admin ataması, `identity.company.first_admin_assigned.v1` olayı + Organization tüketicisi (`Active`), `CompanyOpener`/`FounderDirect` dışı yazma yolu olmadığının gerçek SQL testi, şirket kilidi altında ilk Admin yarışı ve 0→1 tek olay testleri, Organization tüketicisinin idempotent geçişi (`SetupPending`→`Active` bir kez; `Active` yok sayılır; inbox dedup), `ICompanyLifecycleReadPortV1` (öneri) fail-closed okuması, şirket bağlamı reddinin başlıksız endpoint/tüketici/arka plan işlerine genişlemesi (Organization/Platform); şirket açma izni Critical olarak kaydedilir (KIM-D21, grant yok) | Codex (Organization + Identity) | K3 (cross-module contract) | ID-3; Organization şirket açma akışı |
@@ -653,9 +687,8 @@ Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critic
 (KIM-D16). 16. tur (#66 `6821105608` m.4) ile `NEEDS-SINAN-ID-10` (son Admin, KIM-D17), 17. tur (#66
 `6821262098` m.4) ile çok şirkette ilk Admin (KIM-D18), 18. tur (#66 `6821897620`) ile `NEEDS-SINAN-ID-11`
 (kurulum bekliyor + kurucu ataması, KIM-D20) ve `NEEDS-SINAN-ID-12` (şirket açma izni Critical, KIM-D21)
-kapandı; üyeliği olmayan hedef KIM-D19 ile karara bağlandı. Bu spec'te açık kalan tek kimlik politikası sorusu, kurucu da pasifken
-`SetupPending` şirketin kurtarma yoludur (KIM-D20 tanımlamaz; koordinatör #66'da soruyor, cevap gelene kadar
-yazar okuması: şirket kurulum bekliyor kalır, alarm sürer);
+kapandı; üyeliği olmayan hedef KIM-D19 ile, kurucu da pasifken kurtarma 20. tur (#66 `6822303233` m.2) ile
+sunucu kurtarma komutu olarak (KIM-D22) karara bağlandı. Bu spec'te açık kimlik politikası sorusu kalmadı;
 teknik varsayılanlar `ASSUMPTION-*` adayı olarak işaretlidir (hız sınırı değeri `ASSUMPTION-ID-RL-1`, farklı
 parolalı replay `ASSUMPTION-ID-IDEM-1`).
 
