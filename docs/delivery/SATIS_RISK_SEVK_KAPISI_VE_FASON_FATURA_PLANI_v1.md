@@ -77,7 +77,7 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
     `AdmissionId` listesi) gelir; asenkron olay veya Satış'ın API-36 kabul defterinin ikinci kaydı (`SR:665`) kaynak
     sayılmaz, çünkü aradaki gecikme çift sayım veya boşluk üretir. Test: kabul anında tutar tam olarak bir bileşende.
   - (c) Sevk planı bileşeni (SAT-D313; bugün "onaylı kalan sipariş", `ISalesOrderDeliveryReadPortV1` kesin sevk toplamı,
-    `RiskCheck.cs:412-430`) ile
+    `RiskCheck.cs:340` `ApprovedRemainderAsync`, kesin sevk okuması `:412-430`) ile
     faturalanmamış sevk (`ISalesInvoiceableShipmentReadPortV1` onaylı irsaliye payı) aynı Lojistik olgusuna dayanmalıdır.
     Test: kesin sevk var, irsaliye onaysız → tutar tam olarak bir bileşende.
   - (d) Pay anahtarı taşımayan faturalar (review B P2-1, A P3-1):
@@ -91,7 +91,8 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
     - **SAT-D94 (2) önce-fatura/depo teslim:** "faturalandı" **sipariş satırı başına**, faturalanan miktar sevk edilen
       miktarla karşılaştırılarak ölçülür (`ISalesDispatchReadPortsV1.cs:102-106`: "invoiced … measured by the invoice owner
       per order line"). Kesilmiş ama sevk edilmemiş kısım, satır başına `max(0, faturalanan − sevk edilen)`, sevk planı
-      bileşeninden (c) düşülür; çünkü aynı tutar SAT-D311 satırında veya `OpenReceivables`'tadır.
+      bileşeninden (c) düşülür; çünkü aynı tutar SAT-D311 satırında veya `OpenReceivables`'tadır. Düşüm en çok plan
+      kadardır; bileşen sıfırın altına inmez (aşağıdaki SAT-D313 taban formülü).
     - LOJ-D14 fason teslimi kapıya aldığı için bu sınır kapı sonucunu doğrudan etkiler. Testler: "F2 fason faturası kesilince
       fason payı tam olarak bir bileşende", "fason net < Σ beyan ve net > Σ beyan: faturadan sonra faturalanmamış fason
       sevk 0", "çok siparişli talimatta pay yoksa bileşen `Unavailable`", "önce-fatura: kesilmiş, sevk edilmemiş tutar tam
@@ -99,12 +100,22 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **SAT-D313 (Sinan, #66 `6822385722` + `6822674443`; koordinatör sorusunda `6822767886` m.1: "Sevk plan miktarı x onaylı
   fiyat"):** risk onaylı siparişin tamamından sayılmaz; **sevk planına açılan miktar × onaylı birim fiyat** ile başlar (satış ve fason aynı; fason tartı öncesi de böyle), irsaliye/fatura kesilene kadar.
   Tutar durumuna göre görünür: sevk planına alınan → sevk olan (faturalanmamış sevk) → faturası kesilen (SAT-D311 satırı,
-  Finans işleyince açık bakiye). Plana alınmamış sipariş kalanı riske girmez (yazar okuması). Bu, bugünkü "onaylı kalan
+  Finans işleyince açık bakiye). Plana alınmamış sipariş kalanı riske girmez (`6822674443`; koordinatör notu `6822810785`: plansız fason boşluğu bu
+  cevapla kapandı). Bu, bugünkü "onaylı kalan
   sipariş" bileşenini (`RiskCheck.cs:412-430`, DEC-FIN-007 ilk aşaması) değiştirir; S0 K3 PR'ı uygular, Finans'a
-  bildirilir. Test: plan → sevk → fatura geçişinin her adımında tutar tam olarak bir durumda; plana alınmamış kalan
-  riskte yok. *Açık (S0 spec önerir):* sevk planı miktarının kaynağı (Lojistik okuma portu, mevcut/yeni), fasonda plan
-  kg'ı, plan iptali/azaltmasında düşme, durum adları; para etkisi varsa `NEEDS-SINAN`. Plansız fason sipariş için ek yöntem
-  seçilmedi; yazar eklemez.
+  bildirilir; DEC-FIN-007 sicil daraltması ayrı, incelenmiş bir sicil PR'ındadır (`6822810785`).
+  - *Satır başına taban formülü (yazar önerisi, geri alınabilir; S0 spec ve ChatGPT formül golden'ı sabitler, para
+    hesabı yalnız backend hesaplayıcısında, SAT-D11/D46/D90):* planlanmış sevk edilmemiş = max(0, plan − sevk edilen);
+    faturalanmış sevk edilmemiş = max(0, faturalanan − sevk edilen); plan bileşeni miktarı = max(0, planlanmış sevk
+    edilmemiş − faturalanmış sevk edilmemiş). Golden: plan 100, sevk 40 → 60; plan 100, sevk 40, fatura 70 → 30; plan 30,
+    sevk 0, fatura 100 → 0 (düşüm planı aşmaz); plan 50, sevk 60 → 0. *Açık:* plan miktarını aşan sevk (fazlası
+    faturalanmamış sevkte sayılır mı, plan ayrıca güncellenir mi) ve fiyat revizyonunda "onaylı fiyat" esası (eski mi
+    yeni onaylı fiyat mı); para etkisi olduğu için gerekirse `NEEDS-SINAN`. Test: plan → sevk → fatura geçişinin her adımında tutar tam olarak bir durumda; plana alınmamış kalan
+  riskte yok. *Açık (S0 spec önerir):* sevk planı miktarının kaynağı (Lojistik okuma portu, mevcut/yeni; #1115 `bf0a6057` spec
+  04:166 `ILogisticsShipmentPlanQuantityReadPortV1` / `logistics.shipment-plan-quantity.v1` önerir, açık PR, main'de
+  değil), fasonda plan
+  kg'ı, plan iptali/azaltmasında düşme, durum adları; para etkisi varsa `NEEDS-SINAN`. Plansız fason sipariş plana alınana kadar riske
+  girmez (`6822810785`).
 - **SAT-D175 ve ara davranış (review B P2-2, A P3-3):** SAT-D175 fason siparişin risk kontrolünü normal siparişle aynı
   tutar; SAT-D313 de satış ve fason için aynı kuralı koyar, çelişki yoktur. Bugün main'deki `ListOpenApprovedOrdersAsync`
   (`SI/Persistence/SalesStore.cs:1945`) fason siparişi ayırmaz; "onaylı kalan sipariş" onun onaylı miktar × fiyatını sayar.
@@ -243,13 +254,31 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 
 ### X1 — SAT-D314: satır iptal/azaltmada gelecek tedarik ayırmasının bırakılması (K3: cross-module; #1116 F017-s ile)
 - **Ne:** gelecek tedarikten ayrılmış satış satırı iptal edilir veya azaltılırsa Satış komutu aynı işlemde Stok bırakma
-  portunu çağırır; satır miktarını aşan ayırma kalmaz; audit'li. Komut reddetmez (seçilmeyen yön).
-- **Bağımlılık:** Stok bırakma portu (#1116 F017-b) ve Satış tahsis okumasında gelecek ayırma türü (#1116 F017-s). Port
-  main'de yokken Satış komutuna bağlanmaz; dilim F017-s içinde ya da hemen ardından Satış şeridinde açılır.
+  portunu çağırır; artan gelecek ayırma kalmaz; audit'li. Satış, ayırma var diye "önce elle bırak" şartıyla reddetmez
+  (seçilmeyen yön). Stok metni KLN-D28 (#1116), Stok modeli KLN-D26 (main `e165aaee`); X1 yalnız Satış tarafıdır.
+- **Ölçü (yazar okuması, #1116 rev4 §3.2 adım 5 ile hizalı):** yeni açık miktar = yeni satır miktarı − sevk
+  edilen/yüklenen toplam (SAT-D104/D112 tabanı); bırakılan = max(0, aktif gelecek ayırma − yeni açık miktar), en çok
+  mevcut gelecek ayırma kadar. İptal ve satır kaldırma bütün aktif gelecek ayırmayı bırakır. Fiziksel tahsis bugünkü
+  kurallarla kalır (#1116 §5.1 (b)).
+- **Satış komutlarına eşleme:**
+  - DEC-SAL-005 sipariş iptali (README :296-302): önizleme fiziksel tahsiste reddetmeye devam eder; gelecek ayırma
+    onaylı iptalde bırakılır (KLN-D28 (9)). README :302 yarış beyanı değişir.
+  - SAT-D104/D112 miktar revizyonu ve satır kaldırma (README :378, :400): "Satış hiçbir şey bırakmaz" cümlesi gelecek
+    ayırma için değişir; taban reddi sürer. Bırakmanın gönderimde mi onayda mı yapılacağı ve SAT-D115 müşteri reddiyle
+    geri dönüş açık noktadır (F017-s spec).
+  - SAT-D17 satır kapatma ve zorla kapatma (README :850): SAT-D314 kapsamında değil; bugünkü kural sürer.
+  - README metin değişiklikleri F017-s spec görevidir.
+- **Bağımlılık:** Stok bırakma portu (#1116 F017-b; ad `IInventoryFutureAllocationReleasePortV1` #1116/#1110 önerisi,
+  main'de yok), Satış tahsis okumasında gelecek ayırma türü (#1116 F017-s), #1116 §9.1 aday 3 (fiziksel/gelecek sırası)
+  ve aday 4 (çok ayırmada sıra). Karar gelene kadar kapalı yön: seçim yoksa 409, yazma yok. Port main'de yokken Satış
+  komutuna bağlanmaz; dilim F017-s içinde ya da hemen ardından Satış şeridinde açılır. Satış ile Stok arasındaki ilk
+  aynı-işlem yazmadır (host participant; emsal `InventoryManufacturingRealizationParticipant.StagePlanRemainderReleaseAsync`).
 - **Fail-closed:** bırakma portu hata verir veya okunamazsa iptal/azaltma yazılmaz (aynı işlem); idempotent replay ikinci
   bırakma üretmez.
-- **Testler:** iptalde ayırma `Released`, azaltmada yalnız aşan kısım bırakılır, port hatasında satır değişmez, replay tek
-  bırakma, şirket filtresi, gerçek SQL (iki modül tek işlem).
+- **Testler:** iptalde ayırma `Released`; azaltmada yalnız açık miktarı aşan kısım bırakılır; kısmi sevkli satırda
+  azaltma (100/40 sevk/60 ayırma → 80: 20 bırakılır); çok ayırmalı satırda seçimle azaltma; aşan kısım birden çok
+  ayırmaya yayılıyor, seçim yok → 409, yazma yok; fiziksel tahsis bırakılmaz; port hatasında satır değişmez; replay tek
+  bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem).
 - **Modül bağlantıları:** Stok bırakma portu (Stok → Satış tüketimi, ❌ #1116), gelecek ayırma okuma türü (❌ #1116 F017-s).
 
 ---
