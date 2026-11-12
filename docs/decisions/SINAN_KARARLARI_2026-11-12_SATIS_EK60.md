@@ -3,13 +3,11 @@
 Bu belge önceki karar dosyalarını silmez; **SAT-D309, SAT-D310, SAT-D311 ve SAT-D312**'yi ekler. URT-D16 ("fatura hizmet bedelidir"), SAT-D195, SAT-D209,
 SAT-D11 ve SAT-D110 aynen geçerlidir; bu belge onların metnini değiştirmez. `KARAR_SICILI` değişmez.
 
-**Kimlik:** main `149f516ae`'de son Satış kimliği SAT-D307'dir. SAT-D308 açık #1108'de (Stok,
-`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`, fire anahtarı kapalıyken fire maliyeti) ve ona
-atıf yapan Üretim dalında kullanılıyor; çakışmamak için bu karar **SAT-D309** alır. Açık `claude/*` ve `codex/*` dallarında
-SAT-D309 kullanan dosya yoktur (`git grep`, 2026-11-12). #1108 numarasını değiştirirse bu dosya değişmez. #66 16. tur
-yorumu bu maddeyi "LOJ-D9 / SAT-D308" etiketiyle anar; o etiket koordinatörün çalışma adıdır, sicilde bu madde
-**SAT-D309**'dur (SAT-D308 #1108'de 2026-11-12 itibarıyla hâlâ fire maliyeti maddesidir). SAT-D310–D312 için de açık
-`claude/*`, `codex/*` dallarında ve main'de kullanım yoktur (`git grep`, 2026-11-12).
+**Kimlik:** SAT-D308 main'dedir (#1108, `2efb3f68`; Stok,
+`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`, fire anahtarı kapalıyken fire maliyeti); bu karar
+**SAT-D309** alır. #66 16. tur yorumu bu maddeyi "LOJ-D9 / SAT-D308" etiketiyle anar; o etiket koordinatörün çalışma
+adıdır, sicilde bu madde **SAT-D309**'dur. SAT-D309 yalnız #1115'te aynı Sinan cevabına atıf olarak geçer; SAT-D310–D312
+main'de ve açık `claude/*`, `codex/*` dallarında kullanılmaz (`git grep`, 2026-11-12).
 
 **Kaynak:** Sinan, Issue #66 yorumu
 [6820601088](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820601088) (11. tur, madde 4;
@@ -20,8 +18,8 @@ koordinatör aktarımı karar kaynağı sayılmadı. Cevap kelimesi kelimesine:
 > "üretimde işlenen girdi kg" seçilmedi). Bedel, müşteriye geri teslim edilen malın tartıdaki net kg'ı üzerinden hesaplanır;
 > fire bedele girmez. Fatura Satış'taki fason hizmet siparişinden kesilir.
 
-Aynı madde Lojistik şeridinde **LOJ-D9** olarak kayda geçmiştir (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK2.md`, PR #1115).
-Aşağıdaki karar metni LOJ-D9'un karar metniyle birebir aynıdır; yalnız "Etkilenen yer" Satış tarafını gösterir.
+Aynı cevap Lojistik şeridinde **LOJ-D9** olarak kayda geçmiştir (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK2.md`, PR #1115).
+SAT-D309 aynı cevaptan yazılır; Satış etkisi ayrı yazıldı, Lojistik metnini değiştirmez.
 
 **Ek kaynak (SAT-D310–D312):** Sinan, Issue #66 yorumları
 [6821105608](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821105608) (16. tur, madde 2–3;
@@ -47,7 +45,8 @@ madde 1–2; 2026-11-12T10:35:27Z); koordinatör oturumunda `AskUserQuestion` il
 > silinmez, denetim izinde kalır. Fatura kesilmişse fark Satış'tan fark faturasıyla kapatılır.
 
 Yorumun notu: “"Yetkili kişi" (m.3) için yeni izin adı önerilebilir; grant/rol insan kapısıdır.” Aynı 16. tur m.2–3,
-Lojistik şeridinde LOJ-D9'a ek olarak işlenir (#1115); Satış metni aşağıda yalnız Satış etkisini yazar, Lojistik'in tartı
+Lojistik şeridinde LOJ-D12 (paylaşım, tartısız teslim) ve LOJ-D13 (gerekçeli düzeltme) olarak işlenir
+(`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md`, #1115); Satış metni aşağıda yalnız Satış etkisini yazar, Lojistik'in tartı
 kaydı kuralını değiştirmez.
 
 ## Soru ve cevaplar
@@ -64,10 +63,10 @@ kaydı kuralını değiştirmez.
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| SAT-D309 (= LOJ-D9) | Fason hizmet bedeli kg kaynağı | Bedel kg'ı = müşteriye geri teslim edilen malın **teslim tartısı net kg**'ı (WGT-001 net). Fire bedele girmez. Fatura Satış'taki fason hizmet siparişinden kesilir; Lojistik fatura kesmez, yalnız net kg olgusunu okuma portuyla sunar. | Satış fason hizmet siparişi faturası (`docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md` F1/F2), `SalesInvoiceCalculator` (tek hesaplayıcı), Lojistik net kg okuma portu (F1), Finans `sales.invoice.finalized.v1` tüketimi |
-| SAT-D310 | Risk okunamazken sevk | Müşteri riski okunamıyorsa (Finans, kur veya fatura kaynağı yok; port sebebi `SourceUnavailable`) sevk, yetkili onaylı **tek sevk istisnası** (SAT-D154/D160, `Valid`) ile geçebilir; istisna yoksa durur. Risk kapısı portunun kendisi okunamıyorsa (port hatası/zaman aşımı) istisna da okunamadığı için sevk durur (DEC-FIN-009 fail-closed, Lojistik L-7). "Yetkili" mevcut istisna onay yetkisidir; yeni izin/grant seçilmez. | `docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md` S2 kapı kuralı, `ISalesShipmentRiskGateReadPortV1`, `SalesRiskExceptionService` (istisna talebi `Unavailable`'da zaten açık), Lojistik sevk kapısı |
-| SAT-D311 | Finans'ın işlemediği kesilmiş fatura | Satış'ta kesilmiş, Finans'ın henüz işlemediği faturanın tutarı müşteri riskinde **faturalanmamış sevk toplamında sayılır**, ama ekranda **ayrı bir risk türü/satırı** olarak gösterilir; Finans işleyince bu satırdan düşer ve açık bakiyeye geçer. Aynı tutar iki bileşende aynı anda sayılmaz. Tutar fatura hesaplayıcısından gelir (SAT-D90); "Finans işledi" olgusu Finans'ın okuma portundan veya olayından okunur, Satış tahmin etmez. | Plan S0, `SalesDraftService.RiskCheck.cs`, risk kontrol sözleşmesinde ayrı bileşen (`SalesDraftRiskCheckV1`, sürüm etkisi S0'da), Finans işlendi olgusu |
-| SAT-D312 | Fason net kg paylaşımı ve tartı düzeltmesi (Satış etkisi) | (1) Tek teslim tartısı birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır; fatura her siparişin payından kesilir (SAT-D309). (2) Tartısı olmayan fason teslim kaydedilemez; Satış tartısız fason satırı faturalamaz. (3) Çıkış sonrası tartı hatası yetkili kişinin gerekçeli düzeltme kaydıyla düzeltilir, eski değer denetim izinde kalır; fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır. Paylaşım ve fark tutarı tek hesaplayıcıdadır (`SalesInvoiceCalculator`). Düzeltme kaydı Lojistik tartı kaydının işidir (LOJ-D9 eki); "yetkili kişi" için izin adı önerilebilir, grant/rol insan kapısıdır. | Plan F1/F2, `SalesInvoiceCalculator`, Lojistik net kg portu (pay + düzeltme sürümü), fark faturası akışı |
+| SAT-D309 (LOJ-D9 ile aynı cevap) | Fason hizmet bedeli kg kaynağı | Bedel kg'ı = müşteriye geri teslim edilen malın **teslim tartısı net kg**'ı (WGT-001 net). Fire bedele girmez. Fatura Satış'taki fason hizmet siparişinden kesilir; Lojistik fatura kesmez. | Satış fason hizmet siparişi faturası (`docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md` F1/F2), `SalesInvoiceCalculator` (tek hesaplayıcı), Lojistik net kg okuma portu (F1), Finans `sales.invoice.finalized.v1` tüketimi |
+| SAT-D310 | Risk okunamazken sevk | Müşteri riski okunamıyorsa (Finans, kur veya fatura kaynağı yok; port sebebi `SourceUnavailable`) sevk, yetkili onaylı **tek sevk istisnası** (SAT-D154/D160, `Valid`) ile geçebilir; istisna yoksa durur. *Türetilmiş (yazar okuması; DEC-FIN-009 fail-closed, Lojistik L-7):* risk kapısı portunun kendisi okunamıyorsa (port hatası/zaman aşımı) istisna da okunamadığı için sevk durur. *Yazar okuması:* "yetkili" mevcut istisna onay yetkisidir; yeni izin/grant seçilmez. | `docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md` S2 kapı kuralı, `ISalesShipmentRiskGateReadPortV1`, `SalesRiskExceptionService` (istisna talebi `Unavailable`'da zaten açık), Lojistik sevk kapısı |
+| SAT-D311 | Finans'ın işlemediği kesilmiş fatura | Satış'ta kesilmiş, Finans'ın henüz işlemediği faturanın tutarı müşteri riskinde **faturalanmamış sevk toplamında sayılır**, ama ekranda **ayrı bir risk türü/satırı** olarak gösterilir. *Koordinatör/yazar okuması:* Finans işleyince bu satırdan düşer ve açık bakiyeye geçer; aynı tutar iki bileşende aynı anda sayılmaz (AGENTS çift sayım yasağı). Tutar fatura hesaplayıcısından gelir (SAT-D90); "Finans işledi" olgusu Finans'ın okuma portundan veya olayından okunur, Satış tahmin etmez. | Plan S0, `SalesDraftService.RiskCheck.cs`, risk kontrol sözleşmesinde ayrı bileşen (`SalesDraftRiskCheckV1`, sürüm etkisi S0'da), Finans işlendi olgusu |
+| SAT-D312 | Fason net kg paylaşımı ve tartı düzeltmesi (Satış etkisi) | (1) Tek teslim tartısı birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır; fatura her siparişin payından kesilir (SAT-D309). (2) Tartısı olmayan fason teslim kaydedilemez; Satış tartısız fason satırı faturalamaz. (3) Çıkış sonrası tartı hatası yetkili kişinin gerekçeli düzeltme kaydıyla düzeltilir, eski değer denetim izinde kalır; fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır. Düzeltme kaydı Lojistik tartı kaydının işidir (LOJ-D13); "yetkili kişi" için izin adı önerilebilir, grant/rol insan kapısıdır. Hesabın hangi modülde yapıldığı bu kararda seçilmedi (Sınırlar, yazar okuması). | Plan F1/F2, `SalesInvoiceCalculator`, Lojistik net kg okuma portu, fark faturası akışı |
 
 ## Sınırlar
 
@@ -75,6 +74,12 @@ kaydı kuralını değiştirmez.
   kaydı", kesin tanım fason teslim dilimi spec'inde) bu kararla seçilmedi. Bölüşüm ve tartı düzeltmesi SAT-D312 ile
   cevaplandı. Oran paydasındaki "beyan kg"nın sevk satırında hangi alan olduğu ve paylaştırma artığının hangi siparişe
   yazılacağı SAT-D312'de seçilmedi; F2 spec'i önerir, para etkisi olduğu için gerekirse `NEEDS-SINAN`.
+- **Yazar okuması (SAT-D312 hesap yeri, karar değil):** Lojistik net kg okuma portu sipariş başına beyan kg ve talimatın
+  net kg'ını, düzeltme sürümüyle verir; paylaştırma (oran, kg payı), artık ve para (pay × fiyat, fark tutarı)
+  `SalesInvoiceCalculator`'dadır. Lojistik LOJ-D12'yi kendi tarafında aynı oranla uygularsa iki hesap aynı golden'ı
+  geçmelidir; tek kaynak F1 spec'inde Lojistik ile netleşir.
+- SAT-D312 (3) "fark faturası"nın yönü (tartı fazla yazıldıysa negatif fark: iade/alacak belgesi mi) cevapta yoktur; F2
+  spec'i önerir, para etkisi olduğu için gerekirse `NEEDS-SINAN`.
 - SAT-D311'de ayrı risk satırının adı/ekran metni ve Finans "işlendi" olgusunun hangi port/olaydan geldiği seçilmedi
   (S0 dilimi; Finans sözleşmesi #1117).
 - Birim fiyat, net kg'ın faturaya ondalık hassasiyeti, satır tutarı yuvarlaması ve sipariş kg'ı ile fark toleransı
