@@ -54,6 +54,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var replay = await client.PostWithKeyAsync(path, link, "link-1");
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+        Assert.Equal(client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single(),
+            replay.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
         Assert.Equal(JsonSerializer.Serialize(view),
             JsonSerializer.Serialize(await replay.Content.ReadFromJsonAsync<PlanViewV1>()));
         Assert.Equal(1, sales.Reads);
@@ -62,9 +64,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var reread = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{planId}"))!;
         Assert.Equal(JsonSerializer.Serialize(view.SalesOrderLink), JsonSerializer.Serialize(reread.SalesOrderLink));
 
-        // A stale link revision under a new key is a conflict and changes nothing.
+        // A stale link revision under a new key is the link conflict (not version_conflict) and changes nothing.
         var stale = await client.PostWithKeyAsync(path, link, "link-stale");
-        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        await AssertSalesLinkProblemAsync(stale, HttpStatusCode.Conflict, ManufacturingRuleCodes.PlanSalesOrderLinkChanged);
         Assert.Equal(1L, await SalesLinkRevisionAsync(run, planId));
         // Sales is asked before the store checks the link revision.
         Assert.Equal(2, sales.Reads);
@@ -115,6 +117,22 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.PostWithKeyAsync(path, link, "failed")).StatusCode);
         Assert.Equal(4, sales.Reads);
 
+        // An unknown plan is the code-less 404 even with an approved line (Sales is read before the plan) ...
+        failure = null;
+        answer = ApprovedSalesLine(CompanyA, revision: 1);
+        await AssertSalesLinkCodeLessAsync(await client.PostWithKeyAsync(
+            $"{Base}/plans/{Guid.NewGuid()}/sales-order-link", link, "unknown-plan"), HttpStatusCode.NotFound);
+        Assert.Equal(5, sales.Reads);
+        // ... and so is another company's plan; an unlink does not ask Sales.
+        var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+        using (var other = SalesLinkClient(host, userB, CompanyB))
+        {
+            await AssertSalesLinkCodeLessAsync(await other.PostWithKeyAsync(path,
+                new ChangePlanSalesOrderLinkRequestV1(1, 0, null, null), "foreign-plan"), HttpStatusCode.NotFound);
+        }
+
+        Assert.Equal(5, sales.Reads);
+
         var plan = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{planId}"))!;
         Assert.Equal((1L, 0L, (PlanSalesOrderLinkViewV1?)null), (plan.Version, plan.SalesOrderLinkRevision, plan.SalesOrderLink));
         Assert.Equal(0L, await SalesLinkRevisionAsync(run, planId));
@@ -144,7 +162,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var refused = await client.PostWithKeyAsync($"{Base}/plans/{planId}/sales-order-link",
             new ChangePlanSalesOrderLinkRequestV1(1, 0, LinkSalesOrder, LinkSalesLine), "revoked");
 
-        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        await AssertSalesLinkCodeLessAsync(refused, HttpStatusCode.Forbidden);
         Assert.Equal(1, sales.Reads);
         Assert.Equal(0L, await SalesLinkRevisionAsync(run, planId));
         Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM manufacturing.Plans WHERE Id = @id", ("@id", planId)));
@@ -174,11 +192,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             services.AddSingleton<ISalesOrderLineReferencePortV1>(sales);
         }));
 
-    private static HttpClient SalesLinkClient(WebApplicationFactory<Program> host, string user)
+    private static HttpClient SalesLinkClient(WebApplicationFactory<Program> host, string user, Guid? company = null)
     {
         var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-Development-User", user);
-        client.DefaultRequestHeaders.Add("X-Company-Id", CompanyA.ToString());
+        client.DefaultRequestHeaders.Add("X-Company-Id", (company ?? CompanyA).ToString());
         client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
         return client;
     }
@@ -188,6 +206,18 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(status, response.StatusCode);
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
+    }
+
+    /// <summary>401/403/404 carry no problem code on the wire: an empty body or a problem without <c>code</c>.</summary>
+    private static async Task AssertSalesLinkCodeLessAsync(HttpResponseMessage response, HttpStatusCode status)
+    {
+        Assert.Equal(status, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        if (body.Length > 0)
+        {
+            using var problem = JsonDocument.Parse(body);
+            Assert.False(problem.RootElement.TryGetProperty("code", out _));
+        }
     }
 
     private static Task<long> SalesLinkRevisionAsync(Run run, Guid planId) => run.ScalarAsync<long>(
