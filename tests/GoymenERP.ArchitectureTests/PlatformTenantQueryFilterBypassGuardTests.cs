@@ -411,8 +411,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A3 API-30 (ALS-D33, ALS-D21): +3 line delivery schedule SQL facts (an append-only revision stored in one save, replayed,
             // rebuilt between the acceptance shares + the slice checks and keys on direct writes; a Draft schedule before the
             // approval + company isolation; Down refusal 51173), kept ordinal-sorted (c307bc9f… -> f81eff47…).
+            // A3 API-30 r3 (review A P3): +1 same-line schedule race SQL fact (two saves at one version yield one revision, one
+            // audit record and a concurrent change for the loser), kept ordinal-sorted (f81eff47… -> 11e38799…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "f81eff4789cfcfa735740dc58a5a8fe3ae6e68ee5b1d035f584268edb81c5b99",
+                "11e38799e3ed22a443b4ea313a753e062ae8501c347907dd218675af6cd90084",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
