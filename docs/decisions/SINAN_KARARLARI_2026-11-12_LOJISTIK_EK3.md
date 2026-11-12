@@ -1,0 +1,70 @@
+# Sinan Kararları — 2026-11-12 (Lojistik: transfer "kantardan geçer" depo ayarı, fason net kg paylaşımı, çıkış sonrası tartı düzeltmesi)
+
+Bu belge önceki karar dosyalarını silmez; `LOJ-D11…D13` ekler. `SINAN_KARARLARI_2026-11-12_LOJISTIK_F012_F020.md`
+(`LOJ-D1…D8`) ve `SINAN_KARARLARI_2026-11-12_LOJISTIK_EK2.md` (`LOJ-D9`, `LOJ-D10`) aynen geçerlidir; LOJ-D11 yalnız
+LOJ-D10'un "tartı kaydı yoksa" ayrımını, LOJ-D12 LOJ-D9'un paylaşım ve eksik tartı kuralını tamamlar.
+
+**Kaynak:** Sinan'ın 12 Kasım 2026 16. ve 17. tur `AskUserQuestion` cevapları; koordinatör Issue #66 yorumları
+[`6821105608`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821105608) (16. tur, 2026-11-12T10:27:50Z) ve
+[`6821262098`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098) (17.–18. tur, 2026-11-12T10:35:27Z) olarak
+kaydetti; ayrıca LOJ-D11'in devamı olan e-İrsaliye'li transfer penceresi kuralı koordinatörün
+[`6821569022`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821569022) yorumundadır. Lojistik şeridi
+yorumları `gh api` ile birincil kaynaktan okudu. Not: #66 kaynak yorumunda net kg kaynağı "SAT-D308" diye anılır; bu
+koordinatörün çalışma adıdır, Satış #1119'daki karar numarası SAT-D309'dur (bu belge SAT-D309 kullanır). Cevaplar kelimesi kelimesine aktarılmıştır;
+madde etiketi ve soru metni alıntı dışındadır.
+
+**16. tur, m.1 — Transfer "yola çıktı" ayırıcısı (LOJ-D10 / KLN-D25 (7)):**
+
+> **Cevap: Depo ayarı.** Ayarlardan "bu depodan çıkan transferler kantardan geçer" denir. O depoda iptal çıkış tartısına kadar açık kalır. Diğer depolarda sevk kaydedilince kapanır. Kullanıcıya her sevkte ekstra soru yok.
+
+**16. tur, m.2 — Fason net kg paylaşımı (LOJ-D9 / SAT-D309, N-8):**
+
+> **Cevap: Oranla böl, tartı zorunlu.** Net kg, sevk satırlarındaki beyan kg oranında siparişlere paylaştırılır. Tartısı olmayan fason teslim kaydedilemez.
+
+**16. tur, m.3 — Çıkış sonrası tartı düzeltmesi:**
+
+> **Cevap: Gerekçeli düzeltme.** Yetkili kişi gerekçe yazarak düzeltme kaydı girer. Eski değer silinmez, denetim izinde kalır. Fatura kesilmişse fark Satış'tan fark faturasıyla kapatılır.
+
+**16. tur, notlar:**
+
+> "Yetkili kişi" (m.3) için yeni izin adı önerilebilir; grant/rol insan kapısıdır. "Kantardan geçer" depo ayarının varsayılanı kapalıdır (ayar açılmadıkça sevk kaydı anı geçerli).
+
+Koordinatör notu (alıntı dışı, #66 6821105608): açık kalanlar N-5, N-6 (6821077996) ve URN-D1 (b) (6821058038) sıradaki turda sorulacaktır; bu turda hiçbir `OPEN-*` kapanmamıştır.
+
+**LOJ-D11 devamı (#66 6821569022, koordinatör kaydı, birebir):**
+
+> **SINAN KARARI (2026-11-12, AskUserQuestion):** Kantar zorunlu depodan e-İrsaliye'li transferde iptal penceresi **"hangisi önce gelirse"** orada kapanır: çıkış tartısı **veya** e-İrsaliye'nin GİB'e gönderimi — hangisi önce olursa.
+
+Koordinatör notu (alıntı dışı): Stok KLN-D25 (7) devamıdır; Lojistik LOJ-D11 için şeritler karar dosyasına bu metinle işler.
+
+**17. tur, m.1 — N-5, risk okunamazsa sevk (#1119):**
+
+> **Cevap: Evet, istisnayla geçer.** (Yetkili onaylarsa risk okunamasa da tek sevk çıkar.)
+
+## Kararlar
+
+| No | Konu | Karar | Etkilenen yer |
+|---|---|---|---|
+| LOJ-D11 | Transfer "yola çıktı" ayırıcısı = depo ayarı | Settings'te depo başına "bu depodan çıkan transferler kantardan geçer" ayarı vardır; **varsayılan kapalı**. Açıksa: sevk kaydedildikten sonra iptal **çıkış tartısına kadar açık** kalır, çıkış tartısı kaydedilince mal yola çıkmış sayılır (LOJ-D10). Kapalıysa (diğer depolar): **e-İrsaliyesiz** transferde **sevk kaydı kapanış anıdır**, iptal kapanır; **e-İrsaliye'li** transferde iptal GİB gönderimine kadar açıktır (6. tur m.1, KLN-D25 (6), KLN-D27 (3)). Her sevkte kullanıcıya ek soru yoktur. **Devamı (#66 6821569022, Sinan):** kantarlı depoda e-İrsaliye'li transferin iptal penceresi **hangisi önce gelirse** kapanır: çıkış tartısı ya da e-İrsaliye'nin GİB'e gönderimi (Stok KLN-D25 (7) ve KLN-D27 ile aynı cevap). | Settings (depo ayarı), Stok transfer iptali, LOJ-D10 (KLN-D25 (7), KLN-D27 ile aynı cevap) |
+| LOJ-D12 | Fason net kg paylaşımı ve tartısız teslim | Tek tartı aynı araçtaki birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır. **Tartısı olmayan fason teslim kaydedilemez.** Bedel kg'ı LOJ-D9'daki gibi teslim tartısı net kg'ıdır. | F-012 (spec 04), Satış fason hizmet siparişi: Satış tarafında SAT-D309 (kg kaynağı) ve SAT-D312 (1)-(2) (oranla bölme) aynı cevaptır (Satış #1119; #1119 henüz main'de değildir) |
+| LOJ-D13 | Çıkış sonrası tartı düzeltmesi = gerekçeli düzeltme | Araç çıktıktan sonra tartı yanlış girildiği anlaşılırsa **yetkili kişi gerekçe yazarak düzeltme kaydı** girer. Eski değer silinmez, denetim izinde kalır. Fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır; Lojistik fatura kesmez. Yeni izin adı önerilebilir; **grant/rol insan kapısıdır**. | Lojistik tartı kaydı, denetim izi, Satış fark faturası (SAT-D312 (3)) |
+
+**N-5 notu (Lojistik kapsamı):** 17. tur m.1 ile müşteri riski okunamazsa sevk, yetkili onaylı **tek sevk istisnasıyla**
+geçebilir. Bu cevap **yalnız Satış #1119 satış sevki risk kapısı** kaydıdır. Fason teslimin bu kapıya tabi olup olmadığı
+sonradan sorulmuş ve cevaplanmıştır: `LOJ-D14` (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK4.md`, #66 6821949043): fason teslim
+aynı kapıya tabidir, istisnayla geçer. İstisna onayının izin adı, kaynağı ve ekranı Satış'ın kapsamıdır, Lojistik yeni
+kapı veya ayrı istisna kaynağı icat etmez.
+
+**Yazarın okumaları (geri alınabilir, karar değil):** "kantardan geçer" ayarının saklandığı alan adı ve şekli; "yetkili kişi"
+için izin adı; düzeltme kaydının Lojistik içindeki tablo/alan karşılığı (spec 04: bugün tartı tek kayıttır, düzeltme
+model değişikliği ve migration/K3 gerektirir; SAT-D209 Lojistik'i bağlamaz, KLN-D5 ile kalkmıştır). Bunlar ayrı bir
+`ASSUMPTION-*` kimliği taşımaz; "yazar okuması" olarak işaretlidir ve etkinleştirmeden önce kod PR'ında gerekçelendirilir.
+Yuvarlama artığı ve oran paydası kuralı Satış F2 spec'inin/`SalesInvoiceCalculator`'ın konusudur (#1119); Lojistik seçmez.
+
+## Sınırlar
+
+- Karar olmayanlar: düzeltme izin adının grant'i, depo ayarının hangi depolarda açılacağı (işletme verisi), iptalin
+  bildirim/rapor etkisi.
+- Para/stok/üretim/formül/yetki/güvenlik/migration/saklama politikası bu belgeyle tahmin edilerek etkinleştirilmez.
+- İnsan kapıları değişmez: deployment, environment, secret, Settings'te workflow etkinleştirme, grant/rol/Critical,
+  production aktivasyonu, `OPEN-*` kapatma, `.claude/settings.json`. Hiçbir `OPEN-*` bu belgeyle kapatılmadı.
