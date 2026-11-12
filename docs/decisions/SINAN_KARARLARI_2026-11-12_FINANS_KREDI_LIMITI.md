@@ -34,6 +34,10 @@ cevaplanmıştır. Bu belge `OPEN-010`'un kapatılmasını **önerir**; `ACIK_KA
   [`6819835966`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819835966) ("SINAN-KARARI 2026-11-12
   (6. tur)", 09:26:29Z) madde 4. İki kaynak birbiriyle uyumludur. 6. tur teminat cevabı daha ayrıntılıdır ve FNS-D31
   ona göre yazılmıştır.
+- Issue #66 yorumu
+  [`6819908312`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819908312) ("SINAN-KARARI 2026-11-12
+  (7. tur)", 09:30:03Z) madde 2, aynen: "**Gerek yok**; alan eklenmez (kasa işlemini yapan kişi zaten kayıtlı)."
+  FNS-D32'yi teyit eder.
 - Yorumlarda seçilmeyen seçeneklerin metni yoktur. Bu belge onları uydurmaz.
 
 ## Soru ve cevaplar (aynen)
@@ -59,7 +63,7 @@ cevaplanmıştır. Bu belge `OPEN-010`'un kapatılmasını **önerir**; `ACIK_KA
 | FNS-D29 | Dövizli Finans işleminde kur yokluğu | Kur kaydı, TCMB çekimi ve Kurlar ekranı Ayarlar modülünündür. Finans'ta bir işlem için Ayarlar kur çözümleyicisinden (`ISettingsExchangeRateResolverV1`) kur gerekiyorsa ve cevap `Unavailable` ise işlem **durur** (fail-closed). Finans kur tahmin etmez veya varsayılan kur kullanmaz. Hangi Finans işleminin kur gerektirdiği her dilimin kendi spec'indedir | İlgili Finans dilimleri (kur gerektirenler) |
 | FNS-D30 | Limiti tanımlanmamış müşteride sevk | (1) Onaylı limiti olmayan müşteride sevk **durur** ve uyarı çıkar; yetkili kişinin **tek seferlik onayı** ile devam eder. Bu onay mevcut tek sevk risk istisnasıdır (SAT-D283…SAT-D287): yükleme talimatına bağlıdır, tek sevkte tüketilir. "Limitsiz" veya "sıfır limit" sayılmaz. (2) Onayı veren kişiye, cari kartında o müşteri için **limit tanımlama kısayolu öneri olarak** gösterilir. Kısayol yalnız limit **önerisi** açar; öneri FNS-D27a gereği başka bir kullanıcının onayıyla geçerli olur (maker≠checker değişmez). Öneriyi kullanmak zorunlu değildir | Lojistik sevk kapısı, Satış risk sonucu/istisna, Cari kartı paneli (UI), `FinanceSalesPartyRiskReadPortV1` |
 | FNS-D31 | Müşteri teminatı ve evraklı risk (OPEN-010'un teminat kısmı) | (1) **Teminat sayılır:** banka garantili ödemeler, DBS, teminat mektubu, kredi kartı, Vinov, ipotek. Teminat türü listesi Ayarlar'da **yapılandırılabilir** tutulur. (2) **Çek ve senet teminat değildir:** teminat alanında görünmez, doğrudan riske girer ve ayrı **"evraklı risk"** olarak gösterilir. (3) Fatura tutarı teminattan düşülür. Azaltım (haircut) oranı uygulanmaz, teminat tam tutarıyla girer. (4) Ekranda **mevcut teminat**, **teminat doluluğu** (teminattan düşülen fatura tutarı) ve **riskteki tutar** ayrı ayrı görünür. (5) Teminat brüt riski düşürmez (DEC-FIN-007 notu): teminatla karşılanan alacak da riskli alacak olarak görünür | API-85b, `FinanceSalesPartyRiskReadPortV1.Collateral`, evraklı risk okuma ucu, Cari kartı paneli (UI), `ACIK_KARARLAR.md` OPEN-010 |
-| FNS-D32 | Kasa "sorumlu kişi" alanı (API-30) | Şimdilik eklenmez. API-30 (#1109) bugünkü kapsamıyla ilerler; gerekirse ayrı dilimde sorulur | API-30 |
+| FNS-D32 | Kasa "sorumlu kişi" alanı (API-30) | Eklenmez (Finans oturumu "Şimdilik eklenmesin"; #66 `6819908312` m.2 "Gerek yok"). API-30 (#1109) bugünkü kapsamıyla ilerler; gerekirse ayrı dilimde sorulur | API-30 |
 
 ## Kapatılan açık sorular
 
