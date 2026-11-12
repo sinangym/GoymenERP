@@ -252,14 +252,17 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **Modül bağlantıları:** F1 portu (❌), `ISalesSubcontractServiceOrderReadPortV1` (değişmez), `sales.invoice.finalized.v1`
   hedefi (Finans, `SATIS_MODUL_BAGLANTILARI_v1.md:87`, ❌).
 
-### X1 — SAT-D314: satır iptal/azaltmada gelecek tedarik ayırmasının bırakılması (K3: cross-module; #1116 F017-s ile)
+### X1 — SAT-D314/SAT-D315: satır iptal/azaltmada gelecek tedarik ayırmasının bırakılması (K3: cross-module; #1116 F017-s ile)
 - **Ne:** gelecek tedarikten ayrılmış satış satırı iptal edilir veya azaltılırsa Satış komutu aynı işlemde Stok bırakma
   portunu çağırır; artan gelecek ayırma kalmaz; audit'li. Satış, ayırma var diye "önce elle bırak" şartıyla reddetmez
-  (seçilmeyen yön). Stok metni KLN-D28 (#1116), Stok modeli KLN-D26 (main `e165aaee`); X1 yalnız Satış tarafıdır.
+  (seçilmeyen yön); ayırma yüzünden reddetmez, fail-closed, SAT-D104/D112 tabanı ve port hatası ayrı ret sebepleridir. Stok metni KLN-D28 (#1116), Stok modeli KLN-D26 (main `e165aaee`); X1 yalnız Satış tarafıdır.
 - **Ölçü (yazar okuması, #1116 rev4 §3.2 adım 5 ile hizalı):** yeni açık miktar = yeni satır miktarı − sevk
   edilen/yüklenen toplam (SAT-D104/D112 tabanı); bırakılan = max(0, aktif gelecek ayırma − yeni açık miktar), en çok
-  mevcut gelecek ayırma kadar. İptal ve satır kaldırma bütün aktif gelecek ayırmayı bırakır. Fiziksel tahsis bugünkü
-  kurallarla kalır (#1116 §5.1 (b)).
+  mevcut gelecek ayırma kadar. İptal ve satır kaldırma bütün aktif gelecek ayırmayı bırakır.
+- **Sıra (SAT-D315, Sinan 23. tur):** birden çok alışa yayılan ayırmada en geç gelecek alıştan başlanır; fiziksel tahsis ve
+  gelecek ayırma birlikteyse önce gelecek ayırma bırakılır; kullanıcının komuttaki açık seçimi varsayılandan üstündür.
+  Geçici "seçim yoksa 409" yönü kalkmıştır. Fiziksel tahsisin bırakılma yolu Stok kuralıdır (#1116 §5.1 (b)); o yol
+  gelene kadar Satış fiziksel tahsisi bırakmaz.
 - **Satış komutlarına eşleme:**
   - DEC-SAL-005 sipariş iptali (README :296-302): önizleme fiziksel tahsiste reddetmeye devam eder; gelecek ayırma
     onaylı iptalde bırakılır (KLN-D28 (9)). README :302 yarış beyanı değişir.
@@ -269,15 +272,16 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   - SAT-D17 satır kapatma ve zorla kapatma (README :850): SAT-D314 kapsamında değil; bugünkü kural sürer.
   - README metin değişiklikleri F017-s spec görevidir.
 - **Bağımlılık:** Stok bırakma portu (#1116 F017-b; ad `IInventoryFutureAllocationReleasePortV1` #1116/#1110 önerisi,
-  main'de yok), Satış tahsis okumasında gelecek ayırma türü (#1116 F017-s), #1116 §9.1 aday 3 (fiziksel/gelecek sırası)
-  ve aday 4 (çok ayırmada sıra). Karar gelene kadar kapalı yön: seçim yoksa 409, yazma yok. Port main'de yokken Satış
+  main'de yok), Satış tahsis okumasında gelecek ayırma türü ve alış beklenen geliş tarihi (#1116 F017-s), bırakma portunda
+  komut seçimi alanı (SAT-D315 (3)). Port main'de yokken Satış
   komutuna bağlanmaz; dilim F017-s içinde ya da hemen ardından Satış şeridinde açılır. Satış ile Stok arasındaki ilk
   aynı-işlem yazmadır (host participant; emsal `InventoryManufacturingRealizationParticipant.StagePlanRemainderReleaseAsync`).
 - **Fail-closed:** bırakma portu hata verir veya okunamazsa iptal/azaltma yazılmaz (aynı işlem); idempotent replay ikinci
   bırakma üretmez.
 - **Testler:** iptalde ayırma `Released`; azaltmada yalnız açık miktarı aşan kısım bırakılır; kısmi sevkli satırda
-  azaltma (100/40 sevk/60 ayırma → 80: 20 bırakılır); çok ayırmalı satırda seçimle azaltma; aşan kısım birden çok
-  ayırmaya yayılıyor, seçim yok → 409, yazma yok; fiziksel tahsis bırakılmaz; port hatasında satır değişmez; replay tek
+  azaltma (100/40 sevk/60 ayırma → 80: 20 bırakılır); aşan kısım birden çok ayırmaya yayılıyor, seçim yok → en geç
+  gelen alışın ayırması önce bırakılır (30 t → 20 t; 15 Aralık 10 t / 5 Ocak 20 t → 5 Ocak'tan 10 t); seçim varsa seçim
+  uygulanır; fiziksel tahsis + gelecek ayırma birlikte → önce gelecek ayırma bırakılır, fiziksel tahsis yerinde kalır; port hatasında satır değişmez; replay tek
   bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem).
 - **Modül bağlantıları:** Stok bırakma portu (Stok → Satış tüketimi, ❌ #1116), gelecek ayırma okuma türü (❌ #1116 F017-s).
 
