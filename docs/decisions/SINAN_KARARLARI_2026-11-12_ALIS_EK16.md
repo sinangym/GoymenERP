@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in koordinatör oturumunda AskUserQuestion ile verdiği kendi seçimi; koordinatör kaydı
 https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6816723313 madde 3 (NEEDS-SINAN
-https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6812837765 Q4'ün cevabı) ve Sinan Göymen'in kendi yorumu
+https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6812837765 Q4'ün cevabı) ve koordinatör aktarımı
 https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6824883445 (SINAN-KARAR, #1101; aynı NEEDS-SINAN'ın S5'i). Bu dosya
 o kayıtları ALS-D81 ve ALS-D94 olarak numaralandırır; kendi başına yeni karar üretmez.
 

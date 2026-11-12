@@ -198,7 +198,7 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `CK_PurchaseOrders_Approval` (both or neither, only on Approved/Cancelled, approver ≠ `CreatedBy`); its Down refuses
   (`THROW 51172`) while any approver is recorded. The approval amount threshold (API-96) stays in A2a-5.
 - **Order line delivery schedule (A3 API-30, ALS-D33, ALS-D21, master §7.3):** `POST /api/v1/purchasing/orders/{id}/lines/{lineId}/schedule`
-  (`purchasing.orders.revise`, ALS-D94 / Sinan #66 6824883445 — the create name alone is 403; ADR-011 replay; the line id is in
+  (`purchasing.orders.revise`, ALS-D94 / koordinatör aktarımı #66 6824883445 — the create name alone is 403; ADR-011 replay; the line id is in
   the replay identity) replaces a GENERAL line's termin dilimleri
   (hubvogal's "sıra") whole: 1..500 slices, each a distinct `sliceId`, a quantity above zero in the line's unit and a
   `deliveryDate`, numbered 1..n in the given order, summing exactly to the line's ordered quantity (422 `validation_failed` on

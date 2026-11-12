@@ -13,7 +13,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// A3 API-30 (ALS-D33, ALS-D21, master §7.3) on real SQL Server: a general line's delivery schedule (termin dilimleri) is stored as an
 /// append-only revision at the order version it produced, in ONE save with the header version, the attempt and the audit; the same
 /// key replays; a later revision after an acceptance keeps the earlier one as history and the order is rebuilt revision by revision
-/// between the acceptance shares; a domain refusal writes nothing; the checks and the foreign keys hold the slices on a direct write;
+/// between the acceptance shares; two concurrent schedules of one line yield one revision; a domain refusal writes nothing; the checks and the foreign keys hold the slices on a direct write;
 /// company B neither sees nor schedules company A's order; the migration's Down refuses while a slice exists. SENTETIK owners.
 /// </summary>
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
@@ -145,6 +145,52 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         {
             var rebuilt = (await a.Store.FindOrderAsync(orderId))!.Order;
             Assert.Equal((PurchaseOrderStatus.Approved, 4L, 2), (rebuilt.Status, rebuilt.Version, rebuilt.Lines[0].DeliverySchedule.Count));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Two_schedules_of_one_line_saved_concurrently_yield_one_revision_and_the_loser_is_a_concurrent_change()
+    {
+        await using Run run = await Run.StartAsync();
+        var (orderId, lineId, approvedVersion) = await ApprovedAcceptanceOrderAsync(run, 100m);
+        var setA = new[] { KgSlice(60m, ScheduleD1), KgSlice(40m, ScheduleD2) };
+        var setB = new[] { KgSlice(100m, ScheduleD2) };
+
+        Barrier barrier = new Barrier(2);
+        async Task<object> ScheduleAsync(string key, PurchaseOrderDeliverySliceInput[] slices)
+        {
+            await using StoreScope writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            try
+            {
+                var result = await writer.Store.MutateOrderAsync(run.Envelope(key), Hash(key), PurchasingCommands.OrderLineScheduleV1, orderId,
+                    (order, now) => order.SetLineDeliverySchedule(approvedVersion, lineId, slices, run.Actor, now), LineScheduleSet);
+                return result!.Outcome;
+            }
+            catch (PurchasingStoreException exception)
+            {
+                return exception.Code;
+            }
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => ScheduleAsync("k-race-a", setA)), Task.Run(() => ScheduleAsync("k-race-b", setB)));
+        Assert.Single(results, result => result is PurchasingWriteOutcome.Recorded);
+        Assert.Single(results, result => result is string code && code == PurchasingStoreCodes.ConcurrentChange);
+
+        // One revision only, at the next version, and exactly one header bump and one audit record.
+        Assert.Equal(approvedVersion + 1, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id = @id", ("@id", orderId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(DISTINCT OrderVersionAfter) FROM purchasing.PurchaseOrderLineDeliverySlices WHERE OrderId = @id", ("@id", orderId)));
+        Assert.Equal(100m, await run.ScalarAsync<decimal>("SELECT SUM(Quantity) FROM purchasing.PurchaseOrderLineDeliverySlices WHERE OrderId = @id",
+            ("@id", orderId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'purchasing.purchase-order.line-schedule-set.v1' AND EntityId = @id",
+            ("@id", orderId.ToString("D"))));
+
+        await using (StoreScope a = run.Store(CompanyA))
+        {
+            var rebuilt = (await a.Store.FindOrderAsync(orderId))!.Order;
+            var winner = results[0] is PurchasingWriteOutcome.Recorded ? setA : setB;
+            Assert.Equal(winner.Select(slice => slice.SliceId).ToArray(), rebuilt.Lines[0].DeliverySchedule.Select(slice => slice.SliceId).ToArray());
         }
     }
 
