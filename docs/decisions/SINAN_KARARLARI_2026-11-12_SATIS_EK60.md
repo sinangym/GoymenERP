@@ -1,12 +1,12 @@
 # Sinan Kararları — 2026-11-12 (Satış: fason hizmet faturasında kg kaynağı, sevk risk kapısı)
 
-Bu belge önceki karar dosyalarını silmez; **SAT-D309, SAT-D310, SAT-D311 ve SAT-D312**'yi ekler. URT-D16 ("fatura hizmet bedelidir"), SAT-D195, SAT-D209,
+Bu belge önceki karar dosyalarını silmez; **SAT-D309, SAT-D310, SAT-D311, SAT-D312 ve SAT-D313**'ü ekler. URT-D16 ("fatura hizmet bedelidir"), SAT-D195, SAT-D209,
 SAT-D11 ve SAT-D110 aynen geçerlidir; bu belge onların metnini değiştirmez. `KARAR_SICILI` değişmez.
 
 **Kimlik:** SAT-D308 main'dedir (#1108, `2efb3f68`; Stok,
 `SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`, fire anahtarı kapalıyken fire maliyeti); bu karar
 **SAT-D309** alır. #66 16. tur yorumu bu maddeyi "LOJ-D9 / SAT-D308" etiketiyle anar; o etiket koordinatörün çalışma
-adıdır, sicilde bu madde **SAT-D309**'dur. SAT-D309 yalnız #1115'te aynı Sinan cevabına atıf olarak geçer; SAT-D310–D312
+adıdır, sicilde bu madde **SAT-D309**'dur. SAT-D309 yalnız #1115'te aynı Sinan cevabına atıf olarak geçer; SAT-D310–D313
 main'de ve açık `claude/*`, `codex/*` dallarında kullanılmaz (`git grep`, 2026-11-12).
 
 **Kaynak:** Sinan, Issue #66 yorumu
@@ -49,6 +49,19 @@ Lojistik şeridinde LOJ-D12 (paylaşım, tartısız teslim) ve LOJ-D13 (gerekçe
 (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md`, #1115); Satış metni aşağıda yalnız Satış etkisini yazar, Lojistik'in tartı
 kaydı kuralını değiştirmez.
 
+**Ek kaynak (SAT-D313):** Sinan, bu oturumda `AskUserQuestion` ile (2026-11-12); soru bu PR'ın #66 NEEDS-SINAN yorumu
+[6822311631](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822311631) (önerilen: "sipariş kg × onaylı kg
+fiyatı", alternatif: "tartıya kadar riske girmez"); iki seçenek de seçilmedi, Sinan kendi metnini yazdı. Kayıt: #66
+[6822385722](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822385722) ve devam sorusu (önerilen: "plana
+alınmamış kalan sayılır", seçilmedi) [6822674443](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822674443).
+Cevaplar kelimesi kelimesine:
+
+> **Fason hizmet siparişinin tutarı müşteri riskinde tartıdan önce nasıl sayılsın?** "Sevk planı için açılan miktar x
+> birim fiyat, bu fason ve satışlarda gerçekleşecek risk oluyor, irsaliyesi faturası kesilene kadar"
+
+> **Onaylı siparişin henüz sevk planına alınmamış kalanı riskte sayılmaya devam etsin mi?** "Siparişin tamamı risk
+> sayılmaz, sevk planına alınan sevk olan faturası kesilenler durumuna göre risk durumlarında görünür"
+
 ## Soru ve cevaplar
 
 | # | Soru | Cevap | Seçilen seçeneğin açıklaması |
@@ -58,6 +71,7 @@ kaydı kuralını değiştirmez.
 | 3 | Kesilmiş ama Finans'ın işlemediği fatura riskte nerede? (N-6) | **"Faturalanmamış sevkte evet ama bu tutarda ayrı bir risk türü olarak gösterilir"** (Sinan'ın kendi metni) | Finans işleyene kadar faturalanmamış sevk toplamında sayılır, ekranda ayrı risk türü/satırı; işlenince açık bakiyeye geçer. |
 | 4 | Tek tartı birden çok fason siparişini kapsarsa ya da tartı yoksa? (N-8) | **Oranla böl, tartı zorunlu** | Net kg sevk satırlarındaki beyan kg oranında paylaştırılır; tartısız fason teslim kaydedilemez. |
 | 5 | Çıkış sonrası tartı yanlışsa? | **Gerekçeli düzeltme** | Yetkili kişi gerekçeli düzeltme kaydı girer; eski değer denetim izinde kalır; fatura kesilmişse fark Satış'tan fark faturasıyla kapatılır. |
+| 6 | Fason siparişin tartı öncesi risk tutarı; plana alınmamış sipariş kalanı | **Sinan'ın kendi metni** (iki soruda da önerilen seçilmedi; yukarıdaki alıntılar) | Risk sevk planına açılan miktar × birim fiyattan başlar (satış ve fason), irsaliye ve fatura kesilene kadar; siparişin tamamı risk sayılmaz, tutar durumuna göre (planlı / sevk edilmiş / faturalı) görünür. |
 
 ## Kararlar
 
@@ -67,6 +81,7 @@ kaydı kuralını değiştirmez.
 | SAT-D310 | Risk okunamazken sevk | Müşteri riski okunamıyorsa (Finans, kur veya fatura kaynağı yok; port sebebi `SourceUnavailable`) sevk, yetkili onaylı **tek sevk istisnası** (SAT-D154/D160, `Valid`) ile geçebilir; istisna yoksa durur. *Türetilmiş (yazar okuması; DEC-FIN-009 fail-closed, Lojistik L-7):* risk kapısı portunun kendisi okunamıyorsa (port hatası/zaman aşımı) istisna da okunamadığı için sevk durur. *Yazar okuması:* "yetkili" mevcut istisna onay yetkisidir; yeni izin/grant seçilmez. | `docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md` S2 kapı kuralı, `ISalesShipmentRiskGateReadPortV1`, `SalesRiskExceptionService` (istisna talebi `Unavailable`'da zaten açık), Lojistik sevk kapısı |
 | SAT-D311 | Finans'ın işlemediği kesilmiş fatura | Satış'ta kesilmiş, Finans'ın henüz işlemediği faturanın tutarı müşteri riskinde **faturalanmamış sevk toplamında sayılır**, ama ekranda **ayrı bir risk türü/satırı** olarak gösterilir. *Koordinatör/yazar okuması:* Finans işleyince bu satırdan düşer ve açık bakiyeye geçer; aynı tutar iki bileşende aynı anda sayılmaz (AGENTS çift sayım yasağı). Tutar fatura hesaplayıcısından gelir (SAT-D11 ve AGENTS tek hesaplayıcı; SAT-D90 yalnız kur); "Finans işledi" olgusu `OpenReceivables` ile aynı Finans cevabından okunur (plan S0 (b); olay kaynak sayılmaz), Satış tahmin etmez. | Plan S0, `SalesDraftService.RiskCheck.cs`, risk kontrol sözleşmesinde ayrı bileşen (`SalesDraftRiskCheckV1`, sürüm etkisi S0'da), Finans işlendi olgusu |
 | SAT-D312 | Fason net kg paylaşımı ve tartı düzeltmesi (Satış etkisi) | (1) Tek teslim tartısı birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır; fatura her siparişin payından kesilir (SAT-D309). (2) Tartısı olmayan fason teslim kaydedilemez; Satış tartısız fason satırı faturalamaz. (3) Çıkış sonrası tartı hatası yetkili kişinin gerekçeli düzeltme kaydıyla düzeltilir, eski değer denetim izinde kalır; fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır. Düzeltme kaydı Lojistik tartı kaydının işidir (LOJ-D13); "yetkili kişi" için izin adı önerilebilir, grant/rol insan kapısıdır. Hesabın hangi modülde yapıldığı bu kararda seçilmedi (Sınırlar, yazar okuması). | Plan F1/F2, `SalesInvoiceCalculator`, Lojistik net kg okuma portu, fark faturası akışı |
+| SAT-D313 | Siparişin risk tutarı: sevk planı esaslı (satış ve fason) | Müşteri riskinde siparişin tamamı sayılmaz. Risk, **sevk planına açılan miktar × birim fiyat** ile başlar; bu satış ve fason siparişler için aynıdır ve irsaliye/fatura kesilene kadar böyle sayılır. Tutar durumuna göre (sevk planına alınan / sevk olan / faturası kesilen) ayrı risk durumlarında görünür. *Yazar okuması:* plana alınmamış sipariş kalanı riske girmez; her tutar tam olarak bir durumda sayılır (AGENTS çift sayım yasağı); birim fiyat ve KDV fatura hesaplayıcısından gelir (SAT-D11, SAT-D46). | Plan S0, `SalesDraftService.RiskCheck.cs` (bugünkü "onaylı kalan sipariş" bileşeni, `:412-430`), `SalesCustomerRisk.cs`, risk kontrol sözleşmesi, Lojistik sevk planı okuma portu (S0 spec), DEC-FIN-007 ilk aşaması (Finans bilgisine) |
 
 ## Sınırlar
 
@@ -88,8 +103,12 @@ kaydı kuralını değiştirmez.
   Tevkifat kodu SAT-D110'a göre Ayarlar'dadır.
 - #66 `6821949043` (LOJ-D14, Lojistik kararı): fason teslim satış sevkiyle aynı müşteri risk kapısına tabidir, istisnayla
   geçer. Satış etkisi plan S2/F1'dedir (aynı kapı portunun ikinci tüketicisi). Fason hizmet siparişinin tartıdan önceki
-  risk tutarının "onaylı kalan sipariş" bileşeninde nasıl sayılacağı bu kararla seçilmedi (para etkisi; `NEEDS-SINAN`).
-- Bu belgede kod/şema/migration yoktur; SAT-D310–D312'nin kodu plan dilimlerinde K3 kapısıyla gelir (SAT-D209 sınırı).
+  risk tutarı SAT-D313 ile cevaplandı (sevk planına açılan miktar × birim fiyat).
+- SAT-D313 `KARAR_SICILI` DEC-FIN-007'nin "onaylı kalan sipariş" bileşenini daraltır (son kullanıcı kararı önceliği,
+  AGENTS); sicil metni bu PR'da değişmez, Finans şeridine ve koordinatöre bildirilir. Sevk planı miktarının kaynağı
+  (Lojistik sevk planı/yükleme talimatı okuması, mevcut port mu yeni mi), fasonda plan kg'ı, plan iptali/azaltmasında
+  düşme ve durum adları bu kararla seçilmedi; S0 spec'i önerir, para etkisi varsa `NEEDS-SINAN`.
+- Bu belgede kod/şema/migration yoktur; SAT-D310–D313'ün kodu plan dilimlerinde K3 kapısıyla gelir (SAT-D209 sınırı).
 - Hiçbir `OPEN-*` kapanmaz.
 
 İnsan kapıları değişmez: deployment, environment, secret, Settings'ten workflow etkinleştirme, grant/rol/Critical,

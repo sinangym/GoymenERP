@@ -7,7 +7,7 @@ kararı değildir, karar sicilini değiştirmez).
 OPEN-003/004/010; EK21 SAT-D153…D162; EK55 SAT-D281; EK56 SAT-D283…D287; EK7 SAT-D46…D53, SAT-D80; EK25 SAT-D175/D176; EK29
 SAT-D195; EK31 SAT-D201; URT-D16; Finans devri **PR #1117** (main'de, `1a994cbe`): `SINAN_KARARLARI_2026-11-12_FINANS_KREDI_LIMITI.md`
 FNS-D27/D27a/D30/D31 ve `docs/delivery/FINANS_F018_KREDI_LIMITI_PLANI_v1.md` §2 L1, §3. Fason fatura kuralı: Issue #66 yorumu
-`6820601088` (11. tur) madde 4; karar dosyası bu PR'da: `SINAN_KARARLARI_2026-11-12_SATIS_EK60.md` SAT-D309…D312 (F0).
+`6820601088` (11. tur) madde 4; karar dosyası bu PR'da: `SINAN_KARARLARI_2026-11-12_SATIS_EK60.md` SAT-D309…D313 (F0).
 #1117 `1a994cbe` ile main'dedir.
 
 Kısaltmalar: `SA` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application`, `SD` = `…Sales.Domain`, `SI` =
@@ -76,7 +76,8 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   - (b) "Finans işledi" kümesi `OpenReceivables` ile **aynı Finans cevabından** (aynı anlık görüntü, ör. kabul edilmiş
     `AdmissionId` listesi) gelir; asenkron olay veya Satış'ın API-36 kabul defterinin ikinci kaydı (`SR:665`) kaynak
     sayılmaz, çünkü aradaki gecikme çift sayım veya boşluk üretir. Test: kabul anında tutar tam olarak bir bileşende.
-  - (c) Onaylı kalan sipariş (`ISalesOrderDeliveryReadPortV1` kesin sevk toplamı, `RiskCheck.cs:412-430`) ile
+  - (c) Sevk planı bileşeni (SAT-D313; bugün "onaylı kalan sipariş", `ISalesOrderDeliveryReadPortV1` kesin sevk toplamı,
+    `RiskCheck.cs:412-430`) ile
     faturalanmamış sevk (`ISalesInvoiceableShipmentReadPortV1` onaylı irsaliye payı) aynı Lojistik olgusuna dayanmalıdır.
     Test: kesin sevk var, irsaliye onaysız → tutar tam olarak bir bileşende.
   - (d) Pay anahtarı taşımayan faturalarda (F2 fason hizmet faturası; SAT-D94 (2) önce-fatura/depo teslim) "faturalandı"
@@ -85,8 +86,14 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
     bir bileşende kalır. LOJ-D14 fason teslimi kapıya aldığı için bu sınır kapı sonucunu doğrudan etkiler. Testler:
     "F2 fason faturası kesilince fason payı tam olarak bir bileşende", "önce-fatura: kesilmiş, sevk edilmemiş tutar tam
     olarak bir bileşende".
-  - **Açık (para etkisi, `NEEDS-SINAN`):** fason hizmet siparişinin tartıdan önceki risk tutarı (net kg × fiyat henüz
-    bilinmez) "onaylı kalan sipariş" bileşeninde nasıl sayılır. S0 spec'i tahminle seçmez.
+- **SAT-D313 (Sinan, #66 `6822385722` + `6822674443`):** risk onaylı siparişin tamamından sayılmaz; **sevk planına açılan
+  miktar × birim fiyat** ile başlar (satış ve fason aynı; fason tartı öncesi de böyle), irsaliye/fatura kesilene kadar.
+  Tutar durumuna göre görünür: sevk planına alınan → sevk olan (faturalanmamış sevk) → faturası kesilen (SAT-D311 satırı,
+  Finans işleyince açık bakiye). Plana alınmamış sipariş kalanı riske girmez (yazar okuması). Bu, bugünkü "onaylı kalan
+  sipariş" bileşenini (`RiskCheck.cs:412-430`, DEC-FIN-007 ilk aşaması) değiştirir; S0 K3 PR'ı uygular, Finans'a
+  bildirilir. Test: plan → sevk → fatura geçişinin her adımında tutar tam olarak bir durumda; plana alınmamış kalan
+  riskte yok. *Açık (S0 spec önerir):* sevk planı miktarının kaynağı (Lojistik okuma portu, mevcut/yeni), fasonda plan
+  kg'ı, plan iptali/azaltmasında düşme, durum adları; para etkisi varsa `NEEDS-SINAN`.
 - **Dosyalar:** `SA/SalesDraftService.RiskCheck.cs`, `SD/Drafts/SalesCustomerRisk.cs` (gerekirse yeni sebep kodu); frontend
   tüketicisi: sıkı decoder figür listesi ve `riskText.ts:54,73` etiketleri (yeni bileşen; S3 ile).
 - **Testler:** hesap birim testleri (aşama sınırı, faturalanmış pay düşer, iptal edilen fatura geri döner), gerçek SQL
@@ -172,7 +179,7 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 ### F0 — Karar dosyası (docs, governance)
 - **Yapıldı (bu PR):** #66 `6820601088` m.4 → `docs/decisions/SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`, **SAT-D309**
   (LOJ-D9 ile aynı cevap, #1115). SAT-D308 main'de (#1108, Stok) olduğu için 309 alındı.
-  Aynı dosyaya #66 16.–17. tur cevaplarıyla **SAT-D310** (N-5), **SAT-D311** (N-6), **SAT-D312** (N-8) eklendi.
+  Aynı dosyaya #66 16.–17. tur cevaplarıyla **SAT-D310** (N-5), **SAT-D311** (N-6), **SAT-D312** (N-8) eklendi; #66 `6822385722`/`6822674443` ile **SAT-D313** (sevk planı esaslı risk tutarı).
 - **Modül bağlantıları:** yok.
 
 ### F1 — Teslim tartımı net kg portu (K3: modüller arası sözleşme; sahibi Lojistik — SAT-D309/LOJ-D9)
