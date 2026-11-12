@@ -139,7 +139,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        "a1562dc161cfd5fba787dbf77820476905448ebba901af6b6f85f5499cb9d4d5";
+        // B-22a transfer dispatch proof: registers the inventory transfer module and the host-side Organization destination
+        // adapter (DI only); no generation, network or hosted-service change (a1562dc1… -> e19e2ed1…).
+        "e19e2ed1b01568980e8621a70f45e8e440fb39bbd8596b20a173748f5b6935d8";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -300,7 +302,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/inventory.txt"] =
                 // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
                 // SAT-D262..D267: +4 average-cost ledger/port SQL facts (c005163c... -> 0b766916...), kept ordinal-sorted.
-                "ca832f2d003c6d6310f7fbee44d5a19a2eadd843e39ba1e0572f3eee261db495",
+                // B-22a: +3 transfer dispatch-proof SQL facts (ca832f2d… -> abfcd4ef…), kept ordinal-sorted.
+                "abfcd4ef55ddbf3d48f0d786b99271b9aaef3136a4cfd1efa52e8a373d51c9c6",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -777,7 +780,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/InventoryDbContext.cs"] =
                 // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
                 // Re-fingerprinted for SAT-D262: AverageCostLedger table (company filter, company-leading unique position key, write guard); provider tokens unchanged.
-                "f367b28bdcfd848da3e3b63b8a8f72ef7475c5ad5a0041870e0b38bda40d254b",
+                // Re-fingerprinted for B-22a: nullable TransferDispatches.DocumentVersion with a positive check; no query filter, key or table boundary change; provider tokens unchanged.
+                "8d90cce7455570fa1dd2259c6d429fb2c36d923669ee2a2718316a1e5c7ff7a9",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -2887,6 +2891,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // drop. An empty schema rolls back freely; a populated one needs a forward fix.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928161227_AddInventoryStockScraps.cs"] =
                     new("9a4b4e0fd2233b33b8b95ffca4a9df4b06049dc86b7cfd0fd84e1a47b83424d4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // B-22a: adds the nullable proved DocumentVersion (positive check) to transfer dispatches; the Down's only raw
+                // SQL is the Inventory refusal (51272, used by no other migration) while a dispatch stores a proved version,
+                // and the THROW precedes the column drop.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261111231419_AddInventoryTransferDispatchDocumentVersion.cs"] =
+                    new("9e5a05561292abbe02449ae15690589d9e967f224a93dec8d921e6a3ecdfaef0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // SAT-D297: widens the ledger reason check to 1..9 (zero_cost_receipt); the Down's only raw SQL is the Inventory

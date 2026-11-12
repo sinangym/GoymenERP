@@ -131,7 +131,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             freshAuthorityFence, cancellationToken);
     }
 
-    public async Task<InventoryTransferResultV1> DispatchAsync(
+    public async Task<InventoryTransferResultV1?> ReplayDispatchAsync(
         Guid transferId,
         DispatchInventoryTransferV1 request,
         InventoryCommandMetadata metadata,
@@ -141,21 +141,100 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireTransferCall(metadata);
-        if (transferId == Guid.Empty || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
-            || request.DispatchedAtUtc.Offset != TimeSpan.Zero)
+        var parsed = DispatchPayload(transferId, request);
+        return await FindTransferKeyReplayAsync(DispatchTransferCommand, GenealogyHash(metadata.IdempotencyKey.Trim()),
+            parsed.PayloadHash, metadata.ActorId, freshAuthorityFence, cancellationToken);
+    }
+
+    public async Task<InventoryTransferResultV1?> RecordDispatchRefusalAsync(
+        Guid transferId,
+        DispatchInventoryTransferV1 request,
+        InventoryTransferException refusal,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(refusal);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireTransferCall(metadata);
+        if (refusal.Status != 409 || !RecordableDispatchRefusals.Contains(refusal.Code))
         {
-            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
+            throw new ArgumentOutOfRangeException(nameof(refusal), "Only a terminal outgoing-document refusal is recorded.");
         }
 
-        var document = ParseDocument(request.OutgoingDocument);
+        var parsed = DispatchPayload(transferId, request);
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
+        if (await FindTransferKeyReplayAsync(DispatchTransferCommand, keyHash, parsed.PayloadHash, metadata.ActorId,
+                freshAuthorityFence, cancellationToken) is { } winner)
         {
-            transferId,
-            expectedVersion,
-            dispatchedAtUtc = request.DispatchedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
-            document,
+            // The key already holds an answer (a recorded refusal re-throws itself); nothing is recorded over it.
+            return winner;
+        }
+
+        var row = await dbContext.Transfers.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == transferId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (row is null)
+        {
+            throw TransferError(404, InventoryTransferCodesV1.TransferNotFound);
+        }
+
+        dbContext.Commands.Add(new InventoryCommandRow
+        {
+            CompanyId = companyContext.CompanyId,
+            CommandName = DispatchTransferCommand,
+            IdempotencyKeyHash = keyHash,
+            ActorId = metadata.ActorId.Trim(),
+            PayloadHash = parsed.PayloadHash,
+            TargetId = transferId,
+            ResultJson = JsonSerializer.Serialize(new TransferCommandResult(null, refusal.Status, refusal.Code), Json),
+            CorrelationId = metadata.CorrelationId.Trim(),
+            RecordedAtUtc = timeProvider.GetUtcNow(),
         });
+        var state = JsonSerializer.Serialize(new { transferId, version = row.Version, status = row.Status }, Json);
+        Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.dispatch-refused.v1",
+            "DispatchRefused", row.Version, row.Version, state,
+            JsonSerializer.Serialize(new { refusal.Status, refusal.Code, parsed.DocumentVersion,
+                outgoingDocumentId = request.OutgoingDocumentId }, Json),
+            "Transfer çıkışı reddedildi");
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || IsUniqueConstraintViolation(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            // Same key raced: the winner's answer (success or refusal) is the answer for this key.
+            if (await FindTransferKeyReplayAsync(DispatchTransferCommand, keyHash, parsed.PayloadHash, metadata.ActorId,
+                    freshAuthorityFence, cancellationToken) is { } raced)
+            {
+                return raced;
+            }
+
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            throw TransferError(409, InventoryTransferCodesV1.ConcurrentChange, exception);
+        }
+
+        return null;
+    }
+
+    public async Task<InventoryTransferResultV1> DispatchAsync(
+        Guid transferId,
+        DispatchInventoryTransferV1 request,
+        InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(effectiveOutgoingDocument);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireTransferCall(metadata);
+        var (expectedVersion, documentVersion, document, payloadHash) = DispatchPayload(transferId, request);
+        var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
         if (await FindTransferKeyReplayAsync(DispatchTransferCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } keyReplay)
         {
@@ -189,6 +268,15 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
 
         var lines = await dbContext.TransferLines.AsNoTracking().Where(line => line.TransferId == transferId)
             .OrderBy(line => line.Sequence).ToListAsync(cancellationToken);
+        if (!SameOutgoingBinding(effectiveOutgoingDocument, row.CompanyId, transferId, request.OutgoingDocumentId,
+                documentVersion, lines))
+        {
+            // The proof must be the exact current effective binding of this stored transfer (full-label v1, every line
+            // in order); anything else is a composition fault and moves no stock.
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+        }
+
         var labelIds = lines.Select(line => line.LabelId).ToArray();
         var hasActiveAllocation = await dbContext.Allocations.AsNoTracking().AnyAsync(
             allocation => labelIds.Contains(allocation.LabelId)
@@ -254,6 +342,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             DocumentKind = document.Kind,
             DocumentId = document.Id,
             DocumentLineId = document.LineId,
+            DocumentVersion = documentVersion,
             DispatchedAtUtc = request.DispatchedAtUtc,
             PayloadHash = payloadHash,
             RecordedAtUtc = now,
@@ -605,7 +694,19 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
 
         var stored = JsonSerializer.Deserialize<TransferCommandResult>(prior.ResultJson, Json)
             ?? throw TransferError(503, InventoryTransferCodesV1.Unavailable);
-        return new(stored.Transfer, true, prior.CorrelationId);
+        if (stored.Transfer is { } transfer && stored.RefusalStatus is null && stored.RefusalCode is null)
+        {
+            return new(transfer, true, prior.CorrelationId);
+        }
+
+        if (stored.Transfer is null && stored.RefusalStatus == 409 && stored.RefusalCode is { } code
+            && RecordableDispatchRefusals.Contains(code)
+            && string.Equals(command, DispatchTransferCommand, StringComparison.Ordinal))
+        {
+            throw new InventoryTransferException(409, code, isReplay: true, prior.CorrelationId);
+        }
+
+        throw TransferError(503, InventoryTransferCodesV1.Unavailable);
     }
 
     private async Task<InventoryTransferResultV1> SaveTransferAsync(
@@ -779,6 +880,62 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         }
     }
 
+    private static (long ExpectedVersion, int DocumentVersion, InventoryTransferDocumentReference Document,
+        string PayloadHash) DispatchPayload(Guid transferId, DispatchInventoryTransferV1 request)
+    {
+        if (transferId == Guid.Empty || request.OutgoingDocumentId == Guid.Empty
+            || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
+            || !InventoryTransferApiV1.TryParseOutgoingDocumentVersion(request.ExpectedOutgoingDocumentVersion,
+                out var documentVersion)
+            || request.DispatchedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
+        }
+
+        InventoryTransferDocumentReference document;
+        try
+        {
+            document = new(InventoryTransferDocumentKindsV1.LogisticsOutgoingDocument, request.OutgoingDocumentId, null);
+        }
+        catch (InventoryRuleException exception)
+        {
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed, exception);
+        }
+
+        var payloadHash = GenealogyPayloadHash(new
+        {
+            transferId,
+            expectedVersion,
+            dispatchedAtUtc = request.DispatchedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            outgoingDocumentId = request.OutgoingDocumentId,
+            outgoingDocumentVersion = documentVersion,
+        });
+        return (expectedVersion, documentVersion, document, payloadHash);
+    }
+
+    private static bool SameOutgoingBinding(
+        InventoryTransferOutgoingDocumentOwnerSnapshotV1 binding,
+        Guid companyId,
+        Guid transferId,
+        Guid documentId,
+        int documentVersion,
+        IReadOnlyList<InventoryTransferLineRow> orderedLines) =>
+        binding.CompanyId != Guid.Empty
+        && binding.CompanyId == companyId
+        && binding.TransferId == transferId
+        && binding.DocumentId == documentId
+        && binding.DocumentVersion == documentVersion
+        && binding.OrderedTransferLineIds.SequenceEqual(orderedLines.Select(line => line.LineId));
+
+    /// <summary>The outgoing-document state and version refusals recorded as terminal answers for a dispatch key.</summary>
+    internal static readonly IReadOnlySet<string> RecordableDispatchRefusals = new HashSet<string>(StringComparer.Ordinal)
+    {
+        InventoryTransferCodesV1.OutgoingDocumentNotFinal,
+        InventoryTransferCodesV1.OutgoingDocumentCancelled,
+        InventoryTransferCodesV1.OutgoingDocumentReversed,
+        InventoryTransferCodesV1.OutgoingDocumentVersionConflict,
+    };
+
     private static InventoryTransferDocumentReference ParseDocument(InventoryTransferDocumentReferenceV1? value)
     {
         if (value is null)
@@ -830,5 +987,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
     private static InventoryTransferException TransferError(int status, string code, Exception? inner = null) =>
         new(status, code, inner);
 
-    private sealed record TransferCommandResult(InventoryTransferViewV1 Transfer);
+    private sealed record TransferCommandResult(
+        InventoryTransferViewV1? Transfer,
+        int? RefusalStatus = null,
+        string? RefusalCode = null);
 }
