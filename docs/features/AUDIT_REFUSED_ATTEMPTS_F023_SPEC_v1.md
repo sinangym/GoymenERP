@@ -181,7 +181,10 @@ ERP-000L §6 üç kanalı ayırır; aynı olgu iki kanala ayrı satır olarak ya
   "Permission çiti" iki yerden birini anlar: endpoint'in yetki politikası (`RequireAuthorization` ile bağlı izin
   politikası, şirket bağlamı çözümü dahil) **veya** servis içindeki ilk izin kontrolü (`RequireAsync`/eşdeğeri,
   korumalı okumalardan önce). Bu iki noktadan dönen `401/403` ve şirket bağlamı retleri "çitte" sayılır (tablodaki
-  "çit kaybı" da budur); çitten sonra doğan her ret (doğrulama, iş kuralı, sürüm, idempotency) denetime gider.
+  "çit kaybı" da budur). Hedefe bağlı yetki kontrolü de çittir: izin kapsamı hedef kaydın verisine göre
+  çözülüyorsa (ör. `KIM-D16`: işlemi yapanın, hedef kullanıcının atamaları okunduktan sonra hedefin üye olduğu
+  her şirkette izni taşıyıp taşımadığı) bu okuma yalnız yetki kararı içindir ve dönen `403` "çitte" sayılır,
+  güvenlik kanalına gider. Çitten sonra doğan her ret (doğrulama, iş kuralı, sürüm, idempotency) denetime gider.
   Bir istek yalnız bir ret üretir (ilk ret cevabı döner), dolayısıyla çift kayıt oluşmaz. Mimari test: aynı
   `CorrelationId` için hem `audit.AuditEvents(Outcome=Refused)` hem `security.SecurityEvents(EventType=authz.denied)`
   satırı oluşmaz (SQL kabul testi).
