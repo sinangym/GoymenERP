@@ -67,8 +67,16 @@ public sealed partial class PurchasingService
             result = await store.MutateOrderAsync(envelope, requestHash, commandName, orderId,
                 (order, now) =>
                 {
-                    // An unknown line is the domain's refusal; its unit is only needed when the line exists.
-                    var unit = order.Lines.FirstOrDefault(line => line.Id == lineId)?.Quantity.Unit ?? QuantityUnit.Kilogram;
+                    var line = order.Lines.FirstOrDefault(candidate => candidate.Id == lineId);
+                    if (order.Version != expectedVersion || order.Status == PurchaseOrderStatus.Cancelled || line is null)
+                    {
+                        // The domain's own refusal order answers first (version → cancelled → unknown line): a stale version, a
+                        // cancelled order or an unknown line is its 409/404, never the 422 scale refusal below. Called with no slices,
+                        // the domain refuses on one of those three before it reads the (empty) set.
+                        order.SetLineDeliverySchedule(expectedVersion, lineId, [], actor, now);
+                    }
+
+                    var unit = line!.Quantity.Unit;
                     // The order line's own precedent (VerifyUnitAsync): a quantity finer than the unit's scale (a fraction of a
                     // piece) is the 422 scale refusal, named here on the slice's quantity, never a 400.
                     for (var index = 0; index < values.Length; index++)

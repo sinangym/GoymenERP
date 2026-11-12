@@ -164,6 +164,115 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task The_create_name_is_measured_first_an_anonymous_caller_is_401_a_refused_one_403_and_an_unbound_name_503_nothing_written()
+    {
+        // k3-command-skeleton: the schedule command's own 401 / 403 / 503 fences, each before the replay read and the store.
+        var world = new World();
+        var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "10"), Metadata("k-create"));
+        var orderId = created.Detail.Order.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        var replaysBefore = world.Store.Replays;
+
+        world.User.CurrentActor = " ";
+        var anonymous = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-anonymous")));
+        Assert.Equal((401, "unauthenticated"), (anonymous.Status, anonymous.Code));
+        world.User.CurrentActor = Actor;
+
+        world.Authority.Granted = false;
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-denied")));
+        Assert.Equal((403, "forbidden", CreatePermission), (denied.Status, denied.Code, world.Authority.LastPermission));
+        world.Authority.Granted = true;
+
+        world.Bindings = world.Bindings with { CreatePermission = null };
+        var unbound = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-unbound")));
+        Assert.Equal((503, PurchasingProblemCodesV1.PermissionUnregistered), (unbound.Status, unbound.Code));
+
+        Assert.Equal(replaysBefore, world.Store.Replays);
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        var order = (await world.Store.FindOrderAsync(orderId))!.Order;
+        Assert.Equal((2, 0), (order.Version, order.Lines[0].DeliverySchedule.Count));
+    }
+
+    [Fact]
+    public async Task The_same_key_with_another_body_or_another_line_is_the_409_same_key_payload_mismatch_and_writes_nothing()
+    {
+        var world = new World();
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Party, DateTimeOffset.UnixEpoch, Actor);
+        var first = order.AddLine(1, Guid.NewGuid(), Product, Guid.Parse("66666666-6666-4666-8666-666666666666"),
+            Quantity.Of(10m, QuantityUnit.Kilogram), DateTimeOffset.UnixEpoch);
+        var second = order.AddLine(2, Guid.NewGuid(), Product, Guid.Parse("66666666-6666-4666-8666-666666666666"),
+            Quantity.Of(10m, QuantityUnit.Kilogram), DateTimeOffset.UnixEpoch);
+        world.Store.PlantOrder(new StoredPurchaseOrder(order, Account, Day,
+            new Dictionary<Guid, string> { [first.Id] = "7", [second.Id] = "7" }));
+        var request = Schedule(order.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), ("10", ScheduleD1));
+        var set = await world.Service().SetOrderLineScheduleAsync(order.Id, first.Id, request, Metadata("k-mismatch"));
+        var version = set.Detail.Order.Version;
+
+        var otherBody = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().SetOrderLineScheduleAsync(order.Id, first.Id,
+            request with { Slices = [request.Slices[0] with { DeliveryDate = ScheduleD2 }] }, Metadata("k-mismatch")));
+        Assert.Equal((409, PurchasingProblemCodesV1.SameKeyPayloadMismatch), (otherBody.Status, otherBody.Code));
+        var otherLine = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(order.Id, second.Id, request, Metadata("k-mismatch")));
+        Assert.Equal((409, PurchasingProblemCodesV1.SameKeyPayloadMismatch), (otherLine.Status, otherLine.Code));
+
+        Assert.Single(world.Store.Transitions, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        var detail = await world.Service().GetOrderDetailAsync(order.Id);
+        Assert.Equal((version, ScheduleD1, 0), (detail.Order.Version, detail.Lines[0].DeliverySchedule.Single().DeliveryDate,
+            detail.Lines.Single(line => line.LineId == second.Id).DeliverySchedule.Count));
+    }
+
+    [Fact]
+    public async Task A_grant_lost_between_the_first_fence_and_the_write_is_403_at_the_last_fence_before_the_store()
+    {
+        // RequireStillAsync: the grant is measured again after the replay read; losing it there refuses before any mutation.
+        var world = new World();
+        var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "10"), Metadata("k-create"));
+        var orderId = created.Detail.Order.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        var mutated = false;
+        world.Store.BeforeMutation = () => mutated = true;
+        world.Store.OnReplayRead = () => world.Authority.Granted = false;
+
+        var lost = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-lost")));
+
+        Assert.Equal((403, "forbidden", false, null), (lost.Status, lost.Code, lost.IsReplay, lost.OriginalCorrelationId));
+        Assert.False(mutated);
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.Equal(2, (await world.Store.FindOrderAsync(orderId))!.Order.Version);
+    }
+
+    [Fact]
+    public async Task On_a_piece_line_an_unknown_line_or_a_stale_version_answers_before_the_fraction_refusal_404_and_terminal_409()
+    {
+        // K3 review P3: the unit-scale check reads the line's own unit only after the domain's version, cancelled and line refusals
+        // (a text finer than any unit's scale, e.g. four decimals, stays the body's own 422 before the store).
+        var world = new World();
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Party, DateTimeOffset.UnixEpoch, Actor);
+        var line = order.AddLine(1, Guid.NewGuid(), Product, Guid.Parse("66666666-6666-4666-8666-666666666666"),
+            Quantity.Of(10m, QuantityUnit.Piece), DateTimeOffset.UnixEpoch);
+        world.Store.PlantOrder(new StoredPurchaseOrder(order, Account, Day, new Dictionary<Guid, string> { [line.Id] = "7" }));
+
+        var unknown = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(order.Id, Guid.NewGuid(), Schedule("2", ("9.5", ScheduleD1)), Metadata("k-unknown-fraction")));
+        Assert.Equal((404, "not_found"), (unknown.Status, unknown.Code));
+        var stale = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(order.Id, line.Id, Schedule("1", ("9.5", ScheduleD1)), Metadata("k-stale-fraction")));
+        Assert.Equal((409, PurchasingProblemCodesV1.VersionConflict, "expectedVersion"), (stale.Status, stale.Code, stale.Errors[0].Field));
+        var fraction = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().SetOrderLineScheduleAsync(order.Id, line.Id, Schedule("2", ("9.5", ScheduleD1)), Metadata("k-current-fraction")));
+        Assert.Equal((422, PurchasingProblemCodesV1.UnsupportedUnit, "slices[0].quantity"), (fraction.Status, fraction.Code, fraction.Errors[0].Field));
+        Assert.Single(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        Assert.Equal((2, 0), (order.Version, line.DeliverySchedule.Count));
+    }
+
+    [Fact]
     public void The_schedule_wire_shape_is_strict_and_the_line_and_slices_are_in_the_content_hash()
     {
         var id = Guid.NewGuid();

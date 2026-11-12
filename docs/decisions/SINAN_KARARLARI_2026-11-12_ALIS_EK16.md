@@ -33,3 +33,19 @@ karar üretmez.
 
 - Kabulün belirli bir dilime bağlanması (sevk bildirimi/mal kabul dilim eşlemesi) API-31/API-32 dilimlerinde ele alınır.
   O zaman §2'deki sıra okuması gözden geçirilir.
+- NEEDS-SINAN https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6812837765'in Q4 dışındaki soruları hâlâ
+  açıktır. Kod bugün aşağıdaki emsal varsayılanlarla çalışır; cevap gelirse ayrı dilimle değiştirilir. Bunlar karar değildir:
+
+  | Soru | Konu | Bugünkü varsayılan |
+  |---|---|---|
+  | Q1 | Teknik (fason/carve-out) satıra termin | Yalnız genel satır terminlenir; teknik satır 422 `purchasing_schedule_on_technical_line` |
+  | Q2 | Geçmiş tarih / dilimlerin tarih sırası | Serbest (Satış emsali): geçmiş tarih ve sırasız dilim kabul edilir, sıra verildiği gibi kalır |
+  | Q3 | Onayın her satırda termin şartı | Aramaz |
+  | Q5 | Termin için ayrı yetki | Yok; `purchasing.orders.create` (ALS-D60 emsali) |
+
+- **Teknik satıra kaydedilen kabul (bugün erişilemez):** ALS-D81 kilidi (`RequireReceivedPortionKept`) yalnız genel satırın kendi
+  kabul payını sayar. Genel satırın termininde sayılan bir teknik satıra kabul kaydedilirse o kısım kilide girmez. Bugün teknik
+  satır üreten bir production yolu yoktur (`BreakDown` yalnız `RestoreOrder` içinde çağrılır). Ayrıca `RestoreOrder` teknik
+  satırları revizyonlardan önce oynatır; termin kaydından sonra yapılan bir kırılım yeniden kurulumda sürüm sırasını bozar.
+  Kırılım komutu gelmeden önce o dilim iki noktayı kapatır: alt teknik satır kabulleri kilide sayılır ve `RestoreOrder`
+  kırılımı revizyonlarla aynı sürüm sırasında oynatır.

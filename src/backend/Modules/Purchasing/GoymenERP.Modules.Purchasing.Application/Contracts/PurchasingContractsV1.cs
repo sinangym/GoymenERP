@@ -823,8 +823,9 @@ public static class PurchasingJson
     }
 
     /// <summary>
-    /// A3 API-30: the shape only — 1..500 slices, non-empty distinct slice ids, exact decimal quantity text. Whether each quantity
-    /// is positive, fits the unit's scale and the slices sum to the line's quantity is the service's and the domain's 422.
+    /// A3 API-30: the shape only — 1..500 slices, non-empty distinct slice ids, exact decimal quantity text above zero (a zero
+    /// quantity text such as <c>"0"</c> is refused here, a 400, like every other shape refusal). Whether each quantity fits the
+    /// unit's scale and the slices sum to the line's quantity is the service's and the domain's 422.
     /// </summary>
     public static SetPurchaseOrderLineScheduleRequest ReadSetLineSchedule(string json)
     {

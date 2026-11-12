@@ -694,6 +694,9 @@ public sealed partial class PurchasingServiceTests
         public Action? BeforeMutation { get; set; }
         public Action<PurchasingWriteEnvelope, string, string>? BeforeRefusal { get; set; }
         public Action? AfterReplay { get; set; }
+
+        /// <summary>Runs on every replay read, a miss included: the point between a command's first fence and its last one.</summary>
+        public Action? OnReplayRead { get; set; }
         public Exception? ReplayFault { get; set; }
 
         /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
@@ -830,6 +833,7 @@ public sealed partial class PurchasingServiceTests
         public Task<PurchasingReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, CancellationToken cancellationToken = default)
         {
             Replays++;
+            OnReplayRead?.Invoke();
             if (!_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
             {
                 return Task.FromResult<PurchasingReplay?>(null);
