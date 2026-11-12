@@ -6,8 +6,9 @@ namespace GoymenERP.Inventory.UnitTests;
 
 /// <summary>
 /// SAT-D262..D267 (SINAN_KARARLARI_2026-11-10_SATIS_EK52), the deterministic moving-average purchase cost core: golden
-/// examples at the 4-decimal internal scale (AwayFromZero), the transfer rule, the production rule, and every undecided
-/// point (OPEN-INV-AVGCOST-*) answered Unreadable instead of a guess. SENTETIK data only.
+/// examples at the 4-decimal internal scale (AwayFromZero), the transfer rule, the production rule, every point without a
+/// figure answered Unreadable instead of a guess, SAT-D301 (negative stock recovers on a later receipt) and SAT-D302
+/// (additional cost stays out of the v1 average). SENTETIK data only.
 /// </summary>
 public sealed class InventoryAverageCostCalculatorTests
 {
@@ -127,7 +128,7 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void An_issue_beyond_the_held_quantity_is_negative_stock_and_unreadable_not_clamped()
     {
-        // OPEN-INV-AVGCOST-NEGATIVE-STOCK: no policy chosen.
+        // SAT-D301 (1): the cost is "hesaplanamadi", never a made-up figure and never zero.
         var result = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(Issue, 6m, 5m));
         Assert.Equal((AverageCostStatus.Unreadable, NegativeStock), (result.Status, result.UnreadableReason));
         Assert.Null(result.AverageCostPerKg);
@@ -159,19 +160,115 @@ public sealed class InventoryAverageCostCalculatorTests
     [Theory]
     [InlineData("unit", UnitConversion)]
     [InlineData("fx", ForeignCurrency)]
-    [InlineData("landed", LandedOrAdditionalCost)]
     public void An_undecided_receipt_input_is_unreadable_instead_of_a_guess(string fault, AverageCostUnreadableReason expected)
     {
         var movement = fault switch
         {
             "unit" => Purchase(1m, 0m, 10m) with { UnitCostIsPerStockKg = false },
-            "fx" => Purchase(1m, 0m, 10m) with { IsBaseCurrency = false },
-            _ => Purchase(1m, 0m, 10m) with { IncludesAdditionalCost = true },
+            _ => Purchase(1m, 0m, 10m) with { IsBaseCurrency = false },
         };
 
         var result = AverageCostCalculator.Apply(null, movement);
 
         Assert.Equal((AverageCostStatus.Unreadable, expected), (result.Status, result.UnreadableReason));
+    }
+
+    [Fact]
+    public void Additional_cost_never_enters_the_average_and_the_receipt_enters_at_its_own_purchase_price()
+    {
+        // SAT-D302 (1): freight and customs stay outside the v1 average; nothing turns the position unreadable.
+        var first = AverageCostCalculator.Apply(null, Purchase(100m, 0m, 10m) with { AdditionalCostPerStockKg = 1.5m });
+        AssertKnown(first, 100m, 10m);
+
+        // (100 * 10 + 50 * 13) / 150 = 11.0000, the 2.25 additional cost is not blended in.
+        var second = AverageCostCalculator.Apply(first, Purchase(50m, 100m, 13m) with { AdditionalCostPerStockKg = 2.25m });
+        AssertKnown(second, 150m, 11.0000m);
+        Assert.Equal(second, AverageCostCalculator.Apply(first, Purchase(50m, 100m, 13m)));
+    }
+
+    [Fact]
+    public void Negative_stock_recovers_when_a_receipt_arrives_at_zero_stock_and_restarts_at_its_own_cost()
+    {
+        // SAT-D301 (2), implementation reading: physical stock is never negative, so the receipt arrives at zero stock and
+        // the average restarts like a first receipt; then it blends normally.
+        var negative = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(Issue, 6m, 5m));
+        Assert.Equal(NegativeStock, negative.UnreadableReason);
+
+        var recovered = AverageCostCalculator.Apply(negative, Purchase(10m, 0m, 12.34567m));
+        AssertKnown(recovered, 10m, 12.3457m);
+
+        // (10 * 12.3457 + 5 * 13) / 15 = 12.56380 -> 12.5638
+        AssertKnown(AverageCostCalculator.Apply(recovered, Purchase(5m, 10m, 13m)), 15m, 12.5638m);
+    }
+
+    [Fact]
+    public void Negative_stock_from_a_position_the_ledger_never_saw_also_recovers_on_a_receipt()
+    {
+        var negative = AverageCostCalculator.Apply(null, new(Issue, 1m, 0m));
+        AssertKnown(AverageCostCalculator.Apply(negative, Purchase(3m, 0m, 7m)), 3m, 7m);
+    }
+
+    [Fact]
+    public void Negative_stock_meeting_stock_the_ledger_never_costed_becomes_uncosted_stock_not_a_guess()
+    {
+        // SAT-D304: stock without an approved cost is "yok"; the receipt cannot be blended with it.
+        var negative = AverageCostPosition.Unreadable(NegativeStock);
+        var result = AverageCostCalculator.Apply(negative, Purchase(5m, 2m, 12m));
+        Assert.Equal((AverageCostStatus.Unreadable, LedgerStockMismatch), (result.Status, result.UnreadableReason));
+    }
+
+    [Theory]
+    [InlineData("issue")]
+    [InlineData("production")]
+    [InlineData("return")]
+    public void Only_a_receipt_recovers_negative_stock(string kind)
+    {
+        var negative = AverageCostPosition.Unreadable(NegativeStock);
+        AverageCostMovement movement = kind switch
+        {
+            "issue" => new(Issue, 1m, 0m),
+            "production" => new(ProductionReceipt, 1m, 0m),
+            _ => new(AverageCostMovementKind.Return, 1m, 0m),
+        };
+
+        Assert.Same(negative, AverageCostCalculator.Apply(negative, movement));
+    }
+
+    [Theory]
+    [InlineData("zero-cost", ZeroCostReceipt)]
+    [InlineData("unit", UnitConversion)]
+    [InlineData("fx", ForeignCurrency)]
+    public void A_recovering_receipt_still_answers_its_own_unreadable_reason(string fault, AverageCostUnreadableReason expected)
+    {
+        var movement = fault switch
+        {
+            "zero-cost" => Purchase(2m, 0m, 0m),
+            "unit" => Purchase(2m, 0m, 10m) with { UnitCostIsPerStockKg = false },
+            _ => Purchase(2m, 0m, 10m) with { IsBaseCurrency = false },
+        };
+
+        var result = AverageCostCalculator.Apply(AverageCostPosition.Unreadable(NegativeStock), movement);
+
+        Assert.Equal((AverageCostStatus.Unreadable, expected), (result.Status, result.UnreadableReason));
+    }
+
+    [Fact]
+    public void A_transfer_into_a_negative_stock_target_recovers_it_at_the_source_average()
+    {
+        var result = AverageCostCalculator.ApplyTransfer(
+            AverageCostPosition.Known(10m, 9.5m), 10m, AverageCostPosition.Unreadable(NegativeStock), 0m, 4m);
+
+        AssertKnown(result.Source, 6m, 9.5m);
+        AssertKnown(result.Target, 4m, 9.5m);
+    }
+
+    [Fact]
+    public void A_negative_stock_source_still_leaves_a_transfer_target_unreadable()
+    {
+        var result = AverageCostCalculator.ApplyTransfer(AverageCostPosition.Unreadable(NegativeStock), 0m, null, 0m, 1m);
+
+        Assert.Equal(NegativeStock, result.Source.UnreadableReason);
+        Assert.Equal(TransferSourceUnreadable, result.Target.UnreadableReason);
     }
 
     [Fact]
@@ -188,9 +285,13 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void An_unreadable_position_is_sticky_for_every_later_movement()
     {
-        var unreadable = AverageCostPosition.Unreadable(ForeignCurrency);
-        Assert.Same(unreadable, AverageCostCalculator.Apply(unreadable, Purchase(1m, 0m, 10m)));
-        Assert.Same(unreadable, AverageCostCalculator.Apply(unreadable, new(Issue, 1m, 0m)));
+        // Every reason except NegativeStock (SAT-D301) stays sticky.
+        foreach (var reason in Enum.GetValues<AverageCostUnreadableReason>().Where(reason => reason != NegativeStock))
+        {
+            var unreadable = AverageCostPosition.Unreadable(reason);
+            Assert.Same(unreadable, AverageCostCalculator.Apply(unreadable, Purchase(1m, 0m, 10m)));
+            Assert.Same(unreadable, AverageCostCalculator.Apply(unreadable, new(Issue, 1m, 0m)));
+        }
     }
 
     [Fact]
@@ -212,6 +313,10 @@ public sealed class InventoryAverageCostCalculatorTests
         Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(null, Purchase(1m, 0m, -1m)));
         Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(null, new(PurchaseReceipt, 1m, 0m)));
         Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(null, new((AverageCostMovementKind)99, 1m, 0m)));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => AverageCostCalculator.Apply(null, Purchase(1m, 0m, 1m) with { AdditionalCostPerStockKg = -0.01m }));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => AverageCostCalculator.Apply(AverageCostPosition.Known(1m, 1m), new(Issue, 1m, 1m, AdditionalCostPerStockKg: 1m)));
     }
 
     [Fact]

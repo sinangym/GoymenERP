@@ -21,19 +21,24 @@ public enum AverageCostStatus
     Known = 1,
 
     /// <summary>
-    /// A decision that is not taken (see <see cref="AverageCostUnreadableReason"/>) makes the average unreadable. The state
-    /// is sticky: the core never reopens it by itself (that would be a policy choice).
+    /// The average cannot be read (see <see cref="AverageCostUnreadableReason"/>). The state is sticky, except
+    /// <see cref="AverageCostUnreadableReason.NegativeStock"/>, which a later receipt recovers (SAT-D301 (2), see
+    /// <see cref="AverageCostCalculator.Apply"/>).
     /// </summary>
     Unreadable = 2,
 }
 
 /// <summary>
-/// Why a position is unreadable. Every value is a case the decisions leave open (SINAN_KARARLARI_2026-11-10_SATIS_EK52
-/// "Sınırlar"); none of them is given a value here. The numbers are persisted: never renumber.
+/// Why a position is unreadable. Each value is a case that has no figure (SINAN_KARARLARI_2026-11-10_SATIS_EK52 "Sınırlar";
+/// SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER for SAT-D301…D306); none of them is given a value here. The numbers
+/// are persisted: never renumber.
 /// </summary>
 public enum AverageCostUnreadableReason
 {
-    /// <summary>OPEN-INV-AVGCOST-NEGATIVE-STOCK (NEEDS-SINAN): stock would go below zero.</summary>
+    /// <summary>
+    /// SAT-D301 (Sinan decided, OPEN-INV-AVGCOST-NEGATIVE-STOCK): stock would go below zero, so the cost is "hesaplanamadı".
+    /// Not permanent: a later receipt recovers the position (<see cref="AverageCostCalculator.Apply"/>).
+    /// </summary>
     NegativeStock = 1,
 
     /// <summary>OPEN-INV-AVGCOST-UNIT-CONVERSION (NEEDS-SINAN): the cost is not per stock kilogram.</summary>
@@ -42,7 +47,10 @@ public enum AverageCostUnreadableReason
     /// <summary>OPEN-INV-AVGCOST-FX (NEEDS-SINAN): rate and date for a foreign-currency cost are not decided.</summary>
     ForeignCurrency = 3,
 
-    /// <summary>OPEN-INV-AVGCOST-LANDED (NEEDS-SINAN): freight, customs and other additional costs.</summary>
+    /// <summary>
+    /// SAT-D302 (Sinan decided, OPEN-INV-AVGCOST-LANDED): additional cost does not enter the v1 average, so the v1 core
+    /// never produces this reason. The number stays reserved for the later setting (ALS-D80); never reuse it.
+    /// </summary>
     LandedOrAdditionalCost = 4,
 
     /// <summary>OPEN-INV-AVGCOST-RETURN (NEEDS-SINAN): effect of sales and purchase returns.</summary>

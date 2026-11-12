@@ -9,10 +9,15 @@ public sealed record AverageCostTransferResult(AverageCostPosition Source, Avera
 /// product) lives in the ledger; this core only computes the next state of one position.
 /// <list type="bullet">
 /// <item>A purchase receipt with a positive cost recalculates: <c>round4((q·a + Δ·c) / (q + Δ))</c>, rounded once, AwayFromZero.</item>
-/// <item>An issue keeps the average and lowers the quantity; below zero is unreadable, never negative.</item>
+/// <item>An issue keeps the average and lowers the quantity; below zero is unreadable ("hesaplanamadı"), never a negative
+/// figure and never zero (SAT-D301 (1)).</item>
 /// <item>A transfer enters the target at the SOURCE average (the target's own average then blends as a receipt).</item>
 /// <item>A production receipt never enters the average: the position becomes unreadable (mixed source is OPEN).</item>
-/// <item>Negative stock, unit conversion, foreign currency, landed cost and returns are NOT decided: they answer
+/// <item>Negative stock is not permanent (SAT-D301 (2)): a later purchase receipt (or a transfer in) recovers the position;
+/// see <see cref="Apply"/> for the implementation reading.</item>
+/// <item>Additional (landed) cost never enters the average in v1 (SAT-D302 (1)): the receipt enters at its own purchase
+/// price and <see cref="AverageCostMovement.AdditionalCostPerStockKg"/> stays outside the figure.</item>
+/// <item>Unit conversion, foreign currency, returns and production are NOT implemented here: they answer
 /// <see cref="AverageCostStatus.Unreadable"/> with their <see cref="AverageCostUnreadableReason"/>; nothing is guessed.</item>
 /// </list>
 /// A position never seen by the ledger is <c>null</c> (it reads as NoSource). A position that falls to exactly zero keeps
@@ -21,6 +26,23 @@ public sealed record AverageCostTransferResult(AverageCostPosition Source, Avera
 /// </summary>
 public static class AverageCostCalculator
 {
+    /// <summary>
+    /// The next state of one position after <paramref name="movement"/>. An unreadable position is sticky, with one
+    /// exception: <see cref="AverageCostUnreadableReason.NegativeStock"/> (SAT-D301 (2), "stok bir girişle düzelince maliyet
+    /// yeniden okunur"). Implementation reading (reversible, written in the PR for review, not a locked decision):
+    /// <list type="number">
+    /// <item>Only a purchase receipt recovers it (a transfer in arrives as one, at the source average). An issue, a
+    /// production receipt or a return leaves it as it is.</item>
+    /// <item>Inventory's physical stock is never negative (<c>StockLedger</c> refuses it), so the stock is "corrected" when
+    /// the receipt arrives at zero physical stock: the average restarts at the receipt's own unit cost, exactly as a
+    /// first receipt does. Issues made while the position was unreadable keep their "hesaplanamadı" answer; nothing is
+    /// costed backwards.</item>
+    /// <item>A receipt that finds stock on hand the ledger never costed cannot blend it (SAT-D304: cost is "yok" until an
+    /// approved opening cost exists): the position becomes <see cref="AverageCostUnreadableReason.LedgerStockMismatch"/>.</item>
+    /// <item>The receipt's own checks still apply (unit, currency, zero cost); they answer with their own reason.</item>
+    /// </list>
+    /// Every other reason (for example <see cref="AverageCostUnreadableReason.ZeroCostReceipt"/>, SAT-D297) stays sticky.
+    /// </summary>
     public static AverageCostPosition Apply(AverageCostPosition? current, AverageCostMovement movement)
     {
         ArgumentNullException.ThrowIfNull(movement);
@@ -45,9 +67,25 @@ public static class AverageCostCalculator
             throw new ArgumentOutOfRangeException(nameof(movement), "A purchase receipt carries a non-negative unit cost.");
         }
 
+        if (movement.AdditionalCostPerStockKg is { } additional
+            && (movement.Kind != AverageCostMovementKind.PurchaseReceipt || additional < 0m))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(movement), "Only a purchase receipt carries an additional cost, and it is non-negative.");
+        }
+
         if (current is { Status: AverageCostStatus.Unreadable })
         {
-            return current;
+            if (current.UnreadableReason != AverageCostUnreadableReason.NegativeStock
+                || movement.Kind != AverageCostMovementKind.PurchaseReceipt)
+            {
+                return current;
+            }
+
+            // SAT-D301 (2) recovery, implementation reading above.
+            return movement.StockOnHandBeforeKg == 0m
+                ? ApplyReceipt(null, movement)
+                : AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch);
         }
 
         var trackedKg = current?.QuantityKg ?? 0m;
@@ -106,11 +144,8 @@ public static class AverageCostCalculator
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ForeignCurrency);
         }
 
-        if (movement.IncludesAdditionalCost)
-        {
-            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.LandedOrAdditionalCost);
-        }
-
+        // SAT-D302 (1): additional cost (freight, customs) never enters the v1 average; the receipt enters at its own purchase
+        // price. Turning it on later is a setting whose key, default and owner come with the expense structure (ALS-D80).
         var receiptCost = movement.UnitCostPerStockKg!.Value;
         if (receiptCost == 0m)
         {

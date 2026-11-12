@@ -553,9 +553,8 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 
 - **Core:** `Domain/Costing/AverageCostCalculator` is deterministic. A purchase receipt recomputes the average; a transfer
   enters the target at the source average; a production receipt never enters the average (the position becomes
-  Unreadable `mixed_source_undecided`). Negative stock, unit conversion, foreign currency, landed/additional cost, returns
-  and stock the ledger never costed are NOT decided: each answers Unreadable with its own code and an
-  `OPEN-INV-AVGCOST-*` comment in the code. Unreadable is sticky (leaving it would be a policy choice).
+  Unreadable `mixed_source_undecided`). Unit conversion, foreign currency, returns and stock the ledger never costed are
+  not implemented: each answers Unreadable with its own code. Unreadable is sticky, except negative stock (SAT-D301, below).
 - **Ledger:** `inventory.AverageCostLedger` (`AddInventoryAverageCostLedger`), company-filtered, unique per position,
   `Version` + `RowVersion` concurrency, state check `CK_AverageCostLedger_State`. `Down` refuses (THROW 51250) while any
   row exists (forward fix).
@@ -564,6 +563,15 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
   position becomes sticky Unreadable `zero_cost_receipt` (reason 9) and the zero never enters the average. Migration
   `RelaxInventoryAverageCostReasonToZeroCostReceipt` widens the reason check to 1..9; its `Down` refuses (THROW 51258)
   while a reason 9 row exists. Purchase-line price input, USD/TL and unit conversion stay open (NEEDS-SINAN, Issue #66).
+- **Sinan 2026-11-11 (SAT-D301/D302, `docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`):**
+  negative stock answers Unreadable `negative_stock` ("hesaplanamadı", never zero) but is not permanent. Implementation
+  reading (reversible, see `AverageCostCalculator.Apply`): only a purchase receipt (or a transfer in, at the source average)
+  recovers it; physical stock is never negative, so the receipt arrives at zero stock and the average restarts at its own
+  unit cost; past issues are not costed backwards; uncosted stock on hand turns it into `uncosted_stock_on_hand`; the
+  receipt's own checks (unit, currency, zero cost) still apply. Additional cost (freight, customs) never enters the v1
+  average: the receipt enters at its own purchase price and `AverageCostMovement.AdditionalCostPerStockKg` stays apart;
+  reason 4 / `additional_cost_undecided` is no longer produced, its number and wire code stay reserved for the later
+  setting (ALS-D80). No migration: the reason check and the read contract V1 are unchanged.
 - **No price input source is connected yet** (Purchasing price input is NEEDS-SINAN, Issue #66 comment 6760990097), so
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).

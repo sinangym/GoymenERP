@@ -22,7 +22,9 @@ public enum AverageCostMovementKind
 /// <param name="UnitCostPerStockKg">Purchase receipts only: the base-currency cost of one stock kilogram.</param>
 /// <param name="UnitCostIsPerStockKg">False when the purchase price is not per stock kilogram (unit conversion is OPEN).</param>
 /// <param name="IsBaseCurrency">False for a foreign-currency cost (rate and date are OPEN).</param>
-/// <param name="IncludesAdditionalCost">True when freight, customs or other additional cost is mixed in (landed is OPEN).</param>
+/// <param name="AdditionalCostPerStockKg">Purchase receipts only: freight, customs or other additional cost per stock kilogram,
+/// kept apart from <paramref name="UnitCostPerStockKg"/>. SAT-D302 (1): it never enters the v1 average; it is carried so the
+/// later setting (ALS-D80, owner and default with the expense structure) has its input. Non-negative when given.</param>
 public sealed record AverageCostMovement(
     AverageCostMovementKind Kind,
     decimal QuantityKg,
@@ -30,4 +32,4 @@ public sealed record AverageCostMovement(
     decimal? UnitCostPerStockKg = null,
     bool UnitCostIsPerStockKg = true,
     bool IsBaseCurrency = true,
-    bool IncludesAdditionalCost = false);
+    decimal? AdditionalCostPerStockKg = null);
