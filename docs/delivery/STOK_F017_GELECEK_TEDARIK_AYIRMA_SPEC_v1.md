@@ -34,8 +34,8 @@ metni `SINAN_KARARLARI_2026-11-12_STOK_F017_EK.md` (KLN-D28, KLN-D29). Madde 1 S
 Değişenler:
 
 - **Satış satırı iptali/azaltması (KLN-D28):** §5.1 (c)'deki "iptal reddedilir" kapalı yönü kalktı. Satış iptal/azaltma
-  komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada max(0, ayırma − yeni
-  miktar) bırakılır; bırakma exactly-once'dır; başarısızsa Satış komutu da yazılmaz (§3.3, §4.3, §5, §5.1, §7). Satış
+  komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada max(0, ayırma − (yeni
+  miktar − sevk edilen)) bırakılır; bırakma exactly-once'dır; başarısızsa Satış komutu da yazılmaz (§3.3, §4.3, §5, §5.1, §7). Satış
   karşılığı SAT-D314 (#1119, merge bekliyor). F017-s kapsamı bu çağrıyı
   içerir (§10). Testler §8'de.
 - **Canlanmada bırakılmış ayırmalar (KLN-D29):** geri gelmez; canlanan miktar serbest açık miktardır, kullanıcı gerekirse
@@ -377,11 +377,16 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
   okuması, geri alınabilir**; KLN-D28 (3)–(8), SAT-D314 yazar okuması):
   - Satış Stok tablosuna yazmaz; bırakmayı Stok kendi portuyla, §3.2 adım 0'daki satır kilidi altında, sürüm, audit ve
     `released.v1` olayıyla yapar. Modüller birbirine referans vermez; host participant/port deseniyle bağlanır.
-  - İptalde satıra bağlı bütün aktif gelecek ayırmalar bırakılır. Azaltmada yalnız yeni satır miktarını aşan kısım
-    bırakılır: bırakılan = max(0, satıra bağlı aktif gelecek ayırma toplamı − yeni satır miktarı); karşılaştırma merkezi
-    birim çevrimiyle tek birimde yapılır (SAT-D298). min(kalan ayırma, azaltılan miktar) kullanılmaz; kısmi ayrılmış
-    satırda fazla bırakır. Örnek: satır 100, ayırma 60, 30 azaltma → yeni satır 70 ≥ 60 → bırakılan 0 (min formülü
-    yanlışlıkla 30 bırakırdı). Yeni miktar içinde kalan ayırma aktif kalır. Golden satırlar §8'dedir. Fiziksel tahsisle birlikte aşım §9.1 aday 3'tedir.
+  - İptalde satıra bağlı bütün aktif gelecek ayırmalar bırakılır. Azaltmada yalnız satırın yeni **açık miktarını**
+    (§3.2 adım 5: yeni satır miktarı − sevk edilen) aşan kısım bırakılır: bırakılan = max(0, satıra bağlı aktif gelecek
+    ayırma toplamı − (yeni satır miktarı − sevk edilen)); karşılaştırma merkezi birim çevrimiyle tek birimde yapılır
+    (SAT-D298). min(kalan ayırma, azaltılan miktar) kullanılmaz; kısmi ayrılmış satırda fazla bırakır. Yeni satır
+    miktarıyla (sevki düşmeden) karşılaştırmak da kullanılmaz; kısmi sevkli satırda ayırmayı açık miktarın üstünde
+    bırakır ve "artan ayırma kalmaz"ı bozar. Örnekler: satır 100, sevk 0, ayırma 60, 30 azaltma → açık 70 ≥ 60 →
+    bırakılan 0 (min formülü yanlışlıkla 30 bırakırdı); satır 100, sevk 40, ayırma 60, satır 80'e iner → açık 40 →
+    bırakılan 20. Açık miktar içinde kalan ayırma aktif kalır. Golden satırlar §8'dedir. Fiziksel tahsis de varsa
+    hangisinin önce bırakılacağı §9.1 aday 3'tedir (açık). Satış SAT-D314 metni aynı formülle yazılır (koordinatör,
+    #1119 B review 6823066704 P2-1).
   - Aşan kısım birden çok ayırmaya yayılıyorsa hangisinin önce bırakılacağı seçilmedi (§9.1 aday 4). Karar gelene kadar
     kapalı yön: aşan kısım tek ayırmadan karşılanamıyor ve kullanıcı bırakılacak ayırmaları komutta seçmemişse azaltma
     yazma olmadan reddedilir (409; kod F017-s'de). Bu kapalı yön SAT-D314'ün "Satış komutu bu yüzden reddetmez"
@@ -479,19 +484,21 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
 - **Satış portu (F017-s):** gelecek ayırma ayrı türle döner ve fiziksel kg toplamına girmez; iptal önizlemesi gelecek
   ayırmayı gösterir; okunamazsa iptal reddedilir.
 - **Satış iptali/azaltması (F017-s, KLN-D28):** satış satırı iptali aynı işlemde satıra bağlı bütün aktif gelecek
-  ayırmaları bırakır (`Released`, silme yok; `released.v1`, `origin = sales`, audit); azaltma max(0, ayırma − yeni
-  miktar) kadar bırakır, kalan ayırma aktif kalır; aşan kısım birden çok ayırmaya yayılıp seçim yoksa azaltma 409 ve yazma yok; bırakma başarısızsa,
+  ayırmaları bırakır (`Released`, silme yok; `released.v1`, `origin = sales`, audit); azaltma max(0, ayırma − (yeni
+  miktar − sevk edilen)) kadar bırakır, kalan ayırma aktif kalır; aşan kısım birden çok ayırmaya yayılıp seçim yoksa azaltma 409 ve yazma yok; bırakma başarısızsa,
   port okunamazsa veya kilit alınamazsa Satış komutu da yazılmaz (satır iptal edilmiş, ayırma aktif durumu oluşmaz);
   aynı Satış komut anahtarıyla replay ikinci bırakma üretmez; bırakma stok bakiyesini değiştirmez. Gerçek SQL: Satış iptali × mal
   kabul çevirmesi ve Satış iptali × oluşturma yarışında sonuç tutarlıdır.
-  Golden satırlar (satır miktarı / aktif gelecek ayırma / değişiklik → bırakılan; tek birimde):
+  Golden satırlar (satır miktarı / sevk edilen / aktif gelecek ayırma / değişiklik → bırakılan; tek birimde;
+  açık = yeni satır − sevk edilen):
 
-  | Satır | Ayırma | Değişiklik | Yeni satır | Bırakılan | Kalan ayırma |
-  |---|---|---|---|---|---|
-  | 100 | 60 | −30 | 70 | 0 | 60 |
-  | 100 | 100 | −30 | 70 | 30 | 70 |
-  | 100 | 60 | −50 | 50 | 10 | 50 |
-  | 100 | 60 | tam iptal | 0 | 60 | 0 |
+  | Satır | Sevk | Ayırma | Değişiklik | Yeni satır | Açık | Bırakılan | Kalan ayırma |
+  |---|---|---|---|---|---|---|---|
+  | 100 | 0 | 60 | −30 | 70 | 70 | 0 | 60 |
+  | 100 | 0 | 100 | −30 | 70 | 70 | 30 | 70 |
+  | 100 | 0 | 60 | −50 | 50 | 50 | 10 | 50 |
+  | 100 | 0 | 60 | tam iptal | 0 | 0 | 60 | 0 |
+  | 100 | 40 | 60 | −20 | 80 | 40 | 20 | 40 |
 
 - **Termin uyarısı:** Stok bir işaret saklamaz ve hesaplamaz. Uyarı #1110 §3.5'teki okuma anı hesabıdır (Alış ekranı F17-4,
   Satış F17-5). Stok testi yalnız terminin geçmesinin ayırmayı bırakmadığını doğrular.
