@@ -52,7 +52,7 @@ açık bıraktığı iki konuyu Sinan kararına bağlar. SAT-D256…SAT-D261 (EK
 | 11 | Müşteri iadesi (`OPEN-INV-AVGCOST-RETURN`) | "Stoka ilk çıkışın maliyetiyle ters kayıtla girer." | İade, ilk çıkıştaki maliyetle ve ters kayıt olarak stoka girer |
 | 12 | Açılış stoku maliyeti (`OPEN-INV-AVGCOST-UNCOSTED-STOCK`) | "Elle girilir, ikinci kişi onaylar; girilmeyen kalemde maliyet 'yok' görünür." | Açılış maliyeti iki kişili (giren ≠ onaylayan) bir girişle gelir; girilmemişse maliyet "yok"tur, sıfır değildir |
 | 13 | Karışık kaynak (`OPEN-INV-AVGCOST-MIXED-SOURCE`) | "Alınan ve üretilen ürün tek hareketli ortalamada; fire maliyete varsayılan olarak eklenir, Ayarlar'dan kapatılabilir." | Alış ve üretim girişleri aynı hareketli ortalamayı besler; fire varsayılan olarak maliyete eklenir, Ayarlar'dan kapatılabilir |
-| 17 | Sevk edilmiş transferden vazgeçme (B-22a) | Yukarıdaki alıntı (iki alt madde) | Sevk hiçbir durumda silinmez; iptal yalnız teslim alınmamış sevkte ve, irsaliye kesildiyse, irsaliye iptal edilebildiğinde mümkündür |
+| 17 | Sevk edilmiş transferden vazgeçme (B-22a) | Yukarıdaki alıntı (iki alt madde) | Sevk hiçbir durumda silinmez; irsaliye iptal edilebiliyorsa sevk de iptal edilebilir. "Teslim alınmamış" şartı ve "silinmez"in "iptal edilmez" diye okunması yazarın okumasıdır (KLN-D20 (2)–(4)) |
 | 18 | Teslim farkı (B-22a) | "Teslim alanın girdiği miktar kesinleşir; fark otomatik fire yazılır. Ek onay yok." | Kabul edilen miktar teslim alanın girdiği miktardır; sevk ile kabul arasındaki fark ek onaysız fire olur |
 
 ## Kararlar
@@ -63,15 +63,16 @@ açık bıraktığı iki konuyu Sinan kararına bağlar. SAT-D256…SAT-D261 (EK
 | SAT-D302 | Ek (landed) masraf (madde 10) | (1) Nakliye, gümrük gibi ek masraflar **v1'de ortalamaya girmez**. (2) Masraf yapısı (#66 6809898906 madde 8, `NEEDS-SPEC`) kurulunca **bir ayarla** açılabilir; ayar anahtarı, varsayılanı ve sahibi (Ayarlar) o zaman tanımlanır. SAT-D263 (3)'ün "ileride verilecek karar" dediği ek maliyetin v1 cevabı budur; vade farkı ve öteki giderler bu maddede seçilmedi. | `AverageCostCalculator` (ek masraf girdisi), Ayarlar (ileride) |
 | SAT-D303 | Müşteri iadesi (madde 11) | Müşteri iadesi stoka **ilk çıkışın maliyetiyle**, **ters kayıt** olarak girer. "İlk çıkış"ın hangi kayıtla eşleneceği (iade belgesinin bağlandığı çıkış hareketi) **uygulama okunuşu (geri alınabilir)** olarak kod PR'ında yazılır. Alış iadesi bu cevapta yoktur; açık kalır. | `AverageCostMovementKind.Return`, `AverageCostCalculator`, Satış iade akışı (SAT-D300 ile birlikte) |
 | SAT-D304 | Açılış stoku maliyeti (madde 12) | (1) Açılış stokunun maliyeti **elle girilir** ve **ikinci kişi onaylar** (giren ≠ onaylayan). (2) Maliyeti girilmemiş kalemde maliyet **"yok"** görünür; sıfır sayılmaz, tahmin edilmez. Hangi izin adlarının açılacağı kod PR'ının işidir; izinlerin rollere verilmesi (grant/rol) **insan kapısıdır**. | Stok açılış (INV-OPEN-1, `OpeningCount`), maliyet defteri girdisi, okuma portu |
-| SAT-D305 | Karışık kaynak ve fire (madde 13) | (1) Alınan ve üretilen ürün **tek hareketli ortalamada** tutulur; üretim girişi ayrı ortalama açmaz. (2) **Fire maliyete varsayılan olarak eklenir**; Ayarlar'dan kapatılabilir. Ayar anahtarı ve varsayılanı kod PR'ında tanımlanır, sahibi Ayarlar modülüdür. (3) Kodda geçen `OPEN-INV-AVGCOST-PRODUCTION` aynı konudur (EK59) ve bu maddeye bağlanır. (4) **Üretim girişinin birim maliyetinin nereden geleceği bu cevapta yazmaz**; üretim maliyeti konusu (`OPEN-008`) açık kalır ve bu belge onu seçmez. | `AverageCostCalculator` (`ProductionReceipt`), Ayarlar (fire anahtarı), Üretim maliyet girdisi (ayrı dilim) |
-| KLN-D20 | Sevk edilmiş transferden vazgeçme (madde 17) | (1) **Sevk silinmez** (13/14 Ekim kararı 5 ile aynı yönde). (2) İrsaliye kesildiyse: irsaliye iptal edilebiliyorsa iptal edilir ve sevk de iptal edilebilir; irsaliye iptal edilemiyorsa sevk iptal edilmez ve teslim alınmamışsa sistem **uyarı verir**. Sehven kesilen irsaliye için **açıklamalı ters irsaliye** kesilir. (3) İrsaliye kesilmediyse: **teslim alınmamış** sevk iptal edilebilir. (4) Teslim alınmış (kabul edilmiş) sevkin iptali bu cevapta yoktur. | Stok transfer (B-22b, iptal), Lojistik transfer çıkış belgesi (irsaliye) iptali ve ters irsaliye |
-| KLN-D21 | Teslim farkı (madde 18) | (1) Teslim alanın girdiği miktar **kesinleşir**. (2) Sevk ile kabul arasındaki fark **otomatik fire** yazılır. (3) **Ek onay yoktur**. Farkın hangi stok hareketi türüyle kaydedileceği B-22c PR'ının uygulama seçimidir. | Stok transfer (B-22c, teslim alma/kabul), fire hareketi |
+| SAT-D305 | Karışık kaynak ve fire (madde 13) | (1) Alınan ve üretilen ürün **tek hareketli ortalamada** tutulur; üretim girişi ayrı ortalama açmaz. (2) **Fire maliyete varsayılan olarak eklenir**; Ayarlar'dan kapatılabilir. Ayar anahtarı ve varsayılanı kod PR'ında tanımlanır, sahibi Ayarlar modülüdür. (3) Kodda geçen `OPEN-INV-AVGCOST-PRODUCTION` aynı konudur (EK59) ve bu maddeye bağlanır. (4) Üretim girişinin birim maliyeti için yön #66 6808848950 madde 6'dadır (F-011): tüketilen hammaddenin ortalama maliyeti + fire mamule yüklenir; işçilik ve genel gider v1'de yoktur, yapı bunları sonradan ekleyebilecek kadar esnek kurulur. Bu yön henüz ayrı bir karar dosyasına işlenmedi (ChatGPT şeridi); bu belge onu yalnız atıfla bağlar. Değeri Üretim modülü sürümlü bir portla verir (cross-module, K3). (5) Madde 6 fireyi ayarsız yazar; daha yeni olan madde 13 (23:41) "varsayılan olarak eklenir, Ayarlar'dan kapatılabilir" der. Daha yeni karar geçerli olduğundan (2), madde 6'yı inceltir: fire varsayılan olarak mamul maliyetine yüklenir, ayar kapalıysa yüklenmez. (6) `OPEN-008`in resmî kapanışı insan kapısıdır; sicilde açık kalır. | `AverageCostCalculator` (`ProductionReceipt`), Ayarlar (fire anahtarı), Üretim maliyet portu (ayrı dilim) |
+| KLN-D20 | Sevk edilmiş transferden vazgeçme (madde 17) | (1) **Sevk silinmez** (13/14 Ekim kararı 5 ile aynı yönde). (2) İrsaliye kesildiyse: irsaliye iptal edilebiliyorsa iptal edilir ve sevk de iptal edilebilir; irsaliye iptal edilemiyorsa sevk iptal edilmez ve teslim alınmamışsa sistem **uyarı verir**. Sehven kesilen irsaliye için **açıklamalı ters irsaliye** kesilir. (3) İrsaliye kesilmediyse: **teslim alınmamış** sevk iptal edilebilir. (4) Teslim alınmış (kabul edilmiş) sevkin iptali bu cevapta yoktur. (2) içindeki "iptal edilemiyorsa sevk silinmez" sözünün "sevk iptal edilmez" diye okunması ve iptalin teslim alınmamış sevkle sınırlanması **yazarın okumasıdır (geri alınabilir)**. | Stok transfer (B-22b, iptal), Lojistik transfer çıkış belgesi (irsaliye) iptali ve ters irsaliye |
+| KLN-D21 | Teslim farkı (madde 18) | (1) Teslim alanın girdiği miktar **kesinleşir**. (2) Sevk ile kabul arasındaki fark **otomatik fire** yazılır. (3) **Ek onay yoktur**. (4) Sınır (**uygulama okunuşu, geri alınabilir**): "fark", teslim alanın kesinleştirdiği satır/etiket için sevk edilen kg ile girilen kg arasındaki farktır. Henüz teslim alınmamış etiket/satır yolda kalır (14 Ekim kısmi kabul değişmezi) ve fireye dönmez. Transfer bekleyen miktarla kapatılırsa o miktarın ne olacağı bu cevapta yoktur: `NEEDS-SINAN`. Farkın hangi stok hareketi türüyle kaydedileceği B-22c PR'ının uygulama seçimidir. | Stok transfer (B-22c, teslim alma/kabul), fire hareketi |
 
 **SAT-D258 ile ilişki:** SAT-D258 (1) "ortalamaya şimdilik yalnız satınalma maliyeti girer" der ve karma kaynaklı ürünü
 `NEEDS-SINAN` bırakır. SAT-D305 bu `NEEDS-SINAN`'ı cevaplar ve yönü "tek hareketli ortalama" olarak verir. Üretim
-maliyetinin değeri (`OPEN-008`) gelmedikçe üretim girişi ortalamaya bir sayıyla katılamaz; o güne kadar SAT-D258 (2)'deki
-"kullanılamıyor" sonucu fiilen sürer. Bu, yazarın okumasıdır (Sinan kararı değildir); farklı bir ara davranış ancak ayrı
-Sinan kararıyla seçilir.
+maliyetinin yönü #66 6808848950 madde 6'da verilmiştir (SAT-D305 (4)); ancak değer Üretim modülünün sürümlü portundan
+gelmedikçe üretim girişi ortalamaya bir sayıyla katılamaz. O port gelene kadar SAT-D258 (2)'deki "kullanılamıyor" sonucu
+fiilen sürer. Bu ara durum yazarın okumasıdır (Sinan kararı değildir); farklı bir ara davranış ancak ayrı Sinan kararıyla
+seçilir.
 
 ## `OPEN-*` kimliklerinin bağlanması
 
@@ -89,7 +90,7 @@ sicil kapanışı değildir, kimliği Sinan kararına bağlar. Sicil dosyaları 
 | `OPEN-INV-AVGCOST-MIXED-SOURCE` | Sinan kararı verildi (#66 6809898906); kod uygulanınca kod yorumu güncellenir | SAT-D305 (madde 13) |
 | `OPEN-INV-AVGCOST-PRODUCTION` (test yorumu; MIXED-SOURCE ile aynı konu) | Sinan kararı verildi (#66 6809898906); kod uygulanınca kod yorumu güncellenir | SAT-D305 (madde 13) |
 | `OPEN-INV-AVGCOST-FX` | Daha önce karara bağlandı; bu belge değiştirmez | BS-1 (`SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md`, #66 6806579823) |
-| `OPEN-008` (üretim maliyeti) | Açık kalır | SAT-D305 (4) |
+| `OPEN-008` (üretim maliyeti) | Yön Sinan kararıyla verildi (#66 6808848950 madde 6, F-011); karar dosyasına işlenmesi ChatGPT şeridinde, resmî kapanış insan kapısı; sicilde açık kalır | SAT-D305 (4)–(6) |
 
 ## Uygulama notu (kod şeridi; bu PR'da yapılmadı)
 
@@ -116,14 +117,17 @@ yazarın `main` `2f81347ab` taramasıdır.
   adları kod PR'ında kaydedilir; grant/rol ataması ve Critical sınıfı insan kapısıdır.
 - **SAT-D305 (karışık kaynak) — değişiklik gerekir, ama üretim maliyeti girdisine bağlıdır.** Bugünkü kod: `ProductionReceipt`
   pozisyonu `Unreadable(ProductionSource)` yapar (SAT-D258'e göre). Tek ortalamaya geçiş, üretim girişinin birim maliyeti
-  bir kaynaktan gelmedikçe sayı üretemez (`OPEN-008`). Fire anahtarı (ayar adı, varsayılan "açık") Ayarlar modülünde
+  Üretim modülünün sürümlü portundan gelmedikçe sayı üretemez; hesap yönü #66 6808848950 madde 6'dadır (hammadde
+  ortalama maliyeti + fire; işçilik/genel gider v1'de yok) ve port cross-module K3 dilimidir. Fire anahtarı (ayar adı, varsayılan "açık") Ayarlar modülünde
   tanımlanır; fire'nin maliyete eklenme hesabı (ör. iyi çıktı kg'sine dağıtma) uygulama okunuşudur ve formül olduğu için
   K3 review'unda açıkça yazılır.
 - **KLN-D20 (sevkten vazgeçme) — B-22b takip dilimi.** Bugünkü kod: `InventoryTransferStatus` yalnız Planned / InTransit /
   PartiallyAccepted / Accepted taşır; iptal durumu yoktur (yeni durum + migration, K3). Lojistik'te transfer çıkış
   belgesinin `Cancel` komutu vardır (`logistics.transfer-outgoing-document.cancel.v1`); ters irsaliye yoktur. "İrsaliye iptal
-  edilebiliyor mu" kuralı ve ters irsaliye Lojistik şeridinin sahipliğindedir; Stok iptali bu yeteneğe **modüller arası
-  bağımlılık** olarak bağlanır, bu belge Lojistik kuralını seçmez. Uyarı metni Türkçe kullanıcı metnidir (kaynak dosya).
+  edilebiliyor mu" kuralı ve ters irsaliye Lojistik şeridinin sahipliğindedir; Stok, irsaliyenin iptal edilebilirliğini ve iptal
+  sonucunu Lojistik'in sürümlü sözleşmesi (okuma portu veya outbox olayı) ile öğrenir; Stok Lojistik tablosuna yazmaz ve
+  Lojistik komutunu kendi transaction'ında çağırmaz. PR'da `Modül bağlantıları` satırı yazılır. Bu belge Lojistik kuralını
+  seçmez. Uyarı metni Türkçe kullanıcı metnidir (kaynak dosya).
 - **KLN-D21 (teslim farkı) — B-22c takip dilimi.** Bugünkü kod: kabul bütün etiket satırları üzerinden yapılır; v1
   sözleşmesi tek etikette kısmi kg kabul etmez ve sevkte planlanan/gerçek kg farkını (`DifferenceKg`) ayrı tutar. Teslim
   alanın kg girmesi ve farkın fire yazılması sözleşme değişikliğidir. Mevcut hurda kaydı (`StockScrap`) kayıt + onay
@@ -137,7 +141,7 @@ yazarın `main` `2f81347ab` taramasıdır.
 | SAT-D302 | Ek masrafı Unreadable yerine ortalama dışında tutma; ileride ayar | Stok backend; K3. Ayar: Ayarlar şeridi, madde 8 sonrası |
 | SAT-D303 | Müşteri iadesi ters kaydı, ilk çıkış maliyeti girdisi | Stok + Satış/Lojistik iade; cross-module contract K3 |
 | SAT-D304 | Açılış maliyeti maker-checker komutu ve izin adları | Stok backend; K3 (grant insan kapısı) |
-| SAT-D305 | Tek hareketli ortalama, fire anahtarı | Stok + Ayarlar; üretim maliyet girdisi `OPEN-008` sonrası; K3 |
+| SAT-D305 | Tek hareketli ortalama, fire anahtarı | Stok + Ayarlar; üretim maliyet değeri Üretim portuyla (madde 6 yönü, cross-module); K3 |
 | KLN-D20 | B-22b sevk iptali (yeni durum + migration) | Stok; Lojistik irsaliye iptaline bağımlı; K3 |
 | KLN-D21 | B-22c teslim alma ve fark → otomatik fire | Stok; K3 |
 
@@ -147,9 +151,9 @@ yazarın `main` `2f81347ab` taramasıdır.
   değiştirmez; izin veya grant açmaz.
 - **Kapatma yoktur.** `OPEN-INV-AVGCOST-*` kimlikleri yalnız Sinan kararına bağlanır; `KARAR_SICILI`/`ACIK_KARARLAR`
   ve `OPEN-008` değişmez.
-- **Seçilmeyenler:** alış iadesinin maliyeti; vade farkı ve öteki giderler; üretim girişinin birim maliyet kaynağı
-  (`OPEN-008`); teslim alınmış sevkin iptali; Lojistik'te irsaliyenin hangi durumda iptal edilebileceği. Bunlar ilgili
-  şeritte `NEEDS-SINAN` veya sahip şeridin kararıdır; bu belge tahminle seçmez.
+- **Seçilmeyenler:** alış iadesinin maliyeti; vade farkı ve öteki giderler; teslim alınmış sevkin iptali; Lojistik'te irsaliyenin hangi durumda iptal edilebileceği. Bunlar ilgili
+  şeritte `NEEDS-SINAN` veya sahip şeridin kararıdır; bu belge tahminle seçmez. Üretim girişinin birim maliyeti
+  seçilmeyen değildir: yönü madde 6'da vardır, karar dosyasına işlenmemiştir; port/sözleşme ayrı dilimdir (SAT-D305 (4)).
 - "Uygulama okunuşu (geri alınabilir)" diye işaretli noktalar Sinan'ın sözü değildir; kod PR'ında yazılır, Sinan farklı
   isterse ayrı karar gerekir.
 - İnsan kapıları (deployment, environment, secret, Settings aktivasyonu, grant/rol/Critical, production, `OPEN-*`
