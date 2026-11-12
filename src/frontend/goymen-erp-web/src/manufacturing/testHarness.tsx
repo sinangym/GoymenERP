@@ -173,6 +173,9 @@ export function plan(overrides: Record<string, unknown> = {}) {
     processSpec: null,
     // U2-d (URT-D2): the actor id of who prepared the current version; null for a plan stored before U2-d.
     preparedBy: null,
+    // U2-b / API-16 (SAT-D219): the approved sales order line the plan supplies, and the link's own revision.
+    salesOrderLink: null,
+    salesOrderLinkRevision: 0,
     ...overrides,
   }
 }

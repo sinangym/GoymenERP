@@ -150,11 +150,18 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
       names('PlanViewV1').filter(
         (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH
           && name !== 'parameterSnapshot' && name !== LINE_SPEED && name !== 'orderId' && name !== 'rejections'
-          && name !== 'cancellation' && name !== PROCESS_SPEC && name !== 'preparedBy',
+          && name !== 'cancellation' && name !== PROCESS_SPEC && name !== 'preparedBy'
+          && name !== 'salesOrderLink' && name !== 'salesOrderLinkRevision',
       ),
     )
     // U2-d (URT-D2): the preparer is an optional nullable actor id, never required.
     expect(schema('PlanViewV1').properties?.preparedBy).toEqual({ type: ['null', 'string'] })
+    // U2-b / API-16: the sales order link is optional and additive; its view has exactly the eight members the decoder reads.
+    expect([...(schema('PlanSalesOrderLinkViewV1').required ?? [])].sort()).toEqual(names('PlanSalesOrderLinkViewV1'))
+    expect(names('PlanSalesOrderLinkViewV1')).toEqual([
+      'customerAccountId', 'customerPartyId', 'lineRevision', 'linkedAtUtc', 'linkedBy', 'productId', 'salesOrderId',
+      'salesOrderLineId',
+    ])
     expectOptionalCutToLength('PlanViewV1', 'CutToLengthSpecViewV1')
     expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
       names('PlannedInputViewV1').filter(
