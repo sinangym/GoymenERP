@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-12 (yerel hesap, rol atama, reddedilen denemelerin denetim kaydı)
 
-Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D18` kararlarını ekler.
+Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D21` kararlarını ekler.
 `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (tek seferlik kurucu admin) geçerli kalır.
 BS-7'deki "production'da MFA zorunlu" yönü, 2FA zorunluluğu bakımından `KIM-D3` ile şimdilik yerini
 "herkese isteğe bağlı" kararına bırakır (Sinan: "12 Kasım kararı geçerli"); BS-7'nin OIDC/VPN yönü ve
@@ -36,6 +36,20 @@ koordinatör tarafından yazıldı:
 - [`6821262098`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098)
   (2026-11-12 10:35Z, 17. tur) madde 4 — #1112 (çok şirkette ilk Admin). Cevap aynen: "Kurucu hepsinde
   Admin." Madde 1-3 ve 5-8 bu dosyanın konusu değildir.
+- [`6821897620`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821897620)
+  (2026-11-12 11:06Z, 18. tur, AskUserQuestion — #1112 review P2'leri). Cevaplar aynen:
+  1. Hiçbir şirkette rolü olmayan kullanıcı (parola sıfırlama / kilit açma / pasifleştirme): "Önce şirkete
+     atanır" — özel/kurucu yetkisi yok; kullanıcı önce bir şirkete eklenir, sonra o şirketin
+     `identity.users.manage` yetkili kişisi işlem yapar. (KIM-D16 yazar okumasındaki "yalnız kurucu Admin" dalı
+     düşer.)
+  2. Yeni şirkette açana Admin ataması arızalanırsa (açan pasifleşti, olay işlenemedi/dead-letter): "Kurulum
+     bekler, kurucu atar" — şirket Admin'i olana kadar "kurulum bekliyor" durumunda kalır ve işlem kabul etmez;
+     alarm çıkar; kurucu Admin elle Admin atar (audit'li).
+  3. "Şirket açma" izni Critical mi? "Evet, Critical" — şirket açma izni Critical sınıfındadır; verilmesi
+     Critical rol kurallarına tabidir. (Grant/rol/Critical insan kapısı: bu karar sınıflandırmadır; mevcut
+     grant'larda değişiklik ayrı somut karar ister.)
+  - Ayrıca: KIM-D18 "o anda tanımlı bütün şirketler" metni pasif şirketleri de kapsar (spec'teki "aktif"
+    daraltması review'da P2; metne sadık kalınacak).
 
 AskUserQuestion seçeneklerinin tam metni koordinatör oturumundadır; aşağıdaki "seçilmeyen" bilgisi #66
 yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır. 12-16. satırlardaki "Seçilmeyen"
@@ -64,6 +78,10 @@ oturumundadır.
 | 16 | ID-07b grup geneli parola sıfırlama ve kilit açma? (14.–15. tur) | Önerilen | Yalnız, kullanıcının üye olduğu her şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir. Seçilmeyen (yazar özeti): tek şirkette yetki yeterli; yalnız Admin. |
 | 17 | ID-10 şirketteki son Admin kendi Admin rolünü kaldırmaya çalışırsa? (16. tur) | "Sistem engellesin." | Şirkette en az bir aktif Admin kalmak zorunda; son Admin'in rolü kaldırılamaz ve pasifleştirilemez; önce başka birine Admin verilir. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
 | 18 | Çok şirkette ilk Admin? (17. tur) | "Kurucu hepsinde Admin." | İlk kurulumda kurucuya o anda tanımlı bütün şirketlerde Admin atanır; sonradan açılan şirkette şirketi açan kişi ilk Admin olur; sonra başkalarına devredilebilir. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
+| 19 | Hiçbir şirkette rolü olmayan kullanıcıda parola sıfırlama / kilit açma / pasifleştirme? (18. tur) | "Önce şirkete atanır" | Özel/kurucu yetkisi yok; kullanıcı önce bir şirkete eklenir, sonra o şirketin `identity.users.manage` yetkili kişisi işlem yapar. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
+| 20 | Yeni şirkette açana Admin ataması arızalanırsa? (18. tur) | "Kurulum bekler, kurucu atar" | Şirket Admin'i olana kadar "kurulum bekliyor" durumunda kalır ve işlem kabul etmez; alarm çıkar; kurucu Admin elle Admin atar (audit'li). Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
+| 21 | "Şirket açma" izni Critical mi? (18. tur) | "Evet, Critical" | Şirket açma izni Critical sınıfındadır; verilmesi Critical rol kurallarına tabidir. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
+| 22 | KIM-D18 kapsamı (18. tur, ek not) | "o anda tanımlı bütün şirketler" metni pasif şirketleri de kapsar | Spec'teki "aktif" daraltması kaldırılır; metne sadık kalınır. |
 
 ## Kararlar
 
@@ -86,26 +104,29 @@ oturumundadır.
 | KIM-D15 | Critical rol geri alma | Tek adımda, ikinci onay yok; denetim kaydı ve `identity.permission.changed` olayı yazılır. Atama tarafındaki iki kişi kuralı (KIM-D1/D5) değişmez. | Aynı spec, atama durumları ve `/revoke` |
 | KIM-D16 | Grup geneli parola sıfırlama/kilit açma kapsamı | Yalnız hedef kullanıcının üye olduğu **her** şirkette `identity.users.manage` yetkisini şirket genelinde taşıyan kişi yapabilir; tek bir şirkette eksikse istek reddedilir (fail-closed). |  Aynı spec, hedef kapsam ve izin tablosu |
 | KIM-D17 | Son Admin koruması | Her şirkette en az bir aktif Admin kalır. Şirketteki son aktif Admin'in Admin ataması geri alınamaz ve o kullanıcı pasifleştirilemez (kendisi veya başkası yapsa da); sistem reddeder, önce başka birine Admin verilir. "Admin" = mevcut Admin persona tanımına eşlenen rol; kodda rol adı sabiti yok. Problem kodu ve eşzamanlılık kilidi uygulama ayrıntısıdır (geri alınabilir). | Kimlik spec'i, görev ayrılığı, `/revoke`, `/deactivate` |
-| KIM-D18 | Çok şirkette ilk Admin | Bootstrap, kurucuya o anda tanımlı **bütün** şirketlerde Admin atar. Sonradan açılan şirkette şirketi açan kişi o şirketin ilk Admin'i olur. Admin sonra başkalarına devredilebilir (KIM-D17 sınırıyla). Şirket açma akışının Identity'ye nasıl bildirildiği uygulama ayrıntısıdır (cross-module sözleşme, K3). | Kimlik spec'i, bootstrap ve görev ayrılığı |
+| KIM-D18 | Çok şirkette ilk Admin | Bootstrap, kurucuya o anda tanımlı **bütün** şirketlerde Admin atar. Sonradan açılan şirkette şirketi açan kişi o şirketin ilk Admin'i olur. Admin sonra başkalarına devredilebilir (KIM-D17 sınırıyla). Şirket açma akışının Identity'ye nasıl bildirildiği uygulama ayrıntısıdır (cross-module sözleşme, K3). "Bütün şirketler" pasif şirketleri de kapsar (18. tur). | Kimlik spec'i, bootstrap ve görev ayrılığı |
+| KIM-D19 | Hiçbir şirkette rolü olmayan kullanıcı | Parola sıfırlama, kilit açma ve pasifleştirme için özel/kurucu yetkisi yoktur: kullanıcı önce bir şirkete atanır, sonra o şirketin `identity.users.manage` yetkilisi işlemi yapar. Problem kodu uygulama ayrıntısıdır (geri alınabilir). | Kimlik spec'i, hedef kapsam, KS-17 |
+| KIM-D20 | Açana Admin ataması arızalanırsa | Şirket Admin'i olana kadar "kurulum bekliyor" durumunda kalır ve işlem kabul etmez; alarm çıkar; kurucu Admin elle Admin atar (audit'li). Durum adı, olaylar ve metrik uygulama ayrıntısıdır (cross-module sözleşme, K3). | Kimlik spec'i kural 8, ID-3b; Organization şirket açma dilimi |
+| KIM-D21 | Şirket açma izni | Critical sınıfındadır; verilmesi Critical rol kurallarına tabidir. Sınıflandırmadır; mevcut grant'larda değişiklik ayrı somut karar ister. | Organization şirket açma dilimi, Critical küme |
 
 **Yazar okumaları (Sinan kararı değildir; kimlik spec'inde uygulanır, review'da düzeltilebilir):**
 
 - KIM-D16: "üye" = bugün geçerli (başlamış, süresi dolmamış) ataması olan şirket; site/lokasyon kapsamlı atama
-  o şirkette üyeliktir. Hiç geçerli ataması olmayan kullanıcıda boş küme "herkes" diye okunmaz: işlemi yalnız
-  **bütün tanımlı** (pasifler dahil) şirketlerde şirket geneli `identity.users.manage` taşıyan yapabilir;
-  kurucuya ayrı yol açılmaz (KIM-D5 yalnız Critical rol atamasıdır). Aynı kapsam pasifleştirmeye de uygulanır.
+  o şirkette üyeliktir. Aynı kapsam pasifleştirmeye de uygulanır. (Hiç geçerli ataması olmayan kullanıcı artık
+  yazar okuması değildir: KIM-D19.)
 - KIM-D17: "aktif Admin" = aktif kullanıcının, aktif rol tanımındaki, başlamış ve süresiz şirket geneli Admin
   ataması; süreli atama sayılmaz. Problem kodu ve kilit uygulama ayrıntısıdır.
-- KIM-D18: "bütün şirketler" pasif şirketleri de kapsar.
 
 ## Sınırlar
 
 - Karara bağlanmayanlar `NEEDS-SINAN` olarak açık kalır: otomatik imhanın açılması (ayrı onay ve ADR) ve
   toplulaştırma eşik değerleri (ölçümden sonra). ID-02b/03b/05/06b/07b 14.–15. turda (KIM-D12…D16),
-  ID-10 16. turda (KIM-D17), çok şirkette ilk Admin 17. turda (KIM-D18) karara bağlandı.
+  ID-10 16. turda (KIM-D17), çok şirkette ilk Admin 17. turda (KIM-D18), #1112 review P2'leri 18. turda
+  (KIM-D19…D21) karara bağlandı.
 - Şirket açma yetkisinin kimde olduğu bu dosyanın konusu değildir (Organization modülü); KIM-D18 yalnız
-  açan kişinin ilk Admin olmasını söyler, şirket açma izni vermez. Bu iznin Critical sınıflandırması
-  `NEEDS-SINAN-ID-12`, şirket açılış olayı işlenemezse kurtarma yolu `NEEDS-SINAN-ID-11` olarak açıktır.
+  açan kişinin ilk Admin olmasını söyler, şirket açma izni vermez. KIM-D21 bu iznin sınıfını (Critical)
+  belirler, kimseye vermez. KIM-D20 kurucu da pasifse ayrı yol tanımlamaz; o durumda şirket kurulum bekliyor
+  kalır ve alarm sürer.
 - ADR-SEC-001 E8 (başarısız girişte kullanıcı adı hash'inin anahtarı) bu dosyanın konusu değildir: anahtar
   bir secret olduğundan insan kapısıdır; o gelene kadar hash yazılmaz.
 - Bu dosya `OPEN-013`'ü veya başka bir `OPEN-*` kaydını kapatmaz; grant/rol ataması, ilk Admin'in
