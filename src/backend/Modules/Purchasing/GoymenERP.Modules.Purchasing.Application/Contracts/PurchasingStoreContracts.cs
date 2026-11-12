@@ -51,7 +51,7 @@ public static class PurchasingCommands
 
     /// <summary>
     /// A3 API-30 (ALS-D33, ALS-D21): a Draft or Approved order's general line gets a new full delivery schedule (termin dilimleri,
-    /// Σ = the line's ordered quantity), under <c>purchasing.orders.create</c>; the order's version moves by one.
+    /// Σ = the line's ordered quantity), under <c>purchasing.orders.revise</c> (ALS-D94); the order's version moves by one.
     /// </summary>
     public const string OrderLineScheduleV1 = "purchasing.purchase-order.line-schedule.v1";
 

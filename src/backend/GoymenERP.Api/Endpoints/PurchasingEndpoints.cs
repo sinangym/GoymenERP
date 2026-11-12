@@ -397,8 +397,9 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
-        // A3 API-30 (ALS-D33, ALS-D21): a general line's delivery schedule (termin dilimleri) under purchasing.orders.create — the
-        // slices replace the previous schedule whole as a new revision; their sum is exactly the line's ordered quantity.
+        // A3 API-30 (ALS-D33, ALS-D21): a general line's delivery schedule (termin dilimleri) under purchasing.orders.revise
+        // (ALS-D94) — the slices replace the previous schedule whole as a new revision; their sum is exactly the line's ordered
+        // quantity.
         group.MapPost("/{id:guid}/lines/{lineId:guid}/schedule", (Guid id, Guid lineId, HttpContext httpContext,
                 [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
             MutateAsync(httpContext, correlation, PurchasingJson.ReadSetLineSchedule,

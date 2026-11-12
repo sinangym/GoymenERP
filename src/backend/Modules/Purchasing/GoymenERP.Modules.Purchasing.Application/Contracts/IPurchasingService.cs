@@ -48,8 +48,8 @@ public interface IPurchasingService
 
     /// <summary>
     /// A3 API-30 (ALS-D33, ALS-D21): records a Draft or Approved order's general line delivery schedule (termin dilimleri) under
-    /// <c>purchasing.orders.create</c> — slices that sum exactly to the line's ordered quantity, replacing the previous schedule as a
-    /// new revision at the next order version.
+    /// <c>purchasing.orders.revise</c> (ALS-D94) — slices that sum exactly to the line's ordered quantity, replacing the previous
+    /// schedule as a new revision at the next order version.
     /// </summary>
     Task<PurchaseOrderResponse> SetOrderLineScheduleAsync(Guid orderId, Guid lineId, SetPurchaseOrderLineScheduleRequest request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
