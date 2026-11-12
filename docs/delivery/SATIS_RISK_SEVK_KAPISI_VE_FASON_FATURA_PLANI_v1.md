@@ -269,8 +269,10 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   tahsis varsa satır kaldırma ara dönemde reddedilir.
 - **Sıra (SAT-D315, Sinan 23. tur):** birden çok alışa yayılan ayırmada en geç gelecek alıştan başlanır; fiziksel tahsis ve
   gelecek ayırma birlikteyse önce gelecek ayırma bırakılır; kullanıcının komuttaki açık seçimi varsayılandan üstündür.
-  Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31/KLN-D32 (#1116 head `04afcb85`); sıra Stok portunda hesaplanır,
-  Satış yalnız açık seçimi iletir. Gelecek ayırma yetmezse fazla fiziksel tahsisten otomatik bırakılır (Sinan 25. tur,
+  Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31/KLN-D32 (#1116 head `19095be0`); sıra Stok portunda hesaplanır,
+  Satış yalnız açık seçimi iletir. "En geç gelen" tarihi Alış `GetLineScheduleAsync`'ten okunur (#1110 F17-1b, #1101;
+  KLN-D28/KLN-D30): teslim alınmamış en geç `DeliveryDate`; dilimsiz satır tarihsiz (en geç); `Unreadable`/hata → komut
+  yazılmaz, 503 fail-closed. Test: termin okuması `Unreadable` → Satış komutu yazılmaz, 503. Gelecek ayırma yetmezse fazla fiziksel tahsisten otomatik bırakılır (Sinan 25. tur,
   SAT-D315 (5)); bırakma yolu Satış/Stok fiziksel tahsis kuralıdır (KLN-D31 (4), #1116 §5.1 (b)). **Ara dönem:** Sinan:
   "Fiziksel bırakma ekranı hazır olana kadar böyle bir azaltma reddedilir". *Koordinatör/yazar fail-closed türetmesi (KLN-D32 (3)):* ret tamdır (açık fiziksel
   seçim dahil), hiçbir şey yazılmaz, gelecek ayırma da bırakılmaz. Reddi Stok portu #1116 §3.2 adım 0 kilitleri altında
