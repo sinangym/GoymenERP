@@ -1686,11 +1686,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // domain, a legacy approval rebuilt without an approver; same SqlClient use.
                 // Re-fingerprinted for A3 API-30 (ALS-D33, ALS-D21): a line schedule revision appended in the order's one save (the
                 // header version, the slices, the attempt and the audit), the snapshot's deliverySchedule, and every revision
-                // rebuilt through the domain at its version between the acceptance shares; same SqlClient use.
+                // rebuilt through the domain at its version between the acceptance shares; same SqlClient use. Review fix: the
+                // Σ-within-need check runs for every command but the schedule command (pre-existing behaviour kept).
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "c347bb88685742bbb84d147eccf33351d764d0f27d7afe8e64cc5bd889a32b1d",
+                        "63bf4e7a7282bfe0e6b09b40550862546ecab72d21b4d74f84ea746ff40cb064",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
