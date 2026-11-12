@@ -62,11 +62,14 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 ### S0 — "Faturalanmamış sevk" bileşeninin bağlanması (K3: para/formül + modüller arası)
 - **Ne:** `RiskCheck.cs:152`'deki sabit `NoSource` yerine DEC-FIN-007 ikinci aşaması: Lojistik'in onaylı sevk payları
   (`ISalesInvoiceableShipmentReadPortV1`, mevcut) − aktif Satış faturasına bağlı paylar, KDV dahil (SAT-D46), çift sayımsız.
-- **Önkoşul:** "Finans kabulü bekliyor" tutarının hangi bileşende duracağı (`docs/handoffs/SATIS_MODUL_BAGLANTILARI_v1.md:44-45`;
-  seçim gerekirse `NEEDS-SINAN`) ve pay tutarının fatura hesaplayıcısından gelmesi (SAT-D90). Bkz. N-6.
+- **Önkoşul:** pay tutarının fatura hesaplayıcısından gelmesi (SAT-D90). "Finans işlemedi" tutarı **SAT-D311** ile
+  cevaplandı (N-6): faturalanmamış sevk toplamında sayılır, ekranda ayrı risk türü/satırı olarak görünür, Finans işleyince
+  açık bakiyeye geçer, çift sayım yok. Bu, risk kontrol sözleşmesine ayrı bileşen ekler (`SalesDraftRiskCheckV1`; sürüm
+  etkisi S0'da yazılır) ve Finans "işlendi" olgusunu okur (#1117; port/olay adı Finans'ın).
 - **Dosyalar:** `SA/SalesDraftService.RiskCheck.cs`, `SD/Drafts/SalesCustomerRisk.cs` (gerekirse yeni sebep kodu).
 - **Testler:** hesap birim testleri (aşama sınırı, faturalanmış pay düşer, iptal edilen fatura geri döner), gerçek SQL
-  risk olgusu (`Within`/`Over` ilk kez), sözleşme testi değişmez (bileşen adı zaten var: `SalesDraftRiskCheckV1.cs:43`).
+  risk olgusu (`Within`/`Over` ilk kez), Finans işleyene kadar ayrı satırda / işleyince açık bakiyede (aynı tutar iki
+  bileşende yok), sözleşme testi yeni bileşenle güncellenir (`SalesDraftRiskCheckV1.cs:43` emsali).
 - **Modül bağlantıları:** `ISalesInvoiceableShipmentReadPortV1` (Lojistik → Satış, tüketim ✅ mevcut), `ISalesPartyRiskReadPortV1` (Finans, değişmez).
 
 ### S1 — Siparişte limit aşımı uyarısı ve kaydı (K3: modüller arası okuma + kayıt şeması/migration)
@@ -98,9 +101,10 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   (iki okuma arasında yarış olmasın); Lojistik L-2'de kabul etti, Lojistik ayrı istisna portu çağırmaz.
 - **Karar Satış'ta değil:** port yalnız olguyu verir; "durdur/geçir" ve tüketim/iptal düşmesi Lojistik kapısının işidir
   (SAT-D285 (4)). Önerilen kapı kuralı (kararlardan türetilmiş): `Within` → geçer; `Over` veya `CreditLimitNotSet` →
-  yalnız `Exception.Status = Valid` ile tek sevk geçer (FNS-D27 (4), FNS-D30 (1), SAT-D154/D160); istisnanın diğer her durumu
-  (None/Pending/Lapsed/Rejected/Withdrawn) ve `SourceUnavailable` → durur (DEC-FIN-009 fail-closed; Lojistik L-2/L-7 aynı).
-  `SourceUnavailable`'ın istisnayla geçip geçemeyeceği **N-5** olarak açık; karar gelene kadar kapı durur.
+  yalnız `Exception.Status = Valid` ile tek sevk geçer (FNS-D27 (4), FNS-D30 (1), SAT-D154/D160); `SourceUnavailable` de
+  **SAT-D310** (N-5, Sinan: "Evet, istisnayla geçer") ile yalnız `Valid` istisnayla geçer; istisnanın diğer her durumu
+  (None/Pending/Lapsed/Rejected/Withdrawn) → durur. Port hatası/zaman aşımı → durur (istisna da okunamaz; DEC-FIN-009,
+  Lojistik L-7). Lojistik'e kapı kuralı değişikliği bildirilir (L-2 metni `SourceUnavailable`'ı durduruyordu).
 - **Hesap:** `ISalesOrderRiskOutcomeSource` ile aynı deterministik değerlendirme (SAT-D284 ile tek kaynak); izin ölçümü
   port konvansiyonuna göre tüketicidedir (`ISalesPartyRiskReadPortV1.cs:9`). Lojistik L-3: kendi mevcut sevk kaydı iznini
   ölçer, yeni izin gerekmez; Satış okuması kullanıcı izni değil şirket bağlamlı sistem okumasıdır.
@@ -115,7 +119,8 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   kullanıcının aynı idempotency anahtarıyla; otomatik tekrar yok.
 - **Dosyalar:** `SA/Contracts/ISalesShipmentRiskGateReadPortV1.cs` (yeni), `SI/Persistence/SalesShipmentRiskGateReadPort.cs`,
   DI `SI/SalesModuleExtensions.cs`, `SR` bölümü; `FinanceSalesPartyRiskReadPortV1` sebep sabiti sözleşme testine.
-- **Testler:** sürüm sabiti + şekil sözleşme testi (tutar alanı yok), her eşleme satırı (Within/Over/limit tanımsız/kaynak yok),
+- **Testler:** sürüm sabiti + şekil sözleşme testi (tutar alanı yok), her eşleme satırı (Within/Over/limit tanımsız/kaynak yok;
+  kaynak yok + `Valid` istisna cevabı aynı çağrıda),
   başka şirketin siparişi → `Unavailable` (asla `Within`), şirket bağlamı yoksa fırlatır (kapı fail-closed), gerçek SQL.
 - **Modül bağlantıları:** yeni `ISalesShipmentRiskGateReadPortV1` (`sales.shipment-risk-gate.v1`, Satış → Lojistik, ❌→🟡);
   `ISalesShipmentRiskExceptionReadPortV1` (✅, gömülür); `ISalesPartyRiskReadPortV1` (Finans, 🟡 #1117 L1).
@@ -130,13 +135,15 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 ### F0 — Karar dosyası (docs, governance)
 - **Yapıldı (bu PR):** #66 `6820601088` m.4 → `docs/decisions/SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`, **SAT-D309**
   (= LOJ-D9, #1115; metin birebir). SAT-D308 #1108'de (Stok) kullanıldığı için 309 alındı.
+  Aynı dosyaya #66 16.–17. tur cevaplarıyla **SAT-D310** (N-5), **SAT-D311** (N-6), **SAT-D312** (N-8) eklendi.
 - **Modül bağlantıları:** yok.
 
 ### F1 — Teslim tartımı net kg portu (K3: modüller arası sözleşme; sahibi Lojistik — SAT-D309/LOJ-D9)
 - **Öneri:** Satış'ın beyan ettiği, sahibin cevapladığı `ISalesSubcontractDeliveryWeighingReadPortV1`
   (`sales.subcontract-delivery-weighing.v1`): girdi (şirket, fason sipariş, sevk/irsaliye payı), cevap: net kg tam ondalık
   metin, ölçüm türü, tartım kimliği, durum (`Available/NoSource/Unavailable`; asla sıfır). Mevcut AT-053 tartımı talimat
-  başınadır (`LR:52,56`); siparişe/satıra dağıtımı → **N-8**.
+  başınadır (`LR:52,56`); siparişe dağıtımı **SAT-D312** (N-8): sevk satırlarındaki beyan kg oranında; tartısız fason
+  teslim yok. Port cevabı sipariş payını ve düzeltme sürümünü taşır (düzeltme sonrası fark faturası için).
 - **Lojistik L-8 cevabı:** tartım kaydı bugün yalnız olguları taşır (tartı sırası, birinci/ikinci tartı, net, fark); "kimin
   kantarı" ve teslim/sevk ayrımı modellenmedi. Lojistik okuma portu önerisi: anahtar (loadingInstructionId, weighingId) →
   net kg + birim. **Teslim tartısı = talimatın tek tartı kaydı; kesin tanım fason teslim dilimi spec'inde netleşir.** Kesin
@@ -149,9 +156,12 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   başı onaylı fiyatı; fire/hurda faturalanmaz. Hesap `SalesInvoiceCalculator`'da (tek hesaplayıcı; ekranda hesap yok).
   Mevcut fatura taslağı (API-32) irsaliye payı anahtarlı olduğundan, fason satırı için kaynak türü genişler (ayrı anahtar,
   çift faturaya karşı tekil index; AT-055 emsali).
-- **Açık:** yuvarlama/birim (N-9), kısmi teslim/birden çok tartım (N-8), tevkifat kodu (SAT-D110: mali müşavir; Ayarlar).
+- **Kararlı:** paylaşım beyan kg oranında, tartısız satır faturalanmaz, kesilmiş faturada tartı düzeltmesi → fark faturası
+  (SAT-D312). **Açık:** oran paydasının sevk satırındaki alanı ve paylaştırma artığı (F2 spec önerir, para etkisi →
+  gerekirse `NEEDS-SINAN`), yuvarlama/birim (N-9), tevkifat kodu (SAT-D110: mali müşavir; Ayarlar).
 - **Testler:** golden (ChatGPT şeridi formül golden'ı), fire düşmez, aynı tartım iki kez faturalanamaz, fiyatsız/tartımsız
-  satır 409 `invoice_not_ready`, gerçek SQL, OpenAPI.
+  satır 409 `invoice_not_ready`, iki sipariş tek tartı oran paylaşımı golden'ı, tartı düzeltmesi sonrası fark faturası,
+  gerçek SQL, OpenAPI.
 - **Modül bağlantıları:** F1 portu (❌), `ISalesSubcontractServiceOrderReadPortV1` (değişmez), `sales.invoice.finalized.v1`
   hedefi (Finans, `SATIS_MODUL_BAGLANTILARI_v1.md:87`, ❌).
 
@@ -165,7 +175,7 @@ seçilmedi; kurallar FNS-D27 (4)/FNS-D30/SAT-D154/D160'tır.
 | # | Soru | Cevap |
 |---|---|---|
 | L-1 | Okuma anı | Yalnız kesin sevk kaydında; her denemede yeniden okunur, cache yok. Önceki aşamalarda okuma kapı değildir. |
-| L-2 | İstisna gömülü mü | Gömülü; tek çağrı. `Within` geç; `Over`/`CreditLimitNotSet` yalnız `Valid` ile; diğer her durum ve `SourceUnavailable` dur. |
+| L-2 | İstisna gömülü mü | Gömülü; tek çağrı. `Within` geç; `Over`/`CreditLimitNotSet` yalnız `Valid` ile; diğer her durum dur. `SourceUnavailable` Lojistik cevabında duruyordu; **SAT-D310** ile `Valid` istisnayla geçer (Lojistik'e bildirilir). |
 | L-3 | İzin | Yeni Lojistik izni yok; mevcut sevk kaydı izni. Satış okuması sistem okuması. Yeni ad gerekirse yalnız ad kodlanır, grant insan kapısı. |
 | L-4 | Anahtar | `(loadingInstructionId, orderId)`; sipariş başına ayrı sorgu; duran sipariş diğerlerini etkilemez. Talimatta tek müşteri. |
 | L-5 | Tüketim/iptal | Satış kendi istisna kaydında tutar; Lojistik sevk commit'inde outbox olayı, iptalde ters olay yayınlar (S2b). |
@@ -190,7 +200,13 @@ ve bölüşüm politikası Sinan'a gider (#66, tek satır, öneri ilk sırada).
 | N-9 → `ASSUMPTION-SAT-RISK-5` | Net kg tartı kaydındaki hassasiyetle, yuvarlanmadan girer; satır tutarı mevcut SAT-D11 kuralıyla (2 ondalık, yarı yukarı) yuvarlanır. Sipariş kg'ı ile fark için tolerans uyarısı/bloğu **yok** (`OPEN-004` etkinleşmez). | Yeni yuvarlama kuralı icat edilmez, mevcut fatura kuralı kullanılır; tolerans açık karar olduğu için etkinleştirilmez. |
 | N-10 → `ASSUMPTION-SAT-RISK-6` | Sevkiyatçı ekranında üç ayrı metin (L-6), Lojistik resource dosyasında. | Metin UX'tir, kod değiştirmeden değişir; tutar göstermez (SAT-D162 korunur). |
 
-### 4b. Sinan'a giden politika soruları (`NEEDS-SINAN`, #66)
+### 4b. Sinan'a giden politika soruları (`NEEDS-SINAN`, #66) — cevaplandı
+
+N-5/N-6/N-8 #66 [6821105608](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821105608) m.2–3 ve
+[6821262098](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098) m.1–2 ile cevaplandı; karar metni
+`SINAN_KARARLARI_2026-11-12_SATIS_EK60.md`: N-5 → **SAT-D310** (öneri "hayır" seçilmedi; istisnayla geçer), N-6 →
+**SAT-D311** (ayrı risk satırı), N-8 → **SAT-D312** (oranla böl, tartı zorunlu, gerekçeli düzeltme + fark faturası).
+Aşağıdaki tablo sorulan hâli kayıt için tutar.
 
 | Kimlik | Soru (önerim ilk sırada) | Neden tahmin edilemez |
 |---|---|---|
