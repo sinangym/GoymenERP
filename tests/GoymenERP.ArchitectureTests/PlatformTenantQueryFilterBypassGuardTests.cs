@@ -139,7 +139,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        "a1562dc161cfd5fba787dbf77820476905448ebba901af6b6f85f5499cb9d4d5";
+        // Üretim U2-b (API-16, SAT-D219): registers the two host-side Manufacturing/Sales order-line adapters (DI only); no
+        // generation, network or hosted-service change (a1562dc1… -> a5bb99f0…).
+        "a5bb99f00d172122845dedb20da107c205b9d08425666692a6f9d1cae48ca307";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -336,7 +338,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…). U2-d review: the migration fact
                 // renamed (Down refusal 51190) and +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the
                 // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
-                "b30fa7d7fcd05703bfd6f2a0634f6fb095494eb71d81ecc72d6f89ea175dcb5d",
+                // Üretim U2-b (API-16): +2 ManufacturingSqlServerRelationalAcceptanceTests facts (sales order link store
+                // rules, link migration Down 51261) (b30fa7d7… -> 1b1e7223…).
+                "1b1e7223ddbd49482ee4ef34bf2cc77901557a5fa3c6457b371fb1e85c4ca105",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -746,7 +750,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // table, filter, key or bypass).
                 // Üretim U2-d: the plan row gains the nullable preparer column (CreatedBy) and its check (no new table,
                 // filter, key or bypass).
-                "aa5ad9b2b3965da0abd0148155d176032f264f8e768397a734704a865649d210",
+                // Üretim U2-b: the plan row gains the nullable sales order link columns, the link revision and their
+                // all-or-nothing check (no new table, filter, key or bypass).
+                "426f7ed56981ab940120ff5b2fd26b891c948addea38881684c8f45524d5ecc0",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1460,11 +1466,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // ManufacturingStore; the provider branch and its token counts are unchanged.
                 // Re-fingerprinted for Üretim U2-a: one scoped registration of the plan lifecycle store (rejection,
                 // cancellation) over the same ManufacturingStore; the provider branch and its token counts are unchanged.
+                // Re-fingerprinted for Üretim U2-b: the plan sales order link store and the open-supply read for Sales over
+                // the same ManufacturingStore; the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "8910b5105b4980de121faa91aa37b27e2e6139c7983b950b9e02a9f8b7d859bd",
+                        "2c135164934f1cd4cee8569bb2e98e2f2df2d36dd1eb8bda2d57739b2e82acf3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1492,10 +1500,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // same filtered context; SqlClient count unchanged (1).
                 // Üretim U2-d: the preparer is written on the plan row and read back with the revisions through the same
                 // filtered context; SqlClient count unchanged (1).
+                // Üretim U2-b: the sales order link change (plan row, link revision, audit, command record in one save) and
+                // the bounded open-supply read by sales order, through the same filtered context; SqlClient count
+                // unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "9ef41f9be8251dea708100eb2cffb4bca57a06a3fa64c410e1bc73a526a434cc",
+                        "06f00d738be6477a85de2ababadee9b23605785dc2453d783f03a769f011c54c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2199,6 +2210,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261107145415_AddManufacturingPlanInputAllocations.cs"] =
                     new(
                         "5c407961e8bc61ce4a00098cad0963f479e0c15e4cbbf86aeac087c773bfa1ac",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Üretim U2-b (API-16, SAT-D219): Up is pure DDL; Down's only raw SQL refuses (51261, used by no other
+                // migration) while any plan was ever linked to a sales order line (link revision above zero), before the
+                // link columns are dropped (forward fix).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261111183848_AddManufacturingPlanSalesOrderLinks.cs"] =
+                    new(
+                        "7c1b7050978c5c07e370518c14ba1e0f23963838d025e9247aa18d33e02c8efb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

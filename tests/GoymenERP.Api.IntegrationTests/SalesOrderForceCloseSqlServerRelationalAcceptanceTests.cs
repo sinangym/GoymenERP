@@ -80,7 +80,7 @@ public sealed class SalesOrderForceCloseSqlServerRelationalAcceptanceTests
             [
                 (SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None, false),
                 (SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.None, false),
-                (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.NoSource, false),
+                (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.None, false),
                 (SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.None, false),
                 (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.Present, false),
                 (SalesCancellationImpactSourcesV1.UnmatchedAdvances, SalesCancellationImpactStatusesV1.NoSource, false),
