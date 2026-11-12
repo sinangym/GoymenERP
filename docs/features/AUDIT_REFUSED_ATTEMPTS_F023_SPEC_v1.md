@@ -80,17 +80,17 @@ davranış "kapalı/yazılmaz"dır):
 | ID | Soru | Öneri | Cevapsızken |
 |---|---|---|---|
 | ~~`NEEDS-SINAN-F023-1`~~ | Reddedilen deneme kayıtları ne kadar saklansın? | **Karar verildi** (#66 `6820161788` m.4, `KIM-D8`): 2 yıl, Ayarlar'dan değişir; otomatik imha ayrı onayla açılır | — |
-| `NEEDS-SINAN-F023-2` | "Denetim kaydı" yetki retleri için güvenlik olayı kanalını da kapsar mı (tek kayıt güvenlik kanalında, denetim ekranı oradan okur)? | **Evet** (§Sınır, seçenek A) | F023-2 yalnız güvenlik kanalına yazar; denetim ekranındaki görünüm (F023-5b) açılmaz |
-| `NEEDS-SINAN-F023-3` | Denetim ekranında yetki retlerini kim görsün: `identity.audit.read` sahibi mi, yoksa yalnız güvenlik olayı okuma izni (aday `platform.security-events.read`) sahibi mi? | Yalnız güvenlik olayı okuma izni (E2 ile tutarlı) | Görünmez |
-| `NEEDS-SINAN-F023-4` | BS-15 toplulaştırması denetim kaydındaki tekrar eden 400/422 retlerine de uygulansın mı? | Evet, aynı desen; değerler ölçümden sonra | Kapalı: her ret ayrı satır |
-| `NEEDS-SINAN-F023-5` | Aynı idempotency anahtarıyla tekrarlanan (replay) bir ret yeni denetim kaydı mı? | Hayır; ilk ret kanıttır, replay yalnız metrik | Yazılmaz |
-| `NEEDS-SINAN-F023-6` | Ayrı kayıt (400/422) yazılamazsa: ret geçerli kalır + alarm metriği (E1'deki ret türleriyle aynı) uygun mu? | Evet | Ret geçerli kalır + metrik (ret asla başarıya dönmez) |
+| ~~`NEEDS-SINAN-F023-2`~~ | "Denetim kaydı" yetki retleri için güvenlik olayı kanalını da kapsar mı (tek kayıt güvenlik kanalında, denetim ekranı oradan okur)? | **Karar verildi** (#66 `6820237902` m.3, `KIM-D10`): evet, tek kayıt güvenlik olay kanalında | — |
+| ~~`NEEDS-SINAN-F023-3`~~ | Denetim ekranında yetki retlerini kim görsün: `identity.audit.read` sahibi mi, yoksa yalnız güvenlik olayı okuma izni (aday `platform.security-events.read`) sahibi mi? | **Karar verildi** (#66 `6820237902` m.3, `KIM-D10`): yalnız güvenlik olayı okuma yetkisi olan görür | — |
+| ~~`NEEDS-SINAN-F023-4`~~ | BS-15 toplulaştırması denetim kaydındaki tekrar eden 400/422 retlerine de uygulansın mı? | **Karar verildi** (#66 `6820237902` m.4, `KIM-D11`): başta her ret ayrı satır; ölçümden sonra toplulaştırma açılır, eşikleri Sinan girer | — |
+| ~~`NEEDS-SINAN-F023-5`~~ | Aynı idempotency anahtarıyla tekrarlanan (replay) bir ret yeni denetim kaydı mı? | **Karar verildi** (#66 `6820237902` m.4, `KIM-D11`): AI önerisi teknik varsayılan — replay yeni kayıt değil, yalnız metrik | — |
+| ~~`NEEDS-SINAN-F023-6`~~ | Ayrı kayıt (400/422) yazılamazsa: ret geçerli kalır + alarm metriği (E1'deki ret türleriyle aynı) uygun mu? | **Karar verildi** (#66 `6820237902` m.4, `KIM-D11`): AI önerisi teknik varsayılan — ret geçerli kalır + alarm metriği | — |
 
 ## Kullanıcı rolleri ve CompanyId kapsamı
 
 - Kaydı **yazan** rol yoktur; yazma yalnız sunucu içindir. Public mutation endpoint'i yoktur (ADR-009 §6).
 - **Okuma:** iş kuralı retleri mevcut `/api/v1/audit/events` ile, aktif şirket için Company kapsamlı
-  `identity.audit.read` izniyle (ADR-009 §7). Yetki retleri `NEEDS-SINAN-F023-3`'e bağlı. Rol adı kullanılmaz.
+  `identity.audit.read` izniyle (ADR-009 §7). Yetki retleri `KIM-D10`'e bağlı. Rol adı kullanılmaz.
 - `CompanyId` her zaman **sunucu çözümlü** değerdir (`ICompanyContext`), istemci header'ından alınmaz.
   Şirket çözülemeden doğan ret (401, `company_context_invalid`) denetim tablosuna giremez (CHECK); bu retler güvenlik
   kanalında `ScopeKind = Platform`, `CompanyId = null` olarak durur; istenen şirket yalnız kimliği doğrulanmış aktör için
@@ -147,7 +147,7 @@ Kayıt değişmezdir (append-only); durum geçişi yoktur. Ret türü → kayıt
 | 400 biçim/header/strict body (kimlik ve şirket çözülmüşse) | audit `Refused`, sınıf `RequestShape` | Ayrı kısa yazma (endpoint filtresi) | Uygun |
 | 401, 403, `company_context_invalid`, çit kaybı | güvenlik kanalı `authz.denied` | — | ADR-SEC-001/BS-15 |
 | 503 `permission_unregistered` | yalnız log/metrik | — | — |
-| Replay edilen ret | yazılmaz (`NEEDS-SINAN-F023-5`) | — | — |
+| Replay edilen ret | yazılmaz (`KIM-D11`) | — | — |
 
 ## Birim/formül/yuvarlama/tolerans
 
@@ -157,7 +157,7 @@ Para/miktar/formül yoktur. Toplulaştırma penceresi (`TimeSpan`) ve eşiği (`
 
 - Yazma yetki istemez (sunucu içi); okuma için mevcut `identity.audit.read`. Yeni izin adı **önerilmez**; yetki retleri
   görünümü için ADR-SEC-001'deki aday ad (`platform.security-events.read`) kullanılır, kesinleşmesi ve grant insan
-  kapısıdır (`NEEDS-SINAN-F023-3`).
+  kapısıdır (`KIM-D10`).
 - Ret kaydının varlığı kullanıcıya ek bilgi sızdırmaz: problem cevabı değişmez (401/403/404/503 kodsuz kalır).
 - Kendi retlerini görme (self-service) v1'de yoktur.
 
@@ -174,7 +174,7 @@ ERP-000L §6 üç kanalı ayırır; aynı olgu iki kanala ayrı satır olarak ya
 - **Seçenek A (öneri):** yetki retlerinin tek kaynağı `authz.denied` güvenlik olayıdır; denetim ekranı bunları
   güvenlik kanalının okuma portundan (SecurityEvents modülü sahibi, okuma yetkisiyle) **referansla** gösterir; denetim
   tablosuna kopya yazılmaz. Bağ `CorrelationId` ile kurulur. Kullanıcı kararındaki "denetim kaydına yazılır" ifadesinin
-  bu şekilde karşılandığı `NEEDS-SINAN-F023-2` ile teyit edilir.
+  bu şekilde karşılandığı `KIM-D10` ile teyit edilir.
 - **Seçenek B (reddedilen):** her yetki reddini iki depoya yazmak — aynı olgu iki kez kaydedilir (AGENTS.md ihlali),
   anonim/şirketsiz retler zaten audit CHECK'ine takılır.
 - Ayrım kuralı tektir: **ret, permission çitinden önce/çitte mi doğdu?** Evet → güvenlik kanalı; hayır → denetim.
@@ -188,7 +188,7 @@ ERP-000L §6 üç kanalı ayırır; aynı olgu iki kanala ayrı satır olarak ya
   `Refused` taslağı bırakır; `AuditSaveChangesInterceptor` ikisini aynı SQL transaction'ında yazar. Biri başarısızsa
   ikisi de yoktur; mevcut davranış (store hatası → 503 `service_unavailable`) değişmez.
 - Ayrı kısa yazma (400/422/çakışma): ret cevabı **her durumda** döner; kayıt yazılamazsa düşük kardinaliteli
-  `audit_refused_attempt_write_failed{refusal_class}` metriği artar (`NEEDS-SINAN-F023-6`). Ret hiçbir durumda başarıya
+  `audit_refused_attempt_write_failed{refusal_class}` metriği artar (`KIM-D11`). Ret hiçbir durumda başarıya
   dönüşmez; yazma hatası cevap süresini bloklamaz (kısa zaman aşımı ayar).
 - Değişmezlik: mevcut `[audit].[TR_AuditEvents_RejectUpdateDelete]` trigger'ı ve `AuditEventIntegrity` hash'i aynen
   geçerlidir; `Outcome` hash zarfının parçasıdır.
@@ -202,7 +202,7 @@ ERP-000L §6 üç kanalı ayırır; aynı olgu iki kanala ayrı satır olarak ya
 - Ayar bölümü `Audit:RefusedAttempts:Aggregation` — `Window` (TimeSpan) ve `Threshold` (int).
   `SecurityEventAggregationOptions` (PR #1093) ile aynı doğrulama: ikisi birlikte boş → **kapalı**, her ret ayrı satır;
   yalnız biri dolu → uygulama başlamaz (fail-closed); pozitif olmayan değer reddedilir. Varsayılan `appsettings.json`
-  değeri **boştur**; değer Sinan ölçüm sonrası girer (`NEEDS-SINAN-F023-4`, `OPEN-015`).
+  değeri **boştur**; değer Sinan ölçüm sonrası girer (`KIM-D11`, `OPEN-015`).
 - Açıkken: pencere içinde eşiğe kadar ret ayrı satır; eşikten sonrası sayılır ve pencere sonunda **tek özet satırı**
   (`AfterJson`: `count`, `windowStartUtc`, `windowEndUtc`, `refusalClass`, `problemCode`) eklenir. Özet de append-only
   insert'tür; mevcut satır güncellenmez. Sayaç süreç içi tutulur; süreç düşerse kaybolan sayı
@@ -253,7 +253,7 @@ Mevcut `src/frontend/goymen-erp-web/src/audit/AuditLogPage.tsx` genişler (Claud
   Özet satırı "N kez reddedildi (pencere: …)" olarak gösterilir.
 - Durumlar (`frontend-screen-states`): loading, empty-no-data, empty-filtered, unauthenticated, forbidden, network-error,
   service-unavailable, malformed (strict decoder: bilinmeyen `outcome`/`refusalClass` → fail-closed), stale.
-- Yetki retleri bölümü yalnız `NEEDS-SINAN-F023-2/3` cevabından sonra ve okuma izni varsa görünür; izin yoksa bölüm
+- Yetki retleri bölümü (`KIM-D10`) yalnız güvenlik olayı okuma izni varsa görünür; izin yoksa bölüm
   hiç render edilmez (boş liste gibi gösterilmez).
 - Erişilebilirlik: ret satırı yalnız renkle değil metin etiketiyle ("Reddedildi") ayrılır; tablo başlıkları
   `scope`'lu; filtre klavyeyle kullanılabilir.
@@ -304,7 +304,7 @@ Mevcut `src/frontend/goymen-erp-web/src/audit/AuditLogPage.tsx` genişler (Claud
 12. **AI kapalı:** *Given* AI gateway devre dışı ve AI ayarı yok; *When* kullanıcı terminal ret üretir; *Then* kayıt
     `AiInvolvement = None`, `AiContextJson = null` ile yazılır, akış AI'ye hiç dokunmaz.
 13. **Replay:** *Given* bir terminal ret kayıtlı; *When* aynı anahtar ve gövdeyle tekrar gönderilir; *Then* aynı ret
-    `Idempotency-Replayed: true` ile döner ve yeni audit satırı yazılmaz (`NEEDS-SINAN-F023-5` varsayılanı).
+    `Idempotency-Replayed: true` ile döner ve yeni audit satırı yazılmaz (`KIM-D11` varsayılanı).
 14. **Değişmezlik:** *When* uygulama hesabıyla `UPDATE`/`DELETE` denenir; *Then* trigger `51000` ile reddeder;
     integrity hash kalıcı satırdan yeniden hesaplanır.
 15. **Ekran:** *Given* okuma izni olan kullanıcı; *When* "Reddedilen" filtresini seçer; *Then* yalnız ret satırları,
@@ -326,13 +326,13 @@ Mevcut `src/frontend/goymen-erp-web/src/audit/AuditLogPage.tsx` genişler (Claud
 
 | Dilim | İçerik | Sahip | Sınıf | Bağımlılık |
 |---|---|---|---|---|
-| F023-0 | Kararın `docs/decisions/`'a işlenmesi, NEEDS-SINAN-F023-1…6'nın #66'ya yazılması | ChatGPT/koordinatör | governance | — |
+| F023-0 | Kararın `docs/decisions/`'a işlenmesi (`KIM-D7`/`D8`/`D10`/`D11`, bu PR), NEEDS-SINAN-F023-1…6'nın #66'ya yazılması (yapıldı) | ChatGPT/koordinatör | governance | — |
 | F023-1 | `RefusedAttemptV1`, `RefusedAttemptClassesV1`, `AuditOutcomes.Refused`, `AuditEventFactory` kabul listesi, `IRefusedAttemptRecorderV1` (aynı transaction + kısa yazma), yasak alan ve mimari testler, Retention ayarları (`P2Y` başlangıç, otomatik imha kapalı) | Codex (Audit) | **K3** (cross-module contract) | — |
-| F023-2 | Yetki retleri: `ErpAuthorizationMiddlewareResultHandler`, `CompanyContextMiddleware`, servis `RequireAsync`/`RequireStillAsync` çiti → `authz.denied` (tek ortak yardımcı) | AI Merkezi + Codex | **K3** (permission/cross-module) | PR #1093 merge; `NEEDS-SINAN-F023-2` |
+| F023-2 | Yetki retleri: `ErpAuthorizationMiddlewareResultHandler`, `CompanyContextMiddleware`, servis `RequireAsync`/`RequireStillAsync` çiti → `authz.denied` (tek ortak yardımcı) | AI Merkezi + Codex | **K3** (permission/cross-module) | PR #1093 merge; `KIM-D10` |
 | F023-3 | İş kuralı retleri, modül başına ayrı PR; her modülün sahip şeridi kendi modülünü yapar: Purchasing, Sales, Logistics, Product (fiyat listesi), Counterparty, Organization, Settings (`CommandExecution` yolu), Finance, Inventory, Accounting, Manufacturing, Documents, Work. Terminal retlerde `RecordRefusalAsync`'e Enqueue; 422/400/çakışma kısa yazma | Modül sahibi şerit | K2 (kalıp uygulaması; yeni migration/izin yoksa). Para/stok komutunda K3 kapsamına giren değişiklik varsa K3 | F023-1 |
-| F023-4 | Toplulaştırma (`Audit:RefusedAttempts:Aggregation`, boş = kapalı), özet satırı, metrikler | Codex (Audit) | K2 | F023-1, `NEEDS-SINAN-F023-4` (değer girilmeden açılmaz) |
+| F023-4 | Toplulaştırma (`Audit:RefusedAttempts:Aggregation`, boş = kapalı), özet satırı, metrikler | Codex (Audit) | K2 | F023-1, `KIM-D11` (değer girilmeden açılmaz) |
 | F023-5a | `/api/v1/audit/events` `outcome` filtresi + indeks migration'ı + OpenAPI | Codex (Audit) | **K3** (migration) | F023-1 |
-| F023-5b | Denetim ekranı "Reddedilen" filtresi; yetki retleri bölümü (izinli ise) | Claude | K2 | F023-5a; bölüm için `NEEDS-SINAN-F023-2/3` |
+| F023-5b | Denetim ekranı "Reddedilen" filtresi; yetki retleri bölümü (izinli ise) | Claude | K2 | F023-5a; bölüm için `KIM-D10` |
 
 Her dilim AGENTS.md PR kabul kapısına uyar; K3 dilimlerde iki bağımsız exact-head review ve gerçek SQL kanıtı gerekir.
 Production aktivasyonu, grant ve saklama politikası insan kapısıdır.

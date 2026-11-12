@@ -8,7 +8,7 @@
 - Not: Bu spec `OPEN-013`'ü veya başka bir `OPEN-*` kaydını **kapatmaz**; hiçbir role, seed'e veya
   gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararları (1. ve 8. tur,
   #66 `6818566934`, `6820046672`) aynı PR'daki
-  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6` olarak yazıldı.
+  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6` ve `KIM-D9` olarak yazıldı (10. tur `6820237902` dahil).
 
 ## Amaç
 
@@ -82,7 +82,8 @@
 - Atama yapan, atamanın `CompanyId`'sinde ilgili izni **şirket genelinde** taşımalıdır; checker da aynı
   şirkette `identity.access.approve` taşımalıdır. Şirket sunucu tarafında çözülür (`RequireCompanyContext`).
 - Parola sıfırlama/kilit açma/hesap pasifleştirme grup geneli etkiler (kullanıcı birden çok şirkette
-  çalışabilir). Bu eylemin hangi kapsamla yetkilendirileceği → `NEEDS-SINAN-ID-07`.
+  çalışabilir). `identity.users.manage` Critical değildir (KIM-D9, 10. tur); bu eylemin hangi şirket kapsamıyla
+  yetkilendirileceği → `NEEDS-SINAN-ID-07b`.
 
 **Persona (öneri, grant değildir):** Kurucu Admin (bootstrap), Admin (maker), İkinci onaylayıcı (checker),
 sıradan kullanıcı. Persona → rol eşlemesi `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md` gibi insan
@@ -109,8 +110,10 @@ Bugünkü `ErpPermissions.Critical`
 `finance.bank-account.propose`, `finance.bank-account.approve`,
 `counterparty.parties.tax-identity.approve`. Sinan'ın "finans onayı" ifadesi
 `finance.official-invoice-import.approve`, `finance.manual-receipt.*` gibi şu an Critical olmayan adları da
-kapsıyor olabilir; kümeye ekleme insan kapısıdır → `NEEDS-SINAN-ID-04` (8. tur: liste **seçilmedi**, AI önerisi
-taslak kalır; etkinleştirme Sinan'ın liste onayını bekler).
+kapsıyor olabilir. **Karar (KIM-D9, 10. tur, #66 `6820237902`; Sinan: "Bilemiyorum ama bence şuanda hiçbiri"):**
+şimdilik **yeni işlem Critical'e eklenmez** — ödeme/tahsilat onayı, `identity.users.manage`, resmî fatura içe
+aktarma ve manuel makbuz Critical değildir. Yukarıdaki mevcut Critical sınıflandırmalar kaldırılmaz (ayrı karar
+ister). Liste ileride karar ile genişletilebilir; `ErpPermissions.Critical` kümesine ekleme insan kapısıdır.
 
 ## Durum geçişleri
 
@@ -170,7 +173,7 @@ Hash sürümü satırda tutulur (`HashFormatVersion`); parametre artırıldığ�
 | Atamaları görme | `identity.assignments.read` | Var, Critical, şirket geneli |
 | Critical olmayan rol atama / geri alma, Critical talep açma (maker) | `identity.roles.manage` | Var, Critical |
 | Critical talebi onaylama/reddetme (checker) | `identity.access.approve` | Var, Critical |
-| Yerel kullanıcı oluşturma, parola sıfırlama, kilit açma, pasifleştirme | `identity.users.manage` | **Yeni ad (öneri)**; Critical olup olmayacağı `NEEDS-SINAN-ID-07` |
+| Yerel kullanıcı oluşturma, parola sıfırlama, kilit açma, pasifleştirme | `identity.users.manage` | **Yeni ad (öneri)**; Critical **değil** (KIM-D9); kapsam `NEEDS-SINAN-ID-07b` |
 
 `identity.access.request` mevcut adının bu akışta rolü (ör. kullanıcının kendisi için talep) bu spec'te
 kullanılmaz; kullanılacaksa ayrı karar.
@@ -436,13 +439,15 @@ K3 dilimleri iki bağımsız exact-head review ister.
 
 8. tur (#66 `6820046672`) ile kapananlar: ID-01 (2FA herkese isteğe bağlı), ID-02/03/06'nın başlangıç
 değerleri (8 karakter, 10 hata, boşta 8 saat; Ayarlar'dan değişir), ID-08 (kurucu Admin istisnası), ID-09
-(admin/admin yalnız Sinan'ın Development ortamında). Açık kalanlar:
+(admin/admin yalnız Sinan'ın Development ortamında). 10. tur (#66 `6820237902`) ile kapananlar: ID-04 ve ID-07'nin
+Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critical değil). Açık kalanlar (5–10.
+turlarda sorulmadı):
 
 - `NEEDS-SINAN-ID-02b`: Karakter sınıfı kuralı, periyodik değişim ve hash maliyeti (öneri: sınıf kuralı yok,
   periyodik değişim yok, PBKDF2 framework varsayılanı).
 - `NEEDS-SINAN-ID-03b`: Kilit süresi ve kilidi kim açar (öneri: 15 dk otomatik + `identity.users.manage`).
-- `NEEDS-SINAN-ID-04`: Critical işlem **listesi** (8. turda seçilmedi; AI önerisi taslak kalır).
 - `NEEDS-SINAN-ID-05`: Critical rolün geri alınması da iki kişi ister mi? (8. turda sorulmadı.)
 - `NEEDS-SINAN-ID-06b`: Oturum mutlak süresi.
-- `NEEDS-SINAN-ID-07`: `identity.users.manage` Critical listede mi (ID-04 ile birlikte)?
+- `NEEDS-SINAN-ID-07b`: Grup geneli etkili parola sıfırlama/kilit açma hangi şirket kapsamıyla yetkilendirilir
+  (öneri: kullanıcının üye olduğu her şirkette `identity.users.manage` şirket genelinde)?
 - (Mevcut) ADR-SEC-001 NEEDS-SINAN-8 / E8: başarısız giriş kullanıcı adı hash anahtarı.
