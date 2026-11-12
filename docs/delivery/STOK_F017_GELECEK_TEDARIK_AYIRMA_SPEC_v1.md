@@ -24,13 +24,30 @@ kararı işlendi. Alış karşılaştırması #1110 head `87dc49fb2` (rev6) üze
   (≈ #1110 F17-6). Yanlış "mevcut akış" ifadesi düzeltildi. API-44/60 için geçici 409 kapısı yazıldı (§10).
 - **Satış tahsis portu (B P2-4):** `ISalesOrderAllocationReadPortV1` ele alındı (§5.1). Gelecek ayırma ayrı türle,
   sürümlü portta bildirilir. Satış şeridiyle cross-module K3 dilimi **F017-s** eklendi. Bırakma sahibi `NEEDS-SINAN`
-  adayıdır (§9.1).
+  adayıydı (§9.1; rev4'te KLN-D28 ile cevaplandı).
 - **P3'ler:** bayat #1108 atıfları; ayrılabilir formülü (§3.1); Alış alanı çelişkisi (§5); sıra zinciri (§3.5); neden
   kodları ve olay alanları (§3.3); termin ve uyarı sahibi (§5, §8); S11 süre notu ve DEC-STK-005 atfı (§3.3, §9); CHECK
   snapshot anlamı (§4.2); talep tarafı üst sınırı (§3.2).
 
+Revizyon 4 (2026-11-12): Sinan #66 6822767886 (21. tur, madde 2–3) §9.1'deki iki `NEEDS-SINAN` adayını cevapladı; karar
+metni `SINAN_KARARLARI_2026-11-12_STOK_F017_EK.md` (KLN-D28, KLN-D29). Madde 1 Satış/Lojistik şeridinindir; alınmadı.
+Değişenler:
+
+- **Satış satırı iptali/azaltması (KLN-D28):** §5.1 (c)'deki "iptal reddedilir" kapalı yönü kalktı. Satış iptal/azaltma
+  komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada yalnız yeni miktarı aşan
+  kısım bırakılır; bırakma başarısızsa Satış komutu da geri alınır (§3.3, §4.3, §5, §5.1, §7). F017-s kapsamı bu çağrıyı
+  içerir (§10). Testler §8'de.
+- **Canlanmada bırakılmış ayırmalar (KLN-D29):** geri gelmez; canlanan miktar serbest açık miktardır, kullanıcı gerekirse
+  yeniden ayırır, sistem "canlandı" bildirimi gösterir. §3.6'daki "yazarın okuması" Sinan kararına bağlandı; §3.7, §8.
+- §9'a S13 ve S14 eklendi; §9.1'de adaylar 1–2 cevaplı, `NEEDS-SPEC` adayı 3 açık kaldı; azaltmada bırakılacak ayırmanın
+  seçimi (aday 4) ve bildirimin alıcısı/kanalı (aday 5) yeni adaylardır.
+
 **Kaynaklar (öncelik sırasıyla):**
 
+- **KLN-D28, KLN-D29** — `docs/decisions/SINAN_KARARLARI_2026-11-12_STOK_F017_EK.md`; Sinan 21. tur, #66 yorum 6822767886:
+  m.2 "Otomatik bırakılır (Önerilen)" (satış satırı iptal/azaltılınca gelecek ayırma), m.3 "Geri gelmez, yeniden ayrılır
+  (Önerilen)" (canlanan alış satırında bırakılmış ayırmalar). Koordinatörün "Anlamı" satırları ve yazarın okumaları o
+  belgede ayrı işaretlidir.
 - **Sinan 19. tur** — #66 yorum 6822140358: iptal edilmiş sipariş veya API-11 ile kapatılmış satırda kabul geri alınırsa
   ya da "yerine yenisi gelecek" işaretli iade yapılırsa miktar açılır, sipariş canlanır. Canlanan miktar gelecek
   tedarikten yeniden ayrılabilir. ALS-D91 bu iki durumda da koşulsuz uygulanır (§3.7).
@@ -66,7 +83,8 @@ kararı işlendi. Alış karşılaştırması #1110 head `87dc49fb2` (rev6) üze
 4. Stok'un Alış'a "bu satırda ne kadar ayrılmış" bilgisini veren okuma portu (PR #1110 §3.2) ve Alış komutlarının
    çağırdığı bırakma portu (PR #1110 §3.5).
 5. Kabul geri alma ve iadede ayırmanın Stok tarafı (§3.7, F017-e).
-6. Satış'ın tahsis okumasında gelecek ayırmaların ayrı türle bildirilmesi (§5.1, F017-s).
+6. Satış'ın tahsis okumasında gelecek ayırmaların ayrı türle bildirilmesi ve satış satırı iptali/azaltmasında Satış
+   komutunun aynı işlemde Stok bırakma portunu çağırması (KLN-D28; §5.1, F017-s).
 
 **Dışında:**
 
@@ -155,13 +173,15 @@ Akış (host + Stok yazıcısı; hepsi tek işlem). Adımların sırası bağlay
 - `ExpectedAllocationVersion`, `reasonCode` ve `reasonText` ile. Önce §3.2 adım 0'daki satır kilidi alınır. Aktif değilse
   409. Bırakma silme değildir: satır `Released` olur, defter toplamı düşer, audit + outbox yazılır.
 - **Neden kodları:** Alış kaynaklı bırakmalarda tek liste #1110 §3.5 tablosudur: `purchasing-link-dropped`,
-  `source-cancelled`, `purchase-line-closed`, `acceptance-link-failed`, `acceptance-reversed-no-supply`. Stok bu kodları
-  kendisi türetmez, çağıranın verdiğini saklar. Stok kullanıcısının kendi bırakmasının kodu F017-b2'de adlandırılır
-  (öneri, teknik).
+  `source-cancelled`, `purchase-line-closed`, `acceptance-link-failed`, `acceptance-reversed-no-supply`. Satış kaynaklı
+  bırakmalarda (KLN-D28) kodlar F017-s'de adlandırılır (öneri: `sales-line-cancelled`, `sales-line-reduced`; teknik,
+  geri alınabilir). Stok bu kodları kendisi türetmez, çağıranın verdiğini saklar. Stok kullanıcısının kendi bırakmasının
+  kodu F017-b2'de adlandırılır (öneri, teknik).
 - **Olay:** `inventory.future-allocation.released.v1`; `allocationId`, satış sipariş ve satır kimliği, satınalma satırı,
-  bırakılan miktar, `reasonCode`, `reasonText` ve `origin` (`inventory` / `purchasing`) alanlarını taşır. Satış ekranı uyarı
+  bırakılan miktar, `reasonCode`, `reasonText` ve `origin` (`inventory` / `purchasing` / `sales`) alanlarını taşır. Satış ekranı uyarı
   türünü `reasonCode`'dan seçer.
-- Ayırma kendiliğinden bırakılmaz; her bırakma açık bir komut ve nedenle olur. DEC-STK-005'in "süre dolunca sessiz otomatik
+- Ayırma kendiliğinden bırakılmaz; her bırakma açık bir komut ve nedenle olur. Satış satırı iptali/azaltmasındaki
+  otomatik bırakma (KLN-D28) da açık Satış komutunun parçasıdır; zamanla veya arka planda bırakma yoktur. DEC-STK-005'in "süre dolunca sessiz otomatik
   serbest bırakma yok" kuralı burada da geçerlidir; bu türde süre de yoktur (§9 S11).
 
 ### 3.4 Miktar değiştirme
@@ -211,9 +231,10 @@ Gerekirse ayrı dilim (geri alınabilir teknik tercih).
   yapılır. Her ayırma Stok bırakma portuyla `reasonCode = source-cancelled` ile bırakılır. Satışa "kaynak iptal edildi"
   uyarısı gider. Görülen küme, replay ve izin kuralları #1110 §3.5'tedir.
 - Bu iki yol birbirinden ayrıdır. "Satır iptal" API-11 kapanışı sayılmaz.
-- **Yeniden açma ve canlanma:** API-11 ile kapanan satır yeniden açılınca veya canlanınca (§3.7) bırakılmış ayırmalar geri
-  gelmez; açılan kalan yeniden ayrılabilir olur, satış isterse yeni ayırma yapar (#1110 §3.6; **yazarın okuması, kapalı
-  yön**).
+- **Yeniden açma ve canlanma (KLN-D29):** iptalde veya API-11 kapanışında bırakılmış ayırmalar, satır yeniden açılınca
+  veya canlanınca (§3.7) geri gelmez. Canlanan miktar serbest açık miktar olur; gerekiyorsa kullanıcı §3.2 yoluyla yeniden
+  ayırır; sistem "canlandı" bildirimi gösterir (Sinan 21. tur m.3, 6822767886; #1110 §3.6, §3.8). Bildirimi Alış canlanma
+  olayı taşır; alıcısı ve kanalı seçilmedi (§9.1 aday 5).
 
 ### 3.7 Kabul geri alma ve tedarikçiye iade (KLN-D26 (6)(e), ALS-D86, ALS-D91, Sinan 19. tur)
 
@@ -229,6 +250,10 @@ Gerekirse ayrı dilim (geri alınabilir teknik tercih).
   yazılır. Stok buna izin verir: canlanan miktar porttan ayrılabilir okunduğu sürece §3.2 ve aşağıdaki yeniden açma
   kuralları aynen çalışır. #1110 §3.7'deki "açılmaz" okuması ve geçici 409 `purchase_line_not_open` bu kararla geçersizdir;
   #1110 aynı metne getirilir.
+- **Canlanmada bırakılmış ayırmalar (KLN-D29):** iptal ("bağları düşür ve iptal et") veya API-11 kapanışında `Released`
+  olmuş ayırmalar canlanmada geri gelmez; canlanan miktar serbest açık miktardır ve yeni ayırma normal oluşturma yoludur
+  (§3.2). Aşağıdaki "aynı kimlikle `Consumed` → `Active`" kuralı yalnız kabul geri almada tüketilmiş ayırmalar içindir;
+  `Released` ayırma hiçbir yolda yeniden açılmaz (**yazarın okuması**, KLN-D29 (4)).
 - **Stok tarafı (aynı host işlemi, satır kilidi altında; #1110 §3.7 ile aynı metin):**
   - Geri alınan etiketlere bağlı fiziksel tahsis ve etiket ataması geri alınır.
   - Gelecek miktar açıldıysa ilgili ayırma aynı kimlikle `Consumed` → `Active` döner (sürüm artar, audit). Kontrol:
@@ -290,7 +315,7 @@ gevşetmek fiziksel tahsis kısıtlarını zayıflatır. Öneri: **ayrı tablola
 - **Modüller arası:** her oluştur, bırak, kabul çevirmesi, geri alma ve canlanma §3.2 adım 0'daki satır kilidi altında
   çalışır. Kilidi alan yollar #1110 §3.4 listesidir: Stok oluşturma ve bırakma; Alış kabul payı (Stok çevirmesi aynı
   sahipte); sipariş kalanı iptali ve "bağları düşür ve iptal et"; satır azaltma; API-11 kapanışı ve yeniden açma; kabul
-  düzeltmesi, iade ve canlanma. Kilit arayüzü host/BuildingBlocks'ta tek yerdedir; modüller birbirine referans vermez.
+  düzeltmesi, iade ve canlanma; Satış satır iptali ve azaltması (KLN-D28, F017-s). Kilit arayüzü host/BuildingBlocks'ta tek yerdedir; modüller birbirine referans vermez.
   Kilit kaynak adı contract testine bağlanır. Arayüzü ve host uygulamasını F017-a / #1110 F17-1 getirir.
 - **Stok içi:** her oluştur/bırak/çevir, defter satırının `Version` alanını artırır. İki eşzamanlı ayırmadan biri
   `DbUpdateConcurrencyException` alır → replay değilse 409 `inventory_concurrent_change` (fiziksel tahsisteki
@@ -320,9 +345,9 @@ gevşetmek fiziksel tahsis kısıtlarını zayıflatır. Öneri: **ayrı tablola
   - Alış bağ düşürme — `purchasing-link-dropped` (#1110 §3.5, F17-4);
   - Alış "bağları düşür ve iptal et" — `source-cancelled` (#1110 §3.5, F17-4);
   - Alış API-11 kapanışı — `purchase-line-closed` (#1110 §3.6, API-11 veya F17-4);
-  - kabul geri alma/iade — `acceptance-reversed-no-supply` (§3.7, F017-e).
-  Kabul katılımcısındaki `acceptance-link-failed` bırakması Stok'un kendi içindedir; porttan geçmez. Satış satırı iptali
-  ve azaltmasında çağıran §9.1'deki `NEEDS-SINAN` adayına bağlıdır.
+  - kabul geri alma/iade — `acceptance-reversed-no-supply` (§3.7, F017-e);
+  - Satış satır iptali ve azaltması — Satış kaynaklı kodlar (§3.3; KLN-D28, §5.1 (c), F017-s).
+  Kabul katılımcısındaki `acceptance-link-failed` bırakması Stok'un kendi içindedir; porttan geçmez.
 - **Termin:** satınalma satırı termini bu portta yoktur. Ayrı okuma `GetLineScheduleAsync` ile gelir (#1110 §3.1, F17-1b,
   #1101'e bağlı). §3.5 sırası ise **satış** sipariş satırı terminini kullanır; onu satış satırı portundan okur. Stok
   terminleri saklamaz.
@@ -343,10 +368,22 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
   toplamına eklenmez. Gelecek ayırma kaynak planının **stok kısmına girmez** (DEC-STK-002).
 - **(b) İptal önizlemesi görür, fail-closed:** satış iptal önizlemesi gelecek ayırmaları gösterir. Okunamazsa önizleme
   kapalı başarısız olur ve iptal reddedilir (DEC-SAL-005; mevcut önizleme kuralı). Bugünkü önizleme kayıtlı bir etki varken
-  iptali reddeder ve başka modülün kaydını bırakmaz; bu davranış korunur.
-- **(c) Satış satırı iptal edilir veya azaltılırsa bırakmanın sahibi:** politikadır, bu belge seçmez (§9.1
-  `NEEDS-SINAN` adayı). Karar gelene kadar kapalı yön geçerlidir: (b) gereği iptal reddedilir; kullanıcı önce ayırmayı
-  bırakır. Satır azaltma §3.2 adım 5'teki üst sınırı bozacaksa reddedilir (**geçici kapalı yön, politika seçimi değil**).
+  iptali reddeder ve başka modülün kaydını bırakmaz; bu davranış **fiziksel tahsis için** korunur. Gelecek ayırma için
+  onaylanan iptal ayırmayı (c)'ye göre bırakır (KLN-D28 (9)).
+- **(c) Satış satırı iptal edilir veya azaltılırsa (KLN-D28):** gelecek ayırma **otomatik bırakılır** (Sinan 21. tur
+  m.2). Satış iptal/azaltma komutu aynı host işleminde Stok bırakma portunu (§5) çağırır; artan ayırma kalmaz; bırakma
+  audit'lidir (koordinatör anlamı). Ayrıntılar (**yazarın okuması, geri alınabilir**; KLN-D28 (3)–(8)):
+  - Satış Stok tablosuna yazmaz; bırakmayı Stok kendi portuyla, §3.2 adım 0'daki satır kilidi altında, sürüm, audit ve
+    `released.v1` olayıyla yapar. Modüller birbirine referans vermez; host participant/port deseniyle bağlanır.
+  - İptalde satıra bağlı bütün aktif gelecek ayırmalar bırakılır. Azaltmada yalnız yeni satır miktarını aşan kısım
+    bırakılır; ölçü §3.2 adım 5'teki talep tarafı üst sınırıdır. Yeni miktar içinde kalan ayırma aktif kalır.
+  - Aşan kısım birden çok ayırmaya yayılıyorsa hangisinin önce bırakılacağı seçilmedi (§9.1 aday 4). Karar gelene kadar
+    kapalı yön: aşan kısım tek ayırmadan karşılanamıyor ve kullanıcı bırakılacak ayırmaları komutta seçmemişse azaltma
+    yazma olmadan reddedilir (409; kod F017-s'de).
+  - Bırakma portu okunamaz, kilit alınamaz veya bırakma başarısız olursa Satış iptali/azaltması da tümüyle geri alınır
+    (kapalı yön). Satış komutunun replay'i ikinci bırakma üretmez (idempotent).
+  - Bırakma fiziksel hareket değildir; stok bakiyesi, serbest fiziki ve maliyet değişmez (DEC-STK-003).
+  - Seçilmeyen: "Satış reddeder, önce elle bırak".
 - Satış sözleşmesine dokunduğu için bu iş Satış şeridiyle cross-module K3 dilimidir (F017-s, §10).
 
 ## 6. CompanyId, izin, audit, idempotency, outbox
@@ -386,6 +423,8 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
 | F017-e öncesi ayırmalı satırda kabul geri alma/iade (§3.7) | 409 `purchase_line_has_allocations` (Alış kodu) |
 | Idempotency çakışması | 409 `idempotency_conflict` |
 | Alış portu okunamıyor | 503 (kapalı başarısızlık; asla "sıfır ayrılmış" sayılmaz) |
+| Satış azaltmasında aşan kısım birden çok ayırmaya yayılıyor, seçim yok (§5.1 (c)) | 409 (kod F017-s'de adlandırılır) |
+| Satış iptali/azaltmasında Stok bırakması başarısız (§5.1 (c)) | Satış komutu yazılmaz; Stok'un ret kodu (409/503) Satış problemine taşınır |
 | Yetki yok | 401 / 403 |
 
 Ekran (F017-d): yükleniyor, veri yok ("Bu ürün için açık satınalma satırı yok"), süzgeçle boş, yetkisiz, bulunamadı,
@@ -409,7 +448,8 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
   - oluşturma × "bağları düşür ve iptal et";
   - oluşturma × API-11 kapanışı;
   - bırakma × kabul çevirmesi;
-  - oluşturma × kabul geri alma / canlanma.
+  - oluşturma × kabul geri alma / canlanma;
+  - Satış satır iptali/azaltması × mal kabul çevirmesi ve × oluşturma (F017-s).
   Her test, ilgili Alış yolunun merge edildiği dilimde eklenir (§10).
 - **Contract:** kilit kaynak adı `goymen:purchase-line:{companyId:N}:{lineId:N}` contract testine bağlanır. Alış portu ve
   Stok portları için sürümlü contract testleri (alan adları, fiyat alanı yokluğu, `NotFound`); `released.v1` olayının
@@ -424,9 +464,17 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
 - **Kabul geri alma (F017-e):** hatalı kabul geri alınınca ayırma aynı kimlikle yeniden açılır; işaretli iadede açılır,
   işaretsizde `acceptance-reversed-no-supply` ile bırakılır; ≤ kontrolü; kısmi geri almada ters sıra; sevk edilmiş etiket
   409 `allocation_already_fulfilled`; fiziksel tahsis bırakılmışsa yeniden açma yok; Cancelled ve API-11 kapalı satırda
-  canlanma sonrası yeniden açma ve yeni ayırma çalışır.
+  canlanma sonrası yeniden açma ve yeni ayırma çalışır. **Canlanma (KLN-D29):** iptal veya API-11 kapanışında bırakılmış
+  (`Released`) ayırmalar canlanmada geri gelmez; canlanan miktar porttan serbest ayrılabilir okunur ve yeni ayırma §3.2
+  yoluyla yapılır; "canlandı" olayı/bildirimi yazılır (olayın sahibi Alış canlanma dilimi).
 - **Satış portu (F017-s):** gelecek ayırma ayrı türle döner ve fiziksel kg toplamına girmez; iptal önizlemesi gelecek
   ayırmayı gösterir; okunamazsa iptal reddedilir.
+- **Satış iptali/azaltması (F017-s, KLN-D28):** satış satırı iptali aynı işlemde satıra bağlı bütün aktif gelecek
+  ayırmaları bırakır (`released.v1`, `origin = sales`, audit); azaltma yalnız yeni miktarı aşan kısmı bırakır, kalan
+  ayırma aktif kalır; aşan kısım birden çok ayırmaya yayılıp seçim yoksa azaltma 409 ve yazma yok; bırakma başarısızsa,
+  port okunamazsa veya kilit alınamazsa Satış komutu da yazılmaz (satır iptal edilmiş, ayırma aktif durumu oluşmaz);
+  aynı anahtarla replay ikinci bırakma üretmez; bırakma stok bakiyesini değiştirmez. Gerçek SQL: Satış iptali × mal
+  kabul çevirmesi ve Satış iptali × oluşturma yarışında sonuç tutarlıdır.
 - **Termin uyarısı:** Stok bir işaret saklamaz ve hesaplamaz. Uyarı #1110 §3.5'teki okuma anı hesabıdır (Alış ekranı F17-4,
   Satış F17-5). Stok testi yalnız terminin geçmesinin ayırmayı bırakmadığını doğrular.
 - **Yetki:** izin yokken 403; şirket değişince 404; izin önce/sonra ölçümü.
@@ -434,9 +482,9 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
 
 ## 9. Sorular ve cevaplar
 
-Politika soruları Sinan tarafından cevaplandı; karar metni KLN-D26 (6), Alış eşleri ALS-D83…ALS-D91 (PR #1110) ve 19. tur
-(#66 6822140358). Sinan'ın metinleri #66'dadır (5. tur 6819640816; 11.–13. tur 6820601088; 18. tur 6821262098). Uygulama
-yeri parantezde.
+Politika soruları Sinan tarafından cevaplandı; karar metni KLN-D26 (6), Alış eşleri ALS-D83…ALS-D91 (PR #1110), 19. tur
+(#66 6822140358) ve 21. tur (KLN-D28, KLN-D29; #66 6822767886). Sinan'ın metinleri #66'dadır (5. tur 6819640816; 11.–13.
+tur 6820601088; 18. tur 6821262098; 21. tur 6822767886). Uygulama yeri parantezde.
 
 - **S1 — Az gelirse:** gelen kadar ayrılır, kalan satınalma satırının gelecek kısmında açık kalır; satır kapanırsa kalan
   bırakılır ve satış uyarılır (12. tur m.6; ALS-D87). "Satır kapanırsa" = API-11 kapanışı (#1110 §3.6; §3.5, §3.6).
@@ -470,19 +518,25 @@ yeri parantezde.
   nedene bağlıdır: hatalı kabul geri alınırsa açılır; iadede "yerine yenisi gelecek" işaretliyse açılır, değilse kapalı
   kalır (18. tur m.7; ALS-D91). İptal edilmiş sipariş ve API-11 kapalı satırda da açılır, sipariş canlanır (19. tur). §3.7,
   F017-e.
+- **S13 — Satış satırı iptali veya azaltması:** "Otomatik bırakılır (Önerilen)" (21. tur m.2, 6822767886; KLN-D28).
+  Satış komutu aynı işlemde Stok bırakma portunu çağırır; artan ayırma kalmaz; audit'li. Eski §9.1 aday 1. §5.1 (c),
+  F017-s.
+- **S14 — Canlanmada bırakılmış ayırmalar:** "Geri gelmez, yeniden ayrılır (Önerilen)" (21. tur m.3, 6822767886;
+  KLN-D29). Canlanan miktar serbest açık miktardır; kullanıcı gerekirse yeniden ayırır; "canlandı" bildirimi. Eski §9.1
+  aday 2. §3.6, §3.7, F017-e.
 
 ### 9.1 `NEEDS-SINAN` / `NEEDS-SPEC` adayları (yazılmadı; Issue #66'ya koordinatör taşır)
 
-- **NEEDS-SINAN adayı 1 — Satış satırı iptali veya azaltmasında gelecek ayırma:** "Satış sipariş satırı iptal edilir veya
-  miktarı azaltılırsa o satıra bağlı gelecek ayırmayı kim bırakır? (a) Satış komutu aynı işlemde Stok bırakma portunu
-  çağırır ve ayırmayı bırakır; (b) Satış komutu reddeder, kullanıcı önce ayırmayı bırakır." Karar gelene kadar §5.1 (c)
-  kapalı yönü geçerlidir.
-- **NEEDS-SINAN adayı 2 — Canlanmada eski bağlar:** "İptal veya API-11 kapanışında bırakılan ayırmalar, sipariş canlanınca
-  kendiliğinden geri gelsin mi?" Bu belge kapalı yönü yazar: geri gelmez, yeni ayırma yapılır (§3.6). Alış spec'i canlanma
-  dilimini yazarken farklı bir okuma gerekirse sorulur.
+- Adaylar 1 ve 2 cevaplıdır: aday 1 → S13 / KLN-D28, aday 2 → S14 / KLN-D29 (Sinan 21. tur, #66 6822767886).
 - **NEEDS-SPEC adayı 3 — Fiziksel tahsiste talep üst sınırı:** bugünkü fiziksel tahsis, aynı satış satırına satır
   miktarından fazla tahsisi kontrol etmiyor. §3.2 adım 5 gelecek ayırma için okuma olarak yazıldı; fiziksel tarafın kuralı
-  ayrı spec işidir.
+  ayrı spec işidir. Satış azaltmasında fiziksel ve gelecek tahsis birlikte aşıyorsa hangisinin önce bırakılacağı da bu
+  adaya bağlıdır (KLN-D28 Seçilmeyenler).
+- **NEEDS-SPEC adayı 4 — Azaltmada bırakılacak ayırmanın seçimi:** satış satırı azaltılırken aşan kısım birden çok gelecek
+  ayırmaya yayılıyorsa hangisinin önce bırakılacağı KLN-D28 ile seçilmedi. Bu belge öncelik politikası icat etmez; karar
+  gelene kadar §5.1 (c)'deki kapalı yön geçerlidir (seçim yoksa azaltma reddedilir). F017-s'de sorulur.
+- **NEEDS-SPEC adayı 5 — "Canlandı" bildiriminin alıcısı ve kanalı:** KLN-D29 bildirimi verir; kime (satış/satınalma
+  kullanıcısı) ve hangi kanalla gideceği seçilmedi. Alış canlanma dilimi (#1110 §3.8) ile birlikte sorulur.
 
 ## 10. Dilim planı
 
@@ -510,7 +564,7 @@ kilit), F017-b ≈ F17-2, F017-c ≈ F17-3, F017-b2 ≈ F17-2b, F017-e ≈ F17-6
 | F017-b | Stok (Codex backend) | Gelecek ayırma domain + `FutureSupplyAllocations` / `FutureSupplyLines` + migration + check/unique kısıtları; oluşturma ve bırakma servisi (§3.2 adım 0 kilidi + aynı işlemde Alış okuması); Stok okuma portu; bırakma portu; outbox; **endpoint, OpenAPI ve izin kaydı yok** | `src/backend/Modules/Inventory/**`, recovery/relational envanterleri, `tests/GoymenERP.*` | **K3** (migration + kısıt + cross-module) | F017-a |
 | F017-c | Stok (Codex backend) | Mal kabulde aynı host işleminde gelecek ayırmayı tüketme + fiziksel tahsis + bağ satırı; `AllocationOrder` ve sıra zinciri; replay; `acceptance-link-failed`; bırakma × kabul çevirmesi yarış testi | `…Inventory.Infrastructure/Persistence/InventoryGoodsReceiptParticipant.cs`, `src/backend/GoymenERP.Api/PurchasingRuntime/`, migration (bağ tablosu) | **K3** (migration + cross-module işlem) | F017-b |
 | F017-b2 | Stok (Codex backend) | Oluşturma ve bırakma endpoint'leri, OpenAPI, izin adı kaydı (grant yok); oluşturma × mal kabul / × "bağları düşür ve iptal et" / × API-11 kapanışı yarış testleri (ilgili Alış yolu main'deyse) | `src/backend/GoymenERP.Api/Endpoints/Inventory*`, `contracts/openapi/`, izin/manifest kaydı, `tests/GoymenERP.*` | **K3** (yeni endpoint + izin; #1110 F17-2b'yi K2 yazar, iki belge aynı seviyeye getirilir) | F017-c, #1110 F17-4, F017-s |
-| F017-s | Stok + Satış (Codex backend) | Satış tahsis okumasında gelecek ayırma için ayrı tür, yeni sürümlü port veya v2 (§5.1 a); iptal önizlemesinin bunu görmesi ve fail-closed (§5.1 b); stok kısmına girmediğinin testi | `src/backend/Modules/Sales/**/Contracts/`, `src/backend/Modules/Inventory/**`, `tests/GoymenERP.*` contract | **K3** (cross-module contract) | F017-b; §5.1 (c) için §9.1 aday 1 |
+| F017-s | Stok + Satış (+host; Codex backend) | Satış tahsis okumasında gelecek ayırma için ayrı tür, yeni sürümlü port veya v2 (§5.1 a); iptal önizlemesinin bunu görmesi ve fail-closed (§5.1 b); stok kısmına girmediğinin testi; Satış satır iptali/azaltmasında aynı host işleminde Stok bırakma portu çağrısı, iptalde tümü / azaltmada aşan kısım, başarısızlıkta Satış komutunun geri alınması, replay (§5.1 c, KLN-D28) | `src/backend/Modules/Sales/**`, `src/backend/Modules/Inventory/**`, `src/backend/GoymenERP.Api/` (host), `tests/GoymenERP.*` contract + gerçek SQL | **K3** (cross-module contract + cross-module işlem) | F017-b; KLN-D28 (karşılandı); azaltmada seçim kuralı §9.1 aday 4 (karar gelene kadar kapalı yön) |
 | F017-d | Claude (frontend) | Satış satırı ekranından "açık satınalmadan ayır" ve ayırma listesi/bırakma; kabul ekranında ayırma bilgisi; generated client tüketimi; durum blokları | `src/frontend/goymen-erp-web/**` (Stok/Satış klasörleri) | K2 | F017-b2 OpenAPI; izin capability kaydı |
 | F017-e | Stok + Alış (+host) | Kabul geri alma/iade Stok tarafı (§3.7): tahsis/etiket geri alması, yeniden açma (≤ kontrolü), `acceptance-reversed-no-supply`, ters sıra, fail-closed kurallar, canlanma sonrası yeniden açma; geçici 409'un kaldırılması; oluşturma × geri alma/canlanma yarış testi | `…Inventory.Infrastructure/Persistence/**`, `src/backend/GoymenERP.Api/PurchasingRuntime/`, `tests/GoymenERP.*` | **K3** (cross-module işlem) | F017-c, API-44, API-60; canlanma kısmı Alış canlanma K3 dilimi (19. tur) |
 
@@ -522,6 +576,7 @@ Her K3 dilimde: iki bağımsız exact-head review, gerçek SQL kanıtı, fresh C
 - Bu belge karar değildir; `KARAR_SICILI`, `ACIK_KARARLAR` ve karar dosyaları değişmez.
 - "Öneri", "yazarın okuması" ve "yazarın önerisi, geri alınabilir" diye işaretli teknik noktalar (ayrı tablo, izin adı,
   olay adları, hata kodları, eşitlik kuralları, kısmi yeniden açma, ters sıra) review'da değişebilir.
-- Para, stok veya maliyet politikası seçilmez; politika cevapları Sinan'ındır (KLN-D26 (6), ALS-D91, 19. tur). Açık
-  politika noktaları §9.1'de aday olarak durur; Issue #66'ya koordinatör `NEEDS-SINAN` olarak yazar.
+- Para, stok veya maliyet politikası seçilmez; politika cevapları Sinan'ındır (KLN-D26 (6), ALS-D91, 19. tur, KLN-D28,
+  KLN-D29). Açık noktalar §9.1'de aday olarak durur (adaylar 3–5); Issue #66'ya koordinatör `NEEDS-SINAN`/`NEEDS-SPEC`
+  olarak yazar.
 - Hiçbir `OPEN-*` kapatılmaz; grant, rol veya Critical açılmaz.
