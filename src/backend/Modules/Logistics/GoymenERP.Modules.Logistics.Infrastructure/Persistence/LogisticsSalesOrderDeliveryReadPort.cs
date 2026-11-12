@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +13,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// or version effect. The totals are the stored share totals the store moves in the same save as each appended share
 /// (checked on every rebuild, <c>CK_LoadingInstructionLines_Shares</c>: delivered ≤ shipped ≤ loaded ≤ instructed), so a
 /// replayed command or a repeated delivery id — which never appends a second share — is never counted twice.
-/// The port carries no authority (LOG-4 D6): the Sales draft read measures its own name around the call.
+/// <see cref="SalesOrderLineDeliveryV1.ShippedBy"/> (SAT-D216/SAT-D222, B-33) names the distinct, ordinally sorted actors who recorded the
+/// shipment shares of the line and unit; a counted shipment without a recorded actor leaves it null (fail-closed), and nothing is
+/// back-filled. The port carries no authority (LOG-4 D6): the Sales draft read measures its own name around the call.
 /// </summary>
 internal sealed class LogisticsSalesOrderDeliveryReadPort(LogisticsDbContext dbContext, ICompanyContext companyContext)
     : ISalesOrderDeliveryReadPortV1
@@ -51,10 +54,12 @@ internal sealed class LogisticsSalesOrderDeliveryReadPort(LogisticsDbContext dbC
                     Delivered = group.Sum(line => line.Delivered),
                 })
                 .ToListAsync(cancellationToken);
+        var shippers = await ReadShippersAsync(ids, cancellationToken);
         return [.. orderIds.Distinct().Select(orderId => new SalesOrderDeliveryReadAnswerV1(companyId, orderId,
             [.. totals.Where(total => total.SourceOrderId == orderId)
                 .OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
-                .Select(total => new SalesOrderLineDeliveryV1(total.SourceOrderLineId, total.UnitId, total.Shipped, total.Delivered))]))];
+                .Select(total => new SalesOrderLineDeliveryV1(total.SourceOrderLineId, total.UnitId, total.Shipped, total.Delivered,
+                    ShippedByOf(shippers, orderId, total.SourceOrderLineId, total.UnitId)))]))];
     }
 
     private Guid RequireCompany()
@@ -88,9 +93,40 @@ internal sealed class LogisticsSalesOrderDeliveryReadPort(LogisticsDbContext dbC
                 Delivered = group.Sum(line => line.Delivered),
             })
             .ToListAsync(cancellationToken);
+        var shippers = await ReadShippersAsync([orderId], cancellationToken);
 
         return new SalesOrderDeliveryReadAnswerV1(companyId, orderId,
             [.. totals.OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
-                .Select(total => new SalesOrderLineDeliveryV1(total.SourceOrderLineId, total.UnitId, total.Shipped, total.Delivered))]);
+                .Select(total => new SalesOrderLineDeliveryV1(total.SourceOrderLineId, total.UnitId, total.Shipped, total.Delivered,
+                    ShippedByOf(shippers, orderId, total.SourceOrderLineId, total.UnitId)))]);
     }
+
+    /// <summary>
+    /// SAT-D216 / SAT-D222: the distinct actors who recorded the SHIPMENT shares (kind 2) of each (order, order line, unit), from the
+    /// same company-filtered tables and the same statement family as the totals. A shipment share recorded before the actor column
+    /// existed has no actor (never back-filled): its group is marked unknown so Sales refuses fail-closed instead of guessing.
+    /// </summary>
+    private async Task<Dictionary<(Guid OrderId, Guid LineId, Guid UnitId), IReadOnlyList<string>?>> ReadShippersAsync(
+        IReadOnlyCollection<Guid> orderIds, CancellationToken cancellationToken)
+    {
+        var shipments = await (from share in dbContext.Shares.AsNoTracking()
+                join line in dbContext.Lines.AsNoTracking()
+                    on new { share.CompanyId, share.InstructionId, share.LineId } equals new { line.CompanyId, line.InstructionId, line.LineId }
+                where share.Kind == ShipmentKind && orderIds.Contains(line.SourceOrderId)
+                select new { line.SourceOrderId, line.SourceOrderLineId, line.UnitId, share.RecordedBy })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        return shipments
+            .GroupBy(shipment => (shipment.SourceOrderId, shipment.SourceOrderLineId, shipment.UnitId))
+            .ToDictionary(group => group.Key, group => group.Any(shipment => string.IsNullOrWhiteSpace(shipment.RecordedBy))
+                ? null
+                : (IReadOnlyList<string>?)[.. group.Select(shipment => shipment.RecordedBy!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+    }
+
+    private static IReadOnlyList<string>? ShippedByOf(
+        Dictionary<(Guid OrderId, Guid LineId, Guid UnitId), IReadOnlyList<string>?> shippers, Guid orderId, Guid lineId, Guid unitId) =>
+        shippers.TryGetValue((orderId, lineId, unitId), out var named) ? named : null;
+
+    /// <summary><see cref="LoadingShareKind.Shipped"/> as stored (<c>CK_LoadingShares_Kind</c>).</summary>
+    private const int ShipmentKind = (int)LoadingShareKind.Shipped;
 }

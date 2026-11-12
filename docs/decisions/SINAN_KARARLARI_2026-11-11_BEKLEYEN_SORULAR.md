@@ -44,7 +44,7 @@ ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| BS-1 | Dövizli alışta TL ortalama maliyet kuru | TL karşılığı **tedarikçi faturasındaki resmî kurla** hesaplanır. Fatura gelene kadar TL maliyet `Unavailable` okunur. Geçici kur ve düzeltme hareketi **yoktur**. Döviz cinsi değer SAT-D295'teki gibi okunur. `OPEN-INV-AVGCOST-FX`: **Sinan kararıyla karara bağlandı (2026-11-11, #66 6806579823).** `OPEN-INV-AVGCOST-ZERO-STOCK` ve `-UNIT-CONVERSION` EK59'da kapanmıştı. `-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK` açık kalır. | Stok maliyet defteri, `IInventoryAverageCostReadPortV1` (TL değer), `AverageCostPosition`; fatura kuru girdisi Alış/Finans fatura sözleşmesinden gelir (ayrı dilim, `Modül bağlantıları` satırıyla) |
+| BS-1 | Dövizli alışta TL ortalama maliyet kuru | TL karşılığı **tedarikçi faturasındaki resmî kurla** hesaplanır. Fatura gelene kadar TL maliyet `Unavailable` okunur. Geçici kur ve düzeltme hareketi **yoktur**. Döviz cinsi değer SAT-D295'teki gibi okunur. `OPEN-INV-AVGCOST-FX`: **Sinan kararıyla karara bağlandı (2026-11-11, #66 6806579823).** `OPEN-INV-AVGCOST-ZERO-STOCK` ve `-UNIT-CONVERSION` EK59'da kapanmıştı. `-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK` sonra #66 6809898906 ile Sinan kararına bağlandı (SAT-D301…SAT-D305; alış iadesi #66 6810163182 ile SAT-D306; `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`). | Stok maliyet defteri, `IInventoryAverageCostReadPortV1` (TL değer), `AverageCostPosition`; fatura kuru girdisi Alış/Finans fatura sözleşmesinden gelir (ayrı dilim, `Modül bağlantıları` satırıyla) |
 | SAT-D300 (BS-2) | Satış iadesinde müşteri belge numarası | Belge numarası **her zaman kilitlidir**; değiştirme isteği bugünkü gibi 409 ile reddedilir. Düzeltilmiş iade yeni belge numarasıyla gelir. | Satış iade belge numarası alanı ve mevcut 409 davranışı (kod değişikliği gerekmez) |
 | BS-3 | Alış tevkifat eşiği | Eşik **belgenin KDV dahil tutarına** uygulanır, kıyas **kesin büyüktür (`>`)**. Taban ve kıyas **ayar** olarak değiştirilebilir kalır. Production aktivasyonu insan kapısıdır. | Alış tevkifat eşik kontrolü ve ilgili ayar (Alış şeridi) |
 | BS-4 | F-005 resmî fatura verisi | Birincil yol, muhasebenin **kontrollü dosya aktarımıdır** (numara, ETTN, matrah, KDV, tevkifat). Yedek yol **elle giriş + ikinci kişi onayıdır** (maker≠approver). | F-005 resmî fatura kaydı (Finans/Alış) |
@@ -70,9 +70,9 @@ ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
 - Hâlâ açık (#66 6806619303): Fason (Fable Soru 4); B-06 Ürün runtime için secret ve grant; sızan `sk-ant-usr`
   anahtarının iptali (Sinan'ın konsol işlemi); grant ve production aktivasyonları. U-08 yuvarlama BS-13 ile, kantar toleransının sınırı
   ve tabanı BS-16/BS-17 ile karara bağlandı.
-- Hâlâ açık (`SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md` "Kapatılan ve kapanmayan `OPEN-INV-AVGCOST-*` kimlikleri" bölümü):
-  `OPEN-INV-AVGCOST-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK`. `-ZERO-STOCK` ve
-  `-UNIT-CONVERSION` EK59'da kapandı.
+- EK59'da açık kalan `OPEN-INV-AVGCOST-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK`
+  #66 [6809898906](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6809898906) ile cevaplandı ve
+  `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` içinde kaydedildi (SAT-D301…SAT-D305). `-ZERO-STOCK` ve `-UNIT-CONVERSION` EK59'da kapandı.
 - AI Grup E (`docs/delivery/AI_KARAR_PAKETI_2026-11.md`): E7 BS-15 ile karara bağlandı; E8 insan kapısında kalır.
 - `OPEN-013` ve `OPEN-007` için yön seçildi; resmi kapatma insan kapısıdır.
 - BS-6, BS-7 ve BS-11 tasarım yönüdür. Grant, rol ataması, Critical, secret veya production değildir.
