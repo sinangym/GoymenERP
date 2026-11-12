@@ -216,8 +216,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for Work desired-state admission: the mandatory-set test now pins the three
     // canonical admission/snapshot SQL cases already present in work.txt; verifier behavior is unchanged.
     // Re-fingerprinted for B-24: the mandatory Work set now also pins the three outbox dispatch facts.
+    // Re-fingerprinted for CI-HIZ: the shard-trx test uses shard B (which now holds the multi-row theory); shard letters only.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "29a7575265503678483f2b2e0d04eb16a4d6dd7e93e66c264c21a64c7ca1753e";
+        "e801a634b45db52b4121b055588101f631548743ee41972c846c749e439c31b6";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
