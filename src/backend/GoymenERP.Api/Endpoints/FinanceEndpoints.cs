@@ -19,6 +19,8 @@ public static class FinanceEndpoints
     public const string BankAccountsPath = "/api/v1/finance/bank-accounts";
     public const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
     public const string BankAccountCurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
+    public const string CashAccountsPath = "/api/v1/finance/cash-accounts";
+    public const string CashAccountCurrencyCandidatesPath = "/api/v1/finance/cash-accounts/currency-candidates";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string PaymentAllocationsPath = "/api/v1/finance/payment-allocations";
@@ -89,6 +91,7 @@ public static class FinanceEndpoints
         MapFinancePaymentAllocationEndpoints(endpoints);
         MapCustomerInstrumentEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
+        MapCashAccountEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         return endpoints;
     }
@@ -1676,6 +1679,221 @@ public static class FinanceEndpoints
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<BankAccountCurrencyCandidates>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// API-30: the cash account (kasa) master over HTTP. A definition only — no balance, no money. The
+    /// company is only the server context; proposer and decider are the authenticated actors.
+    /// <list type="bullet">
+    /// <item><b>Propose / approve / reject</b> answer <c>CashAccountCommandResult</c>: Succeeded 200,
+    /// ValidationFailed 422, VersionConflict / IdempotencyConflict 409, Denied 403, Unavailable 503, the
+    /// ADR-011 replay headers on a replay. The proposer's own decision is Denied (403), in the service and
+    /// the database.</item>
+    /// <item><b>List / detail</b> (read authority): proposals and rejections only to a proposer or
+    /// approver; a hidden or foreign account is 404.</item>
+    /// <item><b>Currency candidates</b> (propose authority): Settings' candidates as given.</item>
+    /// </list>
+    /// </summary>
+    private static void MapCashAccountEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(CashAccountsPath, async (
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CashAccountProposeRequest>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ProposeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), body, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceCashAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<CashAccountProposeRequest>("application/json")
+            .Produces<CashAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CashAccountsPath + "/{accountId:guid}/approval", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CashAccountApprovalBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new CashAccountApproveRequest(accountId, body.ExpectedVersion), cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceCashAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored decision (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CashAccountApprovalBody>("application/json")
+            .Produces<CashAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CashAccountsPath + "/{accountId:guid}/rejection", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CashAccountRejectionBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.RejectAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new CashAccountRejectRequest(accountId, body.ExpectedVersion, body.Reason), cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RejectFinanceCashAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored decision (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CashAccountRejectionBody>("application/json")
+            .Produces<CashAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CashAccountsPath, async (
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.ListAsync(Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinanceCashAccountsV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CashAccountMasterPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CashAccountsPath + "/{accountId:guid}", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.GetAsync(Context(companyContext, currentUser, correlation), accountId,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceCashAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CashAccountView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CashAccountCurrencyCandidatesPath, async (
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.CurrencyCandidatesAsync(Context(companyContext, currentUser, correlation),
+                    cancellationToken));
+            })
+            .WithName("GetFinanceCashAccountCurrencyCandidatesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CashAccountCurrencyCandidates>()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()

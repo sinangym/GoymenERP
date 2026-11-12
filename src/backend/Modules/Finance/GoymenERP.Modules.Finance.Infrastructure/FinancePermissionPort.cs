@@ -74,6 +74,10 @@ public sealed class FinancePermissionPort(
         // The party ledger's own names; Unavailable (503) until the central registry knows them.
         FinanceAction.ReadPartyLedger => FinancePermissionNames.PartyLedgerRead,
         FinanceAction.ReadPartyLedgerAmount => FinancePermissionNames.PartyLedgerAmountRead,
+        // API-30: the cash account master's own names, registered centrally (company-wide, not Critical, no grant).
+        FinanceAction.ReadCashAccounts => ErpPermissions.FinanceCashAccountRead,
+        FinanceAction.ProposeCashAccount => ErpPermissions.FinanceCashAccountPropose,
+        FinanceAction.ApproveCashAccount => ErpPermissions.FinanceCashAccountApprove,
         _ => null,
     };
 

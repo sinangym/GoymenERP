@@ -232,6 +232,46 @@ internal sealed class BankAccountRow : IFinanceTenantRow
 }
 
 /// <summary>
+/// API-30: a cash account (kasa) definition. No balance and no opening balance; it moves no money. Proposed
+/// by one actor and decided (approved or rejected) once by a different actor: the database refuses a
+/// decision by the proposer (<c>CK_CashAccounts_Decision</c>, binary collation). Status: 1 proposed,
+/// 2 approved (active), 3 rejected. Nothing is deleted.
+/// </summary>
+internal sealed class CashAccountRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-30: one accepted cash-account command attempt (ADR-011), kept beside the account rather than in
+/// <see cref="FinanceCommandRow"/>, so the shared command table and its target check stay untouched.
+/// (company, command, key hash) is its key; only the key's SHA-256 is kept. Append-only.
+/// </summary>
+internal sealed class CashAccountCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? CashAccountId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// One accepted command attempt (ADR-011): (company, command, key hash) is its key. The raw
 /// Idempotency-Key is never stored, only its upper-case SHA-256 (§2). The actor, the canonical
 /// payload hash, the answered result and the first correlation are kept, so the same key with the

@@ -37,6 +37,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<BankAccountRow> BankAccounts => Set<BankAccountRow>();
 
+    internal DbSet<CashAccountRow> CashAccounts => Set<CashAccountRow>();
+
+    internal DbSet<CashAccountCommandRow> CashAccountCommands => Set<CashAccountCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -98,6 +102,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureCustomerInstrumentMovements(modelBuilder);
         ConfigurePaymentAllocations(modelBuilder);
         ConfigurePaymentAllocationStates(modelBuilder);
+        ConfigureCashAccounts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -925,6 +930,83 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// API-30: the cash account master and its own command records. Maker≠checker is a database fact:
+    /// a decided row carries a decider other than the proposer, compared in binary collation so case
+    /// folding cannot make two actors one. A proposed or approved name is unique per company; a rejected
+    /// row frees its name.
+    /// </summary>
+    private void ConfigureCashAccounts(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CashAccountRow>();
+        entity.ToTable("CashAccounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashAccounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CashAccounts_Text", "LEN([DisplayName]) > 0 AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_CashAccounts_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_CashAccounts_Decision", CashAccountDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.HasIndex(x => new { x.CompanyId, x.Status });
+        entity.HasIndex(x => new { x.CompanyId, x.DisplayName }, "UX_CashAccounts_LiveName")
+            .HasFilter("[Status] IN (1, 2)").IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<CashAccountCommandRow>();
+        command.ToTable("CashAccountCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashAccountCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_CashAccountCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_CashAccountCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_CashAccountCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal whose target does not exist (ADR-011 §7).
+            table.HasCheckConstraint("CK_CashAccountCommands_Target",
+                "([CashAccountId] IS NOT NULL AND [CashAccountId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([CashAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CashAccountId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<CashAccountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CashAccountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// API-30 maker≠checker: a proposal carries no decision; an approval carries a decider other than the
+    /// proposer and no reason; a rejection carries a decider other than the proposer and its reason.
+    /// </summary>
+    internal const string CashAccountDecisionCheck =
+        "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
@@ -1044,6 +1126,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Banka hesabı yalnız ilk onay veya bekleyen IBAN öneri/onay geçişiyle değişir.");
                 }
 
+                if (entry.Entity is CashAccountRow cashAccount
+                    && !IsAllowedCashAccountDecision(entry, cashAccount))
+                {
+                    throw new InvalidOperationException(
+                        "Kasa hesabı yalnız önerilmiş durumdan tek onay veya ret kararıyla değişir.");
+                }
+
                 if (entry.Entity is FinanceAllocationRow allocation
                     && !IsAllowedAllocationRelease(entry, allocation))
                 {
@@ -1090,6 +1179,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(BankAccountRow.PendingIbanProposedBy),
                         nameof(BankAccountRow.PendingIbanProposedAtUtc),
                         nameof(BankAccountRow.PendingIbanReason),
+                    ],
+                    // API-30: the one decision; the state-aware guard above admits only proposed → approved/rejected.
+                    CashAccountRow =>
+                    [
+                        nameof(CashAccountRow.Status), nameof(CashAccountRow.DecidedBy),
+                        nameof(CashAccountRow.DecidedAtUtc), nameof(CashAccountRow.RejectionReason),
+                        nameof(CashAccountRow.UpdatedAtUtc),
                     ],
                     ReversalProposalRow =>
                     [
@@ -1256,6 +1352,29 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && !string.IsNullOrWhiteSpace(current.ReleasedBy)
             && current.ReleasedAtUtc is not null
             && !string.IsNullOrWhiteSpace(current.ReleaseReason);
+    }
+
+    private static bool IsAllowedCashAccountDecision(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        CashAccountRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        var originalStatus = (int)entry.OriginalValues[nameof(CashAccountRow.Status)]!;
+        var originalDecidedBy = (string?)entry.OriginalValues[nameof(CashAccountRow.DecidedBy)];
+        var originalDecidedAt = (DateTimeOffset?)entry.OriginalValues[nameof(CashAccountRow.DecidedAtUtc)];
+        var originalReason = (string?)entry.OriginalValues[nameof(CashAccountRow.RejectionReason)];
+        if (originalStatus != proposed || originalDecidedBy is not null || originalDecidedAt is not null
+            || originalReason is not null)
+        {
+            return false;
+        }
+
+        var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+        return decided && ((current.Status == approved && current.RejectionReason is null)
+            || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
     }
 
     private static bool IsAllowedBankAccountTransition(

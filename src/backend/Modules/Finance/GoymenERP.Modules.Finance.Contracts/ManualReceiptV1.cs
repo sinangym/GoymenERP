@@ -102,6 +102,8 @@ public enum FinanceAction
     ReadPartyLedger, ReadPartyLedgerAmount,
     // FI04: open-item metadata and its monetary disclosure are independent reads.
     ReadOpenItems, ReadOpenItemAmount,
+    // API-30: the cash account (kasa) master; its own names, aligned with the bank-account master's.
+    ReadCashAccounts, ProposeCashAccount, ApproveCashAccount,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

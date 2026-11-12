@@ -271,8 +271,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #1006 takip: +1 multi-allocation cancellation fact, ordinal-sorted (19001373… -> 7634c7da…).
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
+            // API-30: +4 cash-account master facts, ordinal-sorted (36413356… -> b4e424b4…).
             ["tools/relational_inventory/finance.txt"] =
-                "3641335616cf9e1e8f00b26efa4f748648583e7c3c5332f5f36ede493b7c604d",
+                "b4e424b4b996f12a2e7da9e10c979d7b62c6d414ab920a28c581c15eeecf3f2f",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -748,7 +749,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CK_OpenItems_Status admits 3 = Cancelled (973395d3… -> 578e4f20…).
             // F3a / API-20: PaymentAllocations / PaymentAllocationStates carry the CompanyId filter, company-leading
             // keys to ManualBankPayments and OpenItems, and a release-only write guard (578e4f20… -> 95024798…).
-            "950247983a8a0742e9ce5aed9b14d527f92e5f9a507ad745637a8d01ff0d52b6",
+            // API-30: CashAccounts / CashAccountCommands carry the CompanyId filter and company-leading keys;
+            // CK_CashAccounts_Decision (maker≠decider, BIN2), UX_CashAccounts_LiveName and a decision-only write
+            // guard (95024798… -> e9c49087…).
+            "e9c490877cead95a08565371df2a51180604319a059f72468eda4d5c7f798da1",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1267,11 +1271,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
                 // items, no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for F3a /
                 // API-20: the payment allocation writer and read service registrations; token counts unchanged.
+                // Re-fingerprinted for API-30: the cash-account master service registration; token counts unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "8b1954b128e2250150ae17f60f2f3955d43209940a863fb59730fa8e84a719a5",
+                        "5e7d06a8c7de0e67e69ef21cbcd281791994f95e4f1ebcaeaac0e2e82658ec20",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1396,6 +1401,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
                     new(
                         "dfa5d4d6015d24d6fe1095c4b61e05b4ada96de0d900ecb2068855384d821ac8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // API-30: the cash-account master writer; the SqlClient namespace only to recognise a
+                // unique-key violation (SqlException 2601/2627, UX_CashAccounts_LiveName) after SaveChanges,
+                // as FinanceBankAccountService does. No connection, command or raw SQL.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs"] =
+                    new(
+                        "5540ddc5962be7e91c7601aa7715af5e7c39a616ba227bfda775a4b10662f645",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2797,6 +2813,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 2 }),
                 // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
                 // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
+                // API-30: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any cash account
+                // or cash-account command is stored; the THROW precedes the table drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261112070144_AddCashAccounts.cs"] =
+                    new("d48f0b982c32c16ed5c011576277a3045fab26dc1fd30a66ffdf68ceada82f8b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107154419_AddPaymentAllocations.cs"] =
                     new("5fee84517da703301d4b2d551731a6458efa4795948e491d457cc14016aba90a",
                         new Dictionary<string, int>(StringComparer.Ordinal)

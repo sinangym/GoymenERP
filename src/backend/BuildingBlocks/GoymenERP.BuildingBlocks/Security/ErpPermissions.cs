@@ -187,6 +187,19 @@ public static class ErpPermissions
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
     /// <summary>
+    /// Finance cash account (kasa) master (API-30): aligned with the bank-account master's names
+    /// (<c>finance.bank-account.*</c>). Registering them makes them KNOWN, not granted: no role and no user
+    /// receives them here, and who holds which is a human gate. All three are company-wide only: a cash
+    /// account belongs to the server-resolved company and has no site, location or work-center dimension.
+    /// None is Critical in this slice: the account is a definition with no balance and moves no money;
+    /// whether propose/approve should join the bank master's Critical pair is left to a human decision.
+    /// Approval and rejection are maker-checker in the service and the database regardless.
+    /// </summary>
+    public const string FinanceCashAccountRead = "finance.cash-account.read";
+    public const string FinanceCashAccountPropose = "finance.cash-account.propose";
+    public const string FinanceCashAccountApprove = "finance.cash-account.approve";
+
+    /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
     /// measurable and grants nothing. Both are company-wide because the batch belongs to the
     /// server-resolved company and has no narrower scope dimension. They are not Critical; the
@@ -1133,6 +1146,9 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountRead,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,
@@ -1307,6 +1323,9 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountRead,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,

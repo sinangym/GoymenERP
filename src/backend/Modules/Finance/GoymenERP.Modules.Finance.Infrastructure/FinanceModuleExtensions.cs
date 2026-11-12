@@ -75,6 +75,8 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateBankAccountService);
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
+        // API-30: the cash account (kasa) master; a definition only, audited with the roles of its own permission.
+        services.AddScoped<IFinanceCashAccountMaster>(CreateCashAccountService);
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
@@ -122,6 +124,25 @@ public static class FinanceModuleExtensions
             new FinanceBankAccountEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceBankAccountPropose, permissions, FinanceAction.ProposeBankAccount),
                 Envelope(provider, ErpPermissions.FinanceBankAccountApprove, permissions, FinanceAction.ApproveBankAccount)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinanceCashAccountService CreateCashAccountService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCashAccountService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCashAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCashAccountPropose, permissions, FinanceAction.ProposeCashAccount),
+                Envelope(provider, ErpPermissions.FinanceCashAccountApprove, permissions, FinanceAction.ApproveCashAccount)),
             provider.GetRequiredService<TimeProvider>());
     }
 
