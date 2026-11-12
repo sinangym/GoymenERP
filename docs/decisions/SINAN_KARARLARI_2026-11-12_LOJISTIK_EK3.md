@@ -35,7 +35,7 @@ Koordinatör notu (koordinatör metni, Sinan metni değildir; alıntı dışı, 
 
 > **SINAN KARARI (2026-11-12, AskUserQuestion):** Kantar zorunlu depodan e-İrsaliye'li transferde iptal penceresi **"hangisi önce gelirse"** orada kapanır: çıkış tartısı **veya** e-İrsaliye'nin GİB'e gönderimi — hangisi önce olursa.
 
-Koordinatör notu (alıntı dışı): Stok KLN-D25 (7) devamıdır; Lojistik LOJ-D11 için şeritler karar dosyasına bu metinle işler.
+Koordinatör notu (koordinatör metni, Sinan metni değildir; alıntı dışı): Stok KLN-D25 (7) devamıdır; Lojistik LOJ-D11 için şeritler karar dosyasına bu metinle işler.
 
 **17. tur, m.1 — N-5, risk okunamazsa sevk (#1119):**
 
