@@ -369,6 +369,22 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         <div><dt>{PLAN_DETAIL_TEXT.version}</dt><dd>{plan.version}</dd></div>
         <div><dt>{PLAN_FORM_TEXT.workCenter}</dt><dd className={styles.mono}>{plan.workCenterId}</dd></div>
         <div><dt>{PLAN_DETAIL_TEXT.process}</dt><dd>{plan.process}</dd></div>
+        {/* U2-b / API-16: read-only; the link is what Sales answered when it was made (ids only, no customer name). */}
+        <div>
+          <dt>{PLAN_DETAIL_TEXT.salesOrderLink}</dt>
+          <dd>
+            {plan.salesOrderLink === null ? (
+              <span className={styles.muted}>{PLAN_DETAIL_TEXT.salesOrderLinkNone}</span>
+            ) : (
+              <>
+                <span className={styles.mono}>{plan.salesOrderLink.salesOrderId}</span>
+                {` · ${PLAN_DETAIL_TEXT.salesOrderLinkLine} `}
+                <span className={styles.mono}>{plan.salesOrderLink.salesOrderLineId}</span>
+                {` · ${PLAN_DETAIL_TEXT.salesOrderLinkRevision} ${plan.salesOrderLink.lineRevision}`}
+              </>
+            )}
+          </dd>
+        </div>
         <div>
           <dt>{PLAN_DETAIL_TEXT.target}</dt>
           <dd>

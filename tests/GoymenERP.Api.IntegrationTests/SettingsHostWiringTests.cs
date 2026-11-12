@@ -3,6 +3,7 @@ using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
@@ -43,16 +44,17 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void S1_the_host_composes_only_the_purchasing_linked_supply_adapter_and_recorder_so_production_stays_no_source()
+    public void S1_the_host_composes_the_purchasing_and_production_linked_supply_adapters_and_recorders_once_each()
     {
-        // S-1 / MOD-03: Sales owns ISalesOrderLinkedSupplyReadPortV1; the Purchasing adapter (A4 / MOD-03) is the owner's and is composed
-        // in the host together with its recorder declaration (SAT-D219); the Production adapter (U5-a) is not on main, so that kind
-        // stays "no source". One adapter per kind: a second one would make the kind Unreadable.
+        // S-1 / MOD-03 / U2-b: Sales owns ISalesOrderLinkedSupplyReadPortV1; each owner's adapter (Purchasing A4 / MOD-03,
+        // Production U2-b / API-16) is composed in the host together with its recorder declaration (SAT-D219). One adapter
+        // per kind: a second one would make the kind Unreadable.
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
-        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>().Select(port => port.SupplyKind));
-        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>().Select(recorder => recorder.SupplyKind));
+        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing, SalesLinkedSupplyKindsV1.Production], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>().Select(port => port.SupplyKind));
+        Assert.Equal([SalesLinkedSupplyKindsV1.Purchasing, SalesLinkedSupplyKindsV1.Production], scope.ServiceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>().Select(recorder => recorder.SupplyKind));
+        Assert.Single(scope.ServiceProvider.GetServices<IManufacturingSalesOrderLineReferencePortV1>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesDraftService>());
     }
 
