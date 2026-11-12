@@ -29,6 +29,8 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 > "Yetkili kişi" (m.3) için yeni izin adı önerilebilir; grant/rol insan kapısıdır. "Kantardan geçer" depo ayarının varsayılanı kapalıdır (ayar açılmadıkça sevk kaydı anı geçerli).
 
+Koordinatör notu (alıntı dışı, #66 6821105608): açık kalanlar N-5, N-6 (6821077996) ve URN-D1 (b) (6821058038) sıradaki turda sorulacaktır; bu turda hiçbir `OPEN-*` kapanmamıştır.
+
 **LOJ-D11 devamı (#66 6821569022, koordinatör kaydı, birebir):**
 
 > **SINAN KARARI (2026-11-12, AskUserQuestion):** Kantar zorunlu depodan e-İrsaliye'li transferde iptal penceresi **"hangisi önce gelirse"** orada kapanır: çıkış tartısı **veya** e-İrsaliye'nin GİB'e gönderimi — hangisi önce olursa.
