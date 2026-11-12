@@ -1,11 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -214,6 +217,99 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                    new CloseOrderRequestV1(balanced.Version)))
         {
             Assert.Equal(HttpStatusCode.OK, close.StatusCode);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Allocations WHERE LabelId = @label AND Status = 3 "
+            + "AND ReleaseReason = N'manufacturing.order-closed' AND ReleasedKg = 400",
+            ("@label", issuedRoll)));
+    }
+
+    [SqlServerFact]
+    public async Task Without_the_allocation_port_approval_and_closure_are_codeless_503s_and_the_same_key_succeeds_once_it_is_back()
+    {
+        // TAKIP-U3a P3-2 through the real host: without the allocation port the approval and the closure answer the
+        // platform's 503 problem (no module code), store nothing and record nothing for the key; the same key on the
+        // host with the port then approves (allocating) and closes (releasing) as a first answer, not a replay.
+        await using var run = await Run.StartAsync();
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
+        using var client = run.ClientFor(user, CompanyA);
+        var approver = await run.ApproverAsync(CompanyA);
+        await using var portless = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.RemoveAll<IManufacturingPlanAllocationPortV1>()));
+        HttpClient PortlessClient(string identity)
+        {
+            var portlessClient = portless.CreateClient();
+            portlessClient.DefaultRequestHeaders.Add("X-Development-User", identity);
+            portlessClient.DefaultRequestHeaders.Add("X-Company-Id", CompanyA.ToString());
+            portlessClient.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+            return portlessClient;
+        }
+
+        static async Task AssertCodelessUnavailableAsync(HttpResponseMessage response)
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(("service_unavailable", 503), (problem.RootElement.GetProperty("code").GetString(),
+                problem.RootElement.GetProperty("status").GetInt32()));
+            Assert.False(problem.RootElement.TryGetProperty("field", out _));
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        var roll = await run.StockedLabelAsync($"SYN-MFG-PORTLESS-{Guid.NewGuid():N}");
+        var plan = new SavePlanRequestV1(Guid.NewGuid(), await run.WorkCenterOfAsync(CompanyA),
+            [new PlannedInputRequestV1(roll.Id, "500", roll.Version)], null);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
+        using (var portlessApprover = PortlessClient(TestUsers.SiteAuditReader))
+        using (var refused = await portlessApprover.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
+                   new ApprovePlanRequestV1(1), "approve-portless"))
+        {
+            await AssertCodelessUnavailableAsync(refused);
+        }
+
+        var draft = (await approver.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{plan.PlanId}"))!;
+        Assert.Equal(("Draft", 1L), (draft.Status, draft.Version));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Allocations WHERE DemandId = @plan", ("@plan", plan.PlanId)));
+
+        using (var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
+                   new ApprovePlanRequestV1(1), "approve-portless"))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            Assert.NotEqual("true", approved.Headers.TryGetValues("Idempotency-Replayed", out var replayed)
+                ? replayed.Single() : null);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Allocations WHERE DemandId = @plan AND Status = 1 AND RemainingKg = 500",
+            ("@plan", plan.PlanId)));
+
+        // A balanced order (600 of its 1000 planned kg used) is refused closure without the port and keeps its
+        // allocation; the same key on the host with the port closes it and releases the 400 kg left.
+        var (orderId, issuedRoll) = await run.OpenOrderAsync(user);
+        var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
+            Run.Issue(1, issuedRoll, "600", At));
+        var balanced = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
+            await run.OutputAsync(client, issued.Version, issuedRoll, "GoodProduct", "600", At.AddMinutes(1)));
+        using (var portlessCloser = PortlessClient(user))
+        using (var refused = await portlessCloser.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                   new CloseOrderRequestV1(balanced.Version), "close-portless"))
+        {
+            await AssertCodelessUnavailableAsync(refused);
+        }
+
+        Assert.Equal(balanced.Version, (await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}"))!.Version);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Allocations WHERE LabelId = @label AND Status = 1 AND RemainingKg = 400",
+            ("@label", issuedRoll)));
+
+        using (var closed = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                   new CloseOrderRequestV1(balanced.Version), "close-portless"))
+        {
+            Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
+            Assert.NotEqual("true", closed.Headers.TryGetValues("Idempotency-Replayed", out var replayed)
+                ? replayed.Single() : null);
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
