@@ -85,7 +85,7 @@ eşliği ve hash yeniden üretimi gerekmez** (dosyalar değişmedi). Aşağıdak
 | `OPEN-INV-AVGCOST-FX` | Sonradan Sinan kararına bağlandı: TL karşılığı tedarikçi faturasındaki resmî kurla (BS-1, #66 6806579823); o güne kadar açıktı (SAT-D295 ilkesi verildi; kur belgesi doğrulanmamıştı) | BS-1 (`SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md`); "Doğrulama" bölümü |
 | `OPEN-INV-AVGCOST-NEGATIVE-STOCK` | Sinan kararı verildi (#66 6809898906) | SAT-D301, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
 | `OPEN-INV-AVGCOST-LANDED` | Sinan kararı verildi (#66 6809898906) | SAT-D302, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` (SAT-D263 (3)) |
-| `OPEN-INV-AVGCOST-RETURN` | Sinan kararı verildi (#66 6809898906; müşteri iadesi) | SAT-D303, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
+| `OPEN-INV-AVGCOST-RETURN` | Sinan kararı verildi (müşteri iadesi #66 6809898906; alış iadesi #66 6810163182) | SAT-D303 ve SAT-D306, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
 | `OPEN-INV-AVGCOST-MIXED-SOURCE` | Sinan kararı verildi (#66 6809898906) | SAT-D305, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` (SAT-D258) |
 | `OPEN-INV-AVGCOST-UNCOSTED-STOCK` | Sinan kararı verildi (#66 6809898906) | SAT-D304, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
 
