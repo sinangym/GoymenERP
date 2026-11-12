@@ -1121,8 +1121,15 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         }
 
         var proposePath = $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/reversal-proposals";
-        var proposeBody = new ProposePaymentReversalRequest(paymentId, "3", new DateOnly(2026, 9, 19),
+        // #66 round 20: the reversal date may equal the payment date (2026-09-18) but not precede it.
+        var proposeBody = new ProposePaymentReversalRequest(paymentId, "3", new DateOnly(2026, 9, 18),
             "SENTETIK banka iadesi");
+        using (var beforePayment = await maker.SendAsync(Post(proposePath, "SENTETIK-payment-reversal-before-payment",
+                   Guid.NewGuid().ToString("N"), proposeBody with { OccurredOn = new DateOnly(2026, 9, 17) })))
+        {
+            Assert.Equal((HttpStatusCode)422, beforePayment.StatusCode);
+            Assert.Equal("finance_reversal_before_payment", Issue(await Json(beforePayment)));
+        }
         using (var keyless = Post(proposePath, "SENTETIK-unused", Guid.NewGuid().ToString("N"), proposeBody))
         {
             keyless.Headers.Remove("Idempotency-Key");

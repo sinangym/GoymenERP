@@ -224,6 +224,23 @@ public sealed class PaymentReversalProposalServiceTests
         Assert.Equal(2, await verify.Commands.CountAsync());
     }
 
+    [Fact]
+    public async Task A_reversal_dated_before_the_payment_is_refused_and_nothing_is_written()
+    {
+        await using var run = await Run.StartAsync();
+        await using (var maker = run.Scope("maker"))
+        {
+            var early = await maker.Service.ProposeAsync(maker.Context, Key("propose-early"),
+                Propose(run) with { OccurredOn = new DateOnly(2026, 11, 4) }, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, early.Outcome);
+            var issue = Assert.Single(early.Issues);
+            Assert.Equal(("occurredOn", "finance_reversal_before_payment"), (issue.Field, issue.Code));
+        }
+        await using var verify = run.Context();
+        Assert.Equal(0, await verify.PaymentReversalProposals.CountAsync());
+        Assert.Equal(0, await verify.Commands.CountAsync());
+    }
+
     [Theory]
     [InlineData(PermissionDecision.Denied, CommandOutcome.Denied)]
     [InlineData(PermissionDecision.Unavailable, CommandOutcome.Unavailable)]

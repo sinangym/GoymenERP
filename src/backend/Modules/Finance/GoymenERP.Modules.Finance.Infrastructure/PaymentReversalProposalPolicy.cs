@@ -36,6 +36,7 @@ internal static class PaymentReversalProposalPolicy
             throw new ReversalPolicyException(ReversalPolicyFailure.SourceNotRecorded);
         }
 
+        EnsureNotBeforePayment(request.OccurredOn, payment);
         return new PaymentReversalProposalRow
         {
             Id = proposalId,
@@ -70,6 +71,7 @@ internal static class PaymentReversalProposalPolicy
             throw new ReversalPolicyException(ReversalPolicyFailure.InvalidRequest);
         }
 
+        EnsureNotBeforePayment(proposal.OccurredOn, payment);
         var reversal = new OutgoingMoneyEventReversalRow
         {
             Id = reversalEventId,
@@ -119,6 +121,18 @@ internal static class PaymentReversalProposalPolicy
         proposal.DecisionReason = request.Reason.Trim();
         proposal.ReversalEventId = null;
         proposal.Version++;
+    }
+
+    /// <summary>
+    /// #66 round 20 (coordinator decision under Sinan's delegation): the reversal date is on or after the payment
+    /// date; an earlier date is refused. The closed-period rule applies separately at approval.
+    /// </summary>
+    private static void EnsureNotBeforePayment(DateOnly reversalOn, ManualBankPaymentRow payment)
+    {
+        if (reversalOn < payment.OccurredOn)
+        {
+            throw new ReversalPolicyException(ReversalPolicyFailure.OccursBeforeSource);
+        }
     }
 
     /// <summary>

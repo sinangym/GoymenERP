@@ -552,6 +552,8 @@ public sealed class PaymentReversalProposalService(
                 Issue("paymentId", "finance_payment_not_recorded")),
             ReversalPolicyFailure.ProposalNotPending => Refused(context, CommandOutcome.ValidationFailed,
                 Issue("proposalId", "finance_reversal_proposal_not_pending")),
+            ReversalPolicyFailure.OccursBeforeSource => Refused(context, CommandOutcome.ValidationFailed,
+                Issue("occurredOn", "finance_reversal_before_payment")),
             _ => Refused(context, CommandOutcome.ValidationFailed, Issue("request", "invalid_request")),
         };
 

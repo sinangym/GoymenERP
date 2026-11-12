@@ -90,6 +90,38 @@ public sealed class PaymentReversalProposalPolicyTests
     }
 
     [Fact]
+    public void A_reversal_dated_before_the_payment_is_refused_and_the_payment_date_itself_is_allowed()
+    {
+        var payment = Payment();
+
+        var early = Assert.Throws<ReversalPolicyException>(() => PaymentReversalProposalPolicy.Propose(payment,
+            new ProposePaymentReversalRequest(payment.Id, "3", new DateOnly(2026, 11, 4), "Hatalı ödeme"),
+            Guid.NewGuid(), "maker", At));
+        var sameDay = PaymentReversalProposalPolicy.Propose(payment,
+            new ProposePaymentReversalRequest(payment.Id, "3", payment.OccurredOn, "Hatalı ödeme"),
+            Guid.NewGuid(), "maker", At);
+
+        Assert.Equal(ReversalPolicyFailure.OccursBeforeSource, early.Failure);
+        Assert.Equal(payment.OccurredOn, sameDay.OccurredOn);
+    }
+
+    [Fact]
+    public void Approval_refuses_a_proposal_dated_before_the_payment_and_leaves_it_pending()
+    {
+        var payment = Payment();
+        var proposal = Proposal(payment, "maker");
+        proposal.OccurredOn = new DateOnly(2026, 11, 4);
+
+        var error = Assert.Throws<ReversalPolicyException>(() => PaymentReversalProposalPolicy.Approve(payment,
+            Event(payment), proposal, new ApprovePaymentReversalRequest(proposal.Id, "1"), Guid.NewGuid(), "checker",
+            "corr-1", At));
+
+        Assert.Equal(ReversalPolicyFailure.OccursBeforeSource, error.Failure);
+        Assert.Equal((ReversalProposalStatuses.Pending, 1L), (proposal.Status, proposal.Version));
+        Assert.Null(proposal.ReversalEventId);
+    }
+
+    [Fact]
     public void Approval_by_another_user_appends_one_counter_event_that_copies_the_original_money_fields()
     {
         var payment = Payment();

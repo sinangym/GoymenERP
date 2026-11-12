@@ -260,6 +260,7 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   // API-23 (manual bank payment reversal)
   finance_payment_not_found: 'Ters kaydedilecek giden ödeme bu şirkette bulunamadı.',
   finance_payment_not_recorded: 'Yalnız kesin kayda alınmış bir giden ödeme için ters kayıt önerilebilir.',
+  finance_reversal_before_payment: 'Ters kayıt tarihi ödeme tarihinden önce olamaz.',
   finance_source_already_reversed: 'Bu kayıt zaten ters kaydedilmiş.',
   finance_reversal_proposal_already_pending: 'Bu kayıt için onay bekleyen bir ters kayıt önerisi zaten var.',
   finance_reversal_source_not_original_payment: 'Ters kayıt yalnız orijinal giden ödeme için önerilebilir.',
