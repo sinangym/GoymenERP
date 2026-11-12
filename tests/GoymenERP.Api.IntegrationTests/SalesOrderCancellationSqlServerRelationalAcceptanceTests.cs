@@ -31,8 +31,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// DEC-SAL-005 / AT-007 against a REAL SQL Server and the REAL host composition: the impact preview of an approved order is
 /// read through the real routes from the owners' real ports (Inventory's active allocations, Logistics's loading lines and
-/// active approved dispatch-note candidates — each registered by its own module; Purchasing's linked-supply adapter reads "None" (A4 / MOD-03); the remaining two categories have no owner
-/// on main and read "NoSource"); the cancellation is one
+/// active approved dispatch-note candidates — each registered by its own module; Purchasing's and Manufacturing's linked-supply adapters read "None" (A4 / MOD-03, U2-b); unmatched advances have no owner
+/// on main and reads "NoSource"); the cancellation is one
 /// save (header state + version, the appended cancellation row, the attempt, the audit event with SourceChannel Web); the
 /// reopened order reads Cancelled with its reason and unchanged approval facts; the same key replays with no second effect;
 /// the Sales line port no longer answers its lines as an approved demand; a loading line of the order blocks the cancellation
@@ -82,7 +82,7 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
             [
                 (SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.None),
-                (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.NoSource),
+                (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.UnmatchedAdvances, SalesCancellationImpactStatusesV1.NoSource),

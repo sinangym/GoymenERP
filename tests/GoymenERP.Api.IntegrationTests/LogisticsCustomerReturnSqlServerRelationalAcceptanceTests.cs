@@ -171,7 +171,8 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
         await run.MigrateAsync(current);
         await run.MigrateAsync(previous);
         Assert.DoesNotContain(current, await run.AppliedMigrationsAsync());
-        await run.MigrateAsync(current);
+        // The store reads the full model (LoadingShares.RecordedBy), so the round trip ends at the head.
+        await run.MigrateAsync();
 
         var source = await run.CreateDeliveredSourceAsync(20m);
         var requested = Request(source, 10m, "alice");
@@ -179,6 +180,8 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             run.Envelope("down-refusal", "alice", "down-refusal-original"),
             Hash("down-refusal"), requested));
 
+        // AddLoadingShareRecordedBy refuses Down (51260) while a share names its recorder; this test is about the return guard.
+        await run.ClearShareRecordedByAsync();
         var refusal = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.MigrateAsync(previous));
         Assert.Equal(51057, refusal.Number);
         Assert.Contains(current, await run.AppliedMigrationsAsync());
@@ -330,6 +333,14 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             await connection.OpenAsync(); await using var command = connection.CreateCommand(); command.CommandText = sql;
             if (parameter is not null) command.Parameters.AddWithValue("@p0", parameter);
             return (T)(await command.ExecuteScalarAsync())!;
+        }
+
+        public async Task ClearShareRecordedByAsync()
+        {
+            await using var connection = new Microsoft.Data.SqlClient.SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync(); await using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE logistics.LoadingShares SET RecordedBy = NULL";
+            await command.ExecuteNonQueryAsync();
         }
 
         public async Task<string[]> AppliedMigrationsAsync()
