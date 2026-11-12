@@ -7,7 +7,10 @@ LOJ-D10'un "tartı kaydı yoksa" ayrımını, LOJ-D12 LOJ-D9'un paylaşım ve ek
 **Kaynak:** Sinan'ın 12 Kasım 2026 16. ve 17. tur `AskUserQuestion` cevapları; koordinatör Issue #66 yorumları
 [`6821105608`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821105608) (16. tur, 2026-11-12T10:27:50Z) ve
 [`6821262098`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821262098) (17.–18. tur, 2026-11-12T10:35:27Z) olarak
-kaydetti; Lojistik şeridi iki yorumu `gh api` ile birincil kaynaktan okudu. Cevaplar kelimesi kelimesine aktarılmıştır;
+kaydetti; ayrıca LOJ-D11'in devamı olan e-İrsaliye'li transfer penceresi kuralı koordinatörün
+[`6821569022`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6821569022) yorumundadır. Lojistik şeridi
+yorumları `gh api` ile birincil kaynaktan okudu. Not: #66 kaynak yorumunda net kg kaynağı "SAT-D308" diye anılır; bu
+koordinatörün çalışma adıdır, Satış #1119'daki karar numarası SAT-D309'dur (bu belge SAT-D309 kullanır). Cevaplar kelimesi kelimesine aktarılmıştır;
 madde etiketi ve soru metni alıntı dışındadır.
 
 **16. tur, m.1 — Transfer "yola çıktı" ayırıcısı (LOJ-D10 / KLN-D25 (7)):**
@@ -34,17 +37,20 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| LOJ-D11 | Transfer "yola çıktı" ayırıcısı = depo ayarı | Settings'te depo başına "bu depodan çıkan transferler kantardan geçer" ayarı vardır; **varsayılan kapalı**. Açıksa: sevk kaydedildikten sonra iptal **çıkış tartısına kadar açık** kalır, çıkış tartısı kaydedilince mal yola çıkmış sayılır (LOJ-D10). Kapalıysa (diğer depolar): **sevk kaydı kapanış anıdır**, iptal kapanır. Her sevkte kullanıcıya ek soru yoktur. | Settings (depo ayarı), Stok transfer iptali, LOJ-D10 (KLN-D25 (7) ile aynı cevap) |
-| LOJ-D12 | Fason net kg paylaşımı ve tartısız teslim | Tek tartı aynı araçtaki birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır. **Tartısı olmayan fason teslim kaydedilemez.** Bedel kg'ı LOJ-D9'daki gibi teslim tartısı net kg'ıdır. | F-012 (spec 04), Satış fason hizmet siparişi (SAT-D309 aynı cevap (Satış #1119; koordinatör düzeltmesi, #1119 henüz main'de değil)) |
-| LOJ-D13 | Çıkış sonrası tartı düzeltmesi = gerekçeli düzeltme | Araç çıktıktan sonra tartı yanlış girildiği anlaşılırsa **yetkili kişi gerekçe yazarak düzeltme kaydı** girer. Eski değer silinmez, denetim izinde kalır. Fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır; Lojistik fatura kesmez. Yeni izin adı önerilebilir; **grant/rol insan kapısıdır**. | Lojistik tartı kaydı, denetim izi, Satış fark faturası |
+| LOJ-D11 | Transfer "yola çıktı" ayırıcısı = depo ayarı | Settings'te depo başına "bu depodan çıkan transferler kantardan geçer" ayarı vardır; **varsayılan kapalı**. Açıksa: sevk kaydedildikten sonra iptal **çıkış tartısına kadar açık** kalır, çıkış tartısı kaydedilince mal yola çıkmış sayılır (LOJ-D10). Kapalıysa (diğer depolar): **sevk kaydı kapanış anıdır**, iptal kapanır. Her sevkte kullanıcıya ek soru yoktur. **Devamı (#66 6821569022, Sinan):** kantarlı depoda e-İrsaliye'li transferin iptal penceresi **hangisi önce gelirse** kapanır: çıkış tartısı ya da e-İrsaliye'nin GİB'e gönderimi (Stok KLN-D25 (7) ile aynı cevap). | Settings (depo ayarı), Stok transfer iptali, LOJ-D10 (KLN-D25 (7) ile aynı cevap) |
+| LOJ-D12 | Fason net kg paylaşımı ve tartısız teslim | Tek tartı aynı araçtaki birden çok fason siparişini kapsıyorsa net kg, sevk satırlarındaki **beyan kg oranında** siparişlere paylaştırılır. **Tartısı olmayan fason teslim kaydedilemez.** Bedel kg'ı LOJ-D9'daki gibi teslim tartısı net kg'ıdır. | F-012 (spec 04), Satış fason hizmet siparişi: Satış tarafında SAT-D309 (kg kaynağı) ve SAT-D312 (1)-(2) (oranla bölme) aynı cevaptır (Satış #1119; #1119 henüz main'de değildir) |
+| LOJ-D13 | Çıkış sonrası tartı düzeltmesi = gerekçeli düzeltme | Araç çıktıktan sonra tartı yanlış girildiği anlaşılırsa **yetkili kişi gerekçe yazarak düzeltme kaydı** girer. Eski değer silinmez, denetim izinde kalır. Fatura kesilmişse fark **Satış'tan fark faturasıyla** kapatılır; Lojistik fatura kesmez. Yeni izin adı önerilebilir; **grant/rol insan kapısıdır**. | Lojistik tartı kaydı, denetim izi, Satış fark faturası (SAT-D312 (3)) |
 
 **N-5 notu (Lojistik kapsamı):** 17. tur m.1 ile müşteri riski okunamazsa sevk, yetkili onaylı **tek sevk istisnasıyla**
-geçebilir. Bu cevap Satış #1119 risk kapısı kaydıdır; Lojistik'te fason teslim kapısına aynı metinle uygulanır (spec 04).
-İstisna onayının izin adı ve ekranı Satış'ın kapsamıdır, Lojistik yeni kapı icat etmez.
+geçebilir. Bu cevap **yalnız Satış #1119 satış sevki risk kapısı** kaydıdır. Fason teslimin bu kapıya tabi olup olmadığı
+Sinan'a sorulmamıştır: `NEEDS-SINAN` (spec 04); cevaba kadar Lojistik fason teslimde kapıyı uygulamaz. İstisna onayının
+izin adı, kaynağı ve ekranı Satış'ın kapsamıdır, Lojistik yeni kapı veya ayrı istisna kaynağı icat etmez.
 
 **Yazarın okumaları (geri alınabilir, karar değil):** "kantardan geçer" ayarının saklandığı alan adı ve şekli; "yetkili kişi"
-için izin adı; düzeltme kaydının Lojistik içindeki tablo/alan karşılığı (SAT-D209: yeni tablo yok; mevcut kayıt üzerinde
-sürümlü düzeltme olarak ele alınır). Bunlar spec 04'te `ASSUMPTION` olarak işaretlenir.
+için izin adı; düzeltme kaydının Lojistik içindeki tablo/alan karşılığı (spec 04: bugün tartı tek kayıttır, düzeltme
+model değişikliği ve migration/K3 gerektirir; SAT-D209 Lojistik'i bağlamaz, KLN-D5 ile kalkmıştır). Bunlar ayrı bir
+`ASSUMPTION-*` kimliği taşımaz; "yazar okuması" olarak işaretlidir ve etkinleştirmeden önce kod PR'ında gerekçelendirilir.
+Yuvarlama artığı `ASSUMPTION-LOJ-1` (spec 04) golden gelene kadar etkinleşmez.
 
 ## Sınırlar
 
