@@ -141,7 +141,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
         // Üretim U2-b (API-16, SAT-D219): registers the two host-side Manufacturing/Sales order-line adapters (DI only); no
         // generation, network or hosted-service change (a1562dc1… -> a5bb99f0…).
-        "a5bb99f00d172122845dedb20da107c205b9d08425666692a6f9d1cae48ca307";
+        // F-021 / B-24b: registers the Work module and the ERP-000F outbox dispatcher (off by default, hosted service skipped in OpenAPI generation) and initializes Work in Dev/Testing; no network surface change; re-fingerprinted after merging main (a5bb99f0… -> 622a262e…).
+        "622a262eb83e2b23ab92f0e2ee86dd4409fbc93a04f08eef70e8284e561f27a4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
