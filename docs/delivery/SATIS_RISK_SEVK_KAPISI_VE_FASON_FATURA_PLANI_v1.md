@@ -277,9 +277,9 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   r3):* Satış (a) okumasını Stok kilitleri dışında yapar, fiziksel tahsis oluşturma satış satırı kilidini almaz (#1116 §3.2);
   okuma ile port çağrısı arasında fiziksel tahsis oluşursa Stok kilit altında görür ve 0'a azaltma fiziksel bırakma
   gerektirdiğinden ara 409 `inventory_future_allocation_physical_release_unavailable` döner (KLN-D32 (3)); bu 409 terminaldir
-  ((c) aşağıda). *Hizalama notu (koordinatör kararı r3):* main'deki #1116 metni (spec §5.1 (c), §8 "fiziksel tahsisli → 409";
-  KLN-D28 satır kaldırmada yalnız "sevkli → 422") bu ayrımdan sapar; Stok tarafı #1126 (açık) ile hizalanır. Hizalanana kadar
-  Satış ön-kapısı (a) geçerlidir.
+  ((c) aşağıda). *Hizalama notu (koordinatör kararı r3):* #1116 metni (spec §5.1 (c), §8; KLN-D28 (4)) #1126
+  (merge `732ba997`) ile bu ayrıma hizalandı: kaldırmada sevkli, yükleme talimatlı veya fiziksel tahsisli satır porttan önce
+  422; ara 409 yalnız yarış penceresinde.
 - **Sıra (SAT-D315, Sinan 23. tur):** birden çok alışa yayılan ayırmada en geç gelecek alıştan başlanır; fiziksel tahsis ve
   gelecek ayırma birlikteyse önce gelecek ayırma bırakılır; kullanıcının komuttaki açık seçimi varsayılandan üstündür.
   Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31/KLN-D32 (#1116 merge `1af6ffea`); sıra Stok portunda hesaplanır,
@@ -295,12 +295,12 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   (RCSI anlık görüntüsünden değil); Satış miktar/sıra hesaplamaz. (b) Expected version + `Idempotency-Key`; replay ikinci
   Stok çağrısı yapmaz. (c) **Terminal, kayıtlı:** 409 (KLN-D32 (3) ara red, yarış penceresi dahil; KLN-D30 (3) bayat seçim
   `inventory_allocation_version_conflict`) ve 422 (KLN-D30 (3) fazlayı aşan seçim, öneri
-  `inventory_future_allocation_release_selection_invalid`; kayıt/replay sınıfı *yazar okuması*: karar (c) gibi terminal ve
-  kayıtlı). Bunlar Satış revizyon/iptal komutunun kendi terminal ret kaydıdır; Stok portu bunlar için hiçbir şey yazmaz,
+  `inventory_future_allocation_release_selection_invalid`) ve 409 `inventory_allocation_state_conflict`; sınıflar #1126
+  (merge `732ba997`) spec §5.1 (c) ile hizalı. Bunlar Satış revizyon/iptal komutunun kendi terminal ret kaydıdır; Stok portu bunlar için hiçbir şey yazmaz,
   tüm komut geri alınır; aynı anahtar Stok'u çağırmadan aynı reddi
   döner, yeniden okuma (ör. fiziksel bırakma yolu geldikten sonra) yeni anahtar ister. **Terminal değil, kaydedilmez:** 503 (bırakma portu
-  hatası/zaman aşımı, termin okuması `Unreadable`, Satış `revision_impact_unavailable`) ve satış satırı kilidi meşgul 409
-  (#1116 spec §5.1 (c); kodu F017-s'te): aynı anahtar komutu yeniden yürütür. Aynı yürütmede terminal ret (409/422) ile
+  hatası/zaman aşımı, termin okuması `Unreadable`, Satış `revision_impact_unavailable`) , satış veya alış satırı kilidi meşgul 409 ve
+  `concurrent_change` (#1126 spec §5.1 (c); kodu F017-s'te): aynı anahtar komutu yeniden yürütür. Aynı yürütmede terminal ret (409/422) ile
   503 birlikte doğarsa 503 geçer, hiçbir şey kaydedilmez. Stok'un problem kodu Satış
   cevabına **aynen taşınır** (#1116 spec §7 "Satış problemine taşınır"; çevrilmez); kesin ad F017-s'te.
 - **Satış komutlarına eşleme:**
