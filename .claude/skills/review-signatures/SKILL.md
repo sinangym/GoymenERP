@@ -71,8 +71,13 @@ squash:
 git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected head sha>; echo "exit=$? main=$(git rev-parse origin/main)"
 ```
 Write the main SHA and exit code in the merge receipt. Fresh required CI must be green on that same head. Exit ≠ 0:
-do not merge; pick the tier (Faz 0.1, GOV-D3 scope logic, #976 measurement). Run the `SCOPE=(…)` diff
-from the Faz 0 paragraph of `AGENTS.md` (same list, word for word):
+pick the tier (Faz 0.1, GOV-D3 scope logic, #976 measurement); try (c) first.
+**(c)** (GOV-D5, `docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md`) Run the two `SKIPPED` / `READ_BY_CI`
+commands from the Faz 0 paragraph of `AGENTS.md` (same lists, word for word) at the repository root. Both exit 0:
+main moved only in prose that never starts CI (CIH-D5), so merge **without** a mechanical merge commit, a new CI
+run or `DELTA-OK`; the green CI and the reviews on that head stay valid. Receipt: main SHA, `(c)`, both commands and
+their exit codes. Either command exits ≠ 0 (a git error included): (c) does not apply, do not merge yet. Run the
+`SCOPE=(…)` diff from the same paragraph (same list, word for word):
 `git diff --quiet "$(git merge-base origin/main <expected head>)" origin/main -- "${SCOPE[@]}"`.
 **(a)** exit ≠ 0 (main moved inside the scope): merge main into the PR, re-pin (`main-merge-resync`), rerun CI
 (K3: GOV-D1, two reviews; K1/K2: the new head needs `DELTA-OK` per v4). **(b)** exit 0 (main moved only outside the
@@ -82,7 +87,7 @@ way is a **non-empty mechanical merge commit** of origin/main into the PR branch
 `git rev-parse <new head>^1` equals `<old head>`, and `git diff <old head> <new head>` equals
 `git diff $(git merge-base origin/main <old head>) origin/main` (a conflict resolution breaks the equality and leaves
 (b)). An independent reviewer signs, writing the `--stat` and the class; the author or merger cannot sign their own
-merge. K3 keeps its two exact-head reviews; (b) covers only the mechanical delta. Receipt: main SHA, tier, new green CI run id. P3: the
+merge. K3 keeps its two exact-head reviews; (b) covers only the mechanical delta. Receipt for (a)/(b): main SHA, tier, new green CI run id. P3: the
 squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
 merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
 
@@ -96,7 +101,7 @@ enabling workflows in Settings → Actions, grant/rol/Critical, production activ
 ## 5. Issue #66 receipt (one line, right after merge)
 
 ```
-MERGED #<n> <40-char merge sha> — <K-level> <short title>; reviews: <url A> · <url B> (head <8-char sha>)[; CI <x>/<y> green][; main <8-char sha> ancestor exit 0]
+MERGED #<n> <40-char merge sha> — <K-level> <short title>; reviews: <url A> · <url B> (head <8-char sha>)[; CI <x>/<y> green][; main <8-char sha> ancestor exit 0 | main <8-char sha> Faz 0 (c) exit 0/0]
 ```
 ```bash
 gh api repos/sinangym/GoymenERP/issues/66/comments -f body='MERGED #… …'

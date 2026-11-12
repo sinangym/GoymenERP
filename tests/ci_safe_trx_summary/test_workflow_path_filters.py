@@ -4,11 +4,16 @@ GitHub starts a workflow only when at least one changed file is included by ``pa
 are read in order, the last matching one decides, and ``!`` excludes. These tests pin the
 reviewed list, prove against the repository's own files that exactly the reviewed prose is
 skipped, and fail when checked-in code starts to read a skipped file.
+
+GOV-D5: the Faz 0 tier (c) commands in AGENTS.md let a merge go ahead when ``main`` moved only in
+that skipped prose. The last two tests keep those commands equal to the filter.
 """
 from __future__ import annotations
 
 import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -39,6 +44,38 @@ EXPECTED_FILTER = (
     "docs/delivery/DECISION_PACK.md",
     "!docs/handoffs/**/*.md",
     "!docs/operations/**/*.md",
+)
+
+# Paths that must start CI, and prose that must not. Both the filter model and the Faz 0 (c)
+# commands are checked against them.
+MUST_START = (
+    ".github/workflows/ci.yml", ".editorconfig", "AGENTS.md", "global.json",
+    "Directory.Build.props", "src/.editorconfig", "src/backend/GoymenERP.Api/Program.cs",
+    "src/frontend/goymen-erp-web/src/main.tsx", "contracts/openapi/goymen-erp-v1.json",
+    "contracts/recovery/recovery-surface-inventory-v1.schema.json",
+    "tools/generate_recovery_surface_inventory.py", "tools/relational_inventory/sales.txt",
+    "tests/GoymenERP.ArchitectureTests/ModuleDependencyGuardTests.cs",
+    "tests/release_manifest/test_generate_release_manifest.py",
+    "docs/backlog/DELIVERY_BACKLOG_v1.json", "docs/backlog/task_manifest.json",
+    "docs/acceptance/ACCEPTANCE_70.md", "docs/ui/CANONICAL_SCREEN_STATUS.csv",
+    "docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json",
+    "docs/features/CARI_UI_VERTICAL_SLICE_v1.md", "docs/governance/ANY.md",
+    "docs/decisions/KARAR_SICILI.csv", "docs/decisions/NOTE.MD", "docs/decisions/note.txt",
+    # File names with a build meaning never end in .md, so they are never ignored.
+    "docs/decisions/global.json", "docs/delivery/Directory.Build.props",
+    "docs/handoffs/NuGet.Config", "docs/operations/.config/dotnet-tools.json",
+    "docs/decisionsX/note.md", "other/docs/decisions/note.md", "docs/note.md",
+)
+SKIPPED_PROSE = (
+    "docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md", "docs/delivery/PLAN.md",
+    "docs/delivery/nested/deeper/PLAN.md", "docs/handoffs/NOTE.md", "docs/operations/RUNBOOK.md",
+)
+
+# GOV-D5: the Faz 0 tier (c) commands, exactly as AGENTS.md gives them to the merger.
+FAZ0_SKIPPED_ONLY_COMMANDS = (
+    'MB="$(git merge-base origin/main <expected-head>)"',
+    'git diff --quiet "$MB" origin/main -- . "${SKIPPED[@]}" '
+    '&& git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"',
 )
 
 CODE_ROOTS = ("src", "tests", "tools", ".github")
@@ -123,6 +160,23 @@ def starts_workflow(path: str, patterns: tuple[str, ...] = EXPECTED_FILTER) -> b
     return included
 
 
+def read_faz0_skipped_only_script() -> str:
+    """The one fenced block of AGENTS.md that defines the Faz 0 tier (c) check."""
+    fenced = (REPO / "AGENTS.md").read_text(encoding="utf-8").split("```")[1::2]
+    blocks = [block for block in fenced if "SKIPPED=(" in block or "READ_BY_CI=(" in block]
+    if len(blocks) != 1:
+        raise AssertionError(f"AGENTS.md: expected one Faz 0 (c) block, found {len(blocks)}")
+    return blocks[0].strip("\n")
+
+
+def shell_array(script: str, name: str) -> list[str]:
+    found = re.findall(rf"^{name}=\((.*?)\)$", script, flags=re.MULTILINE | re.DOTALL)
+    if len(found) != 1:
+        raise AssertionError(f"AGENTS.md: expected one {name}=(…) array, found {len(found)}")
+    items = found[0].replace("\\\n", " ").split()
+    return [item[1:-1] if len(item) >= 2 and item[0] == item[-1] == "'" else item for item in items]
+
+
 def repository_files(top: str) -> list[str]:
     found: list[str] = []
     for directory, names, files in os.walk(REPO / top):
@@ -176,35 +230,13 @@ class WorkflowPathFilterTests(unittest.TestCase):
         self.assertEqual({path for path in documents if not starts_workflow(path)}, expected)
 
     def test_everything_else_still_starts_ci(self):
-        must_start = (
-            ".github/workflows/ci.yml", ".editorconfig", "AGENTS.md", "global.json",
-            "Directory.Build.props", "src/.editorconfig", "src/backend/GoymenERP.Api/Program.cs",
-            "src/frontend/goymen-erp-web/src/main.tsx", "contracts/openapi/goymen-erp-v1.json",
-            "contracts/recovery/recovery-surface-inventory-v1.schema.json",
-            "tools/generate_recovery_surface_inventory.py", "tools/relational_inventory/sales.txt",
-            "tests/GoymenERP.ArchitectureTests/ModuleDependencyGuardTests.cs",
-            "tests/release_manifest/test_generate_release_manifest.py",
-            "docs/backlog/DELIVERY_BACKLOG_v1.json", "docs/backlog/task_manifest.json",
-            "docs/acceptance/ACCEPTANCE_70.md", "docs/ui/CANONICAL_SCREEN_STATUS.csv",
-            "docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json",
-            "docs/features/CARI_UI_VERTICAL_SLICE_v1.md", "docs/governance/ANY.md",
-            "docs/decisions/KARAR_SICILI.csv", "docs/decisions/NOTE.MD", "docs/decisions/note.txt",
-            # File names with a build meaning never end in .md, so they are never ignored.
-            "docs/decisions/global.json", "docs/delivery/Directory.Build.props",
-            "docs/handoffs/NuGet.Config", "docs/operations/.config/dotnet-tools.json",
-            "docs/decisionsX/note.md", "other/docs/decisions/note.md", "docs/note.md",
-        )
-        skipped = (
-            "docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md", "docs/delivery/PLAN.md",
-            "docs/delivery/nested/deeper/PLAN.md", "docs/handoffs/NOTE.md", "docs/operations/RUNBOOK.md",
-        )
-        for path in must_start:
+        for path in MUST_START:
             with self.subTest(path=path):
                 self.assertTrue(starts_workflow(path))
-        for path in skipped:
+        for path in SKIPPED_PROSE:
             with self.subTest(path=path):
                 self.assertFalse(starts_workflow(path))
-        for path in must_start + skipped:
+        for path in MUST_START + SKIPPED_PROSE:
             self.assertFalse(starts_workflow(path, ("**", "!**")))
         with self.assertRaises(AssertionError):
             pattern_regex("docs/[a-z]*.md")
@@ -233,6 +265,106 @@ class WorkflowPathFilterTests(unittest.TestCase):
             "alone would not start CI. Re-include the file in the filter of every workflow in "
             "FILTERED_WORKFLOWS (K3 review) or stop reading it.",
         )
+
+    def test_faz0_skipped_only_commands_carry_the_filter_lists(self):
+        script = read_faz0_skipped_only_script()
+        self.assertEqual(
+            shell_array(script, "SKIPPED"), [f":(exclude,glob){root}**/*.md" for root in PROSE_ROOTS]
+        )
+        self.assertEqual(tuple(shell_array(script, "READ_BY_CI")), READ_BY_CI)
+        self.assertEqual(tuple(script.splitlines()[-2:]), FAZ0_SKIPPED_ONLY_COMMANDS)
+        self.assertEqual(len(script.splitlines()), 6)
+
+    def test_faz0_skipped_only_commands_agree_with_the_filter_in_git(self):
+        script = read_faz0_skipped_only_script()
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "repository"
+            repository.mkdir()
+            environment = {
+                "PATH": os.environ["PATH"],
+                "HOME": directory,
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_AUTHOR_NAME": "Faz 0 test",
+                "GIT_AUTHOR_EMAIL": "faz0-test@example.invalid",
+                "GIT_COMMITTER_NAME": "Faz 0 test",
+                "GIT_COMMITTER_EMAIL": "faz0-test@example.invalid",
+            }
+
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", "-C", str(repository), *arguments],
+                    env=environment, check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+            def commit(changes):
+                for relative, content in changes.items():
+                    target = repository / relative
+                    if content is None:
+                        target.unlink()
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="utf-8")
+                git("add", "-A")
+                git("commit", "-q", "-m", "change")
+                return git("rev-parse", "HEAD")
+
+            def run_commands(head):
+                """Runs the block as a merger pastes it; its status is that of the last line."""
+                return subprocess.run(
+                    ["bash", "-c", script.replace("<expected-head>", head)],
+                    cwd=repository, env=environment, capture_output=True, text=True,
+                ).returncode
+
+            def main_moved_only_in_skipped_prose(head, *main_commits):
+                """Builds ``main`` on top of the fork point and runs the AGENTS.md commands."""
+                git("checkout", "-q", "--detach", fork)
+                tip = fork
+                for changes in main_commits:
+                    tip = commit(changes)
+                git("update-ref", "refs/remotes/origin/main", tip)
+                return run_commands(head)
+
+            git("init", "-q")
+            existing_prose = "docs/operations/OLD_RUNBOOK.md"
+            fork = commit({
+                "src/app.cs": "one\n", existing_prose: "one\n",
+                **{path: "one\n" for path in READ_BY_CI},
+            })
+            head = commit({"src/app.cs": "two\n"})
+
+            self.assertEqual(main_moved_only_in_skipped_prose(head), 0)
+            for path in SKIPPED_PROSE:
+                with self.subTest(skipped=path):
+                    self.assertEqual(main_moved_only_in_skipped_prose(head, {path: "new\n"}), 0)
+            self.assertEqual(main_moved_only_in_skipped_prose(head, {existing_prose: "two\n"}), 0)
+            self.assertEqual(main_moved_only_in_skipped_prose(head, {existing_prose: None}), 0)
+            self.assertEqual(
+                main_moved_only_in_skipped_prose(
+                    head, {SKIPPED_PROSE[0]: "new\n"}, {SKIPPED_PROSE[1]: "new\n"}
+                ),
+                0,
+            )
+
+            for path in MUST_START + READ_BY_CI:
+                with self.subTest(starts_ci=path):
+                    self.assertEqual(main_moved_only_in_skipped_prose(head, {path: "new\n"}), 1)
+            for label, main_commits in (
+                ("prose and code in one commit", ({SKIPPED_PROSE[0]: "new\n", "src/new.cs": "new\n"},)),
+                ("code after prose", ({SKIPPED_PROSE[0]: "new\n"}, {"src/app.cs": "main\n"})),
+                ("re-included file deleted", ({READ_BY_CI[0]: None},)),
+                ("prose moved to a code path", ({existing_prose: None, "src/OLD_RUNBOOK.md": "one\n"},)),
+                ("code moved into a prose folder", ({"src/app.cs": None, "docs/delivery/app.md": "one\n"},)),
+            ):
+                with self.subTest(case=label):
+                    self.assertEqual(main_moved_only_in_skipped_prose(head, *main_commits), 1)
+
+            # Fail closed: an unknown head or a missing origin/main is never "prose only".
+            self.assertNotIn(
+                main_moved_only_in_skipped_prose("0" * 40, {SKIPPED_PROSE[0]: "new\n"}), (0, 1)
+            )
+            git("update-ref", "-d", "refs/remotes/origin/main")
+            self.assertNotIn(run_commands(head), (0, 1))
 
 
 if __name__ == "__main__":

@@ -120,8 +120,23 @@ bir migration'a, kök build-control dosyalarına (`tools/generate_recovery_surfa
 dokunan PR'ı merge eden herkes (`CODEX-ORCHESTRATOR` ve Claude şeridi) expected-head squash'tan
 hemen önce `git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <expected-head>`
 çalıştırır; kullandığı main SHA'sını ve exit code'u merge makbuzuna yazar. Fresh zorunlu CI aynı
-head'de yeşil olmalıdır. Exit ≠ 0 ise merge yapılmaz; iki kademe (GOV-D3 kapsam mantığı, #976 ölçümü).
-Kapsam, yeniden üretilen pin'lerin girdileridir:
+head'de yeşil olmalıdır. Exit ≠ 0 ise üç kademeden biri uygulanır; önce (c) denenir (GOV-D3 kapsam
+mantığı, #976 ölçümü; (c) için GOV-D5, `docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md`).
+**(c)** `main` yalnız CI'ın hiç başlamadığı düzyazıda (CIH-D5 listesi) ilerlediyse merge edilebilir:
+mekanik merge commit'i, yeni CI koşusu ve `DELTA-OK` aranmaz; aynı head'deki fresh yeşil CI ve
+review'lar geçerli kalır. Depo kökünde çalıştırılır; iki komut da exit 0 vermelidir:
+```
+SKIPPED=(':(exclude,glob)docs/decisions/**/*.md' ':(exclude,glob)docs/delivery/**/*.md' \
+  ':(exclude,glob)docs/handoffs/**/*.md' ':(exclude,glob)docs/operations/**/*.md')
+READ_BY_CI=(docs/decisions/KARAR_SICILI.md docs/decisions/ACIK_KARARLAR.md \
+  docs/decisions/SINAN_KARARLARI_2026-08-31.md docs/delivery/DECISION_PACK.md)
+MB="$(git merge-base origin/main <expected-head>)"
+git diff --quiet "$MB" origin/main -- . "${SKIPPED[@]}" && git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"
+```
+İki liste `ci.yml` yol filtresiyle aynıdır (`tests/ci_safe_trx_summary/test_workflow_path_filters.py`
+eşliği sabitler). Makbuza main SHA'sı, `(c)`, iki komut ve exit code'ları yazılır. Komutlardan biri
+exit ≠ 0 verirse (c) uygulanmaz, (a)/(b)'ye geçilir. (a)/(b) kapsamı, yeniden üretilen pin'lerin
+girdileridir:
 ```
 SCOPE=(src/backend/ .editorconfig .globalconfig Directory.Build.props Directory.Build.targets Directory.Build.rsp \
   Directory.Packages.props Directory.Packages.targets Directory.Solution.props Directory.Solution.targets \
@@ -143,7 +158,7 @@ kanıtı: `git rev-parse <yeni-head>^1` = `<eski-head>` ve `git diff <eski-head>
 çözümü gerekirse eşitlik bozulur, (b) dışına çıkılır). Bağımsız reviewer imzalar ve `--stat` ile
 sınıfı yazar; yazar veya merge eden kendi merge'üne `DELTA-OK` veremez. K3'te iki exact-head review
 şartı aynen sürer, (b) yalnız mekanik delta'yı kapsar. Makbuza main SHA'sı, (a)/(b) kararı ve yeni
-yeşil CI run kimliği yazılır. Squash'taki `sha=` parametresi yalnız
+yeşil CI run kimliği yazılır ((c)'de yeni koşu yoktur; head'deki yeşil koşunun kimliği yazılır). Squash'taki `sha=` parametresi yalnız
 head'i doğrular, base'i doğrulamaz; kontrol ile merge çağrısı arasında saniyelik bir yarış kalır.
 Merge eden, çağrıdan önce main ilerlediyse kontrolü yineler. GitHub "Require branches to be up to
 date" ayarı şimdilik kapalıdır (GOV-D3); açılması insan kapısıdır.
