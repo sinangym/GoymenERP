@@ -59,8 +59,8 @@ hedef modelinin içinde zaten örnek olarak duruyor.
 **Sınıflar:**
 - **A:** Değer yalnız kaynak kodda. Değiştirmek için kod PR'ı gerekiyor. F-029'un asıl işi bunlardır.
 - **B:** Bir kısmı tabloya taşınmış. Kalan alt politikalar A gibi ele alınır.
-- **C:** Kalıcı tablo var; derlenmiş katalog sürüm 0 tabanı/fallback. Yapılacak iş, tabanın tabloya tek seferlik
-  ve denetimli olarak aktarılıp aktarılmayacağına karar vermektir (§6, N4). Davranış zaten yapılandırılabilir.
+- **C:** Kalıcı tablo var; derlenmiş katalog bugün sürüm 0 tabanı/fallback. URN-D5 gereği taban, değer değişmeden
+  ve denetim kaydıyla bir kez tabloya aktarılır; sonra tek kaynak tablodur (§6, N4).
 - **D:** Boş katalog, tablo sonraki bir dilime planlanmış. Yeni iş yok; plan aynen sürer.
 
 ## 3. Envanter — diğer modüller (sahibi ilgili şerit)
@@ -77,7 +77,7 @@ hedef modelinin içinde zaten örnek olarak duruyor.
 
 - Her A/B kataloğunun bugünkü içeriği, kalıcı tabloya **değiştirilmeden** "sürüm 0, kaynak: derlenmiş katalog +
   karar kimliği" olarak aktarılır. Aktarım tohum değildir; denetim kaydı olan, idempotent ve tek seferlik bir
-  aktarımdır. Biçimi N4'te karara bağlanacaktır.
+  aktarımdır (URN-D5). Aktarımdan sonra derlenmiş katalog kaynak olmaz.
 - Aktarımdan sonra sağlayıcı yanıtları **bayt bayt aynı** kalır. Kabul testi: aynı şirket, işlem ve tarih için
   derlenmiş ve kalıcı sağlayıcı aynı profil kimliğini, sürümünü, ölçeği ve geçerlilik aralığını döner (§7).
 - Eksik kaynak yine **istisnadır**. Hiçbir sağlayıcı null, boş katalog, sıfır ölçek ya da uygun dönem uyduramaz
@@ -143,7 +143,7 @@ modüllerde kod değişmez. Değişirse V2 port açılır ve V1 korunur.
 3. **F029-S3:** para profili. Birim fiyat ölçeği para hesabını etkiler; K3 kapsamındadır ve iki review gerekir.
 4. **F029-S1/S2:** birim profili ve birim kimliği. Ürün B-07/B-08/B-09 tüketir; bunun için Ürün şeridiyle sözleşme
    gerekir (öneri P2).
-5. **F029-C:** C sınıfı tabanların tabloya aktarılması (N4 kararına bağlıdır).
+5. **F029-C:** C sınıfı tabanların değer değişmeden, denetimli tek seferlik aktarımı (URN-D5).
 
 ### 5.5 Sabit şirket kimlikleri
 
@@ -165,20 +165,22 @@ modüllerde kod değişmez. Değişirse V2 port açılır ve V1 korunur.
 
 Sorular Issue #66'ya NEEDS-SINAN olarak yazıldı
 ([6819528621](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6819528621)); N1, N2, N3 ve N5 Sinan'ın 9.
-tur kararıyla cevaplandı ([6820161788](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820161788)) ve
-`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` içinde URN-D2–URN-D4 olarak kayıtlıdır.
+tur kararıyla ([6820161788](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820161788)), N4 10. tur
+kararıyla ([6820237902](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820237902)) cevaplandı ve
+`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` içinde URN-D2–URN-D5 olarak kayıtlıdır. N6 bu turlardan sonra
+sorulmuştur ([6820502714](https://github.com/sinangym/goymenerp/issues/66#issuecomment-6820502714)).
 
 | No | Soru | Durum |
 |---|---|---|
 | N1 | Hangi kataloglar kullanıcı tarafından yönetilebilir olsun? | **Karar (URN-D2):** hepsi ekrandan, para ve birim profili dahil. Para/birim profilinde ekran etkiyi değişiklikten önce gösterir. |
 | N2 | Değişikliği kim yapar ve onaylar? | **Karar (URN-D3):** ilgili alanın yetkili müdürü tek başına değiştirir ve yayımlar; ikinci onay yok; denetim kaydı var. İzin adları kaydedilir, grant insan kapısıdır. |
 | N3 | Yayımlanan bir değer geçmiş tarihten geçerli olabilir mi? | **Karar (URN-D4):** hayır; yalnız bugünden ileri. |
-| N4 | C sınıfı tabanlar (S7, S8, S10, S11) tabloya tek seferlik "sürüm 0" olarak aktarılsın mı, yoksa derlenmiş fallback olarak mı kalsın? | **Açık** (Sinan'ın sonraki turu). Öneri: denetimli, değer değiştirmeyen tek seferlik aktarım. |
+| N4 | C sınıfı tabanlar (S7, S8, S10, S11) tabloya tek seferlik "sürüm 0" olarak aktarılsın mı, yoksa derlenmiş fallback olarak mı kalsın? | **Karar (URN-D5):** değer değişmeden, denetim kaydıyla bir kez tabloya aktarılır; sonra tek kaynak tablodur. |
 | N5 | Değer değişince bekleyen belgeler yeniden değerlendirilsin mi? | **Karar (URN-D4):** hayır; onay bekleyen belgeler eski değerle kalır. |
 | N6 | URN-D3 mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı? | **Açık** (NEEDS-SINAN). O zamana kadar bu profillerin mevcut akışı değişmez. |
 
-N4 gelene kadar F029-C dilimi (§5.4 madde 5) açılmaz. Diğer dilimlerin komutları (prepare/publish) artık URN-D2–D4
-ile açılabilir; her dilim yine ayrı K3 PR'dır.
+Bütün dilimler (F029-C dahil) URN-D2–D5 ile açılabilir; her dilim yine ayrı K3 PR'dır. N6 cevaplanana kadar S10/S11
+üretim profillerinin hazırla/onayla akışı değiştirilmez; F029-C bu profillerde yalnız değer aktarır.
 
 ## 7. Port / sözleşme önerileri (ilgili şeritlere)
 
