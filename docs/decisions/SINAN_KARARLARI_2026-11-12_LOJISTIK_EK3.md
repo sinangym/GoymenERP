@@ -43,8 +43,9 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 **N-5 notu (Lojistik kapsamı):** 17. tur m.1 ile müşteri riski okunamazsa sevk, yetkili onaylı **tek sevk istisnasıyla**
 geçebilir. Bu cevap **yalnız Satış #1119 satış sevki risk kapısı** kaydıdır. Fason teslimin bu kapıya tabi olup olmadığı
-Sinan'a sorulmamıştır: `NEEDS-SINAN` (spec 04); cevaba kadar Lojistik fason teslimde kapıyı uygulamaz. İstisna onayının
-izin adı, kaynağı ve ekranı Satış'ın kapsamıdır, Lojistik yeni kapı veya ayrı istisna kaynağı icat etmez.
+sonradan sorulmuş ve cevaplanmıştır: `LOJ-D14` (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK4.md`, #66 6821949043): fason teslim
+aynı kapıya tabidir, istisnayla geçer. İstisna onayının izin adı, kaynağı ve ekranı Satış'ın kapsamıdır, Lojistik yeni
+kapı veya ayrı istisna kaynağı icat etmez.
 
 **Yazarın okumaları (geri alınabilir, karar değil):** "kantardan geçer" ayarının saklandığı alan adı ve şekli; "yetkili kişi"
 için izin adı; düzeltme kaydının Lojistik içindeki tablo/alan karşılığı (spec 04: bugün tartı tek kayıttır, düzeltme
