@@ -291,18 +291,25 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   seçim dahil), hiçbir şey yazılmaz, gelecek ayırma da bırakılmaz. Reddi Stok portu #1116 §3.2 adım 0 kilitleri altında
   tespit eder; problem kodu (#1116 KLN-D32 (3), spec §7/§8; öneri kodu `inventory_future_allocation_physical_release_unavailable`, F017-s'de kesinleşir).
 - **Satış komut iskeleti (`k3-command-skeleton`; (a)/(b) yazar önerisi, (c) koordinatör kararı r2/r3):** (a) Satış Stok'a yeni açık miktarı, sevk tabanını ve
-  açık seçimi iletir; bırakılacak miktarı ve sırayı Stok, #1116 §3.2 adım 0'daki kilitler altında (önce satış satırı, sonra alış satırları
-  artan `lineId`; KLN-D28 (7)) hesaplar
+  açık seçimi iletir; bırakılacak miktarı ve sırayı Stok, #1116 §3.2 adım 0'daki kilitler altında (önce satış satırları, birden çok satırda
+  hepsi artan id ile; sonra alış satırları artan `lineId`; KLN-D28 (7)) hesaplar
   (RCSI anlık görüntüsünden değil); Satış miktar/sıra hesaplamaz. (b) Expected version + `Idempotency-Key`; replay ikinci
   Stok çağrısı yapmaz. (c) **Terminal, kayıtlı:** 409 (KLN-D32 (3) ara red, yarış penceresi dahil; KLN-D30 (3) bayat seçim
   `inventory_allocation_version_conflict`) ve 422 (KLN-D30 (3) fazlayı aşan seçim, öneri
   `inventory_future_allocation_release_selection_invalid`) ve 409 `inventory_allocation_state_conflict`; sınıflar #1126
-  (merge `732ba997`) spec §5.1 (c) ile hizalı. Bunlar Satış revizyon/iptal komutunun kendi terminal ret kaydıdır; Stok portu bunlar için hiçbir şey yazmaz,
+  (merge `732ba997`) spec §5.1 (c) ile hizalı (orada "koordinatör sınıflaması, r1; … yazarın okuması, geri alınabilir"). Bunlar Satış revizyon/iptal komutunun kendi terminal ret kaydıdır; Stok portu bunlar için hiçbir şey yazmaz,
   tüm komut geri alınır; aynı anahtar Stok'u çağırmadan aynı reddi
   döner, yeniden okuma (ör. fiziksel bırakma yolu geldikten sonra) yeni anahtar ister. **Terminal değil, kaydedilmez:** 503 (bırakma portu
-  hatası/zaman aşımı, termin okuması `Unreadable`, Satış `revision_impact_unavailable`) , satış satırı kilidi meşgul 409, alış satırı kilidi meşgul 409
-  `purchasing_line_busy` ve `concurrent_change` (#1126 spec §5.1 (c); kodu F017-s'de): aynı anahtar komutu yeniden yürütür. Aynı yürütmede terminal ret (409/422) ile
-  503 birlikte doğarsa 503 geçer, hiçbir şey kaydedilmez. Stok'un problem kodu Satış
+  hatası/zaman aşımı, termin okuması `Unreadable`, Satış `revision_impact_unavailable`), satış satırı kilidi meşgul 409 (kodu Stok F017-b'de), alış satırı kilidi meşgul 409
+  `purchasing_line_busy` ve 409 `inventory_concurrent_change` (#1126 spec §5.1 (c); tam ad §4.3, §7): aynı anahtar komutu yeniden yürütür. Çok satırlı değerlendirme
+  modeli (koordinatör okuması, #66 `6825926365`; `6825436733` ve `6825828888`'in yerine geçer; teknik idempotency sınıflaması,
+  geri alınabilir; Stok spec §5.1 (c) ile aynı): (1) önce bütün kilitler alınır (satış satırları artan kimlikle, sonra alış
+  satırları artan `lineId`); biri meşgulse o kilidin kendi 409 koduyla döner, hiçbir satır okunmaz, kayıt yok; (2) sonra
+  satırlar sabit sırayla (satış satırı, sonra artan `lineId`) değerlendirilir, terminal ret (409/422) toplanır, değerlendirmeyi
+  durdurmaz; (3) ilk terminal olmayan sonuç (503/okunamaz, port hatası, zaman aşımı, 409 `inventory_concurrent_change`)
+  değerlendirmeyi bitirir ve kendi durum ve koduyla döner, hiçbir şey kaydedilmez, aynı anahtar yeniden yürür; (4) kilit
+  meşgul ile terminal ret veya 503 aynı denemede oluşmaz; (5) bütün satırlar terminal ve kodlar farklıysa sabit sıradaki ilk
+  terminal ret kaydedilir ve döner. Satış X1 (5)'i aynen kullanır (NEEDS-SPEC yok). Stok'un problem kodu Satış
   cevabına **aynen taşınır** (#1116 spec §7 "Satış problemine taşınır"; çevrilmez); kesin ad F017-s'de.
 - **Satış komutlarına eşleme:**
   - DEC-SAL-005 sipariş iptali (README :296-302): önizleme fiziksel tahsiste reddetmeye devam eder; gelecek ayırma
@@ -327,9 +334,12 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   hiçbir şey yazılmaz; satır kaldırma: sevkli, yükleme talimatlı veya fiziksel tahsisli satır 422 `sales_line_revision_line_shipped` (Stok portu çağrılmaz), yalnız gelecek ayırmalı satır kaldırılır, bütün ayırmanın kalanı 0 (durum #1116 §4.1'e göre `Released`/`Consumed`);
   yarış: Satış okumasından sonra fiziksel tahsis oluşursa satır kaldırma ara 409, terminal kayıt, hiçbir şey yazılmaz; açık
   seçim fazlayı aşarsa 422, terminal kayıt; bayat seçim 409 (KLN-D30 (3)); termin okuması `Unreadable` → Satış komutu yazılmaz, 503; golden: dilimsiz alış satırı en geç sayılır; port hatasında satır değişmez; Stok reddi tüm komutu
-  geri alır, denetimde yalnız Satış'ın terminal ret kaydı; ara 409 sonrası aynı anahtar → aynı 409, Stok çağrısı yok; 503
-  sonrası aynı anahtar → komut yeniden yürür, kayıt yok; aynı yürütmede 409 + 503 veya 422 + 503 → 503, kayıt yok; satış satırı kilidi meşgul 409 → kayıt yok, aynı anahtar
-  yeniden yürür; replay tek bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem) ve
+  geri alır, denetimde yalnız Satış'ın terminal ret kaydı; ara 409 sonrası aynı anahtar → aynı 409, Stok çağrısı yok; çok satırlı değerlendirme golden'ları (#66 `6825926365`, Stok spec §8): (i) satış satırı kilidi meşgul → o kilidin 409'u,
+  okuma ve kayıt yok; (ii) satır A terminal 422, satır B termin okunamaz → 503, kayıt yok, aynı anahtar yeniden yürür; (iii) satır A
+  terminal 422, satır B 409 `inventory_concurrent_change` → o 409, kayıt yok, aynı anahtar yeniden yürür (sınıflandırıcı testi,
+  port double ile); (iv) satır A 409 bayat seçim, satır B 422 → sabit sıradaki ilk terminal (A'nın 409'u) kaydedilir ve döner;
+  (v) tekrar zinciri: kilit meşgul → 409, kayıt yok; kilit açılınca aynı anahtar → 422 kaydedilir; sonraki çağrı Stok portunu
+  çağırmadan saklı 422'yi döner; replay tek bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem) ve
   gerçek-SQL yarış testleri "Satış azaltma/iptal × alış kabul dönüşümü" ve "Satış iptali/azaltması × oluşturma"
   (#1116 spec §8).
 - **Modül bağlantıları:** Stok bırakma portu (Stok → Satış tüketimi, ❌ #1116), gelecek ayırma okuma türü (❌ #1116 F017-s).
