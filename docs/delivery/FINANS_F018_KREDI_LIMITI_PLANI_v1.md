@@ -46,13 +46,17 @@ Bugün risk kararı her zaman `Unavailable` döner. Bunun bir nedeni limit maste
 
 ### L2 — Müşteri teminatı (API-85b, K3)
 
-- Müşteriden alınan teminatların kaydı: tür (Ayarlar listesi), tutar, para birimi, geçerlilik tarihleri ve belge
-  referansı. FNS-D31: teminat mektubu, ipotek, kredi kartı, Vinov, DBS gibi banka garantileri teminattır; **çek teminat
-  türü olarak kabul edilmez**. Akış L1 ile aynıdır (öner, onay, ret; kayıt ekle-yalnızdır, çözüm ters kayıtla yapılır).
+- Müşteriden alınan teminatların kaydı: tür (Ayarlar'da yapılandırılabilir liste), tutar, para birimi, geçerlilik
+  tarihleri ve belge referansı. FNS-D31: banka garantili ödemeler, DBS, teminat mektubu, kredi kartı, Vinov ve ipotek
+  teminattır. **Çek ve senet teminat türü olarak kabul edilmez.** Akış L1 ile aynıdır (öner, onay, ret; kayıt
+  ekle-yalnızdır, çözüm ters kayıtla yapılır).
 - Port `Collateral` cevabı tür ve para birimine göre tam tutarlardır. **Azaltım uygulanmaz** (FNS-D31 (3)).
-- Teminat brüt riske girmez (DEC-FIN-007 notu, FNS-D31 (4)). Ekranda teminat, "kalan teminat" (teminat − açık fatura)
-  ve "teminatlı alacak" gösterilir; teminatlı alacak riskli alacak toplamında kalır. Bu iki sayı ekranda hesaplanmaz,
-  Finans okuma ucundan gelir (L3).
+- Teminat brüt riski düşürmez (DEC-FIN-007 notu, FNS-D31 (5)). Ekranda **mevcut teminat**, **teminat doluluğu**
+  (teminattan düşülen açık fatura) ve **riskteki tutar** ayrı ayrı görünür. Hiçbiri ekranda hesaplanmaz: ilk ikisi Finans
+  okuma ucundan (L3), riskteki tutar Satış risk hesaplayıcısından gelir.
+- **Evraklı risk** (FNS-D31 (2)): müşteriden alınıp tahsil edilmemiş çek ve senetlerin toplamı ayrı gösterilir ve
+  doğrudan riske girer. Çek/senet portföyünün kaynağı ve DEC-FIN-007 bileşenleriyle eşleşmesi (çift sayım olmaması) L2
+  spec'inde yazılır.
 - API-84 (genel teminatlar; verilen/alınan BTM) ile ilişkisi L2 spec'inde netleşir. Ortak tablo mu ayrı tablo mu,
   sonradan tersine dönmesi pahalı olduğu için L2 başlamadan koordinatöre yazılır.
 
@@ -60,7 +64,7 @@ Bugün risk kararı her zaman `Unavailable` döner. Bunun bir nedeni limit maste
 
 - Cari kartı ekranı (Claude frontend), Finans'ın okuma ucundan limit, teminat ve açık alacağı gösterir. Düzenleme düğmeleri
   Finans uçlarına gider (FNS-D27 (2)).
-- Kalan teminat ve teminatlı alacak (FNS-D31) bu uçtan gelir.
+- Mevcut teminat, teminat doluluğu ve evraklı risk (FNS-D31) bu uçtan gelir.
 - Brüt risk ve "limit boşluğu" sayısı ekranda hesaplanmaz. Gösterilecekse Satış risk hesaplayıcısının cevabından gelir.
 
 ## 3. Diğer şeritlere devir (Finans uygulamaz)
@@ -70,7 +74,7 @@ Bugün risk kararı her zaman `Unavailable` döner. Bunun bir nedeni limit maste
 | Satış | Siparişte limit aşımı **uyarısı ve kaydı** (FNS-D27 (3)). Uyarı sipariş kaydını durdurmaz. | DEC-FIN-009 "uyarı/onay" metninin uyarı kısmı. Siparişte ayrı onay adımı bu kararla açılmaz |
 | Satış | Lojistik sevk kapısının okuyacağı **sevk anı risk sonucu** portu: sonuç (`Within`/`Over`/`Unavailable`), tutar yok (SAT-D162). | Hesap Satış'ta kalır (DEC-FIN-007 bileşenlerinin ikisi Satış verisidir). Finans portu girdi olmaya devam eder. Lojistik'e ayrı bir Finans portu açılmaz; Lojistik Finans tablosu da okumaz |
 | Lojistik | Sevk kapısı: `Over` → sevk durur; geçerli istisna (`Valid`) tek sevki serbest bırakır; tüketim ve sevk iptalinde düşme (SAT-D285). Limiti tanımlanmamış müşteri (`credit_limit_not_defined`) için de sevk durur, aynı tek sevk istisnasıyla geçer (FNS-D30). | Modüller arası sözleşme, K3 |
-| Frontend (Claude) | Cari kartında Finans paneli (limit/teminat öner-onay, tarihçe, kalan teminat, teminatlı alacak), Satış uyarı gösterimi, Lojistik "sevk durdu / istisna" durumu. Limitsiz müşteri istisnasını onaylayan kişiye cari kartında limit **önerisi** kısayolu (FNS-D30 (2)); kısayol limiti doğrudan geçerli yapmaz. | `frontend-screen-states` |
+| Frontend (Claude) | Cari kartında Finans paneli (limit/teminat öner-onay, tarihçe; mevcut teminat, teminat doluluğu, riskteki tutar ve evraklı risk ayrı ayrı), Satış uyarı gösterimi, Lojistik "sevk durdu / istisna" durumu. Limitsiz müşteri istisnasını onaylayan kişiye cari kartında limit **önerisi** kısayolu (FNS-D30 (2)); kısayol limiti doğrudan geçerli yapmaz. | `frontend-screen-states` |
 | Counterparty | Kod işi yok. Limit Counterparty tablosuna yazılmaz. | SAT-D51 |
 
 ## 4. Açık noktalar
@@ -80,7 +84,7 @@ Bugün risk kararı her zaman `Unavailable` döner. Bunun bir nedeni limit maste
 | N-1 | ~~Limiti tanımlanmamış müşteride sevk~~ **Cevaplandı: FNS-D30** (durur, tek seferlik onayla geçer, onaylayana limit önerisi kısayolu). | — |
 | N-2 (`NEEDS-SINAN`, gerekirse) | "Cari kartında tutulur" kaydın sahibini Cari'ye taşımak mı demek? Bu plan ekran yeri olarak okur (SAT-D51 aynen). | Modül sahipliği kararıdır |
 | N-3 | Limit değişikliğine tutar eşiğine bağlı ikinci onay gerekir mi? | OPEN-009 (onay matrisi tutarları); başlangıçta tek ikinci kişi onayıdır (FNS-D27a) |
-| OPEN-010 | Teminat kısmı **FNS-D31** ile cevaplandı (azaltım yok, çek hariç). Risk motoru aktivasyonu ve `ACIK_KARARLAR.md` satırı ayrı | Satır güncellemesi karar kaydı işidir |
+| OPEN-010 | Teminat kısmı **FNS-D31** ile cevaplandı (#66 `6819835966` m.4: azaltım yok, çek/senet teminat değil). Karar dosyası kapatmayı **önerir**; `ACIK_KARARLAR.md` satırı ayrı ve review'da doğrulanır. Risk motoru aktivasyonu ayrı kalır | `OPEN-*` kapatma insan kapısıdır; dayanak Sinan yorumu |
 
 ## 5. Sıra
 
