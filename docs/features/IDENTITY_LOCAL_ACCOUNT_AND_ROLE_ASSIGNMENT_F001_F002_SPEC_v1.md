@@ -22,10 +22,8 @@
    yönetimi) için **ikinci bir kişinin onayı zorunludur** (maker-checker). İlk Admin kurulumda
    **bir kez** tanımlanır ve o anda tanımlı bütün şirketlerde Admin olur (KIM-D18); her şirkette en az bir
    aktif Admin kalır (KIM-D17). Her atama ve her ret audit log'a yazılır.
-3. Yerel `admin/admin` hesabı yalnız Sinan'ın kendi bilgisayarında, geçici olarak vardır. Bu hesap
-   **hiçbir zaman** repoya, seed verisine veya örnek dosyalara (`.env.example` vb.) girmez; ilk girişte
-   parola değişikliği zorunludur (Development istisnası §4). Bu spec bunun nasıl garanti edildiğini tanımlar
-   (§"Varsayılan kimlik bilgisi yasağı").
+3. Varsayılan kimlik bilgisi yasaktır: repo, seed verisi ve örnek dosyalar (`.env.example` vb.) kullanıcı adı
+   veya parola içermez. Bu spec bunun nasıl garanti edildiğini tanımlar (§"Varsayılan kimlik bilgisi yasağı").
 
 ## Kapsam
 
@@ -125,7 +123,7 @@ Sahip modül: **Identity** (`identity` şeması). Başka modül bu tablolara yaz
 | Nesne | Durum | Not |
 |---|---|---|
 | `UserAccount` | Var | `IsActive` mevcut. Kullanıcı adı yerel kimlik bilgisinde tutulur (aşağıda). |
-| `LocalCredential` (yeni, öneri) | Yok | `UserId` (PK, FK → `Users`), `UserName`, `NormalizedUserName` (unique), `PasswordHash`, `HashFormatVersion`, `MustChangePassword`, `PasswordChangedAtUtc`, `FailedAccessCount`, `LockoutEndUtc`, `TwoFactorEnabled`, `Version` (concurrency token). |
+| `LocalCredential` (yeni, öneri) | Yok | `UserId` (PK, FK → `Users`), `UserName`, `NormalizedUserName` (unique), `PasswordHash`, `HashFormatVersion`, `MustChangePassword`, `PasswordChangedAtUtc`, `FailedAccessCount`, `LockoutEndUtc`, `TwoFactorEnabled`, `TemporaryPasswordIssuedAtUtc` (null'lanabilir; KIM-D23 geçici parolası), `TemporaryPasswordConsumedAtUtc` (null'lanabilir), `Version` (concurrency token; giriş sayaçları onu artırmaz, §"Kilit sayacı"). |
 | `LocalTwoFactorSecret` (yeni, ID-5) | Yok | Şifreli TOTP sırrı (ASP.NET Core Data Protection ile korunur; anahtar secret'tır, repoda yok) + tek kullanımlık kurtarma kodlarının hash'leri. |
 | `ExternalIdentityLink` | Var | Yerel hesap da bir `(issuer, subject)` satırı alır: issuer öneri `urn:goymen:local-account`, subject = `UserId`. Böylece `ErpClaimsTransformation` ve `IExternalIdentityResolver` değişmeden kalır; OIDC (ID-6) aynı tabloya ikinci satır ekler. |
 | `IdentityBootstrapState` (yeni, ID-2) | Yok | Tek satırlı işaret: `Id` sabit tekil anahtar + check constraint, `CompletedAtUtc`, `FounderUserId`. Bootstrap'ın ikinci kez çalışmasını DB düzeyinde engeller. |
@@ -155,7 +153,7 @@ Etkin → [N ardışık başarısız deneme] → Kilitli(LockoutEndUtc) → [sü
 Etkin → [yetkili sıfırladı] → Oluşturuldu(MustChangePassword=true)
 Herhangi → [UserAccount.IsActive=false; son Admin ise reddedilir (KIM-D17)] → Pasif (giriş reddedilir; silme yok)
 Pasif → [yalnız FounderUserId; KIM-D22 recover-founder reactivate] → Oluşturuldu(MustChangePassword=true)
-IsActive=true (Etkin | Kilitli | ParolaDeğiştirmeZorunlu; yalnız FounderUserId) → [KIM-D23 recover-founder reset-password] → Oluşturuldu(MustChangePassword=true)
+IsActive=true (Oluşturuldu | Etkin | Kilitli | ParolaDeğiştirmeZorunlu; yalnız FounderUserId) → [KIM-D23 recover-founder reset-password] → Oluşturuldu(MustChangePassword=true)
 ```
 
 `Pasif`'ten çıkışın HTTP/ekran yolu yoktur; tek istisna `FounderUserId` için KIM-D22 sunucu komutudur.
@@ -174,6 +172,12 @@ hedefin üye olduğu her şirkette `identity.users.manage` taşıyan (KIM-D13/D1
 - **Kilit sayacı:** başarılı girişte `FailedAccessCount = 0`; kilit süresi dolunca veya yetkili kilidi açınca ya da
   parolayı sıfırlayınca `0`'dan başlar; kilitliyken gelen deneme süreyi **uzatmaz**, sayacı artırmaz, yalnız
   `auth.login.failed` olayı yazılır.
+- **Giriş sayaçları ve `Version` (KIM-D23 ile hizalı; yazar okuması, geri alınabilir teknik tasarım):** giriş
+  yolunun yazdığı alanlar (`FailedAccessCount`, `LockoutEndUtc`, başarılı girişte yeniden hash, geçici parola
+  tüketimi) tek koşullu `UPDATE` ile yazılır ve `Version`'ı **artırmaz**. `Version` yalnız komut/yetkili
+  değişikliklerinde artar (parola değişimi/sıfırlama, `MustChangePassword`, 2FA, `SecurityStamp`, kilit açma).
+  Böylece başarısız giriş denemeleri `recover-founder` koşumunu `concurrent_change`'e düşürmez (deneme
+  yağmuruyla kurtarmayı engelleme yolu yoktur); komutun yazması kilidi ve sayacı zaten sıfırlar.
 
 **Kurucu bootstrap:** `Yok → Tamamlandı` (tek yön; geri alınamaz, yeniden çalıştırma reddedilir).
 
@@ -508,8 +512,17 @@ her iki alt yol için geçerlidir; `reset-password`'a özgü kurallar ayrı baş
      (ör. Ayşe yalnız A'da, Deniz yalnız B'de Admin) KIM-D16 gereği ikisi de ekrandan `403` alır; komut çalışır.
      Kurucunun hiç geçerli ataması yoksa ekrandan sıfırlama KIM-D19 gereği `409
      identity.user.company_assignment_required` ile reddedilir; ön koşul sağlanmış sayılır ve komut çalışır.
-     Eşzamanlılık: ön koşul kilitli okumayla yeniden doğrulanır; yetki/atama azaltan işlemler KIM-D17 kilidini
-     zaten alır, kilitsiz artışlar yalnız `not_needed` yönüne iter (zararsız).
+     Değerlendirici: ön koşul, HTTP `POST /access/users/{userId}/password-reset` yetki kontrolünün kullandığı
+     **aynı** KIM-D16 değerlendiricisiyle hesaplanır (ayrı bir kopya yazılmaz); `not_needed` ⇔ kurucu dışında, o
+     değerlendiricinin kurucu hedefi için izin verdiği en az bir aktif kullanıcı vardır. Parity testi aynı veri
+     setinde iki yolun aynı sonucu verdiğini doğrular (KS-23).
+     Eşzamanlılık: ön koşul kilitli okumayla yeniden doğrulanır. KIM-D17 kilidi yalnız Admin sayısını azaltan
+     işlemleri sıralar; Admin olmayan bir rolden gelen `identity.users.manage` iznini kaldıran işlemler bu kilidi
+     almaz. İki yön de güvenlidir: yeniden okumadan sonra izin artarsa sonuç gereksiz ama audit'li bir sıfırlamadır;
+     azalırsa en kötü durum `not_needed` reddi ve yeniden çalıştırmadır.
+     Bilinen sınır (`NEEDS-SINAN` adayı; koordinatör Sinan'a sorabilir, bu spec seçmez): yetkili diğer kullanıcı da
+     giriş yapamıyorsa (parolasını unutmuş, kilitli, 2FA cihazını kaybetmiş) komut yine `not_needed` döner; bu tam
+     kilitlenme durumu için kararlı bir yol yoktur.
 - Adım sırası (kilitsiz ön okuma → kilit dışında etkileşim ve onay → bütün şirket kilitleri + kurucu satırı altında
   yeniden doğrulama → `Version` token'lı yazma), `concurrent_change`, TTY, iki kez giriş ve ret kayıtları
   `reactivate` ile aynıdır; `--yes`/`--force` yoktur.
@@ -520,9 +533,17 @@ her iki alt yol için geçerlidir; `reset-password`'a özgü kurallar ayrı baş
   çitli oturumdaki `POST /api/v1/identity/session/password` çağrısı için geçerli kalır. Değişim o oturumda
   yapılmazsa (çıkış, oturum süresi dolması) geçici parolayla yeni giriş, var olmayan kullanıcıyla aynı genel
   hatayla reddedilir ve komutun yeniden çalıştırılması gerekir. Değişimden sonra geçici parola zaten geçersizdir.
+  Tüketim atomiktir: komut `TemporaryPasswordIssuedAtUtc`'yi yazar ve `TemporaryPasswordConsumedAtUtc`'yi
+  null'lar; oturum açılırken tek koşullu `UPDATE … SET TemporaryPasswordConsumedAtUtc = now WHERE … IS NULL`
+  çalışır, etkilenen satır 1 değilse oturum açılmaz. İki eşzamanlı girişten yalnız biri geçer. 2FA açıksa
+  tüketim parola adımında değil, 2FA da geçip oturum açılırken sayılır (yarım kalan giriş parolayı tüketmez).
+  Tüketilmiş veya süresi dolmuş geçici parolayla deneme, yanlış parola gibi başarısız deneme sayılır
+  (`FailedAccessCount` artar, aynı genel hata). Normal parola değişimi iki alanı null'lar.
   Hiç kullanılmayan geçici parolanın geçerlilik süresi (TTL) `ASSUMPTION-ID-TMP-1` adayıdır (geri alınabilir
-  teknik ayar, öneri `Identity:FounderRecovery:TemporaryPasswordLifetime`); değer bu spec'te seçilmez, ayar
-  yokken süre sınırı uygulanmaz.
+  teknik ayar, öneri `Identity:FounderRecovery:TemporaryPasswordLifetime`); değer bu spec'te seçilmez. Ayar
+  yoksa veya geçersizse `reset-password` hesapta değişiklik yapmadan reddeder (öneri kod
+  `identity.founder_recovery.configuration_missing`; ret kaydı yazılır) — süresiz geçici parola üretilmez
+  (fail-closed).
 - Yalnız parola sıfırlanır: `IsActive`, rol tanımları, atamalar, `IdentityBootstrapState`, KIM-D5 istisnası ve
   2FA durumu **değişmez** (koordinatör notu #66 `6823243819`: "rol/atama değiştirmez"). 2FA cihazını da kaybetmiş
   kurucu bu kararın kapsamı dışındadır; komut 2FA'yı kapatmaz veya sıfırlamaz (fail-closed). Gerekirse ayrı
@@ -533,7 +554,9 @@ her iki alt yol için geçerlidir; `reset-password`'a özgü kurallar ayrı baş
   operatör beyanı, `SourceChannel` (öneri `Cli`) ve korelasyon `reactivate` ile aynıdır. Parola grup geneli
   olduğundan başarıda kurucunun bugün geçerli ataması olan **her** şirkete o şirketin `CompanyId`'siyle bir audit
   satırı yazılır (aynı transaction; `reactivate`'teki geri gelen atama kuralının karşılığı); içerik hedef
-  `FounderUserId` ve şirket kimlikleridir. Retler `reactivate`'teki gibi güvenlik kanalına `ScopeKind=Platform`,
+  `FounderUserId` ve şirket kimlikleridir. Kurucunun hiç geçerli ataması yoksa şirket audit satırı yazılmaz;
+  "her kullanım audit'e" şartı, aynı transaction'daki `ScopeKind=Platform`, `CompanyId=null` başarı güvenlik
+  olayıyla karşılanır (fail-closed: yazılamazsa sıfırlama geri alınır). Retler `reactivate`'teki gibi güvenlik kanalına `ScopeKind=Platform`,
   `CompanyId=null` tek kayıt olarak yazılır; `IdempotencyKey`, korelasyon ve `PermissionCode` kuralı aynıdır.
 - Güvenlik olay kanalı: öneri kod `identity.founder.password_reset` (yüksek `Severity` + alarm metriği) aynı
   ADR-SEC-001 sözleşme değişikliğine eklenir; ret kodu `identity.founder.recovery_refused` ortaktır. Başarı olayı
@@ -779,7 +802,16 @@ And kurucu kilitliyken (`LockoutEndUtc` gelecekte) de komut çalışır ve kilit
 And kurucu A ve B'de üye, A'daki tek diğer Admin Ayşe B'de, B'deki tek diğer Admin Deniz A'da yetkisizken
 (ikisi de ekrandan `403` alır) komut çalışır; bir kullanıcı A ve B'nin ikisinde de şirket geneli
 `identity.users.manage` taşıyorsa komut `identity.founder_recovery.not_needed` ile reddeder; kurucunun hiç geçerli
-ataması yoksa komut çalışır;
+ataması yoksa komut çalışır ve tek `ScopeKind=Platform`, `CompanyId=null` başarı güvenlik olayı yazılır (şirket
+audit satırı yok);
+And aynı kullanıcı/atama veri setlerinde ön koşul ile HTTP `password-reset` yetki kontrolü aynı sonucu verir
+(parity testi; Admin olmayan rolden gelen `identity.users.manage` dahil);
+And kurucu `Oluşturuldu` durumundayken (önceki sıfırlamanın geçici parolası hiç kullanılmamış) komut yeniden çalışır;
+And `Identity:FounderRecovery:TemporaryPasswordLifetime` yokken komut `configuration_missing` ile hesapta
+değişiklik yapmadan reddeder; süre dolduktan sonra geçici parolayla giriş reddedilir;
+And geçici parolayla iki eşzamanlı girişten yalnız biri oturum açar; 2FA açık kurucuda 2FA adımı tamamlanmadan
+geçici parola tüketilmez; tüketilmiş geçici parolayla deneme `FailedAccessCount`'u artırır;
+And onay beklerken kurucu adına başarısız giriş denemeleri koşumu `concurrent_change`'e düşürmez;
 And kurucu geçici parolayla girip değiştirmeden çıkarsa aynı geçici parolayla yeni giriş reddedilir;
 And iki eşzamanlı `reset-password` koşumundan biri başarılı olur, diğeri `identity.founder_recovery.concurrent_change`
 ile reddeder; onay ile yazma arasında kurucu parolasını ekrandan değiştirirse koşum aynı kodla reddeder; sonraki
@@ -801,7 +833,9 @@ doğrulanır); komut parolayı argüman, ortam değişkeni veya dosyadan kabul e
   eşzamanlılık koruması (geri alma ∥ geri alma, pasifleştirme ∥ geri alma), ilk Admin yarışı (`CompanyOpener` ∥
   `FounderDirect`, eşzamanlı çift teslim; tek atama ve tek `first_admin_assigned.v1`), `recover-founder` ret yolları (`founder_active`, `founder_inactive`,
   `not_needed`, alt yol yok, eşzamanlı yazma), `reset-password` bölünmüş Admin ön koşulu (çalışır / `not_needed`
-  çifti), iki eşzamanlı `reset-password` (biri `concurrent_change`), iki alt yolun kilitli ön koşul yeniden doğrulaması, onay beklerken kilit
+  çifti), ön koşul ile HTTP `password-reset` değerlendiricisi parity testi, atamasız kurucuda Platform başarı
+  olayı, geçici parolanın atomik tüketimi (iki eşzamanlı giriş), TTL ayarı yokken ret, başarısız girişin
+  `Version`'ı değiştirmediği, iki eşzamanlı `reset-password` (biri `concurrent_change`), iki alt yolun kilitli ön koşul yeniden doğrulaması, onay beklerken kilit
   tutulmadığı ve başarı güvenlik olayı yazılamazsa geri alma; `bootstrap-founder` TTY yokken ret.
 - Audit + güvenlik olayı + idempotency replay + `409` concurrency testleri.
 - Varsayılan kimlik bilgisi guard testi yeşil.
@@ -840,8 +874,9 @@ Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critic
 (kurulum bekliyor + kurucu ataması, KIM-D20) ve `NEEDS-SINAN-ID-12` (şirket açma izni Critical, KIM-D21)
 kapandı; üyeliği olmayan hedef KIM-D19 ile, kurucu da pasifken kurtarma 20. tur (#66 `6822303233` m.2) ile
 sunucu kurtarma komutu olarak (KIM-D22), aktif kurucunun unutulan parolası 23. tur (#66 `6823243819` m.3) ile
-sunucu komutuyla parola sıfırlama olarak (KIM-D23) karara bağlandı. Bu spec'te açık kimlik politikası sorusu
-kalmadı; teknik varsayılanlar `ASSUMPTION-*` adayı olarak işaretlidir (hız sınırı değeri
+sunucu komutuyla parola sıfırlama olarak (KIM-D23) karara bağlandı. Bilinen tek açık durum: KIM-D23'te ekrandan
+sıfırlayabilecek diğer yetkili de giriş yapamıyorsa komut `not_needed` döner (tam kilitlenme; `NEEDS-SINAN`
+adayı, koordinatör Sinan'a sorabilir). Teknik varsayılanlar `ASSUMPTION-*` adayı olarak işaretlidir (hız sınırı değeri
 `ASSUMPTION-ID-RL-1`, farklı parolalı replay `ASSUMPTION-ID-IDEM-1`, KIM-D19/KIM-D16 yanıt ayrımı
 `ASSUMPTION-ID-LEAK-1`, kullanılmayan kurtarma geçici parolası süresi `ASSUMPTION-ID-TMP-1`).
 

@@ -130,7 +130,7 @@ oturumundadır.
 | KIM-D20 | Açana Admin ataması arızalanırsa | Şirket Admin'i olana kadar "kurulum bekliyor" durumunda kalır ve işlem kabul etmez; alarm çıkar; kurucu Admin elle Admin atar (audit'li). Durum adı, olaylar ve metrik uygulama ayrıntısıdır (cross-module sözleşme, K3). | Kimlik spec'i kural 8, ID-3b; Organization şirket açma dilimi |
 | KIM-D21 | Şirket açma izni | Critical sınıfındadır; verilmesi Critical rol kurallarına tabidir. Sınıflandırmadır; mevcut grant'larda değişiklik ayrı somut karar ister. KIM-D9'un "şimdilik yeni işlem Critical'e eklenmez" kuralına Sinan'ın sonradan verdiği açık istisnadır: Critical küme yalnız bu bir sınıflandırma ile büyür, mevcut grant'lar değişmez. | Organization şirket açma dilimi, Critical küme |
 | KIM-D22 | Admin'i olmayan ve kurucusu da pasif şirkette kurtarma | Sunucu kurtarma komutu: yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunludur; ekrandan (HTTP/UI) yapılamaz; her kullanım audit'e yazılır. Komut varsayılan kimlik bilgisi içermez; repo/seed/appsettings'e kullanıcı/şifre yazılmaz. Komut adı, parametreleri ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır (AGENTS.md insan kapısı; Sinan metni değil). Komut yalnız pasif kurucuyu hedefler (kararın lafzı); aktif kurucunun parola sıfırlaması KIM-D23'tür. | Kimlik spec'i kural 8, kurucu kurtarma komutu, KS-22, ID-2 |
-| KIM-D23 | Aktif kurucu parolasını unuttu, ekrandan sıfırlayacak başka aktif Admin yok | Sunucu komutu parola sıfırlar: sunucuya erişimi olan kişi aynı kurtarma komutuyla kurucunun parolasını sıfırlar; kayıt altına alınır (audit); ilk girişte yeni parola zorunludur. Koordinatör notu (#66 `6823243819`, Sinan metni değil): yalnız parola sıfırlama yolunu açar, rol/atama değiştirmez; tek kullanımlık geçici parola. Pasif kurucu yolu (KIM-D22) aynen kalır. Alt yolun adı, ön koşul okuması ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır (AGENTS.md). | Kimlik spec'i kurucu kurtarma komutu, KS-23, ID-2 |
+| KIM-D23 | Aktif kurucu parolasını unuttu, ekrandan sıfırlayacak başka aktif Admin yok | Sunucu komutu parola sıfırlar: sunucuya erişimi olan kişi aynı kurtarma komutuyla kurucunun parolasını sıfırlar; kayıt altına alınır (audit); ilk girişte yeni parola zorunludur. Koordinatör notu (#66 `6823243819`, Sinan metni değil): yalnız parola sıfırlama yolunu açar, rol/atama değiştirmez; tek kullanımlık geçici parola. Pasif kurucu yolu (KIM-D22) aynen kalır. Alt yolun adı ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3); ön koşul okuması yazar okumasıdır (aşağıda). Production'da çalıştırılması insan kapısıdır (AGENTS.md). | Kimlik spec'i kurucu kurtarma komutu, KS-23, ID-2 |
 
 **Yazar okumaları (Sinan kararı değildir; kimlik spec'inde uygulanır, review'da düzeltilebilir):**
 
@@ -139,6 +139,10 @@ oturumundadır.
   yazar okuması değildir: KIM-D19.)
 - KIM-D17: "aktif Admin" = aktif kullanıcının, aktif rol tanımındaki, başlamış ve süresiz şirket geneli Admin
   ataması; süreli atama sayılmaz. Problem kodu ve kilit uygulama ayrıntısıdır.
+- KIM-D23: "ekrandan sıfırlayacak başka aktif Admin yok" = kurucu dışında, kurucunun bugün geçerli ataması olan her
+  şirkette şirket geneli `identity.users.manage` taşıyan tek bir aktif kullanıcı yok (HTTP parola sıfırlama
+  yetkisiyle aynı KIM-D16 değerlendiricisi). "Tek kullanımlık geçici parola" = ilk başarılı girişte atomik
+  tüketilir. Ayrıntılar ve bilinen sınırlar kimlik spec'indedir.
 
 ## Sınırlar
 
