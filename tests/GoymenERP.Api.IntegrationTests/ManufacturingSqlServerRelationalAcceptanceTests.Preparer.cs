@@ -102,6 +102,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             Assert.Equal(51190, error.Number);
             Assert.EndsWith("_AddManufacturingPlanPreparer", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
+
+            // The later migrations Down did roll back (no row stopped them); Up brings the schema back to latest.
+            await context.Database.MigrateAsync();
         }
 
         Assert.Equal(run.Actor.ToString("D"), await run.ScalarAsync<string>(
@@ -136,7 +139,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'CreatedBy' "
                 + "AND [object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingPlanInputAllocations", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+            Assert.EndsWith("_AddManufacturingPlanSalesOrderLinks", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
         }
 

@@ -202,6 +202,23 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 + "AND [PaintColorCode] IS NULL))");
             // U2-d (URT-D2): the preparer, when kept, is a non-empty actor id.
             table.HasCheckConstraint("CK_Plans_CreatedBy", "[CreatedBy] IS NULL OR LEN([CreatedBy]) > 0");
+            // U2-b / API-16 (SAT-D219): the sales order link is whole or absent, and every link counts in its revision.
+            table.HasCheckConstraint("CK_Plans_SalesOrderLink",
+                "([SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [SalesCustomerPartyId] IS NULL "
+                + "AND [SalesCustomerAccountId] IS NULL AND [SalesProductId] IS NULL AND [SalesOrderLineRevision] IS NULL "
+                + "AND [SalesOrderLinkedBy] IS NULL AND [SalesOrderLinkedAtUtc] IS NULL) "
+                + "OR ([SalesOrderId] IS NOT NULL AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesOrderLineId] IS NOT NULL AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesCustomerPartyId] IS NOT NULL "
+                + "AND [SalesCustomerPartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesCustomerAccountId] IS NOT NULL "
+                + "AND [SalesCustomerAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesProductId] IS NOT NULL AND [SalesProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesOrderLineRevision] IS NOT NULL AND [SalesOrderLineRevision] >= 0 "
+                + "AND [SalesOrderLinkedBy] IS NOT NULL AND LEN([SalesOrderLinkedBy]) > 0 "
+                + "AND [SalesOrderLinkedAtUtc] IS NOT NULL)");
+            table.HasCheckConstraint("CK_Plans_SalesOrderLinkRevision",
+                "[SalesOrderLinkRevision] >= 0 AND ([SalesOrderLineId] IS NULL OR [SalesOrderLinkRevision] >= 1)");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -214,6 +231,12 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.CancellationReason).HasMaxLength(ProductionPlan.DecisionReasonMaximumLength);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.CreatedBy).HasMaxLength(ProductionPlan.PreparedByMaximumLength);
+        entity.Property(x => x.SalesOrderLinkedBy).HasMaxLength(PlanSalesOrderLink.LinkedByMaximumLength);
+        entity.Property(x => x.SalesOrderLinkRevision).HasDefaultValue(0L);
+        // U2-b / API-16: Sales' linked-supply read asks by (company, sales order).
+        entity.HasIndex(x => new { x.CompanyId, x.SalesOrderId })
+            .HasDatabaseName("IX_Plans_SalesOrder")
+            .HasFilter("[SalesOrderId] IS NOT NULL");
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -719,7 +742,13 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                     // U2-a: the cancellation moves the status and sets its three columns; the content never changes.
                     PlanRow => [nameof(PlanRow.Status), nameof(PlanRow.ApprovedByUserId), nameof(PlanRow.ApprovedAtUtc),
                         nameof(PlanRow.CancelledByUserId), nameof(PlanRow.CancelledAtUtc),
-                        nameof(PlanRow.CancellationReason), nameof(PlanRow.Version), nameof(PlanRow.UpdatedAtUtc)],
+                        nameof(PlanRow.CancellationReason), nameof(PlanRow.Version), nameof(PlanRow.UpdatedAtUtc),
+                        // U2-b / API-16: the sales order link snapshot and its own revision move together (all or none).
+                        nameof(PlanRow.SalesOrderId), nameof(PlanRow.SalesOrderLineId),
+                        nameof(PlanRow.SalesCustomerPartyId), nameof(PlanRow.SalesCustomerAccountId),
+                        nameof(PlanRow.SalesProductId), nameof(PlanRow.SalesOrderLineRevision),
+                        nameof(PlanRow.SalesOrderLinkedBy), nameof(PlanRow.SalesOrderLinkedAtUtc),
+                        nameof(PlanRow.SalesOrderLinkRevision)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
                         nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc)],
                     // MFG-PLAN-EDIT: a revision is APPEND-ONLY — it adds its rows and moves only the plan's version and
