@@ -10,7 +10,7 @@
 - Not: Bu spec `OPEN-013`'ü veya başka bir `OPEN-*` kaydını **kapatmaz**; hiçbir role, seed'e veya
   gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararları (1. ve 8. tur,
   #66 `6818566934`, `6820046672`) aynı PR'daki
-  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6`, `KIM-D9` (10. tur `6820237902`), `KIM-D12`…`KIM-D16` (14.–15. tur `6820838938`), `KIM-D17` (16. tur `6821105608`) `KIM-D18` (17. tur
+  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6`, `KIM-D9` (10. tur `6820237902`), `KIM-D12`…`KIM-D16` (14.–15. tur `6820838938`), `KIM-D17` (16. tur `6821105608`), `KIM-D18` (17. tur
   `6821262098`) ve `KIM-D19`…`KIM-D21` (18. tur `6821897620`) olarak yazıldı.
 
 ## Amaç
@@ -104,8 +104,13 @@
   pasifleştirme **kimse tarafından** yapılamaz; özel veya kurucu yetkisi yoktur. Kullanıcı önce bir şirkete
   atanır, sonra o şirketin `identity.users.manage` yetkilisi işlemi yapar. Yanıt `409` +
   `identity.user.company_assignment_required` (öneri kod; UI "Önce kullanıcıyı bir şirkete atayın." der). Bu
-  iş kuralı retidir, izin kararı değildir: işlemi yapan aktif şirkette izni taşıyarak çitten geçmiştir; ret
+  iş kuralı retidir, izin kararı değildir: işlemi yapan, isteğin şirket bağlamında (sunucuda çözülen `CompanyId`) izni taşıyarak çitten geçmiştir; ret
   aktörün şirket bağlamında denetime (`Outcome=Refused`) bir kez yazılır.
+  **`ASSUMPTION-ID-LEAK-1` (yazar okuması, geri alınabilir):** KIM-D19 `409` ile KIM-D16 `403` farklı yanıt
+  verdiği için yetkili bir şirket kullanıcısı hedefin "hiç ataması yok" ile "başka şirkette ataması var"
+  durumlarını ayırt edebilir. Kullanıcı hesapları grup genelidir ve ID-4 listesinde zaten görünür; bu nedenle
+  ayrım yeni bir bilgi sızdırmaz kabul edilir. Alternatif, iki durumda da tek tip `403`'tür (UI yönlendirmesi
+  kaybolur). Seçim teknik/UX ayarıdır; ChatGPT hakemliğine açıktır.
 
 **Persona (öneri, grant değildir):** Kurucu Admin (bootstrap), Admin (maker), İkinci onaylayıcı (checker),
 sıradan kullanıcı. Persona → rol eşlemesi `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md` gibi insan
@@ -246,11 +251,28 @@ kullanılmaz; kullanılacaksa ayrı karar.
    değere bağlı olduğu için CHECK constraint ile ifade edilemez: check constraint yalnız "ikinci onaylayıcı dolu
    **veya** `ApprovalMode ∈ {Bootstrap, FounderDirect, CompanyOpener}`" (öneri adlar) biçimine genişler. Her tek
    kişilik modu store aynı transaction içinde doğrular: `Bootstrap` yalnız bootstrap komutundan ve
-   `IdentityBootstrapState` boşken; `FounderDirect` yalnız requester = `FounderUserId` iken; `CompanyOpener`
-   yalnız kural 8'deki inbox tüketicisinden ve şirkette Admin yokken. Gerçek SQL testleri her mod için başka
+   `IdentityBootstrapState` boşken; `FounderDirect` yalnız requester = `FounderUserId` ve kurucu `IsActive=true`
+   iken, iki durumdan birinde: (a) şirket `Active` ise kural 6'nın normal koşullarıyla (kurucu o şirkette şirket
+   geneli `identity.roles.manage` taşır, çitten geçer); (b) şirket `SetupPending` ise — durum Organization'ın
+   sürümlü okuma portundan (öneri `ICompanyLifecycleReadPortV1`) okunur, durum bilinmiyor veya port erişilemezse
+   ret (fail-closed) — yalnız Admin rolü ataması ve yalnız kural 7'deki şirket kilidi altında yapılan kilitli
+   "şirkette aktif Admin yok" kontrolü geçerse; `CompanyOpener` yalnız kural 8'deki inbox tüketicisinden ve aynı
+   kilitli "aktif Admin yok" kontrolü geçerse. `Active` şirket için bayat bir `SetupPending` okuması (b) yolunu
+   açmaz: `Active` durum zaten bir aktif Admin'in var olduğu anlamına gelir ve kilitli kontrol reddeder.
+   (b) yolu için şirket bağlamı çözümündeki `SetupPending` reddinin istisnası yalnız tek "ilk Admin ataması"
+   endpoint'ine, endpoint metadata'sıyla tanınır; genel bir atlama değildir. Gerçek SQL testleri her mod için başka
    yazma yolunun olmadığını kanıtlar (kural 2'deki desen). Böylece tavuk-yumurta sorunu (tek Admin varken ilk checker'ın
    doğması) da çözülür; eski `NEEDS-SINAN-ID-08` kapandı. Kurucu Admin pasifleştirilirse istisna onunla
    biter (devredilmez; devretme ayrı karar). Admin **rolünün** devri (KIM-D18) bu istisnayı devretmez.
+   **Negatif testler (kanal ile):**
+
+   | Durum | Yanıt | Kayıt kanalı |
+   |---|---|---|
+   | `Active` şirket, kurucu üye değil | `403` | güvenlik (çit) |
+   | `SetupPending` şirkette Admin dışı rol | `409 identity.company.first_admin_role_required` (öneri) | audit |
+   | Kurucu pasif | `401` (security stamp) | auth olayı, güvenlik |
+   | Kurucu olmayan kullanıcı, `SetupPending` şirket | `409 organization.company.setup_pending` (bağlam çözümü) | güvenlik (çitten önce) |
+   | Şirkette zaten aktif Admin var | `409 identity.company.admin_already_assigned` (öneri) | audit |
 7. **Son Admin koruması (KIM-D17, 16. tur: "Sistem engellesin"):** her şirkette en az bir aktif Admin kalır.
    "Aktif Admin" = `IsActive=true` kullanıcı + o şirkette şirket geneli, başlamış (`ValidFromUtc` ≤ şimdi),
    **süresiz** (`ValidUntilUtc IS NULL`) Admin rolü ataması + rol tanımı aktif (`RoleDefinition.IsActive`).
@@ -267,6 +289,14 @@ kullanılmaz; kullanılacaksa ayrı karar.
    sırası sabit, deadlock önlenir). RCSI açık olduğundan sayım kilit alındıktan sonra, kilitli okuma ile yapılır
    (satır sürümü okuması sayıma esas alınmaz). Gerçek SQL eşzamanlılık testleri zorunlu. Önce başka birine
    süresiz Admin verilir, sonra eski Admin çıkarılır.
+   **İlk Admin yarışı:** sayıyı 0'dan 1'e çıkaran iki yol (`CompanyOpener` tüketicisi ve `SetupPending`
+   şirkette `FounderDirect`) aynı şirket kilidini alır ve kilit altında "aktif Admin yok" kontrolünü kilitli
+   okumayla yapar. Admin varsa `CompanyOpener` hiçbir şey yazmaz (idempotent; inbox kaydı işlenmiş olarak
+   kapanır), `FounderDirect` `409 identity.company.admin_already_assigned` (öneri kod) ile reddedilir ve audit'e
+   yazılır. `identity.company.first_admin_assigned.v1` yalnız 0→1 geçişinde, aynı transaction'da, şirket başına
+   deterministik olay kimliğiyle yayınlanır. Ek savunma olarak aktif Admin atamaları için filtreli tekil indeks
+   önerilir (migration, K3). Gerçek SQL yarış testleri: `CompanyOpener` ∥ `FounderDirect` ve aynı olayın
+   eşzamanlı çift teslimi; sonuçta tek ilk Admin ve tek olay.
 8. **Sonradan açılan şirkette ilk Admin (KIM-D18, 17. tur: "Kurucu hepsinde Admin"):** yeni şirketi açan kişi o
    şirketin ilk Admin'i olur. Şirketi Organization modülü açar; Identity tablosuna yazmaz. Önerilen sözleşme:
    Organization şirket açılışını outbox olayı (öneri `organization.company.opened.v1`) yayınlar; açan `UserId`
@@ -276,7 +306,11 @@ kullanılmaz; kullanılacaksa ayrı karar.
    **Kurulum bekliyor (KIM-D20, 18. tur: "Kurulum bekler, kurucu atar"):** yeni şirket Admin'i olana kadar
    "kurulum bekliyor" durumundadır ve işlem kabul etmez. Önerilen uygulama: Organization şirketi `SetupPending`
    durumunda açar; şirket bağlamı çözümü `SetupPending` şirkete gelen her isteği tek kodla reddeder (öneri `409`
-   + `organization.company.setup_pending`; aşağıdaki kurucu ataması hariç). Identity şirketteki ilk süresiz
+   + `organization.company.setup_pending`; aşağıdaki kurucu ataması hariç). Bugünkü `CompanyContextMiddleware`
+   yalnız `RequireCompanyContext` endpoint'lerinde çalışır ve şirket durumunu bilmez; ret, başlık olmadan
+   `companyId` alan endpoint'lere, tüketicilere ve arka plan işlerine de genişletilmelidir (Organization/Platform
+   devri). `SetupPending` mevcut `Company.IsActive` alanından ayrı tutulur (öneri: ayrı `LifecycleState` alanı,
+   `IsActive` anlamı değişmez; Organization devri). Identity şirketteki ilk süresiz
    Admin atamasını yazınca aynı transaction'da outbox olayı (öneri `identity.company.first_admin_assigned.v1`)
    yayınlar; Organization inbox/dedup ile tüketip şirketi `Active` yapar. Böylece olay işlenene kadar geçen süre
    de "kurulum bekliyor" olarak görünür, Adminsiz ama işlem kabul eden bir pencere kalmaz. Açan kullanıcı
@@ -284,8 +318,9 @@ kullanılmaz; kullanılacaksa ayrı karar.
    sayısı" ölçülebilir metrik olarak yayınlanır. Kurtarma: kurucu Admin (`FounderUserId`, aktif) o şirkete elle
    Admin atar; bu, kural 6'daki `FounderDirect` yoludur (ikinci onaysız, audit'li). Kurucu o şirkette üye
    olmasa da bu yol yalnız `SetupPending` şirkette ve yalnız Admin rolü ataması için açıktır; `Active` şirkette
-   kural 6'nın normal koşulları geçerlidir. Sınır: kurucu da pasifse şirket "kurulum bekliyor"da kalır ve alarm
-   sürer (KIM-D20 bu durum için ayrı yol tanımlamaz). Bu cross-module sözleşmedir (K3).
+   kural 6'nın normal koşulları geçerlidir. Kurucu da pasifse: KIM-D20 bu durum için ayrı yol
+   tanımlamaz; yazar okuması (Sinan kararı değil, koordinatör #66'da soruyor): şirket "kurulum bekliyor"da kalır
+   ve alarm sürer, kurtarma yolu Sinan'ın cevabına kadar açık değildir. Bu cross-module sözleşmedir (K3).
    **Şirket açma izni Critical (KIM-D21, 18. tur: "Evet, Critical"):** şirket açma izni Critical sınıfındadır;
    verilmesi Critical rol kurallarına (KIM-D1 ikinci kişi onayı, KIM-D5 kurucu istisnası, KIM-D15 geri alma)
    tabidir. Bu bir sınıflandırmadır: iznin adı ve kaydı Organization'ın şirket açma diliminde yapılır; mevcut
@@ -561,7 +596,13 @@ And olay işlenene kadar Şirket D "kurulum bekliyor" durumundadır ve işlem ka
 And Ayşe olay işlenmeden pasifleştirildiyse atama yazılmaz, olay yeniden deneme sonrası dead-letter'a düşer,
 alarm ve "kurulum bekleyen şirket" metriği görünür; Şirket D kurulum bekliyor kalır;
 And kurucu Admin Şirket D'ye Mehmet'i elle Admin atayınca (ikinci onaysız, audit'li) Şirket D `Active` olur
-(KIM-D20).
+(KIM-D20);
+And Ayşe'nin açılış olayı ile kurucunun elle Admin ataması aynı anda gelirse yalnız biri ilk Admin'i yazar,
+diğeri hiçbir şey yazmaz (`CompanyOpener`) ya da `409 identity.company.admin_already_assigned` alır
+(`FounderDirect`); `identity.company.first_admin_assigned.v1` tek kez yayınlanır; aynı açılış olayı eşzamanlı
+iki kez teslim edilirse tek atama oluşur (gerçek SQL);
+And Şirket D `Active` iken kurucu (üye değil) Admin ataması denerse `403` alır; `SetupPending` iken Admin dışı
+rol `409 identity.company.first_admin_role_required` alır.
 
 **KS-21 — Parola değişimi açık oturumları kapatır**
 Given Can iki cihazda oturum açmış
@@ -575,7 +616,8 @@ Then diğer cihazdaki oturumun bir sonraki isteği `401` alır (security stamp u
 - CompanyId ve yetki testleri (şirket dışı, kapsam dışı, izin yok, SoD).
 - Gerçek SQL kanıtı: check constraint'ler, Down reddi, bootstrap tekilliği, doğrudan Critical yazma yolunun
   olmadığı, `Bootstrap`/`FounderDirect`/`CompanyOpener` modlarının kendi yolları dışında yazılamadığı, son Admin
-  eşzamanlılık koruması (geri alma ∥ geri alma, pasifleştirme ∥ geri alma).
+  eşzamanlılık koruması (geri alma ∥ geri alma, pasifleştirme ∥ geri alma), ilk Admin yarışı (`CompanyOpener` ∥
+  `FounderDirect`, eşzamanlı çift teslim; tek atama ve tek `first_admin_assigned.v1`).
 - Audit + güvenlik olayı + idempotency replay + `409` concurrency testleri.
 - Varsayılan kimlik bilgisi guard testi yeşil.
 - OpenAPI yeniden üretildi; frontend decoder'ları strict.
@@ -596,8 +638,8 @@ K3 dilimleri iki bağımsız exact-head review ister.
 | **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` komutu (etkileşimli parola), `/me` sözleşme sürümü | Codex | K3 | ID-1; kurucu Admin istisnası KIM-D5; bütün şirketlerde Admin KIM-D18 |
 | **ID-2F** | Zorunlu parola değiştirme ekranı | Claude | K2 | ID-2 |
 | **ID-3** | Atama/geri alma, Critical talep/onay/ret/geri çekme API'si, `AccessGrantRequest` migration'ı, `identity.users.manage` kaydı (grant yok), shell capability'leri, audit + `identity.permission.changed` | Codex | K3 (permission/rol + migration) | ID-1; KIM-D9, KIM-D15, KIM-D16, son Admin KIM-D17 |
-| **ID-3b** | Şirket açılış olayıyla açan kişiye ilk Admin ataması (KIM-D18, KIM-D20): Organization `SetupPending` durumu ve şirket bağlamı reddi, `organization.company.opened.v1` outbox olayı + Identity inbox tüketicisi, açan kullanıcı aktiflik kontrolü, retry → dead-letter → alarm, "kurulum bekleyen şirket" metriği, kurucunun `SetupPending` şirkete elle Admin ataması, `identity.company.first_admin_assigned.v1` olayı + Organization tüketicisi (`Active`), `CompanyOpener`/`FounderDirect` dışı yazma yolu olmadığının gerçek SQL testi; şirket açma izni Critical olarak kaydedilir (KIM-D21, grant yok) | Codex (Organization + Identity) | K3 (cross-module contract) | ID-3; Organization şirket açma akışı |
-| **ID-4** | "Kullanıcılar ve yetkiler" ekranına atama, onay kuyruğu, kullanıcı oluştur/sıfırla/kilit aç eylemleri | Claude | K2 | ID-3 |
+| **ID-3b** | Şirket açılış olayıyla açan kişiye ilk Admin ataması (KIM-D18, KIM-D20): Organization `SetupPending` durumu ve şirket bağlamı reddi, `organization.company.opened.v1` outbox olayı + Identity inbox tüketicisi, açan kullanıcı aktiflik kontrolü, retry → dead-letter → alarm, "kurulum bekleyen şirket" metriği, kurucunun `SetupPending` şirkete elle Admin ataması, `identity.company.first_admin_assigned.v1` olayı + Organization tüketicisi (`Active`), `CompanyOpener`/`FounderDirect` dışı yazma yolu olmadığının gerçek SQL testi, şirket kilidi altında ilk Admin yarışı ve 0→1 tek olay testleri, Organization tüketicisinin idempotent geçişi (`SetupPending`→`Active` bir kez; `Active` yok sayılır; inbox dedup), `ICompanyLifecycleReadPortV1` (öneri) fail-closed okuması, şirket bağlamı reddinin başlıksız endpoint/tüketici/arka plan işlerine genişlemesi (Organization/Platform); şirket açma izni Critical olarak kaydedilir (KIM-D21, grant yok) | Codex (Organization + Identity) | K3 (cross-module contract) | ID-3; Organization şirket açma akışı |
+| **ID-4** | "Kullanıcılar ve yetkiler" ekranına atama, onay kuyruğu, kullanıcı oluştur/sıfırla/kilit aç eylemleri; kullanıcının son şirket atamasını geri alırken uyarı: "Bu, kullanıcının son şirket ataması; geri alınırsa parola sıfırlama/kilit açma/pasifleştirme yapılamaz (KIM-D19)" | Claude | K2 | ID-3 |
 | **ID-5** | İsteğe bağlı TOTP 2FA + kurtarma kodları + migration; UI kayıt akışı ayrı Claude alt dilimi | Codex (+Claude) | K3 | ID-1; zorunluluk KIM-D3 ile kararlı (isteğe bağlı) |
 | **ID-6** | `Authentication:Providers` çoklu şema; OIDC varsayılan kapalı; yerel kullanıcıya dış kimlik bağlama (Admin eylemi) | Codex | K2 (migration yoksa; güvenlik yüzeyi nedeniyle iki review önerilir) | ID-1; production sağlayıcısı `OPEN-013` insan kapısı |
 
@@ -611,7 +653,9 @@ Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critic
 (KIM-D16). 16. tur (#66 `6821105608` m.4) ile `NEEDS-SINAN-ID-10` (son Admin, KIM-D17), 17. tur (#66
 `6821262098` m.4) ile çok şirkette ilk Admin (KIM-D18), 18. tur (#66 `6821897620`) ile `NEEDS-SINAN-ID-11`
 (kurulum bekliyor + kurucu ataması, KIM-D20) ve `NEEDS-SINAN-ID-12` (şirket açma izni Critical, KIM-D21)
-kapandı; üyeliği olmayan hedef KIM-D19 ile karara bağlandı. Bu spec'te açık kimlik politikası sorusu kalmadı;
+kapandı; üyeliği olmayan hedef KIM-D19 ile karara bağlandı. Bu spec'te açık kalan tek kimlik politikası sorusu, kurucu da pasifken
+`SetupPending` şirketin kurtarma yoludur (KIM-D20 tanımlamaz; koordinatör #66'da soruyor, cevap gelene kadar
+yazar okuması: şirket kurulum bekliyor kalır, alarm sürer);
 teknik varsayılanlar `ASSUMPTION-*` adayı olarak işaretlidir (hız sınırı değeri `ASSUMPTION-ID-RL-1`, farklı
 parolalı replay `ASSUMPTION-ID-IDEM-1`).
 
