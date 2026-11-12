@@ -2,7 +2,9 @@ using GoymenERP.Modules.Manufacturing.Domain.Common;
 
 namespace GoymenERP.Modules.Manufacturing.Domain.Costing;
 
-/// <summary>The answer of one stamped issue cost as Inventory gives it (SAT-D305 (4), Stok answer 1).</summary>
+/// <summary>
+/// The answer of one stamped issue cost as Inventory gives it (SAT-D305 (4), Stok answers in Sinan #66 6823091345).
+/// </summary>
 public enum IssueCostReadStatus
 {
     Value = 1,
@@ -83,8 +85,8 @@ public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Sta
 /// SAT-D305 (4) and Sinan #66 (6816723313, item 4): the single deterministic production receipt cost of v1.
 /// <list type="bullet">
 /// <item>net input cost = sum(issued kg x stamped issue cost) - sum(returned kg x the linked issue's stamped cost);</item>
-/// <item>scrap in cost (default): cost per kg = net / (good product kg + second quality kg), so scrap and
-/// process loss raise the cost of what was produced;</item>
+/// <item>scrap in cost (default, SAT-D305 (2)): cost per kg = net / (good product kg + second quality kg), the
+/// same for both classes (SAT-D307 (1)-(2)), so scrap and process loss raise the cost of what was produced;</item>
 /// <item>scrap out of cost (SAT-D308 answering the SAT-D307 (3) note, Sinan #66 6818566934 item 4): scrap is not loaded on the product, so
 /// cost per kg = net / consumed kg (issued - returned) and the scrap and process loss share,
 /// net - cost per kg x produced kg, is reported as a separate scrap / period expense;</item>
