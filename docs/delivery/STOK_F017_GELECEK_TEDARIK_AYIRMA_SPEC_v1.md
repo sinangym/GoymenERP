@@ -35,7 +35,8 @@ Değişenler:
 
 - **Satış satırı iptali/azaltması (KLN-D28):** §5.1 (c)'deki "iptal reddedilir" kapalı yönü kalktı. Satış iptal/azaltma
   komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada max(0, ayırma − (yeni
-  miktar − sevk edilen)) bırakılır; bırakma exactly-once'dır; başarısızsa Satış komutu da yazılmaz (§3.3, §4.3, §5, §5.1, §7). Satış
+  miktar − sevk edilen)) bırakılır [**tarihçe; geçersiz formül:** yerine KLN-D28 (4) tek tanımı geçer (fazla = fiziksel +
+  gelecek − açık miktar; Revizyon 6/7, #66 6823547103)]; bırakma exactly-once'dır; başarısızsa Satış komutu da yazılmaz (§3.3, §4.3, §5, §5.1, §7). Satış
   karşılığı SAT-D314 (#1119, `main` `c93433f6`). F017-s kapsamı bu çağrıyı
   içerir (§10). Testler §8'de.
 - **Canlanmada bırakılmış ayırmalar (KLN-D29):** geri gelmez; canlanan miktar serbest açık miktardır, kullanıcı gerekirse
@@ -103,7 +104,7 @@ Revizyon 9 (2026-11-12, #1116 merge sonrası takip): koordinatör düzeltmesi (k
   azaltmada oluşur. SAT-D167 metni değişmez. §5.1 (c), §8, golden; KLN-D28 (4).
 - **P3:** yeniden açma tavanı F017-e `NEEDS-SPEC` adayı (§3.7, §9.1 aday 6); yeniden açmadaki deneme ifadesi §3.2 adım 0
   ile aynı; kilitler komutun ilk yazımından önce alınır; §4.3 listesine yeniden açma eklendi; terminal / terminal olmayan
-  kod listesi tamamlandı; Satış iptal testinde durum adı §4.1'e bağlandı; #1110 kilit sırası koordinasyon notu.
+  kod listesi tamamlandı; KLN-D32 (3) tetik ifadesi netleşti; Revizyon 4 bloğundaki eski formül tarihçe olarak işaretlendi; Satış iptal testinde durum adı §4.1'e bağlandı; #1110 kilit sırası koordinasyon notu.
 
 **Kaynaklar (öncelik sırasıyla):**
 
@@ -533,7 +534,8 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
     yükleme talimatlı veya fiziksel tahsisli satırın kaldırılmasını Satış porttan önce 422
     `sales_line_revision_line_shipped` ile reddeder; Stok bu durumu görmez. Fiziksel bırakma gerektiren ara 409
     (KLN-D32 (3)) yalnız miktar azaltmada oluşur. **Bağımlılık (F017-s, r4 B P3-4 / A P3-5):** SAT-D167 bağlantı
-    okuması gelecek ayırmayı "stok tahsisi" saymaz; gelecek ayırma Satış tahsis okumasında ayrı türle döner (§8 "Satış
+    okuması (Satış `ReadAllocationsAsync` "bağlı" kontrolü) yalnız fiziksel tahsisi sayar, gelecek ayırmayı "stok
+    tahsisi" saymaz; gelecek ayırma Satış tahsis okumasında ayrı türle döner (§8 "Satış
     portu"). Sayarsa yalnız gelecek ayırmalı satırın silinmesi de 422 alır ve SAT-D314 (1) uygulanamaz. SAT-D167 metni
     değişmez (koordinasyon notu).
   - Bırakma portu okunamaz, hata verir, kilit alınamaz veya bırakma başarısız olursa Satış iptali/azaltması da yazılmaz
