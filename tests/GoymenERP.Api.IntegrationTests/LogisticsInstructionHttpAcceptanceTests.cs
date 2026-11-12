@@ -406,6 +406,12 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
             throw new LogisticsInstructionServiceException(404, "not_found");
         }
 
+        public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new LogisticsInstructionServiceException(404, "not_found");
+        }
+
         public Task<LoadingInstructionResponse> RecordLoadAsync(Guid instructionId, Guid lineId, RecordLoadRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
             Calls++;
