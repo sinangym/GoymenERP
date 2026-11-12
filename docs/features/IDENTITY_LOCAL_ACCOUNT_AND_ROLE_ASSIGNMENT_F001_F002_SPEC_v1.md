@@ -11,7 +11,7 @@
   gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararları (1. ve 8. tur,
   #66 `6818566934`, `6820046672`) aynı PR'daki
   `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6`, `KIM-D9` (10. tur `6820237902`), `KIM-D12`…`KIM-D16` (14.–15. tur `6820838938`), `KIM-D17` (16. tur `6821105608`), `KIM-D18` (17. tur
-  `6821262098`) ve `KIM-D19`…`KIM-D21` (18. tur `6821897620`) ve `KIM-D22` (20. tur `6822303233` m.2) olarak yazıldı.
+  `6821262098`), `KIM-D19`…`KIM-D21` (18. tur `6821897620`) ve `KIM-D22` (20. tur `6822303233` m.2) olarak yazıldı.
 
 ## Amaç
 
@@ -263,8 +263,9 @@ kullanılmaz; kullanılacaksa ayrı karar.
    (b) yolu için şirket bağlamı çözümündeki `SetupPending` reddinin istisnası yalnız tek "ilk Admin ataması"
    endpoint'ine, endpoint metadata'sıyla tanınır; genel bir atlama değildir. Gerçek SQL testleri her mod için başka
    yazma yolunun olmadığını kanıtlar (kural 2'deki desen). Böylece tavuk-yumurta sorunu (tek Admin varken ilk checker'ın
-   doğması) da çözülür; eski `NEEDS-SINAN-ID-08` kapandı. Kurucu Admin pasifleştirilirse istisna onunla
-   biter (devredilmez; devretme ayrı karar). Admin **rolünün** devri (KIM-D18) bu istisnayı devretmez.
+   doğması) da çözülür; eski `NEEDS-SINAN-ID-08` kapandı. Kurucu Admin pasif olduğu sürece istisna
+   kullanılamaz; KIM-D22 kurtarmasıyla aynı `FounderUserId` yeniden aktif olunca geri döner; başkasına devredilmez
+   (devretme ayrı karar). Admin **rolünün** devri (KIM-D18) bu istisnayı devretmez.
    **Negatif testler (kanal ile):**
 
    | Durum | Yanıt | Kayıt kanalı |
@@ -412,19 +413,54 @@ Admin yokken kurucuyu yeniden aktif eden sunucu komutu (öneri:
 
 - Yalnız `IdentityBootstrapState` satırı varsa çalışır ve yalnız oradaki `FounderUserId` hesabını hedefler;
   kullanıcı adı veya kullanıcı kimliği argümanı almaz, başka hesabı aktif edemez.
-- Ön koşul (yazar okuması, review'da değişebilir): en az bir şirkette (aktif, pasif veya `SetupPending`) KIM-D17 anlamında etkin Admin yoktur; her
-  şirkette etkin Admin varsa `identity.founder_recovery.not_needed` ile reddeder (o şirketlerin Admin'i
-  kurucuyu ekrandan yeniden aktif edebilir). Kontrol, KIM-D17/kural 7'deki şirket kilitleriyle aynı sırada
-  kilitli okumayla yapılır.
-- Yeni parola **etkileşimli** ve yankısız okunur (argüman, ortam değişkeni, dosya yok), ortam politikasından
-  geçer; hesap `IsActive=true`, `MustChangePassword=true`, kilit sıfırlanır, security stamp yenilenir (eski
+- Ön koşullar (ikisi birden; KIM-D22: "Admin'i olmayan **ve** kurucusu da pasif şirket"):
+  1. Hedef hesap pasiftir (`IsActive=false`). Aktif kurucuda `identity.founder_recovery.founder_active` (öneri kod)
+     ile reddeder; parola ve oturumlar değişmez. Aktif kurucunun Admin atama yolu zaten `FounderDirect`'tir
+     (kural 8). Başarılı koşum hesabı aktif yaptığı için ikinci koşum da bu kodla reddedilir; ilk parola ezilmez.
+     Aktif ama parolasını unutmuş kurucu bu komutun kapsamı dışındadır (KIM-D22 kapsamaz; `NEEDS-SINAN-ID-13`,
+     bu spec seçmez).
+  2. En az bir şirkette (aktif, pasif veya `SetupPending`) KIM-D17 anlamında etkin Admin yoktur (yazar okuması,
+     review'da değişebilir). Her şirkette etkin Admin varsa `identity.founder_recovery.not_needed` (öneri kod) ile
+     reddeder. Ekrandan yeniden aktif etme yolu bu spec'te **yoktur** (API'de yalnız `/deactivate` var, `Pasif`
+     terminal durumdur); gerekirse ayrı karar ister, bu spec seçmez.
+- Eşzamanlılık: kilit sırası sabittir. Önce KIM-D17/kural 7'deki şirket kilitleri `CompanyId` sırasıyla, sonra
+  kurucunun `UserAccount` satırı alınır; ön koşullar bu kilitler altında okunur. Kullanıcı ve kimlik bilgisi
+  satırları `Version` concurrency token'ıyla güncellenir; çalışan uygulamadaki eşzamanlı bir yazmayla çakışmada
+  komut `identity.founder_recovery.concurrent_change` (öneri kod) ile reddeder ve ret audit'e yazılır.
+- Yeni parola **etkileşimli** ve yankısız okunur (argüman, ortam değişkeni, dosya yok). stdin terminal (TTY) değilse
+  komut reddeder (`cmd < dosya` veya boru ile parola verilemez). Parola iki kez girilir ve eşleşmesi doğrulanır;
+  ortam politikasından geçer. Aynı TTY ve iki kez giriş kuralı `bootstrap-founder` için de geçerlidir.
+- Yazmadan önce komut hedef ortamı, veritabanını (sunucu ve katalog adı; parola içermez) ve kurucunun kullanıcı adını
+  gösterir ve açık etkileşimli onay ister; `--yes`/`--force` gibi etkileşimsiz atlama bayrağı yoktur. Onay verilmezse
+  hiçbir şey yazmadan çıkar. Production'da çalıştırılması insan kapısıdır (AGENTS.md); bu onay adımı kapının yerine
+  geçmez, prosedürel kapıya kanıt üretir.
+- Başarıda hesap `IsActive=true`, `MustChangePassword=true` olur, kilit sıfırlanır, security stamp yenilenir (eski
   oturumlar düşer). Kurucuya yeni rol ataması yapmaz; Admin ataması ancak giriş + parola değişiminden sonra
   `FounderDirect` ile yapılır.
+- Yan etkiler (kararın lafzi sonucu; daraltılmaz, görünür kılınır): pasifleştirme atamaları geri almadığı için
+  yeniden aktif etme, kurucunun geri alınmamış eski atamalarını (ör. başka şirketlerdeki Admin) bütün şirketlerde
+  kendiliğinden geri getirir; audit kaydı geri gelen etkin atamaların listesini taşır. KIM-D5 `FounderDirect`
+  istisnası da geri gelir (kural 6). Kurucunun 2FA durumu korunur; komut 2FA'yı kapatmaz veya sıfırlamaz (kararda
+  yok, fail-closed).
 - Varsayılan kimlik bilgisi içermez; repo, seed, `appsettings*` veya örnek dosyaya kullanıcı/parola yazılmaz.
-- Her çalıştırma, ret dahil, audit'e yazılır (`identity.founder.recovered` / `Outcome=Refused`; aktör
-  `System` + işletim sistemi kullanıcısı ve makine adı bağlam alanı; parola yazılmaz) ve güvenlik olayı
-  kanalına bilgi kaydı düşer. Tek transaction: kullanıcı güncellemesi + kimlik bilgisi + audit.
-- Production'da çalıştırılması insan kapısıdır.
+- Audit (her çalıştırma, ret dahil; KIM-D22): olay `identity.founder.recovered` / `Outcome=Refused` (öneri kod).
+  Aktör `System` + operatör beyanıdır (kural 5'teki bootstrap ile aynı terim); operatör beyanı işletim sistemi
+  kullanıcısını ve makine adını içerir. İçerik: hedef `FounderUserId`, ön koşulu sağlayan şirket kimlikleri, ret
+  kodu, korelasyon kimliği, `SourceChannel` (öneri `Cli`) ve geri gelen etkin atamalar; parola, hash veya stamp
+  yazılmaz. Şirket kapsamı: başarıda ön koşulu sağlayan her Admin'siz şirket için o şirketin `CompanyId`'siyle bir
+  audit satırı yazılır. Şirket bağlamı olmayan retlerde (`IdentityBootstrapState` yok, `not_needed`,
+  `founder_active`, TTY yok, onay verilmedi) sabit veya sentinel `CompanyId` **uydurulmaz**; bu retler güvenlik
+  kanalına `ScopeKind=Platform`, `CompanyId=null` (ADR-SEC-001) tek kayıt olarak yazılır. Bugünkü
+  `AuditEventDraft` zarfında operatör beyanı için bağlam alanı yoksa, eklemek Audit sözleşme değişikliğidir
+  (ID-2 içinde ayrı K3 madde).
+- Güvenlik olay kanalı: ADR-SEC-001 kapalı listesinde kurtarma için kod yoktur. Eklemek (öneri
+  `identity.founder.recovered` ve `identity.founder.recovery_refused`; yüksek `Severity` + alarm metriği, geri
+  alınabilir teknik ayar) ADR-SEC-001 sözleşme değişikliğidir (liste + check constraint aynı PR), `account_locked`
+  ile aynı desen. Şirket bağlamı olmayan retlerin tek kaydı bu kanalda olduğundan kod ID-2'nin ön şartıdır; komut
+  kodsuz merge edilmez. Kanal yazılamazsa başarı yolu komutu başarısız saymaz (audit aynı transaction'da yazılmıştır)
+  ama alarm üretir (fail-open + alarm, `auth.login.*` gibi). Audit yazılamazsa transaction geri alınır ve komut
+  başarısız olur (fail-closed). Kanalın tek kayıt olduğu bir ret kanal yazılamadığında da alarm üretir.
+- Tek transaction: kullanıcı güncellemesi + kimlik bilgisi + audit.
 
 ## UI durumları ve erişilebilirlik
 
@@ -638,10 +674,16 @@ When sunucuya erişimi olan operatör `recover-founder` komutunu çalıştırıp
 Then kurucu hesabı aktif olur, `MustChangePassword=true`, eski oturumları `401` alır ve audit'te
 `identity.founder.recovered` kaydı vardır (parola yok); kurucu parolasını değiştirmeden başka işlem yapamaz,
 değiştirdikten sonra Şirket E'ye `FounderDirect` ile Admin atar ve şirket `Active` olur;
-And her şirkette etkin Admin varken komut `identity.founder_recovery.not_needed` ile reddeder ve ret audit'e
-yazılır; `IdentityBootstrapState` yokken reddeder;
+And kurucu aktifken komut `identity.founder_recovery.founder_active` ile reddeder, parola ve oturumlar değişmez;
+başarılı koşumdan sonra kurucu Admin atamadan komut ikinci kez çalıştırılırsa aynı kodla reddeder ve ilk parola
+geçerli kalır;
+And her şirkette etkin Admin varken komut `identity.founder_recovery.not_needed` ile reddeder;
+`IdentityBootstrapState` yokken reddeder; stdin terminal değilken reddeder; onay verilmezse hiçbir şey yazmadan
+çıkar; bu şirket bağlamı olmayan retler `ScopeKind=Platform`, `CompanyId=null` güvenlik kaydı olarak yazılır
+(sentinel `CompanyId` yok);
 And aynı işlemi yapan HTTP ucu veya ekran yoktur (OpenAPI'de ve shell kayıtlarında bulunmadığı testle
 doğrulanır); komut parolayı argüman, ortam değişkeni veya dosyadan kabul etmez.
+Komut ve ret yolları ID-2'de test edilir; `SetupPending` ve `FounderDirect` adımı ID-3b ile uçtan uca doğrulanır.
 
 ## Definition of Done
 
@@ -651,7 +693,8 @@ doğrulanır); komut parolayı argüman, ortam değişkeni veya dosyadan kabul e
 - Gerçek SQL kanıtı: check constraint'ler, Down reddi, bootstrap tekilliği, doğrudan Critical yazma yolunun
   olmadığı, `Bootstrap`/`FounderDirect`/`CompanyOpener` modlarının kendi yolları dışında yazılamadığı, son Admin
   eşzamanlılık koruması (geri alma ∥ geri alma, pasifleştirme ∥ geri alma), ilk Admin yarışı (`CompanyOpener` ∥
-  `FounderDirect`, eşzamanlı çift teslim; tek atama ve tek `first_admin_assigned.v1`).
+  `FounderDirect`, eşzamanlı çift teslim; tek atama ve tek `first_admin_assigned.v1`), `recover-founder` ret yolları (`founder_active`, `not_needed`,
+  eşzamanlı yazma) ve kilitli ön koşul okuması.
 - Audit + güvenlik olayı + idempotency replay + `409` concurrency testleri.
 - Varsayılan kimlik bilgisi guard testi yeşil.
 - OpenAPI yeniden üretildi; frontend decoder'ları strict.
@@ -669,7 +712,7 @@ K3 dilimleri iki bağımsız exact-head review ister.
 |---|---|---|---|---|
 | **ID-1** | `LocalCredential` + migration, `PasswordHasher` (PBKDF2, sürümlü), `LocalAccount` kimlik modu, `/session/login`·`/logout`, hız sınırı, kilitleme, `auth.login.*` olayları, ayar doğrulaması, varsayılan kimlik bilgisi guard testi | Codex | K3 (migration + güvenlik) | PR #1093 (olay kanalı) merge'ü veya geçici no-op writer; `account_locked` kodu ADR-SEC-001 sözleşme değişikliği |
 | **ID-1F** | Giriş ekranı, auth sınırı entegrasyonu, yerel modda dev başlığının kapanması | Claude | K2 | ID-1 OpenAPI |
-| **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` ve `recover-founder` komutları (etkileşimli parola; KIM-D22, KS-22), `/me` sözleşme sürümü | Codex | K3 | ID-1; kurucu Admin istisnası KIM-D5; bütün şirketlerde Admin KIM-D18 |
+| **ID-2** | `MustChangePassword` çiti + `/session/password`, `IdentityBootstrapState` + migration, `bootstrap-founder` ve `recover-founder` komutları (etkileşimli parola; KIM-D22, KS-22), `/me` sözleşme sürümü | Codex | K3 | ID-1; kurucu Admin istisnası KIM-D5; bütün şirketlerde Admin KIM-D18; `recover-founder` ID-3'teki KIM-D17 kilidinden sonra merge edilir, KS-22'nin uçtan uca kısmı ID-3b'nin DoD'sindedir; kurtarma güvenlik kodu ADR-SEC-001 sözleşme değişikliği |
 | **ID-2F** | Zorunlu parola değiştirme ekranı | Claude | K2 | ID-2 |
 | **ID-3** | Atama/geri alma, Critical talep/onay/ret/geri çekme API'si, `AccessGrantRequest` migration'ı, `identity.users.manage` kaydı (grant yok), shell capability'leri, audit + `identity.permission.changed` | Codex | K3 (permission/rol + migration) | ID-1; KIM-D9, KIM-D15, KIM-D16, son Admin KIM-D17 |
 | **ID-3b** | Şirket açılış olayıyla açan kişiye ilk Admin ataması (KIM-D18, KIM-D20): Organization `SetupPending` durumu ve şirket bağlamı reddi, `organization.company.opened.v1` outbox olayı + Identity inbox tüketicisi, açan kullanıcı aktiflik kontrolü, retry → dead-letter → alarm, "kurulum bekleyen şirket" metriği, kurucunun `SetupPending` şirkete elle Admin ataması, `identity.company.first_admin_assigned.v1` olayı + Organization tüketicisi (`Active`), `CompanyOpener`/`FounderDirect` dışı yazma yolu olmadığının gerçek SQL testi, şirket kilidi altında ilk Admin yarışı ve 0→1 tek olay testleri, Organization tüketicisinin idempotent geçişi (`SetupPending`→`Active` bir kez; `Active` yok sayılır; inbox dedup), `ICompanyLifecycleReadPortV1` (öneri) fail-closed okuması, şirket bağlamı reddinin başlıksız endpoint/tüketici/arka plan işlerine genişlemesi (Organization/Platform); şirket açma izni Critical olarak kaydedilir (KIM-D21, grant yok) | Codex (Organization + Identity) | K3 (cross-module contract) | ID-3; Organization şirket açma akışı |
@@ -688,12 +731,16 @@ Critical sorusu (yeni işlem Critical'e eklenmez; `identity.users.manage` Critic
 `6821262098` m.4) ile çok şirkette ilk Admin (KIM-D18), 18. tur (#66 `6821897620`) ile `NEEDS-SINAN-ID-11`
 (kurulum bekliyor + kurucu ataması, KIM-D20) ve `NEEDS-SINAN-ID-12` (şirket açma izni Critical, KIM-D21)
 kapandı; üyeliği olmayan hedef KIM-D19 ile, kurucu da pasifken kurtarma 20. tur (#66 `6822303233` m.2) ile
-sunucu kurtarma komutu olarak (KIM-D22) karara bağlandı. Bu spec'te açık kimlik politikası sorusu kalmadı;
-teknik varsayılanlar `ASSUMPTION-*` adayı olarak işaretlidir (hız sınırı değeri `ASSUMPTION-ID-RL-1`, farklı
-parolalı replay `ASSUMPTION-ID-IDEM-1`).
+sunucu kurtarma komutu olarak (KIM-D22) karara bağlandı. Bu spec'te tek açık kimlik politikası sorusu
+`NEEDS-SINAN-ID-13`'tür (aşağıda); teknik varsayılanlar `ASSUMPTION-*` adayı olarak işaretlidir (hız sınırı değeri
+`ASSUMPTION-ID-RL-1`, farklı parolalı replay `ASSUMPTION-ID-IDEM-1`, KIM-D19/KIM-D16 yanıt ayrımı
+`ASSUMPTION-ID-LEAK-1`).
 
 - ~~`NEEDS-SINAN-ID-11`~~ — kapandı: KIM-D20 (kurulum bekler, kurucu atar).
 - ~~`NEEDS-SINAN-ID-12`~~ — kapandı: KIM-D21 (şirket açma izni Critical; grant değişikliği ayrı karar).
+- `NEEDS-SINAN-ID-13` — aktif ama parolasını unutmuş kurucu (başka etkin Admin yoksa ekrandan parola sıfırlayacak
+  kimse yok). KIM-D22 yalnız pasif kurucuyu kapsar; `recover-founder` aktif kurucuyu reddeder. Ek bir kurtarma
+  yolu açılıp açılmayacağı Sinan'ındır; bu spec seçmez, ID-2'yi durdurmaz.
 
 - (Mevcut, bu spec'in kararı değil) ADR-SEC-001 NEEDS-SINAN-8 / E8: başarısız giriş kullanıcı adı hash
   anahtarı. Anahtar bir secret olduğundan insan kapısıdır (secret yönetimi); gelene kadar hash yazılmaz,

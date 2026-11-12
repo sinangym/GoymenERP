@@ -55,7 +55,8 @@ koordinatör tarafından yazıldı:
   DOCS-REVIEW A `6822140926` P3-1 / B `6822168284` P3-2). Soru: "Bu durumda kurtarma yolu olsun mu?" Cevap aynen:
   "Sunucu kurtarma komutu (Önerilen)." (Yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunlu; ekrandan yapılamaz; her kullanım audit'e yazılır.) Aynı yorumun notu aynen: "Hiçbir OPEN-* kapatılmadı;
   grant/rol/Critical yok. Kurtarma komutu varsayılan kimlik bilgisi içermez, repo/seed/appsettings'e
-  kullanıcı/şifre yazılmaz. Teknik biçimler ilgili spec/K3 dilimlerinde yazılır." "(Önerilen)" işareti soranındır.
+  kullanıcı/şifre yazılmaz. Teknik biçimler ilgili spec/K3 dilimlerinde yazılır." "(Önerilen)" işareti ve parantez içindeki
+  açıklama soranın seçenek metnidir.
   Diğer maddeler bu dosyanın konusu değildir.
 
 AskUserQuestion seçeneklerinin tam metni koordinatör oturumundadır; aşağıdaki "seçilmeyen" bilgisi #66
@@ -116,7 +117,7 @@ oturumundadır.
 | KIM-D19 | Hiçbir şirkette rolü olmayan kullanıcı | Parola sıfırlama, kilit açma ve pasifleştirme için özel/kurucu yetkisi yoktur: kullanıcı önce bir şirkete atanır, sonra o şirketin `identity.users.manage` yetkilisi işlemi yapar. Problem kodu uygulama ayrıntısıdır (geri alınabilir). | Kimlik spec'i, hedef kapsam, KS-17 |
 | KIM-D20 | Açana Admin ataması arızalanırsa | Şirket Admin'i olana kadar "kurulum bekliyor" durumunda kalır ve işlem kabul etmez; alarm çıkar; kurucu Admin elle Admin atar (audit'li). Durum adı, olaylar ve metrik uygulama ayrıntısıdır (cross-module sözleşme, K3). | Kimlik spec'i kural 8, ID-3b; Organization şirket açma dilimi |
 | KIM-D21 | Şirket açma izni | Critical sınıfındadır; verilmesi Critical rol kurallarına tabidir. Sınıflandırmadır; mevcut grant'larda değişiklik ayrı somut karar ister. KIM-D9'un "şimdilik yeni işlem Critical'e eklenmez" kuralına Sinan'ın sonradan verdiği açık istisnadır: Critical küme yalnız bu bir sınıflandırma ile büyür, mevcut grant'lar değişmez. | Organization şirket açma dilimi, Critical küme |
-| KIM-D22 | Admin'i olmayan ve kurucusu da pasif şirkette kurtarma | Sunucu kurtarma komutu: yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunludur; ekrandan (HTTP/UI) yapılamaz; her kullanım audit'e yazılır. Komut varsayılan kimlik bilgisi içermez; repo/seed/appsettings'e kullanıcı/şifre yazılmaz. Komut adı, parametreleri ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır. | Kimlik spec'i kural 8, kurucu kurtarma komutu, KS-22, ID-2 |
+| KIM-D22 | Admin'i olmayan ve kurucusu da pasif şirkette kurtarma | Sunucu kurtarma komutu: yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunludur; ekrandan (HTTP/UI) yapılamaz; her kullanım audit'e yazılır. Komut varsayılan kimlik bilgisi içermez; repo/seed/appsettings'e kullanıcı/şifre yazılmaz. Komut adı, parametreleri ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır (AGENTS.md insan kapısı; Sinan metni değil). Komut yalnız pasif kurucuyu hedefler (kararın lafzı). | Kimlik spec'i kural 8, kurucu kurtarma komutu, KS-22, ID-2 |
 
 **Yazar okumaları (Sinan kararı değildir; kimlik spec'inde uygulanır, review'da düzeltilebilir):**
 
