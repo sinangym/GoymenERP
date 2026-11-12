@@ -1851,6 +1851,29 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1"), (again.Status, again.IsReplay, again.OriginalCorrelationId));
         Assert.Single(fixture.Store.Writes);
+        // U3-a (URT-D21): the closure released the plan's allocation remainder once; the replay released nothing.
+        Assert.Equal((order.PlanId, ManufacturingPlanAllocationReleaseReasonV1.OrderClosed),
+            Assert.Single(fixture.PlanAllocations.Releases));
+    }
+
+    [Fact]
+    public async Task An_order_is_refused_closure_with_503_when_the_allocation_port_is_absent()
+    {
+        // TAKIP-U3a (#1004): no allocation port means nothing can release what the order's plan holds, so the
+        // closure refuses (503) before the order store runs instead of closing without releasing (no fail-open).
+        var fixture = new Fixture(withPlanAllocations: false);
+        var order = await fixture.BalancedOrderAsync();
+        var read = order.Version;
+
+        var result = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(read), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingPlanAllocationCodesV1.Incomplete),
+            (result.Status, result.Code));
+        Assert.Null(order.ClosurePolicy);
+        Assert.Equal(read, order.Version);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
     }
 
     [Fact]
@@ -2411,6 +2434,29 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task A_draft_plan_is_refused_approval_with_503_before_any_inventory_read_when_the_allocation_port_is_absent()
+    {
+        // TAKIP-U3a (#1004): no allocation port means the plan's inputs cannot be allocated with the approval, so it
+        // refuses (503) before Inventory is read and before the store runs instead of approving unallocated.
+        var fixture = new Fixture(withPlanAllocations: false);
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        plan.RecordPreparer(OtherActor.ToString("D"));
+        fixture.Store.Plans[plan.Id] = plan;
+        var version = plan.Version;
+
+        var result = await fixture.Service.ApprovePlanAsync(plan.Id, new ApprovePlanRequestV1(version), "key-1",
+            "manufacturing.plans.approve", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingPlanAllocationCodesV1.Incomplete),
+            (result.Status, result.Code));
+        Assert.All(fixture.Calls, call => Assert.Equal("authority", call));
+        Assert.Equal((PlanStatus.Draft, version), (plan.Status, plan.Version));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
     public async Task An_approved_plan_is_refused_cancellation_with_503_when_the_allocation_port_is_absent()
     {
         // TAKIP-U3a (#1004): no allocation port means nothing can release what the approved plan holds, so the
@@ -2448,9 +2494,32 @@ public sealed class ManufacturingCommandServiceTests
             throw new InvalidOperationException("Not used.");
     }
 
+    /// <summary>
+    /// The allocation port as the host wraps the write: the delegate runs, and the release reason is recorded so a
+    /// test sees that the order's closure released the plan's remainder.
+    /// </summary>
+    private sealed class PassThroughPlanAllocationPort : IManufacturingPlanAllocationPortV1
+    {
+        public List<(Guid PlanId, ManufacturingPlanAllocationReleaseReasonV1 Reason)> Releases { get; } = [];
+
+        public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
+            Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken) =>
+            approve(cancellationToken);
+
+        public async Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
+            Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken)
+        {
+            var written = await write(cancellationToken);
+            Releases.Add((planId, reason));
+            return written;
+        }
+    }
+
     private sealed class Fixture
     {
-        public Fixture(bool withWorkCenters = true)
+        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true)
         {
             CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
@@ -2469,10 +2538,12 @@ public sealed class ManufacturingCommandServiceTests
                 InputIssues, ReturnOutputs, manufacturingTolerances: Settings,
                 planRevisions: Store,
                 productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
-                contextualParentRolls: ParentRolls);
+                contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null);
         }
 
         public List<string> Calls { get; } = [];
+
+        public PassThroughPlanAllocationPort PlanAllocations { get; } = new();
 
         public CorrelationContext Correlation { get; }
 
