@@ -41,7 +41,7 @@ public sealed class ManufacturingStore(
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
-        IManufacturingCommandLog, IManufacturingPlanLifecycleStore
+        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -627,6 +627,58 @@ public sealed class ManufacturingStore(
         await SaveAsync(cancellationToken);
         return plan;
     }
+
+    /// <summary>
+    /// Üretim U2-b / API-16 (SAT-D219): links the plan to an approved sales order line, moves or removes the link, in one
+    /// save — the plan row's link columns, link revision and update time, the audit event
+    /// (<c>manufacturing.plan.sales-order-linked.v1</c>) and the command record — or nothing. The plan's version does not
+    /// move; a concurrent write to the row is refused by its row version. The plan's order status is read here so the
+    /// domain refuses a change under a closed order.
+    /// </summary>
+    public async Task<ProductionPlan> ChangeSalesOrderLinkAsync(Guid planId, long expectedVersion,
+        long expectedLinkRevision, PlanSalesOrderLink? link, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var orderClosed = plan.OrderId is { } orderId
+            && await dbContext.Orders.AsNoTracking()
+                .AnyAsync(order => order.Id == orderId && order.Status == (int)OrderStatus.Closed, cancellationToken);
+        var before = SalesOrderLinkAudit(plan);
+        var revisionBefore = plan.SalesOrderLinkRevision;
+
+        // The domain decides: the version fence, not cancelled, the link revision, the order, a change, the party.
+        plan.ChangeSalesOrderLink(expectedVersion, expectedLinkRevision, link, orderClosed);
+
+        var current = plan.SalesOrderLink;
+        row.SalesOrderId = current?.SalesOrderId;
+        row.SalesOrderLineId = current?.SalesOrderLineId;
+        row.SalesCustomerPartyId = current?.CustomerPartyId;
+        row.SalesCustomerAccountId = current?.CustomerAccountId;
+        row.SalesProductId = current?.ProductId;
+        row.SalesOrderLineRevision = current?.LineRevision;
+        row.SalesOrderLinkedBy = current?.LinkedBy;
+        row.SalesOrderLinkedAtUtc = current?.LinkedAtUtc;
+        row.SalesOrderLinkRevision = plan.SalesOrderLinkRevision;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.sales-order-linked.v1",
+            current is null ? "Unlink" : "Link", revisionBefore, plan.SalesOrderLinkRevision, before,
+            SalesOrderLinkAudit(plan), current is null ? "Satış siparişi bağı kaldırıldı" : "Satış siparişi satırına bağlandı");
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    private static string SalesOrderLinkAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
+    {
+        plan.Id,
+        plan.Version,
+        salesOrderLinkRevision = plan.SalesOrderLinkRevision,
+        salesOrderLink = plan.SalesOrderLink,
+    }, Json);
 
     /// <summary>
     /// MFG-PLAN-EDIT: the plan's history — revision 0 from the plan's own rows as created, then every revision its row's
@@ -1283,7 +1335,9 @@ public sealed class ManufacturingStore(
             orderIds.Count == 1 ? orderIds[0] : null,
             RestoreProcessSpec(row),
             // U2-d (URT-D2): the current version's preparer is its last reviser, else the actor who saved the plan.
-            headers.Count > 0 ? headers.MaxBy(header => header.RevisionNo)!.RevisedBy : row.CreatedBy);
+            headers.Count > 0 ? headers.MaxBy(header => header.RevisionNo)!.RevisedBy : row.CreatedBy,
+            RestoreSalesOrderLink(row),
+            row.SalesOrderLinkRevision);
         if ((PlanStatus)row.Status != plan.Status)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
@@ -1291,6 +1345,29 @@ public sealed class ManufacturingStore(
         }
 
         return plan;
+    }
+
+    /// <summary>U2-b / API-16: the stored sales order link (all eight columns, or none — the check constraint holds it).</summary>
+    private static PlanSalesOrderLink? RestoreSalesOrderLink(PlanRow row)
+    {
+        if (row.SalesOrderId is { } orderId && row.SalesOrderLineId is { } lineId
+            && row.SalesCustomerPartyId is { } partyId && row.SalesCustomerAccountId is { } accountId
+            && row.SalesProductId is { } productId && row.SalesOrderLineRevision is { } lineRevision
+            && row.SalesOrderLinkedBy is { } linkedBy && row.SalesOrderLinkedAtUtc is { } linkedAt)
+        {
+            return new PlanSalesOrderLink(orderId, lineId, partyId, accountId, productId, lineRevision, linkedBy, linkedAt);
+        }
+
+        if (row.SalesOrderId is not null || row.SalesOrderLineId is not null || row.SalesCustomerPartyId is not null
+            || row.SalesCustomerAccountId is not null || row.SalesProductId is not null
+            || row.SalesOrderLineRevision is not null || row.SalesOrderLinkedBy is not null
+            || row.SalesOrderLinkedAtUtc is not null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı satış siparişi bağı eksik.");
+        }
+
+        return null;
     }
 
     /// <summary>
