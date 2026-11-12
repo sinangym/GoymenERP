@@ -63,8 +63,8 @@ zorunludur (`AuditEvent.cs` `RequireText`).
 
 **Karar (Sinan, #66 `6819201876` madde 2, 2026-11-12):** "Yetki retleri ve iş kuralı retleri dahil reddedilen tüm
 işlem denemeleri denetim kaydına yazılır (kim, ne zaman, hangi işlem, ret nedeni). Kişisel veri/şifre/secret
-yazılmaz. Saklama süresi ayrı politikadır." Bu karar henüz `docs/decisions/` altında tarihli dosyaya işlenmemiştir;
-işlenmesi `decision-docs-validation` akışıyla ayrı PR'dır (bu spec onu değiştirmez).
+yazılmaz. Saklama süresi ayrı politikadır." Bu karar aynı PR'daki
+`docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D7` olarak yazıldı.
 
 Dayanılan kararlar: ADR-009 (append-only, aynı transaction), ADR-SEC-001 + BS-11 (Grup E kabul: E1 yazma hatası
 davranışı, E5 IP/UA saklanmaz, E9), BS-15 (toplulaştırma, pencere/eşik Ayarlar'dan, ilk değer ölçümden sonra),

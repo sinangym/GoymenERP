@@ -6,9 +6,9 @@
 - Önceki ilgili kararlar: `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (F-001) ve BS-7
   (OPEN-013 yönü); `SINAN_KARARLARI_2026-08-31.md` §2 (OPEN-013 → GECICI_VARSAYIM); ADR-004
 - Not: Bu spec `OPEN-013`'ü veya başka bir `OPEN-*` kaydını **kapatmaz**; hiçbir role, seed'e veya
-  gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararı henüz
-  `docs/decisions/` altında tarihli bir `SINAN_KARARLARI_*` dosyasına yazılmamıştır; o dosya ayrı bir
-  governance PR'ıdır (`decision-docs-validation` akışı) ve bu spec onu öngörmez, yalnız alıntılar.
+  gerçek kullanıcıya grant vermez; production aktivasyonu değildir. 2026-11-12 kararları (1. ve 8. tur,
+  #66 `6818566934`, `6820046672`) aynı PR'daki
+  `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md` dosyasına `KIM-D1`…`KIM-D6` olarak yazıldı.
 
 ## Amaç
 
@@ -53,7 +53,8 @@
 |---|---|---|
 | Issue #66 `6818566934` (2026-11-12) | Son kullanıcı kararı | F-001 mekanizması ve F-002 "şimdilik yerel hesap" yönü bağlayıcıdır. |
 | BS-6 (2026-11-11) | Kilitli tasarım yönü | İki kişi kuralı + tek seferlik kurucu admin; grant/Critical insan kapısı. |
-| BS-7 (2026-11-11) | Yön; `OPEN-013` açık | Production yönü "kurumsal hesap OIDC + **MFA zorunlu** + VPN". 2026-11-12 kararı "şimdilik yerel + **isteğe bağlı** 2FA" der → çelişki `NEEDS-SINAN-ID-01`. |
+| BS-7 (2026-11-11) | Yön; `OPEN-013` açık | Production yönü "kurumsal hesap OIDC + **MFA zorunlu** + VPN". 2026-11-12 kararı "şimdilik yerel + **isteğe bağlı** 2FA" der; çelişki 8. turda (KIM-D3) 12 Kasım kararı lehine çözüldü. |
+| #66 `6820046672` (2026-11-12, 8. tur) | Kilitli | KIM-D3…KIM-D6: 2FA herkese isteğe bağlı; başlangıç parola/kilit/oturum değerleri Ayarlar'dan değişir; kurucu Admin Critical atamayı ikinci onaysız yapabilir, Critical liste seçilmedi; admin/admin yalnız Sinan'ın bilgisayarındaki Development ortamında. Karar dosyası: `docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md`. |
 | `OPEN-013` | KISMEN, açık kalır | Yerel hesap = geçici yol; OIDC soyutlaması korunur (ADR-004). |
 | `DEC-TEC-008` | Kilitli | Dev/test/staging/prod ayrı; weak-password istisnası yalnız Development. |
 | ADR-004 §1–§6 | Uygulandı | Kimlik doğrulama ≠ yetkilendirme; `(issuer, subject)` → yerel kullanıcı; Critical talepte talep eden/hedef onaylayamaz. |
@@ -108,7 +109,8 @@ Bugünkü `ErpPermissions.Critical`
 `finance.bank-account.propose`, `finance.bank-account.approve`,
 `counterparty.parties.tax-identity.approve`. Sinan'ın "finans onayı" ifadesi
 `finance.official-invoice-import.approve`, `finance.manual-receipt.*` gibi şu an Critical olmayan adları da
-kapsıyor olabilir; kümeye ekleme insan kapısıdır → `NEEDS-SINAN-ID-04`.
+kapsıyor olabilir; kümeye ekleme insan kapısıdır → `NEEDS-SINAN-ID-04` (8. tur: liste **seçilmedi**, AI önerisi
+taslak kalır; etkinleştirme Sinan'ın liste onayını bekler).
 
 ## Durum geçişleri
 
@@ -146,15 +148,15 @@ okunur. Değer seçimi güvenlik politikasıdır ve insan kararıdır:
 
 | Parametre | Ayar anahtarı (öneri) | Öneri (yalnız referans, seçim değil) | Karar |
 |---|---|---|---|
-| Asgari parola uzunluğu | `PasswordPolicy:MinimumLength` | NIST SP 800-63B (Rev.4): yalnız parola ile ≥ 15, MFA ile ≥ 8; azami ≥ 64 kabul edilmeli | `NEEDS-SINAN-ID-02` |
-| Karakter sınıfı kuralı | `PasswordPolicy:RequireCharacterClasses` | NIST kompozisyon kuralı önermez; Sinan "güçlü parola" dedi | `NEEDS-SINAN-ID-02` |
+| Asgari parola uzunluğu | `PasswordPolicy:MinimumLength` | **Başlangıç 8** (KIM-D4; Ayarlar'dan değişir). Azami ≥ 64 kabul edilmeli (NIST SP 800-63B) | Karar verildi |
+| Karakter sınıfı kuralı | `PasswordPolicy:RequireCharacterClasses` | NIST kompozisyon kuralı önermez; Sinan "güçlü parola" dedi | `NEEDS-SINAN-ID-02b` |
 | Yasaklı/sık parola listesi | `PasswordPolicy:BlocklistEnabled` | NIST: zorunlu karşılaştırma; liste `admin`, kullanıcı adı, şirket adı türevlerini içerir | Açık olması önerilir |
-| Periyodik zorunlu değişim | `PasswordPolicy:MaximumAgeDays` | NIST önermez (yalnız ihlal şüphesinde) | `NEEDS-SINAN-ID-02` |
-| Kilit eşiği | `Lockout:MaxFailedAttempts` | ASP.NET Core Identity varsayılanı 5; NIST ≤ 100 ardışık hata | `NEEDS-SINAN-ID-03` |
-| Kilit süresi | `Lockout:Duration` | ASP.NET Core Identity varsayılanı 5 dk | `NEEDS-SINAN-ID-03` |
-| Oturum boşta kalma / mutlak süre | `Session:IdleTimeout`, `Session:AbsoluteLifetime` | — | `NEEDS-SINAN-ID-06` |
-| Hash algoritması ve maliyet | `PasswordHashing:Algorithm`, `:Pbkdf2Iterations` | Öneri A: ASP.NET Core Identity `PasswordHasher<T>` (PBKDF2-HMAC-SHA512, V3 biçim, sürümlü hash, yeniden hash desteği); OWASP önerisi PBKDF2-SHA512 ≥ 210 000 iterasyon. Öneri B: Argon2id (OWASP: m=19 MiB, t=2, p=1) — üçüncü taraf paket ister (tedarik zinciri incelemesi). **Öneri: A** (framework içi, yeni bağımlılık minimal). | Maliyet `NEEDS-SINAN-ID-02` |
-| 2FA yöntemi | `TwoFactor:Methods` | TOTP (RFC 6238), kurtarma kodlarıyla; SMS önerilmez | `NEEDS-SINAN-ID-01` |
+| Periyodik zorunlu değişim | `PasswordPolicy:MaximumAgeDays` | NIST önermez (yalnız ihlal şüphesinde) | `NEEDS-SINAN-ID-02b` |
+| Kilit eşiği | `Lockout:MaxFailedAttempts` | **Başlangıç 10** ardışık hata (KIM-D4; Ayarlar'dan değişir) | Karar verildi |
+| Kilit süresi | `Lockout:Duration` | ASP.NET Core Identity varsayılanı 5 dk | `NEEDS-SINAN-ID-03b` |
+| Oturum boşta kalma / mutlak süre | `Session:IdleTimeout`, `Session:AbsoluteLifetime` | Boşta **başlangıç 8 saat** (KIM-D4; Ayarlar'dan değişir); mutlak süre seçilmedi | Boşta: karar verildi; mutlak süre `NEEDS-SINAN-ID-06` |
+| Hash algoritması ve maliyet | `PasswordHashing:Algorithm`, `:Pbkdf2Iterations` | Öneri A: ASP.NET Core Identity `PasswordHasher<T>` (PBKDF2-HMAC-SHA512, V3 biçim, sürümlü hash, yeniden hash desteği); OWASP önerisi PBKDF2-SHA512 ≥ 210 000 iterasyon. Öneri B: Argon2id (OWASP: m=19 MiB, t=2, p=1) — üçüncü taraf paket ister (tedarik zinciri incelemesi). **Öneri: A** (framework içi, yeni bağımlılık minimal). | Maliyet `NEEDS-SINAN-ID-02b` |
+| 2FA | `TwoFactor:Methods`, `TwoFactor:Required` | **Herkese isteğe bağlı**, kimseye zorunlu değil (KIM-D3; pilot sonrası yeniden bakılır). Yöntem önerisi TOTP (RFC 6238) + kurtarma kodları; SMS önerilmez | Zorunluluk: karar verildi; yöntem uygulama ayrıntısı (ID-5 review'unda) |
 
 Hash sürümü satırda tutulur (`HashFormatVersion`); parametre artırıldığında başarılı girişte yeniden hash'lenir
 (`PasswordVerificationResult.SuccessRehashNeeded`). Parola karşılaştırması sabit zamanlıdır (hasher içi).
@@ -187,15 +189,18 @@ kullanılmaz; kullanılacaksa ayrı karar.
    olmadığını kanıtlar.
 3. Critical olmayan rol: tek adım, aynı audit.
 4. Kendine Critical rol talebi açılabilir; checker yine üçüncü kişi olmalıdır.
-5. **Kurucu istisnası:** Bootstrap komutu tek kez, `System` aktörü + operatör beyanıyla
+5. **Kurucu istisnası (bootstrap):** Bootstrap komutu tek kez, `System` aktörü + operatör beyanıyla
    `SYSTEM_ADMINISTRATOR` atamasını yapar (bu rol `identity.roles.manage` ve `identity.access.approve`
-   taşır, yani Critical'dir). Bu, iki kişi kuralının tek belgelenmiş istisnasıdır (BS-6 "tek seferlik kurucu
-   admin").
-6. **Tavuk-yumurta sorunu:** Tek kurucu Admin varken ikinci bir checker'a Critical rol verilemez (checker
-   kurucunun kendisi olamaz, çünkü kurucu requester'dır). Seçenekler: (a) bootstrap aynı törende iki kişiyi
-   (kurucu + ikinci onaylayıcı) operatör girdisiyle tanımlar; (b) ikinci onaylayıcı için bootstrap komutunun
-   ikinci ve son bir adımı; (c) kurucu Critical olmayan rol + ayrı tek seferlik onay. Öneri: (a).
-   → `NEEDS-SINAN-ID-08`.
+   taşır, yani Critical'dir; BS-6 "tek seferlik kurucu admin").
+6. **Kurucu Admin istisnası (KIM-D5, 8. tur: "Kurulumcu admin her zaman yapabilsin"):** Bootstrap'ta
+   oluşturulan kurucu Admin, Critical rol atamasını **ikinci kişi onayı olmadan, her zaman** yapabilir. Diğer
+   her atayan için ikinci kişi onayı sürer. Uygulama: kurucu kimliği `IdentityBootstrapState.FounderUserId`
+   ile sunucuda belirlenir (istemci beyanı değil); kurucunun doğrudan Critical ataması `Approve` yolunu
+   atlamaz, `AccessGrantRequest` satırı `ApprovalMode = FounderDirect` (öneri ad) ile tek kişi olarak kapanır
+   ve audit'te ayrıca işaretlenir; check constraint "ikinci onaylayıcı dolu **veya** FounderDirect ve
+   requester = kurucu" biçimine genişler. Böylece tavuk-yumurta sorunu (tek Admin varken ilk checker'ın
+   doğması) da çözülür; eski `NEEDS-SINAN-ID-08` kapandı. Kurucu Admin pasifleştirilirse istisna onunla
+   biter (devredilmez; devretme ayrı karar).
 
 ## Audit, idempotency ve ters işlem
 
@@ -233,7 +238,7 @@ kodları sürümlü; OpenAPI `openapi-regenerate` ile yeniden üretilir. Adlar �
 | POST | `/access/users/{userId}/password-reset` | `identity.users.manage` | |
 | POST | `/access/users/{userId}/unlock` | `identity.users.manage` | |
 | POST | `/access/assignments` | `identity.roles.manage` | Critical olmayan rol; Critical rolde `409 second_approval_required`. |
-| POST | `/access/assignments/{id}/revoke` | `identity.roles.manage` | `NEEDS-SINAN-ID-05`. |
+| POST | `/access/assignments/{id}/revoke` | `identity.roles.manage` | `NEEDS-SINAN-ID-05` (8. turda sorulmadı). |
 | POST | `/access/grant-requests` | `identity.roles.manage` | Critical rol talebi. |
 | POST | `/access/grant-requests/{id}/approve` · `/reject` · `/withdraw` | approve/reject: `identity.access.approve`; withdraw: requester | |
 | GET | `/access/grant-requests?status=pending` | `identity.access.approve` veya `identity.assignments.read` | |
@@ -304,17 +309,20 @@ kaynak dosyasında; klavye ile tam erişim, odak yönetimi, `aria-live` hata bö
    dosyaları, test fixture'ları ve dokümanlarda kullanılabilir kullanıcı adı + parola çifti bulunmaz. Testler
    parolayı çalışma anında rastgele üretir.
 2. **Bootstrap operatör girdisi ister:** varsayılan parola yoktur; boş/argümanla verilen parola reddedilir.
-3. **Yasaklı liste:** `admin`, `password`, kullanıcı adının kendisi vb. politika tarafından reddedilir. Tek
-   istisna madde 4'teki yalnız-Development ayarıdır; Staging/Production'da bu liste kapatılamaz. Zorunlu parola
-   değişikliğinde (`/session/password`) yeni parola istisna açık olsa bile yasaklı listeden geçmek zorundadır;
-   yani `admin/admin` hiçbir ortamda ilk girişten sonra kullanılamaz.
-4. **Sinan'ın yerel geçici hesabı:** Yalnız `Development` ortamında, açık bir ayarla
-   (`Identity:LocalAccount:DevelopmentAllowWeakPassword=true`, öneri ad) zayıf parola kabul edilebilir. Ayar
-   Development dışında `true` ise uygulama **başlamaz** (mevcut `DevelopmentBootstrap` startup kontrolünün
-   deseni). Hesabı Sinan kendi makinesinde bootstrap komutuyla kendisi oluşturur; ayar ve parola yalnız onun
-   yerel `appsettings.Development.json` dışı kullanıcı-gizli dosyasında/ortamında durur, repoya girmez. Hesap
-   yine `MustChangePassword=true` doğar. Bu istisnanın hiç olmaması da seçilebilir (Sinan geliştirmede
-   `DevelopmentBootstrap` başlığını kullanır) → `NEEDS-SINAN-ID-09`.
+3. **Yasaklı/sızmış parola listesi:** `admin`, `password`, kullanıcı adının kendisi ve sızmış parolalar politika
+   tarafından reddedilir (KIM-D4 korur). Tek istisna madde 4'teki **yalnız Development + yerel ayar** durumudur;
+   test (`Testing`/Staging) ve canlı (Production) ortamda liste kapatılamaz ve `admin/admin` hiç kabul edilmez.
+4. **Sinan'ın yerel geçici hesabı (KIM-D6, 8. tur):** `admin/admin` **yalnız Sinan'ın bilgisayarındaki
+   Development ortamında** kabul edilir. Bunu açan ayar (`Identity:LocalAccount:DevelopmentAllowWeakPassword=true`,
+   öneri ad) repoya, `appsettings*.json`'a, seed'e veya örnek dosyaya yazılmaz; yalnız Sinan'ın makinesindeki
+   kullanıcı-gizli dosyasında (`dotnet user-secrets`) veya yerel ortam değişkeninde durur. Ayar Development
+   dışında `true` ise uygulama **başlamaz** (mevcut `DevelopmentBootstrap` startup kontrolünün deseni). Hesabı
+   Sinan kendi makinesinde bootstrap komutuyla kendisi oluşturur ve parolayı kendisi girer. İstisna açıkken
+   ilk girişteki zorunlu değişim de bu yerel istisnaya tabidir (Development'ta `admin` yeniden kabul
+   edilebilir). Karar gereği **başka kullanıcı bağlanmadan önce** parola değiştirilir; öneri uygulama: zayıf
+   parolayla kabul edilmiş hesap `WeakPasswordAccepted=true` işaretlenir ve bu işaret dururken ikinci bir yerel
+   kullanıcı oluşturma ve başka bir kullanıcıya giriş reddedilir (`identity.weak_founder_password_must_change`,
+   öneri kod). Eski `NEEDS-SINAN-ID-09` kapandı.
 5. **Guard testleri (ID-1/ID-2 ile birlikte):**
    - Repo taraması (öneri `tests/default_credential_guard/`): kod, seed, `appsettings*.json`, `.env.example`,
      `infra/**` compose ve test fixture dosyalarında `admin`/`admin` vb. bilinen varsayılan çiftler ve
@@ -322,8 +330,9 @@ kaynak dosyasında; klavye ile tam erişim, odak yönetimi, `aria-live` hata bö
      yalnız **adıyla anan** dokümanlar (`docs/**`) kimlik bilgisi değildir; taramanın doküman istisnası dar
      tutulur (yalnız `docs/**/*.md`, kullanılabilir yapılandırma biçiminde değil) ve istisna listesi review'da
      görünür.
-   - Integration: `Production`/`Staging` ortamında `DevelopmentAllowWeakPassword=true` ile startup hatası;
-     `admin` parolası politika tarafından reddedilir; bootstrap ikinci kez reddedilir.
+   - Integration: `Production`/`Staging`/`Testing` ortamında `DevelopmentAllowWeakPassword=true` ile startup
+     hatası; bu ortamlarda `admin` parolası hem bootstrap'ta hem zorunlu değişimde reddedilir; bootstrap ikinci
+     kez reddedilir; Development'ta `WeakPasswordAccepted` dururken ikinci kullanıcı oluşturma reddedilir.
    - Integration: boş veritabanında hiçbir giriş başarılı olmaz (bootstrap öncesi kullanıcı yok).
 
 ## Kabul senaryoları
@@ -420,22 +429,20 @@ K3 dilimleri iki bağımsız exact-head review ister.
 | **ID-2F** | Zorunlu parola değiştirme ekranı | Claude | K2 | ID-2 |
 | **ID-3** | Atama/geri alma, Critical talep/onay/ret/geri çekme API'si, `AccessGrantRequest` migration'ı, `identity.users.manage` kaydı (grant yok), shell capability'leri, audit + `identity.permission.changed` | Codex | K3 (permission/rol + migration) | ID-1; `NEEDS-SINAN-ID-04/05/07` |
 | **ID-4** | "Kullanıcılar ve yetkiler" ekranına atama, onay kuyruğu, kullanıcı oluştur/sıfırla/kilit aç eylemleri | Claude | K2 | ID-3 |
-| **ID-5** | İsteğe bağlı TOTP 2FA + kurtarma kodları + migration; UI kayıt akışı ayrı Claude alt dilimi | Codex (+Claude) | K3 | ID-1; `NEEDS-SINAN-ID-01` |
+| **ID-5** | İsteğe bağlı TOTP 2FA + kurtarma kodları + migration; UI kayıt akışı ayrı Claude alt dilimi | Codex (+Claude) | K3 | ID-1; zorunluluk KIM-D3 ile kararlı (isteğe bağlı) |
 | **ID-6** | `Authentication:Providers` çoklu şema; OIDC varsayılan kapalı; yerel kullanıcıya dış kimlik bağlama (Admin eylemi) | Codex | K2 (migration yoksa; güvenlik yüzeyi nedeniyle iki review önerilir) | ID-1; production sağlayıcısı `OPEN-013` insan kapısı |
 
 ## NEEDS-SINAN listesi
 
-- `NEEDS-SINAN-ID-01`: 2FA isteğe bağlı mı (2026-11-12) yoksa production'da zorunlu mu (BS-7)? Critical rol
-  sahipleri için zorunlu olsun mu? Yöntem TOTP mu?
-- `NEEDS-SINAN-ID-02`: Asgari parola uzunluğu, karakter sınıfı kuralı, periyodik değişim, hash maliyeti.
-- `NEEDS-SINAN-ID-03`: Kilit eşiği ve süresi; kilidi kim açar.
-- `NEEDS-SINAN-ID-04`: "Finans onayı" Critical kümesine hangi izinleri ekler (bugün yalnız banka hesabı
-  propose/approve)?
-- `NEEDS-SINAN-ID-05`: Critical rolün geri alınması da iki kişi ister mi?
-- `NEEDS-SINAN-ID-06`: Oturum boşta kalma ve mutlak süre.
-- `NEEDS-SINAN-ID-07`: `identity.users.manage` Critical mi; grup geneli etkili parola sıfırlama hangi
-  kapsamla yetkilendirilir?
-- `NEEDS-SINAN-ID-08`: İlk Critical checker nasıl doğar (bootstrap'ta iki kişi mi)?
-- `NEEDS-SINAN-ID-09`: Development'ta zayıf parola istisnası hiç olsun mu, yoksa yerel geliştirme
-  `DevelopmentBootstrap` başlığıyla mı sürsün?
+8. tur (#66 `6820046672`) ile kapananlar: ID-01 (2FA herkese isteğe bağlı), ID-02/03/06'nın başlangıç
+değerleri (8 karakter, 10 hata, boşta 8 saat; Ayarlar'dan değişir), ID-08 (kurucu Admin istisnası), ID-09
+(admin/admin yalnız Sinan'ın Development ortamında). Açık kalanlar:
+
+- `NEEDS-SINAN-ID-02b`: Karakter sınıfı kuralı, periyodik değişim ve hash maliyeti (öneri: sınıf kuralı yok,
+  periyodik değişim yok, PBKDF2 framework varsayılanı).
+- `NEEDS-SINAN-ID-03b`: Kilit süresi ve kilidi kim açar (öneri: 15 dk otomatik + `identity.users.manage`).
+- `NEEDS-SINAN-ID-04`: Critical işlem **listesi** (8. turda seçilmedi; AI önerisi taslak kalır).
+- `NEEDS-SINAN-ID-05`: Critical rolün geri alınması da iki kişi ister mi? (8. turda sorulmadı.)
+- `NEEDS-SINAN-ID-06b`: Oturum mutlak süresi.
+- `NEEDS-SINAN-ID-07`: `identity.users.manage` Critical listede mi (ID-04 ile birlikte)?
 - (Mevcut) ADR-SEC-001 NEEDS-SINAN-8 / E8: başarısız giriş kullanıcı adı hash anahtarı.
