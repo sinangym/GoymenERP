@@ -69,6 +69,17 @@ public sealed partial class PurchasingService
                 {
                     // An unknown line is the domain's refusal; its unit is only needed when the line exists.
                     var unit = order.Lines.FirstOrDefault(line => line.Id == lineId)?.Quantity.Unit ?? QuantityUnit.Kilogram;
+                    // The order line's own precedent (VerifyUnitAsync): a quantity finer than the unit's scale (a fraction of a
+                    // piece) is the 422 scale refusal, named here on the slice's quantity, never a 400.
+                    for (var index = 0; index < values.Length; index++)
+                    {
+                        if (Quantity.SignificantDecimals(values[index]) > Quantity.AllowedScale(unit))
+                        {
+                            throw new PurchasingServiceException(422, PurchasingProblemCodesV1.UnsupportedUnit,
+                                [new($"slices[{index}].quantity", PurchaseUnitCodes.QuantityScaleExceeded)]);
+                        }
+                    }
+
                     order.SetLineDeliverySchedule(expectedVersion, lineId,
                         [.. slices.Select((slice, index) => new PurchaseOrderDeliverySliceInput(slice.SliceId, Quantity.Of(values[index], unit),
                             slice.DeliveryDate))], actor, now);

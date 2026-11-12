@@ -700,6 +700,8 @@ public sealed partial class PurchasingServiceTests
         public void PlantWinner(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId, string correlation) =>
             _attempts[(commandName, envelope.IdempotencyKey)] =
                 new Attempt(envelope.ActorId, requestHash, null, _orders.Single(candidate => candidate.Order.Id == orderId), null, correlation);
+        /// <summary>A3 API-30: an order the service cannot create today (e.g. a Piece line, which Settings does not publish yet).</summary>
+        public void PlantOrder(StoredPurchaseOrder order) => _orders.Add(order);
         /// <summary>A1-2b: a create attempt recorded earlier (e.g. a Sales-sourced request stored before A1-2b) under the key.</summary>
         public StoredPurchaseRequest PlantRequestAttempt(string key, string actor, string requestHash, PurchaseRequest request, DateOnly effectiveOn,
             IReadOnlyDictionary<Guid, string> productVersionsByLineId, string correlation)

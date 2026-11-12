@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Purchasing.Application;
+using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Quantities;
@@ -112,6 +114,29 @@ public sealed partial class PurchasingServiceTests
         // Not terminal: the same key succeeds once the body is right (a different body under a fresh key here).
         var fixedUp = await world.Service().SetOrderLineScheduleAsync(orderId, lineId, Schedule("2", ("10", ScheduleD1)), Metadata("k-fixed"));
         Assert.Equal("3", fixedUp.Detail.Order.Version);
+    }
+
+    [Fact]
+    public async Task A_fraction_of_a_piece_in_a_slice_is_the_same_non_terminal_422_scale_refusal_as_an_order_line_quantity()
+    {
+        // The order line's precedent (VerifyUnitAsync): a quantity finer than the unit's scale is 422 unsupported_unit with
+        // purchasing_quantity_scale_exceeded, never a 400; a slice names its own quantity.
+        var world = new World();
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Party, DateTimeOffset.UnixEpoch, Actor);
+        var line = order.AddLine(1, Guid.NewGuid(), Product, Guid.Parse("66666666-6666-4666-8666-666666666666"),
+            Quantity.Of(10m, QuantityUnit.Piece), DateTimeOffset.UnixEpoch);
+        world.Store.PlantOrder(new StoredPurchaseOrder(order, Account, Day, new Dictionary<Guid, string> { [line.Id] = "7" }));
+
+        var fraction = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().SetOrderLineScheduleAsync(order.Id, line.Id,
+            Schedule("2", ("4", ScheduleD1), ("5.5", ScheduleD2), ("0.5", ScheduleD2)), Metadata("k-piece-fraction")));
+
+        Assert.Equal((422, PurchasingProblemCodesV1.UnsupportedUnit, "slices[1].quantity", PurchaseUnitCodes.QuantityScaleExceeded),
+            (fraction.Status, fraction.Code, fraction.Errors.Single().Field, fraction.Errors.Single().Code));
+        Assert.Equal((2, 0), (order.Version, line.DeliverySchedule.Count));
+        Assert.DoesNotContain(world.Store.Refusals, item => item.Command == PurchasingCommands.OrderLineScheduleV1);
+        var whole = await world.Service().SetOrderLineScheduleAsync(order.Id, line.Id, Schedule("2", ("4", ScheduleD1), ("6", ScheduleD2)),
+            Metadata("k-piece-fraction"));
+        Assert.Equal(("3", "6"), (whole.Detail.Order.Version, whole.Detail.Lines[0].DeliverySchedule[1].Quantity));
     }
 
     [Fact]

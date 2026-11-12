@@ -418,7 +418,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             throw new InvalidOperationException("Termin komutu tam olarak bir satırın terminini değiştirir; başka komut termin değiştirmez.");
         }
 
-        if (commandName == PurchasingCommands.OrderApproveV1 && order.Status == PurchaseOrderStatus.Approved
+        // A3 API-30: a schedule changes no ordered quantity, so only the schedule command is exempt; every other command keeps the check.
+        if (commandName != PurchasingCommands.OrderLineScheduleV1 && order.Status == PurchaseOrderStatus.Approved
             && order.SourceRequestId is { } sourceRequestId)
         {
             await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken);
