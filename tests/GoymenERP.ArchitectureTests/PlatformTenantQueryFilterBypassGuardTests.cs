@@ -139,7 +139,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        "a1562dc161cfd5fba787dbf77820476905448ebba901af6b6f85f5499cb9d4d5";
+        // F-005 D1 (FNS-D17…FNS-D21): registers the Finance official sales invoice host (scoped in-process DI only); no generation,
+        // network or hosted-service change (a1562dc1… -> 2a110d08…).
+        "2a110d0842f1191c75f13ba34e400ca07adfd69d05f149b806e8b10b865cc444";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -271,8 +273,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #1006 takip: +1 multi-allocation cancellation fact, ordinal-sorted (19001373… -> 7634c7da…).
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
+            // F-005 D1: +3 official sales invoice facts (maker≠approver, CK refusals, Down guard), ordinal-sorted (36413356… -> 41ad9daf…).
             ["tools/relational_inventory/finance.txt"] =
-                "3641335616cf9e1e8f00b26efa4f748648583e7c3c5332f5f36ede493b7c604d",
+                "41ad9dafa5f5e9ada7f6b1925f0f357f31a76be9da79710d66d149f9e8b83bc2",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -748,7 +751,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CK_OpenItems_Status admits 3 = Cancelled (973395d3… -> 578e4f20…).
             // F3a / API-20: PaymentAllocations / PaymentAllocationStates carry the CompanyId filter, company-leading
             // keys to ManualBankPayments and OpenItems, and a release-only write guard (578e4f20… -> 95024798…).
-            "950247983a8a0742e9ce5aed9b14d527f92e5f9a507ad745637a8d01ff0d52b6",
+            // F-005 D1 (FNS-D17…FNS-D21): OfficialSalesInvoices / OfficialSalesInvoiceCommands carry the CompanyId filter,
+            // company-leading keys, unique ETTN/official number per company and CK_OfficialSalesInvoices_Approval
+            // (approver ≠ recorder) (95024798… -> 6bb4c498…).
+            "6bb4c498870310264019ef73609068ea92a379b0024b8fb0e5182433c459a9f6",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -898,6 +904,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     ("FinanceDbContext", 2),
+                // F-005 D1: the three counted sites are the host's target-typed audit envelope and the document port's two
+                // PDF check results; the context is DI-resolved.
+                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
+                    ("FinanceDbContext", 3),
+                // F-005 D1: target-typed result/view/cursor/ReadResult sites in the official sales invoice service are
+                // conservatively counted; 14 is its exact source count, not a new DbContext writer.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialSalesInvoiceServiceV1.cs"] = ("FinanceDbContext", 14),
                 // The conservative target-typed scanner includes DTO/ReadResult return sites in the
                 // reviewed approval service; 21 is its exact source count, not a new DbContext writer.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -1337,6 +1351,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // F-005 D1 (FNS-D17…FNS-D21): the official sales invoice service writes and reads through the tenant-filtered
+                // FinanceDbContext only. SqlClient is referenced only to classify 2601/2627 races after SaveChanges; no
+                // connection, command, raw SQL or bypass.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs"] =
+                    new(
+                        "8e6a00ccb5e4d8391ee521d2af7693a2b4c8a542d2cc568b79adf013d8227465",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // F3a / API-20 reads use only the tenant-filtered FinanceDbContext through EF/DI.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinancePaymentAllocationReadService.cs"] =
@@ -1431,6 +1456,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Empty API inventories plus exact fingerprints keep direct SQL, connection and filter-bypass surfaces closed.
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     new("d6eb42c3009778d83872e20dfdbb2112c50230eff5893f1568930ed6de8bdf10",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                // F-005 D1: the official sales invoice host resolves FinanceDbContext only through DI; no direct database API.
+                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
+                    new("60b146d5b023a163cb49d50f0ff5d11fe487eea9f9f554aaef26f8e129611f45",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =
@@ -2795,6 +2824,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // F-005 D1: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any official sales
+                // invoice record or its command is stored; the THROW precedes the table drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261111233047_AddOfficialSalesInvoices.cs"] =
+                    new("975c3e52e536703b841ca37cdfbe5f0ffca03ae70e56e3cac95be325ef5e6ffe",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
                 // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107154419_AddPaymentAllocations.cs"] =
