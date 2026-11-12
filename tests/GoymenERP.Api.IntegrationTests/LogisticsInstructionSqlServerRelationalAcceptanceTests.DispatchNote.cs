@@ -221,6 +221,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var draftsIndex = Array.IndexOf(applied, DraftsMigration);
             Assert.True(draftsIndex > 0, "Dispatch-note drafts migration must have a named predecessor.");
+            // AddLoadingShareRecordedBy refuses Down (51260) while a share names its recorder; this test is about the drafts guard.
+            await run.ExecuteAsync("UPDATE logistics.LoadingShares SET RecordedBy = NULL");
             var error = await Assert.ThrowsAsync<SqlException>(() =>
                 context.GetService<IMigrator>().MigrateAsync(applied[draftsIndex - 1]));
             Assert.Equal(51056, error.Number);
