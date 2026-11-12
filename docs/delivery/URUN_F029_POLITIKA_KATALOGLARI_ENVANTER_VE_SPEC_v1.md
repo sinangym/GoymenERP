@@ -12,7 +12,7 @@
 - Taban: `origin/main` `58b96aa`.
 
 Bu belge **kod, migration, seed, izin adı, grant veya değer değiştirmez**. Hiçbir `OPEN-*` kararını kapatmaz,
-yeni bir politika değeri de seçmez. Seçim gerektiren noktalar `NEEDS-SINAN` olarak işaretlidir (§6).
+yeni bir politika değeri de seçmez. §6'daki sorular Sinan kararlarıyla (URN-D2–D6) cevaplanmıştır.
 Kiracı (şirket üstü) katmanı F-029 önerisine uygun olarak **kapsam dışıdır** (§5.6).
 
 ## 1. Özet
@@ -77,7 +77,7 @@ hedef modelinin içinde zaten örnek olarak duruyor.
 
 - Her A/B kataloğunun bugünkü içeriği, kalıcı tabloya **değiştirilmeden** "sürüm 0, kaynak: derlenmiş katalog +
   karar kimliği" olarak aktarılır. Aktarım tohum değildir; denetim kaydı olan, idempotent ve tek seferlik bir
-  aktarımdır (URN-D5). Aktarımdan sonra derlenmiş katalog kaynak olmaz.
+  aktarımdır (A/B: URN-D2 + bu spec; C: URN-D5). Aktarımdan sonra derlenmiş katalog kaynak olmaz.
 - Aktarımdan sonra sağlayıcı yanıtları **bayt bayt aynı** kalır. Kabul testi: aynı şirket, işlem ve tarih için
   derlenmiş ve kalıcı sağlayıcı aynı profil kimliğini, sürümünü, ölçeği ve geçerlilik aralığını döner (§7).
 - Eksik kaynak yine **istisnadır**. Hiçbir sağlayıcı null, boş katalog, sıfır ölçek ya da uygun dönem uyduramaz
@@ -118,8 +118,9 @@ correlation/causation, audit ve tek kayıtta deneme + denetim. Önerilen eylemle
 `settings.<politika>.read | prepare | publish` (URN-D3 gereği ayrı bir `approve` adımı yoktur).
 
 - **URN-D3:** değeri ilgili alanın yetkili müdürü tek başına hazırlar ve yayımlar; ikinci onaylayıcı aranmaz. Her
-  değişiklik denetim kaydı bırakır. Durum akışı Draft → Published → Retired olur. Mevcut üretim profillerindeki
-  hazırla/onayla ayrımı bu kararla değişmez (açık soru, karar dosyası "Sınırlar").
+  değişiklik denetim kaydı bırakır. Durum akışı Draft → Published → Retired olur. URN-D6 gereği S10/S11 de tek
+  akışa (hazırla → yayımla) iner. Mevcut hazırla/onayla kayıtları tarihçe olarak kalır. Geçiş F029-C dilimiyle
+  yapılır (ayrı K3).
 - İzin adları kayıt altına alınır, ama **hiçbir role grant edilmez**. Grant/rol/Critical insan kapısıdır
   (`permission-capability-registration`).
 - **URN-D4:** yayımlama geriye dönük değildir; `ValidFrom` bugünden önce olamaz (komut ve DB tarafında reddedilir).
