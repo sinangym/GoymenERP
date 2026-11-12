@@ -126,6 +126,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanPreparer", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanInputAllocations", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanSalesOrderLinks", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -151,6 +153,44 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
             { Name: "PlanInputAllocations" });
+    }
+
+    [Fact]
+    public void The_plan_sales_order_link_is_an_all_or_none_nullable_snapshot_and_its_rollback_refuses_while_one_was_recorded()
+    {
+        // Üretim U2-b / API-16: the link columns are all set or all null, the link revision starts at 0 and is at least 1
+        // while a link is held; Sales's open-supply read walks the filtered (company, sales order) index. Up is pure DDL;
+        // Down refuses (THROW 51261) while any plan holds or ever held a link (forward fix).
+        using var context = Context();
+        var plan = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PlanRow))!;
+        foreach (var name in new[]
+                 {
+                     nameof(PlanRow.SalesOrderId), nameof(PlanRow.SalesOrderLineId), nameof(PlanRow.SalesCustomerPartyId),
+                     nameof(PlanRow.SalesCustomerAccountId), nameof(PlanRow.SalesProductId),
+                     nameof(PlanRow.SalesOrderLineRevision), nameof(PlanRow.SalesOrderLinkedBy),
+                     nameof(PlanRow.SalesOrderLinkedAtUtc),
+                 })
+        {
+            Assert.True(plan.FindProperty(name)!.IsNullable, name);
+        }
+
+        Assert.False(plan.FindProperty(nameof(PlanRow.SalesOrderLinkRevision))!.IsNullable);
+        var checks = plan.GetCheckConstraints().Select(check => check.Name).ToArray();
+        Assert.Contains("CK_Plans_SalesOrderLink", checks);
+        Assert.Equal("[SalesOrderLinkRevision] >= 0 AND ([SalesOrderLineId] IS NULL OR [SalesOrderLinkRevision] >= 1)",
+            plan.GetCheckConstraints().Single(check => check.Name == "CK_Plans_SalesOrderLinkRevision").Sql);
+        var index = plan.GetIndexes().Single(candidate => candidate.GetDatabaseName() == "IX_Plans_SalesOrder");
+        Assert.Equal(["CompanyId", "SalesOrderId"], index.Properties.Select(property => property.Name));
+        Assert.Equal("[SalesOrderId] IS NOT NULL", index.GetFilter());
+
+        var migration = new AddManufacturingPlanSalesOrderLinks();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51261", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[SalesOrderLinkRevision] > 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Plans", Name: "SalesOrderLineId" });
     }
 
     [Fact]

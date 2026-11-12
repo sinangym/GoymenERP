@@ -89,7 +89,7 @@ public sealed partial class SalesDraftServiceTests
         var world = new World();
         var approved = await ApprovedTwoLineAsync(world);
         var second = approved.Lines[1].LineId;
-        // The Logistics owner on main answers totals only (ShippedBy null): SAT-D216 cannot be checked.
+        // An owner answer that does not name the shipper (ShippedBy null, e.g. a pre-B-33 share with no recorded actor): SAT-D216 cannot be checked.
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(second, KgUnit, 2.295m, 0m)]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
 

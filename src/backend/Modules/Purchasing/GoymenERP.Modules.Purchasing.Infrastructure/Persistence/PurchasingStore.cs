@@ -287,6 +287,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             throw Refused(PurchasingStoreCodes.ConcurrentChange, "Bu sipariş kimliği şirketin başka bir siparişinde kullanılıyor.");
         }
 
+        // A2a-5a (ALS-D3): the preparer the approval rule is checked against is the create envelope's actor (CreatedBy).
+        order.StampPreparer(actorId);
         var now = timeProvider.GetUtcNow();
         dbContext.Orders.Add(new PurchaseOrderRow
         {
@@ -414,6 +416,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         row.Status = (int)order.Status;
         row.Version = order.Version;
         row.UpdatedAtUtc = order.UpdatedAtUtc;
+        row.ApprovedBy = order.Approval?.ApprovedBy;
+        row.ApprovedAtUtc = order.Approval?.ApprovedAtUtc;
         row.CancelledBy = order.Cancellation?.CancelledBy;
         row.CancelledAtUtc = order.Cancellation?.CancelledAtUtc;
         row.CancellationReason = order.Cancellation?.Reason;
@@ -730,8 +734,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     {
         var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
-            ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, money, row.CreatedAtUtc)
-            : PurchaseOrder.Create(row.Id, row.CompanyId, row.SupplierPartyId, money, row.CreatedAtUtc);
+            ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, money, row.CreatedAtUtc, row.CreatedBy)
+            : PurchaseOrder.Create(row.Id, row.CompanyId, row.SupplierPartyId, money, row.CreatedAtUtc, row.CreatedBy);
         foreach (var line in lines)
         {
             var quantity = Quantity.Of(line.Ordered, UnitOf(line.UnitIsKilogram));
@@ -756,7 +760,17 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         if (row.Status is (int)PurchaseOrderStatus.Approved or (int)PurchaseOrderStatus.Cancelled)
         {
-            order.Approve(order.Version, row.UpdatedAtUtc);
+            // A2a-5a (ALS-D3): a recorded approver is replayed through the maker ≠ checker rule; an order approved before A2a-5a
+            // has none and is replayed without one (the fact is not invented, the rule is not applied backwards).
+            if (row.ApprovedBy is { } approvedBy)
+            {
+                order.Approve(order.Version, approvedBy,
+                    row.ApprovedAtUtc ?? throw new InvalidOperationException("Kayıtlı sipariş onayının zamanı yok."));
+            }
+            else
+            {
+                order.RestoreLegacyApproval(order.Version, row.UpdatedAtUtc);
+            }
         }
 
         var orderedAcceptances = (acceptances ?? [])
@@ -904,6 +918,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         currency = order.Money is { } money
             ? new { currencyId = money.CurrencyId, currencyCode = money.CurrencyCode, profileId = money.ProfileId, profileVersion = money.ProfileVersion, scale = money.Scale,
                 unitPriceScale = money.UnitPriceScale }
+            : null,
+        // A2a-5a (ALS-D3): who prepared and who approved the order are part of the audited record.
+        preparedBy = order.PreparedBy,
+        approval = order.Approval is { } approval
+            ? new { approvedBy = approval.ApprovedBy, approvedAtUtc = approval.ApprovedAtUtc }
             : null,
         // A1-3 (No.161 §2): the cancellation facts and each line's cancelled remainder are part of the audited record.
         cancellation = order.Cancellation is { } cancellation

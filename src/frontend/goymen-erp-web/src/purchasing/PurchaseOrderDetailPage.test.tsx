@@ -415,6 +415,19 @@ describe('PurchaseOrderDetailPage approval outcome', () => {
     expect(screen.queryByRole('button', { name: 'Aynı onayı yeniden gönder' })).toBeNull()
   })
 
+  it('names the separation-of-duties refusal in user words and keeps the order a draft (A2a-5a)', async () => {
+    const { approvePurchaseOrder } = await import('./approvalApi')
+    vi.mocked(approvePurchaseOrder).mockResolvedValueOnce({ type: 'failed', status: 409, code: 'purchasing_order_same_actor', replayed: false })
+    const user = userEvent.setup()
+    renderDetail()
+
+    await user.click(screen.getByRole('button', { name: 'Onayla' }))
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Onay kaydedilmedi: Siparişi hazırlayan kişi aynı siparişi onaylayamaz; onayı başka bir yetkili vermelidir. (purchasing_order_same_actor). Kayıt yeniden okundu.')
+    expect(screen.queryByText('Onaylandı')).toBeNull()
+  })
+
   it('shows no approval outcome or command controls for an already Approved idle order', () => {
     scenario.status = 'Approved'
     renderDetail()

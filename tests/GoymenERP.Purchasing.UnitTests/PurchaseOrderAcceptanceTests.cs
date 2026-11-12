@@ -10,6 +10,8 @@ public sealed class PurchaseOrderAcceptanceTests
     private static readonly DateTimeOffset T0 = new(2026, 9, 18, 9, 0, 0, TimeSpan.FromHours(3));
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Supplier = Guid.Parse("22222222-2222-4222-8222-222222222222");
+    private const string Preparer = "SENTETIK-hazirlayan";
+    private const string Approver = "SENTETIK-onaylayan";
     private static readonly Guid KgUnit = Guid.Parse("55555555-5555-4555-8555-555555555555");
     private static readonly Guid PieceUnit = Guid.Parse("66666666-6666-4666-8666-666666666666");
 
@@ -19,9 +21,9 @@ public sealed class PurchaseOrderAcceptanceTests
 
     private static (PurchaseOrder Order, PurchaseOrderLine Line) Approved(Quantity ordered)
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         var line = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, ordered, T0);
-        order.Approve(2, T0);
+        order.Approve(2, Approver, T0);
         return (order, line);
     }
 
@@ -65,14 +67,14 @@ public sealed class PurchaseOrderAcceptanceTests
     [Fact]
     public void A_draft_order_accepts_nothing_and_approval_needs_a_line()
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
-        Assert.Equal(PurchasingRuleCodes.OrderWithoutLines, CodeOf(() => order.Approve(1, T0)));
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
+        Assert.Equal(PurchasingRuleCodes.OrderWithoutLines, CodeOf(() => order.Approve(1, Approver, T0)));
         var line = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(100m), T0);
         Assert.Equal(PurchasingRuleCodes.OrderNotApproved,
             CodeOf(() => order.RecordAcceptance(2, Guid.NewGuid(), line.Id, Kg(1m), T0)));
-        order.Approve(2, T0);
+        order.Approve(2, Approver, T0);
         Assert.Equal(PurchasingRuleCodes.OrderNotDraft, CodeOf(() => order.AddLine(3, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(1m), T0)));
-        Assert.Equal(PurchasingRuleCodes.OrderNotDraft, CodeOf(() => order.Approve(3, T0)));
+        Assert.Equal(PurchasingRuleCodes.OrderNotDraft, CodeOf(() => order.Approve(3, Approver, T0)));
     }
 
     [Fact]
@@ -109,10 +111,10 @@ public sealed class PurchaseOrderAcceptanceTests
     [Fact]
     public void Pieces_are_accepted_whole_and_kept_apart_from_kilograms()
     {
-        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0);
+        var order = PurchaseOrder.Create(Guid.NewGuid(), Company, Supplier, T0, Preparer);
         var pieces = order.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), PieceUnit, Quantity.Of(100m, QuantityUnit.Piece), T0);
         var kilograms = order.AddLine(2, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Kg(50m), T0);
-        order.Approve(3, T0);
+        order.Approve(3, Approver, T0);
         order.RecordAcceptance(4, Guid.NewGuid(), pieces.Id, Quantity.Of(30m, QuantityUnit.Piece), T0);
         Assert.Equal(Quantity.Of(70m, QuantityUnit.Piece), order.RemainingCommitment(QuantityUnit.Piece));
         Assert.Equal(Kg(50m), order.RemainingCommitment(QuantityUnit.Kilogram));

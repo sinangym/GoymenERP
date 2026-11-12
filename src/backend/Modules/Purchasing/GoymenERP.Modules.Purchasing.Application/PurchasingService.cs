@@ -304,8 +304,8 @@ public sealed partial class PurchasingService(
             stored = await store.StoreOrderAsync(envelope, requestHash, request.CompanyAccountId, request.EffectiveOn, () =>
             {
                 var order = source is { } sourced
-                    ? PurchaseOrder.CreateForRequest(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, sourced.Request.Id, money, now)
-                    : PurchaseOrder.Create(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, money, now);
+                    ? PurchaseOrder.CreateForRequest(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, sourced.Request.Id, money, now, scope.ActorId.Trim())
+                    : PurchaseOrder.Create(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, money, now, scope.ActorId.Trim());
                 for (var index = 0; index < lines.Count; index++)
                 {
                     var (line, _, quantity, price) = lines[index];
@@ -366,11 +366,12 @@ public sealed partial class PurchasingService(
         }
 
         await RequireStillAsync(scope, bindings.ApprovePermission, cancellationToken);
+        var actor = scope.ActorId.Trim();
         PurchasingOrderStoreResult? result;
         try
         {
             result = await store.MutateOrderAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1, orderId,
-                (order, now) => order.Approve(expectedVersion, now),
+                (order, now) => order.Approve(expectedVersion, actor, now),
                 new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Satınalma siparişi onaylandı"), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
@@ -382,6 +383,15 @@ public sealed partial class PurchasingService(
         {
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
+        }
+        catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.OrderSameActor or PurchasingRuleCodes.OrderMakerUnknown)
+        {
+            // A2a-5a (ALS-D3): hazırlayan ≠ onaylayan; terminal for this key, as the request decisions are.
+            var code = exception.Code == PurchasingRuleCodes.OrderSameActor
+                ? PurchasingProblemCodesV1.OrderSameActor
+                : PurchasingProblemCodesV1.OrderMakerUnknown;
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, code, [new("actor", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
         catch (PurchasingRuleException exception)
         {
