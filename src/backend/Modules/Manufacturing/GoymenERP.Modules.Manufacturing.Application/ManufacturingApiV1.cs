@@ -205,7 +205,9 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// <see cref="Rejections"/> every recorded rejection (oldest first) and <see cref="Cancellation"/> the cancellation of a
 /// Cancelled plan. Üretim U2-d (additive, URT-D2): <see cref="PreparedBy"/> is the actor id of who prepared the current
 /// version (its last reviser, else who saved it) — that user cannot approve or reject it; null for a plan stored before
-/// U2-d and never revised. An id only, never a name.
+/// U2-d and never revised. An id only, never a name. Üretim U2-b / API-16 (additive, SAT-D219):
+/// <see cref="SalesOrderLink"/> is the approved sales order line the plan supplies, or null, and
+/// <see cref="SalesOrderLinkRevision"/> how many times the link was set or removed (the next link request sends it back).
 /// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
@@ -214,7 +216,8 @@ public sealed record PlanViewV1(
     CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null,
     string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
-    PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null);
+    PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null,
+    PlanSalesOrderLinkViewV1? SalesOrderLink = null, long SalesOrderLinkRevision = 0);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -370,6 +373,7 @@ public static class ManufacturingCommandNames
     public const string RevisePlan = "manufacturing.plan.revise.v1";
     public const string RejectPlan = "manufacturing.plan.reject.v1";
     public const string CancelPlan = "manufacturing.plan.cancel.v1";
+    public const string ChangePlanSalesOrderLink = "manufacturing.plan.sales-order-link.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
@@ -429,7 +433,9 @@ public sealed partial class ManufacturingCommandService(
     ISettingsManufacturingParameterProviderV1? manufacturingParameters = null,
     IManufacturingPlanLifecycleStore? planLifecycle = null,
     IManufacturingPlanAllocationPortV1? planAllocations = null,
-    IInventoryLabelDetailsV1? labelDetails = null)
+    IInventoryLabelDetailsV1? labelDetails = null,
+    IManufacturingPlanSalesOrderLinkStore? planSalesOrderLinks = null,
+    IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -2205,7 +2211,11 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingRuleException exception)
         {
-            result = new ManufacturingApiResult<T>(ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
+            // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request.
+            result = new ManufacturingApiResult<T>(
+                exception.Code == ManufacturingRuleCodes.PlanSalesOrderLinkChanged
+                    ? ManufacturingApiStatus.Conflict
+                    : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
@@ -2872,7 +2882,13 @@ public sealed partial class ManufacturingCommandService(
             ? new PlanCancellationViewV1(cancellation.Reason, cancellation.CancelledByUserId, cancellation.CancelledAtUtc)
             : null,
         ProcessSpecView(plan.ProcessSpec),
-        plan.PreparedBy);
+        plan.PreparedBy,
+        plan.SalesOrderLink is { } salesLink
+            ? new PlanSalesOrderLinkViewV1(salesLink.SalesOrderId, salesLink.SalesOrderLineId, salesLink.CustomerPartyId,
+                salesLink.CustomerAccountId, salesLink.ProductId, salesLink.LineRevision, salesLink.LinkedBy,
+                salesLink.LinkedAtUtc)
+            : null,
+        plan.SalesOrderLinkRevision);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null

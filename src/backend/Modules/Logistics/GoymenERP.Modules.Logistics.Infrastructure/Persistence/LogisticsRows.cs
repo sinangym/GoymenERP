@@ -61,6 +61,12 @@ internal sealed class LoadingShareRow : ILogisticsTenantRow
     public int? Measurement { get; set; }
     public Guid? SourceShipmentId { get; set; }
     public DateTimeOffset RecordedAtUtc { get; set; }
+
+    /// <summary>
+    /// SAT-D216 / SAT-D222: the actor of the command that appended this share (the same trimmed id the attempt and the audit carry).
+    /// Null only for shares recorded before the column existed — never back-filled, so the Sales read names no shipper for them (fail-closed).
+    /// </summary>
+    public string? RecordedBy { get; set; }
 }
 
 /// <summary>ADR-011 attempt record (the Sales shape): the key hash, the content hash, the actor, the outcome and the result.</summary>

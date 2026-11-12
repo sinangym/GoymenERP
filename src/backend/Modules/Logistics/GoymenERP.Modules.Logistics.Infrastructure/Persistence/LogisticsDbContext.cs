@@ -22,6 +22,9 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 {
     public const string Schema = "logistics";
     public const string IdentityCollation = "Latin1_General_100_BIN2";
+
+    /// <summary>A recorded share actor, when present, is not blank (SAT-D222: a blank name never counts as a shipper).</summary>
+    public const string ShareRecordedByCheck = "[RecordedBy] IS NULL OR LEN([RecordedBy]) > 0";
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
 
     internal DbSet<LoadingInstructionRow> Instructions => Set<LoadingInstructionRow>();
@@ -152,8 +155,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 "([Kind] = 1 AND [Measurement] IN (1, 2) AND [SourceShipmentId] IS NULL) "
                 + "OR ([Kind] = 2 AND [Measurement] IS NULL AND [SourceShipmentId] IS NULL) "
                 + $"OR ([Kind] = 3 AND [Measurement] IS NULL AND [SourceShipmentId] IS NOT NULL AND [SourceShipmentId] <> {EmptyGuid})");
+            table.HasCheckConstraint("CK_LoadingShares_RecordedBy", ShareRecordedByCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.InstructionId, x.ShareNo });
+        // SAT-D216: the recording actor, compared ordinally by Sales (binary collation); null only for pre-column shares.
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.InstructionId, x.ShareId }).IsUnique().HasDatabaseName("UX_LoadingShares_ShareId");
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
         entity.HasOne<LoadingInstructionRow>().WithMany()

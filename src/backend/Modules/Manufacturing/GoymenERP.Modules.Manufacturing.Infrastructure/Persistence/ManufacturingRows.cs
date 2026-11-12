@@ -81,6 +81,20 @@ internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
     public Guid? CancelledByUserId { get; set; }
     public DateTimeOffset? CancelledAtUtc { get; set; }
     public string? CancellationReason { get; set; }
+
+    /// <summary>
+    /// Üretim U2-b / API-16 (SAT-D219): the approved sales order line the plan supplies, as Sales answered for it (all
+    /// eight set, or none), and how many times the link was set or removed. Not plan content: the version does not move.
+    /// </summary>
+    public Guid? SalesOrderId { get; set; }
+    public Guid? SalesOrderLineId { get; set; }
+    public Guid? SalesCustomerPartyId { get; set; }
+    public Guid? SalesCustomerAccountId { get; set; }
+    public Guid? SalesProductId { get; set; }
+    public int? SalesOrderLineRevision { get; set; }
+    public string? SalesOrderLinkedBy { get; set; }
+    public DateTimeOffset? SalesOrderLinkedAtUtc { get; set; }
+    public long SalesOrderLinkRevision { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public string PayloadHash { get; set; } = string.Empty;

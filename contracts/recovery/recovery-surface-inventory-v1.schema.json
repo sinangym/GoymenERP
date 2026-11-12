@@ -41,7 +41,7 @@
           "const": 18
         },
         "migrations": {
-          "const": 157
+          "const": 159
         },
         "durableStores": {
           "const": 32
@@ -79,8 +79,8 @@
     },
     "migrations": {
       "type": "array",
-      "minItems": 157,
-      "maxItems": 157,
+      "minItems": 159,
+      "maxItems": 159,
       "uniqueItems": true,
       "items": {
         "type": "object",
