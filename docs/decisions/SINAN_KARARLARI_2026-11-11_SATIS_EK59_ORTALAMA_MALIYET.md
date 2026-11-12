@@ -82,14 +82,14 @@ eşliği ve hash yeniden üretimi gerekmez** (dosyalar değişmedi). Aşağıdak
 | `OPEN-INV-AVGCOST-ZERO-STOCK` | **Kapanır** | SAT-D296 (son ortalama okunabilir) |
 | Sıfır birim maliyetli alış girişi (kodda kimliği yok; yeni durum) | **Cevaplanır** | SAT-D297 (Unreadable, ortalamaya girmez) |
 | `OPEN-INV-AVGCOST-UNIT-CONVERSION` | **Kapanır** (aşağıdaki "Ek karar: birim çevrim" bölümü); fiilî çevrim katsayı kaynağı U-08 cevabına bağlıdır, o zamana kadar `NoSource` kalır (SAT-D299 "Açık kalan") | SAT-D298; #66 yorumu 6794310745 madde 1 |
-| `OPEN-INV-AVGCOST-FX` | **Açık** (SAT-D295 ilkesi verildi; kur belgesi doğrulanmadı) | "Doğrulama" bölümü; `NEEDS-SINAN` |
-| `OPEN-INV-AVGCOST-NEGATIVE-STOCK` | Açık | Cevaplanmadı |
-| `OPEN-INV-AVGCOST-LANDED` | Açık | Cevaplanmadı (SAT-D263 (3)) |
-| `OPEN-INV-AVGCOST-RETURN` | Açık | Cevaplanmadı |
-| `OPEN-INV-AVGCOST-MIXED-SOURCE` | Açık | Cevaplanmadı (SAT-D258) |
-| `OPEN-INV-AVGCOST-UNCOSTED-STOCK` | Açık | Cevaplanmadı |
+| `OPEN-INV-AVGCOST-FX` | Sonradan Sinan kararına bağlandı: TL karşılığı tedarikçi faturasındaki resmî kurla (BS-1, #66 6806579823); o güne kadar açıktı (SAT-D295 ilkesi verildi; kur belgesi doğrulanmamıştı) | BS-1 (`SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md`); "Doğrulama" bölümü |
+| `OPEN-INV-AVGCOST-NEGATIVE-STOCK` | Sinan kararı verildi (#66 6809898906) | SAT-D301, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
+| `OPEN-INV-AVGCOST-LANDED` | Sinan kararı verildi (#66 6809898906) | SAT-D302, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` (SAT-D263 (3)) |
+| `OPEN-INV-AVGCOST-RETURN` | Sinan kararı verildi (müşteri iadesi #66 6809898906; alış iadesi #66 6810163182) | SAT-D303 ve SAT-D306, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
+| `OPEN-INV-AVGCOST-MIXED-SOURCE` | Sinan kararı verildi (#66 6809898906) | SAT-D305, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` (SAT-D258) |
+| `OPEN-INV-AVGCOST-UNCOSTED-STOCK` | Sinan kararı verildi (#66 6809898906) | SAT-D304, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` |
 
-Kodda geçen `OPEN-INV-AVGCOST-PRODUCTION` (test yorumu) `…-MIXED-SOURCE` ile aynı konudur; açık kalır. `OPEN-008` açık
+Kodda geçen `OPEN-INV-AVGCOST-PRODUCTION` (test yorumu) `…-MIXED-SOURCE` ile aynı konudur; SAT-D305'e bağlandı (`SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`). `OPEN-008` açık
 kalır.
 
 ## Uygulama notu (kod şeridi; geri alınabilir ayrıntılar işaretlidir)
@@ -163,8 +163,8 @@ Politika cevaplanana kadar Stok kodu katsayı girişi eklemez; çevrim gerektire
 
 - **Kod ve veri değişmez.** Bu belge kod, manifest, migration, OpenAPI, rol seed'i veya Ayarlar verisi değiştirmez; grant
   açmaz.
-- **Kur kaynağı** yukarıdaki `NEEDS-SINAN` ile açıktır; tahminle seçilmez. Birim dönüşümü SAT-D298 ile kararlıdır; yalnız katsayı kaynağı eksiktir: Ürün portu SAT-D299 ile açılabilir, ancak katsayı modeli (U-08) cevaplanmadıkça veri yoktur ve çevrim gerektiren satır `NoSource` kalır. SAT-D299 kimliği de SAT-D294 sonrası aynı seriden alındı (kimlik önekindeki kontrol SAT-D295…SAT-D299 için geçerlidir).
-- Negatif stok, ek (landed) maliyet, iade, karma kaynak ve defterde maliyetlenmemiş stok açık kalır.
+- **Kur kaynağı** yukarıdaki `NEEDS-SINAN` ile açıktı; sonra BS-1 (#66 6806579823) ile karara bağlandı: tedarikçi faturasındaki resmî kur. Birim dönüşümü SAT-D298 ile kararlıdır; yalnız katsayı kaynağı eksiktir: Ürün portu SAT-D299 ile açılabilir, ancak katsayı modeli (U-08) cevaplanmadıkça veri yoktur ve çevrim gerektiren satır `NoSource` kalır. SAT-D299 kimliği de SAT-D294 sonrası aynı seriden alındı (kimlik önekindeki kontrol SAT-D295…SAT-D299 için geçerlidir).
+- Negatif stok, ek (landed) maliyet, iade, karma kaynak ve defterde maliyetlenmemiş stok #66 6809898906 ile Sinan kararına bağlandı: SAT-D301…SAT-D305 (alış iadesi #66 6810163182 ile SAT-D306; aynı belgede SAT-D307 ve KLN-D20…KLN-D24), `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`.
 - Bu belge `OPEN-008`i veya `KARAR_SICILI`/`ACIK_KARARLAR` kayıtlarını değiştirmez. `OPEN-INV-AVGCOST-*` kimlikleri
   docs'ta kayıtlı olmadığı için "kapanış" yalnız bu belge ve kod yorumlarında tutulur; Sinan'ın cevabına
   (#66 yorumu 6791690928) bağlıdır.

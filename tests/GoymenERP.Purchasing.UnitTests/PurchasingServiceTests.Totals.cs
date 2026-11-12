@@ -121,6 +121,22 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task A_full_100_percent_share_is_withheld_and_a_resolved_state_without_a_share_is_unreadable()
+    {
+        var full = new World { LineTaxes = new FakeLineTaxes { ShareOverride = 100m } };
+        var created = await full.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-share-100"));
+        var totals = await full.Service().GetOrderTotalsAsync(created.Detail.Order.Id);
+        Assert.Equal(("Computed", (string?)null, "20", "100"),
+            (totals.WithholdingState, totals.WithholdingReason, totals.WithheldVatAmount, totals.PayableAmount));
+
+        var missing = new World { LineTaxes = new FakeLineTaxes { Fault = "withholding-null-share" } };
+        var bad = await missing.Service().CreateOrderAsync(PricedOrderOf("10", new PurchaseOrderLinePriceRequest("10")), Metadata("k-totals-share-null"));
+        var badTotals = await missing.Service().GetOrderTotalsAsync(bad.Detail.Order.Id);
+        Assert.Equal(("NotComputable", PurchaseOrderTaxReasonsV1.TaxSourceInvalid, (string?)null, (string?)null),
+            (badTotals.WithholdingState, badTotals.WithholdingReason, badTotals.WithheldVatAmount, badTotals.PayableAmount));
+    }
+
+    [Fact]
     public async Task A_withholding_share_outside_the_range_is_unreadable_not_none_and_one_bad_line_names_its_reason_for_the_document()
     {
         var other = Guid.Parse("33333333-3333-4333-8333-333333333333");
@@ -283,7 +299,7 @@ public sealed partial class PurchasingServiceTests
 
             var exempt = Fault == "exempt";
             var noWithholding = exempt || Fault == "no-withholding";
-            var share = productId == InvalidShareFor ? 0m : ShareOverride ?? 50m;
+            decimal? share = Fault == "withholding-null-share" ? null : productId == InvalidShareFor ? 0m : ShareOverride ?? 50m;
             return Task.FromResult(new SettingsTaxDefaultResolutionV1(company, productId, TaxItemTypesV1.Steel, buyerSituation, on,
                 TaxResolutionStatesV1.Resolved, null, TaxDefaultSourcesV1.Catalog, Guid.NewGuid(), 0,
                 exempt ? TaxResolutionStatesV1.Exempt : TaxResolutionStatesV1.Resolved, exempt ? null : 20m,

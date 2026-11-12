@@ -370,7 +370,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (026f3c54… -> 69a1024a…).
                 // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
                 // empty-store rollback) (69a1024a… -> 84945670…).
-                "84945670f9b50efefba59c5525b76a105634b7669da0bd890fb3ce141cbc2ffb",
+                // F-022: +2 readiness SQL facts (Settings/Documents history drift; price-list drift only while the
+                // Product runtime is on) (84945670… -> 912a850f…).
+                "912a850f59568f33ce197227ac1d945fe3820a2c48ee9ec63dae7ecc95e3438c",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -520,7 +522,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // kept ordinal-sorted; recomputed on the merged inventory (1628581b... -> e02ba740...).
                 // SAT-D290 (2, 3): +2 SalesCustomerReturn facts (the rejection by another actor and the draft's cancellation, both terminal
                 // under the 51255 guard and the maker-checker CK; the 51259 rollback refusal), kept ordinal-sorted (e02ba740... -> 766e032e...).
-                "766e032e9d0fc6db6f8d9d93c7419c29aa4d75e43202e50362150f2555b2b709",
+                // SAT-D216 / SAT-D222 (B-33): the Logistics owner names the shipper, so the Sales over-delivery approval fact is
+                // replaced by 3 facts (shipper named and refused, a share without actor refused fail-closed, the 51260 rollback
+                // refusal and the RecordedBy check/collation), kept ordinal-sorted (766e032e... -> eeed0741...).
+                "eeed0741e9f9d26a82dcdbf89bc822575be1ff139358c04df803bd204b9a1f88",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -686,7 +691,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
             // Re-measured for I01.2: transfer outgoing documents and ordered line bindings carry the same CompanyId
             // query filter and company-leading keys; the transfer link remains unique inside one company.
-                "fefc8f5585c59451908d99e31988ed27fa82ec7129fc437e177002fc12fa4db0",
+            // Re-measured for SAT-D216 / SAT-D222: LoadingShares.RecordedBy (nullable, binary collation, non-blank check); the same
+            // CompanyId query filter and keys, no new entity.
+                "5a6e1fbf958a6f600a7062c8c0dbefd0125a6b33eed401552b31eb9c9d6ebb25",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
@@ -1592,7 +1599,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
                         // Re-fingerprinted for SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): one untracked, company-resolved sum of
                         // a Sales line's shipped total through the filtered context; no new database API, SqlClient count unchanged.
-                        "43e2b056c56c0d24365561505109876a1591f2e7fb8070a59decbca812b82176",
+                        // Re-fingerprinted for SAT-D216 / SAT-D222: a shipment share records its actor (RecordedBy) in the same
+                        // save; no new database API and SqlClient count unchanged.
+                        "048d396e1cb2a6bc05c01a6bb23af908d6929dd119e0ffa52e84fa43a74819a5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2749,6 +2758,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
                 // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
+                // SAT-D216 / SAT-D222: the Down's only raw SQL is Logistics' module refusal (51260, used by no other migration)
+                // while any share records its shipper; the THROW precedes the drops, unnamed legacy shares roll back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261111182437_AddLoadingShareRecordedBy.cs"] =
+                    new("7238460d4c8a64dd7f93bc47d9edc1fde0eb401a05d54f8a744e59d79951b753",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
                     new("e1e6fe554c5b58ea381316b99d17dd2fd64dd73780e0a475e849715b28ac42f9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
