@@ -269,7 +269,7 @@ portu gelmeden D5 başlamaz. D8, D2–D3'e ve Muhasebe'nin main'deki dönem port
   `accounting.periods.read` grant'i insan kapısıdır.
 - **Lojistik:** Yeni iş yok. Sevk bilgisi Stok hareketlerinden okunur.
 
-**Stok cevabı (2026-11-12, Stok şeridi oturumu `session_015Usc2pruQTAve57Km32zGP`; kod değişmedi, hepsi ST-F009-D1 kapsamında):**
+**Stok cevabı (2026-11-12, Stok şeridi oturumu `session_015Usc2pruQTAve57Km32zGP`, makbuz [#66 `6823091345`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823091345); kod değişmedi, hepsi ST-F009-D1 kapsamında):**
 
 - D1: Kalite blokajındaki kg, D1 portunda ayrı ve salt okunur bir alan olur. Hangi kg'ın bloklu sayılacağını Stok
   belirler.
