@@ -54,7 +54,7 @@ jobs:
             fork_point="$(git merge-base "$EXPECTED_BASE_SHA" HEAD)"
             git diff --quiet "$fork_point" "$EXPECTED_BASE_SHA" -- . \
               ':(exclude,glob)docs/**' ':(exclude,glob)AGENTS.md' ':(exclude,glob).claude/**' || {
-              echo "C01_BASE_NOT_IN_HEAD: merge the base branch into this branch" >&2
+              echo "::error::C01_BASE_NOT_ANCESTOR: PR base $EXPECTED_BASE_SHA is not an ancestor of HEAD $actual_head and moved outside the paths this workflow ignores. Update the branch from main (non-empty merge commit) and re-run."
               exit 1
             }
             echo "C01_BASE_DRIFT_IN_IGNORED_PATHS_ONLY fork_point=$fork_point"

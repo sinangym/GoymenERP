@@ -442,7 +442,9 @@ class ComposeContractTests(unittest.TestCase):
                 'fork_point="$(git merge-base "$EXPECTED_BASE_SHA" HEAD)"',
                 'git diff --quiet "$fork_point" "$EXPECTED_BASE_SHA" -- . \\',
                 " ".join(f"':(exclude,glob){pattern}'" for pattern in ignored) + " || {",
-                'echo "C01_BASE_NOT_IN_HEAD: merge the base branch into this branch" >&2',
+                'echo "::error::C01_BASE_NOT_ANCESTOR: PR base $EXPECTED_BASE_SHA is not an ancestor '
+                "of HEAD $actual_head and moved outside the paths this workflow ignores. Update the "
+                'branch from main (non-empty merge commit) and re-run."',
                 "exit 1",
                 "}",
                 'echo "C01_BASE_DRIFT_IN_IGNORED_PATHS_ONLY fork_point=$fork_point"',
@@ -528,9 +530,14 @@ class ComposeContractTests(unittest.TestCase):
                 ("source moved into docs", {"src/app.cs": None, "docs/app.cs": "one\n"}),
             ):
                 with self.subTest(drift=label):
-                    refused = gate(head, base_with(changes))
+                    moved_base = base_with(changes)
+                    refused = gate(head, moved_base)
                     self.assertEqual(refused.returncode, 1, refused.stderr)
-                    self.assertIn("C01_BASE_NOT_IN_HEAD", refused.stderr)
+                    self.assertIn(
+                        f"::error::C01_BASE_NOT_ANCESTOR: PR base {moved_base} is not an ancestor "
+                        f"of HEAD {head} ",
+                        refused.stdout,
+                    )
                     self.assertNotIn("C01_BASE_DRIFT", refused.stdout)
 
             with self.subTest(drift="unknown base"):
