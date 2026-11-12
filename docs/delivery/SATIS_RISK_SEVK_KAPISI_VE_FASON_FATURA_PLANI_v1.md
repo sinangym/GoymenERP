@@ -111,9 +111,9 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
     sevk 0, fatura 100 → 0 (düşüm planı aşmaz); plan 50, sevk 60 → 0. *Açık:* plan miktarını aşan sevk (fazlası
     faturalanmamış sevkte sayılır mı, plan ayrıca güncellenir mi) ve fiyat revizyonunda "onaylı fiyat" esası (eski mi
     yeni onaylı fiyat mı); para etkisi olduğu için gerekirse `NEEDS-SINAN`. Test: plan → sevk → fatura geçişinin her adımında tutar tam olarak bir durumda; plana alınmamış kalan
-  riskte yok. *Açık (S0 spec önerir):* sevk planı miktarının kaynağı (Lojistik okuma portu, mevcut/yeni; #1115 `394e9ed4` spec
-  04:181 `ILogisticsShipmentPlanQuantityReadPortV1` / `logistics.shipment-plan-quantity.v1` önerir, açık PR, main'de
-  değil), fasonda plan
+  riskte yok. *Açık (S0 spec önerir):* sevk planı miktarının kaynağı (Lojistik okuma portu, mevcut/yeni; #1115 `26ad52f7` spec
+  04:183 `ILogisticsShipmentPlanQuantityReadPortV1` / `logistics.shipment-plan-quantity.v1` önerir; spec main'de, port
+  kodda yok), fasonda plan
   kg'ı, plan iptali/azaltmasında düşme, durum adları; para etkisi varsa `NEEDS-SINAN`. Plansız fason sipariş plana alınana kadar riske
   girmez (`6822810785`).
 - **SAT-D175 ve ara davranış (review B P2-2, A P3-3):** SAT-D175 fason siparişin risk kontrolünü normal siparişle aynı
@@ -181,7 +181,7 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   (F-012). İkisi aynı port, aynı sonuç eşlemesi ve aynı anahtarı kullanır; fason teslim anahtarı `(fason orderId,
   loadingInstructionId)`. Tek kullanım iki yolu birlikte kapsar: bir `ExceptionNo` sevk veya fason teslimde toplam bir kez
   tüketilir; `ExceptionNo` sipariş içinde tekil olduğundan tekil anahtar `(CompanyId, orderId, ExceptionNo)`'dur.
-  **Fark (L-4'ten sapma):** #1115 `394e9ed4` spec 04:137-150'ye göre fason teslim kesin sevki talimat düzeyinde
+  **Fark (L-4'ten sapma):** #1115 `26ad52f7` spec 04:138-151'ye göre fason teslim kesin sevki talimat düzeyinde
   **hep-ya-hiç**tir: talimattaki herhangi bir fason siparişin kapısı durursa talimatın hiçbir satırı sevk edilmez; diğer
   siparişlerin `Valid` istisnası tüketilmez, aynı transaction'da yazılmış tüketim kayıtları geri alınır ve L-5 aynasına olay
   gitmez; terminal ret kaydı ayrı yazılır. Bu Lojistik yazar okumasıdır (LOJ-D12 "tartı talimat başına tek"; Sinan kararı
@@ -220,14 +220,14 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **Öneri:** Satış'ın beyan ettiği, sahibin cevapladığı `ISalesSubcontractDeliveryWeighingReadPortV1`
   (`sales.subcontract-delivery-weighing.v1`): girdi (şirket, talimat, tartım kimliği; L-8 anahtarı
   `(LoadingInstructionId, WeighingId)`, şirket bağlamıyla; #1115 `4f96492a` aynı anahtarı `(CompanyId, LoadingInstructionId,
-  VehicleWeighingId)` diye adlandırıyordu; #1115 `394e9ed4` spec 04:101-106 anahtarı seçmez; kesin ad F1 spec'inde), cevap: talimatın toplam net kg'ı tam ondalık
+  VehicleWeighingId)` diye adlandırıyordu; #1115 `26ad52f7` spec 04:102-106 anahtarı seçmez; kesin ad F1 spec'inde), cevap: talimatın toplam net kg'ı tam ondalık
   metin, sevk satırı başına beyan kg, düzeltme `Version`, ölçüm türü, durum (`Available/NoSource/Unavailable`; asla sıfır).
   Mevcut AT-053 tartımı talimat başınadır (`LR:52,56`); siparişe dağıtımı **SAT-D312** (N-8; Lojistik LOJ-D12/D13): sevk
   satırlarındaki beyan kg oranında; tartısız fason teslim yok. **Lojistik bölme yapmaz;** paylaştırma, artık ve para yalnız
   `SalesInvoiceCalculator`'dadır (AGENTS tek hesaplayıcı; #1115 spec 04 `4f96492a` ile hizalı).
 - **Fason teslim kapısı (LOJ-D14):** fason teslim S2 portu ve kuralıyla aynen geçer, anahtar `(fason orderId,
   loadingInstructionId)`. Kapı kesin teslim transaction'ında okunur (L-1); net kg okuması ve tartı sırası kontrolleri kapıdan
-  önce yapılır (#1115 `394e9ed4` spec 04:134-136). Fason teslim talimat düzeyinde hep-ya-hiçtir (S2 Tüketiciler). İki okuma aynı transaction'da fail-closed'dır; kesin sıra F1 spec'inde
+  önce yapılır (#1115 `26ad52f7` spec 04:134-136). Fason teslim talimat düzeyinde hep-ya-hiçtir (S2 Tüketiciler). İki okuma aynı transaction'da fail-closed'dır; kesin sıra F1 spec'inde
   Lojistik metniyle tek ifadeye bağlanır.
 - **Fason satır bağı — öneri (F1 spec + K3 cross-module; karar değil):** Lojistik "tartısız fason teslim kaydedilemez"
   kapısı için satırın fason olduğunu `ISalesSubcontractServiceOrderReadPortV1`'den (`sales.subcontract-service-order.v1`)
@@ -265,14 +265,16 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   edilen/yüklenen toplam (SAT-D104/D112 tabanı); bırakılacak fazla = max(0, aktif fiziksel tahsis + aktif gelecek ayırma −
   yeni açık miktar) (koordinatörün 25. tur düzeltmesi, `6823547103`; SAT-D314 (1)). Golden: 100/40 sevk/60 gelecek → 80 ⇒
   20; fiziksel 10 + gelecek 10, 20 → 15 ⇒ gelecekten 5; 20 → 5 ⇒ gelecekten 10 + fiziksel 5 (ara dönemde ret). İptal ve
-  satır kaldırma bütün aktif gelecek ayırmayı bırakır.
+  satır kaldırma bütün aktif gelecek ayırmayı bırakır; satır kaldırmada yeni açık miktar 0 olduğundan satıra bağlı fiziksel
+  tahsis varsa satır kaldırma ara dönemde reddedilir.
 - **Sıra (SAT-D315, Sinan 23. tur):** birden çok alışa yayılan ayırmada en geç gelecek alıştan başlanır; fiziksel tahsis ve
   gelecek ayırma birlikteyse önce gelecek ayırma bırakılır; kullanıcının komuttaki açık seçimi varsayılandan üstündür.
-  Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31 (#1116 `25de5424`); sıra Stok portunda hesaplanır,
+  Geçici "seçim yoksa 409" yönü kalkmıştır. Stok metni KLN-D30/KLN-D31/KLN-D32 (#1116 head `04afcb85`); sıra Stok portunda hesaplanır,
   Satış yalnız açık seçimi iletir. Gelecek ayırma yetmezse fazla fiziksel tahsisten otomatik bırakılır (Sinan 25. tur,
-  SAT-D315 (5)); bırakma yolu Satış/Stok fiziksel tahsis kuralıdır (KLN-D31 (4), #1116 §5.1 (b)). **Ara dönem:** o yol
-  main'e gelene kadar fiziksel bırakma gerektiren azaltma (açık fiziksel seçim dahil) tamamen reddedilir, hiçbir şey
-  yazılmaz.
+  SAT-D315 (5)); bırakma yolu Satış/Stok fiziksel tahsis kuralıdır (KLN-D31 (4), #1116 §5.1 (b)). **Ara dönem:** Sinan:
+  "Fiziksel bırakma ekranı hazır olana kadar böyle bir azaltma reddedilir". *Koordinatör/yazar fail-closed türetmesi (KLN-D32 (3)):* ret tamdır (açık fiziksel
+  seçim dahil), hiçbir şey yazılmaz, gelecek ayırma da bırakılmaz. Reddi Stok portu #1116 §3.2 adım 0 kilitleri altında
+  tespit eder; problem kodu F017-s'te adlandırılır (#1116 KLN-D31, spec §7/§8).
 - **Satış komut iskeleti (`k3-command-skeleton`; yazar önerisi):** (a) Satış Stok'a yeni açık miktarı, sevk tabanını ve
   açık seçimi iletir; bırakılacak miktarı ve sırayı Stok, #1116 §3.2 adım 0'daki alış satırı kilitleri altında hesaplar
   (RCSI anlık görüntüsünden değil); Satış miktar/sıra hesaplamaz. (b) Expected version + `Idempotency-Key`; replay ikinci
@@ -298,9 +300,10 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   gelen alışın ayırması önce bırakılır (30 t → 20 t; 15 Aralık 10 t / 5 Ocak 20 t → 5 Ocak'tan 10 t); seçim varsa seçim
   uygulanır; fiziksel tahsis + gelecek ayırma birlikte → önce gelecek ayırma bırakılır (fiziksel 10 + gelecek 10, 20 → 15: gelecekten
   5, fiziksel 10 kalır); fiziksel bırakma gereken azaltma (20 → 5 veya açık fiziksel seçim) ara dönemde tamamen reddedilir,
-  hiçbir şey yazılmaz; açık seçim fazlayı aşarsa ret (KLN-D30 (3)); port hatasında satır değişmez; Stok reddi tüm komutu
+  hiçbir şey yazılmaz; fiziksel tahsisli satırın kaldırılması ara dönemde ret; açık seçim fazlayı aşarsa ret (KLN-D30 (3)); port hatasında satır değişmez; Stok reddi tüm komutu
   geri alır, denetimde yalnız terminal ret; replay tek bırakma; şirket filtresi; gerçek SQL (iki modül tek işlem) ve
-  gerçek-SQL yarış testi "Satış azaltma/iptal × alış kabul dönüşümü".
+  gerçek-SQL yarış testleri "Satış azaltma/iptal × alış kabul dönüşümü" ve "Satış iptali/azaltması × oluşturma"
+  (#1116 spec §8).
 - **Modül bağlantıları:** Stok bırakma portu (Stok → Satış tüketimi, ❌ #1116), gelecek ayırma okuma türü (❌ #1116 F017-s).
 
 ---
@@ -315,7 +318,7 @@ seçilmedi; kurallar FNS-D27 (4)/FNS-D30/SAT-D154/D160'tır.
 | L-1 | Okuma anı | Yalnız kesin sevk kaydında; her denemede yeniden okunur, cache yok. Önceki aşamalarda okuma kapı değildir. |
 | L-2 | İstisna gömülü mü | Gömülü; tek çağrı. `Within` geç; `Over`/`CreditLimitNotSet` yalnız `Valid` ile; diğer her durum dur. `SourceUnavailable` Lojistik cevabında duruyordu; **SAT-D310** ile `Valid` istisnayla geçer (Lojistik'e bildirilir). |
 | L-3 | İzin | Yeni Lojistik izni yok; mevcut sevk kaydı izni. Satış okuması sistem okuması. Yeni ad gerekirse yalnız ad kodlanır, grant insan kapısı. |
-| L-4 | Anahtar | `(loadingInstructionId, orderId)`; sipariş başına ayrı sorgu; duran sipariş diğerlerini etkilemez. Talimatta tek müşteri. |
+| L-4 | Anahtar | `(loadingInstructionId, orderId)`; sipariş başına ayrı sorgu; duran sipariş diğerlerini etkilemez. Talimatta tek müşteri. **Fason istisnası:** fason teslim talimat düzeyinde hep-ya-hiçtir (S2 Tüketiciler; #1115 `26ad52f7` spec 04:138-151). |
 | L-5 | Tüketim/iptal | Satış kendi istisna kaydında tutar; Lojistik sevk commit'inde outbox olayı, iptalde ters olay yayınlar (S2b). |
 | L-6 | Ekran metni | Lojistik'te, resource dosyasında üç ayrı metin (aşıldı / limit tanımlı değil / risk okunamadı). Metin değişikliği kod değiştirmez (N-10). |
 | L-7 | Port hatası | Fail-closed, sevk kaydı yazılmaz; kullanıcı aynı idempotency anahtarıyla yeniden dener, otomatik tekrar yok. Lojistik cevabı `Unavailable` sonucunu da durduruyordu; **SAT-D310** ile `Unavailable` sonucu yalnız `Valid` istisna yoksa durur, port hatası her zaman durur (Lojistik'e bildirilir). |
