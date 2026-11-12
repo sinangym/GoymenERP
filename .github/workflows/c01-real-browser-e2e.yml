@@ -369,6 +369,11 @@ jobs:
         if: always()
         shell: bash
         run: |
+          if [ -z "${C01_E2E_COMPOSE_PROJECT:-}" ]; then
+            echo "::notice::C01_E2E_COMPOSE_PROJECT is unset (source binding failed before any container started); nothing to capture."
+            exit 0
+          fi
+          mkdir -p artifacts/container-logs
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
             -f "$C01_E2E_COMPOSE_FILE" \
@@ -389,6 +394,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${C01_E2E_COMPOSE_PROJECT:-}" ]; then
+            echo "::notice::C01_E2E_COMPOSE_PROJECT is unset (source binding failed before any container started); nothing to remove."
+            exit 0
+          fi
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
             -f "$C01_E2E_COMPOSE_FILE" \
