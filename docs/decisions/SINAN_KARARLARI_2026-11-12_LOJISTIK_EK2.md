@@ -25,7 +25,7 @@ kelimesine aktarılmıştır; her alıntının başındaki tur/madde etiketi al�
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | LOJ-D9 | Fason hizmet bedeli kg kaynağı | Bedel kg'ı = müşteriye geri teslim edilen malın **teslim tartısı net kg**'ı (WGT-001 net). Fire bedele girmez. Fatura Satış'taki fason hizmet siparişinden kesilir; Lojistik fatura kesmez. Paylaşım ve eksik tartı kuralları `..._LOJISTIK_EK3.md` LOJ-D12'dedir. | F-012 (spec 04), Satış/Finans faturalama |
-| LOJ-D10 | e-İrsaliyesiz **Stok transferinde** "yola çıktı" anı | Araç çıkış tartısı ya da araç çıkışı kaydedilince mal yola çıkmış sayılır; tartı kaydı yoksa sevk kaydının oluştuğu an esas alınır. Sonrasında iptal yoktur (geri dönüş teslim + ters transfer). e-İrsaliye'li sevkte GİB'e gönderim anı (6. tur m.1) geçerlidir. Hangi depoda "tartı yok" sayılacağı `..._LOJISTIK_EK3.md` LOJ-D11 (depo ayarı) ile ayrılır. | Stok transfer (KLN-D20 (3), KLN-D25 (7) — aynı cevap Stok kaydında) |
+| LOJ-D10 | e-İrsaliyesiz **Stok transferinde** "yola çıktı" anı | Araç çıkış tartısı ya da araç çıkışı kaydedilince mal yola çıkmış sayılır; tartı kaydı yoksa sevk kaydının oluştuğu an esas alınır. Sonrasında iptal yoktur (geri dönüş teslim + ters transfer). e-İrsaliye'li sevkte GİB'e gönderim anı (6. tur m.1) geçerlidir. Hangi depoda "tartı yok" sayılacağı `..._LOJISTIK_EK3.md` LOJ-D11 (depo ayarı) ile ayrılır. | Stok transfer (KLN-D20 (3), KLN-D25 (7), #1108 — aynı cevap Stok kaydında; karşılıklı atıf: LOJ-D10, `SINAN_KARARLARI_2026-11-12_LOJISTIK_EK2.md`, #1115) |
 
 LOJ-D10 **yalnız Stok transferi** içindir; yükleme talimatı iptalini (LOJ-D8) değiştirmez ve ona bağlanmaz. F-020'de
 "kesinleşme" = talimatta kayıtlı sevk (7. tur m.4, LOJ-D8); çıkış tartısı F-020 kapısını belirlemez.
