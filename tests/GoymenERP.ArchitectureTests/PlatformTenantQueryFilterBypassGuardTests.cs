@@ -340,10 +340,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
                 // Üretim U2-b (API-16): +2 ManufacturingSqlServerRelationalAcceptanceTests facts (sales order link store
                 // rules, link migration Down 51261) (b30fa7d7… -> 1b1e7223…).
+                // TAKIP-U3a P3-2: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (approval and closure without
+                // the allocation port are code-less 503s; the same key succeeds once it is back) (1b1e7223… -> f6ebea91…).
                 // Üretim U2-b follow-up: +1 supply read fact (revised plan read at its current revision kg) and +3
                 // ManufacturingApiSqlServerRelationalAcceptanceTests facts (host link/replay/unlink, half link and Sales
                 // refusals, grant lost during the Sales read) (1b1e7223… -> a4032147…).
-                "a4032147f0052baefca9f567cfcf660feada53947364fc8aa1cc20dd60f725de",
+                // Main merge after #1104: both fact sets present (re-derived from the merged inventory) (-> 8a43892e…).
+                "8a43892ef5cd1864223ef04a4d0e0adf60cd7fe34b7d93cc7fc04b15a01c1e74",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
