@@ -637,10 +637,17 @@ public sealed record SalesFinanceInstalmentV1(Guid OpenItemId, Guid InstallmentI
 /// <summary>
 /// One admission offer. Company and actor are the server's (the owner fences them against its own context); the key is
 /// <c>sales-invoice:{invoiceId}:{invoiceVersion}</c> for the finaliser's first offer and carries the attempt number for a re-drive by another actor.
+/// <para>
+/// F-005 D5 / FNS-D19 (<c>SINAN_KARARLARI_2026-11-11_FINANS_F005.md</c>): <paramref name="OfficialInvoiceNo"/> and <paramref name="Ettn"/>
+/// are the official number and ETTN of the matched official document (API-35), copied unchanged from the invoice's match so Finance can
+/// refuse a second open receivable for the same official document. Both are optional and appended last (additive, still V1): a caller
+/// that does not set them sends <c>null</c>, and the owner leaves a null value out of its idempotency fingerprint, so an offer made
+/// before these fields existed replays under its key. Sales sets both, or neither, on every offer of a finalised invoice.
+/// </para>
 /// </summary>
 public sealed record SalesFinanceAdmissionRequestV1(Guid CompanyId, string ActorId, string CorrelationId, string? CausationId,
     string IdempotencyKey, Guid AdmissionId, Guid InvoiceId, string InvoiceVersion, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId,
-    string? ExchangeRate, IReadOnlyList<SalesFinanceInstalmentV1> Instalments);
+    string? ExchangeRate, IReadOnlyList<SalesFinanceInstalmentV1> Instalments, string? OfficialInvoiceNo = null, string? Ettn = null);
 
 /// <summary>What Finance answered. Only <see cref="Admitted"/> moves Sales' ledger to admitted; every other answer leaves it waiting.</summary>
 public enum SalesFinanceAdmissionOutcomeV1
