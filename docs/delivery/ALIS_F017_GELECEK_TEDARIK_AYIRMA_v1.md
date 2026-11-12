@@ -55,19 +55,47 @@ yok): §3.7 host işlemi tutarlılık kontrolü host'un Alış sonucuna bağland
 başka her cevap, bayat `NotAllocatable` dahil, işlemin tamamını geri alır; Stok iş reddi de Alış yazısını geri alır); §3.1'e
 işlem içi tutarlılık kontrolü istisnası; §3.8 canlanma tek düzeltmedeki **net** açılan miktara bağlandı (net 0 ise durum
 değişmez); iptal geçmişi deposu iki seçenekte de zorunlu ve forward-fix `Down` davranışı yazıldı; alıntı ve satır atıfları
-düzeltildi. #1116 hizalaması (koordinatör kararı (d), 2026-11-12 13:04Z koordinatör mesajı; merged #1116 (merge `1af6ffea`) §3.2 adım 0, §3.7 ve KLN-D28 (7)'de yazar okuması): kabul geri almada `Consumed → Active` yeniden
+düzeltildi. #1116 hizalaması (koordinatör kararı (d), #66 6824928883 F-017 (a)–(d) koordinatör kaydı; merged #1116 (merge `1af6ffea`) §3.2 adım 0, §3.7 ve KLN-D28 (7)'de yazar okuması): kabul geri almada `Consumed → Active` yeniden
 açma önce satış satırı kilidini, sonra alış satırlarını artan `lineId` ile alır; kilit sonrası satış satırı yeniden okunur,
 iptal/kapalıysa aktif gelecek oluşmaz (§3.4, §3.7, §6). Aynı kararın (a) satır kaldırmanın Stok portuna 0'a azaltma olarak
-gelmesi, (b) fiziksel tahsise dokunan bırakmaya ara 409 KLN-D32 (3), (c) terminal ret kaydı ve replay'in Satış revizyon
+gelmesi (kapsam: satırda sevk, yükleme talimatı veya fiziksel ayırma varsa Satış 422 döner ve Stok portu çağrılmaz; #66 6824928883 (a)), (b) fiziksel tahsise dokunan bırakmaya ara 409 KLN-D32 (3), (c) terminal ret kaydı ve replay'in Satış revizyon
 komutunda olması Satış/Stok tarafıdır; bu belgede onlarla çelişen metin yoktur. Revizyon 10'da metin merged #1116 (main `1af6ffea`) ile yeniden karşılaştırıldı.
 
 Revizyon 10 (2026-11-12): #1110 merge sonrası DOCS review A r9 6824530422 ve B r9 6824580734 P3'leri işlendi (yalnız
 teknik biçim; yeni politika yok): kilit sırası kaynağı düzeltildi (koordinatör kararı (d), #1116'da yazar okuması; review
 6824169369 atfı kaldırıldı); §3.7 adım 1'e çoklu satış satırı sırası ve "küme oku → kilitle → kilit altında yeniden oku"
 protokolü; §3.7 tutarlılık kontrolünün dalları sayısal karşılaştırmayla yazıldı; "Sinan lafzı" etiketi yazar türetmesi
-olarak düzeltildi; net ≤ 0 düzeltme için kabul kapısı değişikliği Kod/DB listesine girdi, net satır başına tanımlandı,
+olarak düzeltildi; net = 0 düzeltme için kabul kapısı değişikliği Kod/DB listesine girdi, net satır başına tanımlandı,
 beklenen değer "net son durumdaki kalan" oldu; §3.7'ye geri alma sonuçlarının terminal / terminal değil sınıfı eklendi;
-satır kilidi meşgul kodu hizalaması yazıldı (§3.4, §4).
+satır kilidi meşgul kodu hizalaması §4'e yazıldı (§3.4 metni değişmedi; ad F17-2'de kesinleşir).
+
+Revizyon 11 (2026-11-12): #1127 merge sonrası DOCS review A 6824921197 ve B 6824916506 P3'leri işlendi (yalnız teknik
+biçim; yeni politika yok): koordinatör kararı (d) atfı #66 6824928883 kaydına bağlandı; (a) özetine kapsam eklendi; §3.7 ile
+§3.8 arasındaki net 0 çelişkisi giderildi (net 0'da açılan miktar yoktur, §3.7 port türüne bakmaz; beklenen değer yalnız
+net > 0'da verilir); §3.7'ye karışık durum kuralı (önce tüm satırlar değerlendirilir, sonra terminal olmayan kazanır) ve
+sınıflandırılmamış durumlar eklendi; açılan miktar yokken `Unreadable` / `NotFound` / `Line` null 503 ile fail-closed
+yazıldı; kabul kapısı "net = 0" ve satır bazlı olarak düzeltildi (rev10'daki "net ≤ 0" ifadesi "net = 0" oldu; net < 0
+ayrı kuraldır); rev10 özetindeki §3.4 atfı düzeltildi.
+
+Revizyon 12 (2026-11-12): #1137 merge sonrası DOCS review A 6825893552 ve B 6825964824 P3'leri ve koordinatörün
+değerlendirme modeli (#66 6825926365) işlendi (yalnız teknik biçim; yeni politika yok): §3.7 karışık durum kuralı
+6825926365 modeliyle değiştirildi (önce bütün kilitler; sabit sırada değerlendirme; ilk terminal olmayan sonuç denemeyi
+bitirir ve kendi durum/kodunu döndürür; hepsi terminalse sabit sıradaki ilk terminal kaydedilir); "port cevabının türüne
+bakmaz" ifadesi `NotAllocatable` / `Allocatable(R)` ayrımıyla sınırlandı ve 503 istisnası §3.8'e de yazıldı; terminal sınıf
+"Stok iş reddi; bugün yalnız `inventory_future_allocation_already_fulfilled`" olarak tekleştirildi; "net < 0 zaten
+`AcceptanceExceedsRemaining`" cümlesi kalanı 0 olan satırla sınırlandı (Approved satırda kalan içinde net < 0 meşrudur,
+`PurchaseOrder.cs:337-341`); §4 #1116 hizalama maddesi #1126 (main `732ba997`) sonrasına güncellendi; §6'ya karışık çok
+satırlı, açılan miktar yokken fail-closed, satır bazlı net 0 / net > 0 kapısı ve 6825926365 golden testleri eklendi.
+Rev12 r2 (#1142 review A 6826271131, B 6826280925): model Alış akışına uyarlandı (bugün tek terminal kod
+`inventory_future_allocation_already_fulfilled`, bu akışta kaydedilen 422 yok; golden (iv)/(v) buna göre; farklı terminal
+kodlar bugün ulaşılamaz); Alış domain retlerinin Stok değerlendirmesinden önce ev iskeleti gereği terminal kaydedildiği yazar
+okuması olarak yazıldı (r3'te düzeltildi); sınırlı deneme tükenmesi kilit evresine alındı ve kodu adlandırıldı; 5. adım "terminal olmayan sonuç
+yoksa ve en az bir terminal varsa" oldu; model etiketi "koordinatör okuması" oldu; §6'ya port istisnası, zaman aşımı ve deneme
+tükenmesi testleri eklendi; Kod/DB kapı parantezi §3.8 ile hizalandı (`RequireNotCancelled` önceliği).
+Rev12 r3 (#1142 review A 6826710253, B 6826712066): Alış retlerinin sınıflaması ev iskeletinin catch zinciriyle yeniden yazıldı
+(sürüm/durum retleri kaydedilen 409, kullanıcının düzeltebileceği kural retleri kaydedilmeyen 422 `validation_failed`; kod
+bazında eşleme F17-6'da); r2'deki "mevcut davranış" iddiası kaldırıldı; deneme tükenmesinin kilit altı yeniden okumayla tespit
+edildiği düzeltildi; Kod/DB kabul kapısı değişikliğine participant kapıları eklendi.
 
 ## 1. Bugün (main `58b96aa2`)
 
@@ -250,7 +278,7 @@ token'ı yalnız Stok'un iki ayırmasını sıralar; Alış yazısını görmez.
 - **Sıra:** birden çok satır kilitlenecekse `lineId` artan sırayla alınır (kilitlenme önlemi). Satış satırı kilidi gereken
   yollarda önce satış satırları (birden çoksa artan satış satırı kimliğiyle, hepsi alış kilitlerinden önce; satış ve alış
   kilitleri iç içe geçmez), sonra alış satırları artan `lineId` ile alınır (#1116 §3.2 adım 0, §4.3): Stok ayırma oluşturma,
-  Satış satır iptali/azaltması ve kabul geri almada tüketilmiş ayırmanın `Consumed → Active` yeniden açılması (koordinatör kararı (d), 2026-11-12 13:04Z koordinatör mesajı; merged #1116 (merge `1af6ffea`) §3.2 adım 0, §3.7 ve KLN-D28 (7)'de yazar okuması). Satış satırı kilidinin arayüzü de host/BuildingBlocks'tadır; modüller birbirine
+  Satış satır iptali/azaltması ve kabul geri almada tüketilmiş ayırmanın `Consumed → Active` yeniden açılması (koordinatör kararı (d), #66 6824928883 F-017 (a)–(d) koordinatör kaydı; merged #1116 (merge `1af6ffea`) §3.2 adım 0, §3.7 ve KLN-D28 (7)'de yazar okuması). Satış satırı kilidinin arayüzü de host/BuildingBlocks'tadır; modüller birbirine
   referans vermez.
 - **Zaman aşımı:** kısa (öneri 5 sn). Alınamazsa işlem yazmadan 409 `purchasing_line_busy` ile biter; replay değilse istemci yeniler.
   Kilit dönüş kodu < 0 ise asla devam edilmez (fail-closed).
@@ -382,22 +410,51 @@ iade) dilimleridir. Bu bölüm o dilimlerin F-017 kurallarıdır; uygulama F17-6
   Başka her cevap (`NotAllocatable`, `NotFound`, `Line` null, sürüm veya miktar farklı, `Unreadable`) bayat okumadır ve işlemin
   tamamı yazmadan geri alınır; ayırma bırakılmaz, `acceptance-reversed-no-supply` yazılmaz. Böylece port işlem dışı bir
   bağlantıdan Cancelled siparişi bayat `NotAllocatable` okursa satış bağı kaybolmaz. Host'un Alış sonucuna göre açılan miktar
-  yoksa (işaretsiz iade, canlanmasız durum, net 0 düzeltme) Stok port cevabının türüne bakmaz (`NotAllocatable` de
-  `Allocatable(R)` de meşrudur) ve bırakma kuralını uygular;
+  yoksa (işaretsiz iade, canlanmasız durum, net 0 düzeltme) Stok `NotAllocatable` / `Allocatable(R)` ayrımına bakmaz (ikisi de
+  meşrudur) ve bırakma kuralını uygular; ancak `Unreadable`, `NotFound` veya `Line` null okunursa yine
+  bayat okuma gibi işlemin tamamı yazmadan geri alınır ve 503 döner, kaydedilmez (fail-closed; yazar okuması, geri alınabilir);
   aynı düzeltmedeki yeni kabulün yeniden tükettiği ayırmalar bırakılmaz (§3.8 net açılan miktar). Ayrım port cevabından değil
   host'un Alış sonucundan yapılır. Bu kontrol §3.1'deki işlem içi tutarlılık kontrolüdür, expected-version değildir.
-- **Stok iş reddi Alış yazısını da geri alır:** 4. adımda Stok bir iş kuralıyla reddederse (ör. sevk edilmiş/tüketilmiş etiket,
-  409 `inventory_future_allocation_already_fulfilled`) host işleminin tamamı geri alınır; Alış geri alma/iade payı ve canlanma da
+- **Stok iş reddi Alış yazısını da geri alır:** 4. adımda Stok bir iş kuralıyla reddederse (sevk edilmiş/tüketilmiş etiket; bugün
+  bu sınıfta tek kod 409 `inventory_future_allocation_already_fulfilled`, sınıfa eklenecek kodlar F17-6'da kesinleşir) host işleminin tamamı geri alınır; Alış geri alma/iade payı ve canlanma da
   yazılmaz. Bu, kabul akışındaki ALS-D89'dan farklıdır (orada iş nedenli çevirme hatasında kabul tamamlanır): geri almada
   önce satış/sevk tarafında ters işlem gerekir.
 - **Sonuç sınıfı ve replay (teknik; `k3-command-skeleton` terminal ret deseni, #1116 §5.1 (c) satış tarafındaki aynası):**
   - Bayat okuma, `Unreadable` ve satır kilidi meşgul terminal değildir: işlem geri alınır, idempotency kaydı yazılmaz, istemci
     yeniden denenebilir hata alır (bayat okuma ve `Unreadable` için 503, kilit meşgul için §3.4 409'u); aynı anahtar yeniden
     yürütülür.
-  - Stok iş reddi (409 `inventory_future_allocation_already_fulfilled`) terminaldir: geri alınan işlemden sonra ret kaydını
+  - Stok iş reddi (bugün yalnız 409 `inventory_future_allocation_already_fulfilled`) terminaldir: geri alınan işlemden sonra ret kaydını
     API-44/API-60 host komutunun kendisi yazar, Stok hiçbir şey yazmaz; aynı anahtarla tekrar saklanan 409'u Stok'u yeniden
     çağırmadan döndürür.
-  - Aynı denemede iki sınıf birlikte görülürse terminal olmayan kazanır (503 kaydedilmez). Kodlar F17-6'da kesinleşir.
+  - Değerlendirme modeli ve karışık durum (koordinatör okuması #66 6825926365; teknik, geri alınabilir):
+    1. Kilit evresi: önce bütün kilitler alınır (host işlemi sırası adım 1: kilit öncesi küme okuması, satış satırları, sonra
+       alış satırları artan `lineId`; §3.4). Bir kilit meşgulse deneme o kilidin kendi 409'uyla biter (satış satırı kilidi
+       için Satış tarafının kodu, alış satırı için `purchasing_line_busy`). Kilit altında küme büyüdüğü için sınırlı deneme
+       tükenirse deneme 409 `inventory_concurrent_change` ile biter (ad öneridir, F17-6'da kesinleşir). Bu evrede biten
+       denemede Alış yazısı ve port okuması yapılmaz (tükenmeyi kilit altındaki küme yeniden okuması tespit eder, host işlemi
+       sırası adım 1), hiçbir şey kaydedilmez, aynı anahtar yeniden yürütülür.
+    2. Kilitler alındıktan sonra Alış yazısı (host işlemi sırası adım 2) yapılır, ardından satırlar sabit sırayla
+       değerlendirilir (satış satırı, sonra artan `lineId`). Bu akışta bugün tek terminal sonuç Stok iş reddi 409
+       `inventory_future_allocation_already_fulfilled`'dır; toplanır, değerlendirmeyi durdurmaz. Bu akışta kaydedilen bir
+       422 yoktur (`AllocationOrder` 422'si kabul akışınındır, §3.3).
+       Alış retleri Alış yazısında, Stok değerlendirmesinden önce oluşur; Stok portu çağrılmaz, satır değerlendirmesine ve
+       karışık duruma girmez. Sınıflama ev iskeletinin catch zinciridir (`k3-command-skeleton` adım 10 ve "rule refusal 422
+       not recorded"): sürüm çakışması ve durum retleri kaydedilen terminal 409 olur (ör. 409 `version_conflict`); kullanıcının
+       yeni girdiyle düzeltebileceği kural retleri 422 `validation_failed` olur ve kaydedilmez. Bugün tek modüllü Alış
+       komutlarında yalnız `version_conflict` ve açıkça eşlenmiş durum kodları kaydedilir, eşlenmemiş kural retleri kaydedilmeyen
+       422'dir (`PurchasingService.cs:169-182`). API-44/60'ta kod bazında eşleme F17-6'da kesinleşir (yazar okuması, teknik,
+       geri alınabilir idempotency sınıflaması).
+    3. İlk terminal olmayan sonuç (503 bayat okuma / `Unreadable`, port istisnası, zaman aşımı, 409
+       `inventory_concurrent_change`) değerlendirmeyi bitirir: işlem geri alınır, istemciye o sonucun durum ve kodu döner
+       (ör. 503 veya 409 `inventory_concurrent_change`), hiçbir şey kaydedilmez, aynı anahtar yeniden yürütülür. Daha önce
+       toplanan terminal sonuç döndürülmez ve kaydedilmez.
+    4. Kilit meşgul ile 503 aynı denemede oluşamaz (meşgul kilit okumadan önce denemeyi bitirir).
+    5. Terminal olmayan sonuç yoksa ve en az bir terminal varsa sabit sıradaki ilk terminal kaydedilir ve döndürülür; aynı
+       anahtar saklanan sonucu portu çağırmadan döndürür. Bugün tek terminal kod olduğundan "farklı terminal kodlar" durumuna
+       ulaşılamaz; bu kural ikinci bir terminal kod eklenirse geçerlidir.
+  - Sınıflandırılmamış durumlar (port istisnası, zaman aşımı, `inventory_concurrent_change`) terminal değildir ve yukarıdaki
+    3. adıma girer (sınırlı deneme tükenmesi 1. adımdadır): işlem geri alınır, idempotency kaydı yazılmaz, aynı anahtar
+    yeniden yürütülür. Stok tarafında yalnız yukarıda adı geçen Stok iş reddi terminaldir. Kodlar F17-6'da kesinleşir.
 - **Stok tarafı (aynı host işlemi, §3.4 kilidi altında, yukarıdaki sırayla):** geri alınan etiketlere bağlı fiziksel tahsis ve
   etiket ataması geri alınır.
   - Gelecek miktar varsa ilgili ayırma aynı ayırma kimliğiyle `Consumed` → `Active` döner (sürüm artar), ayrılmış + yeniden
@@ -410,7 +467,7 @@ iade) dilimleridir. Bu bölüm o dilimlerin F-017 kurallarıdır; uygulama F17-6
     önce satış/sevk tarafında ters işlem gerekir.
   - Satış tarafı fiziksel tahsisi bıraktıysa veya satış satırı iptal edildiyse yeniden açılacak ayırma yoktur: yalnız etiket
     geri alınır, ayırma açılmaz, uyarı gerekmez. Satış satırı kilit alındıktan sonra yeniden okunur; satır iptal veya kapalıysa
-    yeniden açma aktif gelecek ayırma oluşturmaz (koordinatör kararı (d), 2026-11-12 13:04Z koordinatör mesajı; merged #1116 (merge `1af6ffea`) §3.2 adım 0, §3.7 ve KLN-D28 (7)'de yazar okuması). "Aynı kimlikle yeniden açılır" yalnız fiziksel tahsis hâlâ aktifse geçerlidir.
+    yeniden açma aktif gelecek ayırma oluşturmaz (koordinatör kararı (d), #66 6824928883 F-017 (a)–(d) koordinatör kaydı; merged #1116 (merge `1af6ffea`) §3.2 adım 0, §3.7 ve KLN-D28 (7)'de yazar okuması). "Aynı kimlikle yeniden açılır" yalnız fiziksel tahsis hâlâ aktifse geçerlidir.
   - Kısmi geri almada önce geri alınan etiketlerin bağlı olduğu tahsisler geri alınır. Etiket ayrımı yoksa ALS-D84 sırasının
     tersi uygulanır: termini en uzak satış önce geri alınır, termini en yakın olan korunur. Yeniden açma da aynı sırayla yapılır.
 - **API-44 ters + yeni çevirme sırası:** aynı düzeltmede ters kayıt bir ayırmayı yeniden açarsa yeni kabul önce o ayırmaları
@@ -435,14 +492,19 @@ Sinan metni (aynen, #66 6822767886 m.3, ALS-D93): "Geri gelmez, yeniden ayrılı
   kaydeder. Canlanma tek düzeltmedeki **net** açılan miktara göre belirlenir: net = ters kayıt miktarı − aynı düzeltmedeki yeni
   kabul miktarı. Net **genel satır başına** hesaplanır; birden çok satırı etkileyen düzeltmede her satır kendi neti ile
   değerlendirilir, sipariş canlanması net > 0 olan en az bir satır varsa olur (yazar okuması, geri alınabilir).
-  - Net > 0: canlanma olur, satır kalanı net miktardır (aşağıdaki X = net).
-  - Net ≤ 0 (ör. yalnız lot/etiket düzelten, miktarı değişmeyen düzeltme: ters X + yeni X): sipariş ve satır durumu
+  - Net > 0: canlanma olur, satır kalanı net miktardır (aşağıdaki X = net). §3.7 tutarlılık kontrolünde beklenen değer net
+    değişim sonrası kalandır (Approved satırda da). Yeni > 0 iken ALS-D82 yeniden açma kontrolü ve
+    `acceptance-reversed-no-supply` bırakması da net son duruma göre yapılır.
+  - Net = 0 (ör. yalnız lot/etiket düzelten, miktarı değişmeyen düzeltme: ters X + yeni X): sipariş ve satır durumu
     **değişmez**. Cancelled sipariş Cancelled, API-11 kapalı satır kapalı kalır; canlanma olayı ve "canlandı" bildirimi
-    üretilmez; iptal/kapanış kaydına dokunulmaz. Net < 0 zaten `AcceptanceExceedsRemaining` kuralına tabidir.
-  - Stok tarafında "ters + yeni" çevirmesi (aynı ayırma kimliğiyle `Consumed → Active → Consumed`) işlem içi geçici durumdur;
-    `acceptance-reversed-no-supply` yazılmaz. §3.7 tutarlılık kontrolü bu durumda host'un Alış sonucundaki net kalanı (kapalı/iptal
-    satırda 0) beklenen olarak verir ve işlem içi ara durumu kapsar. Approved satırda beklenen değer net son durumdaki kalandır; net > 0 ve
-    yeni > 0 iken ALS-D82 yeniden açma kontrolü ve `acceptance-reversed-no-supply` bırakması da net son duruma göre yapılır.
+    üretilmez; iptal/kapanış kaydına dokunulmaz. Net < 0 (yeni > ters) yeni kabul gibi kalan taahhüde karşı ölçülür
+    (`PurchaseOrder.cs:337-341`): kalanı 0 olan satırda (Cancelled, API-11 kapalı veya tam kabul) `AcceptanceExceedsRemaining`
+    ile reddedilir (Cancelled siparişte bugün önce `RequireNotCancelled` reddeder; aşağıdaki Kod/DB kabul kapısı); Approved
+    satırda kalan içinde kalan net < 0 meşrudur.
+  - Net = 0'da Stok tarafındaki "ters + yeni" çevirmesi (aynı ayırma kimliğiyle `Consumed → Active → Consumed`) işlem içi geçici durumdur;
+    `acceptance-reversed-no-supply` yazılmaz. Net 0'da açılan miktar yoktur; §3.7 tutarlılık kontrolü `NotAllocatable` /
+    `Allocatable(R)` ayrımına bakmaz, ancak `Unreadable`, `NotFound` veya `Line` null okunursa işlem geri alınır ve 503 döner,
+    kaydedilmez (§3.7 "açılan miktar yoksa" dalı).
 - **Açılan miktar:** yalnız geri alınan / işaretli iade edilen net miktar (X). Formül gereği kalan X olur: `kabulNet` X düşer,
   `cancelled` ve `closed` payları **değişmez**. Önceden iptal veya kapanışla düşen miktar canlanmaz (Sinan metni "miktar"; geri
   alınmayan iptal payı bu işlemin konusu değildir). İptal/kapanış payı geri alınan miktar kadar artırılmaz; rev6'daki "paya yaz"
@@ -478,8 +540,15 @@ Sinan metni (aynen, #66 6822767886 m.3, ALS-D93): "Geri gelmez, yeniden ayrılı
       döner" olur; `Cancel` değişmezi yukarıdaki "kalan ≥ 0" ile değişir.
     - Kabul kapısı: `RecordAcceptance` bugün `RequireNotCancelled()` ve `RequireStatus(Approved)` ister
       (`PurchaseOrder.cs:319-324`; "Terminal" belgesi :13 "no acceptance … follows"). API-44 ters + yeni düzeltmesini tek net
-      işlem olarak değerlendirir: net ≤ 0 düzeltme Cancelled siparişte ve API-11 kapalı satırda durum değiştirmeden yazılır,
-      net > 0 ise önce canlanma, sonra yeni kabul. Kapı ve "Terminal" belgesi buna göre güncellenir; düzeltme dışı yeni kabul
+      işlem olarak değerlendirir. Kapı satır bazlıdır: her genel satır kendi netiyle değerlendirilir. Net = 0 olan satırın
+      düzeltmesi Cancelled siparişte ve API-11 kapalı satırda durum değiştirmeden yazılır; net > 0 ise önce canlanma, sonra
+      yeni kabul; net < 0 kalan taahhüde karşı ölçülür (`PurchaseOrder.cs:337-341`): kalanı 0 olan satırda (Cancelled, API-11
+      kapalı veya tam kabul) reddedilir, Approved satırda kalan içinde meşrudur. Bugünkü kodda Cancelled siparişte önce
+      `RequireNotCancelled` (`PurchaseOrder.cs:323`, `purchasing_order_cancelled`) reddeder; Cancelled siparişte
+      `AcceptanceExceedsRemaining` ancak bu kapı değişikliğinden sonra devreye girer. HTTP kabul yolunda participant kapıları
+      domain'den önce çalışır (`PurchaseAcceptanceParticipant.cs:163-172`: sürüm, `Approved` durumu, kalan); kapı değişikliği
+      bu kapıları da kapsar, aksi halde net 0 düzeltmesi Cancelled siparişte participant'ta 409 ile reddedilir. Kapı, participant
+      kapıları ve "Terminal" belgesi buna göre güncellenir; düzeltme dışı yeni kabul
       Cancelled/kapalıda reddedilmeye devam eder. Test: net 0 düzeltme Cancelled siparişte yazılır, düzeltme dışı kabul bugünkü kodla reddedilir.
     - Geri dönüş: migration forward-fix'tir (ev deseni, ör. `AddPurchaseOrderLinePrice` `THROW 51169`). `Down`, canlanmış
       sipariş veya iptal geçmişi satırı varken yeni ve başka migration'da kullanılmayan bir `THROW 51xxx` ile reddeder; veri
@@ -531,9 +600,9 @@ Sıra: #1101 kuyruğu bitmeden kod yok (koordinatör, 2026-11-12).
 - **#1116 hizalaması:** #1116 §10 F017-b bu kapıya göre bölünür: oluşturma endpoint'i, OpenAPI ve izin kaydı F017-b'den çıkıp
   F17-2b'ye (Stok adıyla F017-b2) geçer; F017-d (frontend) F17-2b'ye bağlanır. İki belge F17-2 PR'ında aynı metne getirilir;
   hizalama yapılmadan F17-2 merge edilmez. #1116 bu belgeden önce merge edildi (main `1af6ffea`); hizalamayı F17-2 PR'ı yapar ve
-  F17-2 review'ı denetler. Hizalama ayrıca şunları kapsar: problem kodlarının önekli adları (satır kilidi meşgul: bu belgede
-  `purchasing_line_busy`, merged #1116 §3.2 adım 0 ve §7'de `purchase_line_busy`; tek ad F17-2'de kesinleşir ve iki belge
-  ona getirilir; `inventory_future_allocation_already_fulfilled` / #1116 `allocation_already_fulfilled`), karar
+  F17-2 review'ı denetler. Hizalama ayrıca şunları kapsar: problem kodlarının önekli adları (#1126, main `732ba997`, Stok
+  belgesini bu belgenin adlarına getirdi: satır kilidi meşgul `purchasing_line_busy`, Stok iş reddi
+  `inventory_future_allocation_already_fulfilled`; F17-2 iki belgenin hâlâ aynı adı taşıdığını doğrular), karar
   aralığının ALS-D82..ALS-D93 olması, #1116 §3.6/§9.1 aday 2'nin ALS-D93 ile karara bağlanması.
 - **F17-6 / F017-e hizalaması:** #1116 §3.7'deki "iptal/kapanış payının düşmesi" ifadesi ve Stok tarafı maddeleri, F17-6
   (≈ F017-e) PR'ında bu belgenin §3.7 host işlemi sırası ve §3.8 pay aritmetiği / ayırma etkisi metnine getirilir.
@@ -611,7 +680,7 @@ Ortak sorular #1116 §9 ile tek cevapla kapanır: S1 + S4 = #1116 S2, S2 = #1116
   `acceptance-reversed-no-supply` yazılmaz (Alış yazısı Stok okumasından önce, §3.7 host işlemi sırası). Host'un Alış sonucuna
   göre açılan miktar varken port `Allocatable` + beklenen sürüm + beklenen miktar dışında bir cevap verirse (bayat
   `NotAllocatable`, `Line` null, farklı sürüm, `Unreadable`) işlemin tamamı yazmadan geri alınır; ayırma bırakılmaz,
-  `acceptance-reversed-no-supply` yazılmaz. Stok iş reddi (ör. 409 `inventory_future_allocation_already_fulfilled`) Alış geri
+  `acceptance-reversed-no-supply` yazılmaz. Stok iş reddi (bugün yalnız 409 `inventory_future_allocation_already_fulfilled`) Alış geri
   alma/iade payını ve canlanmayı da geri alır.
 - Kabul geri almada `Consumed → Active` yeniden açma önce satış satırı kilidini, sonra alış satırlarını artan `lineId` ile alır;
   kilit sonrası satış satırı iptal/kapalı okunursa aktif gelecek ayırma oluşmaz, yalnız etiket geri alınır (gerçek SQL: satış
@@ -620,6 +689,23 @@ Ortak sorular #1116 §9 ile tek cevapla kapanır: S1 + S4 = #1116 S2, S2 = #1116
   önce alınır; kilit altında küme büyüdüyse yeniden denenir (gerçek SQL). Bayat port okuması veya `Unreadable` 503 döner ve
   idempotency kaydı yazılmaz, aynı anahtar yeniden yürütür; Stok iş reddi 409'u API-44/API-60 komutu kaydeder, aynı anahtar
   Stok'u çağırmadan 409'u replay eder.
+- Karışık çok satırlı geri alma: bir satırda Stok iş reddi 409, başka satırda `Unreadable` → 503, idempotency kaydı yok; aynı
+  anahtar yeniden yürütür.
+- Açılan miktar yokken (işaretsiz iade, net 0 düzeltme) port `Unreadable`, `NotFound` veya `Line` null okursa işlemin tamamı
+  geri alınır, 503 döner, kaydedilmez; `NotAllocatable` ve `Allocatable(R)` ikisi de kabul edilir.
+- Satır bazlı kabul kapısı: aynı API-44 düzeltmesinde bir satır net 0, başka satır net > 0 ise net 0 satırın durumu değişmez,
+  net > 0 satır canlanır; kalanı 0 olan satırda net < 0 `AcceptanceExceedsRemaining`, Approved satırda kalan içinde net < 0
+  yazılır.
+- Değerlendirme modeli golden'ları (#66 6825926365): (i) kilit meşgul → o kilidin 409'u, port okunmaz, kayıt yok;
+  (ii) terminal + 503 → 503, kayıt yok; (iii) terminal + 409 `inventory_concurrent_change` → o 409, kayıt yok; (iv) iki
+  satırda da 409 `inventory_future_allocation_already_fulfilled` → sabit sıradaki ilk satırın reddi kaydedilir (farklı terminal
+  kodlar bugün ulaşılamaz; ikinci terminal kod eklenirse test o kodla genişletilir); (v) replay zinciri: meşgul → 409
+  kaydedilmez; kilit boşalınca aynı anahtar → 409 `inventory_future_allocation_already_fulfilled` kaydedilir; sonraki çağrı
+  saklanan 409'u portu çağırmadan döndürür.
+- Terminal olmayan diğer sonuçlar: port istisnası ve port zaman aşımı → işlem geri alınır, kayıt yok, aynı anahtar yeniden
+  yürütür; kilit altında küme büyümesiyle sınırlı deneme tükenince 409 `inventory_concurrent_change`, Alış yazısı ve port
+  okuması yok, kayıt yok. Alış sürüm çakışması (409 `version_conflict`) Stok portu çağrılmadan terminal kaydedilir ve replay
+  edilir; kullanıcının düzeltebileceği Alış kural reddi 422 `validation_failed` döner ve kaydedilmez.
 - Cancelled siparişte / API-11 kapalı satırda miktarı değişmeyen API-44 düzeltmesi (ters X + yeni X, net 0): sipariş Cancelled,
   satır kapalı kalır; `Approved`'a dönüş, canlanma olayı ve "canlandı" bildirimi yok; iptal/kapanış kaydı değişmez; Stok'ta
   ayırma aynı kimlikle `Consumed` kalır ve `acceptance-reversed-no-supply` yazılmaz. Net > 0 ise yalnız net miktar açılır.
