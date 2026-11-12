@@ -72,7 +72,7 @@ ilgili soru yorumuna bakılır. Yazar bu belgede hiçbir seçenek seçmemiştir.
   ve tabanı BS-16/BS-17 ile karara bağlandı.
 - EK59'da açık kalan `OPEN-INV-AVGCOST-NEGATIVE-STOCK`, `-LANDED`, `-RETURN`, `-MIXED-SOURCE` ve `-UNCOSTED-STOCK`
   #66 [6809898906](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6809898906) ile cevaplandı ve
-  `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` içinde kaydedildi (SAT-D301…SAT-D305). `-ZERO-STOCK` ve `-UNIT-CONVERSION` EK59'da kapandı.
+  `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md` içinde kaydedildi (SAT-D301…SAT-D305; alış iadesi #66 6810163182 ile SAT-D306; aynı belgede SAT-D307 ve KLN-D20…KLN-D24). `-ZERO-STOCK` ve `-UNIT-CONVERSION` EK59'da kapandı.
 - AI Grup E (`docs/delivery/AI_KARAR_PAKETI_2026-11.md`): E7 BS-15 ile karara bağlandı; E8 insan kapısında kalır.
 - `OPEN-013` ve `OPEN-007` için yön seçildi; resmi kapatma insan kapısıdır.
 - BS-6, BS-7 ve BS-11 tasarım yönüdür. Grant, rol ataması, Critical, secret veya production değildir.
