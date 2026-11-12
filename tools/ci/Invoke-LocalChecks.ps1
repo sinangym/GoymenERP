@@ -23,6 +23,8 @@ function Get-WindowsPortableEvidenceKey([string]$RelativePath) {
 }
 $ConfiguredHost=$env:GOYMEN_LOCAL_CI_HOST
 if([string]::IsNullOrWhiteSpace($ConfiguredHost) -or $env:COMPUTERNAME -ne $ConfiguredHost){throw 'This launcher is bound to the host named in GOYMEN_LOCAL_CI_HOST (set locally, not committed).'}
+# The value is interpolated into the WSL command line below; COMPUTERNAME holds the NetBIOS name (at most 15 characters).
+if($ConfiguredHost -cnotmatch '\A[A-Za-z0-9][A-Za-z0-9-]{0,14}\z'){throw 'GOYMEN_LOCAL_CI_HOST is not a valid computer name (letters, digits, hyphen; at most 15 characters).'}
 if($LinuxRepository -notmatch '^/home/ci/[A-Za-z0-9_./-]+$' -or $LinuxRepository.Contains('..')){throw 'Unexpected Linux repository path.'}
 $root='E:\GoymenERP-CI'
 $runId='launcher-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,8)
