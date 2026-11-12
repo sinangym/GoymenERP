@@ -71,6 +71,60 @@ public sealed class ProductUnitConversionCalculatorV1ProfileTests
     }
 
     [Fact]
+    public void A_wall_at_decimal_MaxValue_is_refused_not_thrown()
+    {
+        var both = ProductUnitConversionCalculatorV1.RoundTubeKgPerMetre(decimal.MaxValue, decimal.MaxValue, Steel);
+        var thinTube = ProductUnitConversionCalculatorV1.RoundTubeKgPerMetre(1m, decimal.MaxValue / 1.5m, Steel);
+
+        Assert.Equal(UnitConversionOutcomeV1.Refused, both.Outcome);
+        Assert.Null(both.Value);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, thinTube.Outcome);
+        Assert.Null(thinTube.Value);
+    }
+
+    [Fact]
+    public void A_tiny_round_tube_that_decimal_maths_rounds_to_zero_is_refused_not_a_silent_zero()
+    {
+        var result = ProductUnitConversionCalculatorV1.RoundTubeKgPerMetre(1e-14m, 5e-15m, Steel);
+
+        Assert.Equal(UnitConversionOutcomeV1.Refused, result.Outcome);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public void A_tiny_sheet_or_coil_that_decimal_maths_rounds_to_zero_is_refused_not_a_silent_zero()
+    {
+        var sheet = ProductUnitConversionCalculatorV1.SheetKgPerPiece(1e-10m, 1e-10m, 1e-10m, Steel);
+        var coil = ProductUnitConversionCalculatorV1.CoilKgPerMetre(1e-14m, 1e-14m, Steel);
+
+        Assert.Equal(UnitConversionOutcomeV1.Refused, sheet.Outcome);
+        Assert.Null(sheet.Value);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, coil.Outcome);
+        Assert.Null(coil.Value);
+    }
+
+    [Fact]
+    public void A_huge_profile_piece_input_is_refused_as_overflow_not_thrown()
+    {
+        var result = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(decimal.MaxValue, decimal.MaxValue, Settings);
+
+        Assert.Equal(UnitConversionOutcomeV1.Refused, result.Outcome);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public void Whole_units_use_the_coefficient_rounded_once_so_0_999_kg_at_one_third_kg_is_3_units()
+    {
+        var shown = ProductUnitConversionCalculatorV1.RoundCoefficient(1m / 3m, Settings);
+
+        var units = ProductUnitConversionCalculatorV1.KgToWholeUnits(0.999m, shown, Settings);
+
+        Assert.Equal(0.333m, shown);
+        Assert.Equal(UnitConversionOutcomeV1.Computed, units.Outcome);
+        Assert.Equal(3L, units.Value);
+    }
+
+    [Fact]
     public void A_profile_piece_of_6000mm_at_4_239_kg_per_metre_weighs_25_434_kg_and_chains_to_whole_units()
     {
         var piece = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(4.239m, 6000m, Settings);
