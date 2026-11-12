@@ -530,7 +530,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SAT-D216 / SAT-D222 (B-33): the Logistics owner names the shipper, so the Sales over-delivery approval fact is
                 // replaced by 3 facts (shipper named and refused, a share without actor refused fail-closed, the 51260 rollback
                 // refusal and the RecordedBy check/collation), kept ordinal-sorted (766e032e... -> eeed0741...).
-                "eeed0741e9f9d26a82dcdbf89bc822575be1ff139358c04df803bd204b9a1f88",
+                // SAT-D216 P2 follow-up: +1 SalesDeliveryProgress fact (the Logistics owner port names each shipper once in ordinal order and
+                // one unnamed shipment makes the whole line unnamed), kept ordinal-sorted (eeed0741... -> 46a4216c...).
+                "46a4216c81a9f84dda2ba4453e3a502cb11dc4a90feee184a7d46a0404f742f3",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
