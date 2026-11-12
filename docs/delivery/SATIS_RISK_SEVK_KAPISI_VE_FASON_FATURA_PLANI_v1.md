@@ -95,13 +95,24 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 - **Eşleme:** Finans limit `NoSource` + `finance_credit_limit_not_set` → `Unavailable` + `CreditLimitNotSet` (FNS-D30 (1):
   "limitsiz/sıfır sayılmaz"). Diğer `Unavailable` sebepleri → `SourceUnavailable`. Sebep **kategori**dir; tutar, limit,
   bakiye, ham sebep kodu listesi taşınmaz (SAT-D162). İstisna alanı ayrı portu tekrar okumak yerine aynı cevabı gömer
-  (iki okuma arasında yarış olmasın) — **L-2** ile Lojistik'e sorulur; ayrı kalırsa mevcut port aynen kullanılır.
+  (iki okuma arasında yarış olmasın); Lojistik L-2'de kabul etti, Lojistik ayrı istisna portu çağırmaz.
 - **Karar Satış'ta değil:** port yalnız olguyu verir; "durdur/geçir" ve tüketim/iptal düşmesi Lojistik kapısının işidir
   (SAT-D285 (4)). Önerilen kapı kuralı (kararlardan türetilmiş): `Within` → geçer; `Over` veya `CreditLimitNotSet` →
-  yalnız `Exception.Status = Valid` ile tek sevk geçer (FNS-D27 (4), FNS-D30 (1), SAT-D154/D160); `SourceUnavailable` → durur
-  (DEC-FIN-009 fail-closed), istisnanın bunu geçirip geçiremeyeceği **N-5**.
+  yalnız `Exception.Status = Valid` ile tek sevk geçer (FNS-D27 (4), FNS-D30 (1), SAT-D154/D160); istisnanın diğer her durumu
+  (None/Pending/Lapsed/Rejected/Withdrawn) ve `SourceUnavailable` → durur (DEC-FIN-009 fail-closed; Lojistik L-2/L-7 aynı).
+  `SourceUnavailable`'ın istisnayla geçip geçemeyeceği **N-5** olarak açık; karar gelene kadar kapı durur.
 - **Hesap:** `ISalesOrderRiskOutcomeSource` ile aynı deterministik değerlendirme (SAT-D284 ile tek kaynak); izin ölçümü
-  port konvansiyonuna göre tüketicidedir (`ISalesPartyRiskReadPortV1.cs:9`) → **L-3**.
+  port konvansiyonuna göre tüketicidedir (`ISalesPartyRiskReadPortV1.cs:9`). Lojistik L-3: kendi mevcut sevk kaydı iznini
+  ölçer, yeni izin gerekmez; Satış okuması kullanıcı izni değil şirket bağlamlı sistem okumasıdır.
+- **Okuma anı (L-1):** kapı yalnız kesin sevk kaydında (stok çıkışının geri dönmediği an) okur, her denemede yeniden okur,
+  sonuç cache'lenmez; talimat/yükleme/tartım/irsaliye onayındaki okuma kapı sayılmaz.
+- **Anahtar (L-4):** `(orderId, loadingInstructionId)`; bir talimat birden çok siparişe bağlanabilir (tek müşteri), Lojistik
+  her sipariş için ayrı sorar; duran sipariş yalnız kendi satırlarının sevkini durdurur.
+- **Tüketim/iptal (L-5, SAT-D285):** Lojistik kesin sevk commit olunca outbox olayı yayınlar (talimat, sipariş, sevk kimliği),
+  sevk iptalinde ters olay; Satış istisnayı kendi kaydında tüketildi/düştü yapar (inbox/dedup). Satış Lojistik durumunu port
+  ile sorgulamaz. Olay sözleşmesini Satış önerir, yayıncı Lojistik'tir; olay adı/sürümü S2 sonrası ayrı dilimde (S2b) yazılır.
+- **Hata (L-7):** `Unavailable`, port hatası veya zaman aşımı → sevk kaydı yazılmaz (503 benzeri ret); yeniden deneme
+  kullanıcının aynı idempotency anahtarıyla; otomatik tekrar yok.
 - **Dosyalar:** `SA/Contracts/ISalesShipmentRiskGateReadPortV1.cs` (yeni), `SI/Persistence/SalesShipmentRiskGateReadPort.cs`,
   DI `SI/SalesModuleExtensions.cs`, `SR` bölümü; `FinanceSalesPartyRiskReadPortV1` sebep sabiti sözleşme testine.
 - **Testler:** sürüm sabiti + şekil sözleşme testi (tutar alanı yok), her eşleme satırı (Within/Over/limit tanımsız/kaynak yok),
@@ -125,6 +136,10 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
   (`sales.subcontract-delivery-weighing.v1`): girdi (şirket, fason sipariş, sevk/irsaliye payı), cevap: net kg tam ondalık
   metin, ölçüm türü, tartım kimliği, durum (`Available/NoSource/Unavailable`; asla sıfır). Mevcut AT-053 tartımı talimat
   başınadır (`LR:52,56`); siparişe/satıra dağıtımı → **N-8**.
+- **Lojistik L-8 cevabı:** tartım kaydı bugün yalnız olguları taşır (tartı sırası, birinci/ikinci tartı, net, fark); "kimin
+  kantarı" ve teslim/sevk ayrımı modellenmedi. Lojistik okuma portu önerisi: anahtar (loadingInstructionId, weighingId) →
+  net kg + birim. **Teslim tartısı = talimatın tek tartı kaydı; kesin tanım fason teslim dilimi spec'inde netleşir.** Kesin
+  alan adı burada verilmez; kantar sahipliği için yeni alan gerekirse `NEEDS-SINAN` (SAT-D209).
 - **Testler:** sözleşme testi, şirket filtresi, tartım yokken `NoSource`, bozuk kayıt `Unavailable`, gerçek SQL (sahip şeritte).
 - **Modül bağlantıları:** yeni port (Lojistik/Stok → Satış, ❌).
 
@@ -141,18 +156,21 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 
 ---
 
-## 3. Lojistik ile hizalanacak sorular
+## 3. Lojistik cevapları (2026-11-12, Lojistik şeridi önerisi, `ASSUMPTION`, geri alınabilir teknik)
 
-| # | Soru |
-|---|---|
-| L-1 | Kapı hangi anda okur: yükleme talimatı **issue**, ilk yük kaydı, kantar, irsaliye onayı, yoksa kesin sevk (LOG-5 Stok seam)? DEC-FIN-009 "sevkiyatta" der; okuma anı ve tekrar okuma (yükleme sırasında risk değişirse) Lojistik spec'inde yazılmalı. |
-| L-2 | İstisna durumu gate cevabına gömülsün mü (tek okuma), yoksa iki ayrı port mu? (Ayrı kalırsa iki okuma arası yarışın kabulü.) |
-| L-3 | İzin: port yetki taşımaz; Lojistik hangi kendi iznini ölçer (`logistics.loads.record` / dispatch onayı)? Satış iç okumaları (Ayarlar kur/para profili, Finans) izin istediği için port "sistem okuması" mı olacak — Satış'ın teknik seçimi, Lojistik onaylamalı. |
-| L-4 | Anahtar: `(orderId, loadingInstructionId)` yeterli mi? Bir talimatta birden çok sipariş/müşteri olabiliyorsa kapı sipariş başına mı okur, talimatın bütün siparişleri `Within/Valid` olmadan mı durur? |
-| L-5 | Tüketim ve iptal düşmesi (SAT-D285): Lojistik "istisna tüketildi" bilgisini kendi tablosunda mı tutar; Satış'ın bunu öğrenmesi (`SalesShipmentRiskExceptionContractsV1.cs:295` NEEDS-SINAN) olay mı port mu? |
-| L-6 | `HoldReason` kategorilerinin Sevkiyatçı ekranındaki metni: SAT-D162 yalnız "risk limiti aşıldı, sevk duruyor" der; "limit tanımlı değil" ve "risk okunamadı" metinleri ayrı mı gösterilir (N-10)? |
-| L-7 | Port `Unavailable` veya fırlatma (şirket bağlamı/saat dilimi yok) → kapı durur; Lojistik bunu kaydeder mi, yeniden deneme UX'i? |
-| L-8 | Fason: müşteriye teslimde tartım bizim kantarda mı (AT-053, talimat başına bir kayıt), müşteri kantarında mı? Net kg hangi Lojistik/Stok kaydında ve hangi anahtarla (irsaliye satırı?) Satış'a verilir (F1)? |
+Lojistik port önerisini kabul etti (Satış sahipli, tutar yok, Result + HoldReason + gömülü istisna). Para/limit politikası
+seçilmedi; kurallar FNS-D27 (4)/FNS-D30/SAT-D154/D160'tır.
+
+| # | Soru | Cevap |
+|---|---|---|
+| L-1 | Okuma anı | Yalnız kesin sevk kaydında; her denemede yeniden okunur, cache yok. Önceki aşamalarda okuma kapı değildir. |
+| L-2 | İstisna gömülü mü | Gömülü; tek çağrı. `Within` geç; `Over`/`CreditLimitNotSet` yalnız `Valid` ile; diğer her durum ve `SourceUnavailable` dur. |
+| L-3 | İzin | Yeni Lojistik izni yok; mevcut sevk kaydı izni. Satış okuması sistem okuması. Yeni ad gerekirse yalnız ad kodlanır, grant insan kapısı. |
+| L-4 | Anahtar | `(loadingInstructionId, orderId)`; sipariş başına ayrı sorgu; duran sipariş diğerlerini etkilemez. Talimatta tek müşteri. |
+| L-5 | Tüketim/iptal | Satış kendi istisna kaydında tutar; Lojistik sevk commit'inde outbox olayı, iptalde ters olay yayınlar (S2b). |
+| L-6 | Ekran metni | Lojistik'te, resource dosyasında üç ayrı metin (aşıldı / limit tanımlı değil / risk okunamadı). Metin değişikliği kod değiştirmez (N-10). |
+| L-7 | Unavailable | Fail-closed, sevk kaydı yazılmaz; kullanıcı aynı idempotency anahtarıyla yeniden dener, otomatik tekrar yok. |
+| L-8 | Fason tartım | Karar Lojistik'in değil; okuma portu anahtarı (loadingInstructionId, weighingId); teslim tartısı = talimatın tek tartı kaydı, fason teslim dilimi spec'inde netleşir (F1, N-7). |
 
 ## 4. Açık noktalar (tahminle seçilmez)
 
@@ -165,13 +183,13 @@ Sıra: S0 → S1 ‖ S2 → S3 (Lojistik) ; F0 → F1 → F2. Her backend dilimi
 | N-4 `NEEDS-SINAN` | Siparişte sonuç `Unavailable` (limit tanımsız veya kaynak yok) ise uyarı kaydı yazılır mı, ayrı tür mü? | FNS-D30 yalnız sevki söyler |
 | N-5 `NEEDS-SINAN` | Teknik `Unavailable` (Finans/kur/fatura kaynağı okunamadı) sevkte tek sevk istisnasıyla geçebilir mi, yoksa yalnız `Over` ve "limit tanımsız" mı? Bugün talep `Unavailable`'da kabul ediliyor (`SalesRiskExceptionService.cs:97-99`). | DEC-FIN-009 fail-closed vs. istisna kapsamı; para/risk politikası |
 | N-6 `NEEDS-SINAN` (gerekirse) | Finans kabulü bekleyen fatura tutarı brüt riskte hangi bileşende durur (S0)? | `SATIS_MODUL_BAGLANTILARI_v1.md:45` açık bırakmış; formül |
-| N-7 `NEEDS-SINAN` | Teslim tartımı net kg'ın sahibi Lojistik mi (AT-053 kantar kaydı), Stok mu (müşteri malı çıkışı, URT-D16/D22)? | Modül sahipliği; stok miktar kaynağı P0 politikası (`LR:60`, master §28.12) |
+| N-7 `NEEDS-SINAN` | Teslim tartımı net kg'ın sahibi Lojistik mi (AT-053 kantar kaydı; Lojistik okuma portu öneriyor, L-8), Stok mu (müşteri malı çıkışı, URT-D16/D22)? Kantar sahipliği ("kimin kantarı") alanı gerekir mi? | Modül sahipliği; stok miktar kaynağı P0 politikası (`LR:60`, master §28.12) |
 | N-8 `NEEDS-SINAN` | Bir tartım birden çok fason satırı/siparişi kapsarsa net kg nasıl dağıtılır? Kısmi teslimlerde her teslim ayrı fatura mı? Tartım düzeltmesi (AT-053'te yok) faturayı nasıl etkiler? | Para/stok politikası |
 | N-9 `NEEDS-SINAN` / `OPEN-004` ilişkili | Net kg faturaya yuvarlanmadan mı girer (≤3 ondalık)? Satır tutarı SAT-D11 (2 ondalık yarı-yukarı) aynen mi? Net kg ile sipariş kg'ı arasındaki fark tolerans (OPEN-004) uyarısı/blok doğurur mu? | Formül/tolerans |
-| N-10 `NEEDS-SINAN` | Sevkiyatçı ekranında "limit tanımlı değil" ayrı metin mi, SAT-D162'deki tek metin mi? | SAT-D162 metni yalnız "aşıldı" der |
+| N-10 `NEEDS-SINAN` (onay) | Sevkiyatçı ekranında "limit tanımlı değil" ve "risk okunamadı" ayrı metin mi, SAT-D162'deki tek metin mi? Lojistik üç ayrı metni resource dosyasında öneriyor (L-6); metin değişikliği kod değiştirmez. | SAT-D162 metni yalnız "aşıldı" der |
 | N-11 (#1117 ile hizalama) | Limit tanımsız sebebi: Finans portu `finance_credit_limit_not_set` (#1117 plan L1), devir tablosu `credit_limit_not_defined` diyor (o kod Satış hesabının "tek tutar değil" kodudur, `SalesCustomerRisk.cs:113`). S2 eşlemesi Finans kodunu esas alır; #1117 metni düzeltilmeli. | Sözleşme tutarlılığı |
 
 ## 5. Sınırlar
 - Bu plan `OPEN-*` kapatmaz, rol/izin/grant seçmez, eşik/tolerans/yuvarlama koymaz. Satış limit hesaplamaz ve tutmaz (SAT-D51,
   FNS-D27 (5)). Lojistik kapı kuralı Lojistik şeridinindir (SAT-D285 (4)); burada yalnız port sözleşmesi önerilir.
-- `ISalesShipmentRiskGateReadPortV1` adı ve şekli önerdir; Lojistik onayıyla (L-1…L-7) kesinleşir, sonra S2 PR'ı açılır.
+- `ISalesShipmentRiskGateReadPortV1` adı ve şekli önerdir; Lojistik L-1…L-7'de kabul etti (§3); S2 PR'ı Satış kod kuyruğunda (#1103 sonrası) açılır.
