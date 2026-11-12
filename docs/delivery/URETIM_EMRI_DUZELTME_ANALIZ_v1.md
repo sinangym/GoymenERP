@@ -1,8 +1,8 @@
-# Üretim emrinde düzeltme ve iptal — analiz ve yol haritası v1 (F-009, URT-D28)
+# Üretim emrinde düzeltme ve iptal — analiz ve yol haritası v1 (F-009, URT-D28, URT-D30…URT-D33)
 
 Bu belge Sinan'ın 12 Kasım 2026 F-009 kararını (URT-D28,
 `docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md`) bugünkü kodla karşılaştırır. Sinan'ın istediği
-gibi uygulamadan önce yazılmıştır. Kod gerçekleri `origin/main` `58b96aa28` üzerinden okunmuştur. Kod bu belge merge
+gibi uygulamadan önce yazılmıştır. Sinan'ın takip cevapları (N1–N4, URT-D30…URT-D33) da bu belgeye işlenmiştir. Kod gerçekleri `origin/main` `58b96aa28` üzerinden okunmuştur. Kod bu belge merge
 edilmeden başlamaz.
 
 ## 1. Kararın kurallara çevrilmesi
@@ -39,14 +39,31 @@ edilmeden başlamaz.
   edilmiş çıktıyı hesaba katmaz. Çıktısı beyan edilmiş bir rulonun girdisi iade edilebilir. Kapanış bunu açıklanamayan
   fark olarak reddeder ama iade anında ret yoktur. R3 sırası bu kuralı gerektirir (§5 D4).
 
-## 3. "Satır" neye karşılık gelir
+## 3. "Satır" neye karşılık gelir (URT-D30)
 
-Sinan'ın sözünde satır hem tüketimi hem çıktıyı taşır. Bizim modelde bu, **bir girdi rulosunun gerçekleştirmesidir**:
-o ruloya ait çıkış, iade ve o rulodan beyan edilmiş çıktılar (kütle dengesi de bu birimde tutulur). Satırı
-"güncellemek" o rulonun çıktısını ters kayıtla azaltmak, gerekirse doğru miktarla yeniden beyan etmektir. Satırı
-"silmek" o rulonun bütün çıktılarını geri almak ve girdisini iade etmektir. Bu okuma §9 N1'de Sinan'a teyit için
-sorulur. Teyit gelene kadar ilk dilimler bu okumayla yazılır, çünkü bir girdi rulosunun silinmesi dışında başka bir
-okuma veri modelini değiştirmez.
+Sinan'ın cevabı (N1): "Plan bazında üretime girecek veya üretimden çıkacak her ürün satırı." Satır girdi rulosu
+değildir. Planın **girdi ürün satırı** ve **çıktı ürün satırıdır**. Kilit ve düzeltme sınırı, o satıra bağlı
+gerçekleşmelerin toplamı üzerinden uygulanır. Rulo ve etiket bu satırın altındaki ayrıntıdır.
+
+Bugünkü koddaki karşılığı:
+
+- **Girdi ürün satırı:** `PlannedInput` (plan girdi satırı). Bugünkü modelde her satır tek bir ana ruloya bağlıdır
+  (`parentRollId`). Bu yüzden girdi satırının gerçekleşmesi = o satırın rulosuna ait çıkış ve iade toplamıdır. Kütle
+  dengesi rulo başına tutulmaya devam eder.
+- **Çıktı ürün satırı:** Planın çıktı satırları (`SlittingSpec.Lines` içindeki `SlitLine` ve boy kesimdeki
+  `CutToLengthLine`). Çıktı satırının gerçekleşmesi = o satıra bağlı çıktı beyanlarının (etiketlerin) net kg toplamıdır.
+- **Boşluk:** Bugün `OutputDeclaration` plan çıktı satırına bağlı değildir. Yalnız ana ruloyu ve çıktı sınıfını taşır.
+  Bu yüzden D2, çıktı beyanına plan çıktı satırı referansını ekler. Eski beyanlarda bu alan boştur. Boş referanslı
+  beyan "satırsız" sayılır ve düzeltmesi ret döner (fail-closed); yeni beyanlar referansla yazılır.
+
+`ASSUMPTION-URT-F009-1` (geri alınabilir): İyi ürün beyanı plandaki çıktı satırına bağlanır. Planda satırı olmayan
+sınıflar (2. kalite, kullanılabilir artık, hurda, işlem kaybı) emir içinde **sınıf başına birer çıktı satırı** sayılır.
+Bu, satır sınırının hesaplanması için bir uygulama ayrıntısıdır; başka bir gruplama istenirse yalnız toplama kuralı
+değişir, olgular değişmez.
+
+Satırı "güncellemek" o satırın çıktısını (veya girdisini) ters kayıtla azaltmak, gerekirse doğru miktarla yeniden
+beyan etmektir. Satırı "silmek" o satırın bütün çıktılarını geri almak ve girdisini iade etmektir. Ters kayıt
+fiziksel olarak yine etiket üzerinde yapılır; satır yalnız sınırın hangi toplam üzerinden hesaplandığını belirler.
 
 ## 4. Sorulara cevaplar
 
@@ -60,6 +77,7 @@ gerekir: `IInventoryLabelDispositionReadPortV1` (öneri adı). Bir çıktı etik
 - kesin sevkle çıkan kg (müşteri iadesi düşülmeden; iade ayrı alan),
 - başka bir üretim emrine çıkışla tüketilen kg,
 - transferle gönderilen kg,
+- satışa veya başka bir işe ayrılmış kg (aktif ayırma),
 - etiketin çıktının ilk pozisyonunda hâlâ serbest ve ayrılmamış duran kg,
 - okuma durumu (`Value / Unreadable`). Okunamazsa düzeltme reddedilir (fail-closed).
 
@@ -68,10 +86,10 @@ Port Stok'un işidir (Stok şeridi, K3: çapraz modül okuma). Üretim yalnız t
 ### 4.2 Satırın alt sınırı
 
 Bir çıktı etiketinden geri alınabilecek kg = **ilk pozisyonunda serbest ve ayrılmamış duran kg**. Sevk edilmiş,
-başka emre çıkılmış, transfer edilmiş veya ayrılmış kg geri alınamaz. Satırın alt sınırı = o rulonun çıktı
-etiketlerindeki bu kilitli kg toplamıdır. Sinan yalnız sevki saydı. Başka emre çıkılmış ve transfer edilmiş kg
-fiziksel olarak da artık o pozisyonda olmadığı için geri alınamaz. Ayrılmış kg için önce ayırma serbest bırakılmalıdır.
-Bu ayrım §9 N2'de teyit için sorulur. Kod o zamana kadar fail-closed kalır: kilitli sayar.
+başka emre girdi olarak verilmiş, transfer edilmiş veya satışa ayrılmış kg geri alınamaz (URT-D31). Satırın alt sınırı
+= o satıra bağlı çıktı etiketlerindeki bu kilitli kg toplamıdır (URT-D30). Kilitli kg'ı serbest bırakmak düzeltmeden
+önce ayrı bir iştir: ayırma bırakılır, transfer geri alınır. Bu işler kendi modüllerinin komutlarıyla yapılır; Üretim
+bunları kendisi geri almaz. Port okunamazsa düzeltme reddedilir.
 
 ### 4.3 Sevk edilmemiş çıktının geri alınması
 
@@ -100,8 +118,20 @@ eşlenir.
 ### 4.6 Emrin tamamlanma koşulu
 
 Değişmez: bugünkü kapanış (`CloseOrderAsync`) net çıktılarla çalışır. Kütle dengesi ve fire üst sınırı ters olgular
-düşüldükten sonra değerlendirilir. **Kapalı emirde düzeltme ve iptal reddedilir** (F-009 kabul satırı). Kapalı emrin
-yeniden açılması bu kararın içinde değildir (§9 N3).
+düşüldükten sonra değerlendirilir. **Kapalı emirde düzeltme ve iptal reddedilir** (F-009 kabul satırı).
+
+**Yeniden açma (URT-D32):** Yetkili kişi kapalı emri gerekçeyle yeniden açabilir. Kurallar:
+
+1. Yeni komut `ReopenOrder`: gerekçe zorunludur; kullanıcı, zaman ve gerekçe denetim kaydına düşer. Emir `Open`'a döner.
+   Önceki kapanış kaydı silinmez; yeniden açma ayrı bir olgudur.
+2. Yeni yetki adı (öneri `manufacturing.orders.reopen`) yalnız kayıt olarak eklenir; grant insan kapısıdır.
+3. **Muhasebe dönemi kapanmışsa** emir yeniden açılamaz. Dönem durumu Finans'ın bilgisidir. Üretim bunu bir Finans
+   okuma portundan sorar (emrin kapanış tarihinin düştüğü dönem kapalı mı?). Port yoksa veya cevap okunamazsa yeniden
+   açma reddedilir (fail-closed). Port Finans şeridinin işidir (§6).
+4. Yeniden açılan emirde düzeltme bu belgedeki ters kayıt yoluyla yapılır, sonra emir yeniden kapatılır.
+5. Kapanışta hesaplanmış üretim alış maliyeti ortalamaya girmiş olabilir (§4.8). Yeniden açma ve sonraki ters kayıtların
+   ortalamaya etkisi Stok'un kararıdır; Stok'a sorulur. Cevap gelene kadar maliyeti ortalamaya girmiş emrin yeniden
+   açılması reddedilir (fail-closed).
 
 ### 4.7 Hiç sevk yokken iptal
 
@@ -109,13 +139,15 @@ yeniden açılması bu kararın içinde değildir (§9 N3).
 edilmiş (net çıkış 0); yarı mamul 0. Bu durumda **İptal** komutu emri `Cancelled` durumuna geçirir, gerekçe ve kullanıcı
 kaydedilir, plan ayırmasının kalanı serbest bırakılır. İptal hiçbir şeyi otomatik geri almaz. Kullanıcı önce satırları
 geri alır, sonra iptal eder. Bu, Sinan'ın "hammadde eski miktarına ulaşınca o üretim emri silinebilir" sırasıdır. Emir
-ve olguları silinmez. Ekranda iptal edilmiş emir ayrı süzgeçle görünür. İptal edilen emrin planına ne olacağı §9
-N4'tür.
+ve olguları silinmez. Ekranda iptal edilmiş emir ayrı süzgeçle görünür.
+
+**Planın durumu (URT-D33):** Emir iptal edilince plan **Onaylı**'ya döner. Aynı plandan yeniden üretim emri açılabilir.
+Planın emirle bağı silinmez; iptal edilen emir planın geçmişinde görünür. Yeni emir yeni bir emir kimliğidir.
 
 ### 4.8 Ortalama maliyete etkisi (SAT-D305 / SAT-D307 / SAT-D308)
 
 - Üretim alış maliyeti yalnız **kapalı** emirde hesaplanır (Stok cevabı 2). Düzeltme ve iptal yalnız **açık** emirde
-  yapılır. Bu yüzden geri alınan çıktı henüz bir maliyetle ortalamaya girmemiştir. Ters hareketin ortalamaya etkisi
+  yapılır (yeniden açılan emir için §4.6 madde 5). Bu yüzden geri alınan çıktı henüz bir maliyetle ortalamaya girmemiştir. Ters hareketin ortalamaya etkisi
   yoktur. Üretim alışını ortalamaya hangi anda ve hangi tutarla aldığı Stok'un kararıdır; Stok bunu ters hareket
   diliminde doğrular.
 - Girdi iadesi bugünkü kurala bağlıdır: iade, bağlı olduğu çıkışın damgalı maliyetiyle girer (Stok cevabı 3,
@@ -128,26 +160,30 @@ N4'tür.
 |---|---|---|---|
 | D0 | Üretim | Bu belge ve karar dosyası (docs PR) | — |
 | D1 | Stok | Ters hareket türü (`manufacturing.output-reversal`) ve `IInventoryLabelDispositionReadPortV1` | Migration (hareket türü kontrolü), çapraz modül port |
-| D2 | Üretim | Domain: çıktı ters olgusu, net çıktı, kütle dengesinde ters olgu, kapalı emirde ret | Migration (yeni tablo), forward-fix Down |
+| D2 | Üretim | Domain: çıktı ters olgusu, net çıktı, kütle dengesinde ters olgu, kapalı emirde ret, çıktı beyanına plan çıktı satırı referansı (§3) | Migration (yeni tablo), forward-fix Down |
 | D3 | Üretim | Uygulama + host + uç: API-25 çıktı düzeltmesi; `manufacturing.facts.correct` yalnız kayıt | Komut iskeleti, yetki adı, idempotency, Stok katılımcısıyla tek işlem |
 | D4 | Üretim | İade sınırının net çıktıyla sıkılaştırılması (§4.4) | Kural değişikliği (para/stok) |
-| D5 | Üretim | `OrderStatus.Cancelled`, iptal komutu, `manufacturing.orders.cancel` yalnız kayıt, ayırma serbest bırakma sebebi `OrderCancelled` | Migration (durum kontrolü genişler), Stok ayırma portu sebep listesi |
+| D5 | Üretim | `OrderStatus.Cancelled`, iptal komutu, `manufacturing.orders.cancel` yalnız kayıt, ayırma serbest bırakma sebebi `OrderCancelled`, planın Onaylı'ya dönmesi (URT-D33) | Migration (durum kontrolü genişler), Stok ayırma portu sebep listesi |
 | D6 | Üretim | Ekran: UI-14 düzeltme formu, iptal düğmesi, ret kodlarının Türkçe metinleri | — |
 | D7 | Üretim + Satış | İptal edilen emrin satış bağı okumasında görünmesi (MOD-03) | Satış'ın okuma tüketicisi Satış'ındır |
+| D8 | Üretim | Yeniden açma: `ReopenOrder` komutu, gerekçe ve denetim kaydı, `manufacturing.orders.reopen` yalnız kayıt, Finans dönem okuma portunun tüketimi (§4.6) | Migration (yeniden açma olgusu), yetki adı, çapraz modül port |
 
 Sıra gerekçesi: D2 ve D3, D1'in ters hareketi ve okuma portu olmadan stok tutarlılığını koruyamaz. D1 bitmeden D2
 domain olarak yazılabilir, ama D3 uç olarak açılmaz. D5, D2–D4'e dayanır, çünkü iptalin ön koşulu net çıktının ve
-net çıkışın sıfır olmasıdır.
+net çıkışın sıfır olmasıdır. D8, D2–D3'e ve Finans'ın dönem okuma portuna dayanır; port yoksa D8 fail-closed kalır.
 
 ## 6. Başka şeritlere aktarılanlar
 
 - **Stok:** D1 (ters hareket türü + etiket durum okuma portu), D5'teki ayırma serbest bırakma sebebi.
 - **Satış:** D7 tüketicisi. Üretim yalnız emir durumunu okuma portunda yayınlar.
+- **Stok (ek):** D1 portu satışa ayrılmış kg'ı da döner (URT-D31). Yeniden açılan emrin maliyet etkisi (§4.6 madde 5).
+- **Finans:** Muhasebe dönemi kapalı mı okuma portu (D8, URT-D32).
 - **Lojistik:** Yeni iş yok. Sevk bilgisi Stok hareketlerinden okunur.
 
 ## 7. Kapsam dışı
 
-- Kapalı emri yeniden açma, aynı etiketi yeniden kullanma, toplu düzeltme.
+- Aynı etiketi yeniden kullanma, toplu düzeltme.
+- Kilitli kg'ı serbest bırakan işler (ayırmayı bırakma, transferi geri alma): kendi modüllerinin komutlarıdır.
 - Kapasite ve takvimle termin hesabı (URT-D29: termin elle girilir).
 - Grant, rol, Critical, production etkinleştirme.
 
@@ -158,11 +194,11 @@ onayında emre kopyalanır, açık emirde düzeltilebilir. Takvim ve kapasite he
 küçük bir dilimdir (migration: plan ve emirde birer nullable sütun). Alanın plan mı emir mi olduğu geri alınabilir bir
 uygulama ayrıntısıdır.
 
-## 9. Sinan'a sorular (NEEDS-SINAN, Issue #66)
+## 9. Sinan'a sorular (Issue #66) — cevaplandı
 
-| # | Soru | Varsayılan (cevap gelene kadar) |
-|---|---|---|
-| N1 | "Satır" bir girdi rulosunun gerçekleştirmesi mi (o rulonun çıktıları ve iadesi)? | Evet, bu okumayla yazılır |
-| N2 | Sevk dışında başka emre çıkılmış, transfer edilmiş veya satışa ayrılmış çıktı da kilitli sayılsın mı? | Kilitli sayılır (fail-closed) |
-| N3 | Kapalı (tamamlanmış) emirde düzeltme gerekirse emir yeniden açılabilsin mi? | Hayır, kapalı emirde ret |
-| N4 | İptal edilen emrin planı ne olsun: yeniden emir açılabilir (Onaylı'ya dönsün) mü, plan da iptal mi olsun? | Varsayılan yok: D5 iptal komutu bu cevap gelmeden açılmaz |
+| # | Soru | Cevap | Karar |
+|---|---|---|---|
+| N1 | "Satır" bir girdi rulosunun gerçekleştirmesi mi? | Hayır. Planın girdi ürün satırı ve çıktı ürün satırı ([`6819908312`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819908312) m.1) | URT-D30, §3 |
+| N2 | Sevk dışında başka emre çıkılmış, transfer edilmiş veya satışa ayrılmış çıktı da kilitli sayılsın mı? | Evet, hepsi kilitli; önce o iş geri alınır ([`6819835966`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819835966) m.2) | URT-D31, §4.2 |
+| N3 | Kapalı emirde düzeltme gerekirse emir yeniden açılabilsin mi? | Yetkili kişi gerekçeyle açabilir; muhasebe dönemi kapalıysa açılamaz ([`6819835966`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819835966) m.3) | URT-D32, §4.6 |
+| N4 | İptal edilen emrin planı ne olsun? | Plan Onaylı'ya döner, yeniden emir açılabilir ([`6819640816`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819640816) m.2) | URT-D33, §4.7 |
