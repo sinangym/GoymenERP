@@ -215,6 +215,23 @@ net çıkışın sıfır olmasıdır. D8, D2–D3'e ve Muhasebe'nin main'deki d�
   `accounting.periods.read` grant'i insan kapısıdır.
 - **Lojistik:** Yeni iş yok. Sevk bilgisi Stok hareketlerinden okunur.
 
+**Stok cevabı (2026-11-12, Stok şeridi; kod değişmedi, hepsi ST-F009-D1 kapsamında):**
+
+- D1: Kalite blokajındaki kg, D1 portunda ayrı ve salt okunur bir alan olur. Hangi kg'ın bloklu sayılacağını Stok
+  belirler.
+- D5: main'de serbest bırakma sebebi olarak yalnız `PlanCancelled=1` ve `OrderClosed=2` var. `OrderCancelled=3` ve
+  `manufacturing.order-cancelled` kodu V1'e ek değer olarak Stok'un K3 diliminde gelir. Üretim'in D5 dilimi bu değer
+  main'e girmeden başlamaz.
+- URT-D34: Bugünkü ayırma komutu etiket bazlıdır ve ya hepsini ayırır ya hiçbirini. Yetersizlikte tek bir 409
+  (`inventory_manufacturing_allocation_insufficient_free_stock`) döner ve satır ayrıntısı vermez. Eksik girdileri
+  göstermek için Stok yan etkisiz yeni bir okuma portu önerir: etiket/ürün başına ayrılabilir (Free) kg (örnek ad
+  `IInventoryManufacturingPlanAvailabilityReadPortV1`). Üretim bu portu ayırmadan önce okur. Komut değişmez ve
+  fail-closed kalır. Ürünün hangi etiketlerden karşılanacağı (ürün → etiket eşlemesi) `NEEDS-SPEC`'tir
+  ([#66 `6822790075`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822790075)). Karar gelene kadar
+  emir açma tümüyle reddedilir; kısmi ayırma yoktur (URT-D34: stok yetmezse emir açılmaz).
+- Yeniden açılan emirde çıktının ters hareketi ve ortalamanın yeniden hesabı `NEEDS-SPEC` olarak kalır. D8'in
+  "maliyeti ortalamaya girmiş emir yeniden açılmaz" kuralı geçerlidir.
+
 ## 7. Kapsam dışı
 
 - Aynı etiketi yeniden kullanma, toplu düzeltme.
@@ -238,3 +255,7 @@ uygulama ayrıntısıdır.
 | N3 | Kapalı emirde düzeltme gerekirse emir yeniden açılabilsin mi? | Yetkili kişi gerekçeyle açabilir; muhasebe dönemi kapalıysa açılamaz ([`6819835966`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819835966) m.3) | URT-D32, §4.6 |
 | N4 | İptal edilen emrin planı ne olsun? | Plan Onaylı'ya döner, yeniden emir açılabilir ([`6819640816`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819640816) m.2) | URT-D33, §4.7 |
 | N5 | İptalden sonra yeni emirde girdi nasıl ayrılsın? | Yeni emirde yeniden ayrılır; stok yetmezse emir açılmaz, eksik girdiler gösterilir ([`6822303233`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822303233) m.1) | URT-D34, §4.7 |
+
+Açık kalan: ürün → etiket eşlemesi ve yeniden açılan emirde ters hareketin maliyeti (`NEEDS-SPEC`,
+[#66 `6822790075`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6822790075)). İkisi de karar gelene
+kadar fail-closed kalır (§6, Stok cevabı).
