@@ -199,10 +199,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (tools/relational_inventory/purchasing.txt, pinned below).
     // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
-    // Re-fingerprinted for CI-HIZ: SHARD_MODULES moves logistics from shard C to shard B (wall-clock balance only);
-    // the exact inventory, every listed test and the 0-skip rule are unchanged.
+    // Re-fingerprinted for CI-HIZ: SHARD_MODULES gains a fourth SQL shard D (Sinan #66 2026-11-12, item 4;
+    // wall-clock balance only); the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "f932bda3bc39f2b4c10b15e034a6c75c472eefce641c095be4bcb5c197a9a342";
+        "56ecdce4e4316e050df3999e257c7824322f0f63ea3739badba0d1eaeb3219b6";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -541,7 +541,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "1d9010430279a89d97e312fb2230b4047a1a1176dce884683639772ad886a19a";
+        "8212a0da495855c19ecdef8ae46ea754e51c7203098be39eabda16d4868da4f2";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -7870,7 +7870,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || !shardLines.Contains("name: SQL Server relational shard (${{ matrix.shard }})",
                 StringComparer.Ordinal)
             || !shardLines.Contains("fail-fast: false", StringComparer.Ordinal)
-            || !shardLines.Contains("shard: [A, B, C]", StringComparer.Ordinal)
+            || !shardLines.Contains("shard: [A, B, C, D]", StringComparer.Ordinal)
             || !rcsiLines.Contains("name: Exact RCSI relational acceptance", StringComparer.Ordinal)
             || !aggregateLines.Contains("name: SQL Server relational acceptance", StringComparer.Ordinal)
             || !aggregateLines.Contains("needs: [relational-shard, relational-rcsi]",

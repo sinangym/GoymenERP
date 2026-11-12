@@ -517,7 +517,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [A, B, C]
+        shard: [A, B, C, D]
     env:
       GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
         Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True

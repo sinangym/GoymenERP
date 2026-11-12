@@ -1066,7 +1066,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             ).group(1),
             "      fail-fast: false\n"
             "      matrix:\n"
-            "        shard: [A, B, C]\n",
+            "        shard: [A, B, C, D]\n",
         )
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
@@ -1082,7 +1082,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             "frontend-test": "ae92e87899200dca4b66f33a0749a5e272240cfbc2f1242ddb499eff31113aaf",
             "frontend": "da83a5f80558cd202195fd7a04e99f8046f47df9d791399f70da3ee305063ac7",
             "relational-shard": (
-                "c96ba3f6a2eb3bd43dab946b745be2b5979e8240e60683af68a005b9114aed7f"
+                "b6053344b02db34ab31baafc9f04f221e4cf1b1fcf9492ddf6d2ed3f00b8e56e"
             ),
             "relational-rcsi": (
                 "4b0f81dd06932cdce3ce52a87798361eb7004a38270f51438497952d3f78caea"
@@ -1460,10 +1460,10 @@ class WorkflowOrderingTests(unittest.TestCase):
             "    strategy:\n"
             "      fail-fast: false\n"
             "      matrix:\n"
-            "        shard: [A, B, C]\n",
+            "        shard: [A, B, C, D]\n",
             shard,
         )
-        self.assertEqual(shard.count("        shard: [A, B, C]\n"), 1)
+        self.assertEqual(shard.count("        shard: [A, B, C, D]\n"), 1)
         self.assertNotIn("    strategy:", self.job_body("relational-rcsi"))
 
         aggregate = self.job_body("relational")
@@ -1565,12 +1565,12 @@ class WorkflowOrderingTests(unittest.TestCase):
             ),
             (
                 "missing shard",
-                "        shard: [A, B, C]\n",
+                "        shard: [A, B, C, D]\n",
                 "        shard: [A, B]\n",
             ),
             (
                 "duplicate shard",
-                "        shard: [A, B, C]\n",
+                "        shard: [A, B, C, D]\n",
                 "        shard: [A, B, C, C]\n",
             ),
             (

@@ -68,9 +68,10 @@ INVENTORY_MODULES = (
     "work",
 )
 SHARD_MODULES = {
-    "A": ("inventory", "manufacturing", "purchasing", "work"),
-    "B": ("finance", "accounting", "product", "identity", "organization", "logistics"),
-    "C": ("counterparty", "sales", "platform"),
+    "A": ("sales", "accounting"),
+    "B": ("finance", "manufacturing", "work"),
+    "C": ("counterparty", "platform", "purchasing", "organization", "identity"),
+    "D": ("inventory", "product", "logistics"),
 }
 TEST_NAMESPACE = "GoymenERP.Api.IntegrationTests."
 # A test class belongs to the module its name starts with; the Cari journey class, whose name has no
