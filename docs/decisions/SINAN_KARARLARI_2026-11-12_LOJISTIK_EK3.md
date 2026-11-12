@@ -29,6 +29,10 @@ madde etiketi ve soru metni alıntı dışındadır.
 
 > "Yetkili kişi" (m.3) için yeni izin adı önerilebilir; grant/rol insan kapısıdır. "Kantardan geçer" depo ayarının varsayılanı kapalıdır (ayar açılmadıkça sevk kaydı anı geçerli).
 
+**LOJ-D11 devamı (#66 6821569022, koordinatör kaydı, birebir):**
+
+> **SINAN KARARI (2026-11-12, AskUserQuestion):** Kantar zorunlu depodan e-İrsaliye'li transferde iptal penceresi **"hangisi önce gelirse"** orada kapanır: çıkış tartısı **veya** e-İrsaliye'nin GİB'e gönderimi — hangisi önce olursa. (Stok KLN-D25 (7) devamı, Lojistik LOJ-D11 için; şeritler karar dosyasına bu metinle işler.)
+
 **17. tur, m.1 — N-5, risk okunamazsa sevk (#1119):**
 
 > **Cevap: Evet, istisnayla geçer.** (Yetkili onaylarsa risk okunamasa da tek sevk çıkar.)
