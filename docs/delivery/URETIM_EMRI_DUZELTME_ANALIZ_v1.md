@@ -264,7 +264,12 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
     gerekmez; Üretim'in ekran ve komut kontrolü yalnız erken ret içindir. Stok'un plan ayırma sözleşmesi plan girdisini ana etiketle anahtarlar
   (`DemandLineId = parent.Label.Id`, `InventoryManufacturingRealizationParticipant.PlanAllocations.cs:94`; etkin ayırma
   tekilliği `UX_Allocations_ActivePlanInput` (CompanyId, DemandId, DemandLineId), `InventoryDbContext.cs:500-503`).
-  Plan girdisi yeni etikete geçince talep satırı da değişir; bu Stok sözleşmesinin ele alınması gereken noktasıdır (§6).
+  Plan girdisi yeni etikete geçince talep satırı da değişir. Stok cevabı
+  ([#66 `6823794908`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823794908)): S1 — `DemandLineId =
+  parent.Label.Id` kalır; eski ayırma `OrderCancelled` ile serbest kalır, yeni etiket yeni `DemandLineId` alır, V1
+  yeterlidir. S2 — yeni alan gerekmez; sahiplik `IInventoryLabelDetailsV1.GetAsync` → `Balances.Positions[]`
+  (`OwnerKind`, `OwnerId`, `LabelVersion`) içinden okunur; 503/409/404/401/403, pozisyon yokluğu veya birden çok sahip
+  ret demektir (fail-closed). Counterparty'nin müşteri olduğunun doğrulanması Ortaklar/Satış portunun işidir (§6).
 - (f) Testler: aynı planda art arda iki iptal (her kuşak tam bir kez serbest bırakılır), iptal → yeni emir → girdi
   çıkışı yeni ayırmayı tüketir, D8'de yeniden açılıp yeniden kapanan emir, gerçek SQL ile. D5b için ayrıca: yeniden onay
   ve emir açılışı aynı girdiyi iki kez ayıramaz (çift ayırma; `UX_Allocations_ActivePlanInput`); iptal ile yeniden onay
