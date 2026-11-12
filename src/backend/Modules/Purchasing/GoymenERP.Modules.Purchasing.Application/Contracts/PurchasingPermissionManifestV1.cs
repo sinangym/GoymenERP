@@ -14,7 +14,11 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public static class PurchasingPermissionManifestV1
 {
-    /// <summary>Open a purchase request (Draft with lines) and submit it; open a purchase order (Draft with lines).</summary>
+    /// <summary>
+    /// Open a purchase request (Draft with lines) and submit it; open a purchase order (Draft with lines). A3 API-30 (ALS-D33,
+    /// ALS-D21): record a Draft or Approved order line's delivery schedule (termin dilimleri) — order data entered by the same
+    /// persona; no new name.
+    /// </summary>
     public const string OrdersCreate = "purchasing.orders.create";
 
     /// <summary>List and read purchase requests and orders of the context company.</summary>

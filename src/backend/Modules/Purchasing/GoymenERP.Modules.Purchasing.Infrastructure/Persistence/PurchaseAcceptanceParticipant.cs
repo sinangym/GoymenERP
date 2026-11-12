@@ -154,7 +154,10 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             throw Refused(PurchaseAcceptanceParticipantCodes.UnitConflict, 409, "Birim sipariş satırıyla uyuşmuyor.");
         }
 
-        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows);
+        // A3 API-30: the delivery-schedule revisions are part of the order's version history; the rebuild replays them too.
+        var sliceRows = await _dbContext.DeliverySlices.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
+            .ToListAsync(cancellationToken);
+        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows);
         if (order.Version != validated.ExpectedPurchaseOrderVersion)
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.OrderVersionConflict, 409, "Sipariş sürümü değişti.");

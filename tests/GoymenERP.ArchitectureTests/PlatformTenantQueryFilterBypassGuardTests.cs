@@ -402,8 +402,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A2a-5a (ALS-D3, Fable F-015): +3 order approval SQL facts (preparer refused + another actor's approval stored, audited
             // and rebuilt; the approval check on direct writes + a legacy approval still loads; Down refusal 51172), kept
             // ordinal-sorted (70821828… -> c307bc9f…).
+            // A3 API-30 (ALS-D33, ALS-D21): +3 line delivery schedule SQL facts (an append-only revision stored in one save, replayed,
+            // rebuilt between the acceptance shares + the slice checks and keys on direct writes; a Draft schedule before the
+            // approval + company isolation; Down refusal 51173), kept ordinal-sorted (c307bc9f… -> f81eff47…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "c307bc9f360db7c5e06c2de24a0eeab32d18223044dba7da4a4b902d1978715d",
+                "f81eff4789cfcfa735740dc58a5a8fe3ae6e68ee5b1d035f584268edb81c5b99",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -706,9 +709,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A2a-5a (ALS-D3, Fable F-015): the order's two nullable approval columns (ApprovedBy 128, ApprovedAtUtc)
             // and their own check (both or neither, only on an approved order, approver ≠ CreatedBy in binary collation); the
             // write guard's allow-list, filters and keys unchanged.
+            // Re-measured for A3 API-30 (ALS-D33, ALS-D21): the append-only tenant table PurchaseOrderLineDeliverySlices (its DbSet,
+            // the CompanyId query filter, key, checks, the line and order foreign keys, indexes); the write guard refuses any update
+            // or delete of a slice; the other filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "d5951612b1c87d85256e84f6f268a72c760422cdbf63f12cf88a26f4c3a5e301",
+                "80279983cc9b39029be05cf8d58fe1199d907681932e555a351b68b828a97dfa",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1650,7 +1656,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedPurchaseAcceptanceParticipantPath] =
                     new(
-                        "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
+                        // Re-fingerprinted for A3 API-30 (ALS-D33, ALS-D21): the order rebuild also reads the line's delivery
+                        // slices (a tenant-filtered, no-tracking read on the same context) so it replays the schedule revisions;
+                        // the reviewed constructions and provider tokens unchanged.
+                        "2a8118ebaba60ed5e05b7153ecbfe9379957fa12799d065f4458c9355c5167be",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1675,10 +1684,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for A2a-5a: the create envelope's actor stamped as the order's preparer before the row is written
                 // (row CreatedBy, domain and audit agree); the approver and approval time written, audited and rebuilt through the
                 // domain, a legacy approval rebuilt without an approver; same SqlClient use.
+                // Re-fingerprinted for A3 API-30 (ALS-D33, ALS-D21): a line schedule revision appended in the order's one save (the
+                // header version, the slices, the attempt and the audit), the snapshot's deliverySchedule, and every revision
+                // rebuilt through the domain at its version between the acceptance shares; same SqlClient use.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "0b46c5c5edd90c7e6f584c17d948ad334266563ae8df2be734df4ff844e66cc2",
+                        "c347bb88685742bbb84d147eccf33351d764d0f27d7afe8e64cc5bd889a32b1d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2391,6 +2403,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
                     new(
                         "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // A3 API-30 (ALS-D33, ALS-D21): one reviewed statement, before the drop. Down refuses (51173, used by no other
+                // migration) while any delivery slice exists, which dropping the table would erase (the recorded schedules every
+                // rebuilt order version counts). Up only creates the table; nothing is backfilled.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261112014446_AddPurchaseOrderLineDeliverySchedule.cs"] =
+                    new(
+                        "b79ebfa7f83116ac87a83100b47023432e4fb2adcc7fedd8657e2c47eda95ce2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

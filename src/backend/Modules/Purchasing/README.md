@@ -197,6 +197,16 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   words and re-reads the order. Migration `20261111182351_AddPurchaseOrderApproval` adds both columns and
   `CK_PurchaseOrders_Approval` (both or neither, only on Approved/Cancelled, approver ≠ `CreatedBy`); its Down refuses
   (`THROW 51172`) while any approver is recorded. The approval amount threshold (API-96) stays in A2a-5.
+- **Order line delivery schedule (A3 API-30, ALS-D33, ALS-D21, master §7.3):** `POST /api/v1/purchasing/orders/{id}/lines/{lineId}/schedule`
+  (`purchasing.orders.create`, ADR-011 replay; the line id is in the replay identity) replaces a GENERAL line's termin dilimleri
+  (hubvogal's "sıra") whole: 1..500 slices, each a distinct `sliceId`, a quantity above zero in the line's unit and a
+  `deliveryDate`, numbered 1..n in the given order, summing exactly to the line's ordered quantity (422 `validation_failed` on
+  `slices` with the rule code otherwise). Draft and Approved orders are scheduled; a cancelled order (409
+  `purchasing_order_state`) and a stale version (409 `version_conflict`) are terminal and replayed; an unknown line is a 404. Each
+  call appends the new set as a revision at the next order version (append only, history kept) and books nothing. The detail's
+  line carries `deliverySchedule` (the latest revision). Migration `20261112014446_AddPurchaseOrderLineDeliverySchedule` adds
+  `purchasing.PurchaseOrderLineDeliverySlices` (bound to the line; checks on identity, quantity, slice number, version, text); its
+  Down refuses (`THROW 51173`) while any slice exists. Delay flagging (API-31/32) and the schedule screen are not part of it.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
