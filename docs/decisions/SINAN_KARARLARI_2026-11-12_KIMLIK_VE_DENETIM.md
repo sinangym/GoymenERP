@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-12 (yerel hesap, rol atama, reddedilen denemelerin denetim kaydı)
 
-Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D7` kararlarını ekler.
+Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D8` kararlarını ekler.
 `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (tek seferlik kurucu admin) geçerli kalır.
 BS-7'deki "production'da MFA zorunlu" yönü, 2FA zorunluluğu bakımından `KIM-D3` ile şimdilik yerini
 "herkese isteğe bağlı" kararına bırakır (Sinan: "12 Kasım kararı geçerli"); BS-7'nin OIDC/VPN yönü ve
@@ -20,6 +20,9 @@ koordinatör tarafından yazıldı:
   [`6819541595`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6819541595) ve spec #1112
   üzerine. Serbest metin cevaplar aynen: "Gevşek ama ilerde ayarlardan değiştirilebilir" ve
   "Kurulumcu admin her zaman yapabilsin,".
+- [`6820161788`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6820161788)
+  (2026-11-12 09:42Z, 9. tur) madde 4 — AI Merkezi F023-1 üzerine; "(Önerilen)". Madde 1-3 (F-029
+  politika yönetimi) bu dosyanın konusu değildir.
 
 AskUserQuestion seçeneklerinin tam metni koordinatör oturumundadır; aşağıdaki "seçilmeyen" bilgisi #66
 yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
@@ -35,6 +38,7 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | 5 | ID-02/03/06 parola, kilit, oturum değerleri? (8. tur) | Serbest metin: "Gevşek ama ilerde ayarlardan değiştirilebilir" | Koordinatörün yazdığı başlangıç değerleri: parola en az 8 karakter, 10 hatalı denemede kilit, boşta 8 saat; hepsi Ayarlar'dan değişir; sızmış/yasaklı parola listesi ve admin/admin yasağı korunur. Seçilmeyen öneri: 12 karakter, 5 hata/15 dk kilit, boşta 30 dk/mutlak 10 saat. |
 | 6 | ID-04/07/08 Critical liste ve ilk Critical onaylayıcı? (8. tur) | Serbest metin: "Kurulumcu admin her zaman yapabilsin," | Koordinatörün okuması ("geri alınabilir" diye işaretli): kurulumu yapan Admin Critical rol atamasını ikinci kişi onayı olmadan her zaman yapabilir; diğer atayanlarda ikinci onay sürer. Critical işlem listesi seçilmedi. Seçilmeyen öneri (ID-08): kurulumda iki kişi tanımlansın. |
 | 7 | ID-09 admin/admin nerede kabul edilir? (8. tur) | Yalnız bu bilgisayardaki geliştirme ortamı | Repoya, örnek dosyaya, seed'e, appsettings'e yazılmaz; test/canlı ortamda hiç kabul edilmez; başka kullanıcı bağlanmadan önce değiştirilir. |
+| 8 | F023-1 reddedilen deneme kayıtları ne kadar saklanır? (9. tur) | Önerilen | 2 yıl; süre Ayarlar'dan değiştirilebilir; süre dolunca otomatik imha ayrı onayla açılır. |
 
 ## Kararlar
 
@@ -46,15 +50,16 @@ yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır.
 | KIM-D4 | Parola/kilit/oturum başlangıç değerleri | En az 8 karakter, 10 hatalı denemede kilit, boşta 8 saat oturum; hepsi Ayarlar'dan değiştirilebilir. Sızmış/yasaklı parola listesi ve admin/admin yasağı korunur. Kilit süresi, kilidi kim açar, mutlak oturum süresi, karakter sınıfı, periyodik değişim ve hash maliyeti seçilmedi. | Aynı spec, politika tablosu |
 | KIM-D5 | Kurucu Admin istisnası | Kurulumu yapan Admin, Critical rol atamasını ikinci kişi onayı olmadan her zaman yapabilir; diğer atayanlarda ikinci onay sürer. Kaynakta koordinatörün okuması olarak "geri alınabilir" diye işaretlidir. Critical işlem listesi seçilmedi: AI önerisi taslak kalır, etkinleştirme Sinan'ın liste onayını bekler. | Aynı spec, maker-checker bölümü |
 | KIM-D6 | admin/admin | Yalnız Sinan'ın bilgisayarındaki Development ortamında kabul edilir; repoya, örnek dosyaya, seed'e, `appsettings*`'e yazılmaz; test ve canlı ortamda hiç kabul edilmez; başka kullanıcı bağlanmadan önce değiştirilir. Açan ayarın yalnız yerel kullanıcı-gizli dosyasında durması uygulama ayrıntısıdır (geri alınabilir). | Aynı spec, "Varsayılan kimlik bilgisi yasağı" |
-| KIM-D7 | F-023 reddedilen denemeler | Yetki ve iş kuralı retleri dahil reddedilen tüm işlem denemeleri denetim kaydına yazılır (kim, ne zaman, hangi işlem, ret nedeni); kişisel veri/şifre/secret yazılmaz; saklama süresi ayrı politikadır. | `docs/features/AUDIT_REFUSED_ATTEMPTS_F023_SPEC_v1.md` |
+| KIM-D7 | F-023 reddedilen denemeler | Yetki ve iş kuralı retleri dahil reddedilen tüm işlem denemeleri denetim kaydına yazılır (kim, ne zaman, hangi işlem, ret nedeni); kişisel veri/şifre/secret yazılmaz; saklama süresi ayrı politikadır (KIM-D8). | `docs/features/AUDIT_REFUSED_ATTEMPTS_F023_SPEC_v1.md` |
+| KIM-D8 | F-023 saklama | Reddedilen işlem denemesi kayıtları 2 yıl saklanır; süre Ayarlar'dan değiştirilebilir; süre dolunca otomatik imha ayrı onayla açılır (bu karar imhayı açmaz). Ayar adları uygulama ayrıntısıdır (geri alınabilir). | Aynı spec, §Saklama |
 
 ## Sınırlar
 
 - Karara bağlanmayanlar `NEEDS-SINAN` olarak açık kalır: Critical işlem listesi ve `identity.users.manage`'in
   bu listede olup olmadığı (ID-04/07), Critical rol geri alımında iki kişi (ID-05), kilit süresi ve kilidi kim
   açar (ID-03b), oturum mutlak süresi (ID-06b), karakter sınıfı/periyodik değişim/hash maliyeti (ID-02b),
-  F-023 alt soruları (`NEEDS-SINAN-F023-1`…`6`; koordinatör sonraki turda soracak) ve reddedilen denemelerin
-  saklama süresi.
+  F-023 alt soruları (`NEEDS-SINAN-F023-2`…`6`; koordinatör sonraki turda soracak) ve otomatik imhanın
+  açılması (ayrı onay).
 - Bu dosya `OPEN-013`'ü veya başka bir `OPEN-*` kaydını kapatmaz; grant/rol ataması, ilk Admin'in
   oluşturulması, Critical liste etkinleştirmesi veya production aktivasyonu değildir.
 - İnsan kapıları değişmez: deployment, environment, secret, Settings etkinleştirmesi, grant/rol/Critical,

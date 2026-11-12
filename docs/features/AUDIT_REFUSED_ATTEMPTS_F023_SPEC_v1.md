@@ -50,7 +50,8 @@ zorunludur (`AuditEvent.cs` `RequireText`).
 
 ## Kapsam dışı
 
-- Saklama süresi ve imha: **seçilmez** (karar metni: "Saklama süresi ayrı politikadır"). Bkz. `NEEDS-SINAN-F023-1`.
+- Otomatik imha: bu spec açmaz. Saklama süresi 9. turda karara bağlandı (2 yıl, Ayarlar'dan değişir; `KIM-D8`,
+  §Saklama); süre dolunca otomatik imha **ayrı onayla** açılır.
 - İsteklerin hız sınırlaması (rate limiting / throttling). BS-15'te hız sınırı **seçilmedi**; bu spec yalnız kaydın
   hacmini yönetir, isteği engellemez.
 - Başarılı girişler, izin değişikliği, dışa aktarım vb. güvenlik olayları (ADR-SEC-001'in kendi kapsamı).
@@ -78,7 +79,7 @@ davranış "kapalı/yazılmaz"dır):
 
 | ID | Soru | Öneri | Cevapsızken |
 |---|---|---|---|
-| `NEEDS-SINAN-F023-1` | Reddedilen deneme kayıtları ne kadar saklansın? | Öneri yok (karar gereği ayrı politika). Ayar anahtarı hazır: `Audit:RefusedAttempts:Retention:PolicyRef` | Ayar boş; imha yolu yok (v1'de zaten yok) → kayıt silinmez |
+| ~~`NEEDS-SINAN-F023-1`~~ | Reddedilen deneme kayıtları ne kadar saklansın? | **Karar verildi** (#66 `6820161788` m.4, `KIM-D8`): 2 yıl, Ayarlar'dan değişir; otomatik imha ayrı onayla açılır | — |
 | `NEEDS-SINAN-F023-2` | "Denetim kaydı" yetki retleri için güvenlik olayı kanalını da kapsar mı (tek kayıt güvenlik kanalında, denetim ekranı oradan okur)? | **Evet** (§Sınır, seçenek A) | F023-2 yalnız güvenlik kanalına yazar; denetim ekranındaki görünüm (F023-5b) açılmaz |
 | `NEEDS-SINAN-F023-3` | Denetim ekranında yetki retlerini kim görsün: `identity.audit.read` sahibi mi, yoksa yalnız güvenlik olayı okuma izni (aday `platform.security-events.read`) sahibi mi? | Yalnız güvenlik olayı okuma izni (E2 ile tutarlı) | Görünmez |
 | `NEEDS-SINAN-F023-4` | BS-15 toplulaştırması denetim kaydındaki tekrar eden 400/422 retlerine de uygulansın mı? | Evet, aynı desen; değerler ölçümden sonra | Kapalı: her ret ayrı satır |
@@ -210,8 +211,15 @@ ERP-000L §6 üç kanalı ayırır; aynı olgu iki kanala ayrı satır olarak ya
 
 ### Saklama
 
-Seçilmez. `Audit:RefusedAttempts:Retention:PolicyRef` ayar anahtarı tanımlanır, boş kalır; v1'de imha yolu yoktur
-(ADR-009 trigger'ı) ve OPEN-018/021 ADR'si gelene kadar kayıt silinmez. Kod sabiti süre yoktur (`NEEDS-SINAN-F023-1`).
+**Karar (Sinan, #66 `6820161788` m.4, 9. tur; `KIM-D8`):** reddedilen işlem denemesi kayıtları **2 yıl** saklanır;
+süre Ayarlar'dan değiştirilebilir; süre dolunca otomatik imha **ayrı onayla** açılır.
+
+- Ayar: `Audit:RefusedAttempts:Retention:Period` (öneri ad; ISO 8601 süre, başlangıç değeri `P2Y`). Değer Ayarlar
+  kataloğundaki varsayılandır, kod sabiti değildir; Ayarlar ekranından değişir (F-029 politika kataloğu deseni).
+- Ayrı onay anahtarı: `Audit:RefusedAttempts:Retention:AutoDisposalEnabled` (öneri ad), varsayılan `false`. Bu
+  spec imha yolunu **uygulamaz**: v1'de ADR-009 append-only trigger'ı silmeyi engeller. İmha yolu, legal hold ve
+  tür bazlı matris (OPEN-018/021) ayrı ADR + dilimdir; açılması somut Sinan onayı ister.
+- Süre dolan kayıt, imha açılana kadar silinmez; yalnız "süresi dolmuş" olarak raporlanabilir (öneri, F023-5b).
 
 ### Açık gözlem (karar değil)
 
@@ -319,7 +327,7 @@ Mevcut `src/frontend/goymen-erp-web/src/audit/AuditLogPage.tsx` genişler (Claud
 | Dilim | İçerik | Sahip | Sınıf | Bağımlılık |
 |---|---|---|---|---|
 | F023-0 | Kararın `docs/decisions/`'a işlenmesi, NEEDS-SINAN-F023-1…6'nın #66'ya yazılması | ChatGPT/koordinatör | governance | — |
-| F023-1 | `RefusedAttemptV1`, `RefusedAttemptClassesV1`, `AuditOutcomes.Refused`, `AuditEventFactory` kabul listesi, `IRefusedAttemptRecorderV1` (aynı transaction + kısa yazma), yasak alan ve mimari testler, Retention ayar anahtarı (boş) | Codex (Audit) | **K3** (cross-module contract) | — |
+| F023-1 | `RefusedAttemptV1`, `RefusedAttemptClassesV1`, `AuditOutcomes.Refused`, `AuditEventFactory` kabul listesi, `IRefusedAttemptRecorderV1` (aynı transaction + kısa yazma), yasak alan ve mimari testler, Retention ayarları (`P2Y` başlangıç, otomatik imha kapalı) | Codex (Audit) | **K3** (cross-module contract) | — |
 | F023-2 | Yetki retleri: `ErpAuthorizationMiddlewareResultHandler`, `CompanyContextMiddleware`, servis `RequireAsync`/`RequireStillAsync` çiti → `authz.denied` (tek ortak yardımcı) | AI Merkezi + Codex | **K3** (permission/cross-module) | PR #1093 merge; `NEEDS-SINAN-F023-2` |
 | F023-3 | İş kuralı retleri, modül başına ayrı PR; her modülün sahip şeridi kendi modülünü yapar: Purchasing, Sales, Logistics, Product (fiyat listesi), Counterparty, Organization, Settings (`CommandExecution` yolu), Finance, Inventory, Accounting, Manufacturing, Documents, Work. Terminal retlerde `RecordRefusalAsync`'e Enqueue; 422/400/çakışma kısa yazma | Modül sahibi şerit | K2 (kalıp uygulaması; yeni migration/izin yoksa). Para/stok komutunda K3 kapsamına giren değişiklik varsa K3 | F023-1 |
 | F023-4 | Toplulaştırma (`Audit:RefusedAttempts:Aggregation`, boş = kapalı), özet satırı, metrikler | Codex (Audit) | K2 | F023-1, `NEEDS-SINAN-F023-4` (değer girilmeden açılmaz) |
