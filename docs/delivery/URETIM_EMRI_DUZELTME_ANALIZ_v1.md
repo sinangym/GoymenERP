@@ -171,6 +171,12 @@ gösterir: iptalde boşaltılır, yeni emirde yeni kimlikle dolar. Planın emir 
 `Orders.PlanId` sütunundan okunur; iptal edilen emir orada kalır ve silinmez. Bu, iptal edilmemiş emirle sınırlı tekil
 indeksle aynı kuralı tutar (aşağıda): planın en çok bir etkin emri olur, alan da en çok bir emir gösterir.
 
+**Emir iptalinde plan sürümü (yazar okuması, geri alınabilir; #1114 r8 P3-4):** emir iptali plan satırını değiştirir
+(`OrderId` boşalır) ve plan sürümünü **bir ilerletir** (`Version++`; `RecordOrder`'ın aksine). Böylece iptal öncesi
+plan sürümünü taşıyan bir yeniden onay veya plan iptali isteği 409 sürüm çakışmasıyla düşer; yeniden onay iptal
+sonrası durumu adlandırmak zorundadır. Emir iptal komutunun fence'i emrin `ExpectedVersion`'ıdır; plan sürümü
+istekte değil, aynı işlemde ilerletilir. Restore iptali plan sürümü artışıyla birlikte aynen kurar.
+
 **URT-D1 ile uzlaşma:** URT-D1 "tek plan = tek emir" der; URT-D33 bunu iptal edilmiş emir için daraltır. Bir planın
 aynı anda en çok bir **iptal edilmemiş** emri olur. Bugün bu kural tam tekil indeksle (`ManufacturingDbContext.cs:508`,
 `(CompanyId, PlanId)` unique) ve `PlanOrderExists` ret koduyla (`ProductionPlan.cs`, `ProductionOrder.cs`,
@@ -205,7 +211,7 @@ sürümünün etkin ayırmasını kullanır, yoksa reddedilir. Girdi değişmedi
 yeniden ayırır. İkinci bir ayırma yolu açılmaz. Seçilen etiketin sahipliği plan girdisininkiyle aynı olmalıdır: şirket malı yerine şirket
 malı, müşteri malı yerine aynı müşterinin malı; farklıysa reddedilir (URT-D38; karşılaştırma `CommercialContext.PartyId`
 ile, §4.7 (e)). Seçilen etiketlerin serbest kg'ı yetmezse yeniden onay reddedilir, emir açılmaz ve eksik girdiler (ürün, istenen kg, ayrılabilen kg)
-cevapta açıkça gösterilir; kısmi ayırma yoktur. Port kayıtlı değil veya okunamıyorsa yeniden onay reddedilir (fail-closed, kodsuz 503). Cross-module sözleşme ve
+cevapta açıkça gösterilir; kısmi ayırma yoktur. Port kayıtlı değil veya okunamıyorsa yeniden onay reddedilir (fail-closed, 503; alana özgü kod yok, genel `service_unavailable`). Cross-module sözleşme ve
 stok kuralı olduğu için K3'tür.
 
 **Free kg okumasının rolü:** Karar kaynağı her zaman Stok'un ayırma komutudur (all-or-nothing). Free kg okuma portu
@@ -255,7 +261,7 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
 - (d) Yeniden onay (Üretim yazımı) ile Stok ayırması tek işlemde yapılır (bugünkü `ApproveAndAllocateAsync` /
   `RunAsync` katılımcı deseni, `ManufacturingApiV1.cs:1255-1258`). Emir açılışı Stok'a ayırma komutu göndermez; yalnız
   yeniden onaylanan sürümün etkin ayırmasını doğrular (26. tur m.2).
-- (d2) **D5'in yeniden onay adımı (koordinatör kararı (a), r6 oturum mesajı; ayrıntılar yazar okuması, geri alınabilir; r6 review A
+- (d2) **D5'in yeniden onay adımı (koordinatör kararı (a), r6 oturum mesajı, #66 makbuzu [`6825123320`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6825123320); ayrıntılar yazar okuması, geri alınabilir; r6 review A
   `6824391793` / B `6824411703` P2):** D5 minimal yeniden
   onay adımını kendisi getirir; D5b'ye kadar fail-closed bekletmez. Main'deki onay bunu taşımaz: `ApplyApproval` →
   `RequireApprovable` yalnız Taslak planı onaylar (`ProductionPlan.cs:777-793`, `PlanNotDraft`), onaylayan/zaman ve
@@ -269,11 +275,14 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
     okuması (geri alınabilir): durum Stok'un okuma portundan okunur —
     `IInventoryManufacturingPlanAllocationReadPortV1.GetForPlanAsync(planId)` → planın herhangi bir ayırması
     `Status = Active` ise ret (`InventoryManufacturingPlanAllocationContractsV1.cs`, B-01 m.4). Port kayıtlı değil,
-    okunamıyor veya beklenmeyen durum dönüyorsa ret (fail-closed, kodsuz 503). Bu port Üretim'in açık işlemine katılmaz;
-    okuma ile ayırma arasındaki yarışı aynı işlemdeki Stok ayırma katılımcısı kapatır (etkin ayırma tekilliği ve Free kg
-    kuralı). Katılımcının aynı plan için etkin ayırma varken yeni ayırmayı aynı işlemde reddettiği D5 PR'ında gerçek
-    SQL testiyle kanıtlanır; reddetmiyorsa D5, Stok'tan işleme katılan bir kontrol ister ve bu Stok'un işidir (Stok ile
-    koordinasyon, D5 başlamadan). İstekte planın `ExpectedVersion`'ı (fence), `Version++`; durum Onaylı kalır (URT-D33). Girdiler, yeniden
+    okunamıyor veya beklenmeyen durum dönüyorsa ret (fail-closed, 503; alana özgü kod yok, genel `service_unavailable`
+    — `ProducesErpServiceUnavailable`, `ErpOpenApiContract.cs:537-547`). Bu port Üretim'in açık işlemine katılmaz; okuma
+    ile ayırma arasındaki yarış plan satırında kapanır: bir planın ayırmasını yalnız o planın (yeniden) onayı yaratır ve
+    her biri plan satırını sürüm belirteci (`Version`, concurrency token) ve `RowVersion` ile yazar
+    (`ManufacturingDbContext.cs:240-241`). Aynı planın iki yeniden onayından biri sürüm çakışmasıyla düşer, böylece port
+    okumasıyla ayırma arasında aynı plana ikinci bir ayırma giremez. Aynı işlemdeki Stok ayırma katılımcısının etkin
+    ayırma tekilliği ve Free kg kuralı ek savunmadır; yeniden onay–yeniden onay yarışı D5 PR'ında gerçek SQL testiyle
+    gösterilir ((f)). Stok'tan işleme katılan ayrı bir kontrol gerekmez. İstekte planın `ExpectedVersion`'ı (fence), `Version++`; durum Onaylı kalır (URT-D33). Girdiler, yeniden
     hesap ve revizyon yoktur. URT-D2: yeniden onaylayan planı hazırlayandan farklıdır.
   - **Append-only onay kuşağı kaydı** (ör. `PlanReapprovals`; `PlanRevisions` / `PlanRejections` deseni): her kuşağın
     kendi onaylayanı, zamanı, ürettiği plan sürümü ve snapshot'ı vardır; ilk onay alanları hiç değişmez. Restore
@@ -293,17 +302,28 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
       `EffectiveThrough`) + yalnız profilin kendi değerleri (`PlanParameterValueV1.Source` null olanlar; anahtar, birim,
       sayı/seçim). Karşılaştırma dışı: `SelectedForDate` (onay günü damgasıdır, ayar değildir) ve plana girilmiş
       değerler (`Source = "Plan"`, URT-D9; planın sürümüyle gelir, yeniden onay girdileri değiştirmez).
+    - **Plan girişli anahtarlar (#1114 r8 A/B ortak P3).** Main'de `WithPlanValue` plan girişli anahtarda profilin
+      değerini siler ve yerine plan değerini koyar (`PlanParameterSnapshotV1.cs:163-171`, onayda
+      `ProductionPlan.cs:485`). Saklı snapshot'ta o anahtarın profil değeri yoktur; bugünkü profilde ise aynı anahtar
+      `Source` null ile gelir. Yalnız `Source` null değerleri karşılaştırmak, plan girişli değeri olan her planı (ör.
+      hat hızı girilmiş Dilme planı) hep reddeder. Kural: saklı snapshot'ta `Source = "Plan"` olan anahtarlar **iki
+      taraftan da** düşülür, kalan anahtarlar karşılaştırılır. Bu anahtarlardaki profil değişikliği yalnız
+      `ProfileVersion` ile yakalanır. **Zayıflık:** `Source = Catalog` profillerinde sürüm hep `"0"`dır; katalogda bu
+      anahtarın değeri değişirse yeniden onay bunu göremez. Bu kabul edilen bir sınırdır; anahtarın değeri zaten plandan
+      gelir ve yeniden onay girdileri değiştirmez.
     - Yeniden onay günü için Settings farklı bir profil veya pencere seçiyorsa (başka `ProfileId`/`ProfileVersion`,
       başka geçerlilik aralığı) ret.
     - İlk kuşağın snapshot'ı null ise ret (U1-b öncesi onay, profilsiz süreç, snapshot'sız onay). Bu durumda yeniden
-      onaya izin verilip verilmeyeceği iş sorusudur: **NEEDS-SINAN adayı** (#66): "Ayar snapshot'ı olmayan (eski) planda
+      onaya izin verilip verilmeyeceği iş sorusudur: **NEEDS-SINAN adayı** (#66 [`6824861342`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6824861342)): "Ayar snapshot'ı olmayan (eski) planda
       iptal sonrası yeniden onaya izin verilsin mi?" Cevaba kadar fail-closed ret.
     - Null ↔ dolu geçişi (ilk kuşakta snapshot yok, bugün profil var veya tersi) "değişti" sayılır ve ret.
     - Kopya kuşak ilk kuşağın `SelectedForDate` değerini korur; yeniden onay günü kuşak kaydının onay zamanında durur.
     - Problem kodu **yazar önerisi** (ad D5 PR'ında kesinleşir): `manufacturing_plan_reapproval_settings_changed` (domain kodu
       `ManufacturingRuleCodes.PlanReapprovalSettingsChanged`), **422**. Main eşlemesinde `ManufacturingRuleCodes`
       domain kuralları 422'dir (`ManufacturingEndpoints.cs:897-915`, ör. `manufacturing_plan_parameters_unavailable`);
-      409 yalnız sürüm/eşzamanlılık çakışmasıdır (`ExpectedVersion`). Ayarın değişmiş olması aynı istekle tekrar
+      409 çakışma kümesidir: sürüm/eşzamanlılık (`ExpectedVersion`, `ConcurrentChange`), `idempotency_conflict`,
+      `CommercialContextVersionConflict`, bağlantı ucunda `PlanSalesOrderLinkChanged` (`ManufacturingEndpoints.cs:45-60`,
+      `:129-133`). Ayarın değişmiş olması aynı istekle tekrar
       denenince değişmeyen bir kural reddidir, çakışma değildir.
   - **Komut yüzeyi (yazar önerisi, ad ve ayrıntı D5 PR'ında kesinleşir).** Uç `POST
     /api/v1/manufacturing/plans/{planId}/reapproval` (mevcut `/approval` ucunun yanında, `ManufacturingEndpoints.cs:268`),
@@ -380,11 +400,13 @@ D5 için gerekenler (yazar okuması, geri alınabilir teknik ayrıntı; Stok pol
   reddedilir; yeniden onaylayan = hazırlayan reddedilir; ilk onay izi (onaylayan, zaman, snapshot) bozulmadan kalır;
   Restore iki kuşakla çalışır; pozitif kopya: aynı ayarlarla yeniden onay yeni kuşağı ilk kuşağın değerleri ve
   `SelectedForDate`'iyle yazar, API-14 son onayı ve onay geçmişini iki kuşakla gösterir; URT-D39: başka günde aynı
-  ayarlarla yeniden onay kabul edilir; profil sürümü veya geçerlilik penceresi değişince `manufacturing_plan_reapproval_settings_changed` ile ret
+  ayarlarla yeniden onay kabul edilir; hat hızı girilmiş Dilme planı aynı profille başka günde yeniden onaylanır
+  (plan girişli anahtar iki taraftan düşülür) ve kabul edilir; profil sürümü veya geçerlilik penceresi değişince `manufacturing_plan_reapproval_settings_changed` ile ret
   ve eski snapshot korunur; ilk kuşak snapshot'ı null ise ret; profil okunamazsa ret; `SlittingApprovalGate`
   başarısızsa ret ve ayırma yapılmaz; ön koşul: emri olmayan ama ayırması etkin plan reddedilir, Stok okuma portu
-  okunamazsa ret; iptal edilen emirden sonra yeniden onay olmadan emir açılışı reddedilir; plan iptalinde plan sürümü
-  artar ve Restore iptal sonrası durumu (kuşaklar + iptal) aynen kurar; aynı `Idempotency-Key` ile tekrar istek replay
+  okunamazsa ret; iptal edilen emirden sonra yeniden onay olmadan emir açılışı reddedilir; emir iptalinde
+  (`OrderId` boşalırken) plan sürümü bir artar, iptal öncesi plan sürümüyle yeniden onay 409 sürüm çakışmasıyla
+  reddedilir ve Restore emir iptali sonrası durumu (plan sürümü, boş `OrderId`, onay kuşakları) aynen kurar; aynı `Idempotency-Key` ile tekrar istek replay
   edilir (200 ve terminal ret), farklı gövdeyle aynı anahtar reddedilir;
   iptal ile yeniden onay arasında etiketin başka talebe ayrılması ve yeniden onayın tutarlı reddi; gerçek SQL yarışları:
   yeniden onay–yeniden onay, yeniden onay–plan iptali, yeniden onay–emir açma.
