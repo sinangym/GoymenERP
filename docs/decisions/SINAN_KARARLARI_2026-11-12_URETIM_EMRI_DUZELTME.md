@@ -11,9 +11,9 @@ tedarikten ayırma) Alış/Satış şeridinin, 4. madde (KLN-D20, ters e-İrsali
 olarak yazılmaz.
 
 **Kaynak (fire maliyeti):** Aynı gün Issue #66 yorumu
-[`6818566934`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6818566934), madde 4. Bu madde SAT-D307
-(3)'ü cevaplar. Kimliği Satış/Stok serisindedir; burada yalnız Üretim tarafındaki uygulaması kaydedilir (§Bağlı
-kararlar).
+[`6818566934`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6818566934), madde 4. Stok şeridi bu maddeyi **SAT-D308** olarak
+`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md` (#1108) dosyasında yazar; SAT-D307 (3)'teki açık
+notu cevaplar. Burada karar olarak yeniden yazılmaz, yalnız Üretim tarafındaki uygulaması kaydedilir (§Bağlı kararlar).
 
 ## Soru ve cevaplar
 
@@ -49,7 +49,7 @@ emir iptal edilebilir.
 
 | Kimlik | Karar | Üretim tarafındaki uygulama |
 |---|---|---|
-| SAT-D307 (3) | Fire maliyete yükleme anahtarı **kapalıyken** fire ürün maliyetine yüklenmez; **ayrı fire/dönem gideri** olarak raporlanır. Anahtar açıkken SAT-D307 (1)-(2) geçerlidir. | Üretim alış maliyeti hesaplayıcısı: anahtar kapalıyken kg maliyeti = net girdi maliyeti / tüketilen kg; fire ve işlem kaybının payı ayrı tutar olarak döner. Gider raporu Stok/Finans'ındır. |
+| SAT-D308 (#1108; SAT-D307 (3) notunu cevaplar) | Fire maliyete yükleme anahtarı **kapalıyken** fire ürün maliyetine yüklenmez; **ayrı fire/dönem gideri** olarak raporlanır. Anahtar açıkken SAT-D307 (1)-(2) geçerlidir. Hesap eşlemesi `NEEDS-SPEC`; gelene kadar gider kaydı açılmaz, yalnız raporlanır. | Üretim alış maliyeti hesaplayıcısı: anahtar kapalıyken kg maliyeti = net girdi maliyeti / tüketilen kg; fire ve işlem kaybının payı ayrı tutar olarak döner. Formül okuması K3'tür, kod PR'ı golden örnek taşır. Stok bu tutarı ortalamaya katmaz, maliyet portunda ayrı alan olarak taşır. |
 
 ## Sınırlar
 
@@ -57,6 +57,7 @@ emir iptal edilebilir.
   ayrılmış çıktı) kilit sayılıp sayılmadığı, kapalı emirde düzeltme ve iptal edilen emrin planına ne olacağı bu kararda
   yoktur. Bunlar analiz belgesinin §9'unda `NEEDS-SINAN` olarak sorulur ve Issue #66'ya yazılır.
 - Yeni yetki adları (düzeltme, iptal) yalnız kayıt olarak eklenir. Rol, grant ve Critical işaretleme insan kapısıdır.
+- SAT-D308 kimliği #1108 merge edilince kesinleşir. #1108 kimliği değiştirirse bu dosyadaki atıf düzeltilir.
 - Dağıtım, ortam, secret, Ayarlar etkinleştirme, grant/rol/Critical, production etkinleştirme
   (`production.execution.enabled`), `OPEN-*` kapatma ve `.claude/settings.json` insan kapıları değişmez. URT-D29
   OPEN-007'yi kapatmaz.

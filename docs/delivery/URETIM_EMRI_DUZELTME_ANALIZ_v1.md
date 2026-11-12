@@ -112,7 +112,7 @@ geri alır, sonra iptal eder. Bu, Sinan'ın "hammadde eski miktarına ulaşınca
 ve olguları silinmez. Ekranda iptal edilmiş emir ayrı süzgeçle görünür. İptal edilen emrin planına ne olacağı §9
 N4'tür.
 
-### 4.8 Ortalama maliyete etkisi (SAT-D305 / SAT-D307)
+### 4.8 Ortalama maliyete etkisi (SAT-D305 / SAT-D307 / SAT-D308)
 
 - Üretim alış maliyeti yalnız **kapalı** emirde hesaplanır (Stok cevabı 2). Düzeltme ve iptal yalnız **açık** emirde
   yapılır. Bu yüzden geri alınan çıktı henüz bir maliyetle ortalamaya girmemiştir. Ters hareketin ortalamaya etkisi
@@ -120,7 +120,7 @@ N4'tür.
   diliminde doğrular.
 - Girdi iadesi bugünkü kurala bağlıdır: iade, bağlı olduğu çıkışın damgalı maliyetiyle girer (Stok cevabı 3,
   `OPEN-INV-AVGCOST-RETURN`).
-- Hesaplayıcı (SAT-D307) net çıktıyı ve net iadeyi kullanır. Ters olgular girdi listesine net olarak yansır.
+- Hesaplayıcı (SAT-D307; anahtar kapalıyken SAT-D308, #1108) net çıktıyı ve net iadeyi kullanır. Ters olgular girdi listesine net olarak yansır.
 
 ## 5. Yol haritası (dilim sırası)
 
