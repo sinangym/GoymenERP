@@ -1219,26 +1219,31 @@ public sealed partial class ManufacturingCommandService(
                     }
 
                     snapshot = parameters.Snapshot;
+                    // TAKIP-U3a (#1004): without the allocation port nothing can allocate the plan's inputs, so the
+                    // approval refuses (503) before Inventory is read instead of approving unallocated (no fail-open).
+                    if (planAllocations is null)
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                            ManufacturingPlanAllocationCodesV1.Incomplete);
+                    }
+
                     // U3-a (URT-D21, URT-D3): the plan's inputs are allocated with the approval, at the label version
                     // Inventory holds NOW (another plan's or a sale's allocation of the same label moves it).
-                    if (planAllocations is not null)
+                    var versions = await ReadCurrentLabelVersionsAsync(current, permission, companyId, actor,
+                        cancellationToken);
+                    if (versions.Refusal is not null)
                     {
-                        var versions = await ReadCurrentLabelVersionsAsync(current, permission, companyId, actor,
-                            cancellationToken);
-                        if (versions.Refusal is not null)
-                        {
-                            return Refusal<PlanViewV1>(versions.Refusal);
-                        }
-
-                        labelVersions = versions.Versions!;
+                        return Refusal<PlanViewV1>(versions.Refusal);
                     }
+
+                    labelVersions = versions.Versions!;
 
                     // U2-a: a plan with a slitting spec reads each parent roll's CURRENT label state from Inventory
                     // (the existing parent-roll read ports) for the gate's labelState; a blocked or unusable roll refuses.
                     if (current.Spec is not null)
                     {
                         var labels = await ReadLabelUsabilityAsync(current, permission, companyId, actor,
-                            cancellationToken, planAllocations is null ? null : labelVersions);
+                            cancellationToken, labelVersions);
                         if (labels.Refusal is not null)
                         {
                             return Refusal<PlanViewV1>(labels.Refusal);
@@ -1249,9 +1254,22 @@ public sealed partial class ManufacturingCommandService(
 
                 }
 
+                // TAKIP-U3a P3-1: without the port the store runs only when the stored state already refuses the
+                // approval for good: a newer version than requested, or the requested version in a non-draft status
+                // (every transition bumps the version). A missing plan or an older stored version could still become
+                // the requested draft before the store's write, so it answers 503 like the draft itself (no
+                // unallocated approval through a race, and no recorded not-found for a plan saved later).
+                if (planAllocations is null && !(current is not null && (current.Version > request.ExpectedVersion
+                    || (current.Version == request.ExpectedVersion && current.Status != PlanStatus.Draft))))
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
                 var approvedAt = timeProvider.GetUtcNow();
                 Task<ProductionPlan> Approve(CancellationToken token) => plans.ApprovePlanAsync(planId,
                     request.ExpectedVersion, actor, approvedAt, snapshot, labelUsable, metadata, token);
+                // Without the port only a plan the stored state already refuses for good reaches the store here.
                 var approved = planAllocations is null
                     ? await Approve(cancellationToken)
                     : await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Approve, metadata,
@@ -1774,10 +1792,16 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 // U3-a (URT-D21): the plan's allocation remainder is released with the order's closure.
-                _ = planAllocations is null
-                    ? await Close(cancellationToken)
-                    : await planAllocations.WriteAndReleaseAsync(current.PlanId,
-                        ManufacturingPlanAllocationReleaseReasonV1.OrderClosed, Close, metadata, cancellationToken);
+                // TAKIP-U3a (#1004): without the allocation port nothing can release it, so the closure refuses (503)
+                // before the order store runs instead of closing without releasing (no fail-open).
+                if (planAllocations is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
+                _ = await planAllocations.WriteAndReleaseAsync(current.PlanId,
+                    ManufacturingPlanAllocationReleaseReasonV1.OrderClosed, Close, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken,
             storedAnswerPermission: exceptionReason is null ? null : exceptionApprovalPermission ?? string.Empty);
