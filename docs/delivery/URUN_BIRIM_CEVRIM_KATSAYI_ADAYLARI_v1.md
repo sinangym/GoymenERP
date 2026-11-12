@@ -46,6 +46,8 @@ listesindedir (#66 6806641583); değerler Ayarlar'dan değişir.
 | F-D | Boru/profil kg ↔ adet | F-C + parça boyu | `adet başına kg = metre başına kg × boy` |
 | F-E | Paket içi adet (**formül değil, sabit sınıf**) | paket standardı (adet/paket) | öneri planda değişebilir (URT-D27); zincir: paket → adet (F-E) → kg (F-A/F-D) |
 
+F-C/F-D uygulaması (B-08): yalnız yuvarlak boru için formül vardır — kesit alanı `π × t × (D − t)` mm² (D dış çap, t et kalınlığı; `2t > D` reddedilir). Kutu/dikdörtgen profilde köşe formülü yoktur; metre başına kg ürünün "Ebat/kalınlık" tablosundan gelir (Sinan, #66 6810051185 m.21). Yuvarlak boru için tabloda satır varsa tablo değeri esastır; formül sonucu yalnız satır yoksa öneri/hesap olarak kullanılır (Sinan, #66 6810163182 m.24). Kesit alanının iç hesapta mm² tutulması `ASSUMPTION-U08-SECTION-AREA-MM2`'dir (geri alınabilir teknik ayar).
+
 Birim tutarlılığı (aday; ölçek hatasını önlemek için implementasyon bu tabloyu açıkça uygular):
 
 | Büyüklük | Girdi birimi (aday) | Ara/sonuç birimi |
