@@ -1363,10 +1363,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // API-23: the payment reversal maker-checker writer has the same shape as the allocation writer. SqlClient
                 // is referenced only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
+                // Re-fingerprinted for the #66 round-20 reversal date rule: one PolicyRefusal arm
+                // (finance_reversal_before_payment); same SqlClient use (a2b0ef1a... -> 11231d88...).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/PaymentReversalProposalService.cs"] =
                     new(
-                        "a2b0ef1a2acc1c3ff220816a6a4365af97d37ddbe255e3345c96b5b1f5b5b096",
+                        "11231d8857d19f4ff642e41df218ca528f2c1f0384afece577711d9e94a15a38",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
