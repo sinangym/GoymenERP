@@ -274,8 +274,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
             // API-23: +3 payment reversal facts, ordinal-sorted (36413356… -> 4684446d…).
+            // API-23 review A: +4 facts (allocation/approval race, double approval, reused key and lost grant, HTTP
+            // company scope), ordinal-sorted (4684446d… -> 96fd63e4…).
             ["tools/relational_inventory/finance.txt"] =
-                "4684446d189159731ae104479a7697d48d2cdb6f0257b7ecda497a1848c44d2c",
+                "96fd63e47fb2e9398d706b4725534cca9c8b7ba50c83ca47dcbfc68292264d5e",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).

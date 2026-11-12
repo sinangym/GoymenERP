@@ -23,6 +23,7 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
 {
     private const string Maker = "SENTETIK-reversal-maker";
     private const string Checker = "SENTETIK-reversal-checker";
+    private const string SecondChecker = "SENTETIK-reversal-second-checker";
     private const string BeforePaymentReversals = "20261107154419_AddPaymentAllocations";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid Lira = Guid.Parse("7c3f1f72-8d4c-4e9f-a021-3c4d5e6f7101");
@@ -108,7 +109,7 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
             && issue.Field == "paymentId");
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PaymentAllocations"));
 
-        // Allocated first: approval refuses while the allocation is active and appends nothing.
+        // Allocated first: the proposal is refused while the allocation is active and nothing is appended.
         var allocated = await run.RecordPaymentAsync("100.00");
         Assert.Equal(CommandOutcome.Succeeded,
             (await run.AllocateAsync("allocate-a", allocated, item, "40")).Outcome);
@@ -118,6 +119,122 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
         Assert.Equal("60.00", await run.ScalarAsync<string>(
             "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
             ("@id", allocated)));
+    }
+
+    /// <summary>
+    /// Review A P2-1: a first allocation of the payment and the approval of its pending reversal both read "no
+    /// allocation" and race on the save. Exactly one commits completely; the other is the key's "concurrent_change"
+    /// conflict and leaves nothing behind (no half allocation, no counter-event next to an allocation).
+    /// </summary>
+    [SqlServerFact]
+    public async Task Concurrent_allocation_create_and_payment_reversal_approval_commit_exactly_one_complete_outcome()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = await run.AdmitPayableAsync("400.00");
+        var item = invoice.Installments[0].OpenItemId;
+        var payment = await run.RecordPaymentAsync("100.00");
+        var proposal = await run.ProposeAsync(Maker, "race-propose", payment);
+        Assert.Equal(CommandOutcome.Succeeded, proposal.Outcome);
+        var proposalId = proposal.Resource!.Id;
+
+        using var finalFence = new Barrier(2);
+        var allocation = Task.Run(() => run.AllocateAsync("race-allocate", payment, item, "40",
+            new FinalWriteBarrierPermission(FinanceAction.WriteAllocation, 2, finalFence)));
+        var approval = Task.Run(() => run.ApproveAsync(Checker, "race-approve", proposalId,
+            new FinalWriteBarrierPermission(FinanceAction.ApprovePaymentReversal, 3, finalFence)));
+        await Task.WhenAll(allocation, approval);
+        CommandOutcome[] outcomes = [allocation.Result.Outcome, approval.Result.Outcome];
+
+        Assert.Single(outcomes, outcome => outcome == CommandOutcome.Succeeded);
+        Assert.Single(outcomes, outcome => outcome == CommandOutcome.VersionConflict);
+        var allocationWon = allocation.Result.Outcome == CommandOutcome.Succeeded;
+        var loserIssues = allocationWon ? approval.Result.Issues : allocation.Result.Issues;
+        Assert.Equal("concurrent_change", Assert.Single(loserIssues).Code);
+
+        Assert.Equal(allocationWon ? "60.00" : "0.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.PaymentAllocationStates WHERE PaymentId = @id",
+            ("@id", payment)));
+        Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentAllocations WHERE PaymentId = @id", ("@id", payment)));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals WHERE PaymentId = @id", ("@id", payment)));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT Status FROM finance.PaymentReversalProposals WHERE Id = @id", ("@id", proposalId)));
+        Assert.Equal(allocationWon ? "360.00" : "400.00", await run.ScalarAsync<string>(
+            "SELECT OutstandingAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", item)));
+        Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = N'finance.payment-allocation.create.v1'"));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @name",
+            ("@name", PaymentReversalProposalService.ApproveCommand)));
+    }
+
+    /// <summary>
+    /// Review A P2-1: two different checkers approve the same pending proposal at the same time. Exactly one
+    /// counter-event is appended; the other approval is the "concurrent_change" conflict with no second row.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Two_concurrent_payment_reversal_approvals_append_exactly_one_counter_event()
+    {
+        await using var run = await Run.StartAsync();
+        var payment = await run.RecordPaymentAsync("100.00");
+        var proposal = await run.ProposeAsync(Maker, "double-propose", payment);
+        Assert.Equal(CommandOutcome.Succeeded, proposal.Outcome);
+        var proposalId = proposal.Resource!.Id;
+
+        using var finalFence = new Barrier(2);
+        var first = Task.Run(() => run.ApproveAsync(Checker, "double-approve-1", proposalId,
+            new FinalWriteBarrierPermission(FinanceAction.ApprovePaymentReversal, 3, finalFence)));
+        var second = Task.Run(() => run.ApproveAsync(SecondChecker, "double-approve-2", proposalId,
+            new FinalWriteBarrierPermission(FinanceAction.ApprovePaymentReversal, 3, finalFence)));
+        await Task.WhenAll(first, second);
+        CommandOutcome[] outcomes = [first.Result.Outcome, second.Result.Outcome];
+
+        Assert.Single(outcomes, outcome => outcome == CommandOutcome.Succeeded);
+        Assert.Single(outcomes, outcome => outcome == CommandOutcome.VersionConflict);
+        var loser = first.Result.Outcome == CommandOutcome.Succeeded ? second.Result : first.Result;
+        Assert.Equal("concurrent_change", Assert.Single(loser.Issues).Code);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals WHERE PaymentId = @id", ("@id", payment)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE Id = @id AND Status = 1", ("@id", proposalId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @name",
+            ("@name", PaymentReversalProposalService.ApproveCommand)));
+    }
+
+    /// <summary>
+    /// Review A P3: a key reused for another payment is the idempotency conflict and stores no second proposal; an
+    /// approve grant lost at the fence right before the save (the third approval check) is "denied" and writes no
+    /// counter-event, no decision and no command, so the proposal stays pending for a later checker.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_reused_key_is_an_idempotency_conflict_and_an_approve_grant_lost_before_the_save_writes_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var payment = await run.RecordPaymentAsync("100.00");
+        var other = await run.RecordPaymentAsync("50.00");
+        var proposal = await run.ProposeAsync(Maker, "reuse", payment);
+        Assert.Equal(CommandOutcome.Succeeded, proposal.Outcome);
+
+        var reused = await run.ProposeAsync(Maker, "reuse", other);
+        Assert.Equal(CommandOutcome.IdempotencyConflict, reused.Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE PaymentId = @id", ("@id", other)));
+
+        var lost = await run.ApproveAsync(Checker, "lost-grant", proposal.Resource!.Id,
+            new DenyAtCheckPermission(FinanceAction.ApprovePaymentReversal, 3));
+        Assert.Equal(CommandOutcome.Denied, lost.Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE Id = @id AND Status = 0 AND DecidedBy IS NULL",
+            ("@id", proposal.Resource.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @name",
+            ("@name", PaymentReversalProposalService.ApproveCommand)));
+
+        var approved = await run.ApproveAsync(Checker, "after-lost-grant", proposal.Resource.Id);
+        Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
     }
 
     [SqlServerFact]
@@ -247,18 +364,19 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
                 new ProposePaymentReversalRequest(payment, "3", DateOnly.FromDateTime(DateTime.UtcNow),
                     "SENTETIK banka iadesi"), CancellationToken.None));
 
-        public Task<PaymentReversalProposalCommandResult> ApproveAsync(string actor, string key, Guid proposal) =>
+        public Task<PaymentReversalProposalCommandResult> ApproveAsync(string actor, string key, Guid proposal,
+            IFinancePermissionPort? permissions = null) =>
             WithReversalAsync(actor, (service, context) => service.ApproveAsync(context,
                 new CommandMetadata($"api23-{key}"), new ApprovePaymentReversalRequest(proposal, "1"),
-                CancellationToken.None));
+                CancellationToken.None), permissions);
 
         public async Task<FinancePaymentAllocationCommandResult> AllocateAsync(string key, Guid payment, Guid openItem,
-            string amount)
+            string amount, IFinancePermissionPort? permissions = null)
         {
             var (companyContext, collector) = Scope();
             await using var dbContext = new FinanceDbContext(Options(companyContext, collector), companyContext);
             var service = new FinancePaymentAllocationService(dbContext, companyContext, new FixedCurrentUser(Maker),
-                new SyntheticPermissions(), collector,
+                permissions ?? new SyntheticPermissions(), collector,
                 new FinanceAuditEnvelope("synthetic.finance.allocations.write", ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System);
             var current = await dbContext.OpenItems.AsNoTracking().SingleAsync(row => row.Id == openItem);
@@ -318,14 +436,15 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
         }
 
         private async Task<PaymentReversalProposalCommandResult> WithReversalAsync(string actor,
-            Func<PaymentReversalProposalService, FinanceContext, Task<PaymentReversalProposalCommandResult>> call)
+            Func<PaymentReversalProposalService, FinanceContext, Task<PaymentReversalProposalCommandResult>> call,
+            IFinancePermissionPort? permissions = null)
         {
             var (companyContext, collector) = Scope();
             await using var dbContext = new FinanceDbContext(Options(companyContext, collector), companyContext);
             var envelope = new FinanceAuditEnvelope("synthetic.finance.payment-reversals.write", ["SENTETIK-FINANCE"],
                 "Web");
             var service = new PaymentReversalProposalService(dbContext, companyContext, new FixedCurrentUser(actor),
-                new SyntheticPermissions(), new OpenPeriod(), collector,
+                permissions ?? new SyntheticPermissions(), new OpenPeriod(), collector,
                 new FinancePaymentReversalEnvelopes(envelope, envelope), TimeProvider.System);
             return await call(service, new FinanceContext(CompanyA, actor, $"api23-{Guid.NewGuid():N}", null));
         }
@@ -379,6 +498,42 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>
+    /// SENTETIK: allows every fence and holds the <paramref name="waitAtCheck"/>-th check of <paramref name="action"/>
+    /// (the fence right before the single save) until the other writer reaches its own final fence, so both commands
+    /// read the same state and race on the save. Not a grant.
+    /// </summary>
+    private sealed class FinalWriteBarrierPermission(FinanceAction action, int waitAtCheck, Barrier barrier)
+        : IFinancePermissionPort
+    {
+        private int checkCount;
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction requestedAction,
+            Guid? sourceId, CancellationToken cancellationToken)
+        {
+            if (requestedAction == action && Interlocked.Increment(ref checkCount) == waitAtCheck
+                && !barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+            {
+                throw new TimeoutException("The concurrent Finance writers did not reach the final save fence.");
+            }
+
+            return Task.FromResult(PermissionDecision.Allowed);
+        }
+    }
+
+    /// <summary>SENTETIK: allows every fence except the <paramref name="denyAtCheck"/>-th check of
+    /// <paramref name="action"/>, which is denied (a grant revoked mid-command). Not a grant.</summary>
+    private sealed class DenyAtCheckPermission(FinanceAction action, int denyAtCheck) : IFinancePermissionPort
+    {
+        private int checkCount;
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction requestedAction,
+            Guid? sourceId, CancellationToken cancellationToken) =>
+            Task.FromResult(requestedAction == action && Interlocked.Increment(ref checkCount) == denyAtCheck
+                ? PermissionDecision.Denied
+                : PermissionDecision.Allowed);
     }
 
     /// <summary>SENTETIK: the record period is open.</summary>
