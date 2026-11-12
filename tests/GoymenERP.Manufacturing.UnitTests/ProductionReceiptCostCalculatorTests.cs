@@ -62,6 +62,7 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Equal(40000m / 950m, result.CostPerKg);
         Assert.Equal(0m, result.WeighedScrapExpense);
         Assert.Equal(20m, result.ProcessLossKg);
+        Assert.Equal(20m / 1000m, result.ProcessLossRatio);
     }
 
     [Fact]
@@ -85,6 +86,7 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Equal(39500m / 950m, result.CostPerKg);
         Assert.Equal(500m, result.WeighedScrapExpense);
         Assert.Equal(0m, result.ProcessLossKg);
+        Assert.Equal(0m, result.ProcessLossRatio);
         Assert.Equal(ProductionReceiptCostCodesV1.BasisWithoutScrap, result.CostBasis);
         Assert.Null(result.UnreadableCode);
     }
@@ -107,12 +109,19 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
-    public void Scrap_out_of_cost_with_unmeasured_process_loss_is_unreadable_until_its_value_is_decided()
+    public void Scrap_out_of_cost_values_the_process_loss_at_zero_and_reports_its_kilograms_and_ratio()
     {
-        // 1000 kg consumed, 950 kg produced, 30 kg weighed: the 20 kg loss line has no decided value (NEEDS-SINAN).
-        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
-            weighedScrap: 30m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(10m))),
-            ProductionReceiptCostCodesV1.ProcessLossUnpriced);
+        // Sinan #66 6826763903 (c): 1000 kg consumed, 950 kg produced, 30 kg weighed scrap at 10 TL/kg = 300 TL
+        // expense; the 20 kg unmeasured loss has value zero, so its cost stays on the product: (40000 - 300) / 950.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 30m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(10m)));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+        Assert.Equal(39700m / 950m, result.CostPerKg);
+        Assert.Equal(300m, result.WeighedScrapExpense);
+        Assert.Equal(20m, result.ProcessLossKg);
+        Assert.Equal(20m / 1000m, result.ProcessLossRatio);
+        Assert.Equal(ProductionReceiptCostCodesV1.BasisWithoutScrap, result.CostBasis);
     }
 
     [Fact]
@@ -177,6 +186,9 @@ public sealed class ProductionReceiptCostCalculatorTests
 
         Assert.Equal(ProductionReceiptCostStatus.Pending, result.Status);
         Assert.Null(result.CostPerKg);
+        Assert.Null(result.WeighedScrapExpense);
+        Assert.Null(result.ProcessLossKg);
+        Assert.Null(result.ProcessLossRatio);
         Assert.Null(result.CostBasis);
     }
 
@@ -291,6 +303,7 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Null(result.CostPerKg);
         Assert.Null(result.WeighedScrapExpense);
         Assert.Null(result.ProcessLossKg);
+        Assert.Null(result.ProcessLossRatio);
         Assert.Null(result.CostBasis);
     }
 }

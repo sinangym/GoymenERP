@@ -43,9 +43,10 @@ public enum ScrapPriceReadStatus
 
 /// <summary>
 /// The scrap (sale / recycling) price in TL per kg that values the weighed scrap when scrap is out of cost
-/// (Sinan #66 6826603722 (a)). The calculator takes it as an explicit input and never picks a value or a source:
-/// where the price comes from is NEEDS-SINAN (same comment). <see cref="TlPerKg"/> is set only for
-/// <see cref="ScrapPriceReadStatus.Value"/>.
+/// (Sinan #66 6826603722 (a)). It is the period's (monthly) scrap price entered by hand in TL per kg; a closed
+/// period's price does not change, and a missing price is unreadable (Sinan #66 6826763903 (d)). The calculator
+/// takes it as an explicit input and never picks a value: the caller reads the price of the receipt's period.
+/// <see cref="TlPerKg"/> is set only for <see cref="ScrapPriceReadStatus.Value"/>.
 /// </summary>
 public sealed record ScrapPriceInput(ScrapPriceReadStatus Status, decimal? TlPerKg)
 {
@@ -83,7 +84,6 @@ public static class ProductionReceiptCostCodesV1
     public const string MassUnbalanced = "mass_unbalanced";
     public const string UsableRemnantUnpriced = "usable_remnant_unpriced";
     public const string ScrapPriceUnreadable = "scrap_price_unreadable";
-    public const string ProcessLossUnpriced = "process_loss_unpriced";
     public const string ScrapValueExceedsInputCost = "scrap_value_exceeds_input_cost";
 
     public const string BasisWithScrap = "production-input-average-plus-scrap";
@@ -94,17 +94,20 @@ public static class ProductionReceiptCostCodesV1
 /// The result: a <see cref="ProductionReceiptCostStatus.Value"/> carries the same TL-per-kg cost for the good
 /// product and the second quality output, <see cref="WeighedScrapExpense"/>: the TL of the weighed scrap line of the
 /// separate scrap / period expense (zero when scrap is in the product cost), and <see cref="ProcessLossKg"/>: the
-/// unmeasured process loss in kg, the report's second line (Sinan #66 6826603722 (b)). The process loss line has
-/// no TL value here: its value is NEEDS-SINAN. Anything else carries no amount (never zero).
+/// unmeasured process loss in kg, the report's second line (Sinan #66 6826603722 (b)), with
+/// <see cref="ProcessLossRatio"/> = process loss kg / consumed kg. The process loss line carries kg and ratio
+/// only: its value is zero and its cost stays on the good product (Sinan #66 6826763903 (c)). A pending or
+/// unreadable result carries no amount, kg or ratio (never zero).
 /// </summary>
 public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Status, decimal? CostPerKg,
-    decimal? WeighedScrapExpense, decimal? ProcessLossKg, string? CostBasis, string? UnreadableCode)
+    decimal? WeighedScrapExpense, decimal? ProcessLossKg, decimal? ProcessLossRatio, string? CostBasis,
+    string? UnreadableCode)
 {
     public static ProductionReceiptCostResult Pending { get; } = new(ProductionReceiptCostStatus.Pending, null, null,
-        null, null, null);
+        null, null, null, null);
 
     public static ProductionReceiptCostResult Unreadable(string code) =>
-        new(ProductionReceiptCostStatus.Unreadable, null, null, null, null, code);
+        new(ProductionReceiptCostStatus.Unreadable, null, null, null, null, null, code);
 }
 
 /// <summary>
@@ -117,8 +120,9 @@ public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Sta
 /// loaded on the product. The weighed scrap is valued at the scrap price and the rest of the net cost is loaded on
 /// the product (Sinan #66 6826603722 (a)): weighed scrap expense = weighed scrap kg x scrap price, cost per kg =
 /// (net - weighed scrap expense) / (good product kg + second quality kg). The unmeasured process loss is a separate
-/// report line of the same expense (6826603722 (b)) whose value is NEEDS-SINAN, so an order with process loss
-/// stays unreadable on this path; a missing or unreadable scrap price is unreadable too;</item>
+/// report line of the same expense (6826603722 (b)) with kg and ratio only: its value is zero, so its cost stays
+/// on the product (6826763903 (c)). The scrap price is the period's hand-entered TL per kg (6826763903 (d)); a
+/// missing or unreadable scrap price is unreadable;</item>
 /// <item>no labour or overhead in v1. The quotient is not rounded here: the precision and rounding rule are the
 /// Inventory average-cost calculator's (EK59 / SAT-D305), fixed in Inventory's K3 PR and applied there.</item>
 /// </list>
@@ -202,20 +206,16 @@ public static class ProductionReceiptCostCalculatorV1
         }
 
         var processLoss = consumed - produced - weighedScrap;
+        var processLossRatio = processLoss / consumed;
         if (input.ScrapSetting == ScrapCostSettingStatus.On)
         {
             return new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, netCost / produced, 0m,
-                processLoss, ProductionReceiptCostCodesV1.BasisWithScrap, null);
+                processLoss, processLossRatio, ProductionReceiptCostCodesV1.BasisWithScrap, null);
         }
 
         if (input.ScrapPrice is not { Status: ScrapPriceReadStatus.Value, TlPerKg: { } price } || price < 0m)
         {
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
-        }
-
-        if (processLoss > 0m)
-        {
-            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ProcessLossUnpriced);
         }
 
         var scrapExpense = weighedScrap * price;
@@ -225,6 +225,6 @@ public static class ProductionReceiptCostCalculatorV1
         }
 
         return new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, (netCost - scrapExpense) / produced,
-            scrapExpense, processLoss, ProductionReceiptCostCodesV1.BasisWithoutScrap, null);
+            scrapExpense, processLoss, processLossRatio, ProductionReceiptCostCodesV1.BasisWithoutScrap, null);
     }
 }
