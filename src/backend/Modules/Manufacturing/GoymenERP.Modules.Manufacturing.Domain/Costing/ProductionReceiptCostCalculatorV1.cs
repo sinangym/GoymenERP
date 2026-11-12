@@ -58,23 +58,25 @@ public static class ProductionReceiptCostCodesV1
     public const string ScrapSettingUnreadable = "scrap_setting_unreadable";
     public const string MassUnbalanced = "mass_unbalanced";
     public const string UsableRemnantUnpriced = "usable_remnant_unpriced";
-    public const string ScrapPolicyUndecided = "scrap_policy_undecided";
 
     public const string BasisWithScrap = "production-input-average-plus-scrap";
+    public const string BasisWithoutScrap = "production-input-average";
 }
 
 /// <summary>
 /// The result: a <see cref="ProductionReceiptCostStatus.Value"/> carries the same TL-per-kg cost for the good
-/// product and the second quality output; anything else carries no amount (never zero).
+/// product and the second quality output, and <see cref="ScrapPeriodExpense"/>: the TL of scrap and process loss
+/// reported as a separate scrap / period expense (zero when scrap is in the product cost). Anything else carries no
+/// amount (never zero).
 /// </summary>
 public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Status, decimal? CostPerKg,
-    string? CostBasis, string? UnreadableCode)
+    decimal? ScrapPeriodExpense, string? CostBasis, string? UnreadableCode)
 {
     public static ProductionReceiptCostResult Pending { get; } = new(ProductionReceiptCostStatus.Pending, null, null,
-        null);
+        null, null);
 
     public static ProductionReceiptCostResult Unreadable(string code) =>
-        new(ProductionReceiptCostStatus.Unreadable, null, null, code);
+        new(ProductionReceiptCostStatus.Unreadable, null, null, null, code);
 }
 
 /// <summary>
@@ -83,13 +85,14 @@ public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Sta
 /// <item>net input cost = sum(issued kg x stamped issue cost) - sum(returned kg x the linked issue's stamped cost);</item>
 /// <item>scrap in cost (default): cost per kg = net / (good product kg + second quality kg), so scrap and
 /// process loss raise the cost of what was produced;</item>
-/// <item>scrap out of cost: not decided (NEEDS-SINAN, #1098), so the answer is
-/// <see cref="ProductionReceiptCostCodesV1.ScrapPolicyUndecided"/> until a decision opens that one branch;</item>
+/// <item>scrap out of cost (SAT-D307 (3), Sinan #66 6818566934 item 4): scrap is not loaded on the product, so
+/// cost per kg = net / consumed kg (issued - returned) and the scrap and process loss share,
+/// net - cost per kg x produced kg, is reported as a separate scrap / period expense;</item>
 /// <item>no labour or overhead in v1. The quotient is not rounded here: the precision and rounding rule are the
 /// Inventory average-cost calculator's (EK59 / SAT-D305), fixed in Inventory's K3 PR and applied there.</item>
 /// </list>
 /// The order must be closed (no provisional cost, Stok answer 2). Any issue cost that is not a value, an unknown
-/// or switched-off scrap setting, a usable remnant, a return without its issue or over its issue, or a zero divisor gives
+/// scrap setting, a usable remnant, a return without its issue or over its issue, or a zero divisor gives
 /// <see cref="ProductionReceiptCostStatus.Unreadable"/>.
 /// </summary>
 public static class ProductionReceiptCostCalculatorV1
@@ -146,11 +149,6 @@ public static class ProductionReceiptCostCalculatorV1
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapSettingUnreadable);
         }
 
-        if (input.ScrapSetting == ScrapCostSettingStatus.Off)
-        {
-            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapPolicyUndecided);
-        }
-
         if (input.UsableRemnant.Value > 0m)
         {
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.UsableRemnantUnpriced);
@@ -171,7 +169,15 @@ public static class ProductionReceiptCostCalculatorV1
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.MassUnbalanced);
         }
 
-        return new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, netCost / produced,
-            ProductionReceiptCostCodesV1.BasisWithScrap, null);
+        if (input.ScrapSetting == ScrapCostSettingStatus.On)
+        {
+            return new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, netCost / produced, 0m,
+                ProductionReceiptCostCodesV1.BasisWithScrap, null);
+        }
+
+        // The expense is taken from the exact shares, net x (consumed - produced) / consumed, so the product's
+        // part and the expense add up to the net cost without a quotient residue being multiplied back.
+        return new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, netCost / consumed,
+            netCost * (consumed - produced) / consumed, ProductionReceiptCostCodesV1.BasisWithoutScrap, null);
     }
 }

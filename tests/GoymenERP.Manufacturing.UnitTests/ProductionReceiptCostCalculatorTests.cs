@@ -46,10 +46,37 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
-    public void Scrap_out_of_cost_is_undecided_and_fails_closed()
+    public void Scrap_in_cost_reports_no_separate_scrap_expense()
     {
-        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(scrap: ScrapCostSettingStatus.Off)),
-            ProductionReceiptCostCodesV1.ScrapPolicyUndecided);
+        Assert.Equal(0m, ProductionReceiptCostCalculatorV1.Calculate(Input()).ScrapPeriodExpense);
+    }
+
+    [Fact]
+    public void Scrap_out_of_cost_prices_by_consumed_kilograms_and_reports_scrap_as_a_period_expense()
+    {
+        // 1000 kg x 40 = 40000 TL; 1000 kg consumed, 950 kg produced: 40 TL/kg on the product and
+        // 50 kg x 40 = 2000 TL of scrap and process loss reported separately (SAT-D307 (3)).
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(scrap: ScrapCostSettingStatus.Off));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+        Assert.Equal(40m, result.CostPerKg);
+        Assert.Equal(2000m, result.ScrapPeriodExpense);
+        Assert.Equal(ProductionReceiptCostCodesV1.BasisWithoutScrap, result.CostBasis);
+    }
+
+    [Fact]
+    public void Scrap_out_of_cost_splits_the_net_cost_between_the_product_and_the_expense_with_returns()
+    {
+        // 39000 TL net over 900 kg consumed; 850 kg produced, so 50 kg of scrap and loss carry 39000 x 50 / 900.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: [Issue(IssueA, 600m, 40m), Issue(IssueB, 400m, 50m)],
+            returns: [new ReturnCostInput(ReturnB, IssueB, new Kilograms(100m))],
+            good: 800m,
+            second: 50m,
+            scrap: ScrapCostSettingStatus.Off));
+
+        Assert.Equal(39000m / 900m, result.CostPerKg);
+        Assert.Equal(39000m * 50m / 900m, result.ScrapPeriodExpense);
     }
 
     [Fact]
@@ -185,6 +212,7 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
         Assert.Equal(code, result.UnreadableCode);
         Assert.Null(result.CostPerKg);
+        Assert.Null(result.ScrapPeriodExpense);
         Assert.Null(result.CostBasis);
     }
 }
