@@ -1,11 +1,13 @@
 from __future__ import annotations
 import importlib.util
+import json
 from pathlib import Path
 import py_compile
 import subprocess
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("local_check", ROOT / "tools/ci/local_check.py")
@@ -304,6 +306,39 @@ class LocalCheckTests(unittest.TestCase):
             module.validate_lease(ROOT, "frontend", Path("/tmp/untrusted.json"), "a"*40)
         with self.assertRaises(ValueError):
             module.validate_lease(ROOT, "frontend", Path("/tmp/untrusted.json"), "wrong")
+
+    def _lease_fixture(self, folder: str, host: str) -> tuple[Path, str]:
+        head = "a" * 40
+        nonce = "b" * 32
+        path = Path(folder) / f"lease-{nonce}.json"
+        path.write_text(json.dumps({
+            "host": host, "status": "ACTIVE", "repository": str(ROOT), "expectedHead": head,
+            "profile": "frontend", "nonce": nonce, "expiresUtc": "2000-01-01T00:00:00+00:00",
+        }), encoding="utf-8")
+        return path, head
+
+    def _validate_with_host(self, lease_host: str, env: dict):
+        with tempfile.TemporaryDirectory() as folder:
+            path, head = self._lease_fixture(folder, lease_host)
+            with patch.object(module, "LEASE_ROOT", Path(folder)), patch.dict(module.os.environ, env, clear=True):
+                return module.validate_lease(ROOT, "frontend", path, head)
+
+    def test_lease_host_unset_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "not configured"):
+            self._validate_with_host("any-host", {})
+
+    def test_lease_host_empty_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "not configured"):
+            self._validate_with_host("any-host", {"GOYMEN_LOCAL_CI_HOST": ""})
+
+    def test_lease_host_mismatch_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "context mismatch"):
+            self._validate_with_host("lease-host", {"GOYMEN_LOCAL_CI_HOST": "other-host"})
+
+    def test_lease_host_match_passes_the_host_check(self):
+        # The fixture lease is already expired, so reaching "expired" proves the host/context check passed.
+        with self.assertRaisesRegex(ValueError, "expired"):
+            self._validate_with_host("same-host", {"GOYMEN_LOCAL_CI_HOST": "same-host"})
 
     def test_prefixed_credentials_are_redacted_completely(self):
         for name in ("GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID",
