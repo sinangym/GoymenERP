@@ -112,7 +112,11 @@ P3'leri (B 6824462459, A 6824478357) ve #1126 r1 bulguları (A 6824763711, B 682
 - **#1126 r2:** "503 kazanır" kuralı bütün kaydedilen terminal retleri (409 veya 422) kapsar; "okumalar bitmeden ret
   yok" cümlesi kaydedilen 409/422'ye daraltıldı, kilit meşgul 409'u okumalardan önce gelir (A 6824996695 P2-1, B
   6825017340 P3-1); 422 + termin okunamaz testi; §3.7'deki eski #1110 cümlesi güncellendi; ALS atıfları main'e göre
-  (ALS-D82…ALS-D93, 19. tur = ALS-D92, KLN-D29 eşi ALS-D93); KLN-D28 (4) yarış istisnasına atıf; Satış iptal testinde durum adı §4.1'e bağlandı; #1110 kilit sırası koordinasyon notu.
+  (ALS-D82…ALS-D93, 19. tur = ALS-D92, KLN-D29 eşi ALS-D93); KLN-D28 (4) yarış istisnasına atıf; Satış iptal testinde durum adı §4.1'e bağlandı; #1110 kilit sırası koordinasyon notu;
+- **#1126 P3 takip (2026-11-12):** çok satırlı karışık sonuç kuralı: terminal ret ile terminal olmayan sonuç birlikteyse
+  terminal olmayan kazanır, 503 varsa 503, yoksa kilit meşgul 409; kayıt yok, aynı anahtar yeniden çalışır (§5.1 (c),
+  §7, §8; koordinatör okuması #66 6825436733; Satış X1 ile hizalı); §7 Stok bırakma ret kodu 409/422/503; "retde" →
+  "rette".
 
 **Kaynaklar (öncelik sırasıyla):**
 
@@ -534,7 +538,7 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
     (409 veya 422) dönmez; satış/alış satırı kilidi meşgul 409'u okumalardan önce gelir ve kaydedilmez. Herhangi bir okuma
     okunamaz durumdaysa veya port hatası / zaman aşımı varsa, terminal ret koşulu (409 veya 422) ayrıca tespit edilmiş olsa
     bile sonuç 503'tür ve hiçbir şey kaydedilmez (karışık sonuçta 503 kazanır; koordinatör kararı (c), #1123 ile aynı; r1
-    A P2-1, r2 A P2-1 / B P3-1). Çok satırlı revizyonda Satış bütün satırları değerlendirir, ilk terminal retde durmaz. 503/okunamaz, port hatası, zaman aşımı, satış satırı kilidi meşgul (409), alış satırı
+    A P2-1, r2 A P2-1 / B P3-1). Çok satırlı revizyonda Satış bütün satırları değerlendirir, ilk terminal rette durmaz; bir satır terminal ret (409 veya 422), başka bir satır terminal olmayan sonuç (kilit meşgul 409, 503, port hatası, zaman aşımı) verirse terminal olmayan kazanır: hiçbir şey kaydedilmez ve aynı anahtar yeniden çalışır; dönen durum 503 varsa 503, yoksa kilit meşgul 409'dur (koordinatör okuması #66 6825436733; Satış X1 ile hizalı). 503/okunamaz, port hatası, zaman aşımı, satış satırı kilidi meşgul (409), alış satırı
     kilidi meşgul (409 `purchasing_line_busy`) ve `concurrent_change` terminal değildir: kaydedilmez, aynı anahtar yeniden
     çalışır. Bayat açık seçimde dönen 409 `inventory_allocation_version_conflict` kaydedilen terminal rettir; 409
     `inventory_allocation_state_conflict` ve fazlayı aşan seçimde 422
@@ -613,8 +617,9 @@ birlikte sabitlenir (r1 A/B P3-2).
 | Azaltma fiziksel tahsisten bırakma gerektiriyor veya açık seçim fiziksel tahsis içeriyor, fiziksel bırakma yolu yok (KLN-D32 (3)) | 409 `inventory_future_allocation_physical_release_unavailable` (öneri, F017-s'de kesinleşir; Stok bırakma portu §3.2 kilitleri altında tespit eder; yazma yok, gelecek ayırma da bırakılmaz; Satış problemine taşınır) |
 | Alış termin okuması `Unreadable`/hata (KLN-D30 (4)) | 503 (Satış komutu yazılmaz; "tarihsiz" sayılmaz) |
 | Aynı yürütmede terminal ret koşulu (409 veya 422) ve okunamaz/port hatası/zaman aşımı birlikte (§5.1 (c)) | 503; hiçbir şey kaydedilmez; port bütün okumaları bitirmeden kaydedilen 409/422 dönmez, kilit meşgul 409'u okumalardan önce gelir (koordinatör kararı (c)) |
+| Çok satırlı revizyonda bir satır terminal ret (409 veya 422), başka bir satır terminal olmayan sonuç (kilit meşgul 409, 503, port hatası, zaman aşımı) (§5.1 (c)) | Terminal olmayan kazanır: 503 varsa 503, yoksa kilit meşgul 409; hiçbir şey kaydedilmez, aynı anahtar yeniden çalışır (koordinatör okuması #66 6825436733; Satış X1 ile hizalı) |
 | Satış satırı kilidi alınamadı (§3.2 adım 0) | 409 (kod F017-b'de adlandırılır) |
-| Satış iptali/azaltmasında Stok bırakması başarısız (§5.1 (c)) | Satış komutu yazılmaz; Stok'un ret kodu (409/503) Satış problemine taşınır |
+| Satış iptali/azaltmasında Stok bırakması başarısız (§5.1 (c)) | Satış komutu yazılmaz; Stok'un ret kodu (409/422/503) Satış problemine taşınır |
 | Yetki yok | 401 / 403 |
 
 Ekran (F017-d): yükleniyor, veri yok ("Bu ürün için açık satınalma satırı yok"), süzgeçle boş, yetkisiz, bulunamadı,
@@ -678,7 +683,7 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
   tahsis, Stok audit/outbox ve ayırma satırları değişmez; Satış satırı değişmez ve Satış'ta tek terminal ret kaydı vardır;
   aynı anahtarla replay aynı reddi döner ve Stok portunu ikinci kez çağırmaz; 503 ve kilit meşgul kaydedilmez, aynı anahtar
   yeniden çalışır; termin okunamaz + "aktif gelecek < fazla" → 503, kayıt yok, aynı anahtar yeniden yürür; çok satırlı
-  revizyonda bir satır 409, diğeri 503 → 503, kayıt yok; fazlayı aşan seçim (422
+  revizyonda bir satır 409, diğeri 503 → 503, kayıt yok; çok satırlı revizyonda bir satır terminal ret (422 veya kaydedilen 409), diğeri kilit meşgul 409 → kilit meşgul 409, kayıt yok, aynı anahtar yeniden yürür; bir satır terminal ret, biri kilit meşgul 409, biri 503 → 503, kayıt yok; fazlayı aşan seçim (422
   `inventory_future_allocation_release_selection_invalid`) + termin okunamaz → 503, kayıt yok, aynı anahtar yeniden yürür; 20 → 15 aynı kurulumda kabul edilir; 20 → 15 açık fiziksel seçimle 409, hiçbir şey değişmez);
   revizyonda satır silme: sevksiz, yükleme talimatsız, yalnız gelecek ayırmalı satır → bütün gelecek bırakılır;
   sevkli, yükleme talimatlı veya fiziksel tahsisli satır → Satış 422 `sales_line_revision_line_shipped`, Stok portu
