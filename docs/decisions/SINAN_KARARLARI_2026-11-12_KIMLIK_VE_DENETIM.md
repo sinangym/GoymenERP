@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-12 (yerel hesap, rol atama, reddedilen denemelerin denetim kaydı)
 
-Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D22` kararlarını ekler.
+Bu belge önceki karar dosyalarını silmez; `KIM-D1`…`KIM-D23` kararlarını ekler.
 `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-6 (tek seferlik kurucu admin) geçerli kalır.
 BS-7'deki "production'da MFA zorunlu" yönü, 2FA zorunluluğu bakımından `KIM-D3` ile şimdilik yerini
 "herkese isteğe bağlı" kararına bırakır (Sinan: "12 Kasım kararı geçerli"); BS-7'nin OIDC/VPN yönü ve
@@ -58,6 +58,17 @@ koordinatör tarafından yazıldı:
   kullanıcı/şifre yazılmaz. Teknik biçimler ilgili spec/K3 dilimlerinde yazılır." "(Önerilen)" işareti ve parantez içindeki
   açıklama soranın seçenek metnidir.
   Diğer maddeler bu dosyanın konusu değildir.
+- [`6823243819`](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6823243819)
+  (2026-11-12 12:11Z, 23. tur) madde 3 — aktif kurucu parolasını unuttu, başka aktif Admin yok (#1112
+  `NEEDS-SINAN-ID-13`, yorum `6823073787`). Soru aynen: "Kurucu hesabı aktif ama parolasını unuttuysa ve ekrandan
+  sıfırlayacak başka aktif Admin yoksa ne olsun? (Pasif kurucu için sunucu kurtarma komutunu zaten seçtin.)"
+  Cevap aynen: "Sunucu komutu parola sıfırlar (Önerilen)". Seçeneğin açıklaması aynen: "sunucuya erişimi olan kişi
+  aynı kurtarma komutuyla kurucunun parolasını sıfırlar; kayıt altına alınır, ilk girişte yeni parola zorunlu
+  olur." Seçilmeyenler aynen: "Ek yol yok, 2. Admin şart"; "E-posta ile sıfırlama". Aynı yorumun m.3 notu aynen:
+  "KIM-D22 kurtarma komutu aktif kurucu için yalnız parola sıfırlama yolunu açar (rol/atama değiştirmez); audit,
+  tek kullanımlık geçici parola ve ilk girişte zorunlu değişiklik uygulanır. Ayrıntı #1112'de yazılır."
+  "(Önerilen)" işareti soranındır; "Anlamı" satırı koordinatörün seçeneğe yazdığı açıklamadır. Madde 1-2
+  (Stok/Satış) bu dosyanın konusu değildir.
 
 AskUserQuestion seçeneklerinin tam metni koordinatör oturumundadır; aşağıdaki "seçilmeyen" bilgisi #66
 yorumlarında ve `6819541595` önerilerinde yazılı olanla sınırlıdır. 12-16. satırlardaki "Seçilmeyen"
@@ -91,6 +102,7 @@ oturumundadır.
 | 21 | "Şirket açma" izni Critical mi? (18. tur) | "Evet, Critical" | Şirket açma izni Critical sınıfındadır; verilmesi Critical rol kurallarına tabidir. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
 | 22 | KIM-D18 kapsamı (18. tur, ek not) | "o anda tanımlı bütün şirketler" metni pasif şirketleri de kapsar | Spec'teki "aktif" daraltması kaldırılır; metne sadık kalınır. |
 | 23 | Admin'i olmayan ve kurucusu da pasif şirkette kurtarma yolu olsun mu? (20. tur) | "Sunucu kurtarma komutu (Önerilen)." | Yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunlu; ekrandan yapılamaz; her kullanım audit'e yazılır. Seçilmeyen seçeneklerin metni koordinatör oturumundadır. |
+| 24 | Kurucu aktif ama parolasını unuttuysa ve ekrandan sıfırlayacak başka aktif Admin yoksa ne olsun? (23. tur) | "Sunucu komutu parola sıfırlar (Önerilen)" | Sunucuya erişimi olan kişi aynı kurtarma komutuyla kurucunun parolasını sıfırlar; kayıt altına alınır, ilk girişte yeni parola zorunlu olur. Seçilmeyenler: "Ek yol yok, 2. Admin şart"; "E-posta ile sıfırlama". |
 
 ## Kararlar
 
@@ -117,7 +129,8 @@ oturumundadır.
 | KIM-D19 | Hiçbir şirkette rolü olmayan kullanıcı | Parola sıfırlama, kilit açma ve pasifleştirme için özel/kurucu yetkisi yoktur: kullanıcı önce bir şirkete atanır, sonra o şirketin `identity.users.manage` yetkilisi işlemi yapar. Problem kodu uygulama ayrıntısıdır (geri alınabilir). | Kimlik spec'i, hedef kapsam, KS-17 |
 | KIM-D20 | Açana Admin ataması arızalanırsa | Şirket Admin'i olana kadar "kurulum bekliyor" durumunda kalır ve işlem kabul etmez; alarm çıkar; kurucu Admin elle Admin atar (audit'li). Durum adı, olaylar ve metrik uygulama ayrıntısıdır (cross-module sözleşme, K3). | Kimlik spec'i kural 8, ID-3b; Organization şirket açma dilimi |
 | KIM-D21 | Şirket açma izni | Critical sınıfındadır; verilmesi Critical rol kurallarına tabidir. Sınıflandırmadır; mevcut grant'larda değişiklik ayrı somut karar ister. KIM-D9'un "şimdilik yeni işlem Critical'e eklenmez" kuralına Sinan'ın sonradan verdiği açık istisnadır: Critical küme yalnız bu bir sınıflandırma ile büyür, mevcut grant'lar değişmez. | Organization şirket açma dilimi, Critical küme |
-| KIM-D22 | Admin'i olmayan ve kurucusu da pasif şirkette kurtarma | Sunucu kurtarma komutu: yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunludur; ekrandan (HTTP/UI) yapılamaz; her kullanım audit'e yazılır. Komut varsayılan kimlik bilgisi içermez; repo/seed/appsettings'e kullanıcı/şifre yazılmaz. Komut adı, parametreleri ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır (AGENTS.md insan kapısı; Sinan metni değil). Komut yalnız pasif kurucuyu hedefler (kararın lafzı). | Kimlik spec'i kural 8, kurucu kurtarma komutu, KS-22, ID-2 |
+| KIM-D22 | Admin'i olmayan ve kurucusu da pasif şirkette kurtarma | Sunucu kurtarma komutu: yalnız sunucuya erişimi olan kişi kurulum komutuyla kurucuyu yeniden aktif eder; şifre değiştirme zorunludur; ekrandan (HTTP/UI) yapılamaz; her kullanım audit'e yazılır. Komut varsayılan kimlik bilgisi içermez; repo/seed/appsettings'e kullanıcı/şifre yazılmaz. Komut adı, parametreleri ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır (AGENTS.md insan kapısı; Sinan metni değil). Komut yalnız pasif kurucuyu hedefler (kararın lafzı); aktif kurucunun parola sıfırlaması KIM-D23'tür. | Kimlik spec'i kural 8, kurucu kurtarma komutu, KS-22, ID-2 |
+| KIM-D23 | Aktif kurucu parolasını unuttu, ekrandan sıfırlayacak başka aktif Admin yok | Sunucu komutu parola sıfırlar: sunucuya erişimi olan kişi aynı kurtarma komutuyla kurucunun parolasını sıfırlar; kayıt altına alınır (audit); ilk girişte yeni parola zorunludur. Koordinatör notu (#66 `6823243819`, Sinan metni değil): yalnız parola sıfırlama yolunu açar, rol/atama değiştirmez; tek kullanımlık geçici parola. Pasif kurucu yolu (KIM-D22) aynen kalır. Alt yolun adı, ön koşul okuması ve audit biçimi uygulama ayrıntısıdır (geri alınabilir; kimlik spec'i, K3). Production'da çalıştırılması insan kapısıdır (AGENTS.md). | Kimlik spec'i kurucu kurtarma komutu, KS-23, ID-2 |
 
 **Yazar okumaları (Sinan kararı değildir; kimlik spec'inde uygulanır, review'da düzeltilebilir):**
 
@@ -132,7 +145,8 @@ oturumundadır.
 - Karara bağlanmayanlar `NEEDS-SINAN` olarak açık kalır: otomatik imhanın açılması (ayrı onay ve ADR) ve
   toplulaştırma eşik değerleri (ölçümden sonra). ID-02b/03b/05/06b/07b 14.–15. turda (KIM-D12…D16),
   ID-10 16. turda (KIM-D17), çok şirkette ilk Admin 17. turda (KIM-D18), #1112 review P2'leri 18. turda
-  (KIM-D19…D21), kurucusu da pasif şirkette kurtarma 20. turda (KIM-D22) karara bağlandı.
+  (KIM-D19…D21), kurucusu da pasif şirkette kurtarma 20. turda (KIM-D22), aktif kurucunun unutulan parolası 23. turda (KIM-D23)
+  karara bağlandı.
 - Şirket açma yetkisinin kimde olduğu bu dosyanın konusu değildir (Organization modülü); KIM-D18 yalnız
   açan kişinin ilk Admin olmasını söyler, şirket açma izni vermez. KIM-D21 bu iznin sınıfını (Critical)
   belirler, kimseye vermez.
