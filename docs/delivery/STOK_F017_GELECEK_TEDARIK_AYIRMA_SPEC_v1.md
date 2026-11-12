@@ -108,7 +108,11 @@ P3'leri (B 6824462459, A 6824478357) ve #1126 r1 bulguları (A 6824763711, B 682
   #1110 merge durumu (`4f3978d3`) ve problem kodu adları #1110 ile hizalandı;
 - **#1126 r1:** karışık 409/503 sonucunda 503 kazanır ve port bütün okumaları bitirmeden 409 dönmez (§5.1 (c), §7, §8;
   koordinatör kararı (c)); 422 seçim reddi ve `inventory_allocation_state_conflict` sınıfları; silmede fiziksel tahsis
-  yarışı notu ve testi (F017-s); aday 6 §10 ve §11'e eklendi; Satış iptal testinde durum adı §4.1'e bağlandı; #1110 kilit sırası koordinasyon notu.
+  yarışı notu ve testi (F017-s); aday 6 §10 ve §11'e eklendi;
+- **#1126 r2:** "503 kazanır" kuralı bütün kaydedilen terminal retleri (409 veya 422) kapsar; "okumalar bitmeden ret
+  yok" cümlesi kaydedilen 409/422'ye daraltıldı, kilit meşgul 409'u okumalardan önce gelir (A 6824996695 P2-1, B
+  6825017340 P3-1); 422 + termin okunamaz testi; §3.7'deki eski #1110 cümlesi güncellendi; ALS atıfları main'e göre
+  (ALS-D82…ALS-D93, 19. tur = ALS-D92, KLN-D29 eşi ALS-D93); KLN-D28 (4) yarış istisnasına atıf; Satış iptal testinde durum adı §4.1'e bağlandı; #1110 kilit sırası koordinasyon notu.
 
 **Kaynaklar (öncelik sırasıyla):**
 
@@ -122,12 +126,12 @@ P3'leri (B 6824462459, A 6824478357) ve #1126 r1 bulguları (A 6824763711, B 682
   belgede ayrı işaretlidir.
 - **Sinan 19. tur** — #66 yorum 6822140358: iptal edilmiş sipariş veya API-11 ile kapatılmış satırda kabul geri alınırsa
   ya da "yerine yenisi gelecek" işaretli iade yapılırsa miktar açılır, sipariş canlanır. Canlanan miktar gelecek
-  tedarikten yeniden ayrılabilir. ALS-D91 bu iki durumda da koşulsuz uygulanır (§3.7).
+  tedarikten yeniden ayrılabilir. Alış eşi ALS-D92: ALS-D91 bu iki durumda koşulsuz uygulanır (§3.7).
 - **KLN-D26** — `docs/decisions/SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md` (main `2efb3f68d`,
   #1108 merge edildi). Sinan, #66 yorum 6819147253 madde 2: "Açık satınalma siparişi satırından satış siparişine **miktar
   bazında (kg/ton)** ayırma yapılabilir; aynı miktar iki siparişe verilemez. Mal kabulde ilgili satış talebine bağlanır,
   etiket ataması o zaman yapılır."
-- **ALS-D82…ALS-D91** — Alış şeridinin eş kararları (`SINAN_KARARLARI_2026-11-12_ALIS_EK17.md`, PR #1110) ve Alış spec'i
+- **ALS-D82…ALS-D93** — Alış şeridinin eş kararları (`SINAN_KARARLARI_2026-11-12_ALIS_EK17.md`, PR #1110) ve Alış spec'i
   `docs/delivery/ALIS_F017_GELECEK_TEDARIK_AYIRMA_v1.md` (PR #1110, `main` `4f3978d3` ile merge edildi). Port
   sözleşmesi o belgenin §3'ündedir. Bu belge onu kopyalamaz, atıf yapar ve Stok tarafını hizalar (§5).
 - `KARAR_SICILI`: DEC-STK-002 (gelecek arz serbest stoğa karışmaz), DEC-STK-003 (tahsis alış satırından da yapılır;
@@ -326,7 +330,7 @@ Akış (host + Stok yazıcısı; hepsi tek işlem). Adımların sırası bağlay
   ayırır; sistem "canlandı" bildirimi gösterir (Sinan 21. tur m.3, 6822767886; #1110 §3.6, §3.8). Bildirimi Alış canlanma
   olayı taşır; alıcısı ve kanalı seçilmedi (§9.1 aday 5).
 
-### 3.7 Kabul geri alma ve tedarikçiye iade (KLN-D26 (6)(e), ALS-D86, ALS-D91, Sinan 19. tur)
+### 3.7 Kabul geri alma ve tedarikçiye iade (KLN-D26 (6)(e), ALS-D86, ALS-D91, Sinan 19. tur / ALS-D92)
 
 - **Bugün kodda yoktur.** Kabul düzeltmesi (API-44) ve tedarikçiye iade (API-60) dilimleri henüz yazılmadı;
   `RecordAcceptance` yalnız ekler (#1110 §1). Bu bölüm o dilimler geldiğinde uygulanacak Stok kurallarıdır. Uygulama
@@ -334,13 +338,13 @@ Akış (host + Stok yazıcısı; hepsi tek işlem). Adımların sırası bağlay
 - **Gelecek miktar ne zaman açılır (ALS-D91):** hatalı kabul geri alınırsa miktar siparişe geri açılır. İadede "yerine
   yenisi gelecek" işaretliyse açılır, işaretli değilse sipariş kapalı kalır. Açılıp açılmadığını Alış belirler; Stok bunu
   kilit altında Alış portunun `AllocatableText`'inden okur.
-- **İptal edilmiş sipariş ve API-11 kapalı satır (Sinan 19. tur):** bu iki durumda da ALS-D91 koşulsuz uygulanır. Miktar
+- **İptal edilmiş sipariş ve API-11 kapalı satır (Sinan 19. tur, ALS-D92):** bu iki durumda da ALS-D91 koşulsuz uygulanır. Miktar
   açılır, sipariş canlanır. Canlanan satır yeniden açıktır ve gelecek tedarikten ayrılabilir. Canlanmanın teknik biçimi
   (durum dönüşü, iptal/kapanış payının düşmesi, audit, expected version, satır kilidi) Alış spec'inde K3 dilimi olarak
   yazılır. Stok buna izin verir: canlanan miktar porttan ayrılabilir okunduğu sürece §3.2 ve aşağıdaki yeniden açma
-  kuralları aynen çalışır. #1110 §3.7'deki "açılmaz" okuması ve geçici 409 `purchase_line_not_open` bu kararla geçersizdir;
-  #1110 aynı metne getirilir.
-- **Canlanmada bırakılmış ayırmalar (KLN-D29):** iptal ("bağları düşür ve iptal et") veya API-11 kapanışında `Released`
+  kuralları aynen çalışır. #1110'un eski "açılmaz" okuması ve geçici 409 merge edilen metinde
+  yoktur (#1110 `main` `4f3978d3`, ALS-D92; r2 A P3-3).
+- **Canlanmada bırakılmış ayırmalar (KLN-D29, Alış eşi ALS-D93):** iptal ("bağları düşür ve iptal et") veya API-11 kapanışında `Released`
   olmuş ayırmalar canlanmada geri gelmez; canlanan miktar serbest açık miktardır ve yeni ayırma normal oluşturma yoludur
   (§3.2). Aşağıdaki "aynı kimlikle `Consumed` → `Active`" kuralı yalnız kabul geri almada tüketilmiş ayırmalar içindir;
   `Released` ayırma hiçbir yolda yeniden açılmaz (**yazarın okuması**, KLN-D29 (4)).
@@ -525,11 +529,12 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
     şey yazmaz: Stok satırı, audit, outbox ve ayırma değişmez. Satış komutu geri alınır ve kod Satış problemine taşınır.
     **Terminal ret kaydı ve replay Satış'ındır (B P2-1):** idempotency anahtarının sahibi Satış revizyon komutudur; tek
     terminal ret kaydını Satış yazar ve aynı anahtarla tekrar saklanan reddi Stok portunu ikinci kez çağırmadan döner
-    (#1119 plan, `k3-command-skeleton` terminal ret deseni). Port, §3.2 kilitleri altında gereken bütün okumaları (satıra bağlı aktif gelecek ayırma kümesi, fiziksel tahsis,
-    satış satırı, alış termini) tamamlamadan 409 dönmez. Herhangi bir okuma okunamaz durumdaysa veya port hatası / zaman
-    aşımı varsa, 409 koşulu ayrıca tespit edilmiş olsa bile sonuç 503'tür ve hiçbir şey kaydedilmez (karışık sonuçta 503
-    kazanır; koordinatör kararı (c), #1123 ile aynı; r1 A P2-1). Çok satırlı revizyonda Satış bütün satırları değerlendirir,
-    ilk 409'da durmaz. 503/okunamaz, port hatası, zaman aşımı, satış satırı kilidi meşgul (409), alış satırı
+    (#1119 plan, `k3-command-skeleton` terminal ret deseni). Port, §3.2 kilitleri altında gereken bütün okumaları (satıra
+    bağlı aktif gelecek ayırma kümesi, fiziksel tahsis, satış satırı, alış termini) tamamlamadan kaydedilen terminal ret
+    (409 veya 422) dönmez; satış/alış satırı kilidi meşgul 409'u okumalardan önce gelir ve kaydedilmez. Herhangi bir okuma
+    okunamaz durumdaysa veya port hatası / zaman aşımı varsa, terminal ret koşulu (409 veya 422) ayrıca tespit edilmiş olsa
+    bile sonuç 503'tür ve hiçbir şey kaydedilmez (karışık sonuçta 503 kazanır; koordinatör kararı (c), #1123 ile aynı; r1
+    A P2-1, r2 A P2-1 / B P3-1). Çok satırlı revizyonda Satış bütün satırları değerlendirir, ilk terminal retde durmaz. 503/okunamaz, port hatası, zaman aşımı, satış satırı kilidi meşgul (409), alış satırı
     kilidi meşgul (409 `purchasing_line_busy`) ve `concurrent_change` terminal değildir: kaydedilmez, aynı anahtar yeniden
     çalışır. Bayat açık seçimde dönen 409 `inventory_allocation_version_conflict` kaydedilen terminal rettir; 409
     `inventory_allocation_state_conflict` ve fazlayı aşan seçimde 422
@@ -607,7 +612,7 @@ birlikte sabitlenir (r1 A/B P3-2).
 | Açık seçimdeki ayırma sürümü bayat (KLN-D30 (3)) | 409 `inventory_allocation_version_conflict` |
 | Azaltma fiziksel tahsisten bırakma gerektiriyor veya açık seçim fiziksel tahsis içeriyor, fiziksel bırakma yolu yok (KLN-D32 (3)) | 409 `inventory_future_allocation_physical_release_unavailable` (öneri, F017-s'de kesinleşir; Stok bırakma portu §3.2 kilitleri altında tespit eder; yazma yok, gelecek ayırma da bırakılmaz; Satış problemine taşınır) |
 | Alış termin okuması `Unreadable`/hata (KLN-D30 (4)) | 503 (Satış komutu yazılmaz; "tarihsiz" sayılmaz) |
-| Aynı yürütmede 409 koşulu ve okunamaz/port hatası/zaman aşımı birlikte (§5.1 (c)) | 503; hiçbir şey kaydedilmez; port bütün okumaları bitirmeden 409 dönmez (koordinatör kararı (c)) |
+| Aynı yürütmede terminal ret koşulu (409 veya 422) ve okunamaz/port hatası/zaman aşımı birlikte (§5.1 (c)) | 503; hiçbir şey kaydedilmez; port bütün okumaları bitirmeden kaydedilen 409/422 dönmez, kilit meşgul 409'u okumalardan önce gelir (koordinatör kararı (c)) |
 | Satış satırı kilidi alınamadı (§3.2 adım 0) | 409 (kod F017-b'de adlandırılır) |
 | Satış iptali/azaltmasında Stok bırakması başarısız (§5.1 (c)) | Satış komutu yazılmaz; Stok'un ret kodu (409/503) Satış problemine taşınır |
 | Yetki yok | 401 / 403 |
@@ -673,7 +678,8 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
   tahsis, Stok audit/outbox ve ayırma satırları değişmez; Satış satırı değişmez ve Satış'ta tek terminal ret kaydı vardır;
   aynı anahtarla replay aynı reddi döner ve Stok portunu ikinci kez çağırmaz; 503 ve kilit meşgul kaydedilmez, aynı anahtar
   yeniden çalışır; termin okunamaz + "aktif gelecek < fazla" → 503, kayıt yok, aynı anahtar yeniden yürür; çok satırlı
-  revizyonda bir satır 409, diğeri 503 → 503, kayıt yok; 20 → 15 aynı kurulumda kabul edilir; 20 → 15 açık fiziksel seçimle 409, hiçbir şey değişmez);
+  revizyonda bir satır 409, diğeri 503 → 503, kayıt yok; fazlayı aşan seçim (422
+  `inventory_future_allocation_release_selection_invalid`) + termin okunamaz → 503, kayıt yok, aynı anahtar yeniden yürür; 20 → 15 aynı kurulumda kabul edilir; 20 → 15 açık fiziksel seçimle 409, hiçbir şey değişmez);
   revizyonda satır silme: sevksiz, yükleme talimatsız, yalnız gelecek ayırmalı satır → bütün gelecek bırakılır;
   sevkli, yükleme talimatlı veya fiziksel tahsisli satır → Satış 422 `sales_line_revision_line_shipped`, Stok portu
   çağrılmaz, gelecek ayırma değişmez; SAT-D167 okumasından sonra eşzamanlı fiziksel tahsis oluşursa 0'a azaltma 409
@@ -714,8 +720,8 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
 
 ## 9. Sorular ve cevaplar
 
-Politika soruları Sinan tarafından cevaplandı; karar metni KLN-D26 (6), Alış eşleri ALS-D83…ALS-D91 (PR #1110), 19. tur
-(#66 6822140358), 21. tur (KLN-D28, KLN-D29; #66 6822767886), 23. tur (KLN-D30, KLN-D31; #66 6823243819) ve 25. tur
+Politika soruları Sinan tarafından cevaplandı; karar metni KLN-D26 (6), Alış eşleri ALS-D83…ALS-D93 (PR #1110), 19. tur
+(#66 6822140358; ALS-D92), 21. tur (KLN-D28, KLN-D29; #66 6822767886), 23. tur (KLN-D30, KLN-D31; #66 6823243819) ve 25. tur
 (KLN-D32; #66 6823547103). Sinan'ın metinleri #66'dadır (5. tur 6819640816; 11.–13.
 tur 6820601088; 18. tur 6821262098; 21. tur 6822767886). Uygulama yeri parantezde.
 
@@ -749,7 +755,7 @@ tur 6820601088; 18. tur 6821262098; 21. tur 6822767886). Uygulama yeri parantezd
   anında hesaplanır; sahibi #1110 §3.5'tir (§8).
 - **S12 — Kabul geri alma/iade:** tahsis ve etiket ataması geri alınır (11. tur m.3; ALS-D86). Gelecek miktarın açılması
   nedene bağlıdır: hatalı kabul geri alınırsa açılır; iadede "yerine yenisi gelecek" işaretliyse açılır, değilse kapalı
-  kalır (18. tur m.7; ALS-D91). İptal edilmiş sipariş ve API-11 kapalı satırda da açılır, sipariş canlanır (19. tur). §3.7,
+  kalır (18. tur m.7; ALS-D91). İptal edilmiş sipariş ve API-11 kapalı satırda da açılır, sipariş canlanır (19. tur; ALS-D92). §3.7,
   F017-e.
 - **S13 — Satış satırı iptali veya azaltması:** "Otomatik bırakılır (Önerilen)" (21. tur m.2, 6822767886; KLN-D28).
   Satış komutu aynı işlemde Stok bırakma portunu çağırır; artan ayırma kalmaz; audit'li. Satış tarafı karşılığı SAT-D314
@@ -821,7 +827,7 @@ Her K3 dilimde: iki bağımsız exact-head review, gerçek SQL kanıtı, fresh C
 - Bu belge karar değildir; `KARAR_SICILI`, `ACIK_KARARLAR` ve karar dosyaları değişmez.
 - "Öneri", "yazarın okuması" ve "yazarın önerisi, geri alınabilir" diye işaretli teknik noktalar (ayrı tablo, izin adı,
   olay adları, hata kodları, eşitlik kuralları, kısmi yeniden açma, ters sıra) review'da değişebilir.
-- Para, stok veya maliyet politikası seçilmez; politika cevapları Sinan'ındır (KLN-D26 (6), ALS-D91, 19. tur, KLN-D28…
+- Para, stok veya maliyet politikası seçilmez; politika cevapları Sinan'ındır (KLN-D26 (6), ALS-D91, 19. tur / ALS-D92, KLN-D28…
   KLN-D32). Açık noktalar §9.1'de aday olarak durur (aday 3'ün üst sınır ve etiket bazlı kısmı, aday 5, aday 6); Issue #66'ya koordinatör `NEEDS-SINAN`/`NEEDS-SPEC`
   olarak yazar.
 - Hiçbir `OPEN-*` kapatılmaz; grant, rol veya Critical açılmaz.
