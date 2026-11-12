@@ -367,7 +367,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (026f3c54… -> 69a1024a…).
                 // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
                 // empty-store rollback) (69a1024a… -> 84945670…).
-                "84945670f9b50efefba59c5525b76a105634b7669da0bd890fb3ce141cbc2ffb",
+                // F-022: +2 readiness SQL facts (Settings/Documents history drift; price-list drift only while the
+                // Product runtime is on) (84945670… -> 912a850f…).
+                "912a850f59568f33ce197227ac1d945fe3820a2c48ee9ec63dae7ecc95e3438c",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
