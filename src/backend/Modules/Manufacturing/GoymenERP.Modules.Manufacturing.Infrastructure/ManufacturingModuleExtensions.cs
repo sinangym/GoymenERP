@@ -48,6 +48,9 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingPlanRevisionStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // Üretim U2-a: the plan's rejection and cancellation, the same store and DbContext as the plan.
         services.AddScoped<IManufacturingPlanLifecycleStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // Üretim U2-b / API-16: the plan's sales order link and Sales's linked-supply read, the same DbContext as the plan.
+        services.AddScoped<IManufacturingPlanSalesOrderLinkStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // ADR-011: the command log shares the store's DbContext, so a success joins the business save.
         services.AddScoped<IManufacturingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());

@@ -164,7 +164,7 @@ Politika cevaplanana kadar Stok kodu katsayı girişi eklemez; çevrim gerektire
 - **Kod ve veri değişmez.** Bu belge kod, manifest, migration, OpenAPI, rol seed'i veya Ayarlar verisi değiştirmez; grant
   açmaz.
 - **Kur kaynağı** yukarıdaki `NEEDS-SINAN` ile açıktı; sonra BS-1 (#66 6806579823) ile karara bağlandı: tedarikçi faturasındaki resmî kur. Birim dönüşümü SAT-D298 ile kararlıdır; yalnız katsayı kaynağı eksiktir: Ürün portu SAT-D299 ile açılabilir, ancak katsayı modeli (U-08) cevaplanmadıkça veri yoktur ve çevrim gerektiren satır `NoSource` kalır. SAT-D299 kimliği de SAT-D294 sonrası aynı seriden alındı (kimlik önekindeki kontrol SAT-D295…SAT-D299 için geçerlidir).
-- Negatif stok, ek (landed) maliyet, iade, karma kaynak ve defterde maliyetlenmemiş stok #66 6809898906 ile Sinan kararına bağlandı: SAT-D301…SAT-D305, `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`.
+- Negatif stok, ek (landed) maliyet, iade, karma kaynak ve defterde maliyetlenmemiş stok #66 6809898906 ile Sinan kararına bağlandı: SAT-D301…SAT-D305 (alış iadesi #66 6810163182 ile SAT-D306; aynı belgede SAT-D307 ve KLN-D20…KLN-D24), `SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`.
 - Bu belge `OPEN-008`i veya `KARAR_SICILI`/`ACIK_KARARLAR` kayıtlarını değiştirmez. `OPEN-INV-AVGCOST-*` kimlikleri
   docs'ta kayıtlı olmadığı için "kapanış" yalnız bu belge ve kod yorumlarında tutulur; Sinan'ın cevabına
   (#66 yorumu 6791690928) bağlıdır.
