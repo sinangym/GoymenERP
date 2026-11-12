@@ -34,8 +34,9 @@ metni `SINAN_KARARLARI_2026-11-12_STOK_F017_EK.md` (KLN-D28, KLN-D29). Madde 1 S
 Değişenler:
 
 - **Satış satırı iptali/azaltması (KLN-D28):** §5.1 (c)'deki "iptal reddedilir" kapalı yönü kalktı. Satış iptal/azaltma
-  komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada yalnız yeni miktarı aşan
-  kısım bırakılır; bırakma başarısızsa Satış komutu da geri alınır (§3.3, §4.3, §5, §5.1, §7). F017-s kapsamı bu çağrıyı
+  komutu aynı host işleminde Stok bırakma portunu çağırır; iptalde bütün ayırmalar, azaltmada max(0, ayırma − yeni
+  miktar) bırakılır; bırakma exactly-once'dır; başarısızsa Satış komutu da yazılmaz (§3.3, §4.3, §5, §5.1, §7). Satış
+  karşılığı SAT-D314 (#1119, merge bekliyor). F017-s kapsamı bu çağrıyı
   içerir (§10). Testler §8'de.
 - **Canlanmada bırakılmış ayırmalar (KLN-D29):** geri gelmez; canlanan miktar serbest açık miktardır, kullanıcı gerekirse
   yeniden ayırır, sistem "canlandı" bildirimi gösterir. §3.6'daki "yazarın okuması" Sinan kararına bağlandı; §3.7, §8.
@@ -372,16 +373,22 @@ gelecek arzı stok kısmına karıştırır (DEC-STK-002, SAT-D255). Kurallar:
   onaylanan iptal ayırmayı (c)'ye göre bırakır (KLN-D28 (9)).
 - **(c) Satış satırı iptal edilir veya azaltılırsa (KLN-D28):** gelecek ayırma **otomatik bırakılır** (Sinan 21. tur
   m.2). Satış iptal/azaltma komutu aynı host işleminde Stok bırakma portunu (§5) çağırır; artan ayırma kalmaz; bırakma
-  audit'lidir (koordinatör anlamı). Ayrıntılar (**yazarın okuması, geri alınabilir**; KLN-D28 (3)–(8)):
+  audit'lidir (koordinatör anlamı). Satış tarafı karşılığı: SAT-D314, #1119 — merge bekliyor. Ayrıntılar (**yazarın
+  okuması, geri alınabilir**; KLN-D28 (3)–(8), SAT-D314 yazar okuması):
   - Satış Stok tablosuna yazmaz; bırakmayı Stok kendi portuyla, §3.2 adım 0'daki satır kilidi altında, sürüm, audit ve
     `released.v1` olayıyla yapar. Modüller birbirine referans vermez; host participant/port deseniyle bağlanır.
   - İptalde satıra bağlı bütün aktif gelecek ayırmalar bırakılır. Azaltmada yalnız yeni satır miktarını aşan kısım
-    bırakılır; ölçü §3.2 adım 5'teki talep tarafı üst sınırıdır. Yeni miktar içinde kalan ayırma aktif kalır.
+    bırakılır: bırakılan = max(0, satıra bağlı aktif gelecek ayırma toplamı − yeni satır miktarı); karşılaştırma merkezi
+    birim çevrimiyle tek birimde yapılır (SAT-D298). min(kalan ayırma, azaltılan miktar) kullanılmaz; kısmi ayrılmış
+    satırda fazla bırakır (10 t satırın 4 t'si ayrılmış, satır 7 t'ye inerse bırakılan 0'dır). Yeni miktar içinde kalan
+    ayırma aktif kalır. Fiziksel tahsisle birlikte aşım §9.1 aday 3'tedir.
   - Aşan kısım birden çok ayırmaya yayılıyorsa hangisinin önce bırakılacağı seçilmedi (§9.1 aday 4). Karar gelene kadar
     kapalı yön: aşan kısım tek ayırmadan karşılanamıyor ve kullanıcı bırakılacak ayırmaları komutta seçmemişse azaltma
     yazma olmadan reddedilir (409; kod F017-s'de).
-  - Bırakma portu okunamaz, kilit alınamaz veya bırakma başarısız olursa Satış iptali/azaltması da tümüyle geri alınır
-    (kapalı yön). Satış komutunun replay'i ikinci bırakma üretmez (idempotent).
+  - Bırakma portu okunamaz, hata verir, kilit alınamaz veya bırakma başarısız olursa Satış iptali/azaltması da yazılmaz
+    (aynı işlem, fail-closed). Bırakma exactly-once'dır: aynı Satış komut anahtarıyla gelen tekrar ikinci bırakma
+    üretmez, saklanan sonucu döner (idempotent).
+  - Bırakma silme değildir: ayırma `Released` olur; audit ve `released.v1` outbox olayı aynı işlemde yazılır (§3.3).
   - Bırakma fiziksel hareket değildir; stok bakiyesi, serbest fiziki ve maliyet değişmez (DEC-STK-003).
   - Seçilmeyen: "Satış reddeder, önce elle bırak".
 - Satış sözleşmesine dokunduğu için bu iş Satış şeridiyle cross-module K3 dilimidir (F017-s, §10).
@@ -470,10 +477,11 @@ Ekran miktar ve birim çevirisini kendisi hesaplamaz; backend'in döndüğünü 
 - **Satış portu (F017-s):** gelecek ayırma ayrı türle döner ve fiziksel kg toplamına girmez; iptal önizlemesi gelecek
   ayırmayı gösterir; okunamazsa iptal reddedilir.
 - **Satış iptali/azaltması (F017-s, KLN-D28):** satış satırı iptali aynı işlemde satıra bağlı bütün aktif gelecek
-  ayırmaları bırakır (`released.v1`, `origin = sales`, audit); azaltma yalnız yeni miktarı aşan kısmı bırakır, kalan
-  ayırma aktif kalır; aşan kısım birden çok ayırmaya yayılıp seçim yoksa azaltma 409 ve yazma yok; bırakma başarısızsa,
+  ayırmaları bırakır (`Released`, silme yok; `released.v1`, `origin = sales`, audit); azaltma max(0, ayırma − yeni
+  miktar) kadar bırakır, kalan ayırma aktif kalır (kısmi ayrılmış satırda, örneğin 10 t'nin 4 t'si ayrılmışken 7 t'ye
+  inmede, bırakma yoktur); aşan kısım birden çok ayırmaya yayılıp seçim yoksa azaltma 409 ve yazma yok; bırakma başarısızsa,
   port okunamazsa veya kilit alınamazsa Satış komutu da yazılmaz (satır iptal edilmiş, ayırma aktif durumu oluşmaz);
-  aynı anahtarla replay ikinci bırakma üretmez; bırakma stok bakiyesini değiştirmez. Gerçek SQL: Satış iptali × mal
+  aynı Satış komut anahtarıyla replay ikinci bırakma üretmez; bırakma stok bakiyesini değiştirmez. Gerçek SQL: Satış iptali × mal
   kabul çevirmesi ve Satış iptali × oluşturma yarışında sonuç tutarlıdır.
 - **Termin uyarısı:** Stok bir işaret saklamaz ve hesaplamaz. Uyarı #1110 §3.5'teki okuma anı hesabıdır (Alış ekranı F17-4,
   Satış F17-5). Stok testi yalnız terminin geçmesinin ayırmayı bırakmadığını doğrular.
@@ -519,8 +527,8 @@ tur 6820601088; 18. tur 6821262098; 21. tur 6822767886). Uygulama yeri parantezd
   kalır (18. tur m.7; ALS-D91). İptal edilmiş sipariş ve API-11 kapalı satırda da açılır, sipariş canlanır (19. tur). §3.7,
   F017-e.
 - **S13 — Satış satırı iptali veya azaltması:** "Otomatik bırakılır (Önerilen)" (21. tur m.2, 6822767886; KLN-D28).
-  Satış komutu aynı işlemde Stok bırakma portunu çağırır; artan ayırma kalmaz; audit'li. Eski §9.1 aday 1. §5.1 (c),
-  F017-s.
+  Satış komutu aynı işlemde Stok bırakma portunu çağırır; artan ayırma kalmaz; audit'li. Satış tarafı karşılığı SAT-D314
+  (#1119, merge bekliyor). Eski §9.1 aday 1. §5.1 (c), F017-s.
 - **S14 — Canlanmada bırakılmış ayırmalar:** "Geri gelmez, yeniden ayrılır (Önerilen)" (21. tur m.3, 6822767886;
   KLN-D29). Canlanan miktar serbest açık miktardır; kullanıcı gerekirse yeniden ayırır; "canlandı" bildirimi. Eski §9.1
   aday 2. §3.6, §3.7, F017-e.
