@@ -50,7 +50,7 @@ Dosyaların hepsi `src/backend/Modules/Settings/GoymenERP.Modules.Settings.Appli
 | S8 | `ApprovedTaxBuyerSituationCatalog` | SAT-D158 | Alıcı durumu tabanı | `SettingsTaxMasterV1` | Var: `TaxBuyerSituation*` | **C** |
 | S9 | `ApprovedTaxRateListCatalog` | SAT-D181 | Boş | `SettingsTaxRateListsV1` | Tablo sonraki bir dilimde | **D — boş, tablo bekliyor** |
 | S10 | `ApprovedManufacturingProfileCatalog` | URT-D6/7/9/10 | StokERP değerleri; GDC/GSP/GIN için aynı; çok sayıda Guid sabiti | `ManufacturingParameterProfilesV1` | Var: `ManufacturingParameterProfile*` + prepare/approve/publish izinleri | **C** |
-| S11 | `ApprovedManufacturingToleranceCatalog` | — | Boş | `ISettingsManufacturingToleranceProviderV1` | Var: `ManufacturingTolerance*` + prepare/approve/publish izinleri | **C** (boş taban) |
+| S11 | `ApprovedManufacturingToleranceCatalog` | — | Katalog sınıfı boş; üretim toleransının sürüm 0 değerleri (fire, kütle dengesi) S10'da, `ApprovedManufacturingProfileCatalog.ToleranceFor` içindedir | `ISettingsManufacturingToleranceProviderV1` | Var: `ManufacturingTolerance*` + prepare/approve/publish izinleri | **C** (boş taban) |
 
 Settings'te katalog sayılmayan kalıcı alanlar zaten tablodan gelir: döviz kurları (`ExchangeRate*`, kur
 izinleri), vergi kod listeleri (`TaxCodeList*`) ve stopaj eşikleri (`TaxWithholdingThreshold*`). Bunlar F-029'un
@@ -82,7 +82,12 @@ hedef modelinin içinde zaten örnek olarak duruyor.
   derlenmiş ve kalıcı sağlayıcı aynı profil kimliğini, sürümünü, ölçeği ve geçerlilik aralığını döner (§7).
 - Eksik kaynak yine **istisnadır**. Hiçbir sağlayıcı null, boş katalog, sıfır ölçek ya da uygun dönem uyduramaz
   (Settings README'deki V1 kuralı).
-- Hiçbir yeni değer tahminle girilmez. Boş olan katalog (S6, S9, S11) boş kalır.
+- Hiçbir yeni değer tahminle girilmez. Boş olan katalog (S6, S9) boş kalır. S11 kataloğu da boştur, ama üretim
+  toleransı boş değildir: sürüm 0 değerleri S10'daki `ToleranceFor` içindedir ve S10 ile birlikte aktarılır.
+- Üretim toleransında sağlayıcı bugün `Source = Catalog | Settings` döner ve URT-D23 bunu tüketici kaydına snapshot'lar.
+  Çözüm sırası hat → proses → sürüm 0'dır (`SettingsManufacturingToleranceProviderV1.GetScopedManufacturingToleranceAsync`).
+  Aktarımdan sonra sürüm 0 satırı (`SourceKind = CompiledBaselineV0`) yine `Source = Catalog`, profil kimliği ve
+  `CatalogProfileVersion` ile döner; çözüm sırası değişmez. Bunu değiştirmek sözleşme değişikliğidir (V2, §5.3).
 
 ## 5. Hedef tasarım (öneri; uygulama Settings sahibinin K3 dilimidir)
 
@@ -144,8 +149,32 @@ modüllerde kod değişmez. Değişirse V2 port açılır ve V1 korunur.
 3. **F029-S3:** para profili. Birim fiyat ölçeği para hesabını etkiler; K3 kapsamındadır ve iki review gerekir.
 4. **F029-S1/S2:** birim profili ve birim kimliği. Ürün B-07/B-08/B-09 tüketir; bunun için Ürün şeridiyle sözleşme
    gerekir (öneri P2).
-5. **F029-C:** C sınıfı tabanların değer değişmeden, denetimli tek seferlik aktarımı (URN-D5); S10/S11'de
-   hazırla/onayla/yayımla akışının hazırla → yayımla tek akışına indirilmesi (URN-D6).
+5. **F029-C:** C sınıfı tabanların değer değişmeden, denetimli tek seferlik aktarımı (URN-D5) ve S10/S11'de
+   hazırla/onayla/yayımla akışının hazırla → yayımla tek akışına indirilmesi (URN-D6). Sıra ve kurallar:
+   1. **Önce kısıt migration'ı (K3, forward-fix).** Bugün DB tek akışı engeller:
+      `CK_SettingsMfgParameterProfiles_Lifecycle` ve `CK_SettingsMfgToleranceVersions_Lifecycle`
+      (`20261102082723_AddManufacturingParameterProfiles`) Published satırda `ApprovedBy` dolu,
+      `ApprovedBy <> PreparedBy` ve `PublishedBy <> PreparedBy` ister; `CK_SettingsMfgTolerance_Approval`
+      (`20261010095724_AddManufacturingTolerancePolicyRegistry`) `ApprovalStatus = 'Approved'` ister. Yeni kısıt
+      eski Approved/Published satırları geçerli tutar ve yeni satırda onay alanlarını boş bırakmaya izin verir.
+      `Down`, onaysız yayımlanmış satır varken `THROW` ile reddeder (`ef-migration-forward-fix`).
+   2. **Sonra sürüm 0 aktarımı** (URN-D5), yeni kısıt altında.
+   3. **Bekleyen sürümler:** geçiş anında Draft veya Approved durumda olan profil sürümlerinin durumunu migration
+      değiştirmez. Bu satırlar yalnız yetkili yeni publish komutuyla (expected version, idempotency, audit)
+      yayımlanır ya da geri çekilir.
+   4. **Geçmiş:** yayımlanmış satırlardaki `ApprovedBy*` değerleri ve `approved.v1` denetim olayları silinmez,
+      değiştirilmez (URN-D4).
+   5. **Yerine geçen kural:** D-MFG-PROFILE-AUTH-01=A (hazırlayan ≠ onaylayan ≠ yayımlayan;
+      `src/backend/Modules/Settings/README.md`, `ManufacturingToleranceProfileLifecyclePolicyV1`,
+      `ManufacturingProfileRows`, `ErpPermissions`) URN-D6 ile yerini tek akışa bırakır; F029-C bu yerleri günceller.
+   6. **Etkilenmeyen:** Üretim modülünün kendi onayları (plan onayı `manufacturing.plan.approve` / URT-D2, tolerans
+      dışı onay URT-D6) bu kararın kapsamında değildir. `ISettingsManufacturingToleranceProviderV1` onay alanı
+      taşımaz; tüketici değişmez.
+   7. **API ve olay etkisi:** `approve` endpoint'i kaldırılınca 404 değil, kayıtlı bir problem kodu döner. Yeni
+      satırda `ApprovedBy*` null olabilir; bu OpenAPI değişikliğidir (`openapi-regenerate`). `published.v1` yükü
+      değişirse `published.v2` açılır, v1 korunur. Frontend profil ekranı da etkilenir (Claude şeridi).
+   8. **İzin:** `approve` izin adı silinmez; kayıtlı kalır ama hiçbir komut onu istemez. Grant değişikliği insan
+      kapısıdır.
 
 ### 5.5 Sabit şirket kimlikleri
 
@@ -183,14 +212,15 @@ kararıyla ([6820237902](https://github.com/sinangym/goymenerp/issues/66#issueco
 | N6 | URN-D3 mevcut üretim parametre/tolerans profillerinin hazırla/onayla ayrımına da uygulansın mı? | **Karar (URN-D6):** evet; üretim profilleri de tek akış (yetkili müdür hazırlar ve yayımlar, ikinci onay yok, denetim kaydı). Mevcut hazırla/onayla kayıtları geçmiş olarak kalır, geriye dönük işlem yok. |
 
 Bütün sorular cevaplanmıştır. Bütün dilimler (F029-C dahil) URN-D2–D6 ile açılabilir; her dilim yine ayrı K3
-PR'dır. F029-C, S10/S11'de değer aktarımına ek olarak akışı da teke indirebilir; mevcut `approve` izni ve kayıtları
-forward-fix ile emekliye ayrılır, silinmez; grant değişikliği insan kapısıdır.
+PR'dır. F029-C'de sıra: önce forward-fix'li kısıt migration'ı (K3), sonra sürüm 0 aktarımı; bekleyen Draft/Approved
+sürümler migration ile değişmez, yalnız yetkili publish komutuyla yayımlanır ya da geri çekilir; `approve` izin adı
+kayıtlı kalır ama kullanılmaz, eski onay kayıtları silinmez (§5.4 madde 5). Grant değişikliği insan kapısıdır.
 
 ## 7. Port / sözleşme önerileri (ilgili şeritlere)
 
 | No | Hedef şerit | Öneri |
 |---|---|---|
-| P1 | Codex — Settings (sahip) | §5.1–5.4'ün uygulanması. İlk dilim F029-S4b. Kabul testi: derlenmiş ve kalıcı sağlayıcı eşdeğerliği (aynı girdi → aynı profil kimliği, sürüm, değer, ölçek, geçerlilik), gerçek SQL ile; `CompanyId` yalıtım testi; eksik kaynakta istisna. Migration'lar forward-fix kuralıyla yazılır (`ef-migration-forward-fix`) |
+| P1 | Codex — Settings (sahip) | §5.1–5.4'ün uygulanması. İlk dilim F029-S4b. Kabul testi: derlenmiş ve kalıcı sağlayıcı eşdeğerliği (aynı girdi → aynı profil kimliği, sürüm, değer, ölçek, geçerlilik), gerçek SQL ile; `CompanyId` yalıtım testi; eksik kaynakta istisna; üretim toleransında `Source = Catalog` ve hat → proses → sürüm 0 sırasının aktarımdan önce ve sonra aynı kalması (§4). Migration'lar forward-fix kuralıyla yazılır (`ef-migration-forward-fix`) |
 | P2 | Codex — Settings ↔ Claude — Ürün | Birim profili kalıcı hale geldiğinde `ISettingsUnitIdentityCatalogV1` ve `ISettingsPrerequisiteProvider` imzaları aynı kalır. Ürün, birim dönüşüm hesaplayıcısında (B-07/B-08) Settings birim kimliğini snapshot'lar ve kendi tarafında sabit şirket veya birim kimliği tutmaz |
 | P3 | Codex — Satış/Alış tüketicileri | Uygulanan politika profil kimliği ve sürümü belge satırında saklanır (mevcut V1 kuralı). F-029 geçişinde tüketici kodu değişmez. Değişirse V2 port açılır |
 | P4 | Codex — Finans | O4 politikalarında şirkete göre değişen bir eşik (risk limiti, eşleştirme toleransı) varsa envantere eklenir ve aynı Settings modeliyle sunulur. Finans kendi tablosuna politika değeri yazmaz; Settings portu üzerinden okur (modül sınırı) |
