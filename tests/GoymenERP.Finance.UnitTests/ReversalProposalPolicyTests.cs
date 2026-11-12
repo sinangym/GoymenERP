@@ -126,6 +126,52 @@ public sealed class ReversalProposalPolicyTests
         Assert.Equal(ReversalPolicyFailure.VersionConflict, error.Failure);
     }
 
+    [Fact]
+    public void A_reversal_dated_before_the_receipt_is_refused_and_the_receipt_date_itself_is_allowed()
+    {
+        var original = Original();
+
+        var early = Assert.Throws<ReversalPolicyException>(() => ReversalProposalPolicy.Propose(original,
+            new ProposeReversalRequest(original.Id, "1", new DateOnly(2026, 9, 19), "Hatalı tahsilat"),
+            Guid.NewGuid(), "maker", At));
+        var sameDay = ReversalProposalPolicy.Propose(original,
+            new ProposeReversalRequest(original.Id, "1", original.OccurredOn, "Hatalı tahsilat"),
+            Guid.NewGuid(), "maker", At);
+
+        Assert.Equal(ReversalPolicyFailure.OccursBeforeSource, early.Failure);
+        Assert.Equal(original.OccurredOn, sameDay.OccurredOn);
+    }
+
+    [Fact]
+    public void Approval_refuses_a_proposal_dated_before_the_receipt_and_leaves_it_pending()
+    {
+        var original = Original();
+        var proposal = Proposal(original, "maker");
+        proposal.OccurredOn = new DateOnly(2026, 9, 19);
+
+        var error = Assert.Throws<ReversalPolicyException>(() => ReversalProposalPolicy.Approve(
+            original, proposal, new ApproveReversalRequest(proposal.Id, "1"), Guid.NewGuid(), Guid.NewGuid(),
+            "checker", "corr-early", At));
+
+        Assert.Equal(ReversalPolicyFailure.OccursBeforeSource, error.Failure);
+        Assert.Equal((ReversalProposalStatuses.Pending, 1L), (proposal.Status, proposal.Version));
+        Assert.Null(proposal.ReversalSourceId);
+    }
+
+    [Fact]
+    public void A_proposal_dated_before_the_receipt_can_still_be_rejected()
+    {
+        var original = Original();
+        var proposal = Proposal(original, "maker");
+        proposal.OccurredOn = new DateOnly(2026, 9, 19);
+
+        ReversalProposalPolicy.Reject(original, proposal,
+            new RejectReversalRequest(proposal.Id, "1", "Tarih hatalı"), "checker", At);
+
+        Assert.Equal((ReversalProposalStatuses.Rejected, 2L), (proposal.Status, proposal.Version));
+        Assert.Null(proposal.ReversalSourceId);
+    }
+
     private static ReversalProposalRow Proposal(ReceiptDraftRow original, string maker) =>
         ReversalProposalPolicy.Propose(original,
             new ProposeReversalRequest(original.Id, "1", new DateOnly(2026, 9, 22), "neden"),
