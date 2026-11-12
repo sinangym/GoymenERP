@@ -196,9 +196,17 @@ public static class ProductUnitConversionCalculatorV1
         return Checked(() => Pi * wall * (outer - wall) * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
     }
 
-    /// <summary>F-D: kg per piece of a tube or profile from its kg per metre and the piece length (mm).</summary>
-    public static UnitConversionResultV1<decimal> ProfileKgPerPiece(decimal? kgPerMetre, decimal? pieceLengthMm)
+    /// <summary>
+    /// F-D: kg per piece of a tube or profile from its kg per metre and the piece length (mm). Shown = computed
+    /// (URN-D8, #66 6825745714): the kg per metre is a coefficient, so it is first rounded with
+    /// <see cref="RoundCoefficient"/> (the company's <see cref="UnitConversionSettingsV1.CoefficientDecimals"/>), then
+    /// multiplied by the length in metres, and the piece kg (itself a coefficient) is rounded to the same decimals.
+    /// Example: 1.2345 kg/m and 6000 mm give 7.410 at 3 decimals (1.235 x 6) and 7.407 at 4 decimals (1.2345 x 6).
+    /// The length is used at full precision. A coefficient that rounds to zero is refused, never returned as 0.
+    /// </summary>
+    public static UnitConversionResultV1<decimal> ProfileKgPerPiece(decimal? kgPerMetre, decimal? pieceLengthMm, UnitConversionSettingsV1 settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
         if (kgPerMetre is null || pieceLengthMm is null)
         {
             return UnitConversionResultV1<decimal>.NoSource("A profile piece conversion needs kg per metre and piece length.");
@@ -209,9 +217,15 @@ public static class ProductUnitConversionCalculatorV1
             return UnitConversionResultV1<decimal>.Refused("Profile piece conversion inputs must be positive.");
         }
 
-        var kgm = kgPerMetre.Value;
+        var kgm = RoundCoefficient(kgPerMetre.Value, settings);
         var length = pieceLengthMm.Value;
-        return Checked(() => kgm * length / MillimetresPerMetre);
+        var piece = Checked(() => RoundCoefficient(kgm * length / MillimetresPerMetre, settings));
+        if (piece.Outcome == UnitConversionOutcomeV1.Computed && (kgm <= 0 || piece.Value <= 0))
+        {
+            return UnitConversionResultV1<decimal>.Refused("The kg per metre or the piece kg rounds to zero at the coefficient decimals.");
+        }
+
+        return piece;
     }
 
     /// <summary>Units to kg at full precision (no intermediate rounding).</summary>

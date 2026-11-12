@@ -73,7 +73,7 @@ public sealed class ProductUnitConversionCalculatorV1ProfileTests
     [Fact]
     public void A_profile_piece_of_6000mm_at_4_239_kg_per_metre_weighs_25_434_kg_and_chains_to_whole_units()
     {
-        var piece = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(4.239m, 6000m);
+        var piece = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(4.239m, 6000m, Settings);
 
         Assert.Equal(UnitConversionOutcomeV1.Computed, piece.Outcome);
         Assert.Equal(25.434m, piece.Value);
@@ -90,9 +90,43 @@ public sealed class ProductUnitConversionCalculatorV1ProfileTests
     [InlineData(4.239, -1.0, true)]
     public void A_missing_profile_piece_input_is_NoSource_and_a_non_positive_one_is_refused(double? kgPerMetre, double? lengthMm, bool refused)
     {
-        var result = ProductUnitConversionCalculatorV1.ProfileKgPerPiece((decimal?)kgPerMetre, (decimal?)lengthMm);
+        var result = ProductUnitConversionCalculatorV1.ProfileKgPerPiece((decimal?)kgPerMetre, (decimal?)lengthMm, Settings);
 
         Assert.Equal(refused ? UnitConversionOutcomeV1.Refused : UnitConversionOutcomeV1.NoSource, result.Outcome);
         Assert.Null(result.Value);
+    }
+
+    [Theory]
+    [InlineData(3, 7.410)]
+    [InlineData(4, 7.407)]
+    public void The_kg_per_metre_is_rounded_to_the_coefficient_decimals_before_the_length_so_shown_equals_computed(int decimals, double expected)
+    {
+        var settings = Settings with { CoefficientDecimals = decimals };
+
+        var piece = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(1.2345m, 6000m, settings);
+
+        Assert.Equal(UnitConversionOutcomeV1.Computed, piece.Outcome);
+        Assert.Equal((decimal)expected, piece.Value);
+    }
+
+    [Fact]
+    public void The_piece_kg_is_rounded_once_to_the_coefficient_decimals_and_the_length_stays_full_precision()
+    {
+        var piece = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(1.235m, 1234.5m, Settings);
+
+        Assert.Equal(UnitConversionOutcomeV1.Computed, piece.Outcome);
+        Assert.Equal(1.525m, piece.Value);
+    }
+
+    [Fact]
+    public void A_kg_per_metre_or_a_piece_kg_that_rounds_to_zero_is_refused_not_returned_as_zero()
+    {
+        var tinyKgPerMetre = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(0.0004m, 6000m, Settings);
+        var tinyPiece = ProductUnitConversionCalculatorV1.ProfileKgPerPiece(0.001m, 0.4m, Settings);
+
+        Assert.Equal(UnitConversionOutcomeV1.Refused, tinyKgPerMetre.Outcome);
+        Assert.Null(tinyKgPerMetre.Value);
+        Assert.Equal(UnitConversionOutcomeV1.Refused, tinyPiece.Outcome);
+        Assert.Null(tinyPiece.Value);
     }
 }
