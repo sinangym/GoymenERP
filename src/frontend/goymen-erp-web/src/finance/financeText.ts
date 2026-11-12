@@ -257,6 +257,7 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_allocation_rule_unavailable: 'Dağıtım durumu doğrulanamadı; ters kayıt onayı kapalı.',
   finance_period_rule_unavailable: 'Ters kayıt dönemi doğrulanamadı; onay kapalı.',
   finance_period_not_open: 'Ters kayıt işlem tarihi açık bir muhasebe dönemine ait değil.',
+  finance_reversal_before_receipt: 'Ters kayıt tarihi tahsilat tarihinden önce olamaz.',
   // API-23 (manual bank payment reversal)
   finance_payment_not_found: 'Ters kaydedilecek giden ödeme bu şirkette bulunamadı.',
   finance_payment_not_recorded: 'Yalnız kesin kayda alınmış bir giden ödeme için ters kayıt önerilebilir.',

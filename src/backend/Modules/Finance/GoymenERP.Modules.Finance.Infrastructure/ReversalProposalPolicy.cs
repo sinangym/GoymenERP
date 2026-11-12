@@ -12,8 +12,8 @@ internal enum ReversalPolicyFailure
     ProposalNotPending,
     ApproverIsProposer,
 
-    /// <summary>API-23 (#66 round 20, coordinator decision under Sinan's delegation): a payment reversal cannot
-    /// occur before the payment it reverses.</summary>
+    /// <summary>#66 round 20 (coordinator decision under Sinan's delegation, temporary assumption): a reversal
+    /// cannot occur before the source it reverses — the payment (API-23) or the receipt (FIN-T06).</summary>
     OccursBeforeSource,
 }
 
@@ -51,6 +51,7 @@ internal static class ReversalProposalPolicy
         {
             throw new ReversalPolicyException(ReversalPolicyFailure.SourceNotRecorded);
         }
+        EnsureNotBeforeReceipt(request.OccurredOn, original);
 
         return new ReversalProposalRow
         {
@@ -77,6 +78,7 @@ internal static class ReversalProposalPolicy
         DateTimeOffset recordedAtUtc)
     {
         ValidateDecision(original, proposal, request.ProposalId, request.ExpectedVersion, actorId);
+        EnsureNotBeforeReceipt(proposal.OccurredOn, original);
         if (reversalSourceId == Guid.Empty || reversalEventId == Guid.Empty || reversalSourceId == original.Id
             || string.IsNullOrWhiteSpace(correlationId))
         {
@@ -187,6 +189,19 @@ internal static class ReversalProposalPolicy
         if (string.Equals(proposal.ProposedBy, actorId, StringComparison.Ordinal))
         {
             throw new ReversalPolicyException(ReversalPolicyFailure.ApproverIsProposer);
+        }
+    }
+
+    /// <summary>
+    /// #66 round 20 (coordinator decision under Sinan's delegation, the API-23 rule applied to FIN-T06): the
+    /// reversal date is on or after the receipt date; an earlier date is refused. Approval checks it again so a
+    /// proposal stored before this rule cannot record an earlier reversal. The closed-period rule applies separately.
+    /// </summary>
+    private static void EnsureNotBeforeReceipt(DateOnly reversalOn, ReceiptDraftRow receipt)
+    {
+        if (reversalOn < receipt.OccurredOn)
+        {
+            throw new ReversalPolicyException(ReversalPolicyFailure.OccursBeforeSource);
         }
     }
 
