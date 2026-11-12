@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 158
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "c7e96d420f709f69c579fa22f9c20713500793b9b6c14941fa6db3b47ad9fa78"
 )
-EXPECTED_DURABLE_STORE_COUNT = 32
+EXPECTED_DURABLE_STORE_COUNT = 33
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -187,6 +187,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("accounting", "SourceDocumentAdmissions"),
     ("audit", "AuditEvents"),
     ("documents", "DocumentAttempts"),
+    ("finance", "CashAccountCommands"),
     ("finance", "Commands"),
     ("finance", "InvoiceCancellations"),
     ("finance", "OfficialInvoiceImportCommands"),
@@ -413,6 +414,13 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20260930120000_InitialDocuments.cs",
         DOCUMENTS_STORE, ("dbContext.Attempts.Add(new DocumentAttemptRow",),
         mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "finance.cash-account-commands", "Finance", "idempotency", "FinanceDbContext",
+        "CashAccountCommandRow", "finance", "CashAccountCommands", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261112070144_AddCashAccounts.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
+        ("dbContext.CashAccountCommands.Add(new CashAccountCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "finance.command-replay", "Finance", "idempotency", "FinanceDbContext",
