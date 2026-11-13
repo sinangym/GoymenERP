@@ -5197,7 +5197,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
                     ("items", "type:array;items:ref:CashAccountCurrencyCandidate")),
-                // API-30: no balance, no opening balance and no responsible person (OPEN, NEEDS-SINAN).
+                // API-30: no balance and no opening balance; FNS-D32 decided there is no responsible person field.
                 ["CashAccountView"] = ObjectSchema(
                     ["id", "companyId", "currencyId", "displayName", "status", "isActive", "rejectionReason", "version"],
                     ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),

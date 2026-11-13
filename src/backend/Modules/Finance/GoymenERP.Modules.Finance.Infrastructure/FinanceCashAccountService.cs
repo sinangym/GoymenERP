@@ -407,8 +407,11 @@ public sealed class FinanceCashAccountService(
         row.Version = checked(row.Version + 1);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, command, payloadHash, row.Id, result, now);
-        var approval = JsonSerializer.Serialize(new { rule = "O4", proposedBy = row.ProposedBy, approvedBy = context.ActorId },
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        // The decider is named for what they did: a rejection is not recorded as an approval.
+        object decision = status == Rejected
+            ? new { rule = "O4", proposedBy = row.ProposedBy, rejectedBy = context.ActorId }
+            : new { rule = "O4", proposedBy = row.ProposedBy, approvedBy = context.ActorId };
+        var approval = JsonSerializer.Serialize(decision, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Audit(context, metadata, envelope, row.Id, eventType, operation, versionBefore, row.Version, before,
             AccountAudit(row), approval, reason is null ? auditReason : auditReason + ": " + reason);
         return await SaveAsync(context, metadata, action, command, payloadHash, result, cancellationToken);

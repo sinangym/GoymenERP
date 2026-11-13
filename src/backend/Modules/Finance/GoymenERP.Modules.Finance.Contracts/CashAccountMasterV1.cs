@@ -11,8 +11,9 @@ namespace GoymenERP.Modules.Finance.Contracts;
 //
 // FNS-D32: a cash account carries NO "responsible person" (sorumlu) field (the actor of each cash
 // operation is already recorded); if one is ever wanted it is asked again in a separate slice.
-// OPEN: passivating an approved cash account (aktif → pasif) has no command in this slice; an approved
-// account is active, and the state is shown so a later command can move it.
+// Not in scope: passivating an approved cash account (aktif → pasif). This slice has no such command and
+// no passive state; whether and how it is added awaits a user decision (NEEDS-SINAN), so nothing here
+// assumes it. An approved account is active.
 
 public sealed record CashAccountProposeRequest(string DisplayName, Guid CurrencyId);
 

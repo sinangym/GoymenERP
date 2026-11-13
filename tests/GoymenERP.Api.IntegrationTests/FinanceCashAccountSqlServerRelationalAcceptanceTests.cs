@@ -85,6 +85,11 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.CashAccount' AND CorrelationId = @c", ("@c", run.Correlation)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.approved.v1' AND ApprovalContextJson IS NOT NULL"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.approved.v1' "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @approver "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.rejectedBy') IS NULL",
+            ("@proposer", Proposer), ("@approver", Approver)));
         // A cash account is a definition: no money event, no balance.
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }
@@ -389,6 +394,12 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.rejected.v1' AND ApprovalContextJson IS NOT NULL"));
+        // The rejection's context names the decider as the one who rejected, never as an approver.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.rejected.v1' "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.rejectedBy') = @approver "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') IS NULL",
+            ("@proposer", Proposer), ("@approver", Approver)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.approved.v1'"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.CashAccount'"));
@@ -557,6 +568,92 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task Permission_revoked_during_the_settings_read_or_just_before_the_save_refuses_propose_approve_and_reject_and_stores_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var auditsAtStart = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+
+        // Propose, the authority withdrawn WHILE Settings is read: the fence after that read refuses.
+        var duringRead = new RevocablePermissions(int.MaxValue);
+        await using (var a = run.OpenWithPermissions(CompanyA, Proposer, duringRead, new RevokingCandidates(duringRead)))
+        {
+            var refused = await a.Accounts.ProposeAsync(a.Context, Key("p-fence"),
+                new CashAccountProposeRequest("SENTETIK kasa", Currency), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+        }
+
+        // Propose, the authority withdrawn after that fence: the one immediately before the save refuses.
+        var beforeSave = new RevocablePermissions(allowedDecisions: 2);
+        await using (var a = run.OpenWithPermissions(CompanyA, Proposer, beforeSave, new SyntheticCandidates()))
+        {
+            var refused = await a.Accounts.ProposeAsync(a.Context, Key("p-fence"),
+                new CashAccountProposeRequest("SENTETIK kasa", Currency), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+            Assert.Equal(3, beforeSave.Decisions);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccounts"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(auditsAtStart, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        // The refused key was never used: with the authority held it is a first attempt.
+        CashAccountView proposed;
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var first = await a.Accounts.ProposeAsync(a.Context, Key("p-fence"),
+                new CashAccountProposeRequest("SENTETIK kasa", Currency), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false), (first.Outcome, first.IsReplay));
+            proposed = first.Resource!;
+        }
+
+        var auditsAfterProposal = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+
+        // Approve, the authority withdrawn while Settings is read.
+        duringRead = new RevocablePermissions(int.MaxValue);
+        await using (var b = run.OpenWithPermissions(CompanyA, Approver, duringRead, new RevokingCandidates(duringRead)))
+        {
+            Assert.Equal(CommandOutcome.Denied, (await b.Accounts.ApproveAsync(b.Context, Key("a-fence"),
+                new CashAccountApproveRequest(proposed.Id, "1"), CancellationToken.None)).Outcome);
+        }
+
+        // Approve, the authority withdrawn after that fence and before the save.
+        beforeSave = new RevocablePermissions(allowedDecisions: 2);
+        await using (var b = run.OpenWithPermissions(CompanyA, Approver, beforeSave, new SyntheticCandidates()))
+        {
+            Assert.Equal(CommandOutcome.Denied, (await b.Accounts.ApproveAsync(b.Context, Key("a-fence"),
+                new CashAccountApproveRequest(proposed.Id, "1"), CancellationToken.None)).Outcome);
+            Assert.Equal(3, beforeSave.Decisions);
+        }
+
+        // Reject reads no Settings: the authority withdrawn after the first decision, before the save.
+        beforeSave = new RevocablePermissions(allowedDecisions: 1);
+        await using (var b = run.OpenWithPermissions(CompanyA, Approver, beforeSave, new SyntheticCandidates()))
+        {
+            Assert.Equal(CommandOutcome.Denied, (await b.Accounts.RejectAsync(b.Context, Key("r-fence"),
+                new CashAccountRejectRequest(proposed.Id, "1", "SENTETIK revoke"), CancellationToken.None)).Outcome);
+            Assert.Equal(2, beforeSave.Decisions);
+        }
+
+        // No decision reached the store: the proposal, its one command record and its one audit event.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 1 AND Version = 1 AND DecidedBy IS NULL "
+            + "AND DecidedAtUtc IS NULL AND RejectionReason IS NULL", ("@id", proposed.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccounts"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(auditsAfterProposal, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        // The refused approval key is a first attempt too once the authority is held.
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var approved = await b.Accounts.ApproveAsync(b.Context, Key("a-fence"),
+                new CashAccountApproveRequest(proposed.Id, "1"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, "2"), (approved.Outcome, approved.IsReplay, approved.Resource!.Version));
+        }
+    }
+
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
     private sealed class Run : IAsyncDisposable
@@ -599,6 +696,10 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         public Scope OpenWith(Guid company, string actor, ISettingsMoneyCandidateReader currencies,
             params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra) =>
             Open(company, actor, new SyntheticPermissions(), currencies, extra);
+
+        /// <summary>The same scope over another SENTETIK authority and candidate source.</summary>
+        public Scope OpenWithPermissions(Guid company, string actor, IFinancePermissionPort permissions,
+            ISettingsMoneyCandidateReader currencies) => Open(company, actor, permissions, currencies, []);
 
         /// <summary>The same scope over Settings' own fail-closed adapter, which has no currency source.</summary>
         public Scope OpenWithUnavailableSettings(Guid company, string actor)
@@ -708,6 +809,36 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(
                 action == FinanceAction.ReadCashAccounts ? PermissionDecision.Allowed : PermissionDecision.Denied);
+    }
+
+    /// <summary>
+    /// SENTETIK: an authority that is withdrawn mid-command, either on demand or after a number of
+    /// allowed decisions. Not a grant.
+    /// </summary>
+    private sealed class RevocablePermissions(int allowedDecisions) : IFinancePermissionPort
+    {
+        private int decisions;
+        private volatile bool revoked;
+
+        public int Decisions => Volatile.Read(ref decisions);
+
+        public void Revoke() => revoked = true;
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) => Task.FromResult(
+                Interlocked.Increment(ref decisions) <= allowedDecisions && !revoked
+                    ? PermissionDecision.Allowed
+                    : PermissionDecision.Denied);
+    }
+
+    /// <summary>SENTETIK: the one candidate, with the caller's authority withdrawn during the read. Not a Settings source.</summary>
+    private sealed class RevokingCandidates(RevocablePermissions permissions) : ISettingsMoneyCandidateReader
+    {
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default)
+        {
+            permissions.Revoke();
+            return Task.FromResult<IReadOnlyList<MoneyCurrencyCandidateV1>>([new MoneyCurrencyCandidateV1(Currency, "SENTETIK", "SENTETIK para")]);
+        }
     }
 
     /// <summary>SENTETIK: one currency candidate. Not a Settings source.</summary>

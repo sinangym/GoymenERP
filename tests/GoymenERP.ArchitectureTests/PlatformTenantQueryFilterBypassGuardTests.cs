@@ -278,8 +278,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // API-30: +4 cash-account master facts, ordinal-sorted (36413356… -> b4e424b4…).
             // API-30 K3 review: +8 cash-account facts (replay/conflict, recorded refusals, rejection audit, races,
             // currency re-check), ordinal-sorted (b4e424b4… -> 0a36a1d0…).
+            // API-30 K3 review B P2-1: +1 cash-account fact (authority withdrawn during the Settings read or just
+            // before the save), ordinal-sorted (0a36a1d0… -> b93d6306…).
             ["tools/relational_inventory/finance.txt"] =
-                "0a36a1d04614f794948bc422b7edcd36dacda51ef45ce2e3b395e7c8ccfd2206",
+                "b93d63063735760d185475bb9d3c94990269e70074e10710c6ebc7987594d8aa",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -1446,10 +1448,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-30: the cash-account master writer; the SqlClient namespace only to recognise a
                 // unique-key violation (SqlException 2601/2627, UX_CashAccounts_LiveName) after SaveChanges,
                 // as FinanceBankAccountService does. No connection, command or raw SQL.
+                // Re-fingerprinted for API-30 K3 review B P3-5: a rejection's audit context names the decider
+                // as rejectedBy instead of approvedBy; same token count (5540ddc5… -> ff441d02…).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs"] =
                     new(
-                        "5540ddc5962be7e91c7601aa7715af5e7c39a616ba227bfda775a4b10662f645",
+                        "ff441d029b75d09f9e8bd9fa98d0076c891abe633c832b2f8e2253ea402d4759",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
