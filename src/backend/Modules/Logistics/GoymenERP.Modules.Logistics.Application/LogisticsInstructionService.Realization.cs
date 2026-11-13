@@ -222,7 +222,7 @@ public sealed partial class LogisticsInstructionService
         {
             var code = exception.Code switch
             {
-                LogisticsRuleCodes.InstructionNotIssued => LogisticsProblemCodesV1.InstructionState,
+                LogisticsRuleCodes.InstructionNotIssued or LogisticsRuleCodes.InstructionCancelled => LogisticsProblemCodesV1.InstructionState,
                 LogisticsRuleCodes.LineBlocked => LogisticsProblemCodesV1.LineBlocked,
                 LogisticsRuleCodes.DuplicateShareId => LogisticsProblemCodesV1.DuplicateShare,
                 LogisticsRuleCodes.ShipmentExceedsLoaded => LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
