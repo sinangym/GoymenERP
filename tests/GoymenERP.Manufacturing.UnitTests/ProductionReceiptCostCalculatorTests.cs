@@ -9,9 +9,12 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// SAT-D316 (1)); returns at the linked issue's stamped cost (SAT-D317 (2)), closed orders only (SAT-D317 (1)). The
 /// declared process loss has value zero (SAT-D316 (2)); consumed kg nothing accounts for is a separate unexplained
 /// kg, never process loss (URT-D5). More out than in gives no amount, also inside the closing tolerance (URT-D40,
-/// URT-D41 (1)). Fail-closed on anything unknown (scrap price, zero issue cost, usable remnant, missing input,
-/// overflow). The expected values are this file's own arithmetic of those rules: the golden example the SAT-D308
-/// implementation note asks for (ChatGPT lane or NEEDS-SINAN) is not in the repository yet.
+/// URT-D41 (1)). Sinan's answers of #66 6857496471: the scrap-out divisor is good + second quality kg and its
+/// example is the golden example (1); a cost per kg of zero or below is unreadable (2); a scrap price above the
+/// raw-material kg cost stops the calculation (3); no weighed scrap and no scrap price entered computes (4); the
+/// paint's cost is not loaded and the result is marked (5). Fail-closed on anything unknown (scrap price, zero issue
+/// cost, usable remnant, another input not tracked in kg, missing input, overflow). The golden test uses the literal
+/// numbers of answer (1); the other expected values are this file's own arithmetic of those rules.
 /// </summary>
 public sealed class ProductionReceiptCostCalculatorTests
 {
@@ -33,7 +36,8 @@ public sealed class ProductionReceiptCostCalculatorTests
         decimal processLoss = 0m,
         ScrapCostSettingStatus scrap = ScrapCostSettingStatus.On,
         ScrapPriceInput? scrapPrice = null,
-        bool closed = true) =>
+        bool closed = true,
+        NonKgInputUse nonKg = NonKgInputUse.None) =>
         new(closed,
             issues ?? [Issue(IssueA, 1000m, 40m)],
             returns ?? [],
@@ -43,7 +47,8 @@ public sealed class ProductionReceiptCostCalculatorTests
             new Kilograms(weighedScrap),
             new Kilograms(processLoss),
             scrap,
-            scrapPrice ?? ScrapPriceInput.Missing);
+            scrapPrice ?? ScrapPriceInput.Missing,
+            nonKg);
 
     private static ScrapPriceInput Price(decimal tlPerKg) => new(ScrapPriceReadStatus.Value, tlPerKg);
 
@@ -56,6 +61,7 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
         Assert.Equal(40000m / 950m, result.CostPerKg);
         Assert.Equal(ProductionReceiptCostCodesV1.BasisWithScrap, result.CostBasis);
+        Assert.Null(result.CostExclusion);
         Assert.Null(result.UnreadableCode);
     }
 
@@ -75,13 +81,19 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void Scrap_in_cost_needs_no_scrap_price()
     {
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
-            scrapPrice: new ScrapPriceInput(ScrapPriceReadStatus.Unreadable, null)));
+        // With scrap in cost the scrap price is not read: an unreadable one, or one above the 40 TL raw-material kg
+        // cost, changes nothing.
+        ScrapPriceInput[] prices = [new(ScrapPriceReadStatus.Unreadable, null), Price(1000m)];
 
-        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(40000m / 950m, result.CostPerKg);
-        Assert.Equal(0m, result.WeighedScrapExpense);
-        Assert.Equal(ProductionReceiptCostCodesV1.BasisWithScrap, result.CostBasis);
+        foreach (var price in prices)
+        {
+            var result = ProductionReceiptCostCalculatorV1.Calculate(Input(weighedScrap: 50m, scrapPrice: price));
+
+            Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+            Assert.Equal(40000m / 950m, result.CostPerKg);
+            Assert.Equal(0m, result.WeighedScrapExpense);
+            Assert.Equal(ProductionReceiptCostCodesV1.BasisWithScrap, result.CostBasis);
+        }
     }
 
     [Theory]
@@ -118,20 +130,32 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
-    public void Scrap_out_of_cost_values_the_weighed_scrap_at_the_scrap_price_and_loads_the_rest_on_the_product()
+    public void Scrap_out_of_cost_golden_example_divides_the_rest_by_good_and_second_quality_kilograms()
     {
-        // SAT-D316 (1): 1000 kg x 40 = 40000 TL; 900 kg good + 50 kg second quality,
-        // 50 kg weighed scrap at 10 TL/kg = 500 TL expense; (40000 - 500) / 950 TL/kg on both outputs; no loss.
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
-            weighedScrap: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(10m)));
+        // Golden: Sinan's answer #66 6857496471 (1) ("Saglam + 2. kalite kg"; the option text counts the answer as the
+        // golden example). 1000 kg x 40 TL; 900 kg good + 50 kg second quality; 50 kg weighed scrap x 10 TL/kg =
+        // 500 TL expense; 39500 / 950 = 41.578947... TL/kg, asserted at the calculator's full decimal precision.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(new ProductionReceiptCostInput(
+            true,
+            [Issue(IssueA, 1000m, 40m)],
+            [],
+            new Kilograms(900m),
+            new Kilograms(50m),
+            Kilograms.Zero,
+            new Kilograms(50m),
+            Kilograms.Zero,
+            ScrapCostSettingStatus.Off,
+            Price(10m),
+            NonKgInputUse.None));
 
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(39500m / 950m, result.CostPerKg);
+        Assert.Equal(41.578947368421052631578947368m, result.CostPerKg);
         Assert.Equal(500m, result.WeighedScrapExpense);
         Assert.Equal(0m, result.ProcessLossKg);
         Assert.Equal(0m, result.ProcessLossRatio);
         Assert.Equal(0m, result.UnexplainedKg);
         Assert.Equal(ProductionReceiptCostCodesV1.BasisWithoutScrap, result.CostBasis);
+        Assert.Null(result.CostExclusion);
         Assert.Null(result.UnreadableCode);
     }
 
@@ -170,8 +194,9 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
-    public void Scrap_out_of_cost_without_a_readable_scrap_price_is_unreadable()
+    public void Scrap_out_of_cost_with_weighed_scrap_and_no_readable_scrap_price_is_unreadable()
     {
+        // SAT-D316 (6): 50 kg of weighed scrap to value and no price entered, or none readable: no amount.
         ScrapPriceInput[] prices =
         [
             ScrapPriceInput.Missing,
@@ -190,29 +215,159 @@ public sealed class ProductionReceiptCostCalculatorTests
 
         AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(new ProductionReceiptCostInput(
             true, [Issue(IssueA, 1000m, 40m)], [], new Kilograms(900m), new Kilograms(50m), Kilograms.Zero,
-            new Kilograms(50m), Kilograms.Zero, ScrapCostSettingStatus.Off, null!)),
+            new Kilograms(50m), Kilograms.Zero, ScrapCostSettingStatus.Off, null!, NonKgInputUse.None)),
             ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
+    }
+
+    [Fact]
+    public void Scrap_out_of_cost_with_no_weighed_scrap_and_no_scrap_price_entered_is_computed()
+    {
+        // #66 6857496471 (4): no weighed scrap and no scrap price entered for the period: the cost is computed with a
+        // zero expense, also when the order has declared process loss or unexplained kg.
+        var balanced = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            good: 950m, second: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: ScrapPriceInput.Missing));
+        var withLoss = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            processLoss: 30m, scrap: ScrapCostSettingStatus.Off, scrapPrice: ScrapPriceInput.Missing));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, balanced.Status);
+        Assert.Equal(40m, balanced.CostPerKg);
+        Assert.Equal(0m, balanced.WeighedScrapExpense);
+        Assert.Equal(ProductionReceiptCostCodesV1.BasisWithoutScrap, balanced.CostBasis);
+        Assert.Null(balanced.UnreadableCode);
+        Assert.Equal(ProductionReceiptCostStatus.Value, withLoss.Status);
+        Assert.Equal(40000m / 950m, withLoss.CostPerKg);
+        Assert.Equal(0m, withLoss.WeighedScrapExpense);
+        Assert.Equal(30m, withLoss.ProcessLossKg);
+        Assert.Equal(20m, withLoss.UnexplainedKg);
+    }
+
+    [Fact]
+    public void Scrap_out_of_cost_with_no_weighed_scrap_still_refuses_an_unreadable_or_malformed_scrap_price()
+    {
+        // Only a price that was not entered is let through with no weighed scrap; one that could not be read or is
+        // malformed stays unreadable (author reading of #66 6857496471 (4), which answers the not-entered case).
+        ScrapPriceInput[] prices =
+        [
+            new(ScrapPriceReadStatus.Unreadable, null),
+            new(ScrapPriceReadStatus.Value, null),
+            new(ScrapPriceReadStatus.Missing, 10m),
+            Price(-0.01m),
+        ];
+
+        foreach (var price in prices)
+        {
+            AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+                good: 950m, second: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: price)),
+                ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
+        }
+
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(new ProductionReceiptCostInput(
+            true, [Issue(IssueA, 1000m, 40m)], [], new Kilograms(950m), new Kilograms(50m), Kilograms.Zero,
+            Kilograms.Zero, Kilograms.Zero, ScrapCostSettingStatus.Off, null!, NonKgInputUse.None)),
+            ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
+    }
+
+    [Fact]
+    public void A_scrap_price_equal_to_the_raw_material_kg_cost_is_computed()
+    {
+        // #66 6857496471 (3) stops a price above the 40 TL raw-material kg cost, not one equal to it:
+        // 50 kg x 40 TL = 2000 TL expense, (40000 - 2000) / 950 TL/kg.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(40m)));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+        Assert.Equal(38000m / 950m, result.CostPerKg);
+        Assert.Equal(2000m, result.WeighedScrapExpense);
+    }
+
+    [Fact]
+    public void A_scrap_price_above_the_raw_material_kg_cost_stops_the_calculation()
+    {
+        // #66 6857496471 (3) ("Hesap dursun, fiyat kontrol edilsin"): 1000 kg x 40 TL, so the raw-material kg cost is
+        // 40 TL. Each case is above it, also where the scrap value would stay under the net cost and give a cost.
+        (decimal Good, decimal Second, decimal WeighedScrap, decimal TlPerKg)[] cases =
+        [
+            (900m, 50m, 50m, 40.01m),
+            (900m, 50m, 50m, 45m),
+            // a price per ton typed as a price per kg on 3 kg: 36000 TL would have left 4.21 TL/kg
+            (900m, 50m, 3m, 12000m),
+            // 100 kg x 300 TL = 30000 TL would have left 11.11 TL/kg
+            (900m, 0m, 100m, 300m),
+            // a price given with no weighed scrap is checked too (author reading)
+            (900m, 50m, 0m, 40.01m),
+        ];
+
+        foreach (var item in cases)
+        {
+            AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+                good: item.Good, second: item.Second, weighedScrap: item.WeighedScrap,
+                scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(item.TlPerKg))),
+                ProductionReceiptCostCodesV1.ScrapPriceAboveRawMaterialCost);
+        }
+    }
+
+    [Fact]
+    public void The_raw_material_kg_cost_is_the_issued_cost_over_the_issued_kilograms_before_returns()
+    {
+        // Author reading of "emirde kullanilan hammaddenin kg maliyeti" (#66 6857496471 (3)), to be confirmed:
+        // A 600 kg x 40 + B 400 kg x 50 = 44000 TL over 1000 kg issued = 44 TL; 100 kg of B back. A 44 TL price is
+        // computed and 44.01 TL stops. (Net cost over consumed kg, 39000 / 900 = 43.33 TL, would stop 44 TL.)
+        IssueCostInput[] issues = [Issue(IssueA, 600m, 40m), Issue(IssueB, 400m, 50m)];
+        ReturnCostInput[] returns = [new(ReturnB, IssueB, new Kilograms(100m))];
+
+        var equal = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: issues, returns: returns, good: 800m, second: 50m, weighedScrap: 50m,
+            scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(44m)));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, equal.Status);
+        Assert.Equal(36800m / 850m, equal.CostPerKg);
+        Assert.Equal(2200m, equal.WeighedScrapExpense);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: issues, returns: returns, good: 800m, second: 50m, weighedScrap: 50m,
+            scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(44.01m))),
+            ProductionReceiptCostCodesV1.ScrapPriceAboveRawMaterialCost);
     }
 
     [Fact]
     public void Scrap_out_of_cost_with_a_scrap_value_over_the_net_input_cost_is_unreadable()
     {
-        // 50 kg x 801 TL = 40050 TL of scrap against 40000 TL of input.
+        // A 500 kg x 10 + B 500 kg x 100 = 55000 TL over 1000 kg issued: the raw-material kg cost is 55 TL, so a
+        // 55 TL price passes its check. 490 kg of B back: 6000 TL net over 510 kg consumed; 10 kg good, 500 kg
+        // weighed scrap x 55 TL = 27500 TL of scrap against 6000 TL of net input.
         AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
-            weighedScrap: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(801m))),
+            issues: [Issue(IssueA, 500m, 10m), Issue(IssueB, 500m, 100m)],
+            returns: [new ReturnCostInput(ReturnB, IssueB, new Kilograms(490m))],
+            good: 10m,
+            second: 0m,
+            weighedScrap: 500m,
+            scrap: ScrapCostSettingStatus.Off,
+            scrapPrice: Price(55m))),
             ProductionReceiptCostCodesV1.ScrapValueExceedsInputCost);
     }
 
     [Fact]
-    public void Scrap_out_of_cost_with_a_scrap_value_equal_to_the_net_input_cost_gives_a_zero_cost()
+    public void Scrap_out_of_cost_with_a_scrap_value_equal_to_the_net_input_cost_is_unreadable_never_a_zero_cost()
     {
-        // 50 kg x 800 TL = 40000 TL of scrap against 40000 TL of input: the products carry a cost of zero.
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
-            weighedScrap: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(800m)));
+        // #66 6857496471 (2): the same order with 390 kg good and 120 kg weighed scrap x 50 TL = 6000 TL, the whole
+        // net input cost: a product cost of zero is unreadable, not a value.
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: [Issue(IssueA, 500m, 10m), Issue(IssueB, 500m, 100m)],
+            returns: [new ReturnCostInput(ReturnB, IssueB, new Kilograms(490m))],
+            good: 390m,
+            second: 0m,
+            weighedScrap: 120m,
+            scrap: ScrapCostSettingStatus.Off,
+            scrapPrice: Price(50m))),
+            ProductionReceiptCostCodesV1.ProductCostNotPositive);
+    }
 
-        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(0m, result.CostPerKg);
-        Assert.Equal(40000m, result.WeighedScrapExpense);
+    [Fact]
+    public void A_cost_that_rounds_to_zero_in_decimal_is_unreadable_also_with_scrap_in_cost()
+    {
+        // #66 6857496471 (2) on both paths: 0.001 kg x 1E-28 TL is below the smallest decimal and gives zero.
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: [Issue(IssueA, 0.001m, 0.0000000000000000000000000001m)], good: 0.001m, second: 0m)),
+            ProductionReceiptCostCodesV1.ProductCostNotPositive);
     }
 
     [Fact]
@@ -224,6 +379,38 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
         Assert.Equal(40000m / 950m, result.CostPerKg);
         Assert.Equal(0m, result.WeighedScrapExpense);
+    }
+
+    [Theory]
+    [InlineData(ScrapCostSettingStatus.On)]
+    [InlineData(ScrapCostSettingStatus.Off)]
+    public void Paint_tracked_in_litres_is_not_loaded_and_the_result_is_marked(ScrapCostSettingStatus scrap)
+    {
+        // #66 6857496471 (5): the paint's cost is not loaded on the product in v1, and the value says so.
+        var kgOnly = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrap: scrap, scrapPrice: Price(10m)));
+        var withPaint = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrap: scrap, scrapPrice: Price(10m), nonKg: NonKgInputUse.PaintLitres));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, withPaint.Status);
+        Assert.Equal(ProductionReceiptCostCodesV1.NonKgInputCostNotIncluded, withPaint.CostExclusion);
+        Assert.Null(withPaint.UnreadableCode);
+        Assert.Equal(kgOnly.CostPerKg, withPaint.CostPerKg);
+        Assert.Equal(kgOnly.WeighedScrapExpense, withPaint.WeighedScrapExpense);
+        Assert.Equal(kgOnly.CostBasis, withPaint.CostBasis);
+        Assert.Equal(ProductionReceiptCostStatus.Value, kgOnly.Status);
+        Assert.Null(kgOnly.CostExclusion);
+    }
+
+    [Theory]
+    [InlineData(ScrapCostSettingStatus.On)]
+    [InlineData(ScrapCostSettingStatus.Off)]
+    public void Another_input_not_tracked_in_kg_keeps_the_result_unreadable(ScrapCostSettingStatus scrap)
+    {
+        // How an input of a process other than Paint that is not tracked in kg is costed is not decided.
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrap: scrap, scrapPrice: Price(10m), nonKg: NonKgInputUse.Other)),
+            ProductionReceiptCostCodesV1.NonKgInputUnpriced);
     }
 
     [Fact]
@@ -271,6 +458,8 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Null(result.ProcessLossRatio);
         Assert.Null(result.UnexplainedKg);
         Assert.Null(result.CostBasis);
+        Assert.Null(result.CostExclusion);
+        Assert.Null(result.UnreadableCode);
     }
 
     [Theory]
@@ -282,6 +471,22 @@ public sealed class ProductionReceiptCostCalculatorTests
             issues: [Issue(IssueA, 600m, 40m), new IssueCostInput(IssueB, new Kilograms(400m), status, null)]));
 
         AssertUnreadable(result, ProductionReceiptCostCodesV1.InputCostUnreadable);
+    }
+
+    [Fact]
+    public void A_fully_returned_issue_still_needs_a_readable_cost()
+    {
+        // The issue's stamped cost values its return (SAT-D317 (2)) and counts in the raw-material kg cost.
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues:
+            [
+                Issue(IssueA, 600m, 40m),
+                new IssueCostInput(IssueB, new Kilograms(400m), IssueCostReadStatus.Unreadable, null),
+            ],
+            returns: [new ReturnCostInput(ReturnB, IssueB, new Kilograms(400m))],
+            good: 550m,
+            second: 50m)),
+            ProductionReceiptCostCodesV1.InputCostUnreadable);
     }
 
     [Fact]
@@ -416,6 +621,17 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
+    public void A_missing_input_or_an_undefined_non_kg_input_value_is_invalid_and_does_not_throw()
+    {
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(null!),
+            ProductionReceiptCostCodesV1.InputInvalid);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(nonKg: (NonKgInputUse)0)),
+            ProductionReceiptCostCodesV1.InputInvalid);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(nonKg: (NonKgInputUse)4)),
+            ProductionReceiptCostCodesV1.InputInvalid);
+    }
+
+    [Fact]
     public void An_arithmetic_overflow_is_unreadable_and_does_not_throw()
     {
         AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
@@ -465,5 +681,6 @@ public sealed class ProductionReceiptCostCalculatorTests
         Assert.Null(result.ProcessLossRatio);
         Assert.Null(result.UnexplainedKg);
         Assert.Null(result.CostBasis);
+        Assert.Null(result.CostExclusion);
     }
 }
