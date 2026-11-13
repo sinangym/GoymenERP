@@ -15,6 +15,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -49,6 +50,8 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                // CI-HIZ: EF Core "Executed DbCommand" Information lines bloat the TRX; Warning keeps failures.
+                ["Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command"] = "Warning",
                 ["Authentication:Mode"] = "DevelopmentBootstrap",
                 ["BootstrapIdentity:HeaderName"] = "X-Development-User",
                 ["BootstrapIdentity:Users:0:UserId"] = TestUsers.CompanyA,
@@ -168,6 +171,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<InventoryDbContext>>();
         services.AddDbContext<InventoryDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-inventory")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // Work is host-wired since F-021 / B-24b; without this the in-memory host would try to
+        // migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<WorkDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<WorkDbContext>>();
+        services.AddDbContext<WorkDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-work")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
         // The document vault is host-wired since ERP-000G / AT-065; without this the in-memory host

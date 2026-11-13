@@ -123,6 +123,27 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanSelfApproval,
     ];
 
+    // Üretim U2-b / API-16 (SAT-D219): the sales order link's own 409 and 422 sets — a moved link revision is a conflict; a
+    // cancelled plan, a closed order, no change, a customer-owned input of another party and the line Sales did not approve
+    // or does not know are refusals. Declared on that endpoint only, so no existing endpoint's contract moves.
+    private static readonly string[] PlanSalesOrderLinkConflictCodes =
+    [
+        .. ConflictCodes,
+        ManufacturingRuleCodes.PlanSalesOrderLinkChanged,
+    ];
+
+    private static readonly string[] PlanSalesOrderLinkUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanCancelled,
+        ManufacturingRuleCodes.PlanSalesOrderLinkOrderClosed,
+        ManufacturingRuleCodes.PlanSalesOrderLinkNoChange,
+        ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
+        ManufacturingRuleCodes.PlanSalesOrderLineNotApproved,
+        ManufacturingRuleCodes.PlanSalesOrderLineNotFound,
+        ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder,
+    ];
+
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
@@ -297,6 +318,32 @@ public static class ManufacturingEndpoints
             .Accepts<CancelPlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithPlanDecisionProblems();
+
+        // Üretim U2-b / API-16 (SAT-D219): links the plan to an approved sales order line (read from Sales through the host),
+        // moves the link to another line, or removes it (neither id), under the plan's write grant. The plan's version does
+        // not move; its link revision does (409 when it moved). ADR-011 as the other plan commands.
+        group.MapPost("/plans/{planId:guid}/sales-order-link", async (
+                Guid planId,
+                ChangePlanSalesOrderLinkRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ChangePlanSalesOrderLinkAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansWrite, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansWrite)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ChangeManufacturingPlanSalesOrderLinkV1")
+            .Accepts<ChangePlanSalesOrderLinkRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(PlanSalesOrderLinkConflictCodes)
+            .ProducesErpUnprocessableEntity(PlanSalesOrderLinkUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
         // MFG-PLAN-EDIT: the Draft edit of a plan, under the plan save's own grant (`manufacturing.plans.write`,
         // company-wide): the new content as a whole with the save's checks, a reason, and the version the caller read.

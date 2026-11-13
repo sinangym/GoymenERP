@@ -239,6 +239,23 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 
 ---
 
+### 5.3a Çıktı sınıfı → Stok etiket sınıfı eşlemesi (API-27, URT-D8/D14, DEC-PRDCT-007)
+
+Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): eşleme yapılandırılabilir 1:1 tablo olur, koda gömülmez; taslağı
+Üretim yazar, Stok onaylar. Stok 2026-11-11'de OC-1, OC-2, OC-4 ve OC-5'i ve kuralları onayladı; OC-3 NEEDS-SINAN (#66).
+
+| Üretim `OutputClass` | Stok `InventoryLabelClassificationV1` | Stok etiketi | Varsayım |
+|---|---|---|---|
+| `GoodProduct` | `Standard` | evet | OC-1 (Stok onayı) |
+| `SecondQuality` | `SecondQuality` | evet, ayrı etiket (URT-D14) | OC-2 (Stok onayı) |
+| `UsableRemnant` | **eşlemesiz** | – | OC-3 NEEDS-SINAN: DEC-PRDCT-007 artığın ayrı durum taşımasını ister; Stok'ta 4. sınıf `Remnant` mı, etikette ayrı üretim durumu alanı mı? Cevaba kadar artık çıktısı fail-closed reddedilir |
+| `Scrap` | `Scrap` | evet (sınıf yalnız betimleyici; satılabilirlik ayrıca belirlenir) | OC-4 (Stok onayı) |
+| `ProcessLoss` | – | hayır, stok dışı (talaş/proses kaybı) | OC-5 (Stok onayı) |
+
+Kurallar: tablo şirket başına bir satır kümesi; her `OutputClass` en çok bir sınıfa eşlenir; `ProcessLoss` hiçbir
+zaman etiket üretmez. Eşleme eksikse çıktı fail-closed reddedilir (sınıf tahmin edilmez). Tablo Stok'ta (Inventory) durur
+(hedef değerler Inventory'nin enum'u); Üretim sürümlü bir okuma portuyla okur (ad Stok'ta, B-03 sonrası).
+
 ## 6. Diğer modüllerle eksik ilişkiler (MOD)
 
 | ID | Modül | Eksik | Sözleşme | Sev. |
@@ -368,10 +385,10 @@ Kalıcı kural: modül başka modülün tablosuna yazmaz; bağ yalnız sürüml�
 
 | # | Bağlantı | Üretici → Tüketici | Port / olay | Durum | Dilim |
 |---|---|---|---|---|---|
-| 1a | Satış sipariş satırı → plan satırı bağı (URT-D13) | Satış → Üretim | `ISalesOrderLineReferencePortV1` (Satış'ta var) | ❌ Üretim okumuyor | U2-b (API-16) |
-| 1b | Bağlı üretim → Satış iptal/zorla kapatma | Üretim → Satış | Üretim: `IManufacturingSalesOrderLinkReadPortV1`; Satış: `ISalesOrderLinkedSupplyReadPortV1` | 🟡 Satış'ta `NoSource` | Üretim tarafı U5-a; Satış tarafı Satış şeridi (S-1) |
-| 2a | Fason hizmet satış siparişi okuma | Satış → Üretim | `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`, #898) | 🟡 Satış'ta hazır, Üretim tüketmiyor | U5-b |
-| 2b | Fason sipariş carisi kilidi | Üretim+Stok → Satış | `ISalesSubcontractOrderBindingReadPortV1` (host adaptörü) | 🟡 adaptör yok, Satış 503 fail-closed | U5-b |
+| 1a | Satış sipariş satırı → plan satırı bağı (URT-D13) | Satış → Üretim | `ISalesOrderLineReferencePortV1` (Satış'ta var) → host adaptörü → Üretim `IManufacturingSalesOrderLineReferencePortV1` | ✅ U2-b: `POST /plans/{id}/sales-order-link`, plan kendi bağ revizyonunu tutar (Down `THROW 51261`) | U2-b (API-16) |
+| 1b | Bağlı üretim → Satış iptal/zorla kapatma | Üretim → Satış | Üretim: `IManufacturingSalesOrderSupplyReadPortV1`; Satış: `ISalesOrderLinkedSupplyReadPortV1` (host adaptörü, Alış'ın yanında Production türü) | ✅ U2-b ile açık plan/emirler okunuyor; `production.order-closed.v1` olayı henüz yok | Üretim tarafı U2-b; olay U5-a |
+| 2a | Fason hizmet satış siparişi okuma | Satış → Üretim | `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`, #898) | 🟡 U5-b1 (#1118) host adaptörüyle tüketiyor; merge bekliyor | U5-b1 |
+| 2b | Fason sipariş carisi kilidi | Üretim+Stok → Satış | `ISalesSubcontractOrderBindingReadPortV1` (host adaptörü) | 🟡 U5-b1 (#1118) host adaptörü: iptal edilmemiş bağlı plan Bound, yok NotBound, hata Unreadable; merge bekliyor | U5-b1 |
 | 3a | Üretim girdi tahsisi (URT-D21/D22) | Üretim → Stok | `manufacturing.plan-input` talep türü + müşteri malı (yalnız kendi fason siparişi) | ❌ Stok tarafı Kalan Modüller B-01; port biçimi görüşüldü (onayla aynı transaction'da stage önerildi, 2026-11-03) | Stok: Kalan Modüller B-01; Üretim bağlantısı U3-a |
 | 3b | Girdi çıkışı / iade / çıktı | Stok ↔ Üretim | `IInventoryManufacturingRealizationParticipantV1` | ✅ | – |
 | 3c | Çıktı soy ağacı (AT-050) | Üretim → Stok | genealogy kenarı (üretim türü) | 🟡 yalnız parent izi | Stok: Kalan Modüller B-03; Üretim U3-b |

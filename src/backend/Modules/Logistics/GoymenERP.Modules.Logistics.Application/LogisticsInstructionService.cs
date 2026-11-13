@@ -463,10 +463,15 @@ public sealed partial class LogisticsInstructionService(
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), cancellationToken);
         }
-        catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.InstructionNotDraft or LogisticsRuleCodes.InstructionNotIssued)
+        catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.InstructionNotDraft or LogisticsRuleCodes.InstructionNotIssued or LogisticsRuleCodes.InstructionCancelled)
         {
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.InstructionState, [new("status", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.InstructionShipped)
+        {
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.InstructionShipped, [new("status", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LoadExceedsInstructed)
         {

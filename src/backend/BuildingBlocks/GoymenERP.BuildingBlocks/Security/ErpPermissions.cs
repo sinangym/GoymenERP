@@ -771,6 +771,12 @@ public static class ErpPermissions
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>
+    /// F-020 (LOJ-D6..D8): cancel a loading instruction with a reason (LogisticsPermissionManifestV1) while no shipment is recorded —
+    /// never a delete. Its own name. Registered, not granted (grant is a human gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsLoadingInstructionsCancel = "logistics.loading-instructions.cancel";
+
     /// <summary>Customer-return reads. Registered, not granted; company-wide only.</summary>
     public const string LogisticsCustomerReturnsRead = "logistics.customer-returns.read";
 
@@ -1114,6 +1120,7 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
@@ -1290,6 +1297,7 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,

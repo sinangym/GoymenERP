@@ -139,9 +139,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // S5 API-36 (Fatura kesinlestirme): maps the finalize and re-drive routes and registers the host-side Sales finance admission adapter (DI only);
         // no generation, network or hosted-service change (d219b1f5… -> f4d42b16…).
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
-        // F-005 D1 (FNS-D17…FNS-D21): registers the Finance official sales invoice host (scoped in-process DI only); no generation,
-        // network or hosted-service change (a1562dc1… -> 2a110d08…).
-        "2a110d0842f1191c75f13ba34e400ca07adfd69d05f149b806e8b10b865cc444";
+        // Üretim U2-b (API-16, SAT-D219): registers the two host-side Manufacturing/Sales order-line adapters (DI only); no
+        // generation, network or hosted-service change (a1562dc1… -> a5bb99f0…).
+        // Üretim U5-b1 (API-36, SAT-D175): registers the two host-side subcontract service order / binding adapters (DI only);
+        // no generation, network or hosted-service change (a5bb99f0… -> 096c3e0b…).
+        // F-021 / B-24b: registers the Work module and the ERP-000F outbox dispatcher (off by default, hosted service skipped in OpenAPI generation) and initializes Work in Dev/Testing; no network surface change; re-fingerprinted after merging main (096c3e0b… -> ee696d73…).
+        "ee696d734546e4656dcd2cf03d623812a794822a69972dc409b1d9e81bcc428e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -313,8 +316,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             // I01.2: +3 transfer outgoing-document schema/idempotency/version SQL facts (459c5cf8… -> e8a7ea83…).
             // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): +1 shipment-time Sales cap fact (e8a7ea83… -> 576e58f6…).
+            // F-020: +3 loading-instruction cancel SQL facts (576e58f6... -> 991fa70f...).
+            // F-020 review fixes: +9 cancel SQL facts (absent line, released limits, weighing row kept, three races, route grant and
+            // company refusal) and one renamed fact, kept ordinal-sorted (991fa70f... -> 15a22a9f...).
             ["tools/relational_inventory/logistics.txt"] =
-                "576e58f6c9fe6c9925d85c3979eb02f53bf38825fe0adfe766bba5919f84e4d1",
+                "15a22a9fe83690729d368c5b808485f886b53bcc59958632d0edf7775dbe45e5",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -339,7 +345,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // legacy preparer and preparer migration) (1a881db5… -> ab2bcb33…). U2-d review: the migration fact
                 // renamed (Down refusal 51190) and +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the
                 // preparer's 422 over HTTP) (ab2bcb33… -> 0df4c0f3…).
-                "b30fa7d7fcd05703bfd6f2a0634f6fb095494eb71d81ecc72d6f89ea175dcb5d",
+                // Üretim U2-b (API-16): +2 ManufacturingSqlServerRelationalAcceptanceTests facts (sales order link store
+                // rules, link migration Down 51261) (b30fa7d7… -> 1b1e7223…).
+                // TAKIP-U3a P3-2: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (approval and closure without
+                // the allocation port are code-less 503s; the same key succeeds once it is back) (1b1e7223… -> f6ebea91…).
+                // Üretim U5-b1 (API-36): +1 ManufacturingSqlServerRelationalAcceptanceTests fact (Sales's binding read of
+                // linked, not cancelled plans) (1b1e7223… -> d3ffa8f8…).
+                // Main merge after #1104: both facts present (re-derived from the merged inventory) (-> 85d84d52…).
+                "85d84d52c13967b770572d148f09d8d67a00d0fe8365dd97b5838e457ffa8a4a",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -370,7 +383,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (026f3c54… -> 69a1024a…).
                 // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
                 // empty-store rollback) (69a1024a… -> 84945670…).
-                "84945670f9b50efefba59c5525b76a105634b7669da0bd890fb3ce141cbc2ffb",
+                // F-022: +2 readiness SQL facts (Settings/Documents history drift; price-list drift only while the
+                // Product runtime is on) (84945670… -> 912a850f…).
+                "912a850f59568f33ce197227ac1d945fe3820a2c48ee9ec63dae7ecc95e3438c",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -520,7 +535,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // kept ordinal-sorted; recomputed on the merged inventory (1628581b... -> e02ba740...).
                 // SAT-D290 (2, 3): +2 SalesCustomerReturn facts (the rejection by another actor and the draft's cancellation, both terminal
                 // under the 51255 guard and the maker-checker CK; the 51259 rollback refusal), kept ordinal-sorted (e02ba740... -> 766e032e...).
-                "766e032e9d0fc6db6f8d9d93c7419c29aa4d75e43202e50362150f2555b2b709",
+                // SAT-D216 / SAT-D222 (B-33): the Logistics owner names the shipper, so the Sales over-delivery approval fact is
+                // replaced by 3 facts (shipper named and refused, a share without actor refused fail-closed, the 51260 rollback
+                // refusal and the RecordedBy check/collation), kept ordinal-sorted (766e032e... -> eeed0741...).
+                // SAT-D216 P2 follow-up: +1 SalesDeliveryProgress fact (the Logistics owner port names each shipper once in ordinal order and
+                // one unnamed shipment makes the whole line unnamed), kept ordinal-sorted (eeed0741... -> 46a4216c...).
+                // F-020 review fixes: +1 SalesOrderCancellation fact (a cancelled instruction's loading line reads as no loading through
+                // the real Sales preview, never as a malformed owner answer), kept ordinal-sorted (46a4216c... -> 5a014a10...).
+                "5a014a10da35668c05e27c1aa29f2d605aa3ad925ddd2d43effb31b5af7210b1",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -538,8 +560,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "9947ab71ffdd0325973206ef714005f4956c83b52186e76b1066e7e848af29f8";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
+    // Re-fingerprinted for CIH-D5: only the trigger path filter under `on:` changed (prose no job reads does not
+    // start the workflow); every job is byte-identical. test_workflow_path_filters.py pins the filter.
+    // Re-fingerprinted for CIH-D8: the three aggregate jobs (backend, frontend, relational) run on
+    // `!cancelled()` instead of `always()`. A failed, timed-out or fail-fast-cancelled worker still makes them
+    // run and fail closed; only a cancelled run skips them, so a superseded run frees its runners at once.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "1d9010430279a89d97e312fb2230b4047a1a1176dce884683639772ad886a19a";
+        "7190110523c47a2669c374d00cd53937eed3f78c95fcfbc3b9c297d7915801bd";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -686,7 +713,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
             // Re-measured for I01.2: transfer outgoing documents and ordered line bindings carry the same CompanyId
             // query filter and company-leading keys; the transfer link remains unique inside one company.
-                "fefc8f5585c59451908d99e31988ed27fa82ec7129fc437e177002fc12fa4db0",
+            // Re-measured for SAT-D216 / SAT-D222: LoadingShares.RecordedBy (nullable, binary collation, non-blank check); the same
+            // CompanyId query filter and keys, no new entity.
+            // Re-measured for F-020: LoadingInstructions.CancelledBy/CancelledAtUtc/CancelReason (nullable), the Cancelled status in
+            // the status check and the cancel-facts check; the same CompanyId query filter and keys, no new entity.
+            // Re-measured for the F-020 write guard: the instruction's allow-list admits the three cancel marks and each is written
+            // from empty exactly once; no query-filter bypass or direct database surface (0a6d41e6... -> 13659996...).
+                "136599961b6b1cb9577df2b7016c7c6461b0c946960365efc2b9cae9bde17d81",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
@@ -736,7 +769,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // table, filter, key or bypass).
                 // Üretim U2-d: the plan row gains the nullable preparer column (CreatedBy) and its check (no new table,
                 // filter, key or bypass).
-                "aa5ad9b2b3965da0abd0148155d176032f264f8e768397a734704a865649d210",
+                // Üretim U2-b: the plan row gains the nullable sales order link columns, the link revision and their
+                // all-or-nothing check (no new table, filter, key or bypass).
+                "426f7ed56981ab940120ff5b2fd26b891c948addea38881684c8f45524d5ecc0",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1476,11 +1511,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // ManufacturingStore; the provider branch and its token counts are unchanged.
                 // Re-fingerprinted for Üretim U2-a: one scoped registration of the plan lifecycle store (rejection,
                 // cancellation) over the same ManufacturingStore; the provider branch and its token counts are unchanged.
+                // Re-fingerprinted for Üretim U2-b: the plan sales order link store and the open-supply read for Sales over
+                // the same ManufacturingStore; the provider branch and its token counts are unchanged.
+                // Re-fingerprinted for Üretim U5-b1: the binding read for Sales (SAT-D175) over ManufacturingDbContext; the
+                // provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "8910b5105b4980de121faa91aa37b27e2e6139c7983b950b9e02a9f8b7d859bd",
+                        "d36a03c33fb1bb1c76f489482ad7af03233d9a64ba1c0e52b45c7fd41eeb79cc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1508,10 +1547,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // same filtered context; SqlClient count unchanged (1).
                 // Üretim U2-d: the preparer is written on the plan row and read back with the revisions through the same
                 // filtered context; SqlClient count unchanged (1).
+                // Üretim U2-b: the sales order link change (plan row, link revision, audit, command record in one save) and
+                // the bounded open-supply read by sales order, through the same filtered context; SqlClient count
+                // unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "9ef41f9be8251dea708100eb2cffb4bca57a06a3fa64c410e1bc73a526a434cc",
+                        "06f00d738be6477a85de2ababadee9b23605785dc2453d783f03a769f011c54c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1617,7 +1659,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
                         // Re-fingerprinted for SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): one untracked, company-resolved sum of
                         // a Sales line's shipped total through the filtered context; no new database API, SqlClient count unchanged.
-                        "43e2b056c56c0d24365561505109876a1591f2e7fb8070a59decbca812b82176",
+                        // Re-fingerprinted for SAT-D216 / SAT-D222: a shipment share records its actor (RecordedBy) in the same
+                        // save; no new database API and SqlClient count unchanged.
+                        // Re-fingerprinted for F-020: the instruction cancel is stored in the same save as its attempt and audit;
+                        // no new database API and SqlClient count unchanged.
+                        // Re-fingerprinted for the F-020 review fixes: the aggregate instructed and loaded limits leave cancelled
+                        // instructions out and the rebuild comparison covers CancelledAtUtc; no new database API, SqlClient count unchanged.
+                        "f6256b174193626723fc65e9d2e7be43732f4debc840a097dba096a5a1ad5ccc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1796,8 +1844,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // API-40 (SAT-D288..SAT-D294): registers the customer return service over the Sales store with the optional Finance
                     // reversal port (DI-only, none registered; finalisation is 503 fail-closed); provider branch and token counts
                     // unchanged; recomputed on the merged registration (ecf53c18... -> 8389326f...).
+                    // Re-fingerprinted for the linked-supply comment sync: comments only (Production adapter and
+                    // recorder registered since #1085); registrations and token counts unchanged (8389326f... -> 1c25c7fd...).
                     new(
-                        "8389326fd0f98ffad49a0ec9e472cd161fee8e7385423cf4ad88656e0c495dfd",
+                        "1c25c7fd20325e6064dea73d330f0ae0d34073c161b0436cc984826a6591fa75",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2206,6 +2256,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261107145415_AddManufacturingPlanInputAllocations.cs"] =
                     new(
                         "5c407961e8bc61ce4a00098cad0963f479e0c15e4cbbf86aeac087c773bfa1ac",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Üretim U2-b (API-16, SAT-D219): Up is pure DDL; Down's only raw SQL refuses (51261, used by no other
+                // migration) while any plan was ever linked to a sales order line (link revision above zero), before the
+                // link columns are dropped (forward fix).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261111183848_AddManufacturingPlanSalesOrderLinks.cs"] =
+                    new(
+                        "7c1b7050978c5c07e370518c14ba1e0f23963838d025e9247aa18d33e02c8efb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
@@ -2774,6 +2836,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
                 // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
+                // SAT-D216 / SAT-D222: the Down's only raw SQL is Logistics' module refusal (51260, used by no other migration)
+                // while any share records its shipper; the THROW precedes the drops, unnamed legacy shares roll back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261111182437_AddLoadingShareRecordedBy.cs"] =
+                    new("7238460d4c8a64dd7f93bc47d9edc1fde0eb401a05d54f8a744e59d79951b753",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F-020: the Down's only raw SQL is Logistics' module refusal (51265, used by no other migration) while any
+                // loading instruction is cancelled; the THROW precedes the drops, so an empty store rolls back freely (forward fix).
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261112090000_AddLoadingInstructionCancel.cs"] =
+                    new("0f18b6d0ae4a74f59139647884290faf6896778ea9d7e9e3a148d9044d2c2e12",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
                     new("e1e6fe554c5b58ea381316b99d17dd2fd64dd73780e0a475e849715b28ac42f9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -7799,7 +7873,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || !backendBuildJob.Contains("Architecture dependency guard", StringComparison.Ordinal)
             || !backendBuildJob.Contains("Check vulnerable dependencies", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]", StringComparison.Ordinal)
-            || !backendAggregateJob.Contains("if: ${{ always() }}", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("if: ${{ !cancelled() }}", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("Download same-run SQL proofs for excluded backend tests", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--relational-proof-directory artifacts/ci-relational-proofs", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--relational-worker-result \"${{ needs.relational-shard.result }}\"", StringComparison.Ordinal)
@@ -7895,7 +7969,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || !aggregateLines.Contains("name: SQL Server relational acceptance", StringComparer.Ordinal)
             || !aggregateLines.Contains("needs: [relational-shard, relational-rcsi]",
                 StringComparer.Ordinal)
-            || !aggregateLines.Contains("if: ${{ always() }}", StringComparer.Ordinal)
+            || !aggregateLines.Contains("if: ${{ !cancelled() }}", StringComparer.Ordinal)
             || !ReadActiveYamlLines(shardStep).SequenceEqual(
                 expectedShardStepLines, StringComparer.Ordinal)
             || !ReadActiveYamlLines(rcsiStep).SequenceEqual(

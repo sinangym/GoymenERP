@@ -175,9 +175,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             }
 
             // Serializable + IX_LoadingInstructionLines_SourceOrderLine holds the key range while this instruction is inserted.
-            var current = await dbContext.Lines.AsNoTracking()
-                .Where(row => row.SourceOrderId == group.Key.OrderId && row.SourceOrderLineId == group.Key.OrderLineId
-                    && row.UnitId == group.Key.UnitId)
+            // F-020: a cancelled instruction's lines no longer hold instructed quantity (a cancel is one-way, so capacity only frees).
+            var current = await ActiveLinesOf(group.Key.OrderId, group.Key.OrderLineId, group.Key.UnitId)
                 .SumAsync(row => (decimal?)row.Instructed, cancellationToken) ?? 0m;
             var requested = newLines.Sum(line => line.InstructedQuantity.Value);
             if (current + requested > snapshots[0].MaximumAggregateQuantity)
@@ -373,6 +372,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         row.Status = (int)instruction.Status;
         row.Version = instruction.Version;
         row.UpdatedAtUtc = instruction.UpdatedAtUtc;
+        row.CancelledBy = instruction.CancelledBy;
+        row.CancelledAtUtc = instruction.CancelledAtUtc;
+        row.CancelReason = instruction.CancelReason;
         foreach (var lineRow in lineRows)
         {
             var line = instruction.Lines.Single(candidate => candidate.Id == lineRow.LineId);
@@ -397,6 +399,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 Measurement = share.Measurement is { } measurement ? (int)measurement : null,
                 SourceShipmentId = share.SourceShipmentId,
                 RecordedAtUtc = share.RecordedAtUtc,
+                RecordedBy = actorId,
             });
         }
 
@@ -578,8 +581,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         // Serializable + IX_LoadingInstructionLines_SourceOrderLine holds the range through this load's save.
-        var loaded = await dbContext.Lines.AsNoTracking()
-            .Where(row => row.SourceOrderId == limit.OrderId && row.SourceOrderLineId == limit.OrderLineId && row.UnitId == limit.UnitId)
+        // F-020: loads recorded on an instruction that was cancelled afterwards no longer count against the order line.
+        var loaded = await ActiveLinesOf(limit.OrderId, limit.OrderLineId, limit.UnitId)
             .SumAsync(row => (decimal?)row.Loaded, cancellationToken) ?? 0m;
         if (loaded + limit.RequestedLoadQuantity > limit.MaximumAggregateQuantity)
         {
@@ -587,6 +590,15 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 "Sales satırının tüm yükleme talimatlarındaki yüklenen toplamı güncel owner-resolved maksimumu aşıyor.");
         }
     }
+
+    /// <summary>The context company's lines for one Sales order line and unit that sit on a non-cancelled instruction (F-020).</summary>
+    private IQueryable<LoadingInstructionLineRow> ActiveLinesOf(Guid orderId, Guid orderLineId, Guid unitId) =>
+        from row in dbContext.Lines.AsNoTracking()
+        join owner in dbContext.Instructions.AsNoTracking()
+            on new { row.CompanyId, row.InstructionId } equals new { owner.CompanyId, InstructionId = owner.Id }
+        where row.SourceOrderId == orderId && row.SourceOrderLineId == orderLineId && row.UnitId == unitId
+            && owner.Status != (int)LoadingInstructionStatus.Cancelled
+        select row;
 
     private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)
     {
@@ -820,7 +832,15 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 line.ProductId, line.UnitId, line.AllocationId, Quantity.Of(line.Instructed, unit), row.CreatedAtUtc);
         }
 
-        if (row.Status == (int)LoadingInstructionStatus.Issued)
+        // F-020: a Cancelled row was Draft or Issued when it was cancelled. A Draft cancel took exactly one step after the lines and
+        // the blocks (the cancel itself); anything more means the instruction had been issued, so the rebuild issues it first and
+        // cancels it last, after every share, weighing and dispatch-note step.
+        var blockedCount = lines.Count(line => line.IsBlocked);
+        var cancelledFromDraft = row.Status == (int)LoadingInstructionStatus.Cancelled
+            && shares.Count == 0 && weighing is null && notes.Count == 0
+            && row.Version == instruction.Version + blockedCount + 1;
+        if (row.Status == (int)LoadingInstructionStatus.Issued
+            || (row.Status == (int)LoadingInstructionStatus.Cancelled && !cancelledFromDraft))
         {
             instruction.Issue(instruction.Version, row.UpdatedAtUtc);
         }
@@ -893,7 +913,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             instruction.BlockLine(instruction.Version, line.LineId, row.UpdatedAtUtc);
         }
 
-        if (instruction.Version != row.Version || instruction.Status != (LoadingInstructionStatus)row.Status)
+        if (row.Status == (int)LoadingInstructionStatus.Cancelled)
+        {
+            if (row.CancelledBy is null || row.CancelledAtUtc is null || row.CancelReason is null)
+            {
+                throw new InvalidOperationException("Kayıtlı iptal edilmiş talimatın iptal bilgileri eksik.");
+            }
+
+            instruction.CancelInstruction(instruction.Version, row.CancelledBy, row.CancelReason, row.CancelledAtUtc.Value);
+        }
+
+        if (instruction.Version != row.Version || instruction.Status != (LoadingInstructionStatus)row.Status
+            || instruction.CancelledBy != row.CancelledBy || instruction.CancelReason != row.CancelReason
+            || instruction.CancelledAtUtc != row.CancelledAtUtc)
         {
             throw new InvalidOperationException("Kayıtlı talimatın sürümü paylarından yeniden kurulan sürümle uyuşmuyor.");
         }
@@ -1070,6 +1102,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             status = instruction.Status.ToString(),
             version = instruction.Version,
+            cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
                 lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
@@ -1109,6 +1142,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             status = instruction.Status.ToString(),
             version = instruction.Version,
+            cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
                 lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,

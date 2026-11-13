@@ -62,8 +62,8 @@ public sealed record SalesOrderDeliveryReadAnswerV1(Guid CompanyId, Guid OrderId
 /// <paramref name="ShippedBy"/> (SAT-D216, EK37: "sevki yapan kişi kendi fazla tesliminin onayını veremez"): the actors who
 /// recorded the definite shipments counted in <paramref name="ShippedQuantity"/>, when the owner names them; <c>null</c> means
 /// the owner does not name them, and the Sales over-delivery approval then cannot tell the shipper from the approver and refuses
-/// (fail-closed). Optional and Sales-owned: the Logistics owner on main does not fill it (SAT-D209: no new Logistics connection
-/// before Logistics development starts — "ertelendi: Lojistik başlayınca"), so its answer keeps the default <c>null</c>.
+/// (fail-closed). The Logistics owner fills it from the actor recorded on each shipment share (B-33); a counted shipment recorded before that
+/// column existed has no actor and leaves it <c>null</c> (never back-filled), so those orders also refuse fail-closed.
 /// </para>
 /// </summary>
 public sealed record SalesOrderLineDeliveryV1(Guid OrderLineId, Guid UnitId, decimal ShippedQuantity, decimal DeliveredQuantity,

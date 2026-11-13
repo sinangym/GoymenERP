@@ -22,6 +22,9 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 {
     public const string Schema = "logistics";
     public const string IdentityCollation = "Latin1_General_100_BIN2";
+
+    /// <summary>A recorded share actor, when present, is not blank (SAT-D222: a blank name never counts as a shipper).</summary>
+    public const string ShareRecordedByCheck = "[RecordedBy] IS NULL OR LEN([RecordedBy]) > 0";
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
 
     internal DbSet<LoadingInstructionRow> Instructions => Set<LoadingInstructionRow>();
@@ -83,6 +86,15 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
+    /// <summary>F-020: Draft, Issued or Cancelled.</summary>
+    internal const string InstructionStatusCheck = "[Status] IN (1, 2, 3)";
+
+    /// <summary>F-020: the cancel marks are all present exactly when the instruction is Cancelled (3), never otherwise.</summary>
+    internal const string InstructionCancelCheck =
+        "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL "
+        + "AND [CancelReason] IS NOT NULL AND LEN([CancelReason]) > 0) "
+        + "OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancelReason] IS NULL)";
+
     private void ConfigureInstructions(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<LoadingInstructionRow>();
@@ -90,7 +102,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         {
             table.HasCheckConstraint("CK_LoadingInstructions_Identity",
                 $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [CustomerPartyId] <> {EmptyGuid} AND [CompanyAccountId] <> {EmptyGuid}");
-            table.HasCheckConstraint("CK_LoadingInstructions_Status", "[Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_LoadingInstructions_Status", InstructionStatusCheck);
+            table.HasCheckConstraint("CK_LoadingInstructions_Cancel", InstructionCancelCheck);
             table.HasCheckConstraint("CK_LoadingInstructions_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_LoadingInstructions_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
         });
@@ -101,6 +114,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.Property(x => x.EffectiveOn).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CancelledBy).HasMaxLength(128);
+        entity.Property(x => x.CancelReason).HasMaxLength(500);
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_LoadingInstructions_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_LoadingInstructions_CompanyId_Status_CreatedAtUtc_Id");
@@ -152,8 +167,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 "([Kind] = 1 AND [Measurement] IN (1, 2) AND [SourceShipmentId] IS NULL) "
                 + "OR ([Kind] = 2 AND [Measurement] IS NULL AND [SourceShipmentId] IS NULL) "
                 + $"OR ([Kind] = 3 AND [Measurement] IS NULL AND [SourceShipmentId] IS NOT NULL AND [SourceShipmentId] <> {EmptyGuid})");
+            table.HasCheckConstraint("CK_LoadingShares_RecordedBy", ShareRecordedByCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.InstructionId, x.ShareNo });
+        // SAT-D216: the recording actor, compared ordinally by Sales (binary collation); null only for pre-column shares.
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.InstructionId, x.ShareId }).IsUnique().HasDatabaseName("UX_LoadingShares_ShareId");
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
         entity.HasOne<LoadingInstructionRow>().WithMany()
@@ -466,7 +484,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             {
                 string[] allowed = entry.Entity switch
                 {
-                    LoadingInstructionRow => [nameof(LoadingInstructionRow.Status), nameof(LoadingInstructionRow.UpdatedAtUtc)],
+                    // F-020: the status, the update stamp and the set-once cancel marks.
+                    LoadingInstructionRow =>
+                    [
+                        nameof(LoadingInstructionRow.Status), nameof(LoadingInstructionRow.UpdatedAtUtc), .. InstructionCancelMarks,
+                    ],
                     LoadingInstructionLineRow =>
                     [
                         nameof(LoadingInstructionLineRow.Loaded), nameof(LoadingInstructionLineRow.Shipped),
@@ -507,7 +529,14 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         }
     }
 
+    /// <summary>F-020: the instruction cancel marks; each is written from empty exactly once, with the cancel.</summary>
+    private static readonly string[] InstructionCancelMarks =
+    [
+        nameof(LoadingInstructionRow.CancelledBy), nameof(LoadingInstructionRow.CancelledAtUtc), nameof(LoadingInstructionRow.CancelReason),
+    ];
+
     /// <summary>
+    /// F-020: an instruction cancel mark is written from empty exactly once (never cleared or rewritten).
     /// AT-055: a dispatch note only moves forward — a set-once column is written from empty exactly once (never cleared or
     /// rewritten), the status only climbs (Draft → Approved → Cancelled, or Draft → Cancelled), a line is released once (never
     /// re-linked in place), and the series only climbs by one.
@@ -516,6 +545,17 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
     {
         switch (entry.Entity)
         {
+            case LoadingInstructionRow:
+                foreach (var column in InstructionCancelMarks)
+                {
+                    var property = entry.Property(column);
+                    if (property.IsModified && (property.OriginalValue is not null || property.CurrentValue is null))
+                    {
+                        throw new InvalidOperationException("Yükleme talimatının iptal alanları bir kez yazılır; değiştirilmez.");
+                    }
+                }
+
+                break;
             case DispatchNoteRow:
                 foreach (var column in DispatchNoteSchema.SetOnceColumns)
                 {

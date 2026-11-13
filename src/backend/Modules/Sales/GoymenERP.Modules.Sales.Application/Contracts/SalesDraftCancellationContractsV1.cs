@@ -90,8 +90,8 @@ public static class SalesCancellationImpactSourcesV1
     public const string LinkedPurchasing = "purchasing.linked-orders";
 
     /// <summary>
-    /// "bağlı üretim" — the Production owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (S-1, U5-a); not on main
-    /// yet, so the category is no source until it is registered.
+    /// "bağlı üretim" — the Production owner's adapter of <see cref="ISalesOrderLinkedSupplyReadPortV1"/> (S-1, U2-b / API-16;
+    /// <c>ManufacturingSalesOrderLinkedSupplyReadPort</c>, registered by the host since #1085).
     /// </summary>
     public const string LinkedProduction = "manufacturing.linked-orders";
 

@@ -21,7 +21,10 @@ function Get-WindowsPortableEvidenceKey([string]$RelativePath) {
  }
  return [string]::Join('/',$keys)
 }
-if($env:COMPUTERNAME -ne 'DESKTOP-11CDRHD'){throw 'This launcher is bound to DESKTOP-11CDRHD.'}
+$ConfiguredHost=$env:GOYMEN_LOCAL_CI_HOST
+if([string]::IsNullOrWhiteSpace($ConfiguredHost) -or $env:COMPUTERNAME -ne $ConfiguredHost){throw 'This launcher is bound to the host named in GOYMEN_LOCAL_CI_HOST (set locally, not committed).'}
+# The value is interpolated into the WSL command line below; COMPUTERNAME holds the NetBIOS name (at most 15 characters).
+if($ConfiguredHost -cnotmatch '\A[A-Za-z0-9][A-Za-z0-9-]{0,14}\z'){throw 'GOYMEN_LOCAL_CI_HOST is not a valid computer name (letters, digits, hyphen; at most 15 characters).'}
 if($LinuxRepository -notmatch '^/home/ci/[A-Za-z0-9_./-]+$' -or $LinuxRepository.Contains('..')){throw 'Unexpected Linux repository path.'}
 $root='E:\GoymenERP-CI'
 $runId='launcher-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,8)
@@ -51,12 +54,12 @@ try {
   wsl.exe -d GoymenERP-CI -u ci -- /usr/bin/mkdir -p /home/ci/local-ci-leases
   if($LASTEXITCODE -ne 0){throw 'Cannot create local lease directory.'}
   $leaseFile='\\wsl.localhost\GoymenERP-CI'+$linuxLease.Replace('/','\')
-  $lease=[ordered]@{host='DESKTOP-11CDRHD';status='ACTIVE';repository=$LinuxRepository;expectedHead=$expected;
+  $lease=[ordered]@{host=$ConfiguredHost;status='ACTIVE';repository=$LinuxRepository;expectedHead=$expected;
    profile=$Profile;nonce=$nonce;availableMemoryBytes=$availableBytes;createdUtc=$started;expiresUtc=[DateTime]::UtcNow.AddHours(1).ToString('o')}
   [IO.File]::WriteAllText($leaseFile,($lease|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
   wsl.exe -d GoymenERP-CI -u ci -- /usr/bin/chmod 600 $linuxLease
   if($LASTEXITCODE -ne 0){throw 'Cannot protect local lease file.'}
-  $arguments=@('-d' ,'GoymenERP-CI','-u','ci','--','/usr/bin/env','-i',('PATH='+$path),'HOME=/home/ci',
+  $arguments=@('-d' ,'GoymenERP-CI','-u','ci','--','/usr/bin/env','-i',('PATH='+$path),'HOME=/home/ci',('GOYMEN_LOCAL_CI_HOST='+$ConfiguredHost),
    'DOTNET_ROOT=/opt/goymen-ci/tools/dotnet-10.0.303','DOTNET_CLI_HOME=/home/ci/.dotnet',
    'NUGET_PACKAGES=/home/ci/.cache/nuget/packages','NPM_CONFIG_CACHE=/home/ci/.cache/npm',
    '/usr/bin/python3','-I','-B',($LinuxRepository+'/tools/ci/local_check.py'),'--repository',$LinuxRepository,'--expected-head',$expected,'--launcher-lease',$linuxLease,

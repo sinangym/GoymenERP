@@ -2,6 +2,7 @@ using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Documents.Infrastructure.Persistence;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
@@ -11,8 +12,11 @@ using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence;
+using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -30,12 +34,14 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
     private static readonly (string Name, Type ContextType)[] Contexts =
     [
         ("organization", typeof(OrganizationDbContext)),
+        ("settings", typeof(SettingsDbContext)),
         ("identity", typeof(IdentityDbContext)),
         ("audit", typeof(AuditDbContext)),
         ("idempotency", typeof(CommandExecutionDbContext)),
         ("counterparty", typeof(CounterpartyDbContext)),
         ("inventory", typeof(InventoryDbContext)),
         ("product", typeof(ProductDbContext)),
+        ("product-price-list", typeof(ProductPriceListDbContext)),
         ("group-shared-command", typeof(GroupSharedCommandDbContext)),
         ("finance", typeof(FinanceDbContext)),
         ("sales", typeof(SalesDbContext)),
@@ -43,6 +49,8 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
         ("logistics", typeof(LogisticsDbContext)),
         ("purchasing", typeof(PurchasingDbContext)),
         ("accounting", typeof(AccountingDbContext)),
+        ("documents", typeof(DocumentsDbContext)),
+        ("work", typeof(WorkDbContext)),
     ];
 
     public async Task<HealthCheckResult> CheckHealthAsync(
@@ -52,9 +60,7 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
         await using var scope = scopeFactory.CreateAsyncScope();
         foreach (var (name, contextType) in Contexts)
         {
-            if (!productRuntimeOptions.IsEnabled
-                && (contextType == typeof(ProductDbContext)
-                    || contextType == typeof(GroupSharedCommandDbContext)))
+            if (!productRuntimeOptions.IsEnabled && IsProductRuntimeContext(contextType))
             {
                 continue;
             }
@@ -118,6 +124,14 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
 
         return HealthCheckResult.Healthy();
     }
+
+    // The Product runtime gate (B-06) owns these contexts; the host neither migrates nor serves them while it is off.
+    internal static bool IsProductRuntimeContext(Type contextType) =>
+        contextType == typeof(ProductDbContext)
+        || contextType == typeof(GroupSharedCommandDbContext)
+        || contextType == typeof(ProductPriceListDbContext);
+
+    internal static IReadOnlyList<(string Name, Type ContextType)> CheckedContexts => Contexts;
 
     private static HealthCheckResult Unhealthy(string description, string context) =>
         HealthCheckResult.Unhealthy(

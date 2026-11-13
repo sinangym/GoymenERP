@@ -63,6 +63,9 @@ public static class LogisticsPermissionManifestV1
     /// </summary>
     public const string DispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>F-020 (LOJ-D6..D8): cancel a loading instruction with a reason while no shipment is recorded (never a delete). Its own name.</summary>
+    public const string InstructionsCancel = "logistics.loading-instructions.cancel";
+
     /// <summary>Read customer-return requests of the context company. Registered centrally; no grant is implied.</summary>
     public const string CustomerReturnsRead = "logistics.customer-returns.read";
 
@@ -74,5 +77,5 @@ public static class LogisticsPermissionManifestV1
 
     public static readonly IReadOnlyList<string> Names =
         [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
-            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision];
+            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision];
 }

@@ -162,6 +162,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             var answer = await new LogisticsSalesOrderDeliveryReadPort(b.Context, b.Company).ReadOrderDeliveriesAsync(draft.Id);
             Assert.Equal((CompanyB, orderLine.Id, 3m, 3m), (answer.CompanyId, Assert.Single(answer.Lines).OrderLineId,
                 answer.Lines[0].ShippedQuantity, answer.Lines[0].DeliveredQuantity));
+            Assert.Equal([run.Actor], answer.Lines[0].ShippedBy);
         }
 
         // The real Sales service over the real port of company A: the order line keeps its whole quantity.
@@ -195,6 +196,70 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         {
             Assert.Equal(("0", "0", "6", "0"), Line(await run.ProgressAsync(clientOfA, path), orderLine.Id));
             Assert.Equal((0, "0", "0", "0", "0"), Loading(await run.ProgressAsync(clientOfA, loadingPath), orderLine.Id));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task The_owner_port_names_each_shipper_once_in_ordinal_order_and_one_unnamed_shipment_makes_the_whole_line_unnamed_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
+        var orderLine = Assert.Single(draft.Lines);
+        // Four definite shipments of the one line, recorded by three actors out of ordinal order: the first by the run actor,
+        // then "...-b", then "...-B" (ordinal puts the capital first), then the run actor again (still named once).
+        var (instructionId, lineId, _, version) = await run.ShippedInstructionAsync(CompanyA, draft, "k", shipped: 2m);
+        var shippers = new[] { "SENTETIK-shipper-b", "SENTETIK-shipper-B", run.Actor };
+        await using (var scope = run.LogisticsStore(CompanyA))
+        {
+            foreach (var (shipper, index) in shippers.Select((value, position) => (value, position)))
+            {
+                var key = $"k-l-ship-{index}";
+                var next = (await scope.Store.MutateInstructionAsync(run.LogisticsEnvelopeBy(key, shipper), Hash(key), LogisticsCommands.RecordShipmentV1,
+                    instructionId, (instruction, now) => instruction.MarkShipped(version, Guid.NewGuid(), lineId, Kg(1m), now), Shipped))!.Instruction.Instruction;
+                version = next.Version;
+            }
+        }
+
+        // The expected order is a literal oracle (ordinal: the run actor's "SENTETIK-" prefix is shared, then 'B' < 'b'), not recomputed.
+        string[] expected = [run.Actor, "SENTETIK-shipper-B", "SENTETIK-shipper-b"];
+        await using (var read = run.LogisticsContext(CompanyA))
+        {
+            var line = Assert.Single((await new LogisticsSalesOrderDeliveryReadPort(read.Context, read.Company).ReadOrderDeliveriesAsync(draft.Id)).Lines);
+            Assert.Equal((orderLine.Id, 5m, 0m), (line.OrderLineId, line.ShippedQuantity, line.DeliveredQuantity));
+            Assert.Equal(expected, line.ShippedBy);
+        }
+
+        // One shipment of the line without a recorded actor (a share from before the column existed, never back-filled): the owner
+        // no longer names the line's shippers at all, instead of naming only the known ones (fail-closed, SAT-D222).
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE [logistics].[LoadingShares] SET [RecordedBy] = NULL WHERE [InstructionId] = @id AND [Kind] = 2 AND [RecordedBy] = @actor; SELECT @@ROWCOUNT",
+            ("@id", instructionId), ("@actor", "SENTETIK-shipper-B")));
+        await using (var read = run.LogisticsContext(CompanyA))
+        {
+            var line = Assert.Single((await new LogisticsSalesOrderDeliveryReadPort(read.Context, read.Company).ReadOrderDeliveriesAsync(draft.Id)).Lines);
+            Assert.Equal(5m, line.ShippedQuantity);
+            Assert.Null(line.ShippedBy);
+        }
+
+        // A line with no shipment share at all (an instruction line never shipped): it still totals 0 shipped, and names nobody.
+        var idleDraft = await run.ApprovedDraftAsync(CompanyA, "idle", "6");
+        var idleOrderLine = Assert.Single(idleDraft.Lines);
+        await using (var scope = run.LogisticsStore(CompanyA))
+        {
+            await scope.Store.StoreInstructionAsync(run.LogisticsEnvelope("idle-l-create"), Hash("idle-l-create"), Day, () =>
+            {
+                var instruction = LoadingInstruction.Create(Guid.NewGuid(), CompanyA, idleDraft.Header.PartyId, idleDraft.Header.CompanyAccountId, T0);
+                instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(idleDraft.Id, idleOrderLine.Id, idleDraft.Revision),
+                    idleOrderLine.Product.ProductId, KgUnit, null, Kg(6m), T0);
+                return instruction;
+            });
+        }
+
+        await using (var read = run.LogisticsContext(CompanyA))
+        {
+            var line = Assert.Single((await new LogisticsSalesOrderDeliveryReadPort(read.Context, read.Company).ReadOrderDeliveriesAsync(idleDraft.Id)).Lines);
+            Assert.Equal((idleOrderLine.Id, 0m, 0m), (line.OrderLineId, line.ShippedQuantity, line.DeliveredQuantity));
+            Assert.Null(line.ShippedBy);
         }
     }
 
@@ -409,6 +474,9 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
 
         public SalesDraftWriteEnvelope SalesEnvelope(string key, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+
+        public LogisticsWriteEnvelope LogisticsEnvelopeBy(string key, string actor) =>
+            new(actor, "SENTETIK-logistics-permission", ["SENTETIK-LOGISTICS"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
         public LogisticsWriteEnvelope LogisticsEnvelope(string key) =>
             new(Actor, "SENTETIK-logistics-permission", ["SENTETIK-LOGISTICS"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");

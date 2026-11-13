@@ -31,8 +31,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// DEC-SAL-005 / AT-007 against a REAL SQL Server and the REAL host composition: the impact preview of an approved order is
 /// read through the real routes from the owners' real ports (Inventory's active allocations, Logistics's loading lines and
-/// active approved dispatch-note candidates — each registered by its own module; Purchasing's linked-supply adapter reads "None" (A4 / MOD-03); the remaining two categories have no owner
-/// on main and read "NoSource"); the cancellation is one
+/// active approved dispatch-note candidates — each registered by its own module; Purchasing's and Manufacturing's linked-supply adapters read "None" (A4 / MOD-03, U2-b); unmatched advances have no owner
+/// on main and reads "NoSource"); the cancellation is one
 /// save (header state + version, the appended cancellation row, the attempt, the audit event with SourceChannel Web); the
 /// reopened order reads Cancelled with its reason and unchanged approval facts; the same key replays with no second effect;
 /// the Sales line port no longer answers its lines as an approved demand; a loading line of the order blocks the cancellation
@@ -82,7 +82,7 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
             [
                 (SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.None),
-                (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.NoSource),
+                (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.UnmatchedAdvances, SalesCancellationImpactStatusesV1.NoSource),
@@ -238,6 +238,49 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
         // Sales released nothing of Logistics: the instruction line is still there.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [logistics].[LoadingInstructionLines] WHERE [SourceOrderId] = @id", ("@id", draft.Id)));
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await run.LineAsync(CompanyA, draft.Id, orderLine.Id)).Outcome);
+    }
+
+    /// <summary>
+    /// F-020 m.5, cross-module parity: Logistics's real port answer for an order whose only instruction was cancelled is read by
+    /// the real Sales consumer validation. The cancelled line is absent (a valid zero), never a positive count with a zero
+    /// instructed total — which Sales would refuse as a malformed owner answer (an unreadable source, fail-closed).
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_cancelled_instructions_loading_line_reads_as_no_loading_through_the_real_sales_preview_and_never_as_a_malformed_owner_answer_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
+        var orderLine = Assert.Single(draft.Lines);
+        await run.InstructedAsync(CompanyA, draft, "k");
+        var instructionId = await run.ScalarAsync<Guid>(
+            "SELECT [InstructionId] FROM [logistics].[LoadingInstructionLines] WHERE [SourceOrderId] = @id", ("@id", draft.Id));
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCancel);
+        using var client = run.Client(subject, CompanyA);
+        var impactPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/cancellation-impact";
+
+        // While the instruction is active, the line is a loading record of the order.
+        var active = await run.JsonAsync(client, impactPath);
+        Assert.Equal((1, "6"), (Assert.Single(active.GetProperty("lines").EnumerateArray()).GetProperty("loadingInstructionLines").GetInt32(),
+            Assert.Single(active.GetProperty("lines").EnumerateArray()).GetProperty("instructed").GetString()));
+
+        await using (var scope = run.LogisticsStore(CompanyA))
+        {
+            var cancelled = await scope.Store.MutateInstructionAsync(run.LogisticsEnvelope("k-l-cancel"), Hash("k-l-cancel"),
+                LogisticsCommands.CancelInstructionV1, instructionId,
+                (instruction, now) => instruction.CancelInstruction(2, run.Actor, "SENTETIK neden", now),
+                new LogisticsMutationAudit("logistics.loading-instruction.cancelled.v1", "CancelInstruction", "SENTETIK yükleme talimatı iptal edildi"));
+            Assert.Equal(LoadingInstructionStatus.Cancelled, cancelled!.Instruction.Instruction.Status);
+        }
+
+        // The cancelled instruction keeps its row; the owner's answer has no line for it, and Sales reads that as a readable zero.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [logistics].[LoadingInstructionLines] WHERE [SourceOrderId] = @id", ("@id", draft.Id)));
+        var preview = await run.JsonAsync(client, impactPath);
+        Assert.Equal(SalesCancellationImpactStatusesV1.None, preview.GetProperty("sources").EnumerateArray()
+            .Single(source => source.GetProperty("source").GetString() == SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote)
+            .GetProperty("status").GetString());
+        var line = Assert.Single(preview.GetProperty("lines").EnumerateArray());
+        Assert.Equal((orderLine.Id.ToString("D"), 0, "0", "0"), (line.GetProperty("lineId").GetString(), line.GetProperty("loadingInstructionLines").GetInt32(),
+            line.GetProperty("instructed").GetString(), line.GetProperty("shipped").GetString()));
     }
 
     [SqlServerFact]

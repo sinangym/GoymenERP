@@ -8,6 +8,8 @@
  *   GET  /api/v1/logistics/loading-instructions?pageSize&cursor&status → LoadingInstructionListResponse
  *   GET  /api/v1/logistics/loading-instructions/{id}            → LoadingInstructionDetailView
  *   POST /api/v1/logistics/loading-instructions/{id}/issue      → 200 LoadingInstructionResponse (Draft → Issued)
+ *   (F-020, LOJ-D6…D8: an instruction may also be `Cancelled`. The read carries the status only — the summary has no
+ *    cancelled-by / cancelled-at / reason member, so this screen shows none. The cancel command is not sent from here.)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
  *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
  *   POST …/{id}/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 LoadingInstructionResponse
@@ -49,7 +51,7 @@ export const MUTATION_STATUS = 200
 export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const ORIGINAL_CORRELATION_HEADER = 'Idempotency-Original-Correlation-Id'
 
-export const INSTRUCTION_STATUS = { draft: 'Draft', issued: 'Issued' } as const
+export const INSTRUCTION_STATUS = { draft: 'Draft', issued: 'Issued', cancelled: 'Cancelled' } as const
 export type InstructionStatus = (typeof INSTRUCTION_STATUS)[keyof typeof INSTRUCTION_STATUS]
 const INSTRUCTION_STATUSES: readonly string[] = Object.values(INSTRUCTION_STATUS)
 
@@ -800,9 +802,11 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
   let weighing: InstructionWeighing | null = null
   if (o.weighing !== null) {
     weighing = decodeWeighing(o.weighing)
-    // A weighbridge record exists only on an issued instruction.
-    if (weighing === null || instruction.status !== INSTRUCTION_STATUS.issued) return null
+    // A weighbridge record is taken on an issued instruction and is kept when that instruction is cancelled (LOJ-D7); a Draft has none.
+    if (weighing === null || instruction.status === INSTRUCTION_STATUS.draft) return null
   }
+  // F-020 / LOJ-D8: an instruction with a recorded shipment cannot be cancelled, so a cancelled one carries loads only.
+  if (instruction.status === INSTRUCTION_STATUS.cancelled && shares.some((share) => share.kind !== SHARE_KIND.loaded)) return null
   const dispatchNotes = decodeDispatchNotes(o.dispatchNotes, lines, shares)
   if (dispatchNotes === null) return null
   return { instruction, lines, shares, weighing, dispatchNotes }
