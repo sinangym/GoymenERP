@@ -556,8 +556,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "9947ab71ffdd0325973206ef714005f4956c83b52186e76b1066e7e848af29f8";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
+    // Re-fingerprinted for CIH-D5: only the trigger path filter under `on:` changed (prose no job reads does not
+    // start the workflow); every job is byte-identical. test_workflow_path_filters.py pins the filter.
+    // Re-fingerprinted for CIH-D8: the three aggregate jobs (backend, frontend, relational) run on
+    // `!cancelled()` instead of `always()`. A failed, timed-out or fail-fast-cancelled worker still makes them
+    // run and fail closed; only a cancelled run skips them, so a superseded run frees its runners at once.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "1d9010430279a89d97e312fb2230b4047a1a1176dce884683639772ad886a19a";
+        "7190110523c47a2669c374d00cd53937eed3f78c95fcfbc3b9c297d7915801bd";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -7837,7 +7842,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || !backendBuildJob.Contains("Architecture dependency guard", StringComparison.Ordinal)
             || !backendBuildJob.Contains("Check vulnerable dependencies", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]", StringComparison.Ordinal)
-            || !backendAggregateJob.Contains("if: ${{ always() }}", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("if: ${{ !cancelled() }}", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("Download same-run SQL proofs for excluded backend tests", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--relational-proof-directory artifacts/ci-relational-proofs", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--relational-worker-result \"${{ needs.relational-shard.result }}\"", StringComparison.Ordinal)
@@ -7933,7 +7938,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || !aggregateLines.Contains("name: SQL Server relational acceptance", StringComparer.Ordinal)
             || !aggregateLines.Contains("needs: [relational-shard, relational-rcsi]",
                 StringComparer.Ordinal)
-            || !aggregateLines.Contains("if: ${{ always() }}", StringComparer.Ordinal)
+            || !aggregateLines.Contains("if: ${{ !cancelled() }}", StringComparer.Ordinal)
             || !ReadActiveYamlLines(shardStep).SequenceEqual(
                 expectedShardStepLines, StringComparer.Ordinal)
             || !ReadActiveYamlLines(rcsiStep).SequenceEqual(
