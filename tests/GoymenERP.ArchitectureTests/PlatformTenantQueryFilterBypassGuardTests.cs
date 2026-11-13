@@ -706,7 +706,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId query filter and keys, no new entity.
             // Re-measured for F-020: LoadingInstructions.CancelledBy/CancelledAtUtc/CancelReason (nullable), the Cancelled status in
             // the status check and the cancel-facts check; the same CompanyId query filter and keys, no new entity.
-                "0a6d41e6c99ce5c8db84fb99a8dc0af500ebb90b0f82f07200b896cdd2a4f2ed",
+            // Re-measured for the F-020 write guard: the instruction's allow-list admits the three cancel marks and each is written
+            // from empty exactly once; no query-filter bypass or direct database surface (0a6d41e6... -> 13659996...).
+                "136599961b6b1cb9577df2b7016c7c6461b0c946960365efc2b9cae9bde17d81",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
