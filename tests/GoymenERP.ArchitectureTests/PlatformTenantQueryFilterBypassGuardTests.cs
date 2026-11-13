@@ -315,8 +315,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // I01.2: +3 transfer outgoing-document schema/idempotency/version SQL facts (459c5cf8… -> e8a7ea83…).
             // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): +1 shipment-time Sales cap fact (e8a7ea83… -> 576e58f6…).
             // F-020: +3 loading-instruction cancel SQL facts (576e58f6... -> 991fa70f...).
+            // F-020 review fixes: +9 cancel SQL facts (absent line, released limits, weighing row kept, three races, route grant and
+            // company refusal) and one renamed fact, kept ordinal-sorted (991fa70f... -> 15a22a9f...).
             ["tools/relational_inventory/logistics.txt"] =
-                "991fa70f58ca50b7bfcdc15ebd1b0a87753f9ed235b6c3e43bd0ac2e407b6fa6",
+                "15a22a9fe83690729d368c5b808485f886b53bcc59958632d0edf7775dbe45e5",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -536,7 +538,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // refusal and the RecordedBy check/collation), kept ordinal-sorted (766e032e... -> eeed0741...).
                 // SAT-D216 P2 follow-up: +1 SalesDeliveryProgress fact (the Logistics owner port names each shipper once in ordinal order and
                 // one unnamed shipment makes the whole line unnamed), kept ordinal-sorted (eeed0741... -> 46a4216c...).
-                "46a4216c81a9f84dda2ba4453e3a502cb11dc4a90feee184a7d46a0404f742f3",
+                // F-020 review fixes: +1 SalesOrderCancellation fact (a cancelled instruction's loading line reads as no loading through
+                // the real Sales preview, never as a malformed owner answer), kept ordinal-sorted (46a4216c... -> 5a014a10...).
+                "5a014a10da35668c05e27c1aa29f2d605aa3ad925ddd2d43effb31b5af7210b1",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1626,7 +1630,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // save; no new database API and SqlClient count unchanged.
                         // Re-fingerprinted for F-020: the instruction cancel is stored in the same save as its attempt and audit;
                         // no new database API and SqlClient count unchanged.
-                        "db79e948e0cad094174aa57249223fcfd5e50cb271c38a3a5ed10586fb3655b8",
+                        // Re-fingerprinted for the F-020 review fixes: the aggregate instructed and loaded limits leave cancelled
+                        // instructions out and the rebuild comparison covers CancelledAtUtc; no new database API, SqlClient count unchanged.
+                        "f6256b174193626723fc65e9d2e7be43732f4debc840a097dba096a5a1ad5ccc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
