@@ -59,6 +59,7 @@ using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
+using GoymenERP.Modules.Work.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -391,6 +392,14 @@ builder.Services.AddAccountingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// B-24b / F-021: Work's module (desired-state store, outbox/inbox tables) is registered in the host. The ERP-000F
+// outbox dispatcher stays OFF unless Work:OutboxDispatcher:Enabled is true (production activation is a human gate);
+// event sources and consumers are registered by their owners.
+builder.Services.AddWorkModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
@@ -520,6 +529,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializePurchasingModuleAsync();
     // After Organization: Accounting's foreign keys reference its tables.
     await app.Services.InitializeAccountingModuleAsync();
+    // After Organization: Work's tables are tenant-scoped by CompanyId.
+    await app.Services.InitializeWorkModuleAsync();
     // After Organization: the document vault's foreign keys reference its tables.
     await app.Services.InitializeDocumentsModuleAsync();
 }
