@@ -364,7 +364,8 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void A_cost_that_rounds_to_zero_in_decimal_is_unreadable_also_with_scrap_in_cost()
     {
-        // #66 6857496471 (2) on both paths: 0.001 kg x 1E-28 TL is below the smallest decimal and gives zero.
+        // #66 6857496471 (2) with scrap in cost too (the test above is scrap out of cost): 0.001 kg x 1E-28 TL is
+        // below the smallest decimal and gives a zero cost.
         AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
             issues: [Issue(IssueA, 0.001m, 0.0000000000000000000000000001m)], good: 0.001m, second: 0m)),
             ProductionReceiptCostCodesV1.ProductCostNotPositive);

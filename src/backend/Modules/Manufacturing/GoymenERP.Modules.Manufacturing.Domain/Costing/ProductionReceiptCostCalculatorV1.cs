@@ -195,17 +195,18 @@ public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Sta
 /// confirmed; the reading written under that answer (net cost / consumed kg) gives the same value when nothing is
 /// returned. The check runs where the price is used (scrap out of cost), also when a price is given with no weighed
 /// scrap (author reading);</item>
-/// <item>a cost per kg of zero or below is unreadable, never a value (#66 6857496471 (2), the same logic as
+/// <item>a cost per kg of zero or below is unreadable, never a value (#66 6857496471 (2); "zero or below" is the
+/// text of the option chosen in 6857438754 "2-a", and the note under (2), not Sinan's words, aligns it with
 /// SAT-D297);</item>
 /// <item>kg inputs only: the cost of the Paint process's paint, tracked in litres, is not loaded on the product in
 /// v1 and the result is marked (#66 6857496471 (5), <see cref="NonKgInputUse"/>); any other input not tracked in
 /// kg is unreadable;</item>
 /// <item>no labour or overhead in v1. The calculator carries no currency: issue costs and the scrap price are taken
 /// as TL per kg as given (for a purchase in a foreign currency, the TL value of SAT-D295 (2) / BS-1); the port
-/// contract guarantees that and the calculator does not check it. Nothing is rounded here: the internal precision
-/// and the rounding mode are SAT-D265 (2)-(4) (4 decimals, half away from zero, once); where they are applied to
-/// the cost per kg and to the scrap expense, and where a rounding remainder goes, are the port contract's to fix
-/// (SINAN_KARARLARI_2026-11-13 "Sinirlar").</item>
+/// contract guarantees that and the calculator does not check it. Nothing is rounded here: SAT-D265 sets the moving
+/// average's internal precision at 4 decimals (2) and keeps the existing Money rounding, half away from zero (4);
+/// where they are applied to the cost per kg and to the scrap expense, and where a rounding remainder goes, are the
+/// port contract's to fix (SINAN_KARARLARI_2026-11-13 "Sinirlar").</item>
 /// </list>
 /// The cost is calculated for closed orders only; an open order gives pending and no amount (SAT-D317 (1)). In a
 /// closed order an issue cost that is still pending is unreadable, not pending. More out than in gives no amount
