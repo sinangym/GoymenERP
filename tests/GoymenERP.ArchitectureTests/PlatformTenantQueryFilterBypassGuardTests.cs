@@ -144,7 +144,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U5-b1 (API-36, SAT-D175): registers the two host-side subcontract service order / binding adapters (DI only);
         // no generation, network or hosted-service change (a5bb99f0… -> 096c3e0b…).
         // F-021 / B-24b: registers the Work module and the ERP-000F outbox dispatcher (off by default, hosted service skipped in OpenAPI generation) and initializes Work in Dev/Testing; no network surface change; re-fingerprinted after merging main (096c3e0b… -> ee696d73…).
-        "ee696d734546e4656dcd2cf03d623812a794822a69972dc409b1d9e81bcc428e";
+        // F-005 D1 (FNS-D17…FNS-D21): registers the Finance official sales invoice host (scoped in-process DI only); no generation,
+        // network or hosted-service change; re-fingerprinted after merging main (ee696d73… -> 1fe3cd9e…).
+        "1fe3cd9e1bfa36a4106d79b007974bbde05cd8a5a5184855b45f89f9646bb0d8";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
