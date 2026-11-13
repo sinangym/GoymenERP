@@ -32,9 +32,10 @@ on:
 permissions:
   contents: read
 
-# CIH-D6: a newer push to a pull request replaces its older run; main runs are never cancelled.
+# CIH-D6: a newer push to a pull request replaces its older run. Every main run has its own group,
+# so a main run is never cancelled or replaced while it waits.
 concurrency:
-  group: cari-c006-${{ github.ref }}
+  group: cari-c006-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

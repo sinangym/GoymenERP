@@ -73,10 +73,14 @@ git fetch origin main <pr-branch> && git merge-base --is-ancestor origin/main <e
 Write the main SHA and exit code in the merge receipt. Fresh required CI must be green on that same head. Exit ≠ 0:
 pick the tier (Faz 0.1, GOV-D3 scope logic, #976 measurement); try (c) first.
 **(c)** (GOV-D5, `docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md`) Run the two `SKIPPED` / `READ_BY_CI`
-commands from the Faz 0 paragraph of `AGENTS.md` (same lists, word for word) at the repository root. Both exit 0:
+commands from the Faz 0 paragraph of `AGENTS.md` (same lists, word for word; the pathspecs are pinned to the
+repository root with `:(top)`, so the working folder does not matter). Both exit 0:
 main moved only in prose that never starts CI (CIH-D5), so merge **without** a mechanical merge commit, a new CI
 run or `DELTA-OK`; the green CI and the reviews on that head stay valid. Receipt: main SHA, `(c)`, both commands and
-their exit codes. Either command exits ≠ 0 (a git error included): (c) does not apply, do not merge yet. Run the
+their exit codes. Either command exits ≠ 0 (a git error included): (c) does not apply, do not merge yet. (c) is
+judged with the lists at the PR head and never applies to a PR that touches the `ci.yml` path filter or these lists.
+"Green" means the required run on that head ended with conclusion `success`; a `cancelled` run or a `skipped`
+aggregator job is not green. Run the
 `SCOPE=(…)` diff from the same paragraph (same list, word for word):
 `git diff --quiet "$(git merge-base origin/main <expected head>)" origin/main -- "${SCOPE[@]}"`.
 **(a)** exit ≠ 0 (main moved inside the scope): merge main into the PR, re-pin (`main-merge-resync`), rerun CI

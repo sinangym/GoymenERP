@@ -124,18 +124,20 @@ head'de yeşil olmalıdır. Exit ≠ 0 ise üç kademeden biri uygulanır; önce
 mantığı, #976 ölçümü; (c) için GOV-D5, `docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md`).
 **(c)** `main` yalnız CI'ın hiç başlamadığı düzyazıda (CIH-D5 listesi) ilerlediyse merge edilebilir:
 mekanik merge commit'i, yeni CI koşusu ve `DELTA-OK` aranmaz; aynı head'deki fresh yeşil CI ve
-review'lar geçerli kalır. Depo kökünde çalıştırılır; iki komut da exit 0 vermelidir:
+review'lar geçerli kalır. Yollar depo köküne sabitlidir (`:(top)`), komutlar deponun herhangi bir
+klasöründen aynı sonucu verir; iki komut da exit 0 vermelidir:
 ```
-SKIPPED=(':(exclude,glob)docs/decisions/**/*.md' ':(exclude,glob)docs/delivery/**/*.md' \
-  ':(exclude,glob)docs/handoffs/**/*.md' ':(exclude,glob)docs/operations/**/*.md')
-READ_BY_CI=(docs/decisions/KARAR_SICILI.md docs/decisions/ACIK_KARARLAR.md \
-  docs/decisions/SINAN_KARARLARI_2026-08-31.md docs/delivery/DECISION_PACK.md)
+SKIPPED=(':(top,exclude,glob)docs/decisions/**/*.md' ':(top,exclude,glob)docs/delivery/**/*.md' \
+  ':(top,exclude,glob)docs/handoffs/**/*.md' ':(top,exclude,glob)docs/operations/**/*.md')
+READ_BY_CI=(':(top)docs/decisions/KARAR_SICILI.md' ':(top)docs/decisions/ACIK_KARARLAR.md' \
+  ':(top)docs/decisions/SINAN_KARARLARI_2026-08-31.md' ':(top)docs/delivery/DECISION_PACK.md')
 MB="$(git merge-base origin/main <expected-head>)"
-git diff --quiet "$MB" origin/main -- . "${SKIPPED[@]}" && git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"
+git diff --quiet "$MB" origin/main -- ':(top)' "${SKIPPED[@]}" && git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"
 ```
 İki liste `ci.yml` yol filtresiyle aynıdır (`tests/ci_safe_trx_summary/test_workflow_path_filters.py`
 eşliği sabitler). Makbuza main SHA'sı, `(c)`, iki komut ve exit code'ları yazılır. Komutlardan biri
-exit ≠ 0 verirse (c) uygulanmaz, (a)/(b)'ye geçilir. (a)/(b) kapsamı, yeniden üretilen pin'lerin
+exit ≠ 0 verirse (c) uygulanmaz, (a)/(b)'ye geçilir. (c), PR head'indeki listelerle değerlendirilir;
+`ci.yml` yol filtresine veya bu listelere dokunan PR'da (c) uygulanmaz. (a)/(b) kapsamı, yeniden üretilen pin'lerin
 girdileridir:
 ```
 SCOPE=(src/backend/ .editorconfig .globalconfig Directory.Build.props Directory.Build.targets Directory.Build.rsp \

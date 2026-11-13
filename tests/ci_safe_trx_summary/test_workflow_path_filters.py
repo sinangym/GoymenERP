@@ -74,8 +74,19 @@ SKIPPED_PROSE = (
 # GOV-D5: the Faz 0 tier (c) commands, exactly as AGENTS.md gives them to the merger.
 FAZ0_SKIPPED_ONLY_COMMANDS = (
     'MB="$(git merge-base origin/main <expected-head>)"',
-    'git diff --quiet "$MB" origin/main -- . "${SKIPPED[@]}" '
+    'git diff --quiet "$MB" origin/main -- \':(top)\' "${SKIPPED[@]}" '
     '&& git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"',
+)
+
+# Folders below the root from which the commands are also run in the test repository.
+WORKING_FOLDERS = ("workdir", "workdir/deeper")
+
+# CIH-D6: the C006 workflow replaces the older run of a pull request only. On ``main`` every run
+# is alone in its group, so it is neither cancelled nor replaced while it waits.
+C006_CONCURRENCY = (
+    "concurrency:\n"
+    "  group: cari-c006-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\n"
+    "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
 )
 
 CODE_ROOTS = ("src", "tests", "tools", ".github")
@@ -208,6 +219,21 @@ class WorkflowPathFilterTests(unittest.TestCase):
                 self.assertEqual(tuple(triggers["pull_request"]["paths"]), EXPECTED_FILTER)
                 self.assertEqual(tuple(triggers["push"]["paths"]), EXPECTED_FILTER)
 
+    def test_no_other_workflow_carries_a_path_filter(self):
+        # ``paths-ignore`` of the C-01 workflow has its own guard in tests/c01_e2e_contract.
+        filtered = sorted(
+            path.name for path in WORKFLOWS.iterdir()
+            if path.suffix in (".yml", ".yaml")
+            and re.search(r"^\s*paths\s*:", path.read_text(encoding="utf-8"), re.MULTILINE)
+        )
+        self.assertEqual(filtered, sorted(FILTERED_WORKFLOWS))
+
+    def test_c006_concurrency_replaces_pull_request_runs_only(self):
+        text = (WORKFLOWS / "cari-c02-link-acceptance.yml").read_text(encoding="utf-8")
+        self.assertEqual(text.count("concurrency:"), 1)
+        self.assertEqual(text.count("cancel-in-progress"), 1)
+        self.assertIn("\n" + C006_CONCURRENCY + "\njobs:\n", text)
+
     def test_only_markdown_in_the_reviewed_folders_can_be_ignored(self):
         self.assertEqual(EXPECTED_FILTER[0], "**")
         negatives = [pattern for pattern in EXPECTED_FILTER if pattern.startswith("!")]
@@ -269,9 +295,12 @@ class WorkflowPathFilterTests(unittest.TestCase):
     def test_faz0_skipped_only_commands_carry_the_filter_lists(self):
         script = read_faz0_skipped_only_script()
         self.assertEqual(
-            shell_array(script, "SKIPPED"), [f":(exclude,glob){root}**/*.md" for root in PROSE_ROOTS]
+            shell_array(script, "SKIPPED"),
+            [f":(top,exclude,glob){root}**/*.md" for root in PROSE_ROOTS],
         )
-        self.assertEqual(tuple(shell_array(script, "READ_BY_CI")), READ_BY_CI)
+        self.assertEqual(
+            tuple(shell_array(script, "READ_BY_CI")), tuple(f":(top){path}" for path in READ_BY_CI)
+        )
         self.assertEqual(tuple(script.splitlines()[-2:]), FAZ0_SKIPPED_ONLY_COMMANDS)
         self.assertEqual(len(script.splitlines()), 6)
 
@@ -310,11 +339,20 @@ class WorkflowPathFilterTests(unittest.TestCase):
                 return git("rev-parse", "HEAD")
 
             def run_commands(head):
-                """Runs the block as a merger pastes it; its status is that of the last line."""
-                return subprocess.run(
-                    ["bash", "-c", script.replace("<expected-head>", head)],
-                    cwd=repository, env=environment, capture_output=True, text=True,
-                ).returncode
+                """Runs the block as a merger pastes it; its status is that of the last line.
+
+                The block is run at the root and in two subfolders: the answer must not depend
+                on the working folder (a relative pathspec would see only that folder).
+                """
+                codes = {
+                    subprocess.run(
+                        ["bash", "-c", script.replace("<expected-head>", head)],
+                        cwd=repository / folder, env=environment, capture_output=True, text=True,
+                    ).returncode
+                    for folder in (".", *WORKING_FOLDERS)
+                }
+                self.assertEqual(len(codes), 1, f"working folder changed the result: {codes}")
+                return codes.pop()
 
             def main_moved_only_in_skipped_prose(head, *main_commits):
                 """Builds ``main`` on top of the fork point and runs the AGENTS.md commands."""
@@ -326,6 +364,8 @@ class WorkflowPathFilterTests(unittest.TestCase):
                 return run_commands(head)
 
             git("init", "-q")
+            for folder in WORKING_FOLDERS:  # untracked and empty: git never removes them
+                (repository / folder).mkdir(parents=True)
             existing_prose = "docs/operations/OLD_RUNBOOK.md"
             fork = commit({
                 "src/app.cs": "one\n", existing_prose: "one\n",
