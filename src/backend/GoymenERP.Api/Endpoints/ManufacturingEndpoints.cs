@@ -141,6 +141,7 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
         ManufacturingRuleCodes.PlanSalesOrderLineNotApproved,
         ManufacturingRuleCodes.PlanSalesOrderLineNotFound,
+        ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder,
     ];
 
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
