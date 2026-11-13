@@ -358,6 +358,102 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         Assert.Equal(calls, service.Calls);
     }
 
+    [Fact]
+    public async Task The_instruction_cancel_route_answers_the_cancelled_instruction_replays_with_headers_and_refuses_loose_requests_before_the_service()
+    {
+        // F-020 wire: 200 with the cancelled instruction, the replay headers on the same key, each 409 with its code, the service's
+        // 403 and 404 code-less, and a missing key, a wrong media type or a loose body refused before the service.
+        var id = Guid.NewGuid();
+        var cancelled = Detail(id) with { Instruction = Detail(id).Instruction with { Status = "Cancelled", Version = "3" } };
+        var service = new StubService { Cancel = () => Task.FromResult(new LoadingInstructionResponse(cancelled, false, "SENTETIK-corr")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        const string Body = "{\"expectedVersion\":\"2\",\"reason\":\"Müşteri vazgeçti\"}";
+
+        using (var response = await client.SendAsync(Post($"{id:D}/cancel", "SENTETIK-cancel", Body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            var instruction = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("instruction");
+            Assert.Equal(("Cancelled", "3", id), (instruction.GetProperty("status").GetString(), instruction.GetProperty("version").GetString(),
+                instruction.GetProperty("id").GetGuid()));
+        }
+
+        // The route binds the instruction, the exact body and the caller's key.
+        var call = Assert.Single(service.CancelCalls);
+        Assert.Equal((id, new CancelInstructionRequest("2", "Müşteri vazgeçti"), "SENTETIK-cancel"), (call.InstructionId, call.Request, call.Key));
+
+        service.Cancel = () => Task.FromResult(new LoadingInstructionResponse(cancelled, true, "SENTETIK-first"));
+        using (var response = await client.SendAsync(Post($"{id:D}/cancel", "SENTETIK-cancel", Body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        foreach (var code in new[]
+                 {
+                     LogisticsProblemCodesV1.InstructionShipped, LogisticsProblemCodesV1.InstructionState, LogisticsProblemCodesV1.VersionConflict,
+                     LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange,
+                 })
+        {
+            service.Cancel = () => throw new LogisticsInstructionServiceException(409, code);
+            using var response = await client.SendAsync(Post($"{id:D}/cancel", $"SENTETIK-cancel-{code}", Body));
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(code, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        // The service's 403 and 404 reach the wire without a module code (the platform's public answer).
+        foreach (var (status, code) in new[] { (403, "forbidden"), (404, "not_found") })
+        {
+            service.Cancel = () => throw new LogisticsInstructionServiceException(status, code);
+            using var response = await client.SendAsync(Post($"{id:D}/cancel", $"SENTETIK-cancel-{status}", Body));
+            Assert.Equal(status, (int)response.StatusCode);
+            Assert.DoesNotContain("logistics_", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        var calls = service.Calls;
+        using (var none = new HttpRequestMessage(HttpMethod.Post, $"{LogisticsEndpoints.InstructionsPath}/{id:D}/cancel") { Content = new StringContent(Body, Encoding.UTF8, "application/json") })
+        using (var response = await client.SendAsync(none))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(LogisticsProblemCodesV1.CommandMetadataInvalid, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        using (var response = await client.SendAsync(Post($"{id:D}/cancel", "SENTETIK-cancel-text", Body, "text/plain")))
+        {
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+
+        // A missing, blank, padded or over-long reason, a non-canonical version and an extra member are the caller's 400.
+        foreach (var loose in new[]
+                 {
+                     "{\"expectedVersion\":\"2\"}",
+                     "{\"expectedVersion\":\"2\",\"reason\":\"\"}",
+                     "{\"expectedVersion\":\"2\",\"reason\":\"   \"}",
+                     "{\"expectedVersion\":\"2\",\"reason\":\" dolgulu \"}",
+                     $"{{\"expectedVersion\":\"2\",\"reason\":\"{new string('x', LogisticsJson.CancelReasonMaximumLength + 1)}\"}}",
+                     "{\"reason\":\"Müşteri vazgeçti\"}",
+                     "{\"expectedVersion\":\"02\",\"reason\":\"Müşteri vazgeçti\"}",
+                     "{\"expectedVersion\":\"2\",\"reason\":\"Müşteri vazgeçti\",\"cancelledBy\":\"SENTETIK\"}",
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{id:D}/cancel", "SENTETIK-cancel-loose", loose));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        // The longest reason is accepted.
+        service.Cancel = () => Task.FromResult(new LoadingInstructionResponse(cancelled, false, "SENTETIK-corr"));
+        using (var response = await client.SendAsync(Post($"{id:D}/cancel", "SENTETIK-cancel-long",
+                   $"{{\"expectedVersion\":\"2\",\"reason\":\"{new string('x', LogisticsJson.CancelReasonMaximumLength)}\"}}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        Assert.Equal(calls + 1, service.Calls);
+    }
+
     private static string CreateBody() =>
         $$"""{"customerPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","sourceOrderId":"{{Guid.NewGuid():D}}","sourceOrderLineId":"{{Guid.NewGuid():D}}","unitId":"{{Guid.NewGuid():D}}","quantity":"6"}]}""";
 
@@ -406,10 +502,15 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
             throw new LogisticsInstructionServiceException(404, "not_found");
         }
 
+        public Func<Task<LoadingInstructionResponse>> Cancel { get; set; } = () => throw new LogisticsInstructionServiceException(404, "not_found");
+
+        public List<(Guid InstructionId, CancelInstructionRequest Request, string Key)> CancelCalls { get; } = [];
+
         public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
             Calls++;
-            throw new LogisticsInstructionServiceException(404, "not_found");
+            CancelCalls.Add((instructionId, request, metadata.IdempotencyKey));
+            return Cancel();
         }
 
         public Task<LoadingInstructionResponse> RecordLoadAsync(Guid instructionId, Guid lineId, RecordLoadRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)

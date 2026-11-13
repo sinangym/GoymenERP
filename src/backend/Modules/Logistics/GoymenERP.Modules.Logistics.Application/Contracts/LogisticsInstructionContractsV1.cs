@@ -148,7 +148,7 @@ public sealed record LoadingInstructionResponse(LoadingInstructionDetailView Det
 
 public sealed record LoadingInstructionListResponse(IReadOnlyList<LoadingInstructionSummaryView> Items, string? NextCursor);
 
-/// <param name="Status">An exact status name ("Draft" | "Issued") to narrow the list to, or null.</param>
+/// <param name="Status">An exact status name ("Draft" | "Issued" | "Cancelled") to narrow the list to, or null.</param>
 public sealed record LoadingInstructionListQuery(int PageSize = 50, string? Cursor = null, string? Status = null);
 
 public sealed record LogisticsFieldError(string Field, string Code);
