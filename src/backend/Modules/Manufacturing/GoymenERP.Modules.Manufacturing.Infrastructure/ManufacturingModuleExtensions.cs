@@ -53,6 +53,8 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
         services.AddScoped<IManufacturingSalesOrderBindingReadPortV1, ManufacturingSalesOrderBindingReadPort>();
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-D42 (3): the read-only list of closed orders for the output-above-input report, the same store and DbContext.
+        services.AddScoped<IManufacturingClosedOrderListStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // ADR-011: the command log shares the store's DbContext, so a success joins the business save.
         services.AddScoped<IManufacturingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // MFG-API (#313): the command surface. Settings' kilogram profile and the fresh authority
