@@ -133,7 +133,6 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Contains(shares.GetCheckConstraints(), check => check.Name == "CK_LoadingShares_RecordedBy"
             && check.Sql == LogisticsDbContext.ShareRecordedByCheck);
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLoadingShareRecordedBy", StringComparison.Ordinal));
-        Assert.Equal("AddLoadingShareRecordedBy", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLoadingShareRecordedBy();
@@ -145,6 +144,35 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(down[1]);
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropColumnOperation>(down[2]);
+    }
+
+    [Fact]
+    public void A_cancelled_instruction_keeps_its_canceller_time_and_reason_in_nullable_columns_under_a_check_and_the_migration_down_refuses_with_51265()
+    {
+        using var context = Context();
+        var instructions = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LoadingInstructionRow))!;
+        foreach (var name in new[] { nameof(LoadingInstructionRow.CancelledBy), nameof(LoadingInstructionRow.CancelledAtUtc), nameof(LoadingInstructionRow.CancelReason) })
+        {
+            // Old instructions carry no cancel marks and are never back-filled: every column stays nullable.
+            Assert.True(instructions.FindProperty(name)!.IsNullable);
+        }
+
+        Assert.Equal(128, instructions.FindProperty(nameof(LoadingInstructionRow.CancelledBy))!.GetMaxLength());
+        Assert.Equal(500, instructions.FindProperty(nameof(LoadingInstructionRow.CancelReason))!.GetMaxLength());
+        Assert.Contains(instructions.GetCheckConstraints(), check => check.Name == "CK_LoadingInstructions_Status"
+            && check.Sql == LogisticsDbContext.InstructionStatusCheck && check.Sql == "[Status] IN (1, 2, 3)");
+        Assert.Contains(instructions.GetCheckConstraints(), check => check.Name == "CK_LoadingInstructions_Cancel"
+            && check.Sql == LogisticsDbContext.InstructionCancelCheck);
+        Assert.Equal("AddLoadingInstructionCancel", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLoadingInstructionCancel();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("[Status] = 3", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51265,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]
@@ -415,6 +443,64 @@ public sealed class LogisticsPersistenceModelTests
     }
 
     [Fact]
+    public async Task An_instruction_cancel_mark_is_written_once_with_the_cancel_and_never_rewritten_or_cleared()
+    {
+        // F-020: the cancel writes the status, the stamp and the three marks from empty. The guard lets that row through and reaches the
+        // next one: the refusal that comes back is the weighing delete, not the instruction (no connection is opened).
+        await using (var context = Context())
+        {
+            var row = Instruction(CompanyA);
+            context.Instructions.Attach(row);
+            Cancel(row);
+            var weighing = Weighing();
+            context.Weighings.Attach(weighing);
+            context.Entry(weighing).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // Control for the case above: the instruction is checked before the weighing, so an instruction refusal wins.
+        await using (var context = Context())
+        {
+            var row = Instruction(CompanyA);
+            context.Instructions.Attach(row);
+            Cancel(row);
+            row.CreatedBy = "SENTETIK-other"; // not allowed: identity never moves
+            var weighing = Weighing();
+            context.Weighings.Attach(weighing);
+            context.Entry(weighing).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // A mark that is already set is never rewritten or cleared.
+        foreach (var change in new Action<LoadingInstructionRow>[]
+                 {
+                     row => row.CancelReason = "SENTETIK-other", row => row.CancelledBy = "SENTETIK-other",
+                     row => row.CancelledAtUtc = row.CancelledAtUtc!.Value.AddMinutes(1), row => row.CancelReason = null,
+                     row => row.CancelledBy = null, row => row.CancelledAtUtc = null,
+                 })
+        {
+            await using var context = Context();
+            var row = Instruction(CompanyA);
+            Cancel(row);
+            context.Instructions.Attach(row);
+            change(row);
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("bir kez yazılır", refusal.Message, StringComparison.Ordinal);
+        }
+
+        static void Cancel(LoadingInstructionRow row)
+        {
+            row.Status = 3;
+            row.UpdatedAtUtc = row.UpdatedAtUtc.AddMinutes(1);
+            row.CancelledBy = "SENTETIK";
+            row.CancelledAtUtc = row.UpdatedAtUtc;
+            row.CancelReason = "SENTETIK";
+        }
+    }
+
+    [Fact]
     public void The_shell_declarations_are_published_and_bound_to_the_manifest_names()
     {
         var provider = new LogisticsShellCapabilityProvider();
@@ -434,10 +520,10 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(14, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(15, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(14, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(15, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
         // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);

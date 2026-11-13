@@ -33,6 +33,7 @@ public sealed class LogisticsPermissionRegistrationTests
         ErpPermissions.LogisticsDispatchNotesCreate,
         ErpPermissions.LogisticsDispatchNotesApprove,
         ErpPermissions.LogisticsDispatchNotesCancel,
+        ErpPermissions.LogisticsLoadingInstructionsCancel,
         ErpPermissions.LogisticsOperationsSalesWorkRead,
         ErpPermissions.LogisticsOperationsPurchaseWorkRead,
     };
@@ -49,6 +50,7 @@ public sealed class LogisticsPermissionRegistrationTests
         Assert.Equal("logistics.dispatch-notes.create", ErpPermissions.LogisticsDispatchNotesCreate);
         Assert.Equal("logistics.dispatch-notes.approve", ErpPermissions.LogisticsDispatchNotesApprove);
         Assert.Equal("logistics.dispatch-notes.cancel", ErpPermissions.LogisticsDispatchNotesCancel);
+        Assert.Equal("logistics.loading-instructions.cancel", ErpPermissions.LogisticsLoadingInstructionsCancel);
         Assert.Equal("logistics.operations-work.sales.read", ErpPermissions.LogisticsOperationsSalesWorkRead);
         Assert.Equal("logistics.operations-work.purchase.read", ErpPermissions.LogisticsOperationsPurchaseWorkRead);
     }
