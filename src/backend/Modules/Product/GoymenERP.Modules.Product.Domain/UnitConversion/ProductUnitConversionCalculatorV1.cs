@@ -100,9 +100,14 @@ public sealed record UnitConversionSettingsV1(
 
 /// <summary>
 /// Deterministic unit-conversion calculator, version 1 (DEC-PRD-006, B-07). Pure decimal maths shared by the UI,
-/// documents and reports. Sheet and coil formulas only; tube/profile cross-section conversion waits for the
-/// "Ebat/kalınlık" table design. Intermediate steps are never rounded; rounding happens only in the explicit
-/// methods that take <see cref="UnitConversionSettingsV1"/>.
+/// documents and reports: sheet (F-A), coil (F-B), round tube (F-C) and tube/profile piece (F-D). Box and rectangular
+/// profiles have no formula; their kg per metre comes from the product's "Ebat/kalınlık" table. Rounding happens only
+/// in the methods that take <see cref="UnitConversionSettingsV1"/>, with one exception (URN-D8, #66 6825745714 and
+/// 6825138604, "hesapta da 3 ondalık"): a coefficient (kg per piece, kg per metre) is rounded once with
+/// <see cref="RoundCoefficient"/> where it is produced and that rounded value is what later steps use, so shown equals
+/// computed. Lengths and thicknesses are millimetres throughout; a value in metres gives a result 1000 times off with
+/// no error, so callers convert first. A result that is not positive (for example a tiny input that decimal maths
+/// rounds to zero) is refused, never returned as 0.
 /// </summary>
 public static class ProductUnitConversionCalculatorV1
 {
@@ -115,6 +120,11 @@ public static class ProductUnitConversionCalculatorV1
     private const decimal MillimetresPerMetre = 1000m;
 
     private const decimal PercentScale = 100m;
+
+    // Geometry constant (pi to decimal precision), not a business value.
+    private const decimal Pi = 3.1415926535897932384626433833m;
+
+    private const decimal Two = 2m;
 
     private const string OverflowReason = "The inputs are too large to convert.";
 
@@ -139,7 +149,7 @@ public static class ProductUnitConversionCalculatorV1
         var w = widthMm.Value;
         var l = lengthMm.Value;
         var d = density.Value.GramsPerCubicCentimetre;
-        return Checked(() => t * w * l * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
+        return CheckedPositive(() => t * w * l * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
     }
 
     /// <summary>F-B: kg per metre of coil or slit coil from thickness, width (mm) and density.</summary>
@@ -158,7 +168,73 @@ public static class ProductUnitConversionCalculatorV1
         var t = thicknessMm.Value;
         var w = widthMm.Value;
         var d = density.Value.GramsPerCubicCentimetre;
-        return Checked(() => t * w * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
+        return CheckedPositive(() => t * w * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
+    }
+
+    /// <summary>
+    /// F-C (round tube only): kg per metre from outer diameter and wall thickness (mm) and density. The cross-section
+    /// is the annulus area <c>pi * t * (D - t)</c> in mm2. Box and rectangular profiles have no formula by decision
+    /// (#66 6810051185 item 21): their kg per metre comes from the product's size/thickness table, never a corner model.
+    /// Where that table has a row for a round tube, the table value is the source and this result is only a suggestion
+    /// (#66 6810163182 item 24). Inputs are millimetres (not metres). The result is at full precision; it is a
+    /// coefficient, so a consumer applies <see cref="RoundCoefficient"/> before showing or using it (URN-D8);
+    /// <see cref="ProfileKgPerPiece"/> does that itself.
+    /// </summary>
+    public static UnitConversionResultV1<decimal> RoundTubeKgPerMetre(decimal? outerDiameterMm, decimal? wallThicknessMm, DensityV1? density)
+    {
+        if (outerDiameterMm is null || wallThicknessMm is null || density is null)
+        {
+            return UnitConversionResultV1<decimal>.NoSource("A round tube conversion needs outer diameter, wall thickness and density.");
+        }
+
+        if (outerDiameterMm <= 0 || wallThicknessMm <= 0 || density.Value.GramsPerCubicCentimetre <= 0)
+        {
+            return UnitConversionResultV1<decimal>.Refused("Round tube conversion inputs must be positive.");
+        }
+
+        var outer = outerDiameterMm.Value;
+        var wall = wallThicknessMm.Value;
+        // Division, not 2 * wall: a wall above decimal.MaxValue / 2 must be refused, not thrown.
+        if (wall > outer / Two)
+        {
+            return UnitConversionResultV1<decimal>.Refused("The wall thickness cannot exceed half of the outer diameter.");
+        }
+
+        var d = density.Value.GramsPerCubicCentimetre;
+        return CheckedPositive(() => Pi * wall * (outer - wall) * MillimetresPerMetre * d * CubicMillimetreGramPerCubicCentimetreToKilogram);
+    }
+
+    /// <summary>
+    /// F-D: kg per piece of a tube or profile from its kg per metre and the piece length (mm). Shown = computed
+    /// (URN-D8, #66 6825745714): the kg per metre is a coefficient, so it is first rounded with
+    /// <see cref="RoundCoefficient"/> (the company's <see cref="UnitConversionSettingsV1.CoefficientDecimals"/>), then
+    /// multiplied by the length in metres, and the piece kg (itself a coefficient) is rounded to the same decimals.
+    /// Example: 1.2345 kg/m and 6000 mm give 7.410 at 3 decimals (1.235 x 6) and 7.407 at 4 decimals (1.2345 x 6).
+    /// The length is used at full precision and is in millimetres (6 m is 6000, not 6). A coefficient that rounds to
+    /// zero is refused, never returned as 0.
+    /// </summary>
+    public static UnitConversionResultV1<decimal> ProfileKgPerPiece(decimal? kgPerMetre, decimal? pieceLengthMm, UnitConversionSettingsV1 settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (kgPerMetre is null || pieceLengthMm is null)
+        {
+            return UnitConversionResultV1<decimal>.NoSource("A profile piece conversion needs kg per metre and piece length.");
+        }
+
+        if (kgPerMetre <= 0 || pieceLengthMm <= 0)
+        {
+            return UnitConversionResultV1<decimal>.Refused("Profile piece conversion inputs must be positive.");
+        }
+
+        var kgm = RoundCoefficient(kgPerMetre.Value, settings);
+        var length = pieceLengthMm.Value;
+        var piece = Checked(() => RoundCoefficient(kgm * length / MillimetresPerMetre, settings));
+        if (piece.Outcome == UnitConversionOutcomeV1.Computed && (kgm <= 0 || piece.Value <= 0))
+        {
+            return UnitConversionResultV1<decimal>.Refused("The kg per metre or the piece kg rounds to zero at the coefficient decimals.");
+        }
+
+        return piece;
     }
 
     /// <summary>Units to kg at full precision (no intermediate rounding).</summary>
@@ -181,9 +257,10 @@ public static class ProductUnitConversionCalculatorV1
     /// <summary>
     /// kg to whole units with the settings' <see cref="UnitConversionSettingsV1.WholeUnitRounding"/> (BS-13: rounds
     /// down by default, adjustable; #66 6806641583); the remainder stays visible to the caller.
-    /// <paramref name="kgPerUnit"/> is the full-precision coefficient, not the 3-decimal stored/displayed one:
-    /// intermediate steps are never rounded (BS-13), so callers pass the unrounded value. A count too large for the
-    /// result is refused, not thrown.
+    /// <paramref name="kgPerUnit"/> is the coefficient as stored and shown, already rounded once with
+    /// <see cref="RoundCoefficient"/> (URN-D8, #66 6825138604: "hesapta da 3 ondalık"); it is used as given and not
+    /// rounded again, so 0.999 kg at 0.333 kg per unit is 3 units. A count too large for the result is refused, not
+    /// thrown.
     /// </summary>
     public static UnitConversionResultV1<long> KgToWholeUnits(decimal kg, decimal? kgPerUnit, UnitConversionSettingsV1 settings)
     {
@@ -278,6 +355,14 @@ public static class ProductUnitConversionCalculatorV1
         {
             return UnitConversionResultV1<decimal>.Refused(OverflowReason);
         }
+    }
+
+    private static UnitConversionResultV1<decimal> CheckedPositive(Func<decimal> compute)
+    {
+        var result = Checked(compute);
+        return result.Outcome == UnitConversionOutcomeV1.Computed && result.Value <= 0
+            ? UnitConversionResultV1<decimal>.Refused("The inputs are too small to convert; the result rounds to zero.")
+            : result;
     }
 
     private static MidpointRounding RequireMode(MidpointRounding mode)

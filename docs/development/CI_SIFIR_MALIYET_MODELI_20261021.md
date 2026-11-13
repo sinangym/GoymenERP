@@ -106,7 +106,7 @@ hizmet, hesap, lisans yok.
 3. Zorunlu check / ruleset etkinleştirmek bu adımın parçası değildir (plan/görünürlük kararı
    ayrı `NEEDS-SINAN`).
 
-Harcama limiti `$0`'da kalır. Runner'lar (`DESKTOP-11CDRHD` Linux servis + Windows kullanıcı
+Harcama limiti `$0`'da kalır. Runner'lar (yerel geliştirme bilgisayarındaki Linux servis + Windows kullanıcı
 oturumu) açık olduğu sürece PR'da yalnız hafif check'ler otomatik koşar.
 
 ## 5. Kaynak sorunu (RAM < 2 GiB)

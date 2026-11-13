@@ -141,7 +141,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U3-a (URT-D21): maps the plan approval/cancel allocation host registration (DI only); no generation, network or hosted-service change (f4d42b16… -> 069c2674…).
         // Üretim U2-b (API-16, SAT-D219): registers the two host-side Manufacturing/Sales order-line adapters (DI only); no
         // generation, network or hosted-service change (a1562dc1… -> a5bb99f0…).
-        "a5bb99f00d172122845dedb20da107c205b9d08425666692a6f9d1cae48ca307";
+        // Üretim U5-b1 (API-36, SAT-D175): registers the two host-side subcontract service order / binding adapters (DI only);
+        // no generation, network or hosted-service change (a5bb99f0… -> 096c3e0b…).
+        "096c3e0b71c9f387eaf3c2445a2ea60d5af1674d7c0ec7f5f1f6b115c4abbc8a";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -342,7 +344,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // rules, link migration Down 51261) (b30fa7d7… -> 1b1e7223…).
                 // TAKIP-U3a P3-2: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (approval and closure without
                 // the allocation port are code-less 503s; the same key succeeds once it is back) (1b1e7223… -> f6ebea91…).
-                "f6ebea913c4ad54634329389964a32112a9175cce986d0890d8cbcbd9bb95c34",
+                // Üretim U5-b1 (API-36): +1 ManufacturingSqlServerRelationalAcceptanceTests fact (Sales's binding read of
+                // linked, not cancelled plans) (1b1e7223… -> d3ffa8f8…).
+                // Main merge after #1104: both facts present (re-derived from the merged inventory) (-> 85d84d52…).
+                "85d84d52c13967b770572d148f09d8d67a00d0fe8365dd97b5838e457ffa8a4a",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -1466,11 +1471,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // cancellation) over the same ManufacturingStore; the provider branch and its token counts are unchanged.
                 // Re-fingerprinted for Üretim U2-b: the plan sales order link store and the open-supply read for Sales over
                 // the same ManufacturingStore; the provider branch and its token counts are unchanged.
+                // Re-fingerprinted for Üretim U5-b1: the binding read for Sales (SAT-D175) over ManufacturingDbContext; the
+                // provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "2c135164934f1cd4cee8569bb2e98e2f2df2d36dd1eb8bda2d57739b2e82acf3",
+                        "d36a03c33fb1bb1c76f489482ad7af03233d9a64ba1c0e52b45c7fd41eeb79cc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

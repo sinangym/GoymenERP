@@ -237,7 +237,8 @@ public sealed partial class SalesInvoiceService
             admissionKey, finalization.AdmissionId, invoice.Id, invoice.Version.ToString(CultureInfo.InvariantCulture), header.PartyId,
             header.CompanyAccountId, header.CurrencyId, header.Rate is { } rate ? Decimal(rate.Rate) : null,
             [.. finalization.Plan.Select(item => new SalesFinanceInstalmentV1(item.OpenItemId, item.InstallmentId, item.SequenceNo,
-                item.DueDate, Text(item.Amount, scale), item.FunctionalAmount is { } functional ? Text(functional, functionalScale) : null))]);
+                item.DueDate, Text(item.Amount, scale), item.FunctionalAmount is { } functional ? Text(functional, functionalScale) : null))],
+            invoice.Match?.OfficialNo, invoice.Match?.Ettn);
         try
         {
             return await financeAdmission!.AdmitAsync(request, cancellationToken) ?? SalesFinanceAdmissionAnswerV1.Unavailable;
