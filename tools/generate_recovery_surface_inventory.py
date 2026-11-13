@@ -90,7 +90,7 @@ EXPECTED_DURABLE_STORE_COUNT = 32
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 654
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "43d43d44881472672a0f99c88dea19dfdb2601a2b158ea50d162806246cea6cc"
+    "6508ac58c0bfec9fcfbd8bb84a9327add761ceac2235e27669098d396e3550a0"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -967,7 +967,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "241e1e850db26e13c0b480d3c1ebb42f7b7ac031041c342ee00968065c1b085d",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": "0861f73739be9690ee8063766a888b26a1508ea422c4a526599669133134009b",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
-    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "db79e948e0cad094174aa57249223fcfd5e50cb271c38a3a5ed10586fb3655b8",
+    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "f6256b174193626723fc65e9d2e7be43732f4debc840a097dba096a5a1ad5ccc",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
     "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "06f00d738be6477a85de2ababadee9b23605785dc2453d783f03a769f011c54c",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
