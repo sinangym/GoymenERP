@@ -1821,8 +1821,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // API-40 (SAT-D288..SAT-D294): registers the customer return service over the Sales store with the optional Finance
                     // reversal port (DI-only, none registered; finalisation is 503 fail-closed); provider branch and token counts
                     // unchanged; recomputed on the merged registration (ecf53c18... -> 8389326f...).
+                    // Re-fingerprinted for the linked-supply comment sync: comments only (Production adapter and
+                    // recorder registered since #1085); registrations and token counts unchanged (8389326f... -> 1c25c7fd...).
                     new(
-                        "8389326fd0f98ffad49a0ec9e472cd161fee8e7385423cf4ad88656e0c495dfd",
+                        "1c25c7fd20325e6064dea73d330f0ae0d34073c161b0436cc984826a6591fa75",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

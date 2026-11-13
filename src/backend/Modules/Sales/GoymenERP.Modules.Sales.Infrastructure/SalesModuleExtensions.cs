@@ -252,10 +252,10 @@ public static class SalesModuleExtensions
         // SAT-D32: the source (MOD-05), invoicing (S5) and financial-closure (MOD-04) axes; nothing registers it on main, so they
         // stay "NoSource" and "kapanmaya hazır" stays false (the user closure is 409), never an assumed complete axis.
         serviceProvider.GetService<ISalesOrderOwnerAxesSourceV1>(),
-        // S-1 / MOD-03 (DEC-SAL-005, No 30 / SAT-D12): the supply owners' linked-supply adapters (Production U5-a, Purchasing
-        // MOD-03), one per supply kind; the host registers Purchasing's (#998), Production's is not on main yet ("no source").
+        // S-1 / MOD-03 (DEC-SAL-005, No 30 / SAT-D12): the supply owners' linked-supply adapters (Production U2-b / API-16,
+        // Purchasing MOD-03), one per supply kind; the host registers Purchasing's (#998) and Production's (#1085).
         serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>(),
-        // SAT-D219 (EK38): the declarations of the supply owners that RECORD links to Sales order lines (Purchasing, #998): a recorded kind
+        // SAT-D219 (EK38): the declarations of the supply owners that RECORD links to Sales order lines (Purchasing #998, Production #1085): a recorded kind
         // without an adapter is Unreadable, and only a kind nobody records is "no source".
         serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
 
