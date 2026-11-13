@@ -69240,6 +69240,7 @@
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
               "manufacturing_plan_cancelled",
+              "manufacturing_plan_customer_goods_require_subcontract_order",
               "manufacturing_plan_engine_refused",
               "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",

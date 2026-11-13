@@ -3503,12 +3503,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["CancelManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["CancelManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
-            // Üretim U2-b / API-16: a moved link revision is 409; the line and link refusals are 422.
+            // Üretim U2-b / API-16: a moved link revision is 409; the line and link refusals are 422. U5-b / API-36 adds the
+            // customer-goods plan's subcontract order refusal.
             ["ChangeManufacturingPlanSalesOrderLinkV1:400"] = ["manufacturing_request_invalid"],
             ["ChangeManufacturingPlanSalesOrderLinkV1:409"] =
                 [.. ManufacturingConflictCodes, "manufacturing_plan_sales_order_link_changed"],
             ["ChangeManufacturingPlanSalesOrderLinkV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled",
+                    "manufacturing_plan_customer_goods_require_subcontract_order",
                     "manufacturing_plan_sales_order_link_no_change", "manufacturing_plan_sales_order_link_order_closed",
                     "manufacturing_plan_sales_order_line_not_approved", "manufacturing_plan_sales_order_line_not_found",
                     "manufacturing_plan_sales_order_party_mismatch"],
