@@ -999,6 +999,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/logistics/loading-instructions/{id}/issue", "IssueLoadingInstructionV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/IssueLoadingInstructionRequest", ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/cancel", "CancelLoadingInstructionV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CancelInstructionRequest", ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads", "RecordLoadingInstructionLoadV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordLoadRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
@@ -1676,6 +1679,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
             ["GetLoadingInstructionV1"] = "ref:LoadingInstructionDetailView",
             ["IssueLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
+            ["CancelLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionLoadV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionShipmentV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionDeliveryV1"] = "ref:LoadingInstructionResponse",
@@ -2036,6 +2040,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateLoadingInstructionV1",
         "GetLoadingInstructionV1",
         "IssueLoadingInstructionV1",
+        "CancelLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
@@ -2284,6 +2289,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountIbanChangeV1",
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
+        "CancelLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
@@ -2596,6 +2602,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["DecideInventoryStockScrapV1"] = [StatusCodes.Status200OK],
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CancelLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionShipmentV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -2867,6 +2874,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLoadingInstructionsV1",
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
+        "CancelLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
@@ -3081,6 +3089,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ConvertSalesQuoteV1:404",
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
+        "CancelLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
         "RecordLoadingInstructionShipmentV1:404",
         "RecordLoadingInstructionDeliveryV1:404",
@@ -3548,12 +3557,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["CancelManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["CancelManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled", "manufacturing_plan_has_order"],
-            // Üretim U2-b / API-16: a moved link revision is 409; the line and link refusals are 422.
+            // Üretim U2-b / API-16: a moved link revision is 409; the line and link refusals are 422. U5-b / API-36 adds the
+            // customer-goods plan's subcontract order refusal.
             ["ChangeManufacturingPlanSalesOrderLinkV1:400"] = ["manufacturing_request_invalid"],
             ["ChangeManufacturingPlanSalesOrderLinkV1:409"] =
                 [.. ManufacturingConflictCodes, "manufacturing_plan_sales_order_link_changed"],
             ["ChangeManufacturingPlanSalesOrderLinkV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled",
+                    "manufacturing_plan_customer_goods_require_subcontract_order",
                     "manufacturing_plan_sales_order_link_no_change", "manufacturing_plan_sales_order_link_order_closed",
                     "manufacturing_plan_sales_order_line_not_approved", "manufacturing_plan_sales_order_line_not_found",
                     "manufacturing_plan_sales_order_party_mismatch"],
@@ -3770,6 +3781,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["IssueLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["IssueLoadingInstructionV1:409"] = ["concurrent_change", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict"],
             ["IssueLoadingInstructionV1:422"] = ["validation_failed"],
+            ["CancelLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CancelLoadingInstructionV1:409"] =
+            [
+                "concurrent_change", "logistics_instruction_shipped", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["CancelLoadingInstructionV1:422"] = ["validation_failed"],
             ["RecordLoadingInstructionLoadV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["RecordLoadingInstructionLoadV1:409"] = ["concurrent_change", "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked", "logistics_load_exceeds_instructed", "same_key_payload_mismatch", "version_conflict"],
             ["RecordLoadingInstructionLoadV1:422"] = ["unsupported_unit", "validation_failed"],
@@ -8876,6 +8893,10 @@ public sealed partial class OpenApiContractGenerationTests
                 ["IssueLoadingInstructionRequest"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
+                ["CancelInstructionRequest"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string")),
                 ["RequestCustomerReturnV1"] = ObjectSchema(
                     ["customerReturnId", "sourceDeliveryId", "expectedInstructionVersion", "quantity", "reason", "occurredAtUtc"],
                     ("customerReturnId", "type:string;format:uuid"),

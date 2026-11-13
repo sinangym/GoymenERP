@@ -52,7 +52,8 @@ public sealed record AiExternalEgressPolicyV1
         if (allowed.Any(type => type == AiSensitiveDataTypeV1.None || !Enum.IsDefined(type)))
             throw new ArgumentException("Invalid sensitive data type.");
         ExternalEnabled = externalEnabled;
-        AllowedSensitiveTypes = allowed;
+        // A read-only view over a private copy: a caller cannot cast it back and widen the policy after review.
+        AllowedSensitiveTypes = new System.Collections.ObjectModel.ReadOnlySet<AiSensitiveDataTypeV1>(allowed);
         IbanKvkkReviewRecorded = ibanKvkkReviewRecorded;
         PolicyReference = policyReference;
     }
@@ -154,9 +155,19 @@ public sealed partial class AiPseudonymizerV1 : IDisposable
     };
 }
 
-public sealed record AiRestoredTextV1(string Text, int UnknownTokenCount);
+/// <summary>Restored model text holds raw values again, so the generated record text never renders it.</summary>
+public sealed record AiRestoredTextV1(string Text, int UnknownTokenCount)
+{
+    public override string ToString() =>
+        $"{nameof(AiRestoredTextV1)} {{ Text = <redacted>, {nameof(UnknownTokenCount)} = {UnknownTokenCount} }}";
+}
 
-public sealed record AiOutboundFieldV1(AiFieldTagV1 Tag, string Value);
+/// <summary>One outbound field before filtering. The value may be sensitive, so the record text shows only the field name.</summary>
+public sealed record AiOutboundFieldV1(AiFieldTagV1 Tag, string Value)
+{
+    public override string ToString() =>
+        $"{nameof(AiOutboundFieldV1)} {{ Field = {Tag?.FieldName}, Value = <redacted> }}";
+}
 
 /// <summary>
 /// The fields that may leave for the external AI. Denied fields are absent; only their names and count are kept for

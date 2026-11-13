@@ -124,6 +124,14 @@ public static class ManufacturingRuleCodes
     public const string PlanSalesOrderLineUnavailable = "manufacturing_plan_sales_order_line_unavailable";
 
     /// <summary>
+    /// Üretim U5-b / API-36 (URT-D16, URT-D22): the plan processes a customer's goods, so it is linked only to an open,
+    /// approved subcontract service order of that same customer (party and account) whose usable basis carries the line.
+    /// A normal order, an unapproved or closed order, another customer or a line outside the basis is refused (422).
+    /// </summary>
+    public const string PlanCustomerGoodsRequireSubcontractOrder =
+        "manufacturing_plan_customer_goods_require_subcontract_order";
+
+    /// <summary>
     /// Üretim U2-d (URT-D2): the user who prepared the plan's current version (saved it, or recorded its last revision)
     /// may not approve or reject it; another user decides.
     /// </summary>

@@ -159,7 +159,7 @@ function InstructionList({ namespace }: { readonly namespace: string | null }) {
                   {canOpen ? <Link to={instructionDetailRoute(row.id)}>{row.id}</Link> : row.id}
                 </th>
                 <td>
-                  <span className={styles.badge} data-testid={`logistics-row-status-${row.id}`}>
+                  <span className={row.status === INSTRUCTION_STATUS.cancelled ? `${styles.badge} ${styles.blocked}` : styles.badge} data-testid={`logistics-row-status-${row.id}`}>
                     {INSTRUCTION_STATUS_TEXT[row.status]}
                   </span>
                 </td>

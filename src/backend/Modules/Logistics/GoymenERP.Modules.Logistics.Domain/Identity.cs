@@ -29,6 +29,10 @@ public static class LogisticsRuleCodes
 {
     public const string InstructionNotDraft = "logistics_instruction_not_draft";
     public const string InstructionNotIssued = "logistics_instruction_not_issued";
+
+    // F-020 instruction cancel: a cancelled instruction takes no further command; a recorded shipment makes the cancel final-refused.
+    public const string InstructionCancelled = "logistics_instruction_cancelled";
+    public const string InstructionShipped = "logistics_instruction_shipped";
     public const string InstructionWithoutLines = "logistics_instruction_without_lines";
     public const string DuplicateLineId = "logistics_duplicate_line_id";
     public const string LineNotFound = "logistics_line_not_found";

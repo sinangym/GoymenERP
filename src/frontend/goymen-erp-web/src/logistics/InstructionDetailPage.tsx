@@ -130,7 +130,8 @@ export function InstructionDetailPage() {
       detail={detail}
       backLink={backLink}
       commands={
-        companyId === null ? null : (
+        // F-020: no command applies to a cancelled instruction (the server refuses every one), so none is offered.
+        companyId === null || detail.instruction.status === INSTRUCTION_STATUS.cancelled ? null : (
           <>
             {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
                 section, or the notice of the command that caused the version step would vanish with it. */}
@@ -359,6 +360,7 @@ export function InstructionView({
   readonly commands?: React.ReactNode
 }) {
   const { instruction, lines, shares } = detail
+  const cancelled = instruction.status === INSTRUCTION_STATUS.cancelled
   const lineNo = (lineId: string) => lines.find((line) => line.lineId === lineId)?.lineNo ?? '?'
   return (
     <article className={styles.page} aria-labelledby="logistics-detail-heading">
@@ -373,10 +375,16 @@ export function InstructionView({
           </p>
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
-        <span className={styles.badge} data-testid="logistics-instruction-status">
+        <span className={cancelled ? `${styles.badge} ${styles.blocked}` : styles.badge} data-testid="logistics-instruction-status">
           {INSTRUCTION_STATUS_TEXT[instruction.status]}
         </span>
       </header>
+
+      {cancelled ? (
+        <p className={styles.notice} role="status" data-testid="logistics-instruction-cancelled">
+          {T.cancelledNotice}
+        </p>
+      ) : null}
 
       <dl className={styles.facts}>
         <div>

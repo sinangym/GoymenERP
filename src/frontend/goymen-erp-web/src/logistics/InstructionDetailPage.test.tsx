@@ -25,6 +25,7 @@ import {
   json,
   mutation,
   renderLogisticsApp,
+  weighingRecord,
   type RecordedCall,
 } from './testHarness'
 
@@ -250,6 +251,36 @@ describe('L-02-DETAIL', () => {
     expect(screen.getByTestId('logistics-issue-button')).toBeTruthy()
     expect(screen.getByTestId('logistics-load-draft-only')).toBeTruthy()
     for (const word of FORBIDDEN_MONEY_WORDS) expect(document.body.textContent).not.toContain(word)
+  })
+
+  it('F-020: a cancelled instruction is shown as "İptal edildi" with its kept records and offers no command', async () => {
+    const load = { shareId: '00000000-0000-4000-8000-000000000061', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
+    const harness = installFetch({
+      onDetail: () => json(instructionDetail({ status: 'Cancelled', version: '4' },
+        [instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })], [load], weighingRecord())),
+    })
+    renderLogisticsApp(path)
+    await screen.findByTestId('logistics-instruction-id')
+    expect(screen.getByTestId('logistics-instruction-status').textContent).toBe('İptal edildi')
+    expect(screen.getByTestId('logistics-instruction-cancelled').textContent).toBe(T.cancelledNotice)
+    expect(screen.getByTestId('logistics-line-1-instructed').textContent).toBe('4.5')
+    expect(screen.queryByTestId('logistics-shares-empty')).toBeNull()
+    expect(screen.queryByTestId('logistics-issue-button')).toBeNull()
+    expect(screen.queryByTestId('logistics-load')).toBeNull()
+    expect(screen.queryByTestId('logistics-load-draft-only')).toBeNull()
+    expect(screen.queryByTestId('logistics-weighing-issued-only')).toBeNull()
+    expect(screen.queryByTestId('logistics-dispatch-note-issued-only')).toBeNull()
+    const record = screen.getByRole('article', { name: T.heading })
+    expect(record.querySelectorAll('button, form, input, select, textarea')).toHaveLength(0)
+    expect(harness.logisticsCalls().every((call) => call.method === 'GET')).toBe(true)
+    for (const word of FORBIDDEN_MONEY_WORDS) expect(document.body.textContent).not.toContain(word)
+  })
+
+  it('F-020: a detail with an unknown status is refused, not shown', async () => {
+    installFetch({ onDetail: () => json(instructionDetail({ status: 'Voided' })) })
+    renderLogisticsApp(path)
+    await screen.findByText(/Beklenmeyen yanıt/)
+    expect(screen.queryByTestId('logistics-instruction-id')).toBeNull()
   })
 
   it('issues the Draft with the expected version under one key and re-reads the detail', async () => {

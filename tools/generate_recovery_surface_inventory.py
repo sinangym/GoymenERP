@@ -51,7 +51,7 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
 )
 EXPECTED_MIGRATION_COUNT = 160
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "c35031d75242e1eada313c65c527f1ed055c54a4096493317a08b998a9845d09"
+    "d7d74dd2ac1718b0ca570b5a49f80c5c0717c3da7f497c187e72d57ffaeee81b"
 )
 EXPECTED_DURABLE_STORE_COUNT = 32
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
@@ -90,7 +90,7 @@ EXPECTED_DURABLE_STORE_COUNT = 32
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 654
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "0f638204d804016d8227304f83a265af537701e8ce03e9b7a44a4ca856901520"
+    "9958097627beaafc659d6ab8cc26e45f3f0087dfbe3a3b67710999ac9800588b"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -967,7 +967,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "241e1e850db26e13c0b480d3c1ebb42f7b7ac031041c342ee00968065c1b085d",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": "0861f73739be9690ee8063766a888b26a1508ea422c4a526599669133134009b",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
-    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "048d396e1cb2a6bc05c01a6bb23af908d6929dd119e0ffa52e84fa43a74819a5",
+    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "f6256b174193626723fc65e9d2e7be43732f4debc840a097dba096a5a1ad5ccc",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
     "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "06f00d738be6477a85de2ababadee9b23605785dc2453d783f03a769f011c54c",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",

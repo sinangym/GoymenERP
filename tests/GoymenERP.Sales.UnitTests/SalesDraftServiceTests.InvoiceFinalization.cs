@@ -80,6 +80,22 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task Every_offer_carries_the_matched_official_number_and_ettn_and_a_resend_offers_the_same_values()
+    {
+        // F-005 D5 / FNS-D19: Finance refuses a second open receivable for the same official document, so each offer names it.
+        var finance = new FakeFinanceAdmission { Answer = SalesFinanceAdmissionAnswerV1.Unavailable };
+        var (invoicing, id) = await MatchedInvoiceAsync(finance);
+
+        await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+        finance.Answer = new SalesFinanceAdmissionAnswerV1(SalesFinanceAdmissionOutcomeV1.Admitted, "ok");
+        await invoicing.Service().ResendFinanceAdmissionAsync(id, Command("4"), Metadata("k-inv-resend"));
+
+        Assert.Equal(2, finance.Requests.Count);
+        Assert.All(finance.Requests, request => Assert.Equal(("GIB2026000000001", OfficialEttn), (request.OfficialInvoiceNo, request.Ettn)));
+        Assert.Equal(finance.Requests[0].AdmissionId, finance.Requests[1].AdmissionId);
+    }
+
+    [Fact]
     public async Task A_throwing_finance_port_never_admits_and_never_undoes_the_commit()
     {
         var (invoicing, id) = await MatchedInvoiceAsync(new ThrowingFinanceAdmission());

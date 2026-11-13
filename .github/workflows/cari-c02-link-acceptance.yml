@@ -1,12 +1,42 @@
 name: Cari C006 backend envelope acceptance
 
 on:
+  # CIH-D5: prose that no CI job reads does not start this workflow. Only *.md files in four
+  # folders are ignored; the Markdown files a validator reads are re-included by name. The last
+  # matching pattern decides, and both events carry the same list. Pinned by
+  # tests/ci_safe_trx_summary/test_workflow_path_filters.py.
   pull_request:
+    paths:
+      - '**'
+      - '!docs/decisions/**/*.md'
+      - 'docs/decisions/KARAR_SICILI.md'
+      - 'docs/decisions/ACIK_KARARLAR.md'
+      - 'docs/decisions/SINAN_KARARLARI_2026-08-31.md'
+      - '!docs/delivery/**/*.md'
+      - 'docs/delivery/DECISION_PACK.md'
+      - '!docs/handoffs/**/*.md'
+      - '!docs/operations/**/*.md'
   push:
     branches: [main]
+    paths:
+      - '**'
+      - '!docs/decisions/**/*.md'
+      - 'docs/decisions/KARAR_SICILI.md'
+      - 'docs/decisions/ACIK_KARARLAR.md'
+      - 'docs/decisions/SINAN_KARARLARI_2026-08-31.md'
+      - '!docs/delivery/**/*.md'
+      - 'docs/delivery/DECISION_PACK.md'
+      - '!docs/handoffs/**/*.md'
+      - '!docs/operations/**/*.md'
 
 permissions:
   contents: read
+
+# CIH-D6: a newer push to a pull request replaces its older run. Every main run has its own group,
+# so a main run is never cancelled or replaced while it waits.
+concurrency:
+  group: cari-c006-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   cari-c006-backend:
