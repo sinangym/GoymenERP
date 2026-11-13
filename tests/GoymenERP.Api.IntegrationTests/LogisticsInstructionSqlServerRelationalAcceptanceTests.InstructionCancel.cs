@@ -177,8 +177,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         // The row stays (nothing is deleted); the owner's answers hold no line for it — an absent line is the valid zero, never a
         // positive count with a zero instructed total.
         Assert.Equal((5m, 2m), (
-            await run.ScalarAsync<decimal>("SELECT Instructed FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", lineId)),
-            await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", lineId))));
+            await run.ScalarAsync<decimal>("SELECT Instructed FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", lineId)),
+            await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", lineId))));
         await using var after = run.LogisticsContext(CompanyA);
         var answer = await after.Port.ReadOrderLoadingAsync(owners.Order);
         Assert.Equal((CompanyA, owners.Order), (answer.CompanyId, answer.OrderId));
@@ -300,8 +300,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
         // The cancelled instruction keeps its own loaded total and share (nothing deleted).
         Assert.Equal((1.5m, 2m), (
-            await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", firstLine.Id)),
-            await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", secondLine.Id))));
+            await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", firstLine.Id)),
+            await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", secondLine.Id))));
     }
 
     [SqlServerFact]
@@ -373,7 +373,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Contains(refusal.Code, new[] { LogisticsRuleCodes.InstructionCancelled, LogisticsRuleCodes.InstructionNotIssued });
             Assert.Equal((3, 0m), (
                 await run.ScalarAsync<int>("SELECT [Status] FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)),
-                await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", lineId))));
+                await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", lineId))));
         }
         else
         {
@@ -384,7 +384,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Equal(LogisticsRuleCodes.InstructionShipped, refusal.Code);
             Assert.Equal((2, 3m), (
                 await run.ScalarAsync<int>("SELECT [Status] FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)),
-                await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", lineId))));
+                await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", lineId))));
         }
 
         // Either way: no cancelled instruction carries a shipped quantity.
@@ -580,5 +580,5 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     private static async Task<(int Status, int Shares, decimal Loaded)> CancelRaceStateAsync(Run run, Guid id, Guid lineId) => (
         await run.ScalarAsync<int>("SELECT [Status] FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)),
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingShares WHERE InstructionId = @id", ("@id", id)),
-        await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE Id = @id", ("@id", lineId)));
+        await run.ScalarAsync<decimal>("SELECT Loaded FROM logistics.LoadingInstructionLines WHERE LineId = @id", ("@id", lineId)));
 }
