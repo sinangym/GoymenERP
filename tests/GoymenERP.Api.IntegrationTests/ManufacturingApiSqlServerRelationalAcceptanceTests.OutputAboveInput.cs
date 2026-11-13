@@ -190,7 +190,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         async Task<(string Orders, string Facts, int Decisions, int Audit, int Commands)> SnapshotAsync() => (
             await run.ScalarAsync<string>(
                 "SELECT COALESCE(STRING_AGG(CAST(CONCAT(CONVERT(nvarchar(36), Id), N'|', Status, N'|', Version, N'|', "
-                + "CONVERT(nvarchar(40), ClosedAtUtc, 127), N'|', CONVERT(nvarchar(20), RowVersion, 1)) AS nvarchar(max)), N',') "
+                + "CONVERT(nvarchar(40), ClosedAtUtc, 127), N'|', "
+                + "CONVERT(nvarchar(20), CONVERT(varbinary(8), RowVersion), 1)) AS nvarchar(max)), N',') "
                 + "WITHIN GROUP (ORDER BY Id), N'') FROM manufacturing.Orders WHERE CompanyId = @c", ("@c", CompanyA)),
             await run.ScalarAsync<string>(
                 "SELECT COALESCE(STRING_AGG(CAST(CONCAT(Kind, N'|', CONVERT(nvarchar(36), Id), N'|', MassKg) AS nvarchar(max)), "
