@@ -9,9 +9,8 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // The currency is one of Settings' money currency candidates of the server-resolved company (FNS-D24:
 // TL/USD/EUR are configured in Settings, never hard-coded here), checked exactly as the bank master checks it.
 //
-// OPEN (NEEDS-SINAN): a "responsible person" (sorumlu) for a cash account is NOT modelled here. Whether it
-// is a user id, a free label, or an authority that gates who may move money through the account is an
-// unanswered business question; a field would silently choose an answer.
+// FNS-D32: a cash account carries NO "responsible person" (sorumlu) field (the actor of each cash
+// operation is already recorded); if one is ever wanted it is asked again in a separate slice.
 // OPEN: passivating an approved cash account (aktif → pasif) has no command in this slice; an approved
 // account is active, and the state is shown so a later command can move it.
 
