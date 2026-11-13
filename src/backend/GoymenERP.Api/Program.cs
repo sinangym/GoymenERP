@@ -362,6 +362,17 @@ builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEli
 builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, PurchasingSalesOrderLinkedSupplyReadPort>();
 builder.Services.AddSingleton<ISalesOrderLinkedSupplyRecorderV1, PurchasingSalesOrderLinkedSupplyRecorder>();
 builder.Services.AddScoped<IPurchaseRequestSalesSourcePortV1, PurchasingRequestSalesSourcePort>();
+// Üretim U2-b / API-16 (SAT-D219): Manufacturing's Sales-facing adapters live in the host too (Manufacturing does not reference
+// Sales): the linked-supply read (SupplyKind Production) with its recorder declaration, and the approved-line reader the plan's
+// sales order link uses.
+builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, ManufacturingSalesOrderLinkedSupplyReadPort>();
+builder.Services.AddSingleton<ISalesOrderLinkedSupplyRecorderV1, ManufacturingSalesOrderLinkedSupplyRecorder>();
+builder.Services.AddScoped<IManufacturingSalesOrderLineReferencePortV1, ManufacturingSalesOrderLineReferencePort>();
+// Üretim U5-b / API-36 (URT-D16, URT-D22, SAT-D175): the subcontract service order read a customer-goods plan's link checks,
+// and Sales's binding question answered from the Manufacturing owner (Bound / NotBound by the company's plans that are not
+// cancelled; see the adapter).
+builder.Services.AddScoped<IManufacturingSubcontractServiceOrderPortV1, ManufacturingSubcontractServiceOrderPort>();
+builder.Services.AddScoped<ISalesSubcontractOrderBindingReadPortV1, ManufacturingSalesSubcontractOrderBindingReadPort>();
 builder.Services.AddSingleton(new PurchasingServiceBindings(
     GoodsReceiptPermission: ErpPermissions.PurchasingGoodsReceiptsRecord));
 builder.Services.AddScoped<PurchaseGoodsReceiptHost>();

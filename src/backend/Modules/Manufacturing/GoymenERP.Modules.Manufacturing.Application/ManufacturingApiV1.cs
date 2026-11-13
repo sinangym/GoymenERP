@@ -205,7 +205,9 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// <see cref="Rejections"/> every recorded rejection (oldest first) and <see cref="Cancellation"/> the cancellation of a
 /// Cancelled plan. Üretim U2-d (additive, URT-D2): <see cref="PreparedBy"/> is the actor id of who prepared the current
 /// version (its last reviser, else who saved it) — that user cannot approve or reject it; null for a plan stored before
-/// U2-d and never revised. An id only, never a name.
+/// U2-d and never revised. An id only, never a name. Üretim U2-b / API-16 (additive, SAT-D219):
+/// <see cref="SalesOrderLink"/> is the approved sales order line the plan supplies, or null, and
+/// <see cref="SalesOrderLinkRevision"/> how many times the link was set or removed (the next link request sends it back).
 /// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
@@ -214,7 +216,8 @@ public sealed record PlanViewV1(
     CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null,
     string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
-    PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null);
+    PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null,
+    PlanSalesOrderLinkViewV1? SalesOrderLink = null, long SalesOrderLinkRevision = 0);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -370,6 +373,7 @@ public static class ManufacturingCommandNames
     public const string RevisePlan = "manufacturing.plan.revise.v1";
     public const string RejectPlan = "manufacturing.plan.reject.v1";
     public const string CancelPlan = "manufacturing.plan.cancel.v1";
+    public const string ChangePlanSalesOrderLink = "manufacturing.plan.sales-order-link.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
@@ -429,7 +433,10 @@ public sealed partial class ManufacturingCommandService(
     ISettingsManufacturingParameterProviderV1? manufacturingParameters = null,
     IManufacturingPlanLifecycleStore? planLifecycle = null,
     IManufacturingPlanAllocationPortV1? planAllocations = null,
-    IInventoryLabelDetailsV1? labelDetails = null)
+    IInventoryLabelDetailsV1? labelDetails = null,
+    IManufacturingPlanSalesOrderLinkStore? planSalesOrderLinks = null,
+    IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null,
+    IManufacturingSubcontractServiceOrderPortV1? subcontractServiceOrders = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1213,26 +1220,31 @@ public sealed partial class ManufacturingCommandService(
                     }
 
                     snapshot = parameters.Snapshot;
+                    // TAKIP-U3a (#1004): without the allocation port nothing can allocate the plan's inputs, so the
+                    // approval refuses (503) before Inventory is read instead of approving unallocated (no fail-open).
+                    if (planAllocations is null)
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                            ManufacturingPlanAllocationCodesV1.Incomplete);
+                    }
+
                     // U3-a (URT-D21, URT-D3): the plan's inputs are allocated with the approval, at the label version
                     // Inventory holds NOW (another plan's or a sale's allocation of the same label moves it).
-                    if (planAllocations is not null)
+                    var versions = await ReadCurrentLabelVersionsAsync(current, permission, companyId, actor,
+                        cancellationToken);
+                    if (versions.Refusal is not null)
                     {
-                        var versions = await ReadCurrentLabelVersionsAsync(current, permission, companyId, actor,
-                            cancellationToken);
-                        if (versions.Refusal is not null)
-                        {
-                            return Refusal<PlanViewV1>(versions.Refusal);
-                        }
-
-                        labelVersions = versions.Versions!;
+                        return Refusal<PlanViewV1>(versions.Refusal);
                     }
+
+                    labelVersions = versions.Versions!;
 
                     // U2-a: a plan with a slitting spec reads each parent roll's CURRENT label state from Inventory
                     // (the existing parent-roll read ports) for the gate's labelState; a blocked or unusable roll refuses.
                     if (current.Spec is not null)
                     {
                         var labels = await ReadLabelUsabilityAsync(current, permission, companyId, actor,
-                            cancellationToken, planAllocations is null ? null : labelVersions);
+                            cancellationToken, labelVersions);
                         if (labels.Refusal is not null)
                         {
                             return Refusal<PlanViewV1>(labels.Refusal);
@@ -1243,9 +1255,22 @@ public sealed partial class ManufacturingCommandService(
 
                 }
 
+                // TAKIP-U3a P3-1: without the port the store runs only when the stored state already refuses the
+                // approval for good: a newer version than requested, or the requested version in a non-draft status
+                // (every transition bumps the version). A missing plan or an older stored version could still become
+                // the requested draft before the store's write, so it answers 503 like the draft itself (no
+                // unallocated approval through a race, and no recorded not-found for a plan saved later).
+                if (planAllocations is null && !(current is not null && (current.Version > request.ExpectedVersion
+                    || (current.Version == request.ExpectedVersion && current.Status != PlanStatus.Draft))))
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
                 var approvedAt = timeProvider.GetUtcNow();
                 Task<ProductionPlan> Approve(CancellationToken token) => plans.ApprovePlanAsync(planId,
                     request.ExpectedVersion, actor, approvedAt, snapshot, labelUsable, metadata, token);
+                // Without the port only a plan the stored state already refuses for good reaches the store here.
                 var approved = planAllocations is null
                     ? await Approve(cancellationToken)
                     : await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Approve, metadata,
@@ -1768,10 +1793,16 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 // U3-a (URT-D21): the plan's allocation remainder is released with the order's closure.
-                _ = planAllocations is null
-                    ? await Close(cancellationToken)
-                    : await planAllocations.WriteAndReleaseAsync(current.PlanId,
-                        ManufacturingPlanAllocationReleaseReasonV1.OrderClosed, Close, metadata, cancellationToken);
+                // TAKIP-U3a (#1004): without the allocation port nothing can release it, so the closure refuses (503)
+                // before the order store runs instead of closing without releasing (no fail-open).
+                if (planAllocations is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ManufacturingPlanAllocationCodesV1.Incomplete);
+                }
+
+                _ = await planAllocations.WriteAndReleaseAsync(current.PlanId,
+                    ManufacturingPlanAllocationReleaseReasonV1.OrderClosed, Close, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken,
             storedAnswerPermission: exceptionReason is null ? null : exceptionApprovalPermission ?? string.Empty);
@@ -2193,7 +2224,11 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingRuleException exception)
         {
-            result = new ManufacturingApiResult<T>(ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
+            // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request.
+            result = new ManufacturingApiResult<T>(
+                exception.Code == ManufacturingRuleCodes.PlanSalesOrderLinkChanged
+                    ? ManufacturingApiStatus.Conflict
+                    : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
@@ -2860,7 +2895,13 @@ public sealed partial class ManufacturingCommandService(
             ? new PlanCancellationViewV1(cancellation.Reason, cancellation.CancelledByUserId, cancellation.CancelledAtUtc)
             : null,
         ProcessSpecView(plan.ProcessSpec),
-        plan.PreparedBy);
+        plan.PreparedBy,
+        plan.SalesOrderLink is { } salesLink
+            ? new PlanSalesOrderLinkViewV1(salesLink.SalesOrderId, salesLink.SalesOrderLineId, salesLink.CustomerPartyId,
+                salesLink.CustomerAccountId, salesLink.ProductId, salesLink.LineRevision, salesLink.LinkedBy,
+                salesLink.LinkedAtUtc)
+            : null,
+        plan.SalesOrderLinkRevision);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null

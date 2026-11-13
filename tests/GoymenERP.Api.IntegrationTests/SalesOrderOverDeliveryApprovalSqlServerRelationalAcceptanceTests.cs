@@ -35,9 +35,10 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// SAT-D30 / SAT-D168 / SAT-D213 / SAT-D216 against a REAL SQL Server and the REAL host composition (Sales store, Identity grants,
-/// the real approved Settings GDC tolerance 1 / 2 / 3 %, the audit pipeline). The REAL Logistics owner answers shipped totals
-/// without naming the shipper, so through it the approval is the key's recorded fail-closed 409
-/// (<c>sales_over_delivery_shipper_unverified</c>) and nothing is approved. Where a test needs the shipper named, the host's
+/// the real approved Settings GDC tolerance 1 / 2 / 3 %, the audit pipeline). The REAL Logistics owner names the shipper (the
+/// actor recorded on each shipment share, B-33): the shipper's own approval is the recorded 409 (<c>sales_over_delivery_self_approval</c>),
+/// another approver is accepted, and a share without a recorded actor is the key's recorded fail-closed 409
+/// (<c>sales_over_delivery_shipper_unverified</c>). Where a test needs the shipper named, the host's
 /// delivery port is replaced by a SYNTHETIC owner (the only substitution; every other owner is real): an approval-band
 /// over-delivery is then approved in ONE save (approval row + header version + attempt + audit with SourceChannel Web), the
 /// status reads "Tamamlandı + onaylı fazla teslim", the same key replays with no second effect, another body under the key is
@@ -143,17 +144,65 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
     }
 
     [SqlServerFact]
-    public async Task The_real_logistics_owner_does_not_name_the_shipper_so_the_approval_is_refused_fail_closed_on_real_sql()
+    public async Task The_real_logistics_owner_names_the_shipper_so_the_shipper_is_refused_another_approver_is_approved_and_a_share_without_actor_is_refused_fail_closed_on_real_sql()
     {
         await using var run = await Run.StartAsync(owner: null);
         var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
-        // Logistics really instructs, loads and ships 102.5 kg of the 100 kg line (through its own store).
+        var (shipperSubject, shipperId) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersOverDeliveryApprove);
+        var (otherSubject, otherId) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersOverDeliveryApprove);
+        Assert.NotEqual(shipperId, otherId);
+        // Logistics really instructs, loads and ships 102.5 kg of the 100 kg line through its own store; the shipment share records its actor (B-33).
+        await run.ShippedInstructionAsync(CompanyA, draft, "k", 102.5m, shippedBy: shipperId.ToString("D"));
+        Assert.Equal(shipperId.ToString("D"), await run.ScalarAsync<string>(
+            "SELECT [RecordedBy] FROM [logistics].[LoadingShares] WHERE [Kind] = 2 AND [CompanyId] = @company", ("@company", CompanyA)));
+        var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/over-delivery-approval";
+        using var shipperClient = run.Client(shipperSubject, CompanyA);
+        using var otherClient = run.Client(otherSubject, CompanyA);
+        Assert.Equal(("AwaitingApproval", "Approval", false), LineOf(await run.JsonAsync(shipperClient, $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/status")));
+
+        // SAT-D216: the shipper the REAL owner names cannot approve their own over-delivery — recorded, replayed, nothing approved.
+        using (var self = await shipperClient.SendAsync(Approve(path, "SENTETIK-real-self", "4", draft.Lines[0].Id, "102.5")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, self.StatusCode);
+            Assert.Equal("sales_over_delivery_self_approval", (await self.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        var refused = await run.EffectsAsync(draft.Id);
+        Assert.Equal((0, 4L), (refused.Approvals, refused.DraftVersion));
+        using (var replayed = await shipperClient.SendAsync(Approve(path, "SENTETIK-real-self", "4", draft.Lines[0].Id, "102.5")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+        }
+
+        // Another approver is accepted: the shipper is named and is not them.
+        using (var approved = await otherClient.SendAsync(Approve(path, "SENTETIK-real-other", "4", draft.Lines[0].Id, "102.5")))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        }
+
+        var accepted = await run.EffectsAsync(draft.Id);
+        Assert.Equal((1, 5L), (accepted.Approvals, accepted.DraftVersion));
+        Assert.Equal(otherId.ToString("D"), await run.ScalarAsync<string>(
+            "SELECT [ApprovedBy] FROM [sales].[DraftOverDeliveryApprovals] WHERE [DraftId] = @id", ("@id", draft.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task A_shipment_share_without_a_recorded_actor_leaves_the_shipper_unnamed_so_the_approval_is_refused_fail_closed_on_real_sql()
+    {
+        await using var run = await Run.StartAsync(owner: null);
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
         await run.ShippedInstructionAsync(CompanyA, draft, "k", 102.5m);
+        // A share recorded before the column existed has no actor and is never back-filled (SAT-D222).
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE [logistics].[LoadingShares] SET [RecordedBy] = NULL WHERE [Kind] = 2 AND [CompanyId] = @company; SELECT @@ROWCOUNT",
+            ("@company", CompanyA)));
         var (subject, _) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersOverDeliveryApprove);
         using var client = run.Client(subject, CompanyA);
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/over-delivery-approval";
-        Assert.Equal(("AwaitingApproval", "Approval", false), LineOf(await run.JsonAsync(client, $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/status")));
 
         using (var refused = await client.SendAsync(Approve(path, "SENTETIK-real-1", "4", draft.Lines[0].Id, "102.5")))
         {
@@ -171,6 +220,32 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
         }
 
         Assert.Equal(effects, await run.EffectsAsync(draft.Id));
+    }
+
+    [SqlServerFact]
+    public async Task The_loading_share_recorded_by_migration_Down_passes_with_only_unnamed_shares_and_refuses_while_a_shipper_is_recorded()
+    {
+        await using var run = await Run.StartAsync(owner: null);
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "100");
+        var guard = Assert.IsType<SqlOperation>(new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLoadingShareRecordedBy().DownOperations[0]).Sql;
+        // No share: the guard passes (an empty table rolls back freely).
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+
+        await run.ShippedInstructionAsync(CompanyA, draft, "k", 102.5m);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM [logistics].[LoadingShares] WHERE [RecordedBy] IS NOT NULL") > 0);
+        var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"));
+        Assert.Equal(51260, error.Number);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM [logistics].[LoadingShares] WHERE [RecordedBy] IS NOT NULL") > 0);
+
+        // Only shares without an actor (the legacy rows): nothing is lost by the drop, the guard passes.
+        await run.ScalarAsync<int>("UPDATE [logistics].[LoadingShares] SET [RecordedBy] = NULL; SELECT 1");
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+
+        // The database refuses an empty actor (check) and compares actors by binary collation.
+        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE TOP (1) [logistics].[LoadingShares] SET [RecordedBy] = N''; SELECT 1"))).Number);
+        Assert.Equal("Latin1_General_100_BIN2", await run.ScalarAsync<string>(
+            "SELECT [collation_name] FROM sys.columns WHERE [object_id] = OBJECT_ID(N'[logistics].[LoadingShares]') AND [name] = N'RecordedBy'"));
     }
 
     [SqlServerFact]
@@ -494,7 +569,7 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
         }
 
         /// <summary>An instruction for the draft's one line, issued, loaded and shipped <paramref name="shipped"/> kg through the real Logistics store.</summary>
-        public async Task ShippedInstructionAsync(Guid company, SalesOrderDraft draft, string keyPrefix, decimal shipped)
+        public async Task ShippedInstructionAsync(Guid company, SalesOrderDraft draft, string keyPrefix, decimal shipped, string? shippedBy = null)
         {
             var orderLine = Assert.Single(draft.Lines);
             await using var scope = LogisticsStore(company);
@@ -512,7 +587,7 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
             var loaded = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"), Hash($"{keyPrefix}-l-load"),
                 LogisticsCommands.RecordLoadV1, id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(shipped),
                     MeasurementKind.Measured, now), Loaded))!.Instruction.Instruction;
-            await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
+            await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship", shippedBy), Hash($"{keyPrefix}-l-ship"),
                 LogisticsCommands.RecordShipmentV1, id, (instruction, now) => instruction.MarkShipped(loaded.Version, Guid.NewGuid(), lineId, Kg(shipped), now),
                 Shipped);
         }
@@ -533,8 +608,8 @@ public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceT
         public SalesDraftWriteEnvelope SalesEnvelope(string key, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
-        public LogisticsWriteEnvelope LogisticsEnvelope(string key) =>
-            new(Actor, "SENTETIK-logistics-permission", ["SENTETIK-LOGISTICS"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+        public LogisticsWriteEnvelope LogisticsEnvelope(string key, string? actor = null) =>
+            new(actor ?? Actor, "SENTETIK-logistics-permission", ["SENTETIK-LOGISTICS"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
         public SalesDbContext SalesContext(Guid company)
         {
