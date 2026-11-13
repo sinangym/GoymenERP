@@ -1076,11 +1076,11 @@ class WorkflowOrderingTests(unittest.TestCase):
             "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
             "backend-test-group": "b5196a6f67af5a964b507a114101c304c9667e73e41a1070e2f4c45f066a5ce8",
             "backend": (
-                "e2e37178376493f6a14224f36a3682680223ee9ce509742a7ef287e80bda78d3"
+                "ad89220a34565da85b7ba1bac64739b1cc0842001ddeb418a5e07ee22ce4b1e1"
             ),
             "frontend-static": "a346a83a55223cf27f2568392cc02e2ee3cb8e268761e2fe08d5c4b9f15e6bbb",
             "frontend-test": "ae92e87899200dca4b66f33a0749a5e272240cfbc2f1242ddb499eff31113aaf",
-            "frontend": "da83a5f80558cd202195fd7a04e99f8046f47df9d791399f70da3ee305063ac7",
+            "frontend": "a69983a5f89deb4f1c7d026b3f53f518f007938e4919730495f39e0760ba45dc",
             "relational-shard": (
                 "c96ba3f6a2eb3bd43dab946b745be2b5979e8240e60683af68a005b9114aed7f"
             ),
@@ -1088,7 +1088,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "4b0f81dd06932cdce3ce52a87798361eb7004a38270f51438497952d3f78caea"
             ),
             "relational": (
-                "0e13b8a66d7f02d8e5ea545d028ea37daffe5a5d5d31bbc4be6b4ff67dd47412"
+                "e8b0fd1def94e1f6c73ea94523c0beb8ec269d973b46947fe685a2858724aeb3"
             ),
             "contract-drift": (
                 "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
@@ -1177,7 +1177,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         for required in (
             "- frontend-static",
             "- frontend-test",
-            "if: ${{ always() }}",
+            "if: ${{ !cancelled() }}",
             'test "$STATIC_RESULT" = success',
             'test "$TEST_RESULT" = success',
             'test "$shards" -eq 4',
@@ -1269,7 +1269,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
              "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
-             "    if: ${{ always() }}",
+             "    if: ${{ !cancelled() }}",
              "    runs-on: ubuntu-latest", "    steps:"],
         )
         self.assertNotIn("continue-on-error:", aggregate)
@@ -1348,8 +1348,8 @@ class WorkflowOrderingTests(unittest.TestCase):
              "  backend-test-group:\n    continue-on-error: true\n    name:"),
             ("missing build", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "needs: [backend-test-group]"),
-            ("not always", "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ always() }}",
+            ("skipped when a worker fails", "  backend:\n    name: Backend build, test and migration\n"
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ !cancelled() }}",
              "  backend:\n    name: Backend build, test and migration\n"
              "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ success() }}"),
             ("missing SQL dependency", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
@@ -1472,7 +1472,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "    name: SQL Server relational acceptance",
                 "    needs: [relational-shard, relational-rcsi]",
-                "    if: ${{ always() }}",
+                "    if: ${{ !cancelled() }}",
                 "    runs-on: ubuntu-latest",
                 "    steps:",
             ],
@@ -1579,8 +1579,8 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "    needs: [relational-shard]\n",
             ),
             (
-                "aggregate not always",
-                "    if: ${{ always() }}\n",
+                "aggregate skipped when a worker fails",
+                "    if: ${{ !cancelled() }}\n",
                 "    if: ${{ success() }}\n",
             ),
             (

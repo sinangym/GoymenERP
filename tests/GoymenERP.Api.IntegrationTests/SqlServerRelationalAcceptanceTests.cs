@@ -1170,6 +1170,8 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         {
             var testConfiguration = new Dictionary<string, string?>
             {
+                // CI-HIZ: EF Core "Executed DbCommand" Information lines bloat the TRX; Warning keeps failures.
+                ["Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command"] = "Warning",
                 ["Authentication:Mode"] = "DevelopmentBootstrap",
                 ["BootstrapIdentity:HeaderName"] = "X-Development-User",
                 ["BootstrapIdentity:Users:0:UserId"] = TestUsers.CompanyA,

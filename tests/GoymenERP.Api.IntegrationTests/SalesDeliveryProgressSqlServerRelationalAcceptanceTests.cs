@@ -162,6 +162,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             var answer = await new LogisticsSalesOrderDeliveryReadPort(b.Context, b.Company).ReadOrderDeliveriesAsync(draft.Id);
             Assert.Equal((CompanyB, orderLine.Id, 3m, 3m), (answer.CompanyId, Assert.Single(answer.Lines).OrderLineId,
                 answer.Lines[0].ShippedQuantity, answer.Lines[0].DeliveredQuantity));
+            Assert.Equal([run.Actor], answer.Lines[0].ShippedBy);
         }
 
         // The real Sales service over the real port of company A: the order line keeps its whole quantity.
@@ -219,7 +220,8 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             }
         }
 
-        string[] expected = [.. new[] { run.Actor, "SENTETIK-shipper-b", "SENTETIK-shipper-B" }.Order(StringComparer.Ordinal)];
+        // The expected order is a literal oracle (ordinal: the run actor's "SENTETIK-" prefix is shared, then 'B' < 'b'), not recomputed.
+        string[] expected = [run.Actor, "SENTETIK-shipper-B", "SENTETIK-shipper-b"];
         await using (var read = run.LogisticsContext(CompanyA))
         {
             var line = Assert.Single((await new LogisticsSalesOrderDeliveryReadPort(read.Context, read.Company).ReadOrderDeliveriesAsync(draft.Id)).Lines);
@@ -236,6 +238,27 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         {
             var line = Assert.Single((await new LogisticsSalesOrderDeliveryReadPort(read.Context, read.Company).ReadOrderDeliveriesAsync(draft.Id)).Lines);
             Assert.Equal(5m, line.ShippedQuantity);
+            Assert.Null(line.ShippedBy);
+        }
+
+        // A line with no shipment share at all (an instruction line never shipped): it still totals 0 shipped, and names nobody.
+        var idleDraft = await run.ApprovedDraftAsync(CompanyA, "idle", "6");
+        var idleOrderLine = Assert.Single(idleDraft.Lines);
+        await using (var scope = run.LogisticsStore(CompanyA))
+        {
+            await scope.Store.StoreInstructionAsync(run.LogisticsEnvelope("idle-l-create"), Hash("idle-l-create"), Day, () =>
+            {
+                var instruction = LoadingInstruction.Create(Guid.NewGuid(), CompanyA, idleDraft.Header.PartyId, idleDraft.Header.CompanyAccountId, T0);
+                instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(idleDraft.Id, idleOrderLine.Id, idleDraft.Revision),
+                    idleOrderLine.Product.ProductId, KgUnit, null, Kg(6m), T0);
+                return instruction;
+            });
+        }
+
+        await using (var read = run.LogisticsContext(CompanyA))
+        {
+            var line = Assert.Single((await new LogisticsSalesOrderDeliveryReadPort(read.Context, read.Company).ReadOrderDeliveriesAsync(idleDraft.Id)).Lines);
+            Assert.Equal((idleOrderLine.Id, 0m, 0m), (line.OrderLineId, line.ShippedQuantity, line.DeliveredQuantity));
             Assert.Null(line.ShippedBy);
         }
     }
