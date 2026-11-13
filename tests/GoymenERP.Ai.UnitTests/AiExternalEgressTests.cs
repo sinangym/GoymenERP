@@ -176,4 +176,50 @@ public sealed class AiExternalEgressTests
         using var pseudonymizer = new AiPseudonymizerV1();
         Assert.Throws<ArgumentException>(() => pseudonymizer.Pseudonymize(AiSensitiveDataTypeV1.None, "x"));
     }
+
+    [Fact]
+    public void Record_text_never_renders_a_raw_outbound_or_restored_value()
+    {
+        const string raw = "SENTETIK-TR00-0000-1111";
+        var field = new AiOutboundFieldV1(Tag(AiDataClassV1.StrictlyConfidential, AiSensitiveDataTypeV1.Iban, name: "iban"), raw);
+        Assert.DoesNotContain(raw, field.ToString(), StringComparison.Ordinal);
+        Assert.Contains("iban", field.ToString(), StringComparison.Ordinal);
+
+        using var pseudonymizer = new AiPseudonymizerV1();
+        var token = pseudonymizer.Pseudonymize(AiSensitiveDataTypeV1.Iban, raw);
+        var restored = pseudonymizer.Restore($"Hesap {token}");
+        Assert.Contains(raw, restored.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(raw, restored.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(raw, $"{restored}", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_allowed_type_set_cannot_be_widened_after_construction()
+    {
+        var source = new List<AiSensitiveDataTypeV1> { AiSensitiveDataTypeV1.Price };
+        var policy = new AiExternalEgressPolicyV1(true, source, false, Policy);
+        source.Add(AiSensitiveDataTypeV1.Iban);
+        Assert.False(policy.AllowedSensitiveTypes.Contains(AiSensitiveDataTypeV1.Iban));
+        Assert.False(policy.AllowedSensitiveTypes is ISet<AiSensitiveDataTypeV1> { IsReadOnly: false });
+        if (policy.AllowedSensitiveTypes is ICollection<AiSensitiveDataTypeV1> collection)
+            Assert.Throws<NotSupportedException>(() => collection.Add(AiSensitiveDataTypeV1.Balance));
+        Assert.Equal(AiEgressDecisionV1.Deny,
+            AiEgressRulesV1.Decide(Tag(AiDataClassV1.Confidential, AiSensitiveDataTypeV1.Balance), policy));
+    }
+
+    [Fact]
+    public void The_disabled_policy_is_fail_closed_on_its_own()
+    {
+        var disabled = AiExternalEgressPolicyV1.Disabled(Policy);
+        Assert.False(disabled.ExternalEnabled);
+        Assert.Empty(disabled.AllowedSensitiveTypes);
+        Assert.False(disabled.IbanKvkkReviewRecorded);
+        Assert.Equal(Policy, disabled.PolicyReference);
+        using var pseudonymizer = new AiPseudonymizerV1();
+        var payload = AiEgressFilterV1.Apply(
+            [new AiOutboundFieldV1(Tag(AiDataClassV1.Public, name: "status"), "Onaylandi")], disabled, pseudonymizer);
+        Assert.Empty(payload.Fields);
+        Assert.Equal(["status"], payload.DeniedFieldNames);
+        Assert.Equal(0, pseudonymizer.IssuedCount);
+    }
 }
