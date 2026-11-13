@@ -45,9 +45,12 @@ public static class LogisticsCommands
     public const string CancelDispatchNoteV1 = "logistics.loading-instruction.cancel-dispatch-note.v1";
     public const string SetEDispatchNumberV1 = "logistics.loading-instruction.set-e-dispatch-number.v1";
 
+    /// <summary>F-020: cancel an instruction with no recorded shipment (one version step, no share).</summary>
+    public const string CancelInstructionV1 = "logistics.loading-instruction.cancel.v1";
+
     public static bool IsMutation(string commandName) =>
         commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1
-            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1;
+            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }

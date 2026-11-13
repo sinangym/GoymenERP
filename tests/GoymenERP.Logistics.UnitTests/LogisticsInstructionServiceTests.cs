@@ -852,7 +852,9 @@ public sealed partial class LogisticsInstructionServiceTests
                 return MutateInstructionAsync(envelope, requestHash, commandName, instructionId, mutate, audit, cancellationToken);
             }
 
-            var loaded = _instructions.SelectMany(stored => stored.Instruction.Lines)
+            // F-020 parity with LogisticsStore: a cancelled instruction's loads no longer count against the order line.
+            var loaded = _instructions.Where(stored => stored.Instruction.Status != LoadingInstructionStatus.Cancelled)
+                .SelectMany(stored => stored.Instruction.Lines)
                 .Where(line => line.Source.OrderId == aggregateLoadLimit.OrderId
                     && line.Source.LineId == aggregateLoadLimit.OrderLineId && line.UnitId == aggregateLoadLimit.UnitId)
                 .Sum(line => line.LoadedQuantity.Value);
