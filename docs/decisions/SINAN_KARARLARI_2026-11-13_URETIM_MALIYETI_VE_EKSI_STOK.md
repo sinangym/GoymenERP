@@ -1,7 +1,7 @@
 # Sinan Kararları — 2026-11-13 (Üretim maliyeti: hurdanın maliyetten düşülmesi, çıkan ≤ giren, yalnız kapalı emir ve üretimden iade; Stok: eksi stok görünmez, satışta kantar farkı kaydı)
 
-Bu belge önceki karar dosyalarını silmez; **SAT-D316, SAT-D317, SAT-D318, SAT-D319, URT-D40 ve URT-D41**'i ekler
-(SAT-D319 ve URT-D41 aynı günün 2. tur cevaplarıdır; "2. tur" bölümü). SAT-D297 (EK59),
+Bu belge önceki karar dosyalarını silmez; **SAT-D316, SAT-D317, SAT-D318, SAT-D319, SAT-D320, URT-D40 ve URT-D41**'i ekler
+(SAT-D319 ve URT-D41 aynı günün 2. tur, SAT-D320 3. tur cevaplarıdır; "2. tur" ve "3. tur" bölümleri). SAT-D297 (EK59),
 SAT-D301…SAT-D307 (`SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`), SAT-D308
 (`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`), URT-D5, URT-D6
 (`SINAN_KARARLARI_2026-11-01_URETIM.md`) ve URT-D23 (`SINAN_KARARLARI_2026-11-02_URETIM_EK2.md`) geçerlidir; bu belge
@@ -32,6 +32,10 @@ tamamlar; 1. tur metninde bunlarla çelişen "yazar okuması" ifadeleri için **
 [6826763903](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6826763903) (12 Kasım 2026, koordinatör
 aracılığıyla sorulan (a)–(d) cevapları). Bu yorumlar bugüne kadar hiçbir karar dosyasına işlenmemişti. Soru 1 bu
 yorumlardaki (a), (c) ve (d)'yi sordu; (b) sorulmadı (Sınırlar).
+
+**3. tur kaynağı:** aynı gün, aynı inceleme oturumunda Sinan'ın dört seçenekli soruya cevabı; kayıt Issue #66 yorumu
+[6849616256](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6849616256). Bu belgenin yazarı cevapları
+ilgili oturumun soru kaydından doğruladı. 3. tur, 2. tur Sınırlar'ındaki dört `NEEDS-SINAN` noktasını cevaplar.
 
 ## Soru ve cevaplar
 
@@ -67,7 +71,7 @@ ve bu belgeye girmez; kaydı aynı yorumdadır.
 | 2.3 | Veri hatasıyla eksi stok kaydı oluşmuşsa maliyet nasıl davransın? (11 Kasım: "giriş gelince düzelir") | Serbest metin: "Üretimde eksiye düşemez sadece alınan malzeme kantar farklarından dolayı satılırken eksiye düşebilir, birde malzeme iade veya rezerv(tahsis), rezerv iptallerinde stok miktarları doğru şekilde korunsun iade veya tahsis süreçlerinden kaynaklı eksiye düşmesin , bu sorunun cevabı oldu mu bilmiyorum" | Seçenek seçilmedi (Elle düzeltilene kadar kapalı · Giriş gelince düzelsin · Şimdilik açık kalsın) | Sorulan soru (ihlal kaydında maliyet) cevaplanmadı. Sinan eksi riskinin nereden doğabileceğini söyledi: yalnız satışta kantar farkı; üretim, iade, tahsis ve tahsis iptali stoğu eksiye düşürmez |
 | 2.4 | Satışta kantar farkı yüzünden satılan kg sistemdeki stoktan fazla çıkarsa (ör. sistemde 1.000 kg, kantarda 1.004 kg) sistem ne yapsın? | "Kantar farkı kaydıyla tamamla" — seçenek metni: satış geçer; eksik kalan kg ayrı bir "kantar farkı" giriş kaydıyla tamamlanır, stok 0'da kalır ve hiç eksi görünmez; fark raporda ayrı izlenir | Stok eksi görünsün (maliyet hesaplanamadı, giriş gelince düzelir) · Satış reddedilsin (bugünkü davranış) | 2.3'ün devamı: tek eksi riski de eksi stok üretmez |
 | 2.5 | Kantar farkı kaydı en fazla ne kadarlık farkı kendiliğinden tamamlasın? (Ayarlar'dan değiştirilebilir başlangıç değeri) | "Satılan kg'ın %0,5'i" | %1 · %2 · sabit kg sınırı | Değer soruyu soranın önerisiydi; Sinan seçti. Başlangıç değeridir, Ayarlar'dan değişir |
-| 2.6 | Kantar farkı bu sınırı aşarsa satış ne olsun? | "Yetkili onayıyla geçsin" — seçenek metni: satış bekler; yetkili onaylarsa fark kaydıyla tamamlanır ve onay kayda geçer. Kimin onaylayacağı (rol) sorulmadı | Reddedilsin, önce sayım | Onaylayan rol/izin karara bağlanmadı (insan kapısı) |
+| 2.6 | Kantar farkı bu sınırı aşarsa satış ne olsun? | "Yetkili onayıyla geçsin" — seçenek metni: satış bekler; yetkili onaylarsa fark kaydıyla tamamlanır ve onay kayda geçer. Kimin onaylayacağı (rol) sorulmadı | Reddedilsin, önce sayım | Onaylayan rol 3. turda cevaplandı (3.1); grant insan kapısıdır |
 | 2.7 | Kantar farkı kaydı maliyette nasıl değerlensin? | "Mevcut ortalama maliyetle" — seçenek metni: tamamlanan kg ürünün o anki ortalama maliyetiyle girer; ortalama değişmez | Sıfır maliyetle · Şimdilik açık kalsın | — |
 
 ## 2. tur — kararlar
@@ -75,23 +79,49 @@ ve bu belgeye girmez; kaydı aynı yorumdadır.
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | URT-D41 | Çıkan > giren: emir kapanışı; Boyama (2.1, 2.2) | (1) **Çıkan kg giren kg'dan fazlaysa emir kapanmaz; tartım düzeltilir; maliyet de hesaplanmaz.** Fark ±%2 içinde olsa da böyledir. (2) **URT-D6'nın ±%2 toleransı yalnız eksik yönde (fire/kayıp) geçerlidir**; daha yeni kullanıcı kararı olarak URT-D6'nın artı yönünün yerine geçer. URT-D6'nın değeri (hat başına %2), eksik yöndeki davranışı ve URT-D23 değişmez. (3) **Boyamada kg değişmez:** boyalı ürün yeniden tartılmaz; çıkan kg, giren çelik kg'ı kabul edilir; boya ağırlığı stok kg'ına yansımaz. Böylece Boyama URT-D40 (1)'i tanım gereği sağlar; boya tüketimi litreyle izlenmeye devam eder (Master PNT-006, URT-D9 değişmez). (4) URT-D40 (2) bu maddeyle Sinan kararına dayanır; oradaki "yazar okumasıdır" kaydı (1) için geçerliliğini yitirir. (5) Sinan'ın cevabında olmayanlar **yazar okumasıdır** ya da açıktır (Sınırlar): reddin hata kodu ve ekran metni kod diliminin işidir; bugüne kadar artı yönde tolerans içinde kapanmış emirlere ne olacağı sorulmadı. Boyama dışındaki, girdisi kg olmayan süreçler ve DEC-PRDCT-006 kalemleri bu maddeyle cevaplanmadı. | `OrderClosureAssessment` (bugün `Math.Abs` ile artı yönü tolerans içinde kapatıyor; ayrı Üretim dilimi, K3), `ProductionReceiptCostCalculatorV1` (#1146), Boyama emri çıktı kaydı |
-| SAT-D319 | Eksi stokun tek kaynağı ve satışta kantar farkı kaydı (2.3–2.7) | (1) **Üretimde stok eksiye düşemez.** (2) **İade, tahsis (rezerv) ve tahsis iptali süreçlerinde stok miktarları doğru korunur; bu süreçler stoğu eksiye düşürmez.** (3) Eksi riski **yalnız satışta, alınan malzemenin kantar farkından** doğar. (4) O durumda **satış geçer; eksik kalan kg ayrı bir "kantar farkı" giriş kaydıyla tamamlanır; stok 0'da kalır ve hiç eksi görünmez; fark raporda ayrı izlenir.** (5) Kendiliğinden tamamlanan fark sınırı: **satılan kg'ın %0,5'i** (Ayarlar'dan değiştirilebilir başlangıç değeri; kodda sabit yazılmaz). (6) Sınır aşılırsa **satış bekler; yetkili onaylarsa fark kaydıyla tamamlanır ve onay kayda geçer.** Onaylayan rol/izin sorulmadı; izin adı kod diliminin işidir, grant/rol insan kapısıdır. (7) **Kantar farkı kaydı ürünün o anki ortalama maliyetiyle girer; ortalama değişmez.** (8) SAT-D318 ile ilişki: SAT-D318 (1) ("stok eksiye düşmez") aynen durur ve bu maddeyle sağlanır. SAT-D318 (2)'deki "eksiye götürecek hareket reddedilir" cümlesi **satışta kantar farkı hali için** bu maddenin (4)–(6)'sına yerini bırakır; diğer bütün hareketlerde ret sürer (**yazar okuması**). DEC-SAL-006'daki "kantar farkı ayrıdır" kaydıyla aynı yöndedir. (9) Kantar farkı kaydı, satış hareketinin kopyası değildir; ayrı nedenli, ayrı izlenen bir stok giriş kaydıdır ("olay bir kez kaydedilir" değişmezi korunur) — **yazar okuması**, K3 review'u doğrular. (10) Sinan 2.3'te sorulan soruya (ihlal edilmiş kayıtta maliyet; 11 Kasım "giriş gelince düzelir" cümlesinin akıbeti) cevap vermedi; SAT-D318 (4)–(6) ve Sınırlar'daki ilgili `NEEDS-SINAN` aynen durur. | `StockLedger` (bugün bu satışı `NegativePhysicalStock` ile reddediyor), Satış sevk/kantar akışı, Ayarlar (sınır değeri), onay akışı, ortalama maliyet (#1107), kantar farkı raporu — yeni kod dilimi, K3 (stok/para/yetki) |
+| SAT-D319 | Eksi stokun tek kaynağı ve satışta kantar farkı kaydı (2.3–2.7) | (1) **Üretimde stok eksiye düşemez.** (2) **İade, tahsis (rezerv) ve tahsis iptali süreçlerinde stok miktarları doğru korunur; bu süreçler stoğu eksiye düşürmez.** (3) Eksi riski **yalnız satışta, alınan malzemenin kantar farkından** doğar. (4) O durumda **satış geçer; eksik kalan kg ayrı bir "kantar farkı" giriş kaydıyla tamamlanır; stok 0'da kalır ve hiç eksi görünmez; fark raporda ayrı izlenir.** (5) Kendiliğinden tamamlanan fark sınırı: **satılan kg'ın %0,5'i** (Ayarlar'dan değiştirilebilir başlangıç değeri; kodda sabit yazılmaz). (6) Sınır aşılırsa **satış bekler; yetkili onaylarsa fark kaydıyla tamamlanır ve onay kayda geçer.** Onaylayan rol 2. turda sorulmadı; 3. turda cevaplandı (SAT-D320 (1)). İzin adı kod diliminin işidir, grant/rol insan kapısıdır. (7) **Kantar farkı kaydı ürünün o anki ortalama maliyetiyle girer; ortalama değişmez.** (8) SAT-D318 ile ilişki: SAT-D318 (1) ("stok eksiye düşmez") aynen durur ve bu maddeyle sağlanır. SAT-D318 (2)'deki "eksiye götürecek hareket reddedilir" cümlesi **satışta kantar farkı hali için** bu maddenin (4)–(6)'sına yerini bırakır; diğer bütün hareketlerde ret sürer (**yazar okuması**). DEC-SAL-006'daki "kantar farkı ayrıdır" kaydıyla aynı yöndedir. (9) Kantar farkı kaydı, satış hareketinin kopyası değildir; ayrı nedenli, ayrı izlenen bir stok giriş kaydıdır ("olay bir kez kaydedilir" değişmezi korunur) — **yazar okuması**, K3 review'u doğrular. (10) Sinan 2.3'te sorulan soruya (ihlal edilmiş kayıtta maliyet; 11 Kasım "giriş gelince düzelir" cümlesinin akıbeti) cevap vermedi; SAT-D318 (4)–(6) ve Sınırlar'daki ilgili `NEEDS-SINAN` aynen durur. | `StockLedger` (bugün bu satışı `NegativePhysicalStock` ile reddediyor), Satış sevk/kantar akışı, Ayarlar (sınır değeri), onay akışı, ortalama maliyet (#1107), kantar farkı raporu — yeni kod dilimi, K3 (stok/para/yetki) |
 
 ### 2. tur — sınırlar
 
 - Kod değişmez; kantar farkı kaydı ve emir kapanışı düzeltmesi ayrı K3 kod dilimleridir. Hiçbir `OPEN-*` kapatılmaz.
-- Karara bağlanmayanlar (`NEEDS-SINAN`; tahminle seçilmez): kantar farkı sınırını aşan satışı **kimin** onaylayacağı
-  (rol/izin; insan kapısı) · %0,5'in satır mı sevkiyat mı bazında ölçüleceği · ters yöndeki kantar farkı (satılan kg <
-  sistem stoğu, artan kg) · kantar farkı kaydının muhasebe eşlemesi (Finance STOP sürer) · stok 0'dan büyükken doğan
-  kantar farkının (satılan > sevk kaydı ama stok yeterli) bu kayda girip girmediği · ortalama maliyeti okunamayan
-  üründe kantar farkı kaydının değeri (o zamana kadar "okunamadı", değer uydurulmaz) · bugüne kadar artı yönde tolerans
-  içinde kapanmış üretim emirleri · Boyama dışındaki girdisi kg olmayan süreçler · DEC-PRDCT-006 kalemleri · ihlal
-  edilmiş eksi stok kaydında maliyetin davranışı ve 11 Kasım "giriş gelince düzelir" cümlesi (2.3 cevaplanmadı).
+- **3. turda cevaplandı (SAT-D320):** sınırı aşan satışı kimin onaylayacağı · %0,5'in neye göre ölçüleceği · ters
+  yöndeki kantar farkı · kantar farkı kaydının muhasebede işleneceği yer.
+- Karara bağlanmayanlar (`NEEDS-SINAN`; tahminle seçilmez): stok 0'dan büyükken doğan kantar farkının (satılan > sevk
+  kaydı ama stok yeterli) bu kayda girip girmediği · ortalama maliyeti okunamayan üründe kantar farkı kaydının değeri
+  (o zamana kadar "okunamadı", değer uydurulmaz) · bugüne kadar artı yönde tolerans içinde kapanmış üretim emirleri ·
+  Boyama dışındaki girdisi kg olmayan süreçler · DEC-PRDCT-006 kalemleri · ihlal edilmiş eksi stok kaydında maliyetin
+  davranışı ve 11 Kasım "giriş gelince düzelir" cümlesi (2.3 cevaplanmadı).
 - Araştırma notu (inceleme oturumu; Sinan'ın sözü değildir): 1. tur Sınırlar'daki "fiziksel eksi olmadan maliyet
   pozisyonunun `NegativeStock` okunması" senaryosu `origin/main`'deki `AverageCostCalculator.Apply` ile doğrulanamadı;
   defter stoğu ≠ maliyet stoğu durumu önce `LedgerStockMismatch` ile duruyor. O `NEEDS-SINAN` satırı bu notla birlikte
   okunur; #1107 kod review'u doğrular.
 - İnsan kapıları değişmez.
+
+## 3. tur — soru ve cevaplar (Issue #66 yorumu 6849616256)
+
+Tablo o yorumdaki kaydın aynısıdır; "(Önerilen)" işaretleri soruyu soranındır; "Okunuş" sütunu Sinan'ın sözü değildir.
+
+| # | Soru (özet) | Cevap (Sinan, aynen) | Seçilmeyenler | Okunuş |
+|---|---|---|---|---|
+| 3.1 | Satışta kantar farkı %0,5 sınırını aşınca satışı kim onaylasın? | "Satış Müdürü" — seçenek metni: satışı giren kişi dışında Satış Müdürü onaylar; satışı giren kendi farkını onaylayamaz | Muhasebe Müdürü · İkisi birlikte · Şimdilik açık kalsın | 2.6'nın açık kalan rolünü kapatır. "Kendi farkını onaylayamaz" kısmı seçenek metnindeydi (dayanak: 21 Ekim EK-14, sayım farkında açan ≠ onaylayan) |
+| 3.2 | %0,5 sınırı neye göre ölçülsün? (Örnek: irsaliyede 3 ürün; birinde fark %0,8, toplamda %0,3) | "İrsaliye toplamına göre" — seçenek metni: tüm irsaliyenin toplam farkı toplam kg'a oranlanır; örnekte %0,3 olduğu için kendiliğinden geçer; tek üründeki büyük fark gizlenebilir | Her ürün satırına göre (önerilen buydu; Sinan bunu seçmedi) | Örnekteki %0,8'lik satır onaya düşmez |
+| 3.3 | Ters durum: kantarda satılan kg sistemdekinden az çıkarsa (sistemde 1.000 kg, kantarda 996 kg, depo boşaldı) kalan 4 kg ne olsun? | "Stokta kalsın, sayımda düzelsin" — seçenek metni: satış kantar kg'ı ile geçer; 4 kg sistemde stok olarak kalır ve sayım farkı kuralıyla (sebep + başka kişinin onayı) düzeltilir; yeni otomatik kayıt gerekmez | Kantar farkı kaydıyla silinsin · Şimdilik açık kalsın | Yeni kural getirmez; mevcut sayım farkı kuralına (DEC-STK-007, EK-14) bağlanır |
+| 3.4 | Kantar farkı kaydı muhasebede nereye işlensin? | "Ayrı "kantar farkı" hesabı" — seçenek metni: farkın tutarı ayrı bir hesapta birikir; hesap kodu Ayarlar'dan seçilir | Sayım farkı hesabıyla aynı · Şimdilik açık kalsın | Hesap kodu seçilmedi |
+
+## 3. tur — kararlar
+
+| No | Konu | Karar | Etkilenen yer |
+|---|---|---|---|
+| SAT-D320 | Satışta kantar farkı kaydı: onaylayan, sınırın ölçüsü, ters yön, muhasebe (3.1–3.4; SAT-D319 (5)–(7)'yi tamamlar) | (1) Kantar farkı sınırı aşılınca satışı **Satış Müdürü** onaylar; **satışı giren kişi kendi farkını onaylayamaz**. Bu bir rol kararıdır; izin adının kaydı ve role grant'i ayrı insan kapısıdır, bu madde kendi başına grant değildir. (2) **%0,5 sınırı irsaliye toplamına göre ölçülür:** tüm irsaliyenin toplam farkı toplam kg'a oranlanır; toplam sınırın içindeyse tek üründeki daha büyük fark da kendiliğinden geçer (Sinan önerilen "her ürün satırına göre"yi seçmedi). Oran SAT-D319 (5)'teki Ayarlar değeridir. (3) **Ters yön (kantar kg'ı < sistemdeki kg):** satış kantar kg'ı ile geçer; kalan kg **stokta kalır** ve **sayım farkı kuralıyla** (sebep + başka kişinin onayı; DEC-STK-007, 21 Ekim EK-14) düzeltilir; **yeni otomatik kayıt oluşmaz**. (4) **Muhasebe:** kantar farkının tutarı **ayrı bir "kantar farkı" hesabında** birikir; **hesap kodu Ayarlar'dan seçilir** (kodda sabit yazılmaz; bu belge kod seçmez). (5) Sınır irsaliye toplamında ölçülse de stok ürün bazında tutulduğu için tamamlama kaydının eksik kalan **her ürün için ayrı** oluşması **yazar okumasıdır** (Sinan'a sorulmadı; SAT-D318 (1) başka türlü sağlanamaz) | Sales (irsaliye/satış onayı), Inventory (kantar farkı girişi, sayım), Finance (hesap eşlemesi; Finance STOP sürer), Ayarlar |
+
+### 3. tur — sınırlar
+
+- Kod, izin, grant, Ayarlar verisi ve hesap planı değişmez. (1) rol atamaz; (4) Finance STOP'u kaldırmaz ve hesap kodu
+  seçmez. Hiçbir `OPEN-*` kapatılmaz; insan kapıları değişmez.
+- Karara bağlanmayanlar (`NEEDS-SINAN`; tahminle seçilmez): satışı giren kişi Satış Müdürü'nün kendisiyse kimin
+  onaylayacağı · irsaliyede "toplam fark"ın nasıl toplanacağı (bir üründe fazla, başka üründe eksik çıkarsa farklar
+  birbirini götürür mü) · irsaliye toplamı sınırın içindeyken tek üründeki büyük fark için ayrı bir üst sınır olup
+  olmadığı · "kantar farkı" hesabının kodu · 2. tur Sınırlar'ında açık kalanlar (yukarıda).
 
 ## Kod etkisi (kod şeridi; bu PR'da yapılmadı)
 
@@ -109,8 +139,9 @@ exact-head review ile doğrulanır.
   yapmadan düzelmeyi tümden kaldıramaz. SAT-D302 (ek masraf ortalamaya girmez) bu belgeden etkilenmez.
 - **Emir kapanışı (`OrderClosureAssessment`, URT-D6 toleransı):** URT-D41 (1)–(2)'ye göre artı yönde kapanış reddedilir;
   ayrı Üretim dilimi (K3).
-- **Satışta kantar farkı kaydı:** SAT-D319 (4)–(7); yeni dilim (K3), onaylayan rol kararı gelmeden sınır aşımı onayı
-  etkinleşmez.
+- **Satışta kantar farkı kaydı:** SAT-D319 (4)–(7) ve SAT-D320; yeni dilim (K3). Sınır aşımı onayı yeni bir izin adı
+  ister; kayıt kod diliminin, Satış Müdürü rolüne grant insan kapısının işidir. Muhasebe fişi Finance STOP sürerken
+  üretilmez.
 
 ## Sınırlar
 
