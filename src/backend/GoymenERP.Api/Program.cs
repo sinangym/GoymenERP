@@ -368,6 +368,11 @@ builder.Services.AddScoped<IPurchaseRequestSalesSourcePortV1, PurchasingRequestS
 builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, ManufacturingSalesOrderLinkedSupplyReadPort>();
 builder.Services.AddSingleton<ISalesOrderLinkedSupplyRecorderV1, ManufacturingSalesOrderLinkedSupplyRecorder>();
 builder.Services.AddScoped<IManufacturingSalesOrderLineReferencePortV1, ManufacturingSalesOrderLineReferencePort>();
+// Üretim U5-b / API-36 (URT-D16, URT-D22, SAT-D175): the subcontract service order read a customer-goods plan's link checks,
+// and Sales's binding question answered from the Manufacturing owner (Bound / NotBound by the company's plans that are not
+// cancelled; see the adapter).
+builder.Services.AddScoped<IManufacturingSubcontractServiceOrderPortV1, ManufacturingSubcontractServiceOrderPort>();
+builder.Services.AddScoped<ISalesSubcontractOrderBindingReadPortV1, ManufacturingSalesSubcontractOrderBindingReadPort>();
 builder.Services.AddSingleton(new PurchasingServiceBindings(
     GoodsReceiptPermission: ErpPermissions.PurchasingGoodsReceiptsRecord));
 builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
