@@ -5,9 +5,13 @@ Bu belge önceki karar dosyalarını silmez; **SAT-D316, SAT-D317, SAT-D318, SAT
 SAT-D301…SAT-D307 (`SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`), SAT-D308
 (`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`), URT-D5, URT-D6
 (`SINAN_KARARLARI_2026-11-01_URETIM.md`) ve URT-D23 (`SINAN_KARARLARI_2026-11-02_URETIM_EK2.md`) geçerlidir; bu belge
-onların dosyalarını değiştirmez. İki yerde daha yeni kullanıcı kararı eski metnin önüne geçer; ikisi de aşağıda cümle
-cümle yazılıdır: SAT-D316 ↔ SAT-D308 (1)–(2) ve SAT-D318 ↔ SAT-D301 (2). `KARAR_SICILI` ve `ACIK_KARARLAR` değişmez;
-hiçbir `OPEN-*` kapatılmaz.
+onların dosyalarını değiştirmez. Dört yerde daha yeni kullanıcı kararı eski metnin önüne geçer ya da ona istisna
+getirir; hepsi aşağıda yazılıdır: SAT-D316 ↔ SAT-D308 (1)–(2), SAT-D318 ↔ SAT-D301 (2), URT-D41 (2) ↔ URT-D6'nın artı
+yönü (URT-D6'nın değeri ve eksik yönü geçerli kalır) ve URT-D41 (3) ↔ URT-D5 (Boyamada çıktı yeniden tartılmaz; URT-D5'in
+fiilî tartım kuralına istisna olduğu **yazar okumasıdır**). Ayrıca SAT-D319 (8), SAT-D318 (2)'deki reddi satışta kantar
+farkı hali için kaldırır. SAT-D319/SAT-D320'nin kilitli `DEC-STK-009` ve `OPEN-004` (kantar/yükleme toleransı) ile
+ilişkisi Sinan'a sorulmadı; bu belge "yerine geçer" demez (2. tur Sınırlar, `NEEDS-SINAN`). `KARAR_SICILI` ve
+`ACIK_KARARLAR` değişmez; hiçbir `OPEN-*` kapatılmaz (`OPEN-004` dahil).
 
 **Kimlikler:** Maliyet zinciri EK59'dan beri SAT-D serisindedir (Stok için ayrı önek yoktur); üretim emrinin kütle
 kuralı URT-D serisindedir. `origin/main` `63041c6c`'de (bu dalın çıkış noktası; sonraki `84dcb86b` `docs/decisions` değiştirmez) en büyük kimlikler SAT-D315 ve URT-D39'dur
@@ -16,7 +20,8 @@ kuralı URT-D serisindedir. `origin/main` `63041c6c`'de (bu dalın çıkış nok
 eklemiyor). Yeni önek icat edilmedi.
 
 **Kaynak:** 13 Kasım 2026, Claude şeridi orkestratör oturumunda Sinan'ın sohbet cevabı. Sorular düz metin olarak soruldu,
-cevaplar serbest metindir ve aşağıda **aynen** (yazım hataları dahil) alıntılanır. Sorular iki K3 PR'ının review
+cevaplar serbest metindir ve aşağıda **aynen** (yazım hataları dahil) alıntılanır. 1. turun Issue #66'da ayrı bir
+kaydı yoktur (2. ve 3. turun vardır); 1. tur için tek kayıt bu belgedeki soru–cevap tablosudur. Sorular iki K3 PR'ının review
 bulgularından doğdu: #1146 (üretim girişi maliyet hesaplayıcısı; fire-hariç formülünün ve iki kuralın karar kimliği
 yok, kapanış toleransı ile maliyet reddi çelişiyor) ve #1107 (ortalama maliyette eksi stoktan düzelme; golden yok).
 
@@ -24,8 +29,8 @@ yok, kapanış toleransı ile maliyet reddi çelişiyor) ve #1107 (ortalama mali
 yorumu [6849107070](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6849107070) (soru, seçilen ve
 seçilmeyen seçenekler, serbest metin aynen). Sorular bu belgenin önceki head'indeki iki incelemenin bulgularından doğdu.
 "(Önerilen)" işaretleri soruyu soranındır. Bu belgenin yazarı o cevapları ilgili oturumun soru kaydından doğruladı.
-2. tur, 1. turdaki dört `NEEDS-SINAN` noktasından ikisini kapatır (URT-D6 artı yönü, Boyama) ve SAT-D318'i daraltmadan
-tamamlar; 1. tur metninde bunlarla çelişen "yazar okuması" ifadeleri için **2. tur bölümü önce gelir**.
+2. tur, 1. turdaki dört `NEEDS-SINAN` noktasından ikisini kapatır (URT-D6 artı yönü, Boyama) ve SAT-D318'i tamamlar (SAT-D319 (8) satışta kantar farkı hali için
+SAT-D318 (2)'deki reddi kaldırır); 1. tur metninde bunlarla çelişen "yazar okuması" ifadeleri için **2. tur bölümü önce gelir**.
 
 **Önceki kayıt (soru 1'in dayandığı):** Issue #66 yorumları
 [6826603722](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6826603722) ve
@@ -57,7 +62,7 @@ Aynı oturumdaki 5. soru süreç sorusudur; karar belgesine girmez.
 | SAT-D316 | Fire anahtarı kapalıyken hurdanın maliyetten düşülmesi (soru 1; #66 6826603722 (a), 6826763903 (c)–(d)) | (1) **Tartılan hurda × hurda fiyatı maliyetten düşülür; kalan mamule yüklenir.** (2) **Proses firesi (tartılmayan kayıp) sıfır değerlidir**; maliyeti mamulde kalır (kayıttaki ifade "sağlam ürüne kalır"dır; 2. kaliteyi de kapsayan "mamul" ifadesi SAT-D307 (2) ile hizalı **yazar okumasıdır**). (3) **Hurda fiyatı dönemlik, elle girilir.** Bu belge formülün payını ve paydasını yazmaz: paydanın anahtar kapalıyken de SAT-D307'deki "sağlam kg + 2. kalite kg" olduğu #1146 kodundaki okumadır, Sinan'ın sözü değildir; K3 review'u SAT-D308 uygulama notundaki golden şartıyla doğrular, golden gelmeden formül kilitli sayılmaz. (4) Sinan'ın eki: **hurda ayrıca satılır**; "o zamana kadar" maliyetlendirme için **elle fiyat girilebilir**. "O zamana kadar"ın "hurda satılana kadar" olduğu **yazar okumasıdır**. (5) SAT-D308 ile ilişki: bu madde SAT-D305 (2) fire anahtarı **kapalıyken** geçerlidir; anahtar açıkken SAT-D307 (1)–(2) değişmez. SAT-D308 (1) "fire maliyeti ürün maliyetine yüklenmez" ve (2) "ayrı fire/dönem gideri olarak raporlanır" cümlelerinin **tutarını** bu madde belirler: ürüne yüklenmeyen ve ayrı raporlanan tutar tartılan hurda × hurda fiyatıdır, firenin bunu aşan maliyeti mamule yüklenir. Daha yeni kullanıcı kararı olduğu için (1)–(2), SAT-D308 (1)–(2)'nin **kısmen yerine geçer** (SAT-D308 (1) "fire maliyeti ürün maliyetine yüklenmez" diyordu; anahtar kapalıyken firenin hurda değerini aşan maliyeti artık ürüne **yüklenir**); SAT-D308 (3)–(6) aynen geçerlidir (gider kaydı hesap eşlemesi gelmeden etkinleşmez). İlişkinin bu ifadesi **yazar okumasıdır**. (6) 6826763903 (d) seçenek metnindeki ayrıntılar — fiyatı yetkili biri her ay için TL/kg girer, geçmiş dönem değişmez, fiyat girilmemişse hesap tahmin yapmaz ve "okunamadı" der — Sinan'ın bugün "evet" dediği kaydın parçasıdır; bugünkü soruda tek tek sayılmadıkları için "evet"in bunları da kapsadığı **yazar okumasıdır**. Fiyat yokken "okunamadı" ayrıca fail-closed kuralın gereğidir (tahminle para üretilmez). | `ProductionReceiptCostCalculatorV1` (#1146), Üretim maliyet portu, hurda fiyatı girişi (ayrı dilim), fire raporu |
 | URT-D40 | Üretimde çıkan girenden fazla olamaz (soru 2) | (1) **Üretimde çıkan, girenden fazla olamaz.** (2) Bu yüzden maliyet hesabının **çıktı > tüketim** durumunu reddetmesi (`mass_unbalanced`, değer üretmez) doğrudur; fark tolerans içinde olsa da değer üretilmez. Sinan A/B harfi seçmedi ve kendi sorusu ("cevabı olabildi mi") cevaplanmadı; (1)'den çıkarılan bu sonuç (soru 2'deki B yönü) **yazar okumasıdır**, Sinan'ın kilitlediği kural yalnız (1)'dir. Yön fail-closed'dır (değer üretmez); kapsam sınırları ve URT-D6 artı yönüyle çelişki Sınırlar'da `NEEDS-SINAN`'dır. Emrin kapanışta nasıl davranacağı bu belgede karara bağlanmadı (bkz. Sınırlar). (3) "Çıkan" = sağlam + 2. kalite + tartılan hurda + beyan edilen proses kaybı, "giren" = tüketilen kg (çıkış − iade) eşlemesi #1146'daki hesabın tanımıdır ve **yazar okumasıdır**; DEC-PRDCT-006'nın ayrı saydığı kalemler (geri kazanılabilir artık, WIP, ölçüm düzeltmesi) bu tanımda yoktur ve girdisi kg olmayan süreçler (Boyama) kapsanmaz (Sınırlar). (4) URT-D6'nın tolerans **değeri** (hat başına ±%2) ve URT-D23 değişmez; bu madde yeni eşik seçmez. | `ProductionReceiptCostCalculatorV1` (#1146); emir kapanışı için bkz. Sınırlar (izlenecek dilim) |
 | SAT-D317 | Maliyetin hesaplanacağı an ve üretimden iade (soru 3) | (1) **Üretim girişi maliyeti yalnız kapanmış emirler için hesaplanır.** Kapanmamış emirde değer üretilmez (fail-closed). (2) **Üretimden iade, bağlı olduğu çıkışın o günkü maliyetiyle değerlenir**; hareketli ortalamanın iade anındaki değeri kullanılmaz. Sinan'ın onayı şartlıydı ("sencede mantıklıysa"); şartın sağlandığı değerlendirmesi orkestratöründür, Sinan'ın sözü değildir: (1) fail-closed'dır, (2) iadeyi ilk hareketin maliyetiyle değerleyen SAT-D303 ve SAT-D306 (1) ile aynı yöndedir. (3) "O günkü maliyet"in, çıkış hareketine çıkış anında yazılan birim maliyet olduğu ve bağlı çıkışı ya da okunur maliyeti olmayan iadede sonucun "okunamadı" olduğu **yazar okumasıdır** (geri alınabilir); değeri Stok verir, Üretim sürümlü portla okur (cross-module, K3). (4) SAT-D303 (müşteri iadesi) ve SAT-D306 (alış iadesi) değişmez; bu madde yalnız üretime verilen girdinin iadesini kapsar. | `ProductionReceiptCostCalculatorV1` (#1146), Üretim maliyet portu, Stok çıkış maliyeti |
-| SAT-D318 | Hiçbir modülde eksi stok yok (soru 4) | (1) **ERP'nin hiçbir modülünde stok eksiye düşmez**; "stok −1" diye bir durum yoktur. Bu madde **fiziksel** stok (eldeki miktar) içindir; projeksiyon/ATP ve serbest stok hesapları (Master INV-009) ayrı kavramlardır ve bu maddeyle değişmez (**yazar okuması**). **Kapsam sınırı:** aşağıdaki (3)–(6) yalnız **fiziksel stokun eksiye düşmesi** halini kapsar; fiziksel stok eksiye düşmediği halde maliyet pozisyonunun `NegativeStock` okunduğu hali kapsamaz (Sınırlar, `NEEDS-SINAN`); o hal için SAT-D301 (2) olduğu gibi geçerlidir. (2) Stoğu eksiye götürecek hareket **reddedilir** (mevcut `StockLedger` davranışı: `NegativePhysicalStock`); bu davranış artık Sinan kararına bağlıdır. (3) Bu yüzden **fiziksel eksi stoktan** "düzelme" hesabı ve golden'ı gerekmez; formül olarak yazılmaz. (4) Ortalama maliyet hesabında fiziksel eksi stok durumu bir **değişmez ihlalidir** ve **fail-closed** kalır: SAT-D301 (1) aynen geçerlidir (maliyet "hesaplanamadı", değer uydurulmaz, sıfır sayılmaz). İhlal durumundaki pozisyonun bir girişle kendiliğinden açılmaması Sinan'ın bugünkü sözü değildir, **yazar okumasıdır**: Sinan bugün yalnız eksi stokun oluşmamasını söyledi; 11 Kasım'daki "giriş gelince düzelir" sözü bu durum için uygulanmamış olur. Yön güvenlidir (değer üretilmez); Sinan farklı isterse ayrı karar gerekir (Sınırlar). (5) **Yerine geçtiği cümle:** SAT-D301 (2)'nin ikinci cümlesi — "Düzelmenin hesap biçimi (hangi girişten sonra, hangi ortalamayla yeniden başlanacağı) Sinan'ın metninde yazmaz; **uygulama okunuşu (geri alınabilir)** kod PR'ında yazılır ve review edilir." — ve aynı dosyanın "Uygulama notu"ndaki "Düzelme hesabı uygulama okunuşudur ve kod PR'ında yazılır … Formül niteliğindeki bu okuma için golden örnek ChatGPT şeridinden ya da gerekirse `NEEDS-SINAN` ile gelir; K3 review'u golden'la doğrular" cümleleri **fiziksel eksi stok hali için** artık uygulanmaz: o hal için düzelme hesabı kod PR'ında yazılmaz, golden beklenmez; kapsam sınırındaki hal için bu cümleler geçerliliğini korur. Aynı nedenle o dosyanın uygulama notundaki "eksi stok nedeni yapışkan kalamaz" cümlesi ve dilim tablosundaki "Eksi stok nedeninin yapışkan olmaması, düzelme hesabı ve testleri" satırı da yalnız fiziksel eksi stok hali için uygulanmaz. (6) SAT-D301 (2)'nin ilk cümlesi ("Bu durum **kalıcı değildir**: stok bir girişle düzelince maliyet yeniden okunur") fiziksel eksi stok oluşmadığı için o hal bakımından **uygulama alanı kalmayan** cümledir; kapsam sınırındaki hal için aynen geçerlidir; ihlal durumundaki bir pozisyonun bir girişle kendiliğinden açılmaması (fail-closed kalması) bu maddenin (4)'üdür. (5)–(6)'daki cümle eşlemesi **yazar okumasıdır**. (7) SAT-D306 (c)–(d)'deki "eksiye düşerse" halleri de aynı nedenle oluşmaz; metinleri değişmez (**yazar okuması**). | `StockLedger`, `AverageCostCalculator` / `AverageCostUnreadableReason.NegativeStock` (#1107), stok hareketi üreten bütün modüller |
+| SAT-D318 | Hiçbir modülde eksi stok yok (soru 4) | (1) **ERP'nin hiçbir modülünde stok eksiye düşmez**; "stok −1" diye bir durum yoktur. Bu madde **fiziksel** stok (eldeki miktar) içindir; projeksiyon/ATP ve serbest stok hesapları (Master INV-009) ayrı kavramlardır ve bu maddeyle değişmez (**yazar okuması**). **Kapsam sınırı:** aşağıdaki (3)–(6) yalnız **fiziksel stokun eksiye düşmesi** halini kapsar; fiziksel stok eksiye düşmediği halde maliyet pozisyonunun `NegativeStock` okunduğu hali kapsamaz (Sınırlar, `NEEDS-SINAN`); o hal için SAT-D301 (2) olduğu gibi geçerlidir. (2) Stoğu eksiye götürecek hareket **reddedilir** (mevcut `StockLedger` davranışı: `NegativePhysicalStock`); bu davranış artık Sinan kararına bağlıdır. Sinan "eksiye düşmez" dedi, "ret" demedi; yolun ret olduğu **yazar okumasıdır** ve satışta kantar farkı halinde geçerli değildir (bkz. SAT-D319 (8)). (3) Bu yüzden **fiziksel eksi stoktan** "düzelme" hesabı ve golden'ı gerekmez; formül olarak yazılmaz. (4) Ortalama maliyet hesabında fiziksel eksi stok durumu bir **değişmez ihlalidir** ve **fail-closed** kalır: SAT-D301 (1) aynen geçerlidir (maliyet "hesaplanamadı", değer uydurulmaz, sıfır sayılmaz). İhlal durumundaki pozisyonun bir girişle kendiliğinden açılmaması Sinan'ın bugünkü sözü değildir, **yazar okumasıdır**: Sinan bugün yalnız eksi stokun oluşmamasını söyledi; 11 Kasım'daki "giriş gelince düzelir" sözü bu durum için uygulanmamış olur. Yön güvenlidir (değer üretilmez); Sinan farklı isterse ayrı karar gerekir (Sınırlar). (5) **Yerine geçtiği cümle:** SAT-D301 (2)'nin ikinci cümlesi — "Düzelmenin hesap biçimi (hangi girişten sonra, hangi ortalamayla yeniden başlanacağı) Sinan'ın metninde yazmaz; **uygulama okunuşu (geri alınabilir)** kod PR'ında yazılır ve review edilir." — ve aynı dosyanın "Uygulama notu"ndaki "Düzelme hesabı uygulama okunuşudur ve kod PR'ında yazılır … Formül niteliğindeki bu okuma için golden örnek ChatGPT şeridinden ya da gerekirse `NEEDS-SINAN` ile gelir; K3 review'u golden'la doğrular" cümleleri **fiziksel eksi stok hali için** artık uygulanmaz: o hal için düzelme hesabı kod PR'ında yazılmaz, golden beklenmez; kapsam sınırındaki hal için bu cümleler geçerliliğini korur. Aynı nedenle o dosyanın uygulama notundaki "eksi stok nedeni yapışkan kalamaz" cümlesi ve dilim tablosundaki "Eksi stok nedeninin yapışkan olmaması, düzelme hesabı ve testleri" satırı da yalnız fiziksel eksi stok hali için uygulanmaz. (6) SAT-D301 (2)'nin ilk cümlesi ("Bu durum **kalıcı değildir**: stok bir girişle düzelince maliyet yeniden okunur") fiziksel eksi stok oluşmadığı için o hal bakımından **uygulama alanı kalmayan** cümledir; kapsam sınırındaki hal için aynen geçerlidir; ihlal durumundaki bir pozisyonun bir girişle kendiliğinden açılmaması (fail-closed kalması) bu maddenin (4)'üdür. (5)–(6)'daki cümle eşlemesi **yazar okumasıdır**. (7) SAT-D306 (c)–(d)'deki "eksiye düşerse" halleri de aynı nedenle oluşmaz; metinleri değişmez (**yazar okuması**). | `StockLedger`, `AverageCostCalculator` / `AverageCostUnreadableReason.NegativeStock` (#1107), stok hareketi üreten bütün modüller |
 
 ## 2. tur — soru ve cevaplar (Issue #66 yorumu 6849107070)
 
@@ -91,6 +96,27 @@ ve bu belgeye girmez; kaydı aynı yorumdadır.
   (o zamana kadar "okunamadı", değer uydurulmaz) · bugüne kadar artı yönde tolerans içinde kapanmış üretim emirleri ·
   Boyama dışındaki girdisi kg olmayan süreçler · DEC-PRDCT-006 kalemleri · ihlal edilmiş eksi stok kaydında maliyetin
   davranışı ve 11 Kasım "giriş gelince düzelir" cümlesi (2.3 cevaplanmadı).
+- `NEEDS-SINAN` — **`DEC-STK-009` / `OPEN-004` ile ilişki (sorulmadı; tahminle seçilmez).** `DEC-STK-009` (kilitli):
+  kantar/yükleme toleransı ürün ve işlem profiline göre ayarlanır. `OPEN-004` (kısmen): başlangıç varsayımı uyarı %1,
+  onay %2, blok %3. SAT-D319 (5)–(6) ve SAT-D320 (2) ise tek oran (%0,5), irsaliye toplamında ölçüm ve üstünde Satış
+  Müdürü onayı der; blok bandı anmaz. Bunların aynı ölçü mü (yeni kural eskisinin yerine mi geçer), yoksa iki ayrı
+  kontrol mü olduğu (kantar ↔ sistem stoğu farkının kaydı ayrı, yükleme toleransı ayrı) Sinan'a sorulur. Örnek:
+  sistemde 1.000 kg, kantarda 1.035 kg (%3,5) `OPEN-004` varsayımıyla blok, SAT-D319 (6) ile onayla geçer; 1.008 kg
+  (%0,8) `OPEN-004`'e göre uyarı bile değil, SAT-D319'a göre onay bekler. Cevap gelene kadar bu belge `DEC-STK-009`'u
+  ve `OPEN-004`'ü değiştirmez, kapatmaz ve "yerine geçer" demez; kantar farkı kod dilimi bu cevap olmadan iki kuralı
+  birleştiren bir davranış etkinleştirmez.
+- `NEEDS-SINAN` — **SAT-D319 (2)'nin kapsadığı miktar.** Tahsis fiziksel hareket değildir (`DEC-STK-003`); "stok
+  miktarları doğru korunur" cümlesinin tahsisli/serbest miktarı da kapsayıp kapsamadığı (ör. fiziksel 1.000 kg, 600 +
+  400 tahsis, ilk satışın kantarı 603: fiziksel eksi yok ama serbest −3) sorulmadı. SAT-D318 (1)'deki "serbest stok
+  hesapları bu maddeyle değişmez" yazar okuması ve `DEC-STK-004` ("serbest miktar aşılmaz") olduğu gibi durur.
+- `NEEDS-SINAN` — **URT-D41 (1)'in ölçü birimi:** kuralın rulo başına mı emir toplamında mı uygulanacağı Sinan'ın
+  sözünde yoktur (bugünkü kod rulo başına değerlendirir). **Yazar okuması:** seçenek metni genel olduğundan ("çıkan
+  girenden fazlaysa emir kapanmaz") URT-D6'daki "tolerans dışı fark Üretim müdürü onayıyla kapanır" yolu artı yönde de
+  kalkar; onayla kapanış yalnız eksik yönde sürer.
+- Not (URT-D41 (3), Boyama; Sinan'ın sözü değildir): Boyama hattında hurda çıkarsa "çıkan kg = giren çelik kg"
+  cümlesinin sağlam çıktı için mi toplam için mi olduğu sorulmadı (`NEEDS-SINAN`). Boya ağırlığı stok kg'ına yansımadığı
+  için boyalı ürün satışında kantar farkı artı yönde çıkabilir ve SAT-D319 (5) sınırına yaklaşabilir; büyüklüğü
+  ölçülmedi.
 - Araştırma notu (inceleme oturumu; Sinan'ın sözü değildir): 1. tur Sınırlar'daki "fiziksel eksi olmadan maliyet
   pozisyonunun `NegativeStock` okunması" senaryosu `origin/main`'deki `AverageCostCalculator.Apply` ile doğrulanamadı;
   defter stoğu ≠ maliyet stoğu durumu önce `LedgerStockMismatch` ile duruyor. O `NEEDS-SINAN` satırı bu notla birlikte
@@ -121,7 +147,10 @@ Tablo o yorumdaki kaydın aynısıdır; "(Önerilen)" işaretleri soruyu soranı
 - Karara bağlanmayanlar (`NEEDS-SINAN`; tahminle seçilmez): satışı giren kişi Satış Müdürü'nün kendisiyse kimin
   onaylayacağı · irsaliyede "toplam fark"ın nasıl toplanacağı (bir üründe fazla, başka üründe eksik çıkarsa farklar
   birbirini götürür mü) · irsaliye toplamı sınırın içindeyken tek üründeki büyük fark için ayrı bir üst sınır olup
-  olmadığı · "kantar farkı" hesabının kodu · 2. tur Sınırlar'ında açık kalanlar (yukarıda).
+  olmadığı · "kantar farkı" hesabının kodu · aynı ürün birden çok stok pozisyonundan (lokasyon/etiket) satıldıysa
+  farkın hangi pozisyona yazılacağı · oranın paydası (sistemdeki kg mı kantar kg'ı mı; SAT-D319 (5) "satılan kg" der) ·
+  "satışı giren kişi"nin siparişi açan mı kantar/sevk kaydını giren mi olduğu · 2. tur Sınırlar'ında açık kalanlar
+  (yukarıda; `DEC-STK-009`/`OPEN-004` ilişkisi dahil).
 
 ## Kod etkisi (kod şeridi; bu PR'da yapılmadı)
 
@@ -133,10 +162,11 @@ exact-head review ile doğrulanır.
   URT-D40'tır. Kod yorumu ve test özetindeki atıflar bu kimliklere çevrilir; formül değişmez. SAT-D308 uygulama notundaki golden
   şartı #1146 için sürer.
 - **#1107 (ortalama maliyet, eksi stok):** fiziksel eksi stok hali için "girişle düzelme" hesabı ve golden'ı SAT-D318
-  (3)'e göre gerekmez. Ancak kodda `NegativeStock` nedeni fiziksel eksi olmadan da doğabilir (maliyet pozisyonu yokken
-  veya eldeki maliyet miktarından büyük çıkışta; `AverageCostCalculator.ApplyIssue`). O hal SAT-D318 kapsamında
-  değildir: SAT-D301 (2) geçerli kalır, düzelme hesabının golden'ı `NEEDS-SINAN`'dır (Sınırlar). #1107 bu ayrımı
-  yapmadan düzelmeyi tümden kaldıramaz. SAT-D302 (ek masraf ortalamaya girmez) bu belgeden etkilenmez.
+  (3)'e göre gerekmez. 1. turda `NegativeStock` nedeninin fiziksel eksi olmadan da doğabileceği iddia edildi (maliyet
+  pozisyonu yokken veya eldeki maliyet miktarından büyük çıkışta); bu iddia `origin/main`'de **doğrulanamadı**:
+  `AverageCostCalculator.Apply`, defter stoğu ≠ maliyet stoğu ise `ApplyIssue`'ya girmeden `LedgerStockMismatch` döner
+  (2. tur araştırma notu). Böyle bir hal gerçekten varsa SAT-D318 kapsamında değildir ve SAT-D301 (2) geçerli kalır;
+  var olup olmadığını #1107'nin K3 review'u kendi dalının kodunda doğrular, yoksa o hal için hesap ve golden beklenmez. SAT-D302 (ek masraf ortalamaya girmez) bu belgeden etkilenmez.
 - **Emir kapanışı (`OrderClosureAssessment`, URT-D6 toleransı):** URT-D41 (1)–(2)'ye göre artı yönde kapanış reddedilir;
   ayrı Üretim dilimi (K3).
 - **Satışta kantar farkı kaydı:** SAT-D319 (4)–(7) ve SAT-D320; yeni dilim (K3). Sınır aşımı onayı yeni bir izin adı
@@ -174,7 +204,8 @@ exact-head review ile doğrulanır.
   - `NEEDS-SINAN`: **Fiziksel eksi olmadan maliyet pozisyonunun `NegativeStock` okunması** (maliyet defterinde önceki
     girişi olmayan ya da eldeki maliyet miktarından büyük çıkış). SAT-D318 bu hali kapsamaz; SAT-D301 (2) ("giriş
     gelince düzelir") geçerlidir, düzelmenin hesap biçimi ve golden'ı Sinan'a sorulur. Hangi akışların bu hali
-    ürettiği uçtan uca doğrulanmadı.
+    ürettiği uçtan uca doğrulanmadı; `origin/main`'de bu hal üretilemedi (2. tur araştırma notu), satır yalnız #1107
+    review'u böyle bir akış bulursa geçerlidir.
   - Hurda fiyatını kimin gireceği (izin adı kod PR'ının işidir; grant/rol insan kapısıdır), dönemin emrin mi girişin mi
     dönemi olduğu, hurda fiyatının girdi birim maliyetini aşması halinde sınır/uyarı.
   - Kullanılabilir artığın (UsableRemnant) maliyet payı (OC-3) açık kalır; hesaplayıcı artık varken fail-closed kalır.
