@@ -1,4 +1,5 @@
 using System.Net;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain;
@@ -491,13 +492,38 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Equal(HttpStatusCode.BadRequest, loose.StatusCode);
             Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)));
 
+            // F-020: the active instruction's detail carries the three cancellation members, each null.
+            using var active = await granted.GetAsync($"{LogisticsEndpoints.InstructionsPath}/{id:D}");
+            Assert.Equal(HttpStatusCode.OK, active.StatusCode);
+            var activeInstruction = System.Text.Json.JsonDocument.Parse(await active.Content.ReadAsStringAsync()).RootElement.GetProperty("detail").GetProperty("instruction");
+            Assert.All(new[] { "cancelledBy", "cancelledAtUtc", "cancelReason" },
+                name => Assert.Equal(System.Text.Json.JsonValueKind.Null, activeInstruction.GetProperty(name).ValueKind));
+
             using var cancelled = await granted.SendAsync(Command($"{id:D}/cancel", "SENTETIK-cancel", Body));
             Assert.Equal(HttpStatusCode.OK, cancelled.StatusCode);
             Assert.False(cancelled.Headers.Contains("Idempotency-Replayed"));
-            Assert.Contains("\"status\":\"Cancelled\"", await cancelled.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            var cancelledText = await cancelled.Content.ReadAsStringAsync();
+            Assert.Contains("\"status\":\"Cancelled\"", cancelledText, StringComparison.Ordinal);
+            // F-020 (LOJ-D6..D8): the answer carries the recorded facts as stored — the canceller's user id, the UTC time and the reason.
+            var cancelledInstruction = System.Text.Json.JsonDocument.Parse(cancelledText).RootElement.GetProperty("detail").GetProperty("instruction");
+            var recorded = (
+                await run.ScalarAsync<string>("SELECT CancelledBy FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)),
+                await run.ScalarAsync<DateTimeOffset>("SELECT CancelledAtUtc FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)),
+                "SENTETIK neden");
+            Assert.Equal(recorded, (cancelledInstruction.GetProperty("cancelledBy").GetString(), cancelledInstruction.GetProperty("cancelledAtUtc").GetDateTimeOffset(),
+                cancelledInstruction.GetProperty("cancelReason").GetString()));
+            Assert.Equal(TimeSpan.Zero, cancelledInstruction.GetProperty("cancelledAtUtc").GetDateTimeOffset().Offset);
             using var replay = await granted.SendAsync(Command($"{id:D}/cancel", "SENTETIK-cancel", Body));
             Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
             Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+
+            // The Cancelled page answers the same facts for the instruction (the company filter is the store's, unchanged).
+            using var cancelledPage = await granted.GetAsync($"{LogisticsEndpoints.InstructionsPath}?status=Cancelled");
+            Assert.Equal(HttpStatusCode.OK, cancelledPage.StatusCode);
+            var listed = Assert.Single(System.Text.Json.JsonDocument.Parse(await cancelledPage.Content.ReadAsStringAsync()).RootElement.GetProperty("items").EnumerateArray(),
+                item => item.GetProperty("id").GetGuid() == id);
+            Assert.Equal(recorded, (listed.GetProperty("cancelledBy").GetString(), listed.GetProperty("cancelledAtUtc").GetDateTimeOffset(),
+                listed.GetProperty("cancelReason").GetString()));
 
             // A second cancel on the fresh version is a state 409; the cancelled instruction takes no further command.
             using var again = await granted.SendAsync(Command($"{id:D}/cancel", "SENTETIK-cancel-again", "{\"expectedVersion\":\"3\",\"reason\":\"SENTETIK neden\"}"));
