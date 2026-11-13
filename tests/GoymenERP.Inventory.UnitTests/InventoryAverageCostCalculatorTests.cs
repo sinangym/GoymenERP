@@ -128,7 +128,8 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void An_issue_beyond_the_held_quantity_is_negative_stock_and_unreadable_not_clamped()
     {
-        // OPEN-INV-AVGCOST-NEGATIVE-STOCK: no policy chosen.
+        // SAT-D318 (1): stock never goes below zero. Staying fail-closed on a breach is the decision file's author
+        // reading (SAT-D318 (4), SAT-D323 (2)).
         var result = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(Issue, 6m, 5m));
         Assert.Equal((AverageCostStatus.Unreadable, NegativeStock), (result.Status, result.UnreadableReason));
         Assert.Null(result.AverageCostPerKg);
@@ -189,7 +190,8 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void Stock_the_ledger_never_costed_is_not_blended_into_the_average()
     {
-        // OPEN-INV-AVGCOST-UNCOSTED-STOCK: 10 kg are on hand but the ledger tracks none.
+        // 10 kg are on hand but the ledger costed none (for example opening stock without an entered cost, SAT-D304 (2):
+        // the cost reads "yok", it is not counted as zero or guessed).
         var result = AverageCostCalculator.Apply(null, Purchase(5m, 10m, 12m));
         Assert.Equal(LedgerStockMismatch, result.UnreadableReason);
 
@@ -200,7 +202,8 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void An_unreadable_position_is_sticky_for_every_later_movement()
     {
-        // Every reason stays sticky, NegativeStock included: the core never reopens a position by itself.
+        // Every reason stays sticky, NegativeStock included: the core never reopens a position by itself (for
+        // NegativeStock this is the decision file's author reading of SAT-D318 (4) and SAT-D323 (2)).
         foreach (var reason in Enum.GetValues<AverageCostUnreadableReason>())
         {
             var unreadable = AverageCostPosition.Unreadable(reason);
