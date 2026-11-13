@@ -147,8 +147,8 @@ public static class SalesSubcontractServiceOrderUnreadableReasonsV1
 
 /// <summary>
 /// SAT-D175 (EK25): the consumer hook Sales asks before the customer of a subcontract service order changes — whether a production
-/// plan or a customer-goods allocation is linked to the order. Implemented by the host from the Production (and, for customer-goods
-/// allocations, Inventory) owners; until it is composed, Sales treats the answer as unreadable and refuses the customer change
+/// plan or a customer-goods allocation is linked to the order. Implemented by the host from the Production owner (plans, and the
+/// customer-goods allocations of Production U3-a plan input, which Inventory stores under demand type manufacturing.plan-input); until it is composed, Sales treats the answer as unreadable and refuses the customer change
 /// (fail-closed, <see cref="SalesDraftProblemCodesV1.SubcontractBindingUnavailable"/>). Company is a copy of the server context.
 /// </summary>
 public interface ISalesSubcontractOrderBindingReadPortV1
