@@ -87,6 +87,46 @@ describe('instruction decoders', () => {
     }
   })
 
+  it('F-020: reads a cancelled instruction in the list and the detail, with its kept loads and weighbridge record', () => {
+    const page = decodeInstructionPage(tweak(listResponseRaw, (b) => {
+      b.items.push({ ...b.items[0], id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status: 'Cancelled' })
+    }))
+    expect(page?.items.map((item) => item.status)).toEqual(['Draft', 'Cancelled'])
+
+    const cancelledWith = (change: (b: Body) => void = () => undefined) => tweak(detailResponseRaw, (b) => {
+      b.instruction.status = 'Cancelled'
+      change(b)
+    })
+    const load = (b: Body): Body => ({
+      shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', lineId: b.lines[0].lineId, kind: 'Loaded',
+      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+    })
+    expect(decodeInstructionDetail(cancelledWith(), INSTRUCTION)?.instruction.status).toBe('Cancelled')
+    // LOJ-D7: the weighbridge record and the loads of an instruction cancelled after issue stay on it.
+    const kept = decodeInstructionDetail(cancelledWith((b) => {
+      b.shares.push(load(b))
+      b.weighing = weighingRecord()
+    }), INSTRUCTION)
+    expect(kept?.weighing?.netKg).toBe('4.3')
+    expect(kept?.shares).toHaveLength(1)
+    expect(decodeInstructionMutation({ detail: cancelledWith(), isReplay: false, originalCorrelationId: 'corr-1' })?.detail.instruction.status).toBe('Cancelled')
+    // LOJ-D8: a recorded shipment refuses the cancel, so a cancelled instruction with one is not vouched for.
+    expect(decodeInstructionDetail(cancelledWith((b) => {
+      b.shares.push({ ...load(b), kind: 'Shipped', measurement: null })
+    }), INSTRUCTION)).toBeNull()
+    // The summary has no cancel member; one that appears is an unknown member and is refused.
+    expect(decodeInstructionDetail(cancelledWith((b) => (b.instruction.cancelReason = 'x')), INSTRUCTION)).toBeNull()
+  })
+
+  it('F-020: a status outside Draft / Issued / Cancelled still fails closed, alone or among good rows', () => {
+    for (const status of ['Canceled', 'cancelled', 'CANCELLED', 'Voided', '', null, 3]) {
+      expect(decodeInstructionDetail(tweak(detailResponseRaw, (b) => (b.instruction.status = status)), INSTRUCTION), String(status)).toBeNull()
+      expect(decodeInstructionPage(tweak(listResponseRaw, (b) => {
+        b.items.push({ ...b.items[0], id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status })
+      })), String(status)).toBeNull()
+    }
+  })
+
   it('a detail of another record is not an answer to the one asked', () => {
     expect(decodeInstructionDetail(parse(detailResponseRaw), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab')).toBeNull()
   })

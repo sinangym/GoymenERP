@@ -236,6 +236,16 @@ public static partial class ErpOpenApiContract
                         uniqueItems: true);
                 }
 
+                if (context.JsonTypeInfo.Type == typeof(GoymenERP.Modules.Logistics.Application.Contracts.CancelInstructionRequest))
+                {
+                    SetStringBounds(
+                        schema,
+                        "reason",
+                        minimumLength: 1,
+                        maximumLength: GoymenERP.Modules.Logistics.Application.Contracts.LogisticsJson.CancelReasonMaximumLength,
+                        pattern: null);
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(GoymenERP.Modules.Logistics.Application.Contracts.CancelDispatchNoteRequest))
                 {
                     SetStringBounds(

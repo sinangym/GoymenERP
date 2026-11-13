@@ -81,6 +81,24 @@ public sealed partial class LogisticsInstructionService
             prepare: null, cancellationToken);
     }
 
+    public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
+        LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.Reason) || !string.Equals(request.Reason, request.Reason.Trim(), StringComparison.Ordinal)
+            || request.Reason.Length > LoadingInstruction.DispatchNoteCancelReasonMaximumLength)
+        {
+            throw new LogisticsInstructionServiceException(400, "validation_failed", [new("reason", "validation_failed")]);
+        }
+
+        return MutateAsync(instructionId, request, request.ExpectedVersion, metadata, LogisticsCommands.CancelInstructionV1,
+            bindings.InstructionCancelPermission,
+            (instruction, expected, now, _, actorId) => instruction.CancelInstruction(expected, actorId, request.Reason, now),
+            // The audit reason is the command's; the user's reason is on the instruction and in the after-image.
+            new LogisticsMutationAudit("logistics.loading-instruction.cancelled.v1", "CancelInstruction", "Yükleme talimatı iptal edildi"),
+            prepare: null, cancellationToken);
+    }
+
     public Task<LoadingInstructionResponse> SetEDispatchNumberAsync(Guid instructionId, Guid dispatchNoteId, SetEDispatchNumberRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
     {

@@ -4,7 +4,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 //
 // DEC-SAL-005 shows "bağlı satın alma/üretim" in the cancellation preview; No 30 as narrowed by SAT-D12 keeps "bağlı satın
 // alma/üretim" and an unreadable source BLOCKING a force-close. Sales owns this read contract; each SUPPLY OWNER answers it with
-// its own adapter in its own module (Production: U5-a over IManufacturingSalesOrderLinkReadPortV1; Purchasing: MOD-03). Sales
+// its own adapter in its own module (Production: U2-b / API-16 over IManufacturingSalesOrderSupplyReadPortV1; Purchasing: MOD-03). Sales
 // never reads another module's tables, and changing this file is a Sales-lane change (owners adapt to it).
 
 /// <summary>The supply kinds an owner answers for (each maps to one DEC-SAL-005 cancellation category).</summary>
@@ -91,13 +91,13 @@ public sealed record SalesOrderLinkedSupplyAnswerV1(
     string? ReasonCode);
 
 /// <summary>
-/// The Sales-declared read a SUPPLY OWNER answers (S-1 Production U5-a; Purchasing MOD-03), registered by that owner's host
+/// The Sales-declared read a SUPPLY OWNER answers (S-1 Production U2-b / API-16; Purchasing MOD-03), registered by that owner's host
 /// adapter. It carries NO authority (the allocation port's shape): the Sales caller measures its own name before and after
 /// asking. It reads under the caller's company only and CREATES NOTHING. One adapter per <see cref="SupplyKind"/>; a kind with no
 /// adapter and no <see cref="ISalesOrderLinkedSupplyRecorderV1"/> is "no source" (not a blocker). A registered adapter that throws,
 /// answers Unreadable or answers a malformed value makes the category Unreadable (it blocks a cancellation and a force-close).
-/// On main (#998): the host registers Purchasing's adapter (<c>PurchasingSalesOrderLinkedSupplyReadPort</c>, kind Purchasing);
-/// Production has no adapter yet, so "linked production" stays "no source".
+/// On main the host registers Purchasing's adapter (<c>PurchasingSalesOrderLinkedSupplyReadPort</c>, kind Purchasing; #998) and
+/// Production's (<c>ManufacturingSalesOrderLinkedSupplyReadPort</c>, kind Production; #1085), so neither kind is "no source".
 /// </summary>
 public interface ISalesOrderLinkedSupplyReadPortV1
 {
@@ -115,8 +115,9 @@ public interface ISalesOrderLinkedSupplyReadPortV1
 /// <c>NoSource</c> and blocks nothing) from "a module records links but its adapter of
 /// <see cref="ISalesOrderLinkedSupplyReadPortV1"/> is not registered" (the kind is <c>Unreadable</c>: removing a line or changing
 /// its product is refused, as are the cancellation and the force-close, fail-closed). A module that starts recording links delivers
-/// this declaration with its adapter in the same change. On main (#998) the host declares Purchasing
-/// (<c>PurchasingSalesOrderLinkedSupplyRecorder</c>) beside its adapter; Production declares nothing yet. It carries no authority
+/// this declaration with its adapter in the same change. On main the host declares Purchasing
+/// (<c>PurchasingSalesOrderLinkedSupplyRecorder</c>, #998) and Production (<c>ManufacturingSalesOrderLinkedSupplyRecorder</c>, #1085)
+/// beside their adapters. It carries no authority
 /// and reads nothing.
 /// </summary>
 public interface ISalesOrderLinkedSupplyRecorderV1
