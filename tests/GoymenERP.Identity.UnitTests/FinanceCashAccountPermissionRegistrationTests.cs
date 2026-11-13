@@ -14,8 +14,8 @@ namespace GoymenERP.Identity.UnitTests;
 /// <summary>
 /// The Finance cash-account (kasa) permissions (API-30) are REGISTERED, not granted; who holds which is
 /// a human gate. These cases keep registration and grant apart, pin the company-wide scope, and pin that
-/// none of the three is Critical: a cash account is a definition without balance or money movement, and
-/// adding one to the Critical set is a security-contract decision the slice does not take.
+/// propose and approve are Critical like the bank master's pair (user decision of 13 November 2026 on
+/// Issue #66) while read is not.
 /// </summary>
 public sealed class FinanceCashAccountPermissionRegistrationTests
 {
@@ -52,11 +52,12 @@ public sealed class FinanceCashAccountPermissionRegistrationTests
         Assert.True(ErpPermissions.RequiresCompanyWideScope(permission));
     }
 
-    [Theory]
-    [MemberData(nameof(Names))]
-    public void None_is_critical(string permission)
+    [Fact]
+    public void Propose_and_approve_are_critical_and_read_is_not()
     {
-        Assert.False(ErpPermissions.IsCritical(permission));
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountPropose));
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountApprove));
+        Assert.False(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountRead));
     }
 
     [Theory]

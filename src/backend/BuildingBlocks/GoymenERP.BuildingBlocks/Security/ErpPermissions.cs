@@ -191,9 +191,9 @@ public static class ErpPermissions
     /// (<c>finance.bank-account.*</c>). Registering them makes them KNOWN, not granted: no role and no user
     /// receives them here, and who holds which is a human gate. All three are company-wide only: a cash
     /// account belongs to the server-resolved company and has no site, location or work-center dimension.
-    /// None is Critical in this slice: the account is a definition with no balance and moves no money;
-    /// whether propose/approve should join the bank master's Critical pair is left to a human decision.
-    /// Approval and rejection are maker-checker in the service and the database regardless.
+    /// Propose and approve are Critical, as the bank master's pair (user decision of 13 November 2026 on
+    /// Issue #66); read is not. Approval and rejection are maker-checker in the service and the database
+    /// regardless.
     /// </summary>
     public const string FinanceCashAccountRead = "finance.cash-account.read";
     public const string FinanceCashAccountPropose = "finance.cash-account.propose";
@@ -1212,6 +1212,8 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
             CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
