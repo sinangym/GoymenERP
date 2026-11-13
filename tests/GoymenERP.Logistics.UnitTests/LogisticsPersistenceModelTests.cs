@@ -443,6 +443,64 @@ public sealed class LogisticsPersistenceModelTests
     }
 
     [Fact]
+    public async Task An_instruction_cancel_mark_is_written_once_with_the_cancel_and_never_rewritten_or_cleared()
+    {
+        // F-020: the cancel writes the status, the stamp and the three marks from empty. The guard lets that row through and reaches the
+        // next one: the refusal that comes back is the weighing delete, not the instruction (no connection is opened).
+        await using (var context = Context())
+        {
+            var row = Instruction(CompanyA);
+            context.Instructions.Attach(row);
+            Cancel(row);
+            var weighing = Weighing();
+            context.Weighings.Attach(weighing);
+            context.Entry(weighing).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // Control for the case above: the instruction is checked before the weighing, so an instruction refusal wins.
+        await using (var context = Context())
+        {
+            var row = Instruction(CompanyA);
+            context.Instructions.Attach(row);
+            Cancel(row);
+            row.CreatedBy = "SENTETIK-other"; // not allowed: identity never moves
+            var weighing = Weighing();
+            context.Weighings.Attach(weighing);
+            context.Entry(weighing).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // A mark that is already set is never rewritten or cleared.
+        foreach (var change in new Action<LoadingInstructionRow>[]
+                 {
+                     row => row.CancelReason = "SENTETIK-other", row => row.CancelledBy = "SENTETIK-other",
+                     row => row.CancelledAtUtc = row.CancelledAtUtc!.Value.AddMinutes(1), row => row.CancelReason = null,
+                     row => row.CancelledBy = null, row => row.CancelledAtUtc = null,
+                 })
+        {
+            await using var context = Context();
+            var row = Instruction(CompanyA);
+            Cancel(row);
+            context.Instructions.Attach(row);
+            change(row);
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("bir kez yazılır", refusal.Message, StringComparison.Ordinal);
+        }
+
+        static void Cancel(LoadingInstructionRow row)
+        {
+            row.Status = 3;
+            row.UpdatedAtUtc = row.UpdatedAtUtc.AddMinutes(1);
+            row.CancelledBy = "SENTETIK";
+            row.CancelledAtUtc = row.UpdatedAtUtc;
+            row.CancelReason = "SENTETIK";
+        }
+    }
+
+    [Fact]
     public void The_shell_declarations_are_published_and_bound_to_the_manifest_names()
     {
         var provider = new LogisticsShellCapabilityProvider();

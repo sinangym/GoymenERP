@@ -484,7 +484,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             {
                 string[] allowed = entry.Entity switch
                 {
-                    LoadingInstructionRow => [nameof(LoadingInstructionRow.Status), nameof(LoadingInstructionRow.UpdatedAtUtc)],
+                    // F-020: the status, the update stamp and the set-once cancel marks.
+                    LoadingInstructionRow =>
+                    [
+                        nameof(LoadingInstructionRow.Status), nameof(LoadingInstructionRow.UpdatedAtUtc), .. InstructionCancelMarks,
+                    ],
                     LoadingInstructionLineRow =>
                     [
                         nameof(LoadingInstructionLineRow.Loaded), nameof(LoadingInstructionLineRow.Shipped),
@@ -525,7 +529,14 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         }
     }
 
+    /// <summary>F-020: the instruction cancel marks; each is written from empty exactly once, with the cancel.</summary>
+    private static readonly string[] InstructionCancelMarks =
+    [
+        nameof(LoadingInstructionRow.CancelledBy), nameof(LoadingInstructionRow.CancelledAtUtc), nameof(LoadingInstructionRow.CancelReason),
+    ];
+
     /// <summary>
+    /// F-020: an instruction cancel mark is written from empty exactly once (never cleared or rewritten).
     /// AT-055: a dispatch note only moves forward — a set-once column is written from empty exactly once (never cleared or
     /// rewritten), the status only climbs (Draft → Approved → Cancelled, or Draft → Cancelled), a line is released once (never
     /// re-linked in place), and the series only climbs by one.
@@ -534,6 +545,17 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
     {
         switch (entry.Entity)
         {
+            case LoadingInstructionRow:
+                foreach (var column in InstructionCancelMarks)
+                {
+                    var property = entry.Property(column);
+                    if (property.IsModified && (property.OriginalValue is not null || property.CurrentValue is null))
+                    {
+                        throw new InvalidOperationException("Yükleme talimatının iptal alanları bir kez yazılır; değiştirilmez.");
+                    }
+                }
+
+                break;
             case DispatchNoteRow:
                 foreach (var column in DispatchNoteSchema.SetOnceColumns)
                 {
