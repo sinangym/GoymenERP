@@ -71084,7 +71084,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                  "$ref": "#/components/schemas/ManufacturingInputIssueConflictProblemContract"
                 }
               }
             },
@@ -115885,6 +115885,61 @@
           }
         }
       },
+      "ManufacturingInputIssueConflictProblemContract": {
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "conflict": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ErpVersionConflictContract"
+              }
+            ]
+          },
+          "stockShortfall": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManufacturingStockShortfallViewV1"
+              }
+            ]
+          }
+        },
+        "description": "The input issue's 409 problem: the shared coded problem with the same codes. stockShortfall is optional. It is present only on a fresh inventory_manufacturing_physical_stock_insufficient refusal that Inventory attributed to this issue, and absent on every other code, on a replayed or stored answer and from older servers. No problem response establishes success or current authority."
+      },
       "ManufacturingOutputLocationCandidatesV1": {
         "required": [
           "items",
@@ -116262,6 +116317,57 @@
             ]
           }
         }
+      },
+      "ManufacturingStockShortfallViewV1": {
+        "required": [
+          "movementKind",
+          "sourceKind",
+          "sourceId",
+          "sourceLineId",
+          "labelId",
+          "productId",
+          "locationId",
+          "requestedKg"
+        ],
+        "type": "object",
+        "properties": {
+          "movementKind": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLineId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "requestedKg": {
+            "type": "string"
+          }
+        },
+        "description": "The input issue Inventory refused because it would take physical stock below zero (SAT-D318). movementKind is Inventory's movement kind name; sourceKind, sourceId and sourceLineId name the order and its issue; labelId and productId name the parent label and its product; locationId is the stored location of the label's stock, null when the label holds none. requestedKg is the issue's lossless invariant kilogram text. Available and reserved kilograms are not part of this view. It records nothing: the refusal is not stored."
       },
       "ManufacturingToleranceProfileListViewV1": {
         "required": [

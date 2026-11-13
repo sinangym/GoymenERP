@@ -20,10 +20,22 @@
  *  - a 5xx (for example 503 when the company's kilogram source is unavailable) says
  *    nothing about our command; it is UNKNOWN, and re-sending the SAME snapshot is safe:
  *    the server answers the same key as the same command (ADR-011) and the same fact id
- *    as the same fact (R3).
+ *    as the same fact (R3);
+ *  - SAT-D318: an input issue's 409 `inventory_manufacturing_physical_stock_insufficient`
+ *    may carry the optional `stockShortfall` member naming the refused issue, its parent
+ *    label and the place. Its absence, or a member that does not name exactly this issue,
+ *    changes nothing: the refusal stays the same definite refusal.
  */
 
-import { closeBody, factBody, type CloseSnapshot, type FactSnapshot } from './contract'
+import {
+  closeBody,
+  decodeStockShortfall,
+  factBody,
+  type CloseSnapshot,
+  type FactSnapshot,
+  type StockShortfallExpectation,
+  type StockShortfallView,
+} from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
 
 /** A DEFINITE refusal: the command did not take effect, and the server said why. */
@@ -54,8 +66,12 @@ export type FactFailure =
   | { readonly kind: 'label-version-conflict' }
   /** 409 `manufacturing_*_id_conflict` — this fact id already names other content. */
   | { readonly kind: 'id-conflict'; readonly code: string }
-  /** 409/422 — a domain, Inventory or kilogram-profile rule refused it, by its stable code. */
-  | { readonly kind: 'rule'; readonly code: string }
+  /**
+   * 409/422 — a domain, Inventory or kilogram-profile rule refused it, by its stable code.
+   * `stockShortfall` (SAT-D318) is present only on a fresh physical-stock refusal of an input
+   * issue that names exactly the issue the screen sent.
+   */
+  | { readonly kind: 'rule'; readonly code: string; readonly stockShortfall?: StockShortfallView }
   | { readonly kind: 'unsupported-media' }
 
 /** The outcome is UNKNOWN: the command may or may not have been applied. */
@@ -99,12 +115,39 @@ function versionField(body: unknown, name: string): number | null {
   return Number.isSafeInteger(value) ? value : null
 }
 
+const PHYSICAL_STOCK_INSUFFICIENT = 'inventory_manufacturing_physical_stock_insufficient'
+
+/**
+ * SAT-D318: the physical-stock refusal of an input issue may name its shortfall. The member is
+ * read only on a fresh answer to an input issue and only when it names exactly that issue. When
+ * it is absent or malformed, names another issue, or comes on a replayed answer (the server never
+ * stores this refusal, so a replayed detail is not this attempt's), the result is the same definite
+ * refusal without the detail. A detail we cannot read never turns a definite refusal into UNKNOWN.
+ */
+function physicalStockRefusal(
+  body: unknown,
+  replayed: boolean,
+  shortfallFor: StockShortfallExpectation | null,
+): FactFailure {
+  const plain: FactFailure = { kind: 'rule', code: PHYSICAL_STOCK_INSUFFICIENT }
+  if (replayed || shortfallFor === null || typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return plain
+  }
+  const shortfall = decodeStockShortfall((body as Record<string, unknown>).stockShortfall, shortfallFor)
+  return shortfall === null ? plain : { kind: 'rule', code: PHYSICAL_STOCK_INSUFFICIENT, stockShortfall: shortfall }
+}
+
 /**
  * A described status becomes a definite refusal; anything the contract does not
  * describe — including a 409/422 whose code never arrived — is null and becomes UNKNOWN,
  * because an answer we cannot read is not evidence that the command did not apply.
  */
-function classifyFailure(status: number, body: unknown, replayed: boolean): FactFailure | null {
+function classifyFailure(
+  status: number,
+  body: unknown,
+  replayed: boolean,
+  shortfallFor: StockShortfallExpectation | null,
+): FactFailure | null {
   if (status === 400) return { kind: 'validation', field: stringField(body, 'field') }
   if (status === 401) return { kind: 'unauthenticated' }
   if (status === 403) return { kind: 'forbidden' }
@@ -131,6 +174,7 @@ function classifyFailure(status: number, body: unknown, replayed: boolean): Fact
       return { kind: 'label-version-conflict' }
     }
     if (/^manufacturing_[a-z_]+_id_conflict$/.test(code)) return { kind: 'id-conflict', code }
+    if (code === PHYSICAL_STOCK_INSUFFICIENT) return physicalStockRefusal(body, replayed, shortfallFor)
     if (/^inventory_manufacturing_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     return null
   }
@@ -154,6 +198,10 @@ export function recordFact(
     snapshot.idempotencyKey,
     factBody(snapshot),
     signal,
+    // SAT-D318: only an input issue's refusal names a shortfall, and only for exactly this issue.
+    snapshot.kind === 'input-issues'
+      ? { orderId, issueId: snapshot.factId, labelId: snapshot.parentRollId, kg: snapshot.kg }
+      : null,
   )
 }
 
@@ -186,6 +234,7 @@ async function sendCommand(
   idempotencyKey: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  shortfallFor: StockShortfallExpectation | null = null,
 ): Promise<FactOutcome> {
   let response: Response
   try {
@@ -228,7 +277,7 @@ async function sendCommand(
   } catch {
     parsed = null
   }
-  const failure = classifyFailure(response.status, parsed, replayed)
+  const failure = classifyFailure(response.status, parsed, replayed, shortfallFor)
   if (failure === null) {
     return { type: 'unknown', unknown: { kind: 'undecodable', status: response.status } }
   }

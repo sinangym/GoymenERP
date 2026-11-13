@@ -10,7 +10,7 @@
  */
 
 import type { FactFailure, FactUnknown } from './commandApi'
-import type { FactKind, OrderStatus, OutputClass } from './contract'
+import type { FactKind, OrderStatus, OutputClass, StockShortfallView } from './contract'
 
 export const OUTPUT_CLASS_LABEL: Record<OutputClass, string> = {
   GoodProduct: 'İyi ürün',
@@ -302,6 +302,26 @@ const RULE_TEXT: Record<string, string> = {
   inventory_manufacturing_input_return_exceeds_issued: 'İade, bu rulodan net çıkan kütleyi aşamaz.',
 }
 
+/**
+ * SAT-D318 (owner decision of 2026-11-13): the input issue's physical-stock refusal, told with what the server named —
+ * the refused issue, its parent label, the place of the label's stock and the requested kilograms. The label's stock
+ * figures are not part of the refusal (NEEDS-SINAN), so the sentence never states or guesses an available or reserved
+ * kilogram; the ids are shown as the server sent them.
+ */
+export function stockShortfallText(shortfall: StockShortfallView): string {
+  const place =
+    shortfall.locationId === null
+      ? 'Konum: yok; etiketin şu an hiçbir konumda stoğu bulunmuyor.'
+      : `Konum: ${shortfall.locationId}.`
+  return [
+    'Girdi çıkışı kaydedilmedi: fiziksel stok sıfırın altına düşürülemez.',
+    `İşlem: girdi çıkışı (olgu ${shortfall.sourceLineId}).`,
+    `Ana rulo etiketi: ${shortfall.labelId}.`,
+    place,
+    `İstenen miktar: ${shortfall.requestedKg} kg; ana ruloda bu kadar serbest fiziksel stok yok.`,
+  ].join(' ')
+}
+
 export function failureText(failure: FactFailure): string {
   switch (failure.kind) {
     case 'validation':
@@ -325,6 +345,7 @@ export function failureText(failure: FactFailure): string {
     case 'id-conflict':
       return `Bu olgu kimliği başka bir içerikle kayıtlı (${failure.code}). Yeni bir gönderim olarak yeniden deneyin.`
     case 'rule':
+      if (failure.stockShortfall !== undefined) return stockShortfallText(failure.stockShortfall)
       return RULE_TEXT[failure.code] ?? `İşlem reddedildi (${failure.code}).`
     case 'unsupported-media':
       return 'İstek biçimi sunucu tarafından kabul edilmedi.'

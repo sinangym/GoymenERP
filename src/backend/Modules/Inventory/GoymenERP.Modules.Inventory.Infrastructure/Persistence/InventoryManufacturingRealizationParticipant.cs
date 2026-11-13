@@ -125,14 +125,15 @@ public sealed partial class InventoryManufacturingRealizationParticipant
 
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: true, cancellationToken);
+        // One source for the movement and for any refusal that names it (SAT-D318).
+        var source = new StockSourceReference(InventoryManufacturingRealizationContractV1.InputIssueSourceKind,
+            request.ManufacturingOrderId, request.IssueId);
         var position = request.AllocationId is { } allocationId
-            ? await ConsumePlanAllocationAsync(allocationId, request.PlanId!.Value, parent, quantity, metadata,
-                cancellationToken)
-            : await CurrentFreePositionAsync(parent.Label, quantity, cancellationToken);
+            ? await ConsumePlanAllocationAsync(allocationId, request.PlanId!.Value, parent, quantity, source,
+                metadata, cancellationToken)
+            : await CurrentFreePositionAsync(parent.Label, quantity, source, cancellationToken);
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
-            request.OccurredAtUtc,
-            new StockSourceReference(InventoryManufacturingRealizationContractV1.InputIssueSourceKind,
-                request.ManufacturingOrderId, request.IssueId),
+            request.OccurredAtUtc, source,
             [new StockMovementLine(position, StockDirection.Out, quantity)], CostResult.NotCalculated);
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
             cancellationToken);
@@ -318,15 +319,19 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     }
 
     private async Task<StockPosition> CurrentFreePositionAsync(MaterialLabel label, Kilograms quantity,
-        CancellationToken cancellationToken)
+        StockSourceReference source, CancellationToken cancellationToken)
     {
         var rows = await context.Balances.Where(row => row.LabelId == label.Id).ToListAsync(cancellationToken);
         ValidateStoredPositions(label, rows);
         var free = rows.Where(row => row.Block == (int)BlockState.Free && row.QuantityKg > 0m).ToArray();
         if (free.Length != 1)
         {
+            // No Free kg at all: the label's stock, if any, is blocked in its one physical place (the validated
+            // stored positions keep a label's non-zero buckets in one place), so that place is where it was refused.
             throw free.Length == 0
-                ? Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient)
+                ? InputIssueShortfall(source, label,
+                    rows.Where(row => row.QuantityKg > 0m).Select(row => (Guid?)row.LocationId).FirstOrDefault(),
+                    quantity, availableKg: 0m, reservedKg: null)
                 : Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
         }
 
@@ -354,10 +359,60 @@ public sealed partial class InventoryManufacturingRealizationParticipant
 
         if (unreserved < quantity)
         {
-            throw Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
+            throw InputIssueShortfall(source, label, row.LocationId, quantity, row.QuantityKg, reservedKg);
         }
 
         return Position(row, label);
+    }
+
+    /// <summary>
+    /// SAT-D318: the input issue's physical-stock refusal names the refused issue line, the label with its product, the
+    /// place and the kg its check saw. A detail that cannot be built from the stored figures leaves the refusal
+    /// without it; the refusal itself never changes.
+    /// </summary>
+    private static InventoryManufacturingRealizationException InputIssueShortfall(StockSourceReference source,
+        MaterialLabel label, Guid? locationId, Kilograms requested, decimal availableKg, decimal? reservedKg)
+    {
+        try
+        {
+            return InventoryManufacturingRealizationException.Refused(409,
+                InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+                new InventoryManufacturingStockShortfallV1(StockMovementKind.Issue, source.Kind, source.Id,
+                    source.LineId, label.Id, label.ProductId, locationId, requested, Kilograms.Of(availableKg),
+                    reservedKg is { } reserved ? Kilograms.Of(reserved) : null));
+        }
+        catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
+        {
+            return Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
+        }
+    }
+
+    /// <summary>
+    /// The stock ledger's own negative-stock refusal, the store's last check behind the participant's pre-check. Only
+    /// the input issue's physical-stock refusal carries the ledger's shortfall; the ledger counts no reservation. Every
+    /// other movement keeps its plain refusal.
+    /// </summary>
+    internal static InventoryManufacturingRealizationException NegativeStockRefusal(StockShortfall? shortfall,
+        string negativeStockCode)
+    {
+        if (shortfall is null
+            || negativeStockCode != InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient)
+        {
+            return Refused(409, negativeStockCode);
+        }
+
+        try
+        {
+            return InventoryManufacturingRealizationException.Refused(409, negativeStockCode,
+                new InventoryManufacturingStockShortfallV1(shortfall.MovementKind, shortfall.Source.Kind,
+                    shortfall.Source.Id, shortfall.Source.LineId, shortfall.Position.LabelId,
+                    shortfall.Position.ProductId, shortfall.Position.LocationId, shortfall.Requested,
+                    shortfall.Available, reservedKg: null));
+        }
+        catch (ArgumentException)
+        {
+            return Refused(409, negativeStockCode);
+        }
     }
 
     private async Task<InputTrace> InputTraceAsync(Guid orderId, MaterialLabel label, string missingIssueCode,
@@ -533,7 +588,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         }
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         {
-            throw Refused(409, negativeStockCode);
+            throw NegativeStockRefusal(exception.Shortfall, negativeStockCode);
         }
         catch (InventoryStoreException exception)
         {

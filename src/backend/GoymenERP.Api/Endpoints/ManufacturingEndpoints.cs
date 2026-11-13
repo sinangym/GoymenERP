@@ -464,7 +464,7 @@ public static class ManufacturingEndpoints
             .WithName("IssueManufacturingInputV1")
             .Accepts<IssueInventoryInputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true, IssueInputConflictCodes);
+            .WithIssueInputProblems();
 
         group.MapPost("/orders/{orderId:guid}/input-returns", async (
                 Guid orderId,
@@ -625,6 +625,19 @@ public static class ManufacturingEndpoints
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
 
+    // SAT-D318 (owner decision of 2026-11-13): the input issue's 409 is the write set's problem plus an optional
+    // `stockShortfall` member that names the issue Inventory refused for physical stock. Same status, same codes.
+    private static RouteHandlerBuilder WithIssueInputProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesManufacturingInputIssueConflict(IssueInputConflictCodes)
+            .ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
     // Üretim U2-a: the approval reads each parent roll's current label for the slitting gate, so Inventory's label version /
     // read conflict (409) joins its write set; its 422 set is the write set (which already names the label refusal).
     private static RouteHandlerBuilder WithApprovePlanProblems(this RouteHandlerBuilder builder) =>
@@ -747,7 +760,7 @@ public static class ManufacturingEndpoints
                 detail: "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor.",
                 statusCode: StatusCodes.Status404NotFound),
             ManufacturingApiStatus.Conflict => Problem(StatusCodes.Status409Conflict, result.Code!, result.Field,
-                result.ExpectedVersion, result.CurrentVersion),
+                result.ExpectedVersion, result.CurrentVersion, result.StockShortfall),
             ManufacturingApiStatus.Unprocessable => Problem(StatusCodes.Status422UnprocessableEntity, result.Code!,
                 result.Field),
             ManufacturingApiStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
@@ -796,7 +809,7 @@ public static class ManufacturingEndpoints
     };
 
     private static IResult Problem(int statusCode, string code, string? field, long? expectedVersion = null,
-        long? currentVersion = null)
+        long? currentVersion = null, ManufacturingStockShortfallViewV1? stockShortfall = null)
     {
         var extensions = new Dictionary<string, object?> { ["code"] = code };
         if (field is not null)
@@ -808,6 +821,12 @@ public static class ManufacturingEndpoints
         {
             extensions["expectedVersion"] = expected.ToString(CultureInfo.InvariantCulture);
             extensions["currentVersion"] = current.ToString(CultureInfo.InvariantCulture);
+        }
+
+        // SAT-D318: optional, only on a fresh physical-stock refusal of an input issue; never on a replayed answer.
+        if (stockShortfall is not null)
+        {
+            extensions["stockShortfall"] = stockShortfall;
         }
 
         return Results.Problem(statusCode: statusCode, extensions: extensions);
