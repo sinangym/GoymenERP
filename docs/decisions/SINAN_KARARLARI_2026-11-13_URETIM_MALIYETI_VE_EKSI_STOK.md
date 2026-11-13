@@ -17,7 +17,7 @@ turun aynı konudaki "yazar okuması" ve `NEEDS-SINAN` kaydının önüne geçer
 `ACIK_KARARLAR` değişmez; hiçbir `OPEN-*` kapatılmaz (`OPEN-004` dahil).
 
 **Kimlikler:** Maliyet zinciri EK59'dan beri SAT-D serisindedir (Stok için ayrı önek yoktur); üretim emrinin kütle
-kuralı URT-D serisindedir. `origin/main` `63041c6c`'de (bu dalın çıkış noktası; sonraki `84dcb86b` `docs/decisions` değiştirmez) en büyük kimlikler SAT-D315 ve URT-D39'dur
+kuralı URT-D serisindedir. `origin/main` `63041c6c`'de (bu dalın çıkış noktası; sonraki `84dcb86b` ve `fb07312b` `docs/decisions` değiştirmez) en büyük kimlikler SAT-D315 ve URT-D39'dur
 (`git grep -ohE "SAT-D[0-9]+|URT-D[0-9]+" origin/main -- docs/decisions`). Aynı gün `origin` üzerindeki bütün dalların
 `docs/decisions` eklemeleri tarandı; SAT-D316+ veya URT-D40+ geçmiyordu (#1146 ve #1107 dalları karar dosyası
 eklemiyor). Yeni önek icat edilmedi.
@@ -69,6 +69,12 @@ Aynı oturumdaki 5. soru süreç sorusudur; karar belgesine girmez.
 
 ## Kararlar
 
+**Okuma notu (1. tur satırları):** aşağıdaki 1. tur satırlarının bazı cümleleri sonraki turlarda geri alındı; satırlar
+tur kaydı olarak aynen bırakılmıştır. Geri alınanlar: URT-D40 (2)–(3)'teki "yazar okumasıdır" ve "Boyama kapsanmaz"
+kayıtları → URT-D41 (3)–(4) · SAT-D318 kapsam sınırı ile (5)–(6)'daki "o hal için SAT-D301 (2) geçerlidir" → SAT-D323
+(1)–(2) · SAT-D318 (2)'deki ret, satışta kantar farkı hali için → SAT-D319 (8). Kod şeridi bu satırları sonraki tur
+kararlarıyla birlikte okur; çelişkide sonraki tur geçerlidir.
+
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | SAT-D316 | Fire anahtarı kapalıyken hurdanın maliyetten düşülmesi (soru 1; #66 6826603722 (a), 6826763903 (c)–(d)) | (1) **Tartılan hurda × hurda fiyatı maliyetten düşülür; kalan mamule yüklenir.** (2) **Proses firesi (tartılmayan kayıp) sıfır değerlidir**; maliyeti mamulde kalır (kayıttaki ifade "sağlam ürüne kalır"dır; 2. kaliteyi de kapsayan "mamul" ifadesi SAT-D307 (2) ile hizalı **yazar okumasıdır**). (3) **Hurda fiyatı dönemlik, elle girilir.** Bu belge formülün payını ve paydasını yazmaz: paydanın anahtar kapalıyken de SAT-D307'deki "sağlam kg + 2. kalite kg" olduğu #1146 kodundaki okumadır, Sinan'ın sözü değildir; K3 review'u SAT-D308 uygulama notundaki golden şartıyla doğrular, golden gelmeden formül kilitli sayılmaz. (4) Sinan'ın eki: **hurda ayrıca satılır**; "o zamana kadar" maliyetlendirme için **elle fiyat girilebilir**. "O zamana kadar"ın "hurda satılana kadar" olduğu **yazar okumasıdır**. (5) SAT-D308 ile ilişki: bu madde SAT-D305 (2) fire anahtarı **kapalıyken** geçerlidir; anahtar açıkken SAT-D307 (1)–(2) değişmez. SAT-D308 (1) "fire maliyeti ürün maliyetine yüklenmez" ve (2) "ayrı fire/dönem gideri olarak raporlanır" cümlelerinin **tutarını** bu madde belirler: ürüne yüklenmeyen ve ayrı raporlanan tutar tartılan hurda × hurda fiyatıdır, firenin bunu aşan maliyeti mamule yüklenir. Daha yeni kullanıcı kararı olduğu için (1)–(2), SAT-D308 (1)–(2)'nin **kısmen yerine geçer** (SAT-D308 (1) "fire maliyeti ürün maliyetine yüklenmez" diyordu; anahtar kapalıyken firenin hurda değerini aşan maliyeti artık ürüne **yüklenir**); SAT-D308 (3)–(6) aynen geçerlidir (gider kaydı hesap eşlemesi gelmeden etkinleşmez). İlişkinin bu ifadesi **yazar okumasıdır**. (6) 6826763903 (d) seçenek metnindeki ayrıntılar — fiyatı yetkili biri her ay için TL/kg girer, geçmiş dönem değişmez, fiyat girilmemişse hesap tahmin yapmaz ve "okunamadı" der — Sinan'ın bugün "evet" dediği kaydın parçasıdır; bugünkü soruda tek tek sayılmadıkları için "evet"in bunları da kapsadığı **yazar okumasıdır**. Fiyat yokken "okunamadı" ayrıca fail-closed kuralın gereğidir (tahminle para üretilmez). | `ProductionReceiptCostCalculatorV1` (#1146), Üretim maliyet portu, hurda fiyatı girişi (ayrı dilim), fire raporu |
@@ -78,7 +84,7 @@ Aynı oturumdaki 5. soru süreç sorusudur; karar belgesine girmez.
 
 ## 2. tur — soru ve cevaplar (Issue #66 yorumu 6849107070)
 
-Tablo o yorumdaki kaydın aynısıdır; "Okunuş" sütunu Sinan'ın sözü değildir. 8. soru (#1149 Faz 0 (c)) süreç sorusudur
+Tablo o yorumdaki kaydın özetidir (cevap etiketleri aynen; numaralar ve soru/açıklama metinleri kısaltılmıştır, asıl metin yorumdadır); "Okunuş" sütunu Sinan'ın sözü değildir. 8. soru (#1149 Faz 0 (c)) süreç sorusudur
 ve bu belgeye girmez; kaydı aynı yorumdadır.
 
 | # | Soru (özet) | Cevap (Sinan, aynen) | Seçilmeyenler | Okunuş |
@@ -139,7 +145,7 @@ ve bu belgeye girmez; kaydı aynı yorumdadır.
 
 ## 3. tur — soru ve cevaplar (Issue #66 yorumu 6849616256)
 
-Tablo o yorumdaki kaydın aynısıdır; "(Önerilen)" işaretleri soruyu soranındır; "Okunuş" sütunu Sinan'ın sözü değildir.
+Tablo o yorumdaki kaydın özetidir (cevap etiketleri aynen; numaralar ve soru/açıklama metinleri kısaltılmıştır, asıl metin yorumdadır); "(Önerilen)" işaretleri soruyu soranındır; "Okunuş" sütunu Sinan'ın sözü değildir.
 
 | # | Soru (özet) | Cevap (Sinan, aynen) | Seçilmeyenler | Okunuş |
 |---|---|---|---|---|
@@ -169,7 +175,7 @@ Tablo o yorumdaki kaydın aynısıdır; "(Önerilen)" işaretleri soruyu soranı
 
 ## 4.–8. tur — soru ve cevaplar (Issue #66 yorumları 6850620225, 6850826600, 6851081845, 6851540840, 6851616762)
 
-Tablo o yorumlardaki kayıtların aynısıdır; cevap sütunu Sinan'ın seçtiği seçeneğin etiketidir (aynen). "(Önerilen)"
+Tablo o yorumlardaki kayıtların özetidir (cevap etiketleri aynen; soru/seçenek metinleri kısaltılmıştır, asıl metin yorumlardadır); cevap sütunu Sinan'ın seçtiği seçeneğin etiketidir (aynen). "(Önerilen)"
 işaretleri soruyu soranındır ve kayıtta nasıl geçiyorsa öyle yazılmıştır. Soruyu soranın notları karar değildir.
 
 | # | Soru | Cevap (Sinan, aynen) | Seçilen seçeneğin açıklaması | Seçilmeyenler |
@@ -222,6 +228,52 @@ işaretleri soruyu soranındır ve kayıtta nasıl geçiyorsa öyle yazılmışt
   - Boyama dışındaki, girdisi kg olmayan süreçler ve DEC-PRDCT-006 kalemleri (1.–2. turdan açık).
   - SAT-D323 (5)'te satış günü için geçerli ortalamanın, o güne ait kayıtlar sonradan düzeltildiyse hangi veriyle
     hesaplanacağı (port sözleşmesi ve K3 review'u; formül golden'ı gerekir).
+
+### İnceleme sonrası ekler (DOCS-REVIEW bulguları; yeni karar değildir, ilişki ve `NEEDS-SINAN` kaydıdır)
+
+Bu bölüm Sinan'a sorulmamış hiçbir noktayı karara bağlamaz; yalnız eksik atıfları ve açık soruları yazar.
+
+- **`NEEDS-SINAN` — 12 Kasım "tartı farkı yalnız kaydedilir, sevk durmaz" kararıyla ilişki.** Sinan'ın Issue #66 yorumu
+  `6818788693` (12 Kasım 2026, 2. tur) madde 2: "Tartı farkı (F-020 / OPEN-004): Teorik ve kantar ağırlığı farkı
+  yalnız kaydedilir ve raporlanır; sevk durmaz (tolerans/onay akışı yok)." Bu karar `main`'de geçerli olarak anılır
+  (`SINAN_KARARLARI_2026-11-12_LOJISTIK_F012_F020.md` girişi). 13 Kasım cevapları ise aynı kantar farkına satışta onay
+  (SAT-D319 (6), SAT-D320 (1)) ve blok (SAT-D321 (3)) getirir. Bu turlarda 12 Kasım kararı Sinan'a hatırlatılmadı;
+  iki kararın birlikte nasıl okunacağı **sorulmadı**. Olası okumalar: (a) 13 Kasım cevapları daha yeni karar olarak
+  12 Kasım madde 2'nin yerine geçer; (b) kapsamlar ayrıdır (12 Kasım: teorik ↔ kantar ağırlığı farkı, Lojistik
+  yükleme/sevk; 13 Kasım: sistem stoğu ↔ kantar farkı, satış ve stok kaydı). Hangisinin geçerli olduğu bu belgede
+  **seçilmez**. Cevap gelene kadar: bu belge 12 Kasım madde 2'yi değiştirmez ve "yerine geçer" demez; kantar farkı
+  kod dilimi **sevki/satışı bekleten onay ve blok davranışını etkinleştirmez** (SAT-D319 (6), SAT-D320 (1), SAT-D321
+  (1)–(3)'ün bekletme/ret kısmı); farkın kaydı ve raporu (SAT-D319 (4), her iki kararla uyumlu) bu kayıttan
+  etkilenmez. `OPEN-004` kapatılmaz.
+- **Satıştaki tolerans bantlarının dayanağı.** SAT-D321 (3)'teki "yükleme toleransı bantları"nın satışta uygulanması
+  `SINAN_KARARLARI_2026-10-25_SATIS.md` SAT-D5'e dayanır (`OPEN-004` başlangıç değerleri satışta da geçerli: %1 uyarı /
+  %2 onay / %3 blok; ürün/işlem bazında Ayarlar'dan değişir); yüzdeleri kimin değiştireceği aynı dosyada SAT-D15 ve
+  SAT-D17'dedir. Bu üç karar değişmez. %0,5 sınırı (SAT-D319 (5)) bunlardan ayrı bir Ayarlar değeridir.
+- **Bantlar geçici varsayımdır.** %1/%2/%3 değerleri `ACIK_KARARLAR.md` `OPEN-004` (KISMEN) ve geçici varsayım notu
+  gereği saha golden testi ve nihai işletme onayı bekleyen başlangıç değerleridir. SAT-D321 (3)'teki "%3 üstü yine
+  bloklanır" cümlesi bu değerleri nihai yapmaz. Aynı cümledeki "`DEC-STK-009` aynen geçerlidir" ifadesi 5.1 cevabının
+  sözü değil, **yazar okumasıdır** (belge `DEC-STK-009`'u değiştirmediği için).
+- **`NEEDS-SINAN` — iki kontrol aynı satışta çakışınca.** (i) Fark hem %0,5'in hem onay bandının üstündeyse (ör.
+  %2–%3) tek onay ikisini karşılar mı, iki ayrı onay mı gerekir; bant onayını kim verir (SAT-D320 (1) Satış Müdürü
+  der; EK-14 No 63 mal kabulde onay bandı için Depo/Lojistik yöneticisini anar). (ii) EK-14 No 62–63'te blok bandı
+  "varsayılan ret"tir ve iki kademeli istisna onayıyla aşılabilir (mal kabul için yazılmıştır); 5.1 cevabı "geçmez"
+  der. İstisna yolunun satışta geçerli olup olmadığı sorulmadı. (iii) Bantların ölçü tabanı (ürün/işlem profili,
+  satır) ile %0,5'in tabanı (irsaliye toplamı, sistem kg) farklıdır; 5.1 örneği ikisini aynı sayıyla gösterir, hangi
+  tabanın hangi kontrolde kullanılacağı sorulmadı. (iv) Tek %0,5 oranının `DEC-STK-009`'daki "ürün ve işlem profiline
+  göre" ilkesine tabi olup olmadığı (SAT-D321 (5) boyalı ürün için ayrı oran tanımaz). Cevap gelene kadar kod dilimi
+  iki onayı birleştiren ya da birini ötekinin yerine sayan davranışı etkinleştirmez.
+- **`DEC-STK-004` koruması.** SAT-D322 (1)–(2) ile `DEC-STK-004` ("serbest miktar aşılmaz") ilişkisi `NEEDS-SINAN`'dır
+  (yukarıda). Cevap gelene kadar kod dilimi **tahsis kısıtını gevşeten davranışı etkinleştirmez**; `DEC-STK-004` ve
+  DB kısıtları olduğu gibi kalır.
+- **`OPEN-005`.** URT-D41 (2) ve URT-D42 (2) toleransı artı yönde kaldırır; `OPEN-005` metni ("±%2") değiştirilmez ve
+  `OPEN-005` KISMEN kalır, kapatılmaz.
+- **SAT-D301 (1).** 4.14'te geçersiz sayılan cümlenin "eksi stokta maliyet hesaplanmaz" kısmı için: bu belge yalnız
+  SAT-D301 (2)'yi ("giriş gelince düzelir") aşılmış sayar; SAT-D301 (1)'in fail-closed yönü yazar okuması olarak
+  sürer ve ihlal edilmiş kayıt için emniyet davranışı `NEEDS-SINAN` kalır.
+- **Genel Sınırlar'daki "Boyama ve girdisi kg olmayan süreçler" maddesi:** 2. turda yalnız **Boyama** cevaplandı
+  (URT-D41 (3)); girdisi kg olmayan öteki süreçler `NEEDS-SINAN` kalır (2. tur ve 4.–8. tur Sınırlar'ında yazılı).
+- **1. tur kaydı.** 1. tur soru–cevabının Issue #66'da ayrı kaydı yoktur (bkz. Kaynak); SAT-D317 dahil 1. tur
+  kararlarının tek kaydı bu belgedir. Kaydın #66'ya yazılması Sinan'ın onayına bırakılmıştır.
 
 ## Kod etkisi (kod şeridi; bu PR'da yapılmadı)
 
