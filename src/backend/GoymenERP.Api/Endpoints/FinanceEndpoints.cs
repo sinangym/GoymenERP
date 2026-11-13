@@ -369,12 +369,6 @@ public static class FinanceEndpoints
             : PermissionDecision.Denied;
     }
 
-    /// <summary>
-    /// DEC-FIN-016 first release: the customer cheque / note portfolio. Receive (no money effect), a status change
-    /// without a money effect, and the collection — the only money effect (one recorded receipt source, one money
-    /// event). Each command needs an <c>Idempotency-Key</c> and answers like every Finance command (200 / 422 / 409;
-    /// 403 / 503 code-less); the route's instrument id and the body's must agree, else 400.
-    /// </summary>
     // F-005 D1 (FNS-D17…FNS-D21, FNS-D26): manual official sales invoice record. Record and approve only; there is no
     // edit, cancel or withdraw route.
     private static void MapOfficialSalesInvoiceEndpoints(IEndpointRouteBuilder endpoints)
@@ -487,7 +481,10 @@ public static class FinanceEndpoints
             .WithTags("Finance")
             .RequireAuthorization()
             .RequireCompanyContext()
-            .WithIdempotencyContract(StatusCodes.Status200OK)
+            // The replayable results: the stored approval (200) and the recorded terminal refusals (ADR-011 §7):
+            // a stale version (409) and an unknown record (422).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
             .Accepts<FinanceOfficialSalesInvoiceApproveRequestV1>("application/json")
             .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status200OK)
             .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status409Conflict)
@@ -500,6 +497,12 @@ public static class FinanceEndpoints
             .ProducesErpServiceUnavailable();
     }
 
+    /// <summary>
+    /// DEC-FIN-016 first release: the customer cheque / note portfolio. Receive (no money effect), a status change
+    /// without a money effect, and the collection — the only money effect (one recorded receipt source, one money
+    /// event). Each command needs an <c>Idempotency-Key</c> and answers like every Finance command (200 / 422 / 409;
+    /// 403 / 503 code-less); the route's instrument id and the body's must agree, else 400.
+    /// </summary>
     private static void MapCustomerInstrumentEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(CustomerInstrumentsPath, async (

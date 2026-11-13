@@ -2444,7 +2444,12 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
                 ["RecordFinanceOfficialSalesInvoiceV1"] = [StatusCodes.Status200OK],
-                ["ApproveFinanceOfficialSalesInvoiceV1"] = [StatusCodes.Status200OK],
+                // F-005 D1 (ADR-011 §7): approve replays its recorded terminal refusals — a stale version (409)
+                // and an unknown record (422) — as well as the approval.
+                ["ApproveFinanceOfficialSalesInvoiceV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["ApplyFinanceOfficialInvoiceImportV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,

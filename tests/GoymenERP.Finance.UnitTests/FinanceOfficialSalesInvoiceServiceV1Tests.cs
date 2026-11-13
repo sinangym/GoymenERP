@@ -5,6 +5,7 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -140,29 +141,71 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     }
 
     [Fact]
-    public async Task Stale_expected_version_is_a_version_conflict()
+    public async Task Stale_expected_version_is_a_recorded_conflict_that_the_same_key_replays_after_the_record_moves()
     {
         var fixture = Fixture.Create();
         await Record(fixture);
+        fixture.Db.ChangeTracker.Clear();
+        var documents = new Documents();
 
-        var result = await fixture.Service("checker", new Documents()).ApproveAsync(Context("checker"),
+        var result = await fixture.Service("checker", documents).ApproveAsync(Context("checker"),
             new CommandMetadata("approve-key"), Approve() with { ExpectedVersion = "2" }, default);
+        fixture.Db.ChangeTracker.Clear();
+        var stored = Assert.Single(await ApprovalCommands(fixture));
+        var auditAfterRefusal = fixture.Audit.Events.Count;
+        var pending = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        var approved = await fixture.Service("third", new Documents())
+            .ApproveAsync(Context("third"), new CommandMetadata("approve-key-2"), Approve(), default);
+        fixture.Db.ChangeTracker.Clear();
+        var replay = await fixture.Service("checker", documents).ApproveAsync(
+            Context("checker") with { CorrelationId = "correlation-retry" }, new CommandMetadata("approve-key"),
+            Approve() with { ExpectedVersion = "2" }, default);
 
         Assert.Equal(CommandOutcome.VersionConflict, result.Outcome);
-        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
-        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval, stored.Status);
+        Assert.Equal([new ValidationIssue("expectedVersion", "version_conflict")], result.Issues);
+        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval, pending.Status);
+        Assert.Equal(Invoice, stored.InvoiceId);
+        Assert.Equal("checker", stored.ActorId);
+        Assert.Equal("correlation-checker", stored.CorrelationId);
+        Assert.Contains("\"version_conflict\"", stored.ResultJson, StringComparison.Ordinal);
+        Assert.Equal(1, auditAfterRefusal);
+        Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(CommandOutcome.VersionConflict, replay.Outcome);
+        Assert.Equal(result.Issues, replay.Issues);
+        Assert.Equal("correlation-checker", replay.OriginalCorrelationId);
+        Assert.Equal(0, documents.Calls);
+        Assert.Equal(2, (await ApprovalCommands(fixture)).Count);
     }
 
     [Fact]
-    public async Task Approving_an_unknown_record_is_refused()
+    public async Task Approving_an_unknown_record_is_a_recorded_refusal_that_the_same_key_replays_after_the_record_appears()
     {
         var fixture = Fixture.Create();
+        var documents = new Documents();
 
-        var result = await fixture.Service("checker", new Documents())
+        var result = await fixture.Service("checker", documents)
             .ApproveAsync(Context("checker"), new CommandMetadata("approve-key"), Approve(), default);
+        fixture.Db.ChangeTracker.Clear();
+        var stored = Assert.Single(await ApprovalCommands(fixture));
+        await Record(fixture);
+        fixture.Db.ChangeTracker.Clear();
+        var replay = await fixture.Service("checker", documents).ApproveAsync(
+            Context("checker") with { CorrelationId = "correlation-retry" }, new CommandMetadata("approve-key"),
+            Approve(), default);
 
         Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
-        Assert.Contains(result.Issues, issue => issue.Field == "invoiceId" && issue.Code == "invoice_not_found");
+        Assert.Equal([new ValidationIssue("invoiceId", "invoice_not_found")], result.Issues);
+        Assert.Equal(Invoice, stored.InvoiceId);
+        Assert.Contains("\"invoice_not_found\"", stored.ResultJson, StringComparison.Ordinal);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(CommandOutcome.ValidationFailed, replay.Outcome);
+        Assert.Equal(result.Issues, replay.Issues);
+        Assert.Equal("correlation-checker", replay.OriginalCorrelationId);
+        Assert.Equal(0, documents.Calls);
+        var record = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval, record.Status);
+        Assert.DoesNotContain(fixture.Audit.Events, e => e.EventType == "finance.official-sales-invoice.approved.v1");
     }
 
     [Fact]
@@ -298,8 +341,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     [Theory]
     [InlineData(PermissionDecision.Denied, CommandOutcome.Denied)]
     [InlineData(PermissionDecision.Unavailable, CommandOutcome.Unavailable)]
-    public async Task Record_and_approve_are_refused_without_fresh_authority(PermissionDecision decision,
-        CommandOutcome outcome)
+    public async Task Record_and_approve_are_refused_without_fresh_authority_before_the_shape_is_checked(
+        PermissionDecision decision, CommandOutcome outcome)
     {
         var fixture = Fixture.Create();
         await Record(fixture);
@@ -312,11 +355,19 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
             default);
         var approved = await fixture.Service("checker", documents, new Authority(decision))
             .ApproveAsync(Context("checker"), new CommandMetadata("approve-key"), Approve(), default);
+        var invalidRecord = await fixture.Service("maker", documents, new Authority(decision)).RecordAsync(
+            Context("maker"), new CommandMetadata("key-3"), Invalid("officialNo-empty"), default);
+        var emptyApproval = await fixture.Service("checker", documents, new Authority(decision)).ApproveAsync(
+            Context("checker"), new CommandMetadata("approve-key-2"), Approve() with { InvoiceId = Guid.Empty },
+            default);
 
         Assert.Equal(outcome, recorded.Outcome);
         Assert.Equal(outcome, approved.Outcome);
+        Assert.Equal(outcome, invalidRecord.Outcome);
+        Assert.Equal(outcome, emptyApproval.Outcome);
         Assert.Equal(0, documents.Calls);
         Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Single(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
         if (decision == PermissionDecision.Unavailable)
         {
             Assert.Contains(recorded.Issues, issue => issue.Code == "finance_permission_mapping_unavailable");
@@ -324,19 +375,57 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     }
 
     [Fact]
-    public async Task Authority_revoked_before_save_writes_nothing()
+    public async Task Authority_revoked_at_the_last_fence_before_the_record_save_writes_nothing()
     {
+        var probe = new Authority();
+        var probed = await Fixture.Create().Service("maker", new Documents(), probe)
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key"), Request(), default);
         var fixture = Fixture.Create();
-        var authority = new Authority(PermissionDecision.Allowed, PermissionDecision.Allowed,
-            PermissionDecision.Allowed, PermissionDecision.Denied);
+        var documents = new Documents();
+        var authority = new Authority([.. Enumerable.Repeat(PermissionDecision.Allowed, probe.Calls - 1),
+            PermissionDecision.Denied]);
 
-        var result = await fixture.Service("maker", new Documents(), authority)
+        var result = await fixture.Service("maker", documents, authority)
             .RecordAsync(Context("maker"), new CommandMetadata("record-key"), Request(), default);
 
+        Assert.Equal(CommandOutcome.Succeeded, probed.Outcome);
         Assert.Equal(CommandOutcome.Denied, result.Outcome);
+        Assert.Equal(probe.Calls, authority.Calls);
+        Assert.Equal(1, documents.Calls);
         Assert.Empty(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
         Assert.Empty(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
         Assert.Empty(fixture.Audit.Events);
+    }
+
+    [Fact]
+    public async Task Authority_revoked_at_the_last_fence_before_the_approval_save_leaves_the_record_pending()
+    {
+        var probeFixture = Fixture.Create();
+        await Record(probeFixture);
+        probeFixture.Db.ChangeTracker.Clear();
+        var probe = new Authority();
+        var probed = await probeFixture.Service("checker", new Documents(), probe)
+            .ApproveAsync(Context("checker"), new CommandMetadata("approve-key"), Approve(), default);
+        var fixture = Fixture.Create();
+        await Record(fixture);
+        fixture.Db.ChangeTracker.Clear();
+        var documents = new Documents();
+        var authority = new Authority([.. Enumerable.Repeat(PermissionDecision.Allowed, probe.Calls - 1),
+            PermissionDecision.Denied]);
+
+        var result = await fixture.Service("checker", documents, authority)
+            .ApproveAsync(Context("checker"), new CommandMetadata("approve-key"), Approve(), default);
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.Equal(CommandOutcome.Succeeded, probed.Outcome);
+        Assert.Equal(CommandOutcome.Denied, result.Outcome);
+        Assert.Equal(probe.Calls, authority.Calls);
+        Assert.Equal(1, documents.Calls);
+        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval, stored.Status);
+        Assert.Null(stored.ApprovedBy);
+        Assert.Empty(await ApprovalCommands(fixture));
+        Assert.DoesNotContain(fixture.Audit.Events, e => e.EventType == "finance.official-sales-invoice.approved.v1");
     }
 
     [Fact]
@@ -360,8 +449,147 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         Assert.Equal(ReadOutcome.Found, list.Outcome);
         Assert.Empty(list.Resource!.Items);
         Assert.Equal(CommandOutcome.ValidationFailed, approve.Outcome);
-        Assert.Contains(approve.Issues, issue => issue.Code == "invoice_not_found");
+        Assert.Equal([new ValidationIssue("invoiceId", "invoice_not_found")], approve.Issues);
         Assert.Equal(ReadOutcome.Denied, crossContext.Outcome);
+        // The foreign refusal is recorded in the foreign company only; the record and its commands are untouched.
+        var foreignCommand = Assert.Single(await ApprovalCommands(foreign));
+        Assert.Equal(ForeignCompany, foreignCommand.CompanyId);
+        fixture.Db.ChangeTracker.Clear();
+        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval, stored.Status);
+        Assert.Empty(await ApprovalCommands(fixture));
+    }
+
+    [Fact]
+    public async Task The_same_idempotency_key_in_two_companies_records_two_independent_invoices()
+    {
+        var databaseName = $"finance-official-sales-{Guid.NewGuid():N}";
+        var fixture = Fixture.Create(Company, databaseName);
+        var foreign = Fixture.Create(ForeignCompany, databaseName);
+        var foreignInvoice = Guid.Parse("20000000-0000-0000-0000-0000000000b2");
+
+        var first = await fixture.Service("maker", new Documents())
+            .RecordAsync(Context("maker"), new CommandMetadata("shared-key"), Request(), default);
+        var second = await foreign.Service("maker", new Documents()).RecordAsync(Context("maker", ForeignCompany),
+            new CommandMetadata("shared-key"), Request() with { InvoiceId = foreignInvoice }, default);
+
+        Assert.Equal(CommandOutcome.Succeeded, first.Outcome);
+        Assert.Equal(CommandOutcome.Succeeded, second.Outcome);
+        Assert.False(first.IsReplay);
+        Assert.False(second.IsReplay);
+        Assert.Equal(Company, first.Resource!.CompanyId);
+        Assert.Equal(ForeignCompany, second.Resource!.CompanyId);
+        Assert.Equal(foreignInvoice, second.Resource.InvoiceId);
+        Assert.Equal(Invoice, Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync()).Id);
+        Assert.Equal(foreignInvoice,
+            Assert.Single(await foreign.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync()).Id);
+        Assert.Single(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+        Assert.Single(await foreign.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Record_refuses_a_currency_that_is_not_a_settings_money_candidate_and_records_nothing()
+    {
+        var fixture = Fixture.Create();
+        var documents = new Documents();
+        var other = new Candidates([new MoneyCurrencyCandidateV1(Guid.NewGuid(), "EUR", "SENTETIK Avro")]);
+
+        var result = await fixture.Service("maker", documents, currencies: other)
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key"), Request(), default);
+
+        Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal([new ValidationIssue("currencyId", "currency_not_a_candidate")], result.Issues);
+        Assert.Equal(1, other.Calls);
+        Assert.Equal(0, documents.Calls);
+        Assert.Empty(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+        Assert.Empty(fixture.Audit.Events);
+    }
+
+    public static TheoryData<string, CommandOutcome, string?> UnusableCurrencySources => new()
+    {
+        { "unavailable", CommandOutcome.Unavailable, "settings_provider_unavailable" },
+        { "malformed", CommandOutcome.Unavailable, "settings_provider_unavailable" },
+        { "empty", CommandOutcome.ValidationFailed, "currency_not_a_candidate" },
+        { "denied", CommandOutcome.Denied, null },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnusableCurrencySources))]
+    public async Task Record_fails_closed_when_the_settings_money_candidates_are_unusable(string source,
+        CommandOutcome outcome, string? code)
+    {
+        var fixture = Fixture.Create();
+        var documents = new Documents();
+
+        var result = await fixture.Service("maker", documents, currencies: CurrencySource(source))
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key"), Request(), default);
+
+        Assert.Equal(outcome, result.Outcome);
+        if (code is null)
+        {
+            Assert.Empty(result.Issues);
+        }
+        else
+        {
+            Assert.Equal([new ValidationIssue("currencyId", code)], result.Issues);
+        }
+        Assert.Equal(0, documents.Calls);
+        Assert.Empty(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Approve_checks_the_currency_again_and_the_record_stays_pending()
+    {
+        var fixture = Fixture.Create();
+        await Record(fixture);
+        fixture.Db.ChangeTracker.Clear();
+        var documents = new Documents();
+        var other = new Candidates([new MoneyCurrencyCandidateV1(Guid.NewGuid(), "EUR", "SENTETIK Avro")]);
+
+        var result = await fixture.Service("checker", documents, currencies: other)
+            .ApproveAsync(Context("checker"), new CommandMetadata("approve-key"), Approve(), default);
+        var unavailable = await fixture.Service("checker", documents, currencies: CurrencySource("unavailable"))
+            .ApproveAsync(Context("checker"), new CommandMetadata("approve-key-2"), Approve(), default);
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal([new ValidationIssue("currencyId", "currency_not_a_candidate")], result.Issues);
+        Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
+        Assert.Equal(0, documents.Calls);
+        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval, stored.Status);
+        Assert.Empty(await ApprovalCommands(fixture));
+    }
+
+    [Fact]
+    public async Task Record_stores_the_validated_normalised_amounts_and_the_same_raw_body_replays()
+    {
+        var fixture = Fixture.Create();
+        var raw = Request() with
+        {
+            PayableAmount = "01250.50", TaxBaseFunctionalAmount = "0001042.08", WithholdingFunctionalAmount = "00",
+        };
+
+        var first = await fixture.Service("maker", new Documents())
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key"), raw, default);
+        fixture.Db.ChangeTracker.Clear();
+        var replay = await fixture.Service("maker", new Documents())
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key"), raw, default);
+        var normalisedBody = await fixture.Service("maker", new Documents())
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key"), Request(), default);
+
+        Assert.Equal(CommandOutcome.Succeeded, first.Outcome);
+        Assert.Equal("1250.50", first.Resource!.PayableAmount);
+        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Equal("1250.50", stored.PayableAmountText);
+        Assert.Equal("1042.08", stored.TaxBaseFunctionalAmountText);
+        Assert.Equal("0", stored.WithholdingFunctionalAmountText);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(first.Resource, replay.Resource);
+        // The key binds the body as sent: the same values written differently are another payload.
+        Assert.Equal(CommandOutcome.IdempotencyConflict, normalisedBody.Outcome);
     }
 
     [Fact]
@@ -403,9 +631,14 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
 
         var detail = await service.GetAsync(Context("reader"), Invoice, default);
         var list = await service.ListAsync(Context("reader"), true, null, default);
+        var emptyId = await service.GetAsync(Context("reader"), Guid.Empty, default);
+        var badCursor = await service.ListAsync(Context("reader"), true, "not-a-cursor", default);
 
         Assert.Equal(outcome, detail.Outcome);
         Assert.Equal(outcome, list.Outcome);
+        // Authority comes before the shape: a refused reader never learns which inputs are malformed.
+        Assert.Equal(outcome, emptyId.Outcome);
+        Assert.Equal(outcome, badCursor.Outcome);
     }
 
     [Fact]
@@ -450,6 +683,28 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     }
 
     [Fact]
+    public async Task The_write_guard_refuses_an_approval_by_the_recorder_and_accepts_another_actor()
+    {
+        var fixture = Fixture.Create();
+        await Record(fixture);
+        fixture.Db.ChangeTracker.Clear();
+
+        var row = await fixture.Db.OfficialSalesInvoices.SingleAsync();
+        row.Status = (int)FinanceOfficialSalesInvoiceStatusV1.Approved;
+        row.Version = 2;
+        row.ApprovedBy = row.RecordedBy;
+        row.ApprovedAtUtc = DateTimeOffset.UtcNow;
+        Assert.Throws<InvalidOperationException>(() => fixture.Db.SaveChanges());
+        row.ApprovedBy = "checker";
+        fixture.Db.SaveChanges();
+        fixture.Db.ChangeTracker.Clear();
+
+        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Equal((int)FinanceOfficialSalesInvoiceStatusV1.Approved, stored.Status);
+        Assert.Equal("checker", stored.ApprovedBy);
+    }
+
+    [Fact]
     public void The_migration_is_pure_ddl_up_and_its_rollback_refuses_first_while_a_record_is_stored()
     {
         var migration = new AddOfficialSalesInvoices();
@@ -461,6 +716,24 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         Assert.Contains("[finance].[OfficialSalesInvoiceCommands]", guard, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
     }
+
+    private static async Task<List<FinanceOfficialSalesInvoiceCommandRow>> ApprovalCommands(Fixture fixture) =>
+        await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking()
+            .Where(command => command.CommandName == FinanceOfficialSalesInvoiceServiceV1.ApproveCommand)
+            .ToListAsync();
+
+    private static ISettingsMoneyCandidateReader CurrencySource(string source) => source switch
+    {
+        "unavailable" => new FailingCandidates("settings_provider_unavailable"),
+        "denied" => new FailingCandidates("settings_access_denied"),
+        "malformed" => new Candidates(
+        [
+            new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK A"),
+            new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK B"),
+        ]),
+        "empty" => new Candidates([]),
+        _ => throw new ArgumentOutOfRangeException(nameof(source)),
+    };
 
     private static async Task<FinanceOfficialSalesInvoiceResultV1> Record(Fixture fixture)
     {
@@ -515,12 +788,13 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         }
 
         public FinanceOfficialSalesInvoiceServiceV1 Service(string actor, Documents documents,
-            IFinanceOfficialSalesInvoiceAuthorityV1? authority = null)
+            IFinanceOfficialSalesInvoiceAuthorityV1? authority = null, ISettingsMoneyCandidateReader? currencies = null)
         {
             var context = new CompanyContext();
             context.Set(CompanyId);
             return new FinanceOfficialSalesInvoiceServiceV1(Db, context, new User(actor, CompanyId),
-                authority ?? new Authority(), documents, Audit,
+                authority ?? new Authority(), documents,
+                currencies ?? new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]), Audit,
                 new FinanceOfficialSalesInvoiceAuditEnvelopesV1(
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Record, [], "unit-test"),
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve, [], "unit-test")),
@@ -542,9 +816,12 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         private readonly Queue<PermissionDecision> queue = new(decisions);
         private PermissionDecision last = decisions.Length == 0 ? PermissionDecision.Allowed : decisions[^1];
 
+        public int Calls { get; private set; }
+
         public Task<PermissionDecision> CheckAsync(FinanceContext context,
             FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId, CancellationToken cancellationToken)
         {
+            Calls++;
             if (queue.Count > 0) last = queue.Dequeue();
             return Task.FromResult(last);
         }
@@ -563,6 +840,24 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
             return Task.FromResult(answer
                 ?? new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 1, Sha));
         }
+    }
+
+    private sealed class Candidates(IReadOnlyList<MoneyCurrencyCandidateV1> candidates) : ISettingsMoneyCandidateReader
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(candidates);
+        }
+    }
+
+    private sealed class FailingCandidates(string code) : ISettingsMoneyCandidateReader
+    {
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+            CancellationToken cancellationToken = default) => throw new SettingsPrerequisiteException(code);
     }
 
     private sealed class AuditCollector : IAuditEventCollector

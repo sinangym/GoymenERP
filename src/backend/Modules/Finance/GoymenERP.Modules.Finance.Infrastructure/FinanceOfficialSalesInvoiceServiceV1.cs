@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,6 +29,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     ICurrentUser currentUser,
     IFinanceOfficialSalesInvoiceAuthorityV1 authority,
     IFinanceOfficialSalesInvoiceDocumentPortV1 documents,
+    ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector auditEvents,
     FinanceOfficialSalesInvoiceAuditEnvelopesV1 envelopes,
     TimeProvider timeProvider)
@@ -65,7 +67,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("request", "finance_value_does_not_fit"));
         }
 
-        var issues = Validate(request, out var ettn);
+        var issues = Validate(request, out var ettn, out var amounts);
         if (issues.Count > 0)
         {
             return Refused(context, CommandOutcome.ValidationFailed, [.. issues]);
@@ -99,6 +101,11 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return Refused(context, CommandOutcome.ValidationFailed,
                 [.. DuplicateIssues(sameNo, sameEttn)]);
         }
+        if (await CurrencyRefusalAsync(context, action, request.InvoiceId, request.CurrencyId, cancellationToken)
+            is { } currencyRefused)
+        {
+            return currencyRefused;
+        }
 
         var pdf = await documents.CheckAsync(context, request.PdfDocumentId, request.CustomerPartyId, null,
             cancellationToken);
@@ -116,11 +123,12 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             Ettn = ettn,
             CustomerPartyId = request.CustomerPartyId,
             CurrencyId = request.CurrencyId,
-            PayableAmountText = request.PayableAmount,
-            PayableFunctionalAmountText = request.PayableFunctionalAmount,
-            TaxBaseFunctionalAmountText = request.TaxBaseFunctionalAmount,
-            VatFunctionalAmountText = request.VatFunctionalAmount,
-            WithholdingFunctionalAmountText = request.WithholdingFunctionalAmount,
+            // Stored normalised, so the text kept is the value validated (the payload hash stays the request's).
+            PayableAmountText = amounts.Payable,
+            PayableFunctionalAmountText = amounts.PayableFunctional,
+            TaxBaseFunctionalAmountText = amounts.TaxBaseFunctional,
+            VatFunctionalAmountText = amounts.VatFunctional,
+            WithholdingFunctionalAmountText = amounts.WithholdingFunctional,
             PdfDocumentId = request.PdfDocumentId,
             PdfDocumentVersionNo = pdf.VersionNo!.Value,
             PdfSha256 = pdf.Sha256!,
@@ -190,17 +198,30 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         }
         if (row is null)
         {
-            return Refused(context, CommandOutcome.ValidationFailed, Issue("invoiceId", "invoice_not_found"));
+            // Another company's record is not visible either: the same answer, nothing leaks. Terminal (ADR-011 §7):
+            // the key keeps this answer even if a record with this id appears later.
+            return await TerminalAsync(context, ApproveCommand, action, request.InvoiceId, keyHash, payloadHash,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("invoiceId", "invoice_not_found")),
+                cancellationToken);
         }
         if (row.Status != (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
             || !string.Equals(request.ExpectedVersion, VersionText(row.Version), StringComparison.Ordinal))
         {
-            return Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict"));
+            // Terminal (§7): a retry of this key answers the same conflict even after the record moves on.
+            return await TerminalAsync(context, ApproveCommand, action, row.Id, keyHash, payloadHash,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
         }
         if (string.Equals(row.RecordedBy, context.ActorId, StringComparison.Ordinal))
         {
             return Refused(context, CommandOutcome.ValidationFailed,
                 Issue("approver", "approver_must_differ_from_recorder"));
+        }
+        if (await CurrencyRefusalAsync(context, action, row.Id, row.CurrencyId, cancellationToken)
+            is { } currencyRefused)
+        {
+            dbContext.ChangeTracker.Clear();
+            return currencyRefused;
         }
 
         var pdf = await documents.CheckAsync(context, row.PdfDocumentId, row.CustomerPartyId,
@@ -240,14 +261,14 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (invoiceId == Guid.Empty)
-        {
-            return new(ReadOutcome.NotFound, null);
-        }
         if (await ReadFenceAsync<FinanceOfficialSalesInvoiceViewV1>(context, invoiceId, cancellationToken)
             is { } refused)
         {
             return refused;
+        }
+        if (invoiceId == Guid.Empty)
+        {
+            return new(ReadOutcome.NotFound, null);
         }
 
         FinanceOfficialSalesInvoiceRow? row;
@@ -279,14 +300,14 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!TryCursor(context.CompanyId, pendingOnly, cursor, out var offset))
-        {
-            return new(ReadOutcome.NotFound, null);
-        }
         if (await ReadFenceAsync<FinanceOfficialSalesInvoicePageV1>(context, Guid.Empty, cancellationToken)
             is { } refused)
         {
             return refused;
+        }
+        if (!TryCursor(context.CompanyId, pendingOnly, cursor, out var offset))
+        {
+            return new(ReadOutcome.NotFound, null);
         }
 
         List<FinanceOfficialSalesInvoiceRow> rows;
@@ -325,7 +346,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             hasMore ? EncodeCursor(context.CompanyId, pendingOnly, checked(offset + PageSize)) : null));
     }
 
-    private static List<ValidationIssue> Validate(FinanceOfficialSalesInvoiceRecordRequestV1 request, out string ettn)
+    private static List<ValidationIssue> Validate(FinanceOfficialSalesInvoiceRecordRequestV1 request, out string ettn,
+        out NormalizedAmounts amounts)
     {
         var issues = new List<ValidationIssue>();
         ettn = string.Empty;
@@ -357,25 +379,27 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
 
         if (request.CustomerPartyId == Guid.Empty) issues.Add(Issue("customerPartyId", "required"));
         if (request.CurrencyId == Guid.Empty) issues.Add(Issue("currencyId", "required"));
-        Amount(issues, "payableAmount", request.PayableAmount, positive: true);
-        Amount(issues, "payableFunctionalAmount", request.PayableFunctionalAmount, positive: true);
-        Amount(issues, "taxBaseFunctionalAmount", request.TaxBaseFunctionalAmount, positive: false);
-        Amount(issues, "vatFunctionalAmount", request.VatFunctionalAmount, positive: false);
-        Amount(issues, "withholdingFunctionalAmount", request.WithholdingFunctionalAmount, positive: false);
+        amounts = new NormalizedAmounts(
+            Amount(issues, "payableAmount", request.PayableAmount, positive: true),
+            Amount(issues, "payableFunctionalAmount", request.PayableFunctionalAmount, positive: true),
+            Amount(issues, "taxBaseFunctionalAmount", request.TaxBaseFunctionalAmount, positive: false),
+            Amount(issues, "vatFunctionalAmount", request.VatFunctionalAmount, positive: false),
+            Amount(issues, "withholdingFunctionalAmount", request.WithholdingFunctionalAmount, positive: false));
         if (request.PdfDocumentId == Guid.Empty) issues.Add(Issue("pdfDocumentId", "required"));
         return issues;
     }
 
     /// <summary>
     /// Exact decimal text (DEC-FIN-014). It must also fit <see cref="decimal"/> without rounding because the Sales
-    /// read port (D3) carries decimals; a value that would be rounded is refused, never silently changed.
+    /// read port (D3) carries decimals; a value that would be rounded is refused, never silently changed. Answers the
+    /// normalised text (no leading zeros, the scale kept), or an empty text when the value is refused.
     /// </summary>
-    private static void Amount(List<ValidationIssue> issues, string field, string? text, bool positive)
+    private static string Amount(List<ValidationIssue> issues, string field, string? text, bool positive)
     {
         if (string.IsNullOrEmpty(text))
         {
             issues.Add(Issue(field, "required"));
-            return;
+            return string.Empty;
         }
         var exact = positive
             ? FinanceExactDecimalText.TryParsePositive(text, out var parsed)
@@ -385,8 +409,17 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             || !FinanceExactDecimalText.Equal(value.ToString(CultureInfo.InvariantCulture), parsed.Text))
         {
             issues.Add(Issue(field, "invalid"));
+            return string.Empty;
         }
+        return parsed.Text;
     }
+
+    private readonly record struct NormalizedAmounts(
+        string Payable,
+        string PayableFunctional,
+        string TaxBaseFunctional,
+        string VatFunctional,
+        string WithholdingFunctional);
 
     private static IEnumerable<ValidationIssue> DuplicateIssues(bool sameNo, bool sameEttn)
     {
@@ -466,6 +499,60 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return await PriorAsync(context, command, action, invoiceId, keyHash, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
         }
+    }
+
+    /// <summary>
+    /// ADR-011 §7: an authorized terminal refusal is the key's result for good. It is recorded alone (no business
+    /// change, no audit event) and replayed with its first correlation; a lost race answers the winner's record (§8).
+    /// </summary>
+    private async Task<FinanceOfficialSalesInvoiceResultV1> TerminalAsync(
+        FinanceContext context, string command, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId,
+        string keyHash, string payloadHash, FinanceOfficialSalesInvoiceResultV1 refusal,
+        CancellationToken cancellationToken)
+    {
+        AddCommand(context, command, keyHash, payloadHash, invoiceId, refusal, timeProvider.GetUtcNow());
+        if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } fenced)
+        {
+            dbContext.ChangeTracker.Clear();
+            return fenced;
+        }
+        return await SaveAsync(context, command, action, invoiceId, keyHash, payloadHash, cancellationToken)
+            ?? refusal;
+    }
+
+    /// <summary>
+    /// FinanceBankAccountService's rule (#66 6860586175): the currency must be one of Settings' money candidates now.
+    /// An unreachable or malformed source is Unavailable with the Settings code, a forbidden one is Denied; nothing is
+    /// defaulted. A currency outside the candidates is a refusal on the merits, so it is not recorded.
+    /// </summary>
+    private async Task<FinanceOfficialSalesInvoiceResultV1?> CurrencyRefusalAsync(
+        FinanceContext context, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId, Guid currencyId,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MoneyCurrencyCandidateV1> candidates;
+        try
+        {
+            candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(
+                await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+        }
+        catch (SettingsPrerequisiteException exception)
+        {
+            if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } fenced)
+            {
+                return fenced;
+            }
+            return exception.Code == "settings_access_denied"
+                ? Refused(context, CommandOutcome.Denied)
+                : Refused(context, CommandOutcome.Unavailable, Issue("currencyId", exception.Code));
+        }
+
+        if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } afterSettings)
+        {
+            return afterSettings;
+        }
+        return candidates.Any(candidate => candidate.CurrencyId == currencyId)
+            ? null
+            : Refused(context, CommandOutcome.ValidationFailed, Issue("currencyId", "currency_not_a_candidate"));
     }
 
     private async Task<FinanceOfficialSalesInvoiceResultV1?> FenceAsync(

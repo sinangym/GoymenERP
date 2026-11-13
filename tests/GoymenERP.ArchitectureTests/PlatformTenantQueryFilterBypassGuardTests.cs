@@ -279,8 +279,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
             // F-005 D1: +3 official sales invoice facts (maker≠approver, CK refusals, Down guard), ordinal-sorted (36413356… -> 41ad9daf…).
+            // F-005 D1 review: +3 facts (approval race, same-key record race, another company), ordinal-sorted (41ad9daf… -> d9eae78e…).
             ["tools/relational_inventory/finance.txt"] =
-                "41ad9dafa5f5e9ada7f6b1925f0f357f31a76be9da79710d66d149f9e8b83bc2",
+                "d9eae78e919f161d438889b7ee6ab451b3f28ed78aa6d6ad02d713240d08ab55",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -1394,7 +1395,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs"] =
                     new(
-                        "8e6a00ccb5e4d8391ee521d2af7693a2b4c8a542d2cc568b79adf013d8227465",
+                        "362c03debea43995a71c7312b0fc0f45bee9605e59500a9a326d81228992de25",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1496,7 +1497,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-005 D1: the official sales invoice host resolves FinanceDbContext only through DI; no direct database API.
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
-                    new("60b146d5b023a163cb49d50f0ff5d11fe487eea9f9f554aaef26f8e129611f45",
+                    new("26e7f8d185becccc18f07ef0ab77a7813d7394042db5939dd9bd0683abbd8819",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =

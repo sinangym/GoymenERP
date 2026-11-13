@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,6 +28,7 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
         services.AddSingleton<ICompanyContext>(new MutableCompanyContext(Company));
         services.AddSingleton<ICurrentUser>(new User(Actor, Company));
         services.AddSingleton<IDocumentService>(new Documents());
+        services.AddSingleton<ISettingsMoneyCandidateReader>(new NoCandidates());
         services.AddScoped<IAuditEventCollector>(_ => new NoOpAuditCollector());
         services.AddScoped<ICorrelationContext>(_ =>
         {
@@ -233,6 +235,13 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
     private sealed class NoOpAuditCollector : IAuditEventCollector
     {
         public void Enqueue(AuditEventDraft auditEvent) { }
+    }
+
+    private sealed class NoCandidates : ISettingsMoneyCandidateReader
+    {
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MoneyCurrencyCandidateV1>>([]);
     }
 
     private sealed class Revalidation(params PermissionScope[] answers) : IErpAuthorityRevalidationService

@@ -6,6 +6,7 @@ using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.Shell;
 
@@ -31,6 +32,7 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
             provider.GetRequiredService<ICurrentUser>(),
             authority,
             provider.GetRequiredService<IFinanceOfficialSalesInvoiceDocumentPortV1>(),
+            provider.GetRequiredService<ISettingsMoneyCandidateReader>(),
             provider.GetRequiredService<IAuditEventCollector>(),
             new FinanceOfficialSalesInvoiceAuditEnvelopesV1(
                 Envelope(FinanceOfficialSalesInvoicePermissionNamesV1.Record,

@@ -5,8 +5,10 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -39,7 +41,9 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
 
             var selfApproval = await maker.Service.ApproveAsync(maker.Context, new CommandMetadata("self-approve-key"),
                 new FinanceOfficialSalesInvoiceApproveRequestV1(Invoice, "1"), default);
-            Assert.NotEqual(CommandOutcome.Succeeded, selfApproval.Outcome);
+            Assert.Equal(CommandOutcome.ValidationFailed, selfApproval.Outcome);
+            Assert.Equal([new ValidationIssue("approver", "approver_must_differ_from_recorder")], selfApproval.Issues);
+            Assert.Null(selfApproval.Resource);
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -126,6 +130,105 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands"));
     }
 
+    [SqlServerFact]
+    public async Task Two_checkers_racing_to_approve_store_one_approval_and_the_loser_answers_a_concurrent_change()
+    {
+        await using var run = await Run.StartAsync();
+        await RecordAsync(run);
+
+        // Both checkers read the same pending record, then wait for each other at the save.
+        using var barrier = new Barrier(2);
+        async Task<FinanceOfficialSalesInvoiceResultV1> ApproveAsync(string checker)
+        {
+            await using var scope = run.Service(checker, barrier: barrier);
+            return await scope.Service.ApproveAsync(scope.Context, new CommandMetadata("approve-" + checker),
+                new FinanceOfficialSalesInvoiceApproveRequestV1(Invoice, "1"), default);
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => ApproveAsync("SENTETIK-checker-1")),
+            Task.Run(() => ApproveAsync("SENTETIK-checker-2")));
+        var winner = Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
+        var loser = Assert.Single(results, result => result.Outcome == CommandOutcome.VersionConflict);
+        Assert.Equal([new ValidationIssue("request", "concurrent_change")], loser.Issues);
+        Assert.False(loser.IsReplay);
+        Assert.Equal(winner.Resource!.ApprovedBy + "|2|2", await run.ScalarAsync<string>(
+            "SELECT CONCAT(ApprovedBy COLLATE DATABASE_DEFAULT, '|', Status, '|', Version) "
+            + "FROM finance.OfficialSalesInvoices WHERE Id = @id", ("@id", Invoice)));
+        // The loser's attempt is not a stored answer: only the record and the winner's approval are.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands WHERE CommandName = @name",
+            ("@name", FinanceOfficialSalesInvoiceServiceV1.ApproveCommand)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.official-sales-invoice.approved.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Two_requests_with_one_key_racing_to_record_store_one_invoice_and_the_loser_replays_it()
+    {
+        await using var run = await Run.StartAsync();
+
+        // The same maker sends the same body with the same key twice; both pass the replay lookup before either saves.
+        using var barrier = new Barrier(2);
+        async Task<FinanceOfficialSalesInvoiceResultV1> RecordWithTheSameKeyAsync()
+        {
+            await using var scope = run.Service("SENTETIK-maker", barrier: barrier);
+            return await scope.Service.RecordAsync(scope.Context, new CommandMetadata("record-key"), Request(),
+                default);
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => RecordWithTheSameKeyAsync()),
+            Task.Run(() => RecordWithTheSameKeyAsync()));
+        Assert.All(results, result => Assert.Equal(CommandOutcome.Succeeded, result.Outcome));
+        var first = Assert.Single(results, result => !result.IsReplay);
+        var replay = Assert.Single(results, result => result.IsReplay);
+        Assert.Equal(first.OriginalCorrelationId, replay.OriginalCorrelationId);
+        Assert.Equal(first.Resource!.InvoiceId, replay.Resource!.InvoiceId);
+        Assert.Equal(first.Resource.RecordedAtUtc, replay.Resource.RecordedAtUtc);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoices"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.official-sales-invoice.recorded.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Another_company_neither_reads_nor_approves_the_record_and_its_refusal_is_stored_under_its_own_company()
+    {
+        await using var run = await Run.StartAsync();
+        await RecordAsync(run);
+
+        await using (var foreign = run.Service("SENTETIK-checker", TestCompanyIds.CompanyB))
+        {
+            Assert.Equal(ReadOutcome.NotFound, (await foreign.Service.GetAsync(foreign.Context, Invoice, default)).Outcome);
+            var page = await foreign.Service.ListAsync(foreign.Context, pendingOnly: false, cursor: null, default);
+            Assert.Equal(ReadOutcome.Found, page.Outcome);
+            Assert.Empty(page.Resource!.Items);
+
+            var approve = await foreign.Service.ApproveAsync(foreign.Context, new CommandMetadata("foreign-approve"),
+                new FinanceOfficialSalesInvoiceApproveRequestV1(Invoice, "1"), default);
+            Assert.Equal(CommandOutcome.ValidationFailed, approve.Outcome);
+            Assert.Equal([new ValidationIssue("invoiceId", "invoice_not_found")], approve.Issues);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialSalesInvoices WHERE CompanyId = @a AND Status = 1 AND ApprovedBy IS NULL",
+            ("@a", Company)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands WHERE CompanyId = @b AND CommandName = @name",
+            ("@b", TestCompanyIds.CompanyB), ("@name", FinanceOfficialSalesInvoiceServiceV1.ApproveCommand)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands WHERE CompanyId = @a AND CommandName = @name",
+            ("@a", Company), ("@name", FinanceOfficialSalesInvoiceServiceV1.ApproveCommand)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.official-sales-invoice.approved.v1'"));
+    }
+
+    private static async Task RecordAsync(Run run)
+    {
+        await using var maker = run.Service("SENTETIK-maker");
+        Assert.Equal(CommandOutcome.Succeeded, (await maker.Service.RecordAsync(maker.Context,
+            new CommandMetadata("record-key"), Request(), default)).Outcome);
+    }
+
     private static FinanceOfficialSalesInvoiceRecordRequestV1 Request() => new(Invoice, "SNT2026000000001", Ettn,
         Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf);
 
@@ -162,26 +265,28 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
             return new FinanceDbContext(Options(Factory), companyContext);
         }
 
-        public Scope Service(string actor)
+        public Scope Service(string actor, Guid? company = null, Barrier? barrier = null)
         {
+            var companyId = company ?? Company;
             var companyContext = new CompanyContext();
-            companyContext.Set(Company);
+            companyContext.Set(companyId);
             var collector = new AuditEventCollector();
-            var options = new DbContextOptionsBuilder<FinanceDbContext>()
+            var builder = new DbContextOptionsBuilder<FinanceDbContext>()
                 .UseSqlServer(Factory.DatabaseConnectionString,
                     sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
-                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
-                .Options;
-            var db = new FinanceDbContext(options, companyContext);
-            var service = new FinanceOfficialSalesInvoiceServiceV1(db, companyContext, new User(actor, Company),
-                new AllowAuthority(), new AcceptedDocuments(), collector,
+                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext));
+            if (barrier is not null) builder.AddInterceptors(new BarrierInterceptor(barrier));
+            var db = new FinanceDbContext(builder.Options, companyContext);
+            var service = new FinanceOfficialSalesInvoiceServiceV1(db, companyContext, new User(actor, companyId),
+                new AllowAuthority(), new AcceptedDocuments(), new Candidates(), collector,
                 new FinanceOfficialSalesInvoiceAuditEnvelopesV1(
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Record,
                         ["SENTETIK-FINANCE"], "Integration"),
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
                         ["SENTETIK-FINANCE"], "Integration")),
                 TimeProvider.System);
-            return new Scope(db, service, new FinanceContext(Company, actor, $"fin-official-sales-{Guid.NewGuid():N}", null));
+            return new Scope(db, service,
+                new FinanceContext(companyId, actor, $"fin-official-sales-{Guid.NewGuid():N}", null));
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -246,6 +351,25 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
         public Task<PermissionDecision> CheckAsync(FinanceContext context,
             FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId, CancellationToken cancellationToken) =>
             Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    private sealed class Candidates : ISettingsMoneyCandidateReader
+    {
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MoneyCurrencyCandidateV1>>(
+                [new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]);
+    }
+
+    /// <summary>Holds each save until both writers have reached it, so both read the same state first.</summary>
+    private sealed class BarrierInterceptor(Barrier barrier) : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken);
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class AcceptedDocuments : IFinanceOfficialSalesInvoiceDocumentPortV1
