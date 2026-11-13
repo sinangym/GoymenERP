@@ -5,11 +5,13 @@ namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
 /// SAT-D305 (4) production receipt cost: net input cost over the produced kilograms (scrap in, SAT-D307 (1)-(2)),
-/// or net input cost less the weighed scrap at the scrap price over the produced kilograms (scrap out, SAT-D308 and
-/// Sinan #66 6826603722); returns at the linked issue's stamped cost, closed orders only. The declared process loss
-/// is reported in kg and ratio with value zero (6826763903 (c)); consumed kg nothing accounts for is a separate
-/// unexplained kg, never process loss (URT-D5). Fail-closed on anything unknown (scrap price, usable remnant,
-/// missing input, overflow).
+/// or net input cost less the weighed scrap at the scrap price over the produced kilograms (scrap out,
+/// SAT-D316 (1)); returns at the linked issue's stamped cost (SAT-D317 (2)), closed orders only (SAT-D317 (1)). The
+/// declared process loss has value zero (SAT-D316 (2)); consumed kg nothing accounts for is a separate unexplained
+/// kg, never process loss (URT-D5). More out than in gives no amount, also inside the closing tolerance (URT-D40,
+/// URT-D41 (1)). Fail-closed on anything unknown (scrap price, zero issue cost, usable remnant, missing input,
+/// overflow). The expected values are this file's own arithmetic of those rules: the golden example the SAT-D308
+/// implementation note asks for (ChatGPT lane or NEEDS-SINAN) is not in the repository yet.
 /// </summary>
 public sealed class ProductionReceiptCostCalculatorTests
 {
@@ -118,7 +120,7 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void Scrap_out_of_cost_values_the_weighed_scrap_at_the_scrap_price_and_loads_the_rest_on_the_product()
     {
-        // Golden (SAT-D308, Sinan #66 6826603722 (a)): 1000 kg x 40 = 40000 TL; 900 kg good + 50 kg second quality,
+        // SAT-D316 (1): 1000 kg x 40 = 40000 TL; 900 kg good + 50 kg second quality,
         // 50 kg weighed scrap at 10 TL/kg = 500 TL expense; (40000 - 500) / 950 TL/kg on both outputs; no loss.
         var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
             weighedScrap: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(10m)));
@@ -153,7 +155,7 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void Scrap_out_of_cost_values_the_process_loss_at_zero_and_reports_its_kilograms_and_ratio()
     {
-        // Sinan #66 6826763903 (c): 1000 kg consumed, 950 kg produced, 30 kg weighed scrap at 10 TL/kg = 300 TL
+        // SAT-D316 (2): 1000 kg consumed, 950 kg produced, 30 kg weighed scrap at 10 TL/kg = 300 TL
         // expense; the 20 kg declared process loss has value zero, so its cost stays on the product: (40000 - 300) / 950.
         var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
             weighedScrap: 30m, processLoss: 20m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(10m)));
@@ -290,6 +292,53 @@ public sealed class ProductionReceiptCostCalculatorTests
             ProductionReceiptCostCodesV1.InputCostUnreadable);
         AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(issues: [Issue(IssueA, 1000m, -1m)])),
             ProductionReceiptCostCodesV1.InputCostUnreadable);
+    }
+
+    [Theory]
+    [InlineData(ScrapCostSettingStatus.On)]
+    [InlineData(ScrapCostSettingStatus.Off)]
+    public void A_zero_issue_cost_is_not_a_cost_and_makes_the_result_unreadable(ScrapCostSettingStatus scrap)
+    {
+        // Not decided how a zero-cost issue reads (port contract, SAT-D297 alignment): no amount until then, also
+        // when only one of the issues is zero and the other would give a positive net cost.
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: [Issue(IssueA, 1000m, 0m)], scrap: scrap, scrapPrice: Price(0m))),
+            ProductionReceiptCostCodesV1.InputCostUnreadable);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            issues: [Issue(IssueA, 600m, 40m), Issue(IssueB, 400m, 0m)], scrap: scrap, scrapPrice: Price(0m))),
+            ProductionReceiptCostCodesV1.InputCostUnreadable);
+    }
+
+    [Theory]
+    [InlineData(ScrapCostSettingStatus.On)]
+    [InlineData(ScrapCostSettingStatus.Off)]
+    public void More_out_than_in_gives_no_amount_even_inside_the_closing_tolerance(ScrapCostSettingStatus scrap)
+    {
+        // URT-D40 (1)-(2), URT-D41 (1): 1000 kg consumed, 1005 kg weighed product (+0.5 %, inside the 2 % closing
+        // tolerance of URT-D6) and the smallest weighable excess (1000.001 kg) both give no cost.
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            good: 955m, second: 50m, scrap: scrap, scrapPrice: Price(10m))),
+            ProductionReceiptCostCodesV1.MassUnbalanced);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            good: 950.001m, second: 50m, scrap: scrap, scrapPrice: Price(10m))),
+            ProductionReceiptCostCodesV1.MassUnbalanced);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            good: 900m, second: 50m, weighedScrap: 30m, processLoss: 25m, scrap: scrap, scrapPrice: Price(10m))),
+            ProductionReceiptCostCodesV1.MassUnbalanced);
+    }
+
+    [Theory]
+    [InlineData(ScrapCostSettingStatus.On)]
+    [InlineData(ScrapCostSettingStatus.Off)]
+    public void Out_equal_to_in_is_balanced_and_gives_a_cost(ScrapCostSettingStatus scrap)
+    {
+        // URT-D40 (1) forbids more out than in, not out equal to in: 1000 kg consumed, 950 + 50 kg produced.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            good: 950m, second: 50m, scrap: scrap, scrapPrice: Price(10m)));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+        Assert.Equal(40m, result.CostPerKg);
+        Assert.Equal(0m, result.UnexplainedKg);
     }
 
     [Fact]
