@@ -492,10 +492,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Equal(HttpStatusCode.BadRequest, loose.StatusCode);
             Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)));
 
-            // F-020: the active instruction's detail carries the three cancellation members, each null.
+            // F-020: the active instruction's detail (the detail view itself, no command envelope) carries the three cancellation members, each null.
             using var active = await granted.GetAsync($"{LogisticsEndpoints.InstructionsPath}/{id:D}");
             Assert.Equal(HttpStatusCode.OK, active.StatusCode);
-            var activeInstruction = System.Text.Json.JsonDocument.Parse(await active.Content.ReadAsStringAsync()).RootElement.GetProperty("detail").GetProperty("instruction");
+            var activeInstruction = System.Text.Json.JsonDocument.Parse(await active.Content.ReadAsStringAsync()).RootElement.GetProperty("instruction");
             Assert.All(new[] { "cancelledBy", "cancelledAtUtc", "cancelReason" },
                 name => Assert.Equal(System.Text.Json.JsonValueKind.Null, activeInstruction.GetProperty(name).ValueKind));
 
