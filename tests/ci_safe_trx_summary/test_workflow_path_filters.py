@@ -74,8 +74,10 @@ SKIPPED_PROSE = (
 # GOV-D5: the Faz 0 tier (c) commands, exactly as AGENTS.md gives them to the merger.
 FAZ0_SKIPPED_ONLY_COMMANDS = (
     'MB="$(git merge-base origin/main <expected-head>)"',
-    'git diff --quiet "$MB" origin/main -- \':(top)\' "${SKIPPED[@]}" '
-    '&& git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"',
+    'COMMITS="$(git rev-list --first-parent "${MB:-no-merge-base}..origin/main")" '
+    '&& (for C in $COMMITS; do \\',
+    '  git diff --quiet "$C^" "$C" -- \':(top)\' "${SKIPPED[@]}" && \\',
+    '  git diff --quiet "$C^" "$C" -- "${READ_BY_CI[@]}" || exit; done)',
 )
 
 # Folders below the root from which the commands are also run in the test repository.
@@ -301,8 +303,8 @@ class WorkflowPathFilterTests(unittest.TestCase):
         self.assertEqual(
             tuple(shell_array(script, "READ_BY_CI")), tuple(f":(top){path}" for path in READ_BY_CI)
         )
-        self.assertEqual(tuple(script.splitlines()[-2:]), FAZ0_SKIPPED_ONLY_COMMANDS)
-        self.assertEqual(len(script.splitlines()), 6)
+        self.assertEqual(tuple(script.splitlines()[-4:]), FAZ0_SKIPPED_ONLY_COMMANDS)
+        self.assertEqual(len(script.splitlines()), 8)
 
     def test_faz0_skipped_only_commands_agree_with_the_filter_in_git(self):
         script = read_faz0_skipped_only_script()
@@ -392,6 +394,17 @@ class WorkflowPathFilterTests(unittest.TestCase):
             for label, main_commits in (
                 ("prose and code in one commit", ({SKIPPED_PROSE[0]: "new\n", "src/new.cs": "new\n"},)),
                 ("code after prose", ({SKIPPED_PROSE[0]: "new\n"}, {"src/app.cs": "main\n"})),
+                # Every commit on main is judged alone: the total diff of these is prose only,
+                # yet the code commit started CI and the PR was never tested against it.
+                ("code commit, then its revert", ({"src/app.cs": "main\n"}, {"src/app.cs": "one\n"})),
+                (
+                    "code commit, its revert, then prose",
+                    ({"src/new.cs": "new\n"}, {"src/new.cs": None}, {SKIPPED_PROSE[0]: "new\n"}),
+                ),
+                (
+                    "re-included file changed and restored",
+                    ({READ_BY_CI[0]: "two\n"}, {READ_BY_CI[0]: "one\n"}),
+                ),
                 ("re-included file deleted", ({READ_BY_CI[0]: None},)),
                 ("prose moved to a code path", ({existing_prose: None, "src/OLD_RUNBOOK.md": "one\n"},)),
                 ("code moved into a prose folder", ({"src/app.cs": None, "docs/delivery/app.md": "one\n"},)),

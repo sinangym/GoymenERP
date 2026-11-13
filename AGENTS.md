@@ -125,18 +125,22 @@ mantığı, #976 ölçümü; (c) için GOV-D5, `docs/decisions/SINAN_KARARLARI_2
 **(c)** `main` yalnız CI'ın hiç başlamadığı düzyazıda (CIH-D5 listesi) ilerlediyse merge edilebilir:
 mekanik merge commit'i, yeni CI koşusu ve `DELTA-OK` aranmaz; aynı head'deki fresh yeşil CI ve
 review'lar geçerli kalır. Yollar depo köküne sabitlidir (`:(top)`), komutlar deponun herhangi bir
-klasöründen aynı sonucu verir; iki komut da exit 0 vermelidir:
+klasöründen aynı sonucu verir. `main`'deki her commit tek tek bakılır (toplam fark değil: kod commit'i ve
+onun geri alınması toplamda düzyazı gibi görünür, ama CI'ı başlatmıştır); blok exit 0 vermelidir:
 ```
 SKIPPED=(':(top,exclude,glob)docs/decisions/**/*.md' ':(top,exclude,glob)docs/delivery/**/*.md' \
   ':(top,exclude,glob)docs/handoffs/**/*.md' ':(top,exclude,glob)docs/operations/**/*.md')
 READ_BY_CI=(':(top)docs/decisions/KARAR_SICILI.md' ':(top)docs/decisions/ACIK_KARARLAR.md' \
   ':(top)docs/decisions/SINAN_KARARLARI_2026-08-31.md' ':(top)docs/delivery/DECISION_PACK.md')
 MB="$(git merge-base origin/main <expected-head>)"
-git diff --quiet "$MB" origin/main -- ':(top)' "${SKIPPED[@]}" && git diff --quiet "$MB" origin/main -- "${READ_BY_CI[@]}"
+COMMITS="$(git rev-list --first-parent "${MB:-no-merge-base}..origin/main")" && (for C in $COMMITS; do \
+  git diff --quiet "$C^" "$C" -- ':(top)' "${SKIPPED[@]}" && \
+  git diff --quiet "$C^" "$C" -- "${READ_BY_CI[@]}" || exit; done)
 ```
 İki liste `ci.yml` yol filtresiyle aynıdır (`tests/ci_safe_trx_summary/test_workflow_path_filters.py`
-eşliği sabitler). Makbuza main SHA'sı, `(c)`, iki komut ve exit code'ları yazılır. Komutlardan biri
-exit ≠ 0 verirse (c) uygulanmaz, (a)/(b)'ye geçilir. (c), PR head'indeki listelerle değerlendirilir;
+eşliği sabitler). Makbuza main SHA'sı, `(c)`, blok ve exit code'u yazılır. Blok exit ≠ 0 verirse
+(git hatası dahil) (c) uygulanmaz, (a)/(b)'ye geçilir. "Yeşil", o head'deki zorunlu koşunun `success` ile
+bitmesidir; iptal edilen koşu veya atlanan toplayıcı iş yeşil değildir. (c), PR head'indeki listelerle değerlendirilir;
 `ci.yml` yol filtresine veya bu listelere dokunan PR'da (c) uygulanmaz. (a)/(b) kapsamı, yeniden üretilen pin'lerin
 girdileridir:
 ```
