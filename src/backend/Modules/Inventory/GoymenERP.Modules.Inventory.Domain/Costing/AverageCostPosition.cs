@@ -21,9 +21,8 @@ public enum AverageCostStatus
     Known = 1,
 
     /// <summary>
-    /// The average cannot be read (see <see cref="AverageCostUnreadableReason"/>). The state is sticky, except
-    /// <see cref="AverageCostUnreadableReason.NegativeStock"/>, which a later receipt recovers (SAT-D301 (2), see
-    /// <see cref="AverageCostCalculator.Apply"/>).
+    /// The average cannot be read (see <see cref="AverageCostUnreadableReason"/>). The state is sticky: the core never
+    /// reopens it by itself (that would be a policy choice).
     /// </summary>
     Unreadable = 2,
 }
@@ -35,10 +34,7 @@ public enum AverageCostStatus
 /// </summary>
 public enum AverageCostUnreadableReason
 {
-    /// <summary>
-    /// SAT-D301 (Sinan decided, OPEN-INV-AVGCOST-NEGATIVE-STOCK): stock would go below zero, so the cost is "hesaplanamadı".
-    /// Not permanent: a later receipt recovers the position (<see cref="AverageCostCalculator.Apply"/>).
-    /// </summary>
+    /// <summary>OPEN-INV-AVGCOST-NEGATIVE-STOCK (NEEDS-SINAN): stock would go below zero.</summary>
     NegativeStock = 1,
 
     /// <summary>OPEN-INV-AVGCOST-UNIT-CONVERSION (NEEDS-SINAN): the cost is not per stock kilogram.</summary>
@@ -64,7 +60,8 @@ public enum AverageCostUnreadableReason
 
     /// <summary>
     /// The movement's physical stock before it differs from what the ledger tracked (for example opening stock that never
-    /// had a cost). The ledger cannot blend a quantity it never costed (OPEN-INV-AVGCOST-UNCOSTED-STOCK, NEEDS-SINAN).
+    /// had a cost). The ledger cannot blend a quantity it never costed (SAT-D304: cost is "yok" until an approved opening
+    /// cost exists; that command is a later slice).
     /// </summary>
     LedgerStockMismatch = 8,
 

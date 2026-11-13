@@ -7,8 +7,8 @@ namespace GoymenERP.Inventory.UnitTests;
 /// <summary>
 /// SAT-D262..D267 (SINAN_KARARLARI_2026-11-10_SATIS_EK52), the deterministic moving-average purchase cost core: golden
 /// examples at the 4-decimal internal scale (AwayFromZero), the transfer rule, the production rule, every point without a
-/// figure answered Unreadable instead of a guess, SAT-D301 (negative stock recovers on a later receipt) and SAT-D302
-/// (additional cost stays out of the v1 average). SENTETIK data only.
+/// figure answered Unreadable instead of a guess, and SAT-D302 (additional cost stays out of the v1 average). SENTETIK
+/// data only.
 /// </summary>
 public sealed class InventoryAverageCostCalculatorTests
 {
@@ -128,7 +128,7 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void An_issue_beyond_the_held_quantity_is_negative_stock_and_unreadable_not_clamped()
     {
-        // SAT-D301 (1): the cost is "hesaplanamadi", never a made-up figure and never zero.
+        // OPEN-INV-AVGCOST-NEGATIVE-STOCK: no policy chosen.
         var result = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(Issue, 6m, 5m));
         Assert.Equal((AverageCostStatus.Unreadable, NegativeStock), (result.Status, result.UnreadableReason));
         Assert.Null(result.AverageCostPerKg);
@@ -187,91 +187,6 @@ public sealed class InventoryAverageCostCalculatorTests
     }
 
     [Fact]
-    public void Negative_stock_recovers_when_a_receipt_arrives_at_zero_stock_and_restarts_at_its_own_cost()
-    {
-        // SAT-D301 (2), implementation reading: physical stock is never negative, so the receipt arrives at zero stock and
-        // the average restarts like a first receipt; then it blends normally.
-        var negative = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(Issue, 6m, 5m));
-        Assert.Equal(NegativeStock, negative.UnreadableReason);
-
-        var recovered = AverageCostCalculator.Apply(negative, Purchase(10m, 0m, 12.34567m));
-        AssertKnown(recovered, 10m, 12.3457m);
-
-        // (10 * 12.3457 + 5 * 13) / 15 = 12.56380 -> 12.5638
-        AssertKnown(AverageCostCalculator.Apply(recovered, Purchase(5m, 10m, 13m)), 15m, 12.5638m);
-    }
-
-    [Fact]
-    public void Negative_stock_from_a_position_the_ledger_never_saw_also_recovers_on_a_receipt()
-    {
-        var negative = AverageCostCalculator.Apply(null, new(Issue, 1m, 0m));
-        AssertKnown(AverageCostCalculator.Apply(negative, Purchase(3m, 0m, 7m)), 3m, 7m);
-    }
-
-    [Fact]
-    public void Negative_stock_meeting_stock_the_ledger_never_costed_becomes_uncosted_stock_not_a_guess()
-    {
-        // SAT-D304: stock without an approved cost is "yok"; the receipt cannot be blended with it.
-        var negative = AverageCostPosition.Unreadable(NegativeStock);
-        var result = AverageCostCalculator.Apply(negative, Purchase(5m, 2m, 12m));
-        Assert.Equal((AverageCostStatus.Unreadable, LedgerStockMismatch), (result.Status, result.UnreadableReason));
-    }
-
-    [Theory]
-    [InlineData("issue")]
-    [InlineData("production")]
-    [InlineData("return")]
-    public void Only_a_receipt_recovers_negative_stock(string kind)
-    {
-        var negative = AverageCostPosition.Unreadable(NegativeStock);
-        AverageCostMovement movement = kind switch
-        {
-            "issue" => new(Issue, 1m, 0m),
-            "production" => new(ProductionReceipt, 1m, 0m),
-            _ => new(AverageCostMovementKind.Return, 1m, 0m),
-        };
-
-        Assert.Same(negative, AverageCostCalculator.Apply(negative, movement));
-    }
-
-    [Theory]
-    [InlineData("zero-cost", ZeroCostReceipt)]
-    [InlineData("unit", UnitConversion)]
-    [InlineData("fx", ForeignCurrency)]
-    public void A_recovering_receipt_still_answers_its_own_unreadable_reason(string fault, AverageCostUnreadableReason expected)
-    {
-        var movement = fault switch
-        {
-            "zero-cost" => Purchase(2m, 0m, 0m),
-            "unit" => Purchase(2m, 0m, 10m) with { UnitCostIsPerStockKg = false },
-            _ => Purchase(2m, 0m, 10m) with { IsBaseCurrency = false },
-        };
-
-        var result = AverageCostCalculator.Apply(AverageCostPosition.Unreadable(NegativeStock), movement);
-
-        Assert.Equal((AverageCostStatus.Unreadable, expected), (result.Status, result.UnreadableReason));
-    }
-
-    [Fact]
-    public void A_transfer_into_a_negative_stock_target_recovers_it_at_the_source_average()
-    {
-        var result = AverageCostCalculator.ApplyTransfer(
-            AverageCostPosition.Known(10m, 9.5m), 10m, AverageCostPosition.Unreadable(NegativeStock), 0m, 4m);
-
-        AssertKnown(result.Source, 6m, 9.5m);
-        AssertKnown(result.Target, 4m, 9.5m);
-    }
-
-    [Fact]
-    public void A_negative_stock_source_still_leaves_a_transfer_target_unreadable()
-    {
-        var result = AverageCostCalculator.ApplyTransfer(AverageCostPosition.Unreadable(NegativeStock), 0m, null, 0m, 1m);
-
-        Assert.Equal(NegativeStock, result.Source.UnreadableReason);
-        Assert.Equal(TransferSourceUnreadable, result.Target.UnreadableReason);
-    }
-
-    [Fact]
     public void Stock_the_ledger_never_costed_is_not_blended_into_the_average()
     {
         // OPEN-INV-AVGCOST-UNCOSTED-STOCK: 10 kg are on hand but the ledger tracks none.
@@ -285,8 +200,8 @@ public sealed class InventoryAverageCostCalculatorTests
     [Fact]
     public void An_unreadable_position_is_sticky_for_every_later_movement()
     {
-        // Every reason except NegativeStock (SAT-D301) stays sticky.
-        foreach (var reason in Enum.GetValues<AverageCostUnreadableReason>().Where(reason => reason != NegativeStock))
+        // Every reason stays sticky, NegativeStock included: the core never reopens a position by itself.
+        foreach (var reason in Enum.GetValues<AverageCostUnreadableReason>())
         {
             var unreadable = AverageCostPosition.Unreadable(reason);
             Assert.Same(unreadable, AverageCostCalculator.Apply(unreadable, Purchase(1m, 0m, 10m)));
