@@ -220,4 +220,40 @@ public sealed partial class LogisticsInstructionServiceTests
         // The loaded share and total stay as recorded (nothing deleted).
         Assert.Equal(("24000", 1), (cancelled.Detail.Lines[0].Loaded, cancelled.Detail.Shares.Count));
     }
+
+    [Fact]
+    public async Task The_views_carry_who_cancelled_when_and_why_only_once_the_instruction_is_cancelled()
+    {
+        // F-020 (LOJ-D6..D8): the facts the cancel recorded reach the command answer, the detail, the list and a replay; an active
+        // instruction answers all three as null. The actor is the recorded user id, the time is UTC and the reason is as given.
+        var world = new World();
+        var created = await world.Service().CreateInstructionAsync(Request(quantity: "10"), Metadata("k-create"));
+        var id = created.Detail.Instruction.Id;
+        var other = (await world.Service().CreateInstructionAsync(Request(quantity: "5"), Metadata("k-create-other"))).Detail.Instruction.Id;
+        var issued = await world.Service().IssueInstructionAsync(other, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-other"));
+
+        foreach (var view in new[] { created.Detail.Instruction, issued.Detail.Instruction, (await world.Service().GetInstructionDetailAsync(id)).Instruction })
+        {
+            Assert.Equal((null, null, null), (view.CancelledBy, view.CancelledAtUtc, view.CancelReason));
+        }
+
+        var before = DateTimeOffset.UtcNow;
+        var cancelled = await world.Service().CancelInstructionAsync(id, new CancelInstructionRequest("2", "Müşteri vazgeçti"), Metadata("k-cancel"));
+        var after = DateTimeOffset.UtcNow;
+
+        var summary = cancelled.Detail.Instruction;
+        var stored = world.Store.Instruction(id);
+        Assert.Equal(("Cancelled", Actor, stored.CancelledAtUtc, "Müşteri vazgeçti"),
+            (summary.Status, summary.CancelledBy, summary.CancelledAtUtc, summary.CancelReason));
+        Assert.Equal(TimeSpan.Zero, summary.CancelledAtUtc?.Offset);
+        Assert.InRange(summary.CancelledAtUtc ?? default, before, after);
+
+        // The detail, the Cancelled page and a replay on the same key answer the same facts; the other instruction stays without them.
+        Assert.Equal(summary, (await world.Service().GetInstructionDetailAsync(id)).Instruction);
+        Assert.Equal(summary, Assert.Single((await world.Service().GetInstructionListAsync(new LoadingInstructionListQuery(Status: "Cancelled"))).Items));
+        var replay = await world.Service().CancelInstructionAsync(id, new CancelInstructionRequest("2", "Müşteri vazgeçti"), Metadata("k-cancel"));
+        Assert.Equal((true, summary), (replay.IsReplay, replay.Detail.Instruction));
+        var stillActive = Assert.Single((await world.Service().GetInstructionListAsync(new LoadingInstructionListQuery(Status: "Issued"))).Items);
+        Assert.Equal((other, null, null, null), (stillActive.Id, stillActive.CancelledBy, stillActive.CancelledAtUtc, stillActive.CancelReason));
+    }
 }

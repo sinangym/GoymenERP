@@ -10,7 +10,10 @@
       "effectiveOn": "2026-09-19",
       "createdAtUtc": "2026-09-19T09:00:00Z",
       "updatedAtUtc": "2026-09-19T09:10:00Z",
-      "lineCount": 1
+      "lineCount": 1,
+      "cancelledBy": null,
+      "cancelledAtUtc": null,
+      "cancelReason": null
     },
     "lines": [
       {

@@ -7,6 +7,7 @@ import errorCapRaw from './examples/error-cap.json?raw'
 import errorForbiddenRaw from './examples/error-forbidden.json?raw'
 import {
   APPROVED_ORDER_LINE_KEYS,
+  CANCEL_REASON_MAX,
   decodeApprovedOrderLine,
   decodeApprovedOrderLinePage,
   decodeInstructionDetail,
@@ -16,7 +17,7 @@ import {
   parseQuantityInput,
 } from './contract'
 import approvedLinesRaw from './examples/approved-order-lines-response.json?raw'
-import { approvedOrderLine, INSTRUCTION, weighingRecord } from './testHarness'
+import { approvedOrderLine, CANCELLED_INSTRUCTION, INSTRUCTION, weighingRecord } from './testHarness'
 
 type Body = Record<string, any>
 const parse = (raw: string): Body => JSON.parse(raw) as Body
@@ -25,6 +26,12 @@ const tweak = (raw: string, change: (body: Body) => void): Body => {
   change(body)
   return body
 }
+/** F-020: the pinned detail as a Cancelled instruction — the status with its three stored cancel facts. */
+const cancelledWith = (change: (b: Body) => void = () => undefined): Body => tweak(detailResponseRaw, (b) => {
+  Object.assign(b.instruction, CANCELLED_INSTRUCTION)
+  change(b)
+})
+const NO_CANCEL_FACTS = { cancelledBy: null, cancelledAtUtc: null, cancelReason: null }
 
 describe('instruction decoders', () => {
   it('reads the pinned detail, mutation, load and list bodies', () => {
@@ -58,6 +65,11 @@ describe('instruction decoders', () => {
     })],
     ['a zero instructed quantity', (b: Body) => (b.lines[0].instructed = '0')],
     ['an all-zero id', (b: Body) => (b.instruction.customerPartyId = '00000000-0000-0000-0000-000000000000')],
+    ['a summary without the F-020 cancel members', (b: Body) => {
+      delete b.instruction.cancelledBy
+      delete b.instruction.cancelledAtUtc
+      delete b.instruction.cancelReason
+    }],
   ])('a body with %s is refused', (_, change) => {
     expect(decodeInstructionDetail(tweak(detailResponseRaw, change), null)).toBeNull()
   })
@@ -89,14 +101,14 @@ describe('instruction decoders', () => {
 
   it('F-020: reads a cancelled instruction in the list and the detail, with its kept loads and weighbridge record', () => {
     const page = decodeInstructionPage(tweak(listResponseRaw, (b) => {
-      b.items.push({ ...b.items[0], id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status: 'Cancelled' })
+      b.items.push({ ...b.items[0], id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', ...CANCELLED_INSTRUCTION })
     }))
     expect(page?.items.map((item) => item.status)).toEqual(['Draft', 'Cancelled'])
+    // One cancelled row without its cancel facts is not vouched for, and with it the whole page.
+    expect(decodeInstructionPage(tweak(listResponseRaw, (b) => {
+      b.items.push({ ...b.items[0], id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status: 'Cancelled' })
+    }))).toBeNull()
 
-    const cancelledWith = (change: (b: Body) => void = () => undefined) => tweak(detailResponseRaw, (b) => {
-      b.instruction.status = 'Cancelled'
-      change(b)
-    })
     const load = (b: Body): Body => ({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', lineId: b.lines[0].lineId, kind: 'Loaded',
       quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
@@ -114,8 +126,57 @@ describe('instruction decoders', () => {
     expect(decodeInstructionDetail(cancelledWith((b) => {
       b.shares.push({ ...load(b), kind: 'Shipped', measurement: null })
     }), INSTRUCTION)).toBeNull()
-    // The summary has no cancel member; one that appears is an unknown member and is refused.
-    expect(decodeInstructionDetail(cancelledWith((b) => (b.instruction.cancelReason = 'x')), INSTRUCTION)).toBeNull()
+  })
+
+  it('F-020 (LOJ-D6…D8): a Cancelled summary carries who cancelled it, when and why, as stored; any other status carries none', () => {
+    const facts = { cancelledBy: 'SENTETIK-iptal-eden', cancelledAtUtc: '2026-09-19T11:15:00Z', cancelReason: 'Müşteri vazgeçti' }
+    expect(decodeInstructionDetail(cancelledWith(), INSTRUCTION)?.instruction).toMatchObject({ status: 'Cancelled', ...facts })
+    expect(decodeInstructionMutation({ detail: cancelledWith(), isReplay: true, originalCorrelationId: 'corr-1' })?.detail.instruction)
+      .toMatchObject(facts)
+    expect(decodeInstructionPage(tweak(listResponseRaw, (b) => Object.assign(b.items[0], CANCELLED_INSTRUCTION)))?.items[0])
+      .toMatchObject(facts)
+    // The server writes a zero-offset instant either way; both spellings are the same UTC instant.
+    expect(decodeInstructionDetail(cancelledWith((b) => (b.instruction.cancelledAtUtc = '2026-09-19T11:15:00.1234567+00:00')), INSTRUCTION)
+      ?.instruction.cancelledAtUtc).toBe('2026-09-19T11:15:00.1234567+00:00')
+    // The limits are the columns': a 128-character canceller and a CANCEL_REASON_MAX-character reason are kept whole.
+    expect(decodeInstructionDetail(cancelledWith((b) => {
+      b.instruction.cancelledBy = 'u'.repeat(128)
+      b.instruction.cancelReason = 'r'.repeat(CANCEL_REASON_MAX)
+    }), INSTRUCTION)?.instruction).toMatchObject({ cancelledBy: 'u'.repeat(128), cancelReason: 'r'.repeat(CANCEL_REASON_MAX) })
+
+    expect(decodeInstructionDetail(parse(detailResponseRaw), INSTRUCTION)?.instruction).toMatchObject({ status: 'Draft', ...NO_CANCEL_FACTS })
+    expect(decodeInstructionDetail(tweak(detailResponseRaw, (b) => (b.instruction.status = 'Issued')), INSTRUCTION)?.instruction)
+      .toMatchObject({ status: 'Issued', ...NO_CANCEL_FACTS })
+    expect(decodeInstructionPage(parse(listResponseRaw))?.items[0]).toMatchObject(NO_CANCEL_FACTS)
+  })
+
+  it.each([
+    ['without its canceller', (b: Body) => (b.instruction.cancelledBy = null)],
+    ['without its cancel time', (b: Body) => (b.instruction.cancelledAtUtc = null)],
+    ['without its reason', (b: Body) => (b.instruction.cancelReason = null)],
+    ['without any of the three facts', (b: Body) => Object.assign(b.instruction, NO_CANCEL_FACTS)],
+    ['missing a cancel member', (b: Body) => delete b.instruction.cancelledAtUtc],
+    ['with a canceller name beside the id (no name lookup)', (b: Body) => (b.instruction.cancelledByName = 'Ad Soyad')],
+    ['with a number for the canceller', (b: Body) => (b.instruction.cancelledBy = 42)],
+    ['with an empty canceller', (b: Body) => (b.instruction.cancelledBy = '')],
+    ['with a canceller longer than its column', (b: Body) => (b.instruction.cancelledBy = 'u'.repeat(129))],
+    ['with a date for the cancel time', (b: Body) => (b.instruction.cancelledAtUtc = '2026-09-19')],
+    ['with a cancel time without its offset', (b: Body) => (b.instruction.cancelledAtUtc = '2026-09-19T11:15:00')],
+    ['with an impossible cancel time', (b: Body) => (b.instruction.cancelledAtUtc = '2026-13-40T11:15:00Z')],
+    ['with a number for the cancel time', (b: Body) => (b.instruction.cancelledAtUtc = 1789816500000)],
+    ['with a reason that is not text', (b: Body) => (b.instruction.cancelReason = ['Müşteri vazgeçti'])],
+    ['with an empty reason', (b: Body) => (b.instruction.cancelReason = '')],
+    ['with a blank reason', (b: Body) => (b.instruction.cancelReason = '   ')],
+    ['with an untrimmed reason', (b: Body) => (b.instruction.cancelReason = ' Müşteri vazgeçti ')],
+    ['with a reason longer than its column', (b: Body) => (b.instruction.cancelReason = 'r'.repeat(CANCEL_REASON_MAX + 1))],
+    ['whose status is Issued', (b: Body) => (b.instruction.status = 'Issued')],
+    ['whose status is Draft', (b: Body) => (b.instruction.status = 'Draft')],
+    ['whose status is Issued with only a reason left', (b: Body) => Object.assign(b.instruction, { status: 'Issued', cancelledBy: null, cancelledAtUtc: null })],
+  ])('F-020: a cancel record %s is refused, in the detail, the mutation answer and the list', (_, change) => {
+    const body = cancelledWith(change)
+    expect(decodeInstructionDetail(body, INSTRUCTION)).toBeNull()
+    expect(decodeInstructionMutation({ detail: body, isReplay: false, originalCorrelationId: 'corr-1' })).toBeNull()
+    expect(decodeInstructionPage({ items: [body.instruction], nextCursor: null })).toBeNull()
   })
 
   it('F-020: a status outside Draft / Issued / Cancelled still fails closed, alone or among good rows', () => {
