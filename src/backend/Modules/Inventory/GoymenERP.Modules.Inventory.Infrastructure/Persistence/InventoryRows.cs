@@ -491,6 +491,12 @@ internal sealed class InventoryTransferDispatchRow : IInventoryTenantRow
     public string DocumentKind { get; set; } = string.Empty;
     public Guid DocumentId { get; set; }
     public Guid? DocumentLineId { get; set; }
+
+    /// <summary>
+    /// B-22a: the exact Logistics outgoing-document version the dispatch was proved against. Null only on dispatches
+    /// recorded before the proof binding existed.
+    /// </summary>
+    public int? DocumentVersion { get; set; }
     public DateTimeOffset DispatchedAtUtc { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

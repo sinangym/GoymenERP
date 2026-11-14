@@ -171,6 +171,14 @@ public static class ErpPermissions
     public const string InventoryStockScrapApprove = "inventory.stock-scrap.approve";
 
     /// <summary>
+    /// B-22a stock transfer (user decisions 2026-10-14 K1/K2/K3/K6): plans a same-company label transfer and
+    /// dispatches it only against a final, current Logistics outgoing document. Registration grants nothing: no
+    /// seeded role or real user receives this command. Company-wide only because the transfer has no narrower
+    /// approved scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferWrite = "inventory.stock-transfer.write";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -1174,6 +1182,7 @@ public static class ErpPermissions
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
             InventoryStockScrapApprove,
+            InventoryStockTransferWrite,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -1370,6 +1379,7 @@ public static class ErpPermissions
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
             InventoryStockScrapApprove,
+            InventoryStockTransferWrite,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

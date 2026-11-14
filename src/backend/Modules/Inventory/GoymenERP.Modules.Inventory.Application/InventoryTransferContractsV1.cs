@@ -9,6 +9,18 @@ public static class InventoryTransferApiV1
     public const string DispatchPathTemplate = "/api/v1/inventory/transfers/{transferId}/dispatch";
     public const string AcceptPathTemplate = "/api/v1/inventory/transfers/{transferId}/accept-lines/{lineId}";
     public const int MaximumLines = 100;
+
+    /// <summary>
+    /// Canonical positive document-version text: ASCII digits, no sign, no leading zero, within the Logistics int range.
+    /// </summary>
+    public static bool TryParseOutgoingDocumentVersion(string? value, out int version)
+    {
+        version = 0;
+        return !string.IsNullOrEmpty(value) && value[0] != '0' && value.All(char.IsAsciiDigit)
+            && int.TryParse(value, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out version)
+            && version > 0;
+    }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -36,11 +48,17 @@ public sealed record PlanInventoryTransferV1(
     [property: JsonRequired] DateTimeOffset PlannedAtUtc,
     [property: JsonRequired] IReadOnlyList<PlanInventoryTransferLineV1> Lines);
 
+/// <summary>
+/// B-22a dispatch request: the Logistics-owned outgoing document is named only by its identity and the exact version the
+/// caller saw (canonical positive integer text). No free-form document kind can select the owner; Inventory asks the
+/// typed <see cref="IInventoryTransferOutgoingDocumentProofPortV1"/> and moves stock only on a current effective proof.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DispatchInventoryTransferV1(
     [property: JsonRequired] string ExpectedTransferVersion,
     [property: JsonRequired] DateTimeOffset DispatchedAtUtc,
-    [property: JsonRequired] InventoryTransferDocumentReferenceV1 OutgoingDocument);
+    [property: JsonRequired] Guid OutgoingDocumentId,
+    [property: JsonRequired] string ExpectedOutgoingDocumentVersion);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record AcceptInventoryTransferLineV1(
@@ -95,9 +113,38 @@ public interface IInventoryTransferWriterV1
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The stored answer for this dispatch key — the dispatched transfer, or a recorded terminal refusal re-thrown as a
+    /// replayed <see cref="InventoryTransferException"/> — or null when the key is new.
+    /// </summary>
+    Task<InventoryTransferResultV1?> ReplayDispatchAsync(
+        Guid transferId,
+        DispatchInventoryTransferV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Dispatches only against the exact current effective outgoing-document binding the proof port returned; the store
+    /// re-checks it against the stored company, transfer, requested document version and the stored ordered line set.
+    /// </summary>
     Task<InventoryTransferResultV1> DispatchAsync(
         Guid transferId,
         DispatchInventoryTransferV1 request,
+        InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records a terminal dispatch refusal (a 409 outgoing-document state or version refusal) under the dispatch key with
+    /// its audit entry, so the same key replays the same refusal. No stock, movement or transfer row changes. Returns null
+    /// when the refusal was recorded, or the answer the key already holds (a recorded refusal re-throws itself).
+    /// </summary>
+    Task<InventoryTransferResultV1?> RecordDispatchRefusalAsync(
+        Guid transferId,
+        DispatchInventoryTransferV1 request,
+        InventoryTransferException refusal,
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
@@ -193,11 +240,38 @@ public static class InventoryTransferCodesV1
     public const string IdempotencyConflict = "idempotency_conflict";
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string Unavailable = "inventory_transfer_unavailable";
+
+    // B-22a outgoing-document proof refusals (K2: only a final/effective Logistics document opens dispatch).
+    public const string OutgoingDocumentNotFound = "inventory_transfer_outgoing_document_not_found";
+    public const string OutgoingDocumentBindingMismatch = "inventory_transfer_outgoing_document_binding_mismatch";
+    public const string OutgoingDocumentNotFinal = "inventory_transfer_outgoing_document_not_final";
+    public const string OutgoingDocumentCancelled = "inventory_transfer_outgoing_document_cancelled";
+    public const string OutgoingDocumentReversed = "inventory_transfer_outgoing_document_reversed";
+    public const string OutgoingDocumentVersionConflict = "inventory_transfer_outgoing_document_version_conflict";
+}
+
+/// <summary>The fixed owner kind stored on a B-22a dispatch row; it is never read from the request.</summary>
+public static class InventoryTransferDocumentKindsV1
+{
+    public const string LogisticsOutgoingDocument = "logistics.transfer-outgoing-document";
 }
 
 public sealed class InventoryTransferException(int status, string code, Exception? innerException = null)
     : Exception(code, innerException)
 {
+    public InventoryTransferException(int status, string code, bool isReplay, string originalCorrelationId)
+        : this(status, code)
+    {
+        IsReplay = isReplay;
+        OriginalCorrelationId = originalCorrelationId;
+    }
+
     public int Status { get; } = status;
     public string Code { get; } = code;
+
+    /// <summary>True when this is a recorded terminal refusal answered again for the same idempotency key.</summary>
+    public bool IsReplay { get; }
+
+    /// <summary>The correlation of the request that recorded the refusal; set only on a replay.</summary>
+    public string? OriginalCorrelationId { get; }
 }

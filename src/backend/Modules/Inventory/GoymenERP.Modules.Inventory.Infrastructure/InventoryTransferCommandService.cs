@@ -4,7 +4,11 @@ using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
-/// <summary>Fresh company-wide transfer authority around the Inventory writer and its destination-owner read.</summary>
+/// <summary>
+/// Fresh company-wide transfer authority around the Inventory writer and its destination-owner read. B-22a: dispatch
+/// moves stock only after the typed Logistics outgoing-document proof answers <c>CurrentEffective</c> for the exact
+/// requested version and the transfer's complete ordered line set; a missing or failing proof port is a 503.
+/// </summary>
 public sealed class InventoryTransferCommandService : IInventoryTransferCommandV1
 {
     private readonly ICompanyContext companyContext;
@@ -13,6 +17,7 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
     private readonly IInventoryTransferDestinationPortV1 destination;
     private readonly IInventoryTransferReaderV1 reader;
     private readonly IInventoryTransferWriterV1 writer;
+    private readonly IInventoryTransferOutgoingDocumentProofPortV1? outgoingDocumentProof;
     private readonly Func<string, bool> isKnownPermission;
 
     public InventoryTransferCommandService(
@@ -21,8 +26,10 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         IErpAuthorityRevalidationService authority,
         IInventoryTransferDestinationPortV1 destination,
         IInventoryTransferReaderV1 reader,
-        IInventoryTransferWriterV1 writer)
-        : this(companyContext, currentUser, authority, destination, reader, writer, ErpPermissions.IsKnown)
+        IInventoryTransferWriterV1 writer,
+        IInventoryTransferOutgoingDocumentProofPortV1? outgoingDocumentProof = null)
+        : this(companyContext, currentUser, authority, destination, reader, writer, ErpPermissions.IsKnown,
+            outgoingDocumentProof)
     {
     }
 
@@ -33,8 +40,10 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         IInventoryTransferDestinationPortV1 destination,
         IInventoryTransferReaderV1 reader,
         IInventoryTransferWriterV1 writer,
-        Func<string, bool> isKnownPermission)
+        Func<string, bool> isKnownPermission,
+        IInventoryTransferOutgoingDocumentProofPortV1? outgoingDocumentProof = null)
     {
+        this.outgoingDocumentProof = outgoingDocumentProof;
         this.companyContext = companyContext ?? throw new ArgumentNullException(nameof(companyContext));
         this.currentUser = currentUser ?? throw new ArgumentNullException(nameof(currentUser));
         this.authority = authority ?? throw new ArgumentNullException(nameof(authority));
@@ -73,10 +82,159 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
     {
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(cancellationToken);
+        var replayMetadata = await FinalizeAsync(scope, transport, cancellationToken);
+        // The key's stored answer (dispatch or recorded refusal) comes before any read or proof.
+        if (await writer.ReplayDispatchAsync(transferId, request, replayMetadata,
+                token => FreshAuthorityFenceAsync(scope, token), cancellationToken) is { } replay)
+        {
+            return replay;
+        }
+
+        if (!InventoryTransferApiV1.TryParseOutgoingDocumentVersion(request.ExpectedOutgoingDocumentVersion,
+                out var documentVersion))
+        {
+            throw new InventoryTransferException(400, InventoryTransferCodesV1.ValidationFailed);
+        }
+
+        var transfer = await ReadTransferAsync(scope, transferId, cancellationToken);
+        scope = await MeasureAsync(scope, cancellationToken);
+        InventoryTransferOutgoingDocumentProofQueryV1 query;
+        try
+        {
+            query = new(scope.CompanyId, transfer.TransferId, request.OutgoingDocumentId, documentVersion,
+                transfer.Lines.Select(line => line.LineId));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InventoryTransferException(400, InventoryTransferCodesV1.ValidationFailed, exception);
+        }
+
+        var binding = await RequireCurrentEffectiveOutgoingDocumentAsync(scope, query, cancellationToken);
+        if (binding.Refusal is { } refusal)
+        {
+            if (refusal.Status != 409)
+            {
+                throw refusal;
+            }
+
+            var refusalMetadata = await FinalizeAsync(scope, transport, cancellationToken);
+            if (await writer.RecordDispatchRefusalAsync(transferId, request, refusal, refusalMetadata,
+                    token => FreshAuthorityFenceAsync(scope, token), cancellationToken) is { } winner)
+            {
+                return winner;
+            }
+
+            throw refusal;
+        }
+
         var metadata = await FinalizeAsync(scope, transport, cancellationToken);
-        return await writer.DispatchAsync(transferId, request, metadata, token => FreshAuthorityFenceAsync(scope, token),
-            cancellationToken);
+        return await writer.DispatchAsync(transferId, request, binding.Effective!, metadata,
+            token => FreshAuthorityFenceAsync(scope, token), cancellationToken);
     }
+
+    private async Task<InventoryTransferViewV1> ReadTransferAsync(
+        Scope scope,
+        Guid transferId,
+        CancellationToken cancellationToken)
+    {
+        InventoryTransferViewV1? transfer;
+        try
+        {
+            transfer = await reader.ReadAsync(transferId, cancellationToken);
+        }
+        catch (InventoryTransferException)
+        {
+            await MeasureAsync(scope, cancellationToken);
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await MeasureAsync(scope, cancellationToken);
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
+        }
+
+        scope = await MeasureAsync(scope, cancellationToken);
+        if (transfer is null)
+        {
+            throw new InventoryTransferException(404, InventoryTransferCodesV1.TransferNotFound);
+        }
+
+        if (transfer.CompanyId != scope.CompanyId)
+        {
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        }
+
+        return transfer;
+    }
+
+    /// <summary>
+    /// Asks the typed outgoing-document proof port inside the permission fence. Only <c>CurrentEffective</c> with the
+    /// exact requested binding passes; every other outcome is an explicit refusal and nothing is written for it here.
+    /// </summary>
+    private async Task<(InventoryTransferOutgoingDocumentOwnerSnapshotV1? Effective, InventoryTransferException? Refusal)>
+        RequireCurrentEffectiveOutgoingDocumentAsync(
+            Scope scope,
+            InventoryTransferOutgoingDocumentProofQueryV1 query,
+            CancellationToken cancellationToken)
+    {
+        if (outgoingDocumentProof is null)
+        {
+            // Composition gap: without the Logistics owner's proof no dispatch can be proved.
+            await MeasureAsync(scope, cancellationToken);
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        }
+
+        InventoryTransferOutgoingDocumentProofV1? proof;
+        try
+        {
+            proof = await outgoingDocumentProof.ReadAsync(query, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await MeasureAsync(scope, cancellationToken);
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
+        }
+
+        await MeasureAsync(scope, cancellationToken);
+        if (proof is null)
+        {
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        }
+
+        if (proof.Outcome == InventoryTransferDocumentProofOutcomeV1.CurrentEffective)
+        {
+            var effective = proof.EffectiveBinding;
+            return effective is not null
+                && effective.CompanyId == query.CompanyId
+                && effective.TransferId == query.TransferId
+                && effective.DocumentId == query.DocumentId
+                && effective.DocumentVersion == query.ExpectedDocumentVersion
+                && effective.OrderedTransferLineIds.SequenceEqual(query.OrderedTransferLineIds)
+                ? (effective, null)
+                : throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        }
+
+        return (null, OutgoingDocumentRefusal(proof.Outcome));
+    }
+
+    /// <summary>The closed outcome-to-problem map; an unknown outcome fails closed as unavailable.</summary>
+    internal static InventoryTransferException OutgoingDocumentRefusal(InventoryTransferDocumentProofOutcomeV1 outcome) =>
+        outcome switch
+        {
+            InventoryTransferDocumentProofOutcomeV1.Missing =>
+                new(422, InventoryTransferCodesV1.OutgoingDocumentNotFound),
+            InventoryTransferDocumentProofOutcomeV1.BindingMismatch =>
+                new(422, InventoryTransferCodesV1.OutgoingDocumentBindingMismatch),
+            InventoryTransferDocumentProofOutcomeV1.Draft =>
+                new(409, InventoryTransferCodesV1.OutgoingDocumentNotFinal),
+            InventoryTransferDocumentProofOutcomeV1.Cancelled =>
+                new(409, InventoryTransferCodesV1.OutgoingDocumentCancelled),
+            InventoryTransferDocumentProofOutcomeV1.Reversed =>
+                new(409, InventoryTransferCodesV1.OutgoingDocumentReversed),
+            InventoryTransferDocumentProofOutcomeV1.Stale =>
+                new(409, InventoryTransferCodesV1.OutgoingDocumentVersionConflict),
+            _ => new(503, InventoryTransferCodesV1.Unavailable),
+        };
 
     public async Task<InventoryTransferResultV1> AcceptLineAsync(
         Guid transferId,

@@ -3215,6 +3215,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("0e75914b6647cf6ee11f83680a1590d354de818b7b4ca24e10e22c164cb255c4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // B-22a: adds the nullable proved DocumentVersion (positive check) to transfer dispatches; the Down's only raw
+                // SQL is the Inventory refusal (51272, used by no other migration) while a dispatch stores a proved version,
+                // and the THROW precedes the column drop.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261111231419_AddInventoryTransferDispatchDocumentVersion.cs"] =
+                    new("9e5a05561292abbe02449ae15690589d9e967f224a93dec8d921e6a3ecdfaef0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // SAT-D297: widens the ledger reason check to 1..9 (zero_cost_receipt); the Down's only raw SQL is the Inventory
                 // refusal (51258, used by no other migration) while a reason 9 row exists, and the THROW precedes the check swap.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261111091157_RelaxInventoryAverageCostReasonToZeroCostReceipt.cs"] =

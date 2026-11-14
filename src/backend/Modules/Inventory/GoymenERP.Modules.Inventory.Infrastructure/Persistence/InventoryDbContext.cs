@@ -35,6 +35,9 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 {
     public const string Schema = "inventory";
 
+    /// <summary>B-22a: a proved dispatch stores a positive Logistics document version; legacy rows stay null.</summary>
+    internal const string TransferDispatchDocumentVersionCheck = "[DocumentVersion] IS NULL OR [DocumentVersion] >= 1";
+
     /// <summary>
     /// SAT-D262: a known row holds both numbers (kg >= 0, average >= 0) and no reason; an unreadable row holds a reason
     /// (1..9, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
@@ -900,6 +903,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND ([DocumentLineId] IS NULL OR [DocumentLineId] <> '00000000-0000-0000-0000-000000000000')");
             table.HasCheckConstraint("CK_TransferDispatches_Text",
                 "LEN([DocumentKind]) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_TransferDispatches_DocumentVersion", TransferDispatchDocumentVersionCheck);
         });
         dispatch.HasKey(x => new { x.CompanyId, x.TransferId });
         dispatch.Property(x => x.DocumentKind).HasMaxLength(64).IsRequired();

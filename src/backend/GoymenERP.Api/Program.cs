@@ -302,6 +302,11 @@ builder.Services.AddInventoryStockCounts();
 builder.Services.AddInventoryStockScraps();
 // D-05: read-only Inventory pending approvals composed into the existing Work inbox.
 builder.Services.AddInventoryPendingApprovalReads();
+// B-22a: the stock transfer plan/dispatch commands and the transfer read behind the published routes, with the
+// destination custody check over Organization's company-scoped location read (DEC-ORG-004). Dispatch moves stock
+// only after the Logistics outgoing-document proof answers CurrentEffective. Accept is not published here.
+builder.Services.AddInventoryTransfers();
+builder.Services.AddScoped<IInventoryTransferDestinationPortV1, OrganizationInventoryTransferDestinationPort>();
 // INV-OPEN-1 part 2: the opening command's host ports — Organization's company-scoped location module read
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();

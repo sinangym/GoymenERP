@@ -520,6 +520,33 @@ awaited proof and must consume an owner implementation that reads that snapshot 
 I02.1 remains separate: the accepted partial-acceptance invariant does not by itself decide per-line quantity grain.
 No quantity, migration or stock-effect wiring is introduced by this contract-only slice.
 
+### B-22a — dispatch bound to the Logistics outgoing-document proof
+
+The host now wires `AddInventoryTransfers()` with the destination adapter (`OrganizationInventoryTransferDestinationPort`:
+an external location's custodian must be its operator party, an internal location's custodian the company itself —
+DEC-ORG-004; an unreadable owner answers 503) and maps plan, dispatch and get-by-id (accept is B-22b).
+`inventory.stock-transfer.write` is registered centrally; no grant is added. The dispatch request names the outgoing
+document only by `outgoingDocumentId` and `expectedOutgoingDocumentVersion` (canonical positive integer text); the
+stored kind is the fixed `logistics.transfer-outgoing-document`. Inside the permission fence the service replays the
+key first, reads the transfer, then asks `IInventoryTransferOutgoingDocumentProofPortV1` with the transfer's complete
+ordered line set (full-label v1). Only `CurrentEffective` moves stock; the store re-checks the proved binding against the
+stored company, transfer, requested version and ordered lines and stores `DocumentVersion` on the dispatch row.
+
+| Proof outcome | Answer | Recorded for the key |
+|---|---|---|
+| `Missing` | 422 `inventory_transfer_outgoing_document_not_found` | no |
+| `BindingMismatch` | 422 `inventory_transfer_outgoing_document_binding_mismatch` | no |
+| `Draft` | 409 `inventory_transfer_outgoing_document_not_final` | yes (terminal, audited) |
+| `Cancelled` | 409 `inventory_transfer_outgoing_document_cancelled` | yes |
+| `Reversed` | 409 `inventory_transfer_outgoing_document_reversed` | yes |
+| `Stale` | 409 `inventory_transfer_outgoing_document_version_conflict` | yes |
+| `Unavailable`, no proof port, port error | 503 (code-less) | no |
+
+Migration `AddInventoryTransferDispatchDocumentVersion` adds nullable `TransferDispatches.DocumentVersion` with
+`CK_TransferDispatches_DocumentVersion`; its `Down` refuses (THROW 51272) while a proved dispatch row exists (forward
+fix). Not decided here and left fail-closed: cancelling or reversing a dispatched transfer, planned/actual difference
+or tolerance resolution, and subcontract-order binding.
+
 ## Movement kinds and rollback signal (reference)
 
 `StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 9`):
