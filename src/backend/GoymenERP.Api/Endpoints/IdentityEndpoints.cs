@@ -1,8 +1,10 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Security;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using Microsoft.AspNetCore.Authentication;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -41,9 +43,93 @@ public static class IdentityEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapAccessView(group);
+        MapLocalAccountSession(group);
 
         return endpoints;
     }
+
+    /// <summary>
+    /// ID-1 local account session. Both routes are always in the document (the login screen is built from it) and
+    /// answer a code-less 404 unless the host runs in the <c>LocalAccount</c> mode. Every login refusal is the same
+    /// platform 401, whatever the reason (unknown user, wrong password, lock, inactive account); only the security
+    /// event carries the reason. The rate limit is checked before any credential is read.
+    /// </summary>
+    private static void MapLocalAccountSession(RouteGroupBuilder group)
+    {
+        group.MapPost("/session/login", async (
+                LocalAccountLoginRequestV1 request,
+                HttpContext httpContext,
+                IAuthenticationSchemeProvider schemeProvider,
+                CancellationToken cancellationToken) =>
+            {
+                NoStore(httpContext);
+                if (await schemeProvider.GetSchemeAsync(LocalAccountSession.SchemeName) is null)
+                {
+                    return NotFound();
+                }
+
+                var services = httpContext.RequestServices;
+                if (!services.GetRequiredService<LocalAccountLoginRateLimiter>().TryAcquire(httpContext, request.UserName))
+                {
+                    return LoginRateLimited(services.GetRequiredService<ICorrelationContext>());
+                }
+
+                var result = await services.GetRequiredService<ILocalAccountLoginService>().LoginAsync(
+                    request.UserName,
+                    request.Password,
+                    cancellationToken);
+                if (!result.Succeeded)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                await httpContext.SignInAsync(
+                    LocalAccountSession.SchemeName,
+                    LocalAccountSession.CreatePrincipal(result.UserId!.Value, result.SecurityStamp!.Value),
+                    LocalAccountSession.CreateProperties(services.GetRequiredService<TimeProvider>().GetUtcNow()));
+                return Results.NoContent();
+            })
+            .AllowAnonymous()
+            .WithName("LoginLocalAccountV1")
+            .Accepts<LocalAccountLoginRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpLoginRefused()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpTooManyRequests(IdentitySessionProblemCodesV1.LoginRateLimited)
+            .ProducesErpInternalError();
+
+        group.MapPost("/session/logout", async (
+                HttpContext httpContext,
+                IAuthenticationSchemeProvider schemeProvider) =>
+            {
+                NoStore(httpContext);
+                if (await schemeProvider.GetSchemeAsync(LocalAccountSession.SchemeName) is null)
+                {
+                    return NotFound();
+                }
+
+                await httpContext.SignOutAsync(LocalAccountSession.SchemeName);
+                return Results.NoContent();
+            })
+            .WithName("LogoutLocalAccountV1")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static IResult LoginRateLimited(ICorrelationContext correlationContext) => Results.Problem(
+        title: "Çok fazla giriş denemesi.",
+        detail: "Kısa süre içinde çok fazla giriş denemesi yapıldı. Lütfen biraz sonra yeniden deneyin.",
+        statusCode: StatusCodes.Status429TooManyRequests,
+        extensions: new Dictionary<string, object?>
+        {
+            ["code"] = IdentitySessionProblemCodesV1.LoginRateLimited,
+            ["correlationId"] = correlationContext.IsResolved ? correlationContext.CorrelationId : null,
+        });
 
     /// <summary>
     /// AT-004 read-only access view ("Kullanıcılar ve yetkiler"). Four GETs, all on

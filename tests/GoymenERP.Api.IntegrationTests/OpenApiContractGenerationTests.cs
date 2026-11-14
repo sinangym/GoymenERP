@@ -11,6 +11,7 @@ using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.OpenApi;
+using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -232,6 +233,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/identity/access/roles/{roleId}", "GetIdentityAccessRoleV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:roleId:true:type:string;format:uuid"]),
+        // ID-1 local account session (KIM-D4/KIM-D12): login is the one anonymous command; one generic 401 for every
+        // refusal (no user enumeration), 429 before any credential is read, a code-less 404 while the mode is off.
+        new("post", "/api/v1/identity/session/login", "LoginLocalAccountV1",
+            ["204:", "400:application/problem+json", "401:application/problem+json", "404:application/problem+json", "415:", "429:application/problem+json", "500:application/problem+json"],
+            "#/components/schemas/LocalAccountLoginRequestV1"),
+        new("post", "/api/v1/identity/session/logout", "LogoutLocalAccountV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json")),
         new("get", "/api/v1/counterparties", "GetCounterpartiesV1",
             AuthenticatedResponses(
                 "200:application/json",
@@ -1479,6 +1487,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetIdentityAccessUserV1"] = "ref:IdentityAccessUserDetail",
             ["GetIdentityAccessRolesV1"] = "array:IdentityAccessRoleSummary",
             ["GetIdentityAccessRoleV1"] = "ref:IdentityAccessRoleDetail",
+            ["LoginLocalAccountV1"] = "none",
+            ["LogoutLocalAccountV1"] = "none",
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["GetCounterpartyCompanyAccountLinkCandidatesV1"] =
                 "ref:CounterpartyLinkCandidatePage",
@@ -2709,6 +2719,7 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
     [
+        "LoginLocalAccountV1",
         "CreatePriceListV1",
         "RevisePriceListDraftV1",
         "StartPriceListVersionV1",
@@ -2976,6 +2987,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationWorkCenterV1:404",
         "GetIdentityAccessUserV1:404",
         "GetIdentityAccessRoleV1:404",
+        "LoginLocalAccountV1:404",
+        "LogoutLocalAccountV1:404",
         "GetFinanceAllocationV1:404",
         "GetFinancePaymentAllocationV1:404",
         "GetInventoryLabelV1:404",
@@ -3177,6 +3190,7 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> MixedProblemResponses =
     [
+        "LoginLocalAccountV1:400",
         "ListFinanceOpenItemsV1:400",
         "GetFinanceOpenItemV1:400",
         "GetWorkApprovalsV1:400",
@@ -3341,6 +3355,8 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            // ID-1: the login rate limit's single code, read from the owner's contract.
+            ["LoginLocalAccountV1:429"] = [IdentitySessionProblemCodesV1.LoginRateLimited],
             // INV-OPEN-1 part 2: the owner's closed sets (InventoryOpeningCodesV1), read here, never retyped.
             ["RecordInventoryOpeningCountV1:400"] = [.. InventoryOpeningCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryOpeningCountV1:409"] = [.. InventoryOpeningCodesV1.Status409Codes.Order(StringComparer.Ordinal)],
@@ -8776,6 +8792,11 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                // ID-1 local account login body (KIM-D4); the password is never echoed in any response.
+                ["LocalAccountLoginRequestV1"] = ObjectSchema(
+                    ["userName", "password"],
+                    ("userName", "type:string"),
+                    ("password", "type:string")),
                 ["PrepareAccountingPostingAccountMappingRequestV1"] = ObjectSchema(
                     ["expectedLatestMappingVersion", "effectiveFrom", "rows"],
                     ("expectedLatestMappingVersion", "type:integer|string;format:int64"),
@@ -10698,9 +10719,9 @@ public sealed partial class OpenApiContractGenerationTests
         }
 
         var anonymousOperations = operations.Where(operation =>
-                operation.OperationId is "GetLivenessV1" or "GetReadinessV1")
+                operation.OperationId is "GetLivenessV1" or "GetReadinessV1" or "LoginLocalAccountV1")
             .ToArray();
-        Assert.Equal(2, anonymousOperations.Length);
+        Assert.Equal(3, anonymousOperations.Length);
         Assert.All(anonymousOperations, operation =>
             Assert.False(operation.Value.TryGetProperty("security", out _)));
 

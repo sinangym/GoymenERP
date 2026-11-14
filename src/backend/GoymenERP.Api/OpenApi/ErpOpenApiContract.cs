@@ -408,6 +408,40 @@ public static partial class ErpOpenApiContract
         return builder.ProducesErpInternalError();
     }
 
+    /// <summary>
+    /// The anonymous login refusal: the same platform <c>authentication_required</c> 401 as an authenticated
+    /// route, without a 403 (an anonymous operation has no permission check).
+    /// </summary>
+    public static RouteHandlerBuilder ProducesErpLoginRefused(
+        this RouteHandlerBuilder builder)
+    {
+        builder.Produces<ErpProblemDetailsContract>(
+            StatusCodes.Status401Unauthorized,
+            "application/problem+json");
+        AddProblemCodeMetadata(
+            builder,
+            StatusCodes.Status401Unauthorized,
+            [ErpProblemCodes.AuthenticationRequired]);
+        return builder;
+    }
+
+    public static RouteHandlerBuilder ProducesErpTooManyRequests(
+        this RouteHandlerBuilder builder,
+        params string[] stableCodes)
+    {
+        if (stableCodes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Coded 429 OpenAPI responses require at least one stable code.");
+        }
+
+        builder.Produces<ErpProblemDetailsContract>(
+            StatusCodes.Status429TooManyRequests,
+            "application/problem+json");
+        AddProblemCodeMetadata(builder, StatusCodes.Status429TooManyRequests, stableCodes);
+        return builder;
+    }
+
     public static RouteHandlerBuilder ProducesErpInternalError(
         this RouteHandlerBuilder builder)
     {
