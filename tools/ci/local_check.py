@@ -34,6 +34,8 @@ ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SENSITIVE = re.compile(r"(?i)\b[\w.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|authorization|connection[_-]?string)[\w.-]*\s*[=:]")
 BEARER = re.compile(r"(?i)\bBearer\s+[^\r\n]+")
 LEASE_ROOT = Path("/home/ci/local-ci-leases")
+# Same rule as Invoke-LocalChecks.ps1: COMPUTERNAME holds the NetBIOS name (at most 15 characters).
+LOCAL_CI_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,14}")
 LOCAL_PATH = "/opt/goymen-ci/tools/dotnet-10.0.303:/opt/goymen-ci/tools/node-v24.20.0-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 P032_BROWSER_PROFILE = "p032-u02-r14"
 HEAVY_PROFILES = frozenset(("frontend", P032_BROWSER_PROFILE))
@@ -61,7 +63,12 @@ def validate_lease(root: Path, profile: str, path: Path, expected_head: str) -> 
     if path.stat().st_size > 4096:
         raise ValueError("Invalid launcher lease size")
     lease = json.loads(path.read_text(encoding="utf-8-sig"))
-    if (lease.get("host") != "DESKTOP-11CDRHD" or lease.get("status") != "ACTIVE"
+    configured_host = os.environ.get("GOYMEN_LOCAL_CI_HOST", "")
+    if not configured_host.strip():
+        raise ValueError("GOYMEN_LOCAL_CI_HOST is not configured; local lease check fails closed")
+    if not LOCAL_CI_HOST.fullmatch(configured_host):
+        raise ValueError("GOYMEN_LOCAL_CI_HOST is not a valid computer name; local lease check fails closed")
+    if (lease.get("host") != configured_host or lease.get("status") != "ACTIVE"
             or lease.get("repository") != str(root) or lease.get("expectedHead") != expected_head
             or lease.get("profile") != profile or lease.get("nonce") != path.stem[6:]):
         raise ValueError("Launcher lease context mismatch")

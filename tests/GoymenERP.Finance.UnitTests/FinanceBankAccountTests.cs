@@ -75,9 +75,11 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, openItemInvoiceExchange) < Array.IndexOf(migrations, invoiceCancellations));
         const string paymentAllocations = "20261107154419_AddPaymentAllocations";
         Assert.True(Array.IndexOf(migrations, invoiceCancellations) < Array.IndexOf(migrations, paymentAllocations));
-        // The NEWEST migration is pinned by name on purpose: the payment allocations (F3a / API-20) are the reviewed
-        // append after the invoice cancellations, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal(paymentAllocations, migrations.Last());
+        const string paymentReversals = "20261111184316_AddPaymentReversals";
+        Assert.True(Array.IndexOf(migrations, paymentAllocations) < Array.IndexOf(migrations, paymentReversals));
+        // The NEWEST migration is pinned by name on purpose: the payment reversals (API-23) are the reviewed append
+        // after the payment allocations, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal(paymentReversals, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

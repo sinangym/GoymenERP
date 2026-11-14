@@ -13,7 +13,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// filter on the server-resolved company and a write guard that refuses any row of another company, any
 /// company change, any delete and any column move outside the axis a command may move (a header's status /
 /// version / time, a request's sourcing version; an order line's technical, accepted and (A1-3) cancelled totals; attempts
-/// append only). The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key
+/// and (A3 API-30) delivery-slice revisions append only). The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key
 /// is never stored. The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// Nothing here is physical: an approved order is expected supply, never stock.
 /// </summary>
@@ -164,6 +164,9 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     internal DbSet<PurchaseAcceptanceRow> Acceptances => Set<PurchaseAcceptanceRow>();
 
+    /// <summary>A3 API-30 (ALS-D33): the delivery slices of every recorded schedule revision (append only).</summary>
+    internal DbSet<PurchaseOrderLineDeliverySliceRow> DeliverySlices => Set<PurchaseOrderLineDeliverySliceRow>();
+
     internal DbSet<PurchaseAttemptRow> Attempts => Set<PurchaseAttemptRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -179,6 +182,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureOrders(modelBuilder);
         ConfigureOrderLines(modelBuilder);
         ConfigureAcceptances(modelBuilder);
+        ConfigureDeliverySlices(modelBuilder);
         ConfigureAttempts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -417,6 +421,45 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             .HasDatabaseName("UX_PurchaseAcceptanceShares_Idempotency");
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.LineId, x.RecordedAtUtc, x.AcceptanceId })
             .HasDatabaseName("IX_PurchaseAcceptanceShares_OrderLineRecorded");
+        entity.HasOne<PurchaseOrderRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PurchaseOrderLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// A3 API-30 (ALS-D33, ALS-D21): a schedule revision is the set of rows of one (company, order, version); its slices are numbered
+    /// 1..n (SliceNo, "Sıra No") and named by a distinct id, each with a quantity above zero in the line's unit and a delivery date.
+    /// Bound to the order and to the line itself (the line's alternate key), never to another company's. The Σ = ordered rule is the
+    /// domain's, measured again on every rebuild.
+    /// </summary>
+    private void ConfigureDeliverySlices(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PurchaseOrderLineDeliverySliceRow>();
+        entity.ToTable("PurchaseOrderLineDeliverySlices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseOrderLineDeliverySlices_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} AND [LineId] <> {EmptyGuid} AND [SliceId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_PurchaseOrderLineDeliverySlices_Quantity", "[Quantity] > 0");
+            table.HasCheckConstraint("CK_PurchaseOrderLineDeliverySlices_SliceNo",
+                "[SliceNo] >= 1 AND [SliceNo] <= " + PurchaseOrder.MaximumScheduleSlices.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            table.HasCheckConstraint("CK_PurchaseOrderLineDeliverySlices_Version", "[OrderVersionAfter] >= 2");
+            table.HasCheckConstraint("CK_PurchaseOrderLineDeliverySlices_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OrderId, x.OrderVersionAfter, x.SliceNo });
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.OrderVersionAfter, x.SliceId }).IsUnique()
+            .HasDatabaseName("UX_PurchaseOrderLineDeliverySlices_SliceId");
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.LineId, x.OrderVersionAfter })
+            .HasDatabaseName("IX_PurchaseOrderLineDeliverySlices_OrderLineVersion");
+        entity.Property(x => x.Quantity).HasPrecision(18, 3);
+        entity.Property(x => x.DeliveryDate).HasColumnType("date");
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasOne<PurchaseOrderRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.OrderId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })

@@ -1044,6 +1044,8 @@ public sealed partial class PurchasingService(
             {
                 Cancelled = Text(line.CancelledQuantity),
                 Price = visible ? PriceView(line, stored.Order.Money) : null,
+                DeliverySchedule = [.. line.DeliverySchedule.Select(slice =>
+                    new PurchaseOrderDeliverySliceView(slice.SliceId, slice.SliceNo, Text(slice.Quantity), slice.DeliveryDate))],
             })])
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,

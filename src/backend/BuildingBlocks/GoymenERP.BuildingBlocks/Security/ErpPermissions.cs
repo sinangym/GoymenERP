@@ -327,6 +327,14 @@ public static class ErpPermissions
     public const string FinanceManualBankPaymentRecord = "finance.manual-bank-payment.record";
 
     /// <summary>
+    /// API-23 maker-checker reversal of a recorded manual outgoing bank payment. Registration makes the names
+    /// measurable; it grants nothing (grants stay a human gate). Company-wide only; the approver must differ from
+    /// the proposer, enforced by the service and the database.
+    /// </summary>
+    public const string FinanceManualBankPaymentReversePropose = "finance.manual-bank-payment.reverse.propose";
+    public const string FinanceManualBankPaymentReverseApprove = "finance.manual-bank-payment.reverse.approve";
+
+    /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
     /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
     /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
@@ -759,6 +767,12 @@ public static class ErpPermissions
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>
+    /// F-020 (LOJ-D6..D8): cancel a loading instruction with a reason (LogisticsPermissionManifestV1) while no shipment is recorded —
+    /// never a delete. Its own name. Registered, not granted (grant is a human gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsLoadingInstructionsCancel = "logistics.loading-instructions.cancel";
+
     /// <summary>Customer-return reads. Registered, not granted; company-wide only.</summary>
     public const string LogisticsCustomerReturnsRead = "logistics.customer-returns.read";
 
@@ -841,6 +855,17 @@ public static class ErpPermissions
     /// Not Critical: no source makes seeing a price a segregated duty.
     /// </summary>
     public const string PurchasingOrdersPriceRead = "purchasing.orders.price.read";
+
+    /// <summary>
+    /// A3 API-30 (ALS-D94, EK16; plan API-12/API-17 name): revise an existing purchase order — today only a line's delivery
+    /// schedule (termin dilimleri), which on an APPROVED order needs no re-approval when the total and the price stay (ALS-D94);
+    /// the header/line revision with Rev+1 and re-approval (ALS-D9, API-12) and the breakdown (API-17) take the same name when
+    /// they come. The Purchasing owner's name (PurchasingPermissionManifestV1.OrdersRevise), apart from entering, approving,
+    /// receiving and cancelling; none confers another. Sinan (#66 6824883445): no other name is opened for the schedule.
+    /// Registered, not granted: no role, seed or user receives it here (only SENTETIK browser-suite personas in disposable
+    /// stacks); the persona card and any real grant stay a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingOrdersRevise = "purchasing.orders.revise";
 
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
@@ -1102,6 +1127,7 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
@@ -1115,6 +1141,7 @@ public static class ErpPermissions
             PurchasingRequestsWithdraw,
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
+            PurchasingOrdersRevise,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1145,6 +1172,8 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceManualBankPaymentReversePropose,
+        FinanceManualBankPaymentReverseApprove,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1276,6 +1305,7 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
@@ -1289,6 +1319,7 @@ public static class ErpPermissions
             PurchasingRequestsWithdraw,
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
+            PurchasingOrdersRevise,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1319,6 +1350,8 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceManualBankPaymentReversePropose,
+        FinanceManualBankPaymentReverseApprove,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,

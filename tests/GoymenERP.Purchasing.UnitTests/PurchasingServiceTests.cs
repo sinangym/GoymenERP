@@ -30,6 +30,7 @@ public sealed partial class PurchasingServiceTests
     private const string CreatePermission = ErpPermissions.CounterpartyPartiesCreate;
     private const string ReadPermission = ErpPermissions.CounterpartyPartiesRead;
     private const string ApprovePermission = ErpPermissions.CounterpartyAccountsCreate;
+    private const string RevisePermission = ErpPermissions.PurchasingOrdersRevise;
 
     [Fact]
     public async Task A_request_and_an_order_bound_to_it_are_stored_once_with_the_owners_product_version_and_the_fences_measured()
@@ -516,7 +517,7 @@ public sealed partial class PurchasingServiceTests
 
         /// <summary>A4b: the Sales approved-line port the service is composed with (null: not composed, Sales lines stay closed).</summary>
         public IPurchaseRequestSalesSourcePortV1? SalesSources { get; set; }
-        public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
+        public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {
@@ -694,12 +695,17 @@ public sealed partial class PurchasingServiceTests
         public Action? BeforeMutation { get; set; }
         public Action<PurchasingWriteEnvelope, string, string>? BeforeRefusal { get; set; }
         public Action? AfterReplay { get; set; }
+
+        /// <summary>Runs on every replay read, a miss included: the point between a command's first fence and its last one.</summary>
+        public Action? OnReplayRead { get; set; }
         public Exception? ReplayFault { get; set; }
 
         /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
         public void PlantWinner(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId, string correlation) =>
             _attempts[(commandName, envelope.IdempotencyKey)] =
                 new Attempt(envelope.ActorId, requestHash, null, _orders.Single(candidate => candidate.Order.Id == orderId), null, correlation);
+        /// <summary>A3 API-30: an order the service cannot create today (e.g. a Piece line, which Settings does not publish yet).</summary>
+        public void PlantOrder(StoredPurchaseOrder order) => _orders.Add(order);
         /// <summary>A1-2b: a create attempt recorded earlier (e.g. a Sales-sourced request stored before A1-2b) under the key.</summary>
         public StoredPurchaseRequest PlantRequestAttempt(string key, string actor, string requestHash, PurchaseRequest request, DateOnly effectiveOn,
             IReadOnlyDictionary<Guid, string> productVersionsByLineId, string correlation)
@@ -828,6 +834,7 @@ public sealed partial class PurchasingServiceTests
         public Task<PurchasingReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, CancellationToken cancellationToken = default)
         {
             Replays++;
+            OnReplayRead?.Invoke();
             if (!_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
             {
                 return Task.FromResult<PurchasingReplay?>(null);

@@ -52,6 +52,8 @@ export const REVERSAL_PROPOSALS_PATH = '/finance/manual-receipts/reversal-propos
 export const BANK_ACCOUNT_MASTER_PATH = '/finance/bank-accounts/master'
 export const BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH = '/finance/bank-accounts/currency-candidates'
 export const MANUAL_BANK_PAYMENTS_PATH = '/finance/manual-bank-payments'
+/** API-23: the payment reversal proposals live under the payment resource. */
+export const PAYMENT_REVERSAL_PROPOSALS_PATH = `${MANUAL_BANK_PAYMENTS_PATH}/reversal-proposals`
 /** DEC-FIN-016: the customer cheque / note portfolio (receive, status changes, collection, list, detail). */
 export const CUSTOMER_INSTRUMENTS_PATH = '/finance/customer-instruments'
 /** The first-release party ledger (cari hesap ekstresi), read-only. */
@@ -243,6 +245,30 @@ export function createHttpFinancePort(): FinanceReceiptPort {
         idempotencyKey,
         request,
       ),
+    proposePaymentReversal: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(request.paymentId)}/reversal-proposals`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    approvePaymentReversal: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${PAYMENT_REVERSAL_PROPOSALS_PATH}/${encodeURIComponent(request.proposalId)}/approval`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    rejectPaymentReversal: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${PAYMENT_REVERSAL_PROPOSALS_PATH}/${encodeURIComponent(request.proposalId)}/rejection`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    pendingPaymentReversals: (scope, signal) => read(`${API_BASE}${PAYMENT_REVERSAL_PROPOSALS_PATH}/pending`, scope, signal),
+    paymentReversalProposal: (scope, proposalId, signal) =>
+      read(`${API_BASE}${PAYMENT_REVERSAL_PROPOSALS_PATH}/${encodeURIComponent(proposalId)}`, scope, signal),
 
     listCustomerInstruments: (scope, request, signal) => {
       const params = new URLSearchParams()

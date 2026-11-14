@@ -1,7 +1,11 @@
 import copy
 import hashlib
+import os
 import pathlib
+import re
+import subprocess
 import tempfile
+import textwrap
 import unittest
 import unicodedata
 
@@ -397,6 +401,154 @@ class ComposeContractTests(unittest.TestCase):
             if line.strip()
         }
         self.assertEqual(sab_uploaded, set(validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST))
+
+    # CIH-D9: what the pull_request trigger ignores is exactly what the base gate may ignore.
+    BASE_GATE_IGNORED_PATHS = ("docs/**", "AGENTS.md", ".claude/**")
+
+    def read_base_gate(self):
+        workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(workflow.count("    paths-ignore:\n"), 1)
+        trigger = workflow.split("\npermissions:", 1)[0]
+        ignored = re.findall(
+            r"^      - '([^']+)'$",
+            trigger.split("    paths-ignore:\n", 1)[1].split("  push:\n", 1)[0],
+            re.M,
+        )
+        step = workflow.split(
+            "      - name: Bind exact source and disposable run secrets\n", 1
+        )[1]
+        script = step.split("        run: |\n", 1)[1].split("\n\n", 1)[0]
+        return workflow, ignored, script
+
+    def test_base_gate_exempts_exactly_the_paths_the_trigger_ignores(self):
+        workflow, ignored, script = self.read_base_gate()
+        self.assertEqual(tuple(ignored), self.BASE_GATE_IGNORED_PATHS)
+        self.assertEqual(
+            re.findall(r"':\(([a-z,]+)\)([^']+)'", workflow),
+            [("exclude,glob", pattern) for pattern in ignored],
+        )
+        active = [
+            line.strip() for line in script.splitlines() if not line.strip().startswith("#")
+        ]
+        self.assertEqual(
+            active,
+            [
+                "set -euo pipefail",
+                'actual_head="$(git rev-parse HEAD)"',
+                'test "$actual_head" = "$EXPECTED_HEAD_SHA"',
+                'if ! git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD; then',
+                'fork_point="$(git merge-base "$EXPECTED_BASE_SHA" HEAD)"',
+                'git diff --quiet "$fork_point" "$EXPECTED_BASE_SHA" -- . \\',
+                " ".join(f"':(exclude,glob){pattern}'" for pattern in ignored) + " || {",
+                'echo "::error::C01_BASE_NOT_ANCESTOR: PR base $EXPECTED_BASE_SHA is not an ancestor '
+                "of HEAD $actual_head and moved outside the paths this workflow ignores. Update the "
+                'branch from main (non-empty merge commit) and re-run."',
+                "exit 1",
+                "}",
+                'echo "C01_BASE_DRIFT_IN_IGNORED_PATHS_ONLY fork_point=$fork_point"',
+                "fi",
+            ],
+        )
+
+    def test_base_gate_accepts_only_drift_in_the_ignored_paths(self):
+        script = textwrap.dedent(self.read_base_gate()[2])
+        with tempfile.TemporaryDirectory() as directory:
+            repository = pathlib.Path(directory) / "repository"
+            repository.mkdir()
+            environment = {
+                "PATH": os.environ["PATH"],
+                "HOME": directory,
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_AUTHOR_NAME": "C01 gate test",
+                "GIT_AUTHOR_EMAIL": "c01-gate-test@example.invalid",
+                "GIT_COMMITTER_NAME": "C01 gate test",
+                "GIT_COMMITTER_EMAIL": "c01-gate-test@example.invalid",
+            }
+
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", "-C", str(repository), *arguments],
+                    env=environment, check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+            def commit(changes):
+                for relative, content in changes.items():
+                    target = repository / relative
+                    if content is None:
+                        target.unlink()
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="utf-8")
+                git("add", "-A")
+                git("commit", "-q", "-m", "change")
+                return git("rev-parse", "HEAD")
+
+            def gate(head, base):
+                git("checkout", "-q", "--detach", head)
+                return subprocess.run(
+                    ["bash", "-c", script],
+                    cwd=repository, capture_output=True, text=True,
+                    env={**environment, "EXPECTED_HEAD_SHA": head, "EXPECTED_BASE_SHA": base},
+                )
+
+            git("init", "-q")
+            fork = commit({
+                "src/app.cs": "one\n", "docs/guide/note.md": "one\n", "AGENTS.md": "one\n",
+                ".claude/skills/skill.md": "one\n", "README.md": "one\n",
+            })
+            head = commit({"src/app.cs": "two\n"})
+
+            def base_with(changes):
+                git("checkout", "-q", "--detach", fork)
+                return commit(changes)
+
+            contained = gate(head, fork)
+            self.assertEqual(contained.returncode, 0, contained.stderr)
+            self.assertNotIn("C01_BASE_DRIFT", contained.stdout)
+
+            ignored_only = gate(head, base_with({
+                "docs/guide/note.md": "two\n", "docs/backlog/deep/new.json": "{}\n",
+                "AGENTS.md": "two\n", ".claude/settings.json": "{}\n",
+                ".claude/skills/skill.md": None,
+            }))
+            self.assertEqual(ignored_only.returncode, 0, ignored_only.stderr)
+            self.assertIn("C01_BASE_DRIFT_IN_IGNORED_PATHS_ONLY", ignored_only.stdout)
+
+            for label, changes in (
+                ("source", {"src/app.cs": "three\n"}),
+                ("new source file next to prose", {"docs/x.md": "x\n", "src/new.cs": "x\n"}),
+                ("root file", {"README.md": "two\n"}),
+                ("workflow", {".github/workflows/ci.yml": "x\n"}),
+                ("look-alike folder", {"docsX/note.md": "x\n"}),
+                ("nested docs folder", {"src/docs/note.md": "x\n"}),
+                ("nested AGENTS.md", {"src/AGENTS.md": "x\n"}),
+                ("look-alike file", {"AGENTS.md.bak": "x\n"}),
+                ("look-alike settings folder", {".claudeX/settings.json": "{}\n"}),
+                ("source moved into docs", {"src/app.cs": None, "docs/app.cs": "one\n"}),
+            ):
+                with self.subTest(drift=label):
+                    moved_base = base_with(changes)
+                    refused = gate(head, moved_base)
+                    self.assertEqual(refused.returncode, 1, refused.stderr)
+                    self.assertIn(
+                        f"::error::C01_BASE_NOT_ANCESTOR: PR base {moved_base} is not an ancestor "
+                        f"of HEAD {head} ",
+                        refused.stdout,
+                    )
+                    self.assertNotIn("C01_BASE_DRIFT", refused.stdout)
+
+            with self.subTest(drift="unknown base"):
+                self.assertNotEqual(gate(head, "0" * 40).returncode, 0)
+            with self.subTest(drift="head is not the expected head"):
+                git("checkout", "-q", "--detach", fork)
+                wrong_head = subprocess.run(
+                    ["bash", "-c", script], cwd=repository, capture_output=True, text=True,
+                    env={**environment, "EXPECTED_HEAD_SHA": head, "EXPECTED_BASE_SHA": fork},
+                )
+                self.assertNotEqual(wrong_head.returncode, 0)
 
     def test_api_start_failure_diagnostics_are_masked_job_log_only(self):
         workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(

@@ -49,15 +49,22 @@ public static class PurchasingCommands
     /// <summary>A1-3 (plan API-10, No.161 §2): Approved → Cancelled — the whole unaccepted remainder, with a reason, under <c>purchasing.orders.cancel</c>.</summary>
     public const string OrderCancelV1 = "purchasing.purchase-order.cancel.v1";
 
+    /// <summary>
+    /// A3 API-30 (ALS-D33, ALS-D21): a Draft or Approved order's general line gets a new full delivery schedule (termin dilimleri,
+    /// Σ = the line's ordered quantity), under <c>purchasing.orders.revise</c> (ALS-D94); the order's version moves by one.
+    /// </summary>
+    public const string OrderLineScheduleV1 = "purchasing.purchase-order.line-schedule.v1";
+
     public static bool IsRequestCommand(string commandName) =>
         commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
-    public static bool IsOrderCommand(string commandName) => commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1;
+    public static bool IsOrderCommand(string commandName) =>
+        commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1;
 
     public static bool IsRequestMutation(string commandName) =>
         commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
-    public static bool IsOrderMutation(string commandName) => commandName is OrderApproveV1 or OrderCancelV1;
+    public static bool IsOrderMutation(string commandName) => commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1;
 
     public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || IsOrderMutation(commandName);
 
@@ -165,12 +172,15 @@ public interface IPurchasingStore
         Func<PurchaseOrder> build, IReadOnlyDictionary<Guid, string> productVersionsByLineId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// One transition (approve) of the company's stored order in ONE save, as <see cref="MutateRequestAsync"/>.
+    /// One transition (approve, cancel, line schedule) of the company's stored order in ONE save, as <see cref="MutateRequestAsync"/>.
     /// For an order opened for a request the source request must be APPROVED
     /// (<see cref="PurchasingStoreCodes.SourceRequestNotApproved"/>, A1-1) and the Σ-shares rule is measured inside the same save
     /// (<see cref="PurchasingStoreCodes.RequestLineOverSourced"/>, with field errors) and the source request's
     /// sourcing version moves with the approval, so two approvals against the same request cannot both pass the
     /// sum unseen: the loser is <see cref="PurchasingStoreCodes.ConcurrentChange"/> and measures again.
+    /// A1-3: the remainder cancellation is one more transition. A3 API-30: the line schedule command replaces exactly one line's
+    /// delivery schedule and appends its slices as a revision at the new order version (the earlier revisions stay); the Σ-shares
+    /// rule is measured only by the approval.
     /// </summary>
     Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default);

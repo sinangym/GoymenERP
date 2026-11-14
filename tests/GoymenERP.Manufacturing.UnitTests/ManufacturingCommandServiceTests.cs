@@ -1970,6 +1970,45 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task Output_above_input_is_refused_before_any_exception_step_with_or_without_a_reason()
+    {
+        // URT-D41 (1)-(2), URT-D42 (2): 1 kg (1 %) more output than input is inside the 2 % tolerance and is still
+        // refused; a reason does not open the approval path and the dedicated exception permission is never asked.
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with
+        {
+            MaximumFirePercent = 5m,
+            MassBalanceDifferenceTolerancePercent = 2m,
+        };
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(101m), At);
+
+        var plain = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version), "close-plus-plain", ClosePermission,
+            CloseExceptionPermission, CancellationToken.None);
+        var reasoned = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "SENTETIK tartim teyidi"), "close-plus-reasoned",
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        foreach (var refused in new[] { plain, reasoned })
+        {
+            Assert.Equal((ManufacturingApiStatus.Unprocessable, ClosureAssessmentCodesV1.OutputExceedsInput, false),
+                (refused.Status, refused.Code, refused.IsReplay));
+            Assert.Null(refused.Resource);
+        }
+
+        Assert.Equal(2, fixture.Settings.ToleranceAsked);
+        Assert.DoesNotContain(CloseExceptionPermission, fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosureExceptionApproval);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
     public async Task A_reasoned_close_replay_remeasures_exception_authority_before_returning_its_immutable_answer()
     {
         const string key = "close-approved";
@@ -2689,6 +2728,145 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(0, lines.Asked);
         Assert.Empty(fixture.Calls);
         Assert.Empty(fixture.Store.Commands);
+    }
+
+    private static (Fixture Fixture, ProductionPlan Plan, SubcontractOrderPort Orders, ManufacturingCommandService Service)
+        CustomerGoodsLinkCase(bool withOrderPort = true)
+    {
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m), commercialContext:
+                new PlanCommercialContextSnapshotV1(Party, PartyAccount, "party-v1", "account-v1"))]);
+        fixture.Store.Plans[plan.Id] = plan;
+        var orders = new SubcontractOrderPort(fixture.Calls);
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            planSalesOrderLinks: fixture.Store, salesOrderLines: new SalesOrderLinePort(fixture.Calls),
+            subcontractServiceOrders: withOrderPort ? orders : null);
+        return (fixture, plan, orders, service);
+    }
+
+    [Fact]
+    public async Task A_customer_goods_plan_links_to_its_customers_open_approved_subcontract_order_line()
+    {
+        // Üretim U5-b / API-36 (URT-D16, URT-D22): the plan's customer goods are processed under that customer's subcontract
+        // service order; Sales is asked after the line, then the link is stored as for any plan.
+        var (fixture, plan, orders, service) = CustomerGoodsLinkCase();
+
+        var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(1, orders.Asked);
+        Assert.Equal(SalesOrder, plan.SalesOrderLink!.SalesOrderId);
+        Assert.Single(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_plan_without_customer_goods_does_not_ask_for_a_subcontract_order()
+    {
+        var (fixture, plan, _, service) = SalesOrderLinkCase();
+
+        var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.DoesNotContain("subcontract-order", fixture.Calls);
+    }
+
+    public static TheoryData<string> CustomerGoodsRefusals() =>
+        ["normal-order", "not-found", "closed", "not-approved", "basis-unusable", "other-party", "other-account",
+            "line-outside-basis"];
+
+    [Theory]
+    [MemberData(nameof(CustomerGoodsRefusals))]
+    public async Task A_customer_goods_plan_is_not_linked_outside_its_customers_usable_subcontract_order(string variant)
+    {
+        var (fixture, plan, orders, service) = CustomerGoodsLinkCase();
+        (orders.Outcome, orders.Answered) = variant switch
+        {
+            "normal-order" => (ManufacturingSubcontractServiceOrderOutcomeV1.NotSubcontractService, null),
+            "not-found" => (ManufacturingSubcontractServiceOrderOutcomeV1.NotFound, null),
+            "closed" => (ManufacturingSubcontractServiceOrderOutcomeV1.Found, orders.Order with { IsOpen = false }),
+            "not-approved" => (ManufacturingSubcontractServiceOrderOutcomeV1.Found, orders.Order with { IsApproved = false }),
+            "basis-unusable" => (ManufacturingSubcontractServiceOrderOutcomeV1.Found, orders.Order with { BasisUsable = false }),
+            "other-party" => (ManufacturingSubcontractServiceOrderOutcomeV1.Found,
+                orders.Order with { CustomerPartyId = Guid.NewGuid() }),
+            "other-account" => (ManufacturingSubcontractServiceOrderOutcomeV1.Found,
+                orders.Order with { CustomerAccountId = Guid.NewGuid() }),
+            _ => (ManufacturingSubcontractServiceOrderOutcomeV1.Found, orders.Order with { BasisLineIds = [Guid.NewGuid()] }),
+        };
+
+        var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder),
+            (result.Status, result.Code));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Null(plan.SalesOrderLink);
+        Assert.Equal(0L, plan.SalesOrderLinkRevision);
+    }
+
+    [Fact]
+    public async Task An_unreadable_or_foreign_subcontract_answer_or_a_missing_port_is_503_and_links_nothing()
+    {
+        var (fixture, plan, orders, service) = CustomerGoodsLinkCase();
+        foreach (var (outcome, answered, throws) in new (ManufacturingSubcontractServiceOrderOutcomeV1,
+                     ManufacturingSubcontractServiceOrderV1?, bool)[]
+                 {
+                     (ManufacturingSubcontractServiceOrderOutcomeV1.Unavailable, null, false),
+                     (ManufacturingSubcontractServiceOrderOutcomeV1.Found, orders.Order with { CompanyId = Guid.NewGuid() }, false),
+                     (ManufacturingSubcontractServiceOrderOutcomeV1.Found, orders.Order with { SalesOrderId = Guid.NewGuid() }, false),
+                     ((ManufacturingSubcontractServiceOrderOutcomeV1)99, null, false),
+                     (ManufacturingSubcontractServiceOrderOutcomeV1.Found, null, true),
+                 })
+        {
+            (orders.Outcome, orders.Answered, orders.Throws) = (outcome, answered, throws);
+            var result = await service.ChangePlanSalesOrderLinkAsync(plan.Id, LinkRequest(), "key-1",
+                "manufacturing.plans.write", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingRuleCodes.PlanSalesOrderLineUnavailable),
+                (result.Status, result.Code));
+        }
+
+        var (_, noPortPlan, _, noPort) = CustomerGoodsLinkCase(withOrderPort: false);
+        var withoutPort = await noPort.ChangePlanSalesOrderLinkAsync(noPortPlan.Id, LinkRequest(), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingRuleCodes.PlanSalesOrderLineUnavailable),
+            (withoutPort.Status, withoutPort.Code));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Null(plan.SalesOrderLink);
+        Assert.Null(noPortPlan.SalesOrderLink);
+    }
+
+    private sealed class SubcontractOrderPort(List<string> calls) : IManufacturingSubcontractServiceOrderPortV1
+    {
+        public ManufacturingSubcontractServiceOrderV1 Order { get; } =
+            new(Company, SalesOrder, Party, PartyAccount, true, true, true, [SalesOrderLine]);
+
+        public ManufacturingSubcontractServiceOrderV1? Answered { get; set; }
+
+        public ManufacturingSubcontractServiceOrderOutcomeV1 Outcome { get; set; } =
+            ManufacturingSubcontractServiceOrderOutcomeV1.Found;
+
+        public bool Throws { get; set; }
+
+        public int Asked { get; private set; }
+
+        public Task<ManufacturingSubcontractServiceOrderAnswerV1> GetAsync(Guid salesOrderId,
+            CancellationToken cancellationToken = default)
+        {
+            Asked++;
+            calls.Add("subcontract-order");
+            if (Throws)
+            {
+                throw new InvalidOperationException("Satış okunamadı.");
+            }
+
+            return Task.FromResult(new ManufacturingSubcontractServiceOrderAnswerV1(Outcome,
+                Outcome == ManufacturingSubcontractServiceOrderOutcomeV1.Found ? Answered ?? Order : Answered));
+        }
     }
 
     private sealed class SalesOrderLinePort(List<string> calls) : IManufacturingSalesOrderLineReferencePortV1

@@ -42,6 +42,10 @@ export const FINANCE_CAPABILITY = {
   manualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
   manualBankPaymentsApprove: 'finance.manual-bank-payments.approve',
   manualBankPaymentsRecord: 'finance.manual-bank-payments.record',
+  /** API-23: propose the reversal of a recorded payment (control of the payment detail). */
+  manualBankPaymentsReversePropose: 'finance.manual-bank-payments.reverse.propose',
+  /** API-23: approve or reject a pending payment reversal (another user than the proposer). */
+  manualBankPaymentsReverseApprove: 'finance.manual-bank-payments.reverse.approve',
   officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',

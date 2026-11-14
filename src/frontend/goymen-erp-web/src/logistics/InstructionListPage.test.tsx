@@ -9,7 +9,16 @@ import { cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LOGISTICS_CAPABILITY } from './capabilities'
 import { INSTRUCTION_LIST_TEXT } from './logisticsText'
-import { FORBIDDEN_MONEY_WORDS, INSTRUCTION, READ_ONLY_LOGISTICS, installFetch, instructionSummary, json, renderLogisticsApp } from './testHarness'
+import {
+  CANCELLED_INSTRUCTION,
+  FORBIDDEN_MONEY_WORDS,
+  INSTRUCTION,
+  READ_ONLY_LOGISTICS,
+  installFetch,
+  instructionSummary,
+  json,
+  renderLogisticsApp,
+} from './testHarness'
 
 afterEach(() => {
   cleanup()
@@ -44,6 +53,37 @@ describe('L-02 Yükleme Talimatları', () => {
     await userEvent.selectOptions(screen.getByLabelText(INSTRUCTION_LIST_TEXT.filter), 'Issued')
     await waitFor(() => expect(urls.at(-1)).toContain('status=Issued'))
     await waitFor(() => expect(screen.getByTestId(`logistics-row-status-${INSTRUCTION}`).textContent).toBe('Yayımlandı'))
+  })
+
+  it('F-020: a cancelled instruction is a row like any other, shown as "İptal edildi", and the filter offers it', async () => {
+    const urls: string[] = []
+    const other = 'cccccccc-cccc-cccc-cccc-ccccccccccc2'
+    installFetch({
+      onList: (url) => {
+        urls.push(url)
+        return json({ items: [instructionSummary(), instructionSummary({ id: other, ...CANCELLED_INSTRUCTION })], nextCursor: null })
+      },
+    })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari')
+    await screen.findByTestId(`logistics-row-${other}`)
+    expect(screen.getByTestId(`logistics-row-status-${other}`).textContent).toBe('İptal edildi')
+    expect(screen.getByTestId(`logistics-row-status-${INSTRUCTION}`).textContent).toBe('Taslak')
+    await userEvent.selectOptions(screen.getByLabelText(INSTRUCTION_LIST_TEXT.filter), 'Cancelled')
+    await waitFor(() => expect(urls.at(-1)).toContain('status=Cancelled'))
+  })
+
+  it('F-020: a Cancelled row without its cancel facts is not shown as a list: the answer is refused whole', async () => {
+    installFetch({ onList: () => json({ items: [instructionSummary(), instructionSummary({ id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status: 'Cancelled' })], nextCursor: null }) })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari')
+    await screen.findByText(/Beklenmeyen yanıt/)
+    expect(screen.queryByTestId(`logistics-row-${INSTRUCTION}`)).toBeNull()
+  })
+
+  it('an unknown status in one row is not shown as a list: the answer is refused whole', async () => {
+    installFetch({ onList: () => json({ items: [instructionSummary(), instructionSummary({ id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status: 'Voided' })], nextCursor: null }) })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari')
+    await screen.findByText(/Beklenmeyen yanıt/)
+    expect(screen.queryByTestId(`logistics-row-${INSTRUCTION}`)).toBeNull()
   })
 
   it('a failed next page keeps the rows shown and offers the same cursor again', async () => {

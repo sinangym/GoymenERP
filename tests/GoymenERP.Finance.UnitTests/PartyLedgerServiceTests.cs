@@ -162,6 +162,57 @@ public sealed class PartyLedgerServiceTests
     }
 
     [Fact]
+    public async Task An_approved_payment_reversal_is_its_own_credit_row_linked_to_the_payment_and_counts_in_the_summary()
+    {
+        // API-23: the payment's debit row stays as recorded; the approved reversal is its own row on the reverse side
+        // (credit), sourced by its proposal and pointing at the payment it reverses.
+        await using var run = new Run();
+        var facts = await run.SeedStoryAsync();
+        var proposal = Guid.NewGuid();
+        await using (var db = run.Context(Company))
+        {
+            var original = await db.OutgoingMoneyEvents.SingleAsync(row => row.PaymentId == facts.Payment);
+            db.OutgoingMoneyEventReversals.Add(new OutgoingMoneyEventReversalRow
+            {
+                Id = Guid.NewGuid(), CompanyId = Company, PaymentId = facts.Payment, OriginalEventId = original.Id,
+                ProposalId = proposal, PartyId = Party, CompanyAccountId = Account, TreasuryAccountId = Bank,
+                CurrencyId = Currency, AmountText = "50.00", ProfileId = Profile.ToString("D"), ProfileVersion = "1",
+                OccurredOn = new DateOnly(2026, 9, 23), RecordedAtUtc = DateTimeOffset.UtcNow,
+                RecordedBy = "SENTETIK-checker", CorrelationId = "SENTETIK-payment-reversal",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        PartyLedgerView ledger;
+        PartyBalanceResult summary;
+        await using (var reader = run.Ledger("reader", Company))
+        {
+            ledger = (await reader.Service.ReadAuthorizedAsync(reader.Context, Request(), CancellationToken.None)).Ledger!;
+            summary = await reader.Service.SummarizeAuthorizedAsync(reader.Context, new PartyBalanceRequest(Party, Account),
+                CancellationToken.None);
+        }
+
+        var tl = ledger.Currencies.Single(currency => currency.CurrencyId == Currency);
+        Assert.Equal(
+            [
+                (PartyLedgerEntryKind.ManualBankPayment, PartyLedgerSide.Debit, "50.00", PartyLedgerBalanceSide.Debit, "1050.00"),
+                (PartyLedgerEntryKind.ManualBankPaymentReversal, PartyLedgerSide.Credit, "50.00", PartyLedgerBalanceSide.Debit, "1000.00"),
+            ],
+            tl.Entries.Where(entry => entry.OccurredOn is { Day: 22 or 23 })
+                .Select(entry => (entry.Kind, entry.Side, entry.Amount.Money!.Amount, entry.RunningBalance.Side!.Value,
+                    entry.RunningBalance.Amount.Money!.Amount)).ToArray());
+        var row = tl.Entries.Single(entry => entry.Kind == PartyLedgerEntryKind.ManualBankPaymentReversal);
+        Assert.Equal((proposal, (Guid?)facts.Payment), (row.SourceId, row.ReversesSourceId));
+        Assert.Equal((PartyLedgerBalanceSide.Credit, "200.00"),
+            (tl.ClosingBalance.Side!.Value, tl.ClosingBalance.Amount.Money!.Amount));
+
+        Assert.Equal(PartyBalanceOutcome.Found, summary.Outcome);
+        Assert.Equal(
+            ledger.Currencies.Select(currency => (currency.CurrencyId, currency.DebitTotal, currency.CreditTotal, currency.ClosingBalance)),
+            summary.Balance!.Currencies.Select(currency => (currency.CurrencyId, currency.DebitTotal, currency.CreditTotal, currency.Balance)));
+    }
+
+    [Fact]
     public async Task Without_the_amount_grant_every_amount_total_and_balance_side_is_withheld()
     {
         await using var run = new Run();

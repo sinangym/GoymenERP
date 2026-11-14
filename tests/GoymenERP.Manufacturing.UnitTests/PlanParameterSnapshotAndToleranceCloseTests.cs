@@ -8,9 +8,9 @@ namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
 /// Üretim U1-b (URT-D5, D6, D7, D9, D23; DEC-PRDCT-008): the Settings parameter profile feeds the one plan calculator by the
-/// engines' own names, is captured at approval and never refreshed; the close applies BOTH the fire maximum and the ± mass
+/// engines' own names, is captured at approval and never refreshed; the close applies BOTH the fire maximum and the mass
 /// balance tolerance of the supplied snapshot (catalog version 0 or a published version), with the unexplained difference
-/// kept as its own category.
+/// kept as its own category. Since URT-D41 (2) that tolerance covers only a shortfall (OutputAboveInputClosureTests).
 /// </summary>
 public sealed class PlanParameterSnapshotAndToleranceCloseTests
 {
@@ -198,18 +198,23 @@ public sealed class PlanParameterSnapshotAndToleranceCloseTests
     }
 
     [Fact]
-    public void A_negative_difference_is_measured_against_the_same_plus_minus_tolerance()
+    public void A_negative_difference_is_not_measured_against_the_tolerance_and_is_refused_inside_and_outside_it()
     {
+        // URT-D41 (2): the 2 % of URT-D6 applies only to a shortfall. 15 kg (1.5 %) more output than input is refused
+        // within the catalog tolerance and outside a tighter one alike; no difference percent is reported for it.
         var order = Order();
         order.Issue(Roll, Kg(1_000m));
         order.Declare(Roll, OutputClass.Scrap, Kg(10m));
         order.Declare(Roll, OutputClass.GoodProduct, Kg(1_005m));
 
-        var within = order.AssessClosure(Catalog());
-        Assert.Equal((ClosureDispositionV1.Balanced, -15m, -1.5m),
-            (within.Disposition, within.Rolls[0].DifferenceKg, within.Rolls[0].DifferencePercent));
-        var tight = order.AssessClosure(Catalog(massBalance: 1m));
-        Assert.Equal(ClosureDispositionV1.ApprovalRequired, tight.Disposition);
+        foreach (var policy in new[] { Catalog(), Catalog(massBalance: 1m) })
+        {
+            var assessment = order.AssessClosure(policy);
+            Assert.Equal(
+                (ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.OutputExceedsInput, -15m, (decimal?)null),
+                (assessment.Disposition, assessment.Code, assessment.Rolls[0].DifferenceKg,
+                    assessment.Rolls[0].DifferencePercent));
+        }
     }
 
     [Fact]

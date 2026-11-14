@@ -26,6 +26,10 @@ public interface ILogisticsInstructionService
     Task<LoadingInstructionResponse> CreateDispatchNoteAsync(Guid instructionId, CreateDispatchNoteRequest request, LogisticsCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
+    /// <summary>F-020 (LOJ-D6..D8): cancel an instruction with a reason while no shipment is recorded; nothing recorded is deleted.</summary>
+    Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
+        LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     /// <summary>AT-055 (user decision 2026-09-30): approve a draft; the company's next system number is assigned in the same save.</summary>
     Task<LoadingInstructionResponse> ApproveDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, ApproveDispatchNoteRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);

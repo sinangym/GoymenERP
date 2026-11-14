@@ -469,7 +469,11 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             (acceptances[0].GetProperty("acceptanceId").GetGuid(), acceptances[0].GetProperty("lineId").GetGuid(),
                 acceptances[0].GetProperty("quantity").GetString(), acceptances[0].GetProperty("recordedAtUtc").GetDateTimeOffset()));
         Assert.Equal(second, acceptances[1].GetProperty("acceptanceId").GetGuid());
-        string payload = body.RootElement.GetRawText();
+        // A3 API-30 (ALS-D33): the line's quantity-only delivery schedule is the one schedule on the wire (empty when none is
+        // recorded); no payment or other schedule is.
+        Assert.Equal(JsonValueKind.Array, body.RootElement.GetProperty("lines")[0].GetProperty("deliverySchedule").ValueKind);
+        Assert.Equal(0, body.RootElement.GetProperty("lines")[0].GetProperty("deliverySchedule").GetArrayLength());
+        string payload = body.RootElement.GetRawText().Replace("\"deliverySchedule\"", string.Empty, StringComparison.Ordinal);
         foreach (string forbidden in new[] { "unitPrice", "lineAmount", "discount", "tax", "payment", "schedule", "invoice", "openItem" })
         {
             Assert.DoesNotContain(forbidden, payload, StringComparison.OrdinalIgnoreCase);
@@ -922,6 +926,105 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task A_line_delivery_schedule_is_set_over_its_own_route_with_a_strict_body_and_replayed_terminal_refusals()
+    {
+        // A3 API-30 (ALS-D33, ALS-D21): POST …/lines/{lineId}/schedule answers 200 with the order and the line's schedule; a
+        // malformed body (no slice, a duplicate or empty slice id, a zero or non-decimal quantity, an unknown member) never reaches
+        // the service; a terminal refusal replays with the first attempt's headers; a schedule rule is the domain's 422 on slices.
+        var id = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        (Guid Order, Guid Line, SetPurchaseOrderLineScheduleRequest Body)? seen = null;
+        var service = new StubService
+        {
+            SetLineSchedule = (orderId, line, body) =>
+            {
+                seen = (orderId, line, body);
+                var detail = OrderDetail(orderId, "Approved", "3");
+                return Task.FromResult(new PurchaseOrderResponse(detail with
+                {
+                    Lines = [detail.Lines[0] with
+                    {
+                        DeliverySchedule = [.. body.Slices.Select((slice, index) =>
+                            new PurchaseOrderDeliverySliceView(slice.SliceId, index + 1, slice.Quantity, slice.DeliveryDate))],
+                    }],
+                }, false, "SENTETIK-corr-schedule"));
+            },
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{PurchasingApiV1.OrdersPath}/{id:D}/lines/{lineId:D}/schedule";
+
+        using (var response = await client.SendAsync(Post(path, "SENTETIK-line-schedule",
+                   $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"4","deliveryDate":"2026-12-01"},{"sliceId":"{{second:D}}","quantity":"2.5","deliveryDate":"2026-12-15"}]}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            AssertPrivateNoStore(response);
+            var schedule = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("lines")[0]
+                .GetProperty("deliverySchedule");
+            Assert.Equal(2, schedule.GetArrayLength());
+            Assert.Equal((first.ToString("D"), 1, "4", "2026-12-01"), (schedule[0].GetProperty("sliceId").GetString(),
+                schedule[0].GetProperty("sliceNo").GetInt32(), schedule[0].GetProperty("quantity").GetString(),
+                schedule[0].GetProperty("deliveryDate").GetString()));
+            Assert.Equal(("2.5", 2), (schedule[1].GetProperty("quantity").GetString(), schedule[1].GetProperty("sliceNo").GetInt32()));
+        }
+
+        Assert.Equal((id, lineId, "2", 2), (seen!.Value.Order, seen.Value.Line, seen.Value.Body.ExpectedVersion, seen.Value.Body.Slices.Count));
+        Assert.Equal(new DateOnly(2026, 12, 15), seen.Value.Body.Slices[1].DeliveryDate);
+        var calls = service.Calls;
+        foreach (var body in new[]
+                 {
+                     """{"expectedVersion":"2"}""",
+                     """{"expectedVersion":"2","slices":[]}""",
+                     """{"expectedVersion":"2","slices":null}""",
+                     $$"""{"expectedVersion":"0","slices":[{"sliceId":"{{first:D}}","quantity":"1","deliveryDate":"2026-12-01"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{Guid.Empty:D}}","quantity":"1","deliveryDate":"2026-12-01"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"1","deliveryDate":"2026-12-01"},{"sliceId":"{{first:D}}","quantity":"1","deliveryDate":"2026-12-02"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"0","deliveryDate":"2026-12-01"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"1,5","deliveryDate":"2026-12-01"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":1,"deliveryDate":"2026-12-01"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"1"}]}""",
+                     $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"1","deliveryDate":"2026-12-01","unitId":"{{first:D}}"}]}""",
+                     $$"""{"expectedVersion":"2","lineId":"{{lineId:D}}","slices":[{"sliceId":"{{first:D}}","quantity":"1","deliveryDate":"2026-12-01"}]}""",
+                 })
+        {
+            using var response = await client.SendAsync(Post(path, $"SENTETIK-bad-{Guid.NewGuid():N}", body));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        var valid = $$"""{"expectedVersion":"2","slices":[{"sliceId":"{{first:D}}","quantity":"6","deliveryDate":"2026-12-01"}]}""";
+        service.SetLineSchedule = (_, _, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.OrderState,
+            [new("status", "purchasing_order_cancelled")], isReplay: true, originalCorrelationId: "SENTETIK-first-schedule");
+        using (var response = await client.SendAsync(Post(path, "SENTETIK-line-schedule-cancelled", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first-schedule", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            Assert.Equal(PurchasingProblemCodesV1.OrderState, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.SetLineSchedule = (_, _, _) => throw new PurchasingServiceException(422, "validation_failed",
+            [new("slices", "purchasing_schedule_total_mismatch")]);
+        using (var response = await client.SendAsync(Post(path, "SENTETIK-line-schedule-total", valid)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("slices", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            Assert.Equal("purchasing_schedule_total_mismatch", problem.GetProperty("errors")[0].GetProperty("code").GetString());
+        }
+
+        service.SetLineSchedule = (_, _, _) => throw new PurchasingServiceException(404, "not_found");
+        using (var response = await client.SendAsync(Post(path, "SENTETIK-line-schedule-missing", valid)))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task The_cancel_impact_preview_answers_the_owners_view_privately_and_refuses_a_query_before_the_service()
     {
         // A1-3 (plan API-10): GET …/cancel-impact reads only; the preview carries the blocker the command would answer and each
@@ -1199,6 +1302,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Guid, CancelPurchaseOrderRequest, Task<PurchaseOrderResponse>> CancelOrder { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderCancelImpactView>> CancelImpact { get; set; } = _ => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, SetPurchaseOrderLineScheduleRequest, Task<PurchaseOrderResponse>> SetLineSchedule { get; set; }
+            = (_, _, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderTotalsView>> Totals { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
@@ -1308,6 +1413,13 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             Calls++;
             return CancelImpact(orderId);
+        }
+
+        public Task<PurchaseOrderResponse> SetOrderLineScheduleAsync(Guid orderId, Guid lineId, SetPurchaseOrderLineScheduleRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return SetLineSchedule(orderId, lineId, request);
         }
 
         public Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default)

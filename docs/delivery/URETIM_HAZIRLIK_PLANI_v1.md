@@ -241,8 +241,15 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 
 ### 5.3a Çıktı sınıfı → Stok etiket sınıfı eşlemesi (API-27, URT-D8/D14, DEC-PRDCT-007)
 
-Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): eşleme yapılandırılabilir 1:1 tablo olur, koda gömülmez; taslağı
-Üretim yazar, Stok onaylar. Stok 2026-11-11'de OC-1, OC-2, OC-4 ve OC-5'i ve kuralları onayladı; OC-3 NEEDS-SINAN (#66).
+**Sinan kararı URT-D43 (2026-11-13, `docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md`):** eşleme **sabittir ve her
+şirkette aynıdır**; şirket başına ayar tablosu veya ayar ekranı yoktur. Üretim çıkış kaydında varsayılan sınıf
+`GoodProduct` (standart) gelir; 2. kalite veya hurda çıkarsa kullanıcı onu seçer, stok etiketi seçilen sınıfla açılır.
+Bu karar aşağıdaki koordinatör kararının "yapılandırılabilir 1:1 tablo olur, koda gömülmez" kısmının ve "Kurallar"daki
+şirket başına tablo ifadesinin yerine geçer; tablodaki değerler (OC-1, OC-2, OC-4, OC-5) değişmez.
+
+Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): ~~eşleme yapılandırılabilir 1:1 tablo olur, koda gömülmez;~~
+(URT-D43 ile aşıldı) taslağı Üretim yazar, Stok onaylar. Stok 2026-11-11'de OC-1, OC-2, OC-4 ve OC-5'i ve kuralları
+onayladı; OC-3 NEEDS-SINAN (#66).
 
 | Üretim `OutputClass` | Stok `InventoryLabelClassificationV1` | Stok etiketi | Varsayım |
 |---|---|---|---|
@@ -252,9 +259,15 @@ Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): eşleme yapılandırı
 | `Scrap` | `Scrap` | evet (sınıf yalnız betimleyici; satılabilirlik ayrıca belirlenir) | OC-4 (Stok onayı) |
 | `ProcessLoss` | – | hayır, stok dışı (talaş/proses kaybı) | OC-5 (Stok onayı) |
 
-Kurallar: tablo şirket başına bir satır kümesi; her `OutputClass` en çok bir sınıfa eşlenir; `ProcessLoss` hiçbir
-zaman etiket üretmez. Eşleme eksikse çıktı fail-closed reddedilir (sınıf tahmin edilmez). Tablo Stok'ta (Inventory) durur
-(hedef değerler Inventory'nin enum'u); Üretim sürümlü bir okuma portuyla okur (ad Stok'ta, B-03 sonrası).
+Kurallar (URT-D43 ile güncellendi): eşleme sabittir ve her şirkette aynıdır (şirket başına satır kümesi ve ayar ekranı
+yoktur); her `OutputClass` en çok bir sınıfa eşlenir; `ProcessLoss` hiçbir zaman etiket üretmez. Eşleme eksikse çıktı
+fail-closed reddedilir (sınıf tahmin edilmez). Hedef değerler Inventory'nin enum'udur. Seçilen çıktı sınıfı API'de
+açıkça taşınır; ekran `GoodProduct`'u (standart) önceden seçer (uygulama ayrıntısı, geri alınabilir). Önceki metindeki
+"tablo şirket başına bir satır kümesi" ifadesi URT-D43 ile aşıldı. Sabit eşlemenin kodda hangi modülde durduğu ve
+Üretim'in onu nasıl okuduğu (önceki metin: "Tablo Stok'ta (Inventory) durur … Üretim sürümlü bir okuma portuyla okur")
+kod şeridinin uygulama ayrıntısıdır; modül sınırı korunur. `UsableRemnant` satırındaki ve yukarıdaki "OC-3
+NEEDS-SINAN" notları bu düzenlemenin kapsamı dışındadır ve burada güncellenmedi (OC-3 sonradan BS-5/BS-14 ile
+cevaplandı: `docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md`).
 
 ## 6. Diğer modüllerle eksik ilişkiler (MOD)
 
@@ -387,8 +400,8 @@ Kalıcı kural: modül başka modülün tablosuna yazmaz; bağ yalnız sürüml�
 |---|---|---|---|---|---|
 | 1a | Satış sipariş satırı → plan satırı bağı (URT-D13) | Satış → Üretim | `ISalesOrderLineReferencePortV1` (Satış'ta var) → host adaptörü → Üretim `IManufacturingSalesOrderLineReferencePortV1` | ✅ U2-b: `POST /plans/{id}/sales-order-link`, plan kendi bağ revizyonunu tutar (Down `THROW 51261`) | U2-b (API-16) |
 | 1b | Bağlı üretim → Satış iptal/zorla kapatma | Üretim → Satış | Üretim: `IManufacturingSalesOrderSupplyReadPortV1`; Satış: `ISalesOrderLinkedSupplyReadPortV1` (host adaptörü, Alış'ın yanında Production türü) | ✅ U2-b ile açık plan/emirler okunuyor; `production.order-closed.v1` olayı henüz yok | Üretim tarafı U2-b; olay U5-a |
-| 2a | Fason hizmet satış siparişi okuma | Satış → Üretim | `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`, #898) | 🟡 Satış'ta hazır, Üretim tüketmiyor | U5-b |
-| 2b | Fason sipariş carisi kilidi | Üretim+Stok → Satış | `ISalesSubcontractOrderBindingReadPortV1` (host adaptörü) | 🟡 adaptör yok, Satış 503 fail-closed | U5-b |
+| 2a | Fason hizmet satış siparişi okuma | Satış → Üretim | `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`, #898) | 🟡 U5-b1 (#1118) host adaptörüyle tüketiyor; merge bekliyor | U5-b1 |
+| 2b | Fason sipariş carisi kilidi | Üretim+Stok → Satış | `ISalesSubcontractOrderBindingReadPortV1` (host adaptörü) | 🟡 U5-b1 (#1118) host adaptörü: iptal edilmemiş bağlı plan Bound, yok NotBound, hata Unreadable; merge bekliyor | U5-b1 |
 | 3a | Üretim girdi tahsisi (URT-D21/D22) | Üretim → Stok | `manufacturing.plan-input` talep türü + müşteri malı (yalnız kendi fason siparişi) | ❌ Stok tarafı Kalan Modüller B-01; port biçimi görüşüldü (onayla aynı transaction'da stage önerildi, 2026-11-03) | Stok: Kalan Modüller B-01; Üretim bağlantısı U3-a |
 | 3b | Girdi çıkışı / iade / çıktı | Stok ↔ Üretim | `IInventoryManufacturingRealizationParticipantV1` | ✅ | – |
 | 3c | Çıktı soy ağacı (AT-050) | Üretim → Stok | genealogy kenarı (üretim türü) | 🟡 yalnız parent izi | Stok: Kalan Modüller B-03; Üretim U3-b |

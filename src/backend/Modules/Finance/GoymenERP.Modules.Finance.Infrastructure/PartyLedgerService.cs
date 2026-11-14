@@ -14,7 +14,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item>every money event of the account — a recorded receipt (kind 1), a FIN-T06 reversal counter-event (kind 2, its
 /// own row, linked to the original through its approved proposal) and a cheque / note collection (kind 3, linked to its
 /// instrument) — by its <c>OccurredOn</c>;</item>
-/// <item>every outgoing money event of a recorded payment to the account, by its <c>OccurredOn</c>;</item>
+/// <item>every outgoing money event of a recorded payment to the account, by its <c>OccurredOn</c>, and API-23: every
+/// approved payment reversal counter-event (its own row, linked to the payment), by its <c>OccurredOn</c>;</item>
 /// <item>every admitted open item of the account, by the UTC day Finance admitted it (the source contract carries no
 /// document date yet), with its official document and due date;</item>
 /// <item>F2b: every invoice-cancellation reversal of one of those open items, by the UTC day of the cancellation.</item>
@@ -83,6 +84,14 @@ public sealed class PartyLedgerService(
             .Select(row => new PaymentFact(row.Id, row.PaymentId, row.CurrencyId, row.AmountText, row.OccurredOn,
                 row.RecordedAtUtc))
             .ToListAsync(cancellationToken);
+        var paymentReversals = await dbContext.OutgoingMoneyEventReversals.AsNoTracking()
+            .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId
+                && row.OccurredOn >= from && row.OccurredOn <= to)
+            .OrderBy(row => row.OccurredOn).ThenBy(row => row.Id)
+            .Take(take)
+            .Select(row => new PaymentReversalFact(row.Id, row.ProposalId, row.PaymentId, row.CurrencyId,
+                row.AmountText, row.OccurredOn, row.RecordedAtUtc))
+            .ToListAsync(cancellationToken);
         var openItems = await dbContext.OpenItems.AsNoTracking()
             .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId
                 && row.CreatedAtUtc >= admittedFrom && row.CreatedAtUtc < admittedBefore)
@@ -96,7 +105,8 @@ public sealed class PartyLedgerService(
             .OrderBy(row => row.CancelledAtUtc).ThenBy(row => row.OpenItemId)
             .Take(take)
             .ToListAsync(cancellationToken);
-        if (moneyEvents.Count + payments.Count + openItems.Count + cancellations.Count > PartyLedgerRules.MaximumEntries)
+        if (moneyEvents.Count + payments.Count + paymentReversals.Count + openItems.Count + cancellations.Count
+            > PartyLedgerRules.MaximumEntries)
         {
             return await AfterReadAsync(context, PartyLedgerOutcome.TooManyEntries, cancellationToken);
         }
@@ -147,6 +157,7 @@ public sealed class PartyLedgerService(
 
         facts.AddRange(payments.Select(row => new PartyLedgerFact(PartyLedgerEntryKind.ManualBankPayment, row.Id,
             row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText, row.PaymentId, null, null, null, null)));
+        facts.AddRange(paymentReversals.Select(PaymentReversalFactOf));
         foreach (var row in openItems)
         {
             if (OpenItemKind(row.Direction) is not { } kind)
@@ -228,6 +239,13 @@ public sealed class PartyLedgerService(
             .Take(take)
             .Select(row => new { row.Id, row.CurrencyId, row.AmountText, row.OccurredOn, row.RecordedAtUtc })
             .ToListAsync(cancellationToken);
+        var paymentReversals = await dbContext.OutgoingMoneyEventReversals.AsNoTracking()
+            .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
+            .OrderBy(row => row.Id)
+            .Take(take)
+            .Select(row => new PaymentReversalFact(row.Id, row.ProposalId, row.PaymentId, row.CurrencyId,
+                row.AmountText, row.OccurredOn, row.RecordedAtUtc))
+            .ToListAsync(cancellationToken);
         var openItems = await dbContext.OpenItems.AsNoTracking()
             .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId)
             .OrderBy(row => row.Id)
@@ -242,8 +260,8 @@ public sealed class PartyLedgerService(
             .OrderBy(row => row.OpenItemId)
             .Take(take)
             .ToListAsync(cancellationToken);
-        var tooMany = moneyEvents.Count + payments.Count + openItems.Count + cancellations.Count
-            > PartyBalanceRules.MaximumFacts;
+        var tooMany = moneyEvents.Count + payments.Count + paymentReversals.Count + openItems.Count
+            + cancellations.Count > PartyBalanceRules.MaximumFacts;
         var reversalSourceIds = tooMany
             ? []
             : moneyEvents.Where(row => row.Kind == MoneyEventKinds.ManualBankReceiptReversed)
@@ -288,6 +306,7 @@ public sealed class PartyLedgerService(
 
         facts.AddRange(payments.Select(row => new PartyLedgerFact(PartyLedgerEntryKind.ManualBankPayment, row.Id,
             row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText, row.Id, null, null, null, null)));
+        facts.AddRange(paymentReversals.Select(PaymentReversalFactOf));
         var receivable = new Dictionary<Guid, FinanceExactDecimalText>();
         var payable = new Dictionary<Guid, FinanceExactDecimalText>();
         foreach (var row in openItems)
@@ -386,6 +405,14 @@ public sealed class PartyLedgerService(
 
     private sealed record PaymentFact(Guid Id, Guid PaymentId, Guid CurrencyId, string AmountText, DateOnly OccurredOn,
         DateTimeOffset RecordedAtUtc);
+
+    /// <summary>API-23: an approved payment reversal counter-event; its source is the proposal, it reverses the payment.</summary>
+    private sealed record PaymentReversalFact(Guid Id, Guid ProposalId, Guid PaymentId, Guid CurrencyId,
+        string AmountText, DateOnly OccurredOn, DateTimeOffset RecordedAtUtc);
+
+    private static PartyLedgerFact PaymentReversalFactOf(PaymentReversalFact row) =>
+        new PartyLedgerFact(PartyLedgerEntryKind.ManualBankPaymentReversal, row.Id, row.OccurredOn, row.RecordedAtUtc,
+            row.CurrencyId, row.AmountText, row.ProposalId, row.PaymentId, null, null, null);
 
     /// <summary>
     /// F2b: the account's invoice-cancellation reversals — one per cancelled open item, with the item's direction and the

@@ -362,7 +362,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         RequireAudit(audit);
         if (!PurchasingCommands.IsOrderMutation(commandName))
         {
-            throw new ArgumentException("Yalnız onay ve kalan iptali komutları bir siparişi değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız onay, kalan iptali ve termin komutları bir siparişi değiştirir.", nameof(commandName));
         }
 
         var companyId = RequireResolvedCompany();
@@ -396,9 +396,12 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var lineRows = await dbContext.OrderLines.Where(line => line.OrderId == orderId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         var acceptanceRows = await dbContext.Acceptances.AsNoTracking().Where(acceptance => acceptance.OrderId == orderId)
             .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows, acceptanceRows);
+        var sliceRows = await dbContext.DeliverySlices.AsNoTracking().Where(slice => slice.OrderId == orderId)
+            .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo).ToListAsync(cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows);
         var versionBefore = order.Version;
         var before = Snapshot(order);
+        var schedulesBefore = order.Lines.ToDictionary(line => line.Id, line => line.DeliverySchedule);
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(order, now);
@@ -408,7 +411,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir; satır ve kabul payı eklemez.");
         }
 
-        if (order.Status == PurchaseOrderStatus.Approved && order.SourceRequestId is { } sourceRequestId)
+        // A3 API-30: the schedule command replaces exactly one line's schedule; every other command replaces none.
+        var rescheduled = order.Lines.Where(line => !ReferenceEquals(schedulesBefore[line.Id], line.DeliverySchedule)).ToArray();
+        if (rescheduled.Length != (commandName == PurchasingCommands.OrderLineScheduleV1 ? 1 : 0))
+        {
+            throw new InvalidOperationException("Termin komutu tam olarak bir satırın terminini değiştirir; başka komut termin değiştirmez.");
+        }
+
+        // A3 API-30: a schedule changes no ordered quantity, so only the schedule command is exempt; every other command keeps the check.
+        if (commandName != PurchasingCommands.OrderLineScheduleV1 && order.Status == PurchaseOrderStatus.Approved
+            && order.SourceRequestId is { } sourceRequestId)
         {
             await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken);
         }
@@ -427,6 +439,27 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             lineRow.Technical = line.TechnicalQuantity.Value;
             lineRow.Accepted = line.AcceptedQuantity.Value;
             lineRow.Cancelled = line.CancelledQuantity.Value;
+        }
+
+        foreach (var line in rescheduled)
+        {
+            foreach (var slice in line.DeliverySchedule)
+            {
+                dbContext.DeliverySlices.Add(new PurchaseOrderLineDeliverySliceRow
+                {
+                    CompanyId = companyId,
+                    OrderId = order.Id,
+                    LineId = line.Id,
+                    OrderVersionAfter = order.Version,
+                    SliceNo = slice.SliceNo,
+                    SliceId = slice.SliceId,
+                    Quantity = RequireFits(slice.Quantity.Value),
+                    DeliveryDate = slice.DeliveryDate,
+                    RecordedBy = actorId,
+                    RecordedAtUtc = now,
+                    CorrelationId = envelope.CorrelationId.Trim(),
+                });
+            }
         }
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
@@ -714,23 +747,28 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var ids = rows.Select(row => row.Id).ToArray();
         var lines = await dbContext.OrderLines.AsNoTracking().Where(line => ids.Contains(line.OrderId)).ToListAsync(cancellationToken);
         var acceptances = await dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken);
+        var slices = await dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
             var ownAcceptances = acceptances.Where(acceptance => acceptance.OrderId == row.Id)
                 .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToList();
-            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances), row.CompanyAccountId, row.EffectiveOn, VersionsOf(own));
+            var ownSlices = slices.Where(slice => slice.OrderId == row.Id).ToList();
+            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices), row.CompanyAccountId, row.EffectiveOn, VersionsOf(own));
         })];
     }
 
     /// <summary>
     /// Rebuilds the order through the domain in recording order (general lines, technical slices, approval, acceptance shares);
-    /// the stored version and totals must be the ones the rebuild reaches.
+    /// the stored version and totals must be the ones the rebuild reaches. A3 API-30: each delivery-schedule revision is replayed at
+    /// the version it produced — before the approval when it was recorded on the Draft, otherwise between the acceptance shares in
+    /// version order — so every revision passes the domain's rules again (Σ slices = the line's ordered quantity).
     /// </summary>
     internal static PurchaseOrder RestoreOrder(
         PurchaseOrderRow row,
         IReadOnlyList<PurchaseOrderLineRow> lines,
-        IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null)
+        IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null,
+        IReadOnlyList<PurchaseOrderLineDeliverySliceRow>? deliverySlices = null)
     {
         var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
@@ -758,6 +796,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             }
         }
 
+        var revisions = new Queue<PurchaseOrderLineDeliverySliceRow[]>((deliverySlices ?? [])
+            .GroupBy(slice => slice.OrderVersionAfter)
+            .OrderBy(revision => revision.Key)
+            .Select(revision => revision.OrderBy(slice => slice.SliceNo).ToArray()));
+        // A3 API-30: the revisions recorded on the Draft come before the approval.
+        while (revisions.TryPeek(out var draftRevision) && draftRevision[0].OrderVersionAfter == checked(order.Version + 1))
+        {
+            ReplaySchedule(order, row, lines, revisions.Dequeue());
+        }
+
         if (row.Status is (int)PurchaseOrderStatus.Approved or (int)PurchaseOrderStatus.Cancelled)
         {
             // A2a-5a (ALS-D3): a recorded approver is replayed through the maker ≠ checker rule; an order approved before A2a-5a
@@ -773,13 +821,23 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             }
         }
 
-        var orderedAcceptances = (acceptances ?? [])
+        var orderedAcceptances = new Queue<PurchaseAcceptanceRow>((acceptances ?? [])
             .OrderBy(acceptance => acceptance.OrderVersionAfter)
-            .ThenBy(acceptance => acceptance.AcceptanceId)
-            .ToArray();
-        var expectedVersionAfter = checked(order.Version + 1);
-        foreach (var acceptance in orderedAcceptances)
+            .ThenBy(acceptance => acceptance.AcceptanceId));
+        while (orderedAcceptances.Count > 0 || revisions.Count > 0)
         {
+            var expectedVersionAfter = checked(order.Version + 1);
+            if (revisions.TryPeek(out var revision) && revision[0].OrderVersionAfter == expectedVersionAfter)
+            {
+                ReplaySchedule(order, row, lines, revisions.Dequeue());
+                continue;
+            }
+
+            if (!orderedAcceptances.TryDequeue(out var acceptance))
+            {
+                throw new InvalidOperationException("Kayıtlı termin revizyonu sipariş sürümünde ardışık değil.");
+            }
+
             if (acceptance.CompanyId != row.CompanyId || acceptance.OrderId != row.Id
                 || acceptance.OrderVersionAfter != expectedVersionAfter)
             {
@@ -798,8 +856,6 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             {
                 throw new InvalidOperationException("Kayıtlı kabul payının sürümü domain sürümüyle uyuşmuyor.");
             }
-
-            expectedVersionAfter = checked(expectedVersionAfter + 1);
         }
 
         if (row.Status == (int)PurchaseOrderStatus.Cancelled)
@@ -827,6 +883,33 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         }
 
         return order;
+    }
+
+    /// <summary>
+    /// A3 API-30: one stored schedule revision through the domain — one line, slices numbered 1..n without a gap, recorded at the
+    /// version the replay reaches; the domain measures every slice and the Σ = ordered rule again.
+    /// </summary>
+    private static void ReplaySchedule(PurchaseOrder order, PurchaseOrderRow row, IReadOnlyList<PurchaseOrderLineRow> lines,
+        IReadOnlyList<PurchaseOrderLineDeliverySliceRow> revision)
+    {
+        var first = revision[0];
+        if (revision.Any(slice => slice.CompanyId != row.CompanyId || slice.OrderId != row.Id || slice.LineId != first.LineId
+                                  || slice.OrderVersionAfter != first.OrderVersionAfter)
+            || revision.Select((slice, index) => slice.SliceNo != index + 1).Any(gap => gap))
+        {
+            throw new InvalidOperationException("Kayıtlı termin revizyonu tek satırın 1..n sıralı dilimleri değil.");
+        }
+
+        var line = lines.SingleOrDefault(candidate => candidate.LineId == first.LineId)
+            ?? throw new InvalidOperationException("Kayıtlı termin diliminin sipariş satırı bulunamadı.");
+        var unit = UnitOf(line.UnitIsKilogram);
+        var recorded = order.SetLineDeliverySchedule(order.Version, first.LineId,
+            [.. revision.Select(slice => new PurchaseOrderDeliverySliceInput(slice.SliceId, Quantity.Of(slice.Quantity, unit), slice.DeliveryDate))],
+            first.RecordedBy, first.RecordedAtUtc);
+        if (order.Version != first.OrderVersionAfter || recorded.Count != revision.Count)
+        {
+            throw new InvalidOperationException("Kayıtlı termin revizyonunun sürümü domain sürümüyle uyuşmuyor.");
+        }
     }
 
     private static QuantityUnit UnitOf(bool isKilogram) => isKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
@@ -932,6 +1015,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         {
             lineId = line.Id, ordered = line.Quantity.Value, technical = line.TechnicalQuantity.Value, accepted = line.AcceptedQuantity.Value,
             cancelled = line.CancelledQuantity.Value, sourceRequestLineId = line.SourceRequestLineId,
+            // A3 API-30 (ALS-D33): the line's current delivery schedule is part of the audited record.
+            deliverySchedule = line.DeliverySchedule.Select(slice => new
+            {
+                sliceId = slice.SliceId, sliceNo = slice.SliceNo, quantity = slice.Quantity.Value, deliveryDate = slice.DeliveryDate,
+            }),
             price = line.Price is { } price
                 ? new
                 {

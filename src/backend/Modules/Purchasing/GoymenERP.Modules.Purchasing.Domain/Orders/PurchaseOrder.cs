@@ -396,6 +396,132 @@ public sealed class PurchaseOrder
         Touch(now);
     }
 
+    /// <summary>
+    /// A3 API-30 (ALS-D33, ALS-D21, master §7.3 "Miktar bazlı birden fazla termin dilimi desteklenir"): replaces the delivery schedule
+    /// (termin dilimleri) of one GENERAL line with a full new set of quantity slices, each with its expected delivery date — the
+    /// "sıra"s of hubvogal's bağlantı (ALS-D21: the bağlantı is the order line). The slices are numbered 1..n in the given order
+    /// (<see cref="PurchaseOrderDeliverySlice.SliceNo"/>) and together equal the line's ordered quantity exactly (never more, never
+    /// less: <see cref="PurchasingRuleCodes.ScheduleTotalMismatch"/>). A schedule is a plan only: it books no stock, no acceptance
+    /// and no money, and it changes no share (ordered, technical, accepted, cancelled, remaining stay as they are).
+    /// <para>
+    /// Open while Draft and Approved (the §8.2 flow "onay → termin/yolda"; the breakdown precedent), refused on a cancelled order
+    /// (<see cref="PurchasingRuleCodes.OrderCancelled"/>). A technical line is not scheduled on its own
+    /// (<see cref="PurchasingRuleCodes.ScheduleOnTechnicalLine"/>): its quantity is already counted in its general line, whose
+    /// schedule covers it. After a partial acceptance the received part's slices are locked (<see cref="RequireReceivedPortionKept"/>,
+    /// ALS-D81). Between 1 and <see cref="MaximumScheduleSlices"/> slices, each with a distinct non-empty id, a quantity
+    /// above zero in the line's unit and a delivery date; nothing is rounded, merged or reordered. Delay flagging (API-32) and who
+    /// may write a schedule are not this record's rules.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<PurchaseOrderDeliverySlice> SetLineDeliverySchedule(long expectedVersion, Guid lineId,
+        IReadOnlyList<PurchaseOrderDeliverySliceInput> slices, string recordedBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireActor(recordedBy, nameof(recordedBy));
+        ArgumentNullException.ThrowIfNull(slices);
+        RequireNotCancelled();
+        if (Status is not (PurchaseOrderStatus.Draft or PurchaseOrderStatus.Approved))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant, "İç tutarsızlık: termin dilimi yalnız taslak veya onaylı siparişte kaydedilir.");
+        }
+
+        var line = FindLine(lineId);
+        if (line.Kind != PurchaseOrderLineKind.General)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleOnTechnicalLine,
+                "Termin dilimi genel satıra kaydedilir; teknik satırın miktarı genel satırın termininde sayılır.");
+        }
+
+        if (slices.Count == 0)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleEmpty, "Termin en az bir dilim içerir.");
+        }
+
+        if (slices.Count > MaximumScheduleSlices)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleTooManySlices,
+                $"Bir satırın termini en fazla {MaximumScheduleSlices} dilimdir.");
+        }
+
+        var ids = new HashSet<Guid>();
+        var total = Quantity.Zero(line.Quantity.Unit);
+        var recorded = new List<PurchaseOrderDeliverySlice>(slices.Count);
+        foreach (var slice in slices)
+        {
+            ArgumentNullException.ThrowIfNull(slice, nameof(slices));
+            Identity.Require(slice.SliceId, nameof(slices));
+            if (!ids.Add(slice.SliceId))
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleDuplicateSliceId, "Aynı termin dilimi kimliği ikinci kez kullanılamaz.");
+            }
+
+            if (slice.DeliveryDate == default)
+            {
+                throw new ArgumentException("Termin diliminin teslim tarihi gereklidir.", nameof(slices));
+            }
+
+            if (slice.Quantity.Unit != line.Quantity.Unit)
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.UnitMismatch, "Termin dilimi satırın biriminde olmalıdır.");
+            }
+
+            if (slice.Quantity.IsZero)
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleSliceNotPositive, "Termin diliminin miktarı sıfırdan büyük olmalıdır.");
+            }
+
+            total = total.Add(slice.Quantity);
+            recorded.Add(new PurchaseOrderDeliverySlice(slice.SliceId, recorded.Count + 1, slice.Quantity, slice.DeliveryDate));
+        }
+
+        if (total.Value != line.Quantity.Value)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleTotalMismatch,
+                "Termin dilimlerinin toplamı satırın sipariş miktarına eşit olmalıdır.");
+        }
+
+        RequireReceivedPortionKept(line, recorded);
+        line.ReplaceDeliverySchedule(recorded);
+        Touch(now);
+        return line.DeliverySchedule;
+    }
+
+    /// <summary>
+    /// A3 API-30, Sinan #66 6816723313 madde 3 (ALS-D81): after a partial goods acceptance the schedule changes only for the remaining
+    /// (not yet received) quantity; the received part is locked. A receipt names no slice, so the line's accepted share is read as
+    /// covering the current schedule's slices in slice order (implementation reading, reversible): every slice the share covers whole
+    /// stays in the new schedule at the same place with the same id, quantity and date; the slice the share ends in keeps its place,
+    /// id and date and at least the received part of its quantity (only its unreceived rest may move to other slices or dates).
+    /// Anything else is refused fail-closed (<see cref="PurchasingRuleCodes.ScheduleReceivedPortionLocked"/>). With no acceptance, or
+    /// with no earlier schedule (the received part has no termin to lock), nothing is locked.
+    /// </summary>
+    private static void RequireReceivedPortionKept(PurchaseOrderLine line, IReadOnlyList<PurchaseOrderDeliverySlice> next)
+    {
+        var received = line.AcceptedQuantity;
+        var current = line.DeliverySchedule;
+        var covered = Quantity.Zero(received.Unit);
+        for (var index = 0; index < current.Count && received.IsGreaterThan(covered); index++)
+        {
+            var before = current[index];
+            var locked = received.Subtract(covered);
+            // A slice the share passes over (received whole, with more received after it) is kept exactly; the slice the share
+            // ends in keeps at least its received part — its unreceived rest may shrink or grow on the same date.
+            var whole = locked.IsGreaterThan(before.Quantity);
+            var after = index < next.Count ? next[index] : null;
+            if (after is null || after.SliceId != before.SliceId || after.DeliveryDate != before.DeliveryDate
+                || (whole ? after.Quantity.Value != before.Quantity.Value : locked.IsGreaterThan(after.Quantity)))
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.ScheduleReceivedPortionLocked,
+                    "Teslim alınan miktarın termini kilitlidir; yalnız kalan miktarın termini değiştirilebilir.");
+            }
+
+            covered = covered.Add(whole ? before.Quantity : locked);
+        }
+    }
+
+    /// <summary>A3 API-30: the most slices one line's schedule holds (the Sales order-line slice bound, <c>MaximumSlicesPerLine</c>).</summary>
+    public const int MaximumScheduleSlices = 500;
+
     /// <summary>A1-3: the bound of a cancellation reason (the request decisions' bound); a longer text is refused, never cut.</summary>
     public const int MaximumReasonLength = 4000;
 
@@ -586,3 +712,12 @@ public sealed record PurchaseOrderCancellation(string CancelledBy, DateTimeOffse
 
 /// <summary>One recorded acceptance share. Not a receipt document and not a stock movement.</summary>
 public sealed record PurchaseAcceptanceShare(Guid AcceptanceId, Guid LineId, Quantity Quantity, DateTimeOffset RecordedAtUtc);
+
+/// <summary>A3 API-30 (ALS-D33): one requested delivery slice — its client id, its quantity in the line's unit and its expected delivery date.</summary>
+public sealed record PurchaseOrderDeliverySliceInput(Guid SliceId, Quantity Quantity, DateOnly DeliveryDate);
+
+/// <summary>
+/// A3 API-30 (ALS-D33, ALS-D21): one recorded delivery slice (termin dilimi, hubvogal's "sıra") of a general line — its id, its
+/// position 1..n ("Sıra No"), its quantity and its expected delivery date ("Sıra Tarih"). A plan, never stock or an acceptance.
+/// </summary>
+public sealed record PurchaseOrderDeliverySlice(Guid SliceId, int SliceNo, Quantity Quantity, DateOnly DeliveryDate);

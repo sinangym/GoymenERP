@@ -545,6 +545,26 @@ be rolled back once its facts exist (`AddInventoryLabelGenealogy`, `AddInventory
 Finance's `AddManualBankPayments` uses the same number for the same meaning ("facts exist; forward fix"). It is kept
 as is — existing migrations are never renumbered — and the message text names the owner and the facts.
 
+## Manufacturing output genealogy and participant V2 (B-03, API-22/27)
+
+Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
+
+- **Genealogy (V1 and V2 output):** staging a Manufacturing output also records one `LabelTransformation` of kind
+  `Manufacturing` (3). It links the output label to every input label of the same `ManufacturingOrderId` whose net
+  issued kilograms (issued minus returned) are above zero, with the raw net kg on each input edge. The transformation
+  id is a name-based UUID over company and output id, so a replay returns the stored edges and never re-derives them.
+  An order with no net issued input refuses the output (`409 inventory_manufacturing_parent_input_not_issued`), so a
+  Manufacturing transformation always has at least one input. Split/merge still refuse kind 3, and the label detail
+  read returns kind `Manufacturing` without the split/merge kg balance check (scrap and loss make the totals differ).
+- **Participant V2:** `IInventoryManufacturingRealizationParticipantV2` keeps the V1 issue/return shapes. Its output
+  maps the output class before any read or write: `GoodProduct` -> `Standard`, `SecondQuality` -> `SecondQuality`,
+  `Scrap` -> `Scrap`. `ProcessLoss`, `UsableRemnant` (fail-closed until its production status field is decided, BS-5)
+  and any other token are refused with `400 inventory_manufacturing_output_class_not_stockable`. The label is created
+  classified, and the result echoes both the output class and the classification. V1 stays unchanged until the
+  Manufacturing consumer moves to V2 in its own slice.
+- **Migration:** `WidenInventoryLabelTransformationKindToManufacturing` widens `CK_LabelTransformations_Kind` to
+  `IN (1, 2, 3)`. Its `Down` refuses (THROW 51262) while any kind 3 row exists (forward fix).
+
 ## Average purchase cost ledger and read port V1 (SAT-D262..D267, slice 1)
 
 Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory owns the moving-average purchase cost
@@ -553,9 +573,9 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 
 - **Core:** `Domain/Costing/AverageCostCalculator` is deterministic. A purchase receipt recomputes the average; a transfer
   enters the target at the source average; a production receipt never enters the average (the position becomes
-  Unreadable `mixed_source_undecided`). Negative stock, unit conversion, foreign currency, landed/additional cost, returns
-  and stock the ledger never costed are NOT decided: each answers Unreadable with its own code and an
-  `OPEN-INV-AVGCOST-*` comment in the code. Unreadable is sticky (leaving it would be a policy choice).
+  Unreadable `mixed_source_undecided`). Negative stock, unit conversion, foreign currency, returns and stock the ledger
+  never costed have no figure: each answers Unreadable with its own code. Unreadable is sticky (leaving it would be a
+  policy choice).
 - **Ledger:** `inventory.AverageCostLedger` (`AddInventoryAverageCostLedger`), company-filtered, unique per position,
   `Version` + `RowVersion` concurrency, state check `CK_AverageCostLedger_State`. `Down` refuses (THROW 51250) while any
   row exists (forward fix).
@@ -564,6 +584,18 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
   position becomes sticky Unreadable `zero_cost_receipt` (reason 9) and the zero never enters the average. Migration
   `RelaxInventoryAverageCostReasonToZeroCostReceipt` widens the reason check to 1..9; its `Down` refuses (THROW 51258)
   while a reason 9 row exists. Purchase-line price input, USD/TL and unit conversion stay open (NEEDS-SINAN, Issue #66).
+- **Sinan 2026-11-11 (SAT-D302, `docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`):**
+  additional cost (freight, customs) never enters the v1 average. The receipt entering at its own purchase price, with
+  `AverageCostMovement.AdditionalCostPerStockKg` kept apart, is the implementation reading of that decision (reversible);
+  reason 4 / `additional_cost_undecided` is no longer produced, its number and wire code stay reserved for the later
+  setting (ALS-D80). No migration: the reason check and the read contract V1 are unchanged. The domain field does not
+  decide the Purchasing→Inventory contract: per the ALS-D80 implementation reading, that cross-module K3 slice decides
+  how additional cost is carried (a separate field, a flag or nothing), and so that SAT-D302 (1) holds it must make sure
+  `UnitCostPerStockKg` is the purchase price alone.
+- **Sinan 2026-11-13 (SAT-D318, SAT-D323, `docs/decisions/SINAN_KARARLARI_2026-11-13_URETIM_MALIYETI_VE_EKSI_STOK.md`):**
+  stock never goes below zero, so `negative_stock` (reason 1) marks an invariant breach; SAT-D301 (2) ("giriş gelince
+  düzelir") is superseded by SAT-D323 (1) and no recovery formula is written. Keeping the breach fail-closed and sticky
+  is the decision file's author reading; the safety behaviour for a violated record is NEEDS-SINAN.
 - **No price input source is connected yet** (Purchasing price input is NEEDS-SINAN, Issue #66 comment 6760990097), so
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).

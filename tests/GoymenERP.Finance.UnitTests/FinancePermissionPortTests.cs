@@ -113,6 +113,8 @@ public sealed class FinancePermissionPortTests
     [Theory]
     [InlineData(FinanceAction.ProposeReversal, FinancePermissionNames.ReversePropose)]
     [InlineData(FinanceAction.ApproveReversal, FinancePermissionNames.ReverseApprove)]
+    [InlineData(FinanceAction.ProposePaymentReversal, FinancePermissionNames.PaymentReversePropose)]
+    [InlineData(FinanceAction.ApprovePaymentReversal, FinancePermissionNames.PaymentReverseApprove)]
     public async Task Each_FIN_T06_command_revalidates_its_own_permission_on_every_call(
         FinanceAction action, string permission)
     {
@@ -131,6 +133,8 @@ public sealed class FinancePermissionPortTests
     [Theory]
     [InlineData(FinanceAction.ProposeReversal, FinancePermissionNames.ReversePropose)]
     [InlineData(FinanceAction.ApproveReversal, FinancePermissionNames.ReverseApprove)]
+    [InlineData(FinanceAction.ProposePaymentReversal, FinancePermissionNames.PaymentReversePropose)]
+    [InlineData(FinanceAction.ApprovePaymentReversal, FinancePermissionNames.PaymentReverseApprove)]
     public async Task A_missing_FIN_T06_grant_is_denied_after_a_real_authority_measurement(
         FinanceAction action, string permission)
     {
