@@ -2,6 +2,12 @@ namespace GoymenERP.Modules.Counterparty.Domain.Parties;
 
 public sealed class Party
 {
+    /// <summary>Upper bound of the official legal name (resmi unvan), as the persisted column.</summary>
+    public const int LegalNameMaximumLength = 250;
+
+    /// <summary>Upper bound of the optional trade name (ticari ad), as the persisted column.</summary>
+    public const int TradeNameMaximumLength = 200;
+
     private Party()
     {
     }
@@ -16,8 +22,8 @@ public sealed class Party
         Id = RequireId(id, nameof(id));
         Code = PartyCode.Parse(partyCode.Value);
         Kind = RequireKnownKind(kind);
-        LegalName = RequireText(legalName, nameof(legalName), 250);
-        TradeName = NormalizeOptionalText(tradeName, nameof(tradeName), 200);
+        LegalName = RequireText(legalName, nameof(legalName), LegalNameMaximumLength);
+        TradeName = NormalizeOptionalText(tradeName, nameof(tradeName), TradeNameMaximumLength);
         var now = DateTimeOffset.UtcNow;
         CreatedAtUtc = now;
         UpdatedAtUtc = now;
@@ -89,6 +95,29 @@ public sealed class Party
         TaxIdentityNumber = proposed.Value;
         Touch(utcNow);
     }
+
+    /// <summary>
+    /// F-027 / C-02 trade name edit: the optional trade name (ticari ad) is a basic card field, changed directly with the
+    /// basic-update permission and audited (CARI-DEC-004 lists only the official legal name, VKN/TCKN, MERSİS and IBAN as
+    /// approval-bound). Blank clears it. Returns false and leaves the version untouched when the normalized value is the
+    /// one already stored, so a repeated save is not a business change. The legal name is never changed here.
+    /// </summary>
+    internal bool ChangeTradeName(string? tradeName, DateTimeOffset utcNow)
+    {
+        var normalized = NormalizeOptionalText(tradeName, nameof(tradeName), TradeNameMaximumLength);
+        if (string.Equals(TradeName, normalized, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        TradeName = normalized;
+        Touch(utcNow);
+        return true;
+    }
+
+    /// <summary>The trade name as <see cref="ChangeTradeName"/> would store it (trimmed, blank as null, bounded).</summary>
+    public static string? NormalizeTradeName(string? tradeName) =>
+        NormalizeOptionalText(tradeName, nameof(tradeName), TradeNameMaximumLength);
 
     internal void Touch(DateTimeOffset utcNow)
     {

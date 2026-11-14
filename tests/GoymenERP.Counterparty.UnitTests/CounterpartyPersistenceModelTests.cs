@@ -213,6 +213,38 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
+    public void SaveChanges_AllowsATradeNameOnlyPartyChangeAndRejectsALegalNameRiddenAlong()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000011"), PartyKind.LegalEntity, "Göymen Test Cari");
+        dbContext.Parties.Attach(party);
+        Assert.True(party.ChangeTradeName("Göymen", DateTimeOffset.UtcNow));
+        dbContext.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, dbContext.Entry(party).State);
+        // The guard lets this through; the (absent) database is what fails next, not the guard.
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
+
+        // CARI-DEC-004: the legal name is approval-bound, so it may not ride along with a trade name change.
+        dbContext.ChangeTracker.Clear();
+        var mixed = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000012"), PartyKind.LegalEntity, "Karışık Cari");
+        dbContext.Parties.Attach(mixed);
+        mixed.ChangeTradeName("Karışık", DateTimeOffset.UtcNow);
+        dbContext.Entry(mixed).Property(value => value.LegalName).CurrentValue = "Gizli Unvan Değişikliği";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
+
+        // Nor may a tax identity change and a trade name change share one save.
+        dbContext.ChangeTracker.Clear();
+        var both = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000013"), PartyKind.LegalEntity, "İkili Cari");
+        dbContext.Parties.Attach(both);
+        both.ChangeTradeName("İkili", DateTimeOffset.UtcNow);
+        both.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("1234567890"), DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
     public void SaveChanges_RejectsAChangeRequestOfAnotherCompanyAndItsDeletion()
     {
         var companyId = Guid.NewGuid();

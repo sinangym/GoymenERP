@@ -336,7 +336,9 @@ public sealed class CounterpartyDbContext(
                     "Grup seviyesindeki Party kaydı fiziksel olarak silinemez.");
             }
 
-            if (entry.State == EntityState.Modified && !IsTaxIdentityOnlyPartyChange(entry))
+            if (entry.State == EntityState.Modified
+                && !IsTaxIdentityOnlyPartyChange(entry)
+                && !IsTradeNameOnlyPartyChange(entry))
             {
                 throw new InvalidOperationException(
                     "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
@@ -505,6 +507,18 @@ public sealed class CounterpartyDbContext(
         nameof(Party.RowVersion),
     ];
 
+    /// <summary>
+    /// F-027 / C-02: the trade name edit touches only these. The official legal name stays outside every direct edit
+    /// (CARI-DEC-004: its change is approval-bound), and a tax identity change never rides along.
+    /// </summary>
+    private static readonly string[] MutableTradeNamePartyProperties =
+    [
+        nameof(Party.TradeName),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
     private static readonly string[] ImmutableChangeRequestProperties =
     [
         nameof(PartyTaxIdentityChangeRequest.Id),
@@ -530,6 +544,16 @@ public sealed class CounterpartyDbContext(
             .ToArray();
         return modified.Contains(nameof(Party.TaxIdentityNumber), StringComparer.Ordinal)
             && modified.All(name => MutableTaxIdentityPartyProperties.Contains(name, StringComparer.Ordinal));
+    }
+
+    private static bool IsTradeNameOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.TradeName), StringComparer.Ordinal)
+            && modified.All(name => MutableTradeNamePartyProperties.Contains(name, StringComparer.Ordinal));
     }
 
     private sealed class OrganizationCompanyReference
