@@ -73,6 +73,38 @@ public sealed class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Inbox_dedup_key_refuses_the_same_consumer_message_from_another_source_in_real_SQL()
+    {
+        await WithDatabaseAsync(async connectionString =>
+        {
+            Assert.Equal("1", await ScalarAsync(connectionString, $"""
+                SELECT CAST([is_unique] AS int) FROM sys.indexes
+                WHERE [object_id] = OBJECT_ID(N'[work].[OutboxDeliveries]') AND [name] = N'{WorkDbContext.ConsumerMessageIndexName}'
+                """));
+
+            var message = Guid.NewGuid();
+            string Insert(Guid company, string source, string consumer) => $"""
+                INSERT INTO [work].[OutboxDeliveries]
+                ([CompanyId],[SourceName],[ConsumerName],[MessageId],[EventType],[SchemaVersion],[PayloadSha256],[Status],[AttemptCount],[FirstAttemptAtUtc],[LastAttemptAtUtc],[DeliveredAtUtc])
+                VALUES ('{company}','{source}','{consumer}','{message}','{Event}',1,'{new string('a', 64)}',1,1,SYSUTCDATETIME(),SYSUTCDATETIME(),SYSUTCDATETIME())
+                """;
+
+            await ExecAsync(connectionString, Insert(TestCompanyIds.CompanyA, "sales", "finance"));
+            var crossSource = await Assert.ThrowsAnyAsync<Exception>(
+                () => ExecAsync(connectionString, Insert(TestCompanyIds.CompanyA, "inventory", "finance")));
+            Assert.Equal(2601, Sql(crossSource).Number);
+
+            // The key is per company and per consumer: another consumer or another company records the same id.
+            await ExecAsync(connectionString, Insert(TestCompanyIds.CompanyA, "inventory", "audit"));
+            await ExecAsync(connectionString, Insert(TestCompanyIds.CompanyB, "inventory", "finance"));
+
+            await using var scoped = Db(connectionString, TestCompanyIds.CompanyA);
+            var rows = await scoped.OutboxDeliveries.OrderBy(r => r.ConsumerName).ToListAsync();
+            Assert.Equal(new[] { ("audit", "inventory"), ("finance", "sales") }, rows.Select(r => (r.ConsumerName, r.SourceName)));
+        });
+    }
+
+    [SqlServerFact]
     public async Task Down_refuses_while_dispatch_records_exist_and_drops_the_empty_tables()
     {
         await WithDatabaseAsync(async connectionString =>
