@@ -5115,7 +5115,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string")),
                 ["LoadingInstructionSummaryView"] = ObjectSchema(
-                    ["id", "companyId", "status", "version", "customerPartyId", "companyAccountId", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount"],
+                    ["id", "companyId", "status", "version", "customerPartyId", "companyAccountId", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount",
+                        "cancelledBy", "cancelledAtUtc", "cancelReason"],
                     ("id", "type:string;format:uuid"),
                     ("companyId", "type:string;format:uuid"),
                     ("status", "type:string"),
@@ -5125,7 +5126,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("effectiveOn", "type:string;format:date"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("updatedAtUtc", "type:string;format:date-time"),
-                    ("lineCount", "type:integer|string;format:int32")),
+                    ("lineCount", "type:integer|string;format:int32"),
+                    // F-020 (LOJ-D6..D8): who cancelled, when and why; every member present, each null until Cancelled.
+                    ("cancelledBy", "type:null|string"),
+                    ("cancelledAtUtc", "type:null|string;format:date-time"),
+                    ("cancelReason", "type:null|string")),
                 ["CustomerReturnResponseV1"] = ObjectSchema(
                     ["return", "isReplay", "originalCorrelationId"],
                     ("return", "ref:CustomerReturnViewV1"),

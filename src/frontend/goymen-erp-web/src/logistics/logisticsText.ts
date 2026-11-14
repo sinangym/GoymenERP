@@ -130,6 +130,10 @@ export const INSTRUCTION_DETAIL_TEXT = {
   heading: 'Yükleme talimatı',
   status: 'Durum',
   cancelledNotice: 'Bu talimat iptal edildi. Kayıtlar yalnız görüntülenir; yeni işlem yapılamaz.',
+  /** F-020: the stored cancel facts of a Cancelled instruction (the canceller is a user id; no name lookup). */
+  cancelledBy: 'İptal eden',
+  cancelledAt: 'İptal zamanı',
+  cancelReason: 'İptal nedeni',
   version: 'Kayıt sürümü',
   effectiveOn: 'İş tarihi',
   createdAt: 'Oluşturulma',
