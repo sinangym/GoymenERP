@@ -1,0 +1,74 @@
+# Sinan Kararları — 2026-11-14 (NEEDS-SINAN NS-01…NS-16 cevapları)
+
+Bu belge önceki karar dosyalarını silmez; `KIM-D24`…`KIM-D27`, `KLN-D33`…`KLN-D37`, `AI-D7`, `URT-D60`,
+`URT-D61`, `SAT-D345` ve `FNS-D42` kararlarını ekler. `KIM-D1`…`KIM-D23`
+(`SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md`), `KLN-D1`…`KLN-D32`, `AI-D1`…`AI-D6`, `URT-D1`…`URT-D59`
+(D48…D59 #1157 ile), `SAT-D1`…`SAT-D344` ve `FNS-D1`…`FNS-D41` (D40/41 #1157 ile) geçerli kalır.
+
+**Kaynak:** Sinan (`sinangym`), Issue #66 yorumu
+[6882315732](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6882315732) ("SINAN-CEVAP (14)",
+2026-11-14). Sorular NEEDS-SINAN yorumu
+[6881073257](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6881073257)'deki NS-01…NS-16'dır;
+Claude oturumunda AskUserQuestion ile seçenekli soruldu. "(Önerilen)" işaretleri soranındır. Serbest metin
+cevaplar aynen aktarılmıştır. Seçilmeyen seçenekler açıklamalarıyla tabloda listelidir.
+
+## Soru ve cevaplar
+
+| # | Soru | Cevap | Seçilen seçeneğin açıklaması |
+|---|---|---|---|
+| NS-01 | Görev ayrılığı (F-024): İrsaliyeyi hazırlayan kişi aynı irsaliyeyi onaylayabilsin mi? Diğer "hazırlayan = onaylayan" durumları da buna göre ayarlanacak. | "Ayrı kişi şart (Önerilen)" | Hazırlayan onaylayamaz; Alış'ta (F-015) yapılanla aynı kural. Tek kişilik şirkette ayar ile gevşetilebilir, varsayılan ayrı. — Seçilmeyenler: "Ayarla seçilsin" (şirket ayarı: varsayılan "aynı kişi onaylayabilir", istenirse ayrı kişi şartı açılır); "Aynı kişi onaylasın" (görev ayrılığı yok) |
+| NS-02 | Reddedilen deneme kaydı (F023-4): Yetkisiz veya geçersiz denemeler nasıl kaydedilsin? Toplu mu, yoksa her biri ayrı ayrı mı? | "Her ret ayrı (Önerilen)" | Toplama yok; her reddedilen deneme tek satır. Basit ve denetimde eksiksiz. Hacim artarsa sonra toplama açılır. — Seçilmeyenler: "Eşikli toplama" (aynı kullanıcı + aynı işlem kısa sürede çok tekrar ederse tek özet satır, eşik ayarlanabilir; replay ve yazım hatası ayrı sınıf); "Yalnız yetki retleri" (doğrulama hataları kaydedilmez) |
+| NS-03 | Reddedilen deneme kayıtları için 2 yıllık saklama süresi var. Süre dolunca kayıtlar otomatik silinsin mi? | "Kapalı kalsın (Önerilen)" | Kod yazılır ama imha kapalı; açmak için ayrıca karar verilir. Veri kaybı riski yok. — Seçilmeyen: "2 yıl sonunda açılsın" (2 yılı dolan kayıtlar otomatik silinir) |
+| NS-04 | Hesap kurtarma: Kurucu 2FA cihazını kaybederse ya da başka yetkili yokken herkes kilitlenirse ne yapılsın? | "Kodlar + 2. yönetici (Önerilen)" | Kurulumda tek seferlik kurtarma kodları verilir; ikinci bir yönetici tanımlanması önerilir. Hepsi kaybolursa sunucuda denetim kaydı bırakan komut satırı aracıyla kurtarma. — Seçilmeyenler: "Yalnız sunucu aracı" (kurtarma kodu yok); "Yalnız kurtarma kodları" (kodlar kaybolursa kurtarma yok, yeniden kurulum) |
+| NS-05 | Belge şablonları (OPEN-019): Sevk/irsaliye belgelerindeki (GDC/GSP/GIN) logo ve antet dosyaları ile şablon yayımlama onayı nasıl olsun? | "Yükleme + ayrı onay izni (Önerilen)" | Logo/antet şirket ayarından yüklenir; şablonu yayımlamak için ayrı bir izin olur, hazırlayan kendi şablonunu yayımlayamaz. İzni kimin alacağını Sinan atar. — Seçilmeyenler: "Yükleme, onaysız" (şablon düzenleme izni olan herkes doğrudan yayımlar); "Şimdilik sabit şablon" (logo/antet sonra) |
+| NS-06 | Yapay zekâ dış sağlayıcısı (OPEN-020): Hangi sağlayıcı kullanılsın? (API anahtarını eklemek her durumda Sinan'ın işidir.) | "Birden fazla ai anahtarı ekleyebilirim, openai chatgpt ve anthropic claude ve diğerlerinide ekleyebilirim ilerde" | Serbest metin. Sunulan seçenekler: "Bağımsız arayüz, şimdilik kapalı (Önerilen)" (kod sağlayıcıdan bağımsız, AI kapalı; sağlayıcı ve anahtar test bitince seçilir); "Anthropic (Claude)"; "OpenAI" (her ikisinde anahtar eklenene kadar kapalı) |
+| NS-07 | Miktar bazlı rezervasyon (B-23): Sipariş için stoktan belirli miktar ayırma (rezerve etme) istenir mi? | "Otomatik dediği öneri olarak sorsun onaylanırsa yapsın haricinde elle yapıp kaldırım düzenleme yapabilsin ama her sipariş sayfasındaki satırlarda bir buton yardımı ile öneri almaya devam edebilsin, ve evet sipariş onayında önerilen seçeneğinin açıklamasıda doğru" | Serbest metin. Atıf yapılan önerilen seçenek "Evet, sipariş onayında": satış siparişi onaylanınca miktar rezerve olur, sevkte düşer, iptalde serbest kalır; kullanılabilir stok = eldeki − rezerve; eksi stoka izin yok. — Diğer seçenekler: "Evet, elle rezerve" (otomatik yok); "Şimdilik yok" |
+| NS-08 | Asgari stok (MINSTOK, B-32): Ürün asgari stok seviyesinin altına düşünce sistem ne yapsın? | "Uyarı talep önerisi olur ama bizim sektör tam olarak bu şekilde ilerlemiyor, birde her alınan etiketli ürün etiket bazında takip edilmeli her giren ürünün etiketi aynı üründe olsa etiketi farklı oluyor bizim sektörde, hangi giren etiket hangi üretimde kullanıldı veya hangi müşterilere gitti detayı bizim için önemli ayrıca bu yazdığımıda anlayıp mantıklı şekilde hem bu soruya hem genel olarak kontrolünü sağla" | Serbest metin. Atıf yapılan önerilen seçenek "Uyarı + talep önerisi": ürün/depo bazında asgari seviye; altına inince uyarı listesi ve satın alma talebi taslak önerisi, talep otomatik gönderilmez. — Diğer seçenekler: "Yalnız uyarı"; "Otomatik talep" |
+| NS-09 | Mamul maliyet izi (OPEN-008, B-27): Mamul maliyeti hangi yöntemle hesaplansın? (Önceki karar: hammadde kg maliyeti esas.) | "Ağırlıklı ortalama (Önerilen)" | Hammadde kg maliyeti ağırlıklı ortalama ile; mamul maliyeti = tüketilen hammadde maliyeti (+ ileride işçilik/genel gider). — Seçilmeyenler: "FIFO" (her parti kendi alış maliyetiyle); "Standart maliyet" (sapmalar ayrı raporlanır) |
+| NS-10 | Kapasite ve termin (OPEN-007): Üretim kapasitesi ve termin tarihi nasıl hesaplansın? | "Takvim + öneri, onaylı (Önerilen)" | İş merkezi vardiya takvimi ve saatlik kapasiteden termin önerilir; kullanıcı onaylar veya değiştirir. Vardiya/kapasite değerlerini Sinan ayardan girer. — Seçilmeyenler: "Yalnız elle termin"; "Tam otomatik" |
+| NS-11 | Yedekleme (OPEN-017/014, F-016): En fazla ne kadar veri kaybı (RPO) ve ne kadar kesinti (RTO) kabul edilebilir? | "RPO 15 dk / RTO 4 saat (Önerilen)" | Günlük tam yedek + 15 dakikada bir işlem günlüğü yedeği; ayda bir geri yükleme denemesi. — Seçilmeyenler: "RPO 24 saat / RTO 1 gün" (yalnız günlük tam yedek); "RPO 1 saat / RTO 8 saat" (günlük tam + saatlik günlük yedeği) |
+| NS-12 | Tekrar gönderim kayıtları (idempotency, OPEN-021): Aynı işlemin iki kez kaydedilmesini önleyen kayıtlar ne kadar saklansın? | "90 gün (Önerilen)" | Geç gelen tekrarları yakalar; denetim kaydı ayrıca kalıcıdır. Süre ayardan değişir. — Seçilmeyenler: "30 gün"; "1 yıl" |
+| NS-13 | Satış sözleşmesi (S-11, SAT-D28): Ödeme planı ve iskonto kuralları nasıl olsun? | "Taksit + iskonto, limit üstü onay (Önerilen)" | Sözleşmede taksitli ödeme planı (vade/tutar satırları) ve satır/toplam iskontosu; iskonto oranı ayardaki sınırı aşarsa yetkili onayı gerekir. Sınırı Sinan girer. — Seçilmeyenler: "Tek vade + satır iskontosu" (onay yok); "Şimdilik yok" |
+| NS-14 | Carinin vergi numarası (VKN) değişirse (OPEN-030) ne yapılsın? | "Bunu muhasebesel ve hukuksal olarak araştır" | Karar verilmedi. Sunulan seçenekler: "Yeni cari, eski pasif (Önerilen)"; "Aynı cari, onaylı değişiklik". Araştırma sonucu yeniden sorulacak |
+| NS-15 | Açılış bakiyesi devri (OPEN-018 / FNS-D23): Dönem sonunda bakiyeler yeni döneme nasıl devretsin? | "Kapanışta devir fişi (Önerilen)" | Dönem kapanışı onaylanınca sistem yeni dönem için açılış/devir fişi üretir; kapanış geri alınırsa ters kayıtla iptal edilir. — Seçilmeyenler: "Her dönem elle açılış"; "Devir yok, kümülatif" |
+| NS-16 | Ürün çalışma ortamı (B-06): Gerçek kullanım için gizli anahtar ve kullanıcı yetkileri ne zaman verilsin? | "Testler bitince , ama benim yerime senin yapmanıda isteyeceğim" | Serbest metin. Atıf yapılan önerilen seçenek "Testler bitince": kod + tam test + güvenlik testi bitip ana dala girdikten sonra. — Seçilmeyen: "Canlıya geçişte" |
+
+## Kararlar
+
+| No | Konu | Karar | Etkilenen yer |
+|---|---|---|---|
+| KIM-D24 | Görev ayrılığı (F-024) | **Sinan'ın sözü:** Hazırlayan kendi belgesini onaylayamaz; varsayılan ayrı kişi. **Uygulama ayrıntısı (geri alınabilir):** tek kişilik şirket için gevşetme şirket ayarıdır, varsayılan kapalı; gevşetme açıldığında da onay denetim kaydında "hazırlayan = onaylayan" olarak işaretlenir. Kapsam: irsaliye ve diğer hazırlayan/onaylayan akışları (F-015 Alış ile aynı kural) | Logistics irsaliye onayı, KIM-S22 dilimi |
+| KIM-D25 | Reddedilen deneme kaydı (F023-4) | **Sinan'ın sözü:** Toplama yok; her reddedilen deneme ayrı satır. Toplama ileride ayrı kararla açılabilir | Platform reddedilen deneme denetimi, PLT-S5 |
+| KIM-D26 | Reddedilen deneme imhası | **Sinan'ın sözü:** 2 yıl sonra otomatik imha kodu yazılabilir ama **kapalı** kalır; açmak ayrı karardır (saklama politikası) | PLT-S5 |
+| KIM-D27 | Hesap kurtarma | **Sinan'ın sözü:** Kurulumda tek seferlik kurtarma kodları; ikinci yönetici tanımlanması önerilir; hepsi kaybolursa sunucuda denetim kaydı bırakan komut satırı kurtarma aracı. **Uygulama ayrıntısı (geri alınabilir):** kod sayısı, biçimi ve yeniden üretme akışı; CLI aracı yalnız sunucu erişimiyle çalışır, uzaktan uç nokta açmaz | Identity, KIM-S9 |
+| KLN-D33 | Belge logosu/anteti ve şablon yayımlama (OPEN-019 kısmi) | **Sinan'ın sözü:** Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izindir; hazırlayan kendi şablonunu yayımlayamaz; iznin kime verileceğini Sinan atar. **Sınır:** yeni izin adı kaydedilebilir, grant/rol atanmaz (insan kapısı); dosya biçimi/boyut sınırı yapılandırılabilir | Logistics belge şablonları, STK-S29 |
+| KLN-D34 | Rezervasyon (B-23) | **Sinan'ın sözü:** Sipariş onayında sistem rezervasyonu **öneri** olarak sunar; kullanıcı onaylarsa rezerve edilir. Kullanıcı rezervasyonu elle ekleyebilir, kaldırabilir, düzenleyebilir. Sipariş sayfasındaki her satırda bir buton ile istendiği zaman yeniden öneri alınabilir. Rezervasyon sevkte düşer, iptalde serbest kalır; kullanılabilir stok = eldeki − rezerve; eksi stoka izin yok. **Açık:** rezervasyonun etiket bazında mı yoksa miktar bazında mı tutulacağı KLN-D35 ile birlikte ele alınır (aşağıda "Sınırlar") | Stock/Sales, STK-S30 |
+| KLN-D35 | Asgari stok ve etiket bazlı izlenebilirlik (B-32) | **Sinan'ın sözü:** (1) Asgari stok altına inişte uyarı ve satın alma talebi önerisi olabilir; ancak sektörün işleyişi tam olarak bu değildir. (2) Her alınan etiketli ürün **etiket bazında** takip edilir; aynı üründe bile her girişin etiketi farklıdır. (3) Hangi giriş etiketinin hangi üretimde kullanıldığı ve hangi müşterilere gittiği izlenebilir olmalıdır. (4) Sistem bu ihtiyacı genel olarak da kontrol eder. **Uygulama ayrıntısı (geri alınabilir):** asgari stok uyarısı ve talep taslağı önerisi otomatik talep göndermez; ileri (giriş etiketi → üretim → çıkış etiketi → sevk/müşteri) ve geri izleme kapsamı mevcut soy ağacı (F-008) ile karşılaştırılıp eksikler ayrı dilim olarak planlanır. Bu söz `KARAR_SICILI`'ndeki DEC-LBL-001/002/003, DEC-PRD-003 ve DEC-PRDCT-003 ile uyumludur; onları değiştirmez | Stock, Production, Sales/Logistics; STK-S31 ve izlenebilirlik dilimleri |
+| KLN-D36 | Yedekleme hedefi (F-016) | **Sinan'ın sözü:** RPO 15 dakika, RTO 4 saat: günlük tam yedek + 15 dakikada bir işlem günlüğü yedeği; ayda bir geri yükleme denemesi. **Sınır:** bu hedeftir; ortamda yedekleme işinin kurulması/etkinleştirilmesi ve production ortamı insan kapısıdır. OPEN-017 ve OPEN-014 bu dosyayla kapanmaz | Platform yedek/geri yükleme, PLT-S15 |
+| KLN-D37 | Idempotency kayıtları saklama (OPEN-021 kısmi) | **Sinan'ın sözü:** Varsayılan 90 gün; süre ayardan değişir. Denetim kaydı ayrıca kalıcıdır | Platform idempotency, PLT-S14 |
+| AI-D7 | AI sağlayıcıları (OPEN-020 kısmi) | **Sinan'ın sözü:** Birden fazla AI anahtarı eklenebilir; OpenAI (ChatGPT), Anthropic (Claude) ve ileride diğerleri. **Uygulama ayrıntısı (geri alınabilir):** sağlayıcıdan bağımsız arayüz, sağlayıcı başına yapılandırma; anahtarı olmayan sağlayıcı kapalıdır. **Sınır:** anahtar (secret) ekleme insan kapısıdır; kodda secret yoktur; AI doğrudan DB/ham SQL kullanamaz (`AGENTS.md`) | AI Merkezi, PLT-S11 |
+| URT-D60 | Mamul maliyet yöntemi (OPEN-008 kısmi, B-27) | **Sinan'ın sözü:** Ağırlıklı ortalama; hammadde kg maliyeti esas; mamul maliyeti = tüketilen hammadde maliyeti (işçilik/genel gider ileride) | Production/Costing, URT-S19 |
+| URT-D61 | Kapasite ve termin (OPEN-007 kısmi) | **Sinan'ın sözü:** İş merkezi vardiya takvimi ve saatlik kapasiteden termin **önerilir**; kullanıcı onaylar veya değiştirir; vardiya/kapasite değerleri ayardan girilir (kodda sabit değer yok) | Production planlama, URT-S10 |
+| SAT-D345 | Satış sözleşmesi ödeme planı ve iskonto (SAT-D28 devamı) | **Sinan'ın sözü:** Taksitli ödeme planı (vade/tutar satırları) + satır/toplam iskonto; iskonto oranı ayardaki sınırı aşarsa yetkili onayı. Sınır değerini Sinan girer. **Açık:** sınır hiç girilmemişken davranış (aşağıda "Sınırlar") | Sales sözleşme, SAT-S14 |
+| FNS-D42 | Açılış bakiyesi devri (OPEN-018 / FNS-D23 kalanı) | **Sinan'ın sözü:** Dönem kapanışı onaylanınca yeni dönem için açılış/devir fişi üretilir; kapanış geri alınırsa devir fişi ters kayıtla iptal edilir. **Sınır:** Finance STOP ve finansal aktivasyon kapıları değişmez | Finance dönem kapanışı, FIN-S17 |
+
+## Sınırlar
+
+- **NS-14 (OPEN-030, VKN değişikliği):** karar verilmedi; Sinan muhasebe ve hukuk araştırması istedi. Araştırma
+  sonucuyla yeniden sorulacak (`NEEDS-SINAN`). ALC-S15 bekler.
+- **KLN-D34 / KLN-D35 birleşimi:** rezervasyonun etiket bazında mı miktar bazında mı tutulacağı, asgari stoğun
+  etiket bazlı stokla nasıl hesaplanacağı ve "sektörün işleyişi" ayrıntısı açık; mevcut kod incelemesinden sonra
+  seçenekli olarak sorulacak (`NEEDS-SINAN`).
+- **SAT-D345 sınırı girilmemişken:** iskonto onayının nasıl davranacağı (her iskonto onaylı mı, onaysız mı) açık;
+  tahminle seçilmez. SAT-S14 sınırı ayar olarak kodlar; sınır girilene kadar bu davranış `NEEDS-SINAN` olarak
+  sorulur.
+- **NS-16 (B-06):** Sinan'ın sözü "Testler bitince" ve bu işi ileride Claude'dan isteyeceğidir. Bu dosya bir yetki
+  vermez: secret ekleme, grant/rol/Critical atama ve production aktivasyonu insan kapısıdır; o an geldiğinde
+  somut ve ayrı bir açık onay gerekir.
+- **NS-03:** imha kodu kapalı kalır; açmak saklama politikası kararıdır.
+- **NS-11:** hedef kaydedildi; yedekleme işinin ortamda kurulması/etkinleştirilmesi ve kullanıcının mevcut
+  Docker/SQL ortamı değişmez.
+- `OPEN-007`, `OPEN-008`, `OPEN-014`, `OPEN-017`, `OPEN-018`, `OPEN-019`, `OPEN-020`, `OPEN-021`, `OPEN-030`
+  bu dosyayla **kapanmaz**; kapatma insan kapısıdır. `KARAR_SICILI` ve `ACIK_KARARLAR` değişmez.
+- Finance STOP ve insan kapıları (deployment, environment, secret, Settings → Actions'ta etkinleştirme,
+  grant/rol/Critical, production, `OPEN-*` kapatma, `.claude/settings.json`) değişmez.
