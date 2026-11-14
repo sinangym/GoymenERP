@@ -281,8 +281,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // currency re-check), ordinal-sorted (b4e424b4… -> 0a36a1d0…).
             // API-30 K3 review B P2-1: +1 cash-account fact (authority withdrawn during the Settings read or just
             // before the save), ordinal-sorted (0a36a1d0… -> b93d6306…).
+            // API-30 passivation/reactivation (#66, 13 November 2026): +8 cash-account facts (two-person change flow,
+            // balance seam, database checks, company, replay/stale, permission revoked, race, Down guard),
+            // ordinal-sorted (b93d6306… -> dbfc6f19…).
             ["tools/relational_inventory/finance.txt"] =
-                "b93d63063735760d185475bb9d3c94990269e70074e10710c6ebc7987594d8aa",
+                "dbfc6f190bc75ad342f0c51770123ef374c166cd767b24a3c31ce755d48190e3",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -793,7 +796,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // API-30: CashAccounts / CashAccountCommands carry the CompanyId filter and company-leading keys;
             // CK_CashAccounts_Decision (maker≠decider, BIN2), UX_CashAccounts_LiveName and a decision-only write
             // guard (95024798… -> e9c49087…).
-            "e9c490877cead95a08565371df2a51180604319a059f72468eda4d5c7f798da1",
+            // API-30 passivation/reactivation: CashAccounts gains the change columns, CK_CashAccounts_StateChange,
+            // the decision check and live-name filter widened to the passive status, and a write guard that also
+            // admits one change proposal or decision per save; the filter and keys are unchanged (e9c49087… -> c4668c43…).
+            "c4668c43a066910719e2d6c926cbac4ab30c08ee947bc6a6211669fa5f5030f3",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1313,11 +1319,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // items, no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for F3a /
                 // API-20: the payment allocation writer and read service registrations; token counts unchanged.
                 // Re-fingerprinted for API-30: the cash-account master service registration; token counts unchanged.
+                // Re-fingerprinted for API-30 passivation: the four change envelopes and the zero-answering balance
+                // reader (TryAddScoped); token counts unchanged (5e7d06a8… -> 79b587d8…).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "5e7d06a8c7de0e67e69ef21cbcd281791994f95e4f1ebcaeaac0e2e82658ec20",
+                        "79b587d8945efd389a27c0c90de8ce0abbcb98dd758af8c5b04499b5fdd08a96",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1451,10 +1459,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // as FinanceBankAccountService does. No connection, command or raw SQL.
                 // Re-fingerprinted for API-30 K3 review B P3-5: a rejection's audit context names the decider
                 // as rejectedBy instead of approvedBy; same token count (5540ddc5… -> ff441d02…).
+                // Re-fingerprinted for API-30 passivation/reactivation: the change proposal, approval and rejection
+                // through the same fence, replay, attempt and audit path, and the balance seam; still no
+                // connection, command or raw SQL, same token count (ff441d02… -> 72827fa6…).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs"] =
                     new(
-                        "ff441d029b75d09f9e8bd9fa98d0076c891abe633c832b2f8e2253ea402d4759",
+                        "72827fa6fd5d25e6720ebde9ae981e05d1c340164a59a442d154e7fc16f5c07e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2893,14 +2904,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
-                // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
-                // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
                 // API-30: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any cash account
                 // or cash-account command is stored; the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261112070144_AddCashAccounts.cs"] =
                     new("d48f0b982c32c16ed5c011576277a3045fab26dc1fd30a66ffdf68ceada82f8b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // API-30 passivation and reactivation (#66, 13 November 2026): Up is pure DDL (seven nullable change columns,
+                // the widened decision check and live-name filter, CK_CashAccounts_StateChange); the Down's only raw SQL is
+                // Finance's module refusal (51051) while any cash account is passive or carries a change; the THROW precedes
+                // every index, constraint and column drop. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261113161917_AddCashAccountStateChanges.cs"] =
+                    new("9edb092789cf1388583bc6cb5aa9972b9ccd45b3118cf6967d183a0e2fc3420e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
+                // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107154419_AddPaymentAllocations.cs"] =
                     new("5fee84517da703301d4b2d551731a6458efa4795948e491d457cc14016aba90a",
                         new Dictionary<string, int>(StringComparer.Ordinal)

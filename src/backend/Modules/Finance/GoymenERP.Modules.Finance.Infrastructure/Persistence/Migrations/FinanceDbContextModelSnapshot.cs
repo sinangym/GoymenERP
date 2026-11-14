@@ -2081,6 +2081,32 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("ChangeDecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ChangeDecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int?>("ChangeKind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ChangeProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ChangeProposedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ChangeRejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("ChangeStatus")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2129,13 +2155,15 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                     b.HasIndex(new[] { "CompanyId", "DisplayName" }, "UX_CashAccounts_LiveName")
                         .IsUnique()
-                        .HasFilter("[Status] IN (1, 2)");
+                        .HasFilter("[Status] IN (1, 2, 4)");
 
                     b.ToTable("CashAccounts", "finance", t =>
                         {
-                            t.HasCheckConstraint("CK_CashAccounts_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)");
+                            t.HasCheckConstraint("CK_CashAccounts_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)");
 
                             t.HasCheckConstraint("CK_CashAccounts_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_CashAccounts_StateChange", "([ChangeKind] IS NULL AND [ChangeStatus] IS NULL AND [ChangeProposedBy] IS NULL AND [ChangeProposedAtUtc] IS NULL AND [ChangeDecidedBy] IS NULL AND [ChangeDecidedAtUtc] IS NULL AND [ChangeRejectionReason] IS NULL AND [Status] IN (1, 2, 3)) OR ([ChangeKind] IS NOT NULL AND [ChangeStatus] IS NOT NULL AND [ChangeKind] IN (1, 2) AND [ChangeProposedBy] IS NOT NULL AND LEN([ChangeProposedBy]) > 0 AND [ChangeProposedAtUtc] IS NOT NULL AND (([ChangeStatus] = 1 AND [ChangeDecidedBy] IS NULL AND [ChangeDecidedAtUtc] IS NULL AND [ChangeRejectionReason] IS NULL AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4))) OR ([ChangeStatus] = 2 AND [ChangeDecidedBy] IS NOT NULL AND [ChangeDecidedAtUtc] IS NOT NULL AND LEN([ChangeDecidedBy]) > 0 AND [ChangeDecidedBy] COLLATE Latin1_General_100_BIN2 <> [ChangeProposedBy] COLLATE Latin1_General_100_BIN2 AND [ChangeRejectionReason] IS NULL AND (([ChangeKind] = 1 AND [Status] = 4) OR ([ChangeKind] = 2 AND [Status] = 2))) OR ([ChangeStatus] = 3 AND [ChangeDecidedBy] IS NOT NULL AND [ChangeDecidedAtUtc] IS NOT NULL AND LEN([ChangeDecidedBy]) > 0 AND [ChangeDecidedBy] COLLATE Latin1_General_100_BIN2 <> [ChangeProposedBy] COLLATE Latin1_General_100_BIN2 AND [ChangeRejectionReason] IS NOT NULL AND LEN([ChangeRejectionReason]) > 0 AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4)))))");
 
                             t.HasCheckConstraint("CK_CashAccounts_Text", "LEN([DisplayName]) > 0 AND LEN([ProposedBy]) > 0");
 

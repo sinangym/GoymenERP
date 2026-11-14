@@ -23,12 +23,21 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item><b>Currency (FNS-D24):</b> one of Settings' money currency candidates of the server-resolved
 /// company, checked on propose and again on approve, exactly as the bank master does. Nothing is
 /// hard-coded; an unavailable Settings source refuses, fail-closed.</item>
-/// <item><b>Name:</b> a proposed or approved name is unique per company (<c>UX_CashAccounts_LiveName</c>);
-/// a rejected proposal frees it.</item>
+/// <item><b>Name:</b> a proposed, approved or passive name is unique per company
+/// (<c>UX_CashAccounts_LiveName</c>); a rejected proposal frees it.</item>
+/// <item><b>Passivation / reactivation (user decision on Issue #66, 13 November 2026):</b> the same
+/// two-person flow as opening, each under its own propose/approve authority: one actor proposes the
+/// change, a DIFFERENT actor approves or rejects it (<c>CK_CashAccounts_StateChange</c> holds it in the
+/// database too). The account's state moves only on approval; every step takes the account's expected
+/// version and moves it. A passivation is refused, on proposal and again on approval, unless the balance
+/// reads zero through <see cref="IFinanceCashAccountBalanceReader"/> — the one seam; no cash movement
+/// exists yet, so its only implementation answers zero. A passive account is not active
+/// (<see cref="CashAccountView.IsActive"/>): a future cash movement command must refuse it. It stays
+/// readable, to a read-only caller too.</item>
 /// <item><b>Authority:</b> server company/actor must be the request's; the action is checked before
 /// anything is read, after every owner await, on replay and immediately before the save.</item>
 /// <item><b>Visibility:</b> proposals and rejections are shown only to a caller who may propose or
-/// approve; a read-only caller sees approved accounts, in the list and by id alike.</item>
+/// approve; a read-only caller sees approved and passive accounts, in the list and by id alike.</item>
 /// <item><b>Idempotency (ADR-011):</b> the cash account's own command record keyed by (company, command,
 /// key hash) with the actor and the canonical payload hash; terminal refusals (not found, stale version)
 /// are recorded and replayed; the loser of a same-key race answers the winner's record.</item>
@@ -43,16 +52,29 @@ public sealed class FinanceCashAccountService(
     ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector auditEvents,
     FinanceCashAccountEnvelopes envelopes,
+    IFinanceCashAccountBalanceReader balances,
     TimeProvider timeProvider) : IFinanceCashAccountMaster
 {
     public const string ProposeCommand = "finance.cash-account.propose";
     public const string ApproveCommand = "finance.cash-account.approve";
     public const string RejectCommand = "finance.cash-account.reject";
+    public const string ProposePassivationCommand = "finance.cash-account.passivation.propose";
+    public const string ApprovePassivationCommand = "finance.cash-account.passivation.approve";
+    public const string RejectPassivationCommand = "finance.cash-account.passivation.reject";
+    public const string ProposeReactivationCommand = "finance.cash-account.reactivation.propose";
+    public const string ApproveReactivationCommand = "finance.cash-account.reactivation.approve";
+    public const string RejectReactivationCommand = "finance.cash-account.reactivation.reject";
     internal const string LiveNameIndex = "UX_CashAccounts_LiveName";
     private const string EntityType = "Finance.CashAccount";
     private const int Proposed = 1;
     private const int Approved = 2;
     private const int Rejected = 3;
+    private const int Passive = 4;
+    private const int PassivationKind = 1;
+    private const int ReactivationKind = 2;
+    private const int ChangePending = 1;
+    private const int ChangeApproved = 2;
+    private const int ChangeRejected = 3;
     private const int IdentityMaximumLength = 128;
     private const int DisplayNameMaximumLength = 200;
     private const int ReasonMaximumLength = 500;
@@ -107,7 +129,7 @@ public sealed class FinanceCashAccountService(
 
         // The database's unique index is the authority; this answers the common case before a write.
         if (await dbContext.CashAccounts.AsNoTracking().AnyAsync(row => row.DisplayName == request.DisplayName
-            && (row.Status == Proposed || row.Status == Approved), cancellationToken))
+            && (row.Status == Proposed || row.Status == Approved || row.Status == Passive), cancellationToken))
         {
             return Refused(context, CommandOutcome.ValidationFailed, Issue("displayName", "cash_account_name_taken"));
         }
@@ -228,6 +250,172 @@ public sealed class FinanceCashAccountService(
             "Finans kasa hesabı reddi (hazırlayandan farklı tek karar; para etkisi yok)", cancellationToken);
     }
 
+    /// <summary>
+    /// Proposes the passivation of an active account or the reactivation of a passive one. The account
+    /// does not move: the change waits for a different actor's decision. A passivation is refused unless
+    /// the balance reads zero.
+    /// </summary>
+    public async Task<CashAccountCommandResult> ProposeStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        var kind = KindOf(change);
+        if (await StartAsync(context, metadata, kind.Propose, request.AccountId, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed)
+        {
+            return malformed;
+        }
+
+        var payloadHash = PayloadHash(kind.ProposeCommand, request);
+        if (await PriorAsync(context, metadata, kind.Propose, kind.ProposeCommand, payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        var (row, terminal) = await VersionedTargetAsync(context, metadata, kind.Propose, kind.ProposeCommand, payloadHash,
+            request.AccountId, request.ExpectedVersion, cancellationToken);
+        if (terminal is not null)
+        {
+            return terminal;
+        }
+
+        // Only an active account is passivated and only a passive one reactivated; one change at a time.
+        if (row!.Status != kind.From)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", kind.WrongStateCode));
+        }
+
+        if (row.ChangeStatus == ChangePending)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "cash_account_change_pending"));
+        }
+
+        if (kind.Number == PassivationKind
+            && await BalanceRefusalAsync(context, kind.Propose, row.Id, cancellationToken) is { } balanceRefused)
+        {
+            return balanceRefused;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = row.Version;
+        var before = AccountAudit(row);
+        row.ChangeKind = kind.Number;
+        row.ChangeStatus = ChangePending;
+        row.ChangeProposedBy = context.ActorId;
+        row.ChangeProposedAtUtc = now;
+        row.ChangeDecidedBy = null;
+        row.ChangeDecidedAtUtc = null;
+        row.ChangeRejectionReason = null;
+        row.UpdatedAtUtc = now;
+        row.Version = checked(row.Version + 1);
+        var result = Succeeded(context, row);
+        AddCommand(context, metadata, kind.ProposeCommand, payloadHash, row.Id, result, now);
+        Audit(context, metadata, kind.ProposeEnvelope(envelopes), row.Id, kind.EventPrefix + "-proposed.v1", "Propose",
+            versionBefore, row.Version, before, AccountAudit(row), approvalContextJson: null, kind.ProposeReason);
+        return await SaveAsync(context, metadata, kind.Propose, kind.ProposeCommand, payloadHash, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// Approves the pending change: a different actor than its proposer. The account becomes passive
+    /// (passivation; the balance must still read zero) or active again (reactivation).
+    /// </summary>
+    public async Task<CashAccountCommandResult> ApproveStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        var kind = KindOf(change);
+        if (await StartAsync(context, metadata, kind.Approve, request.AccountId, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed)
+        {
+            return malformed;
+        }
+
+        var payloadHash = PayloadHash(kind.ApproveCommand, request);
+        if (await PriorAsync(context, metadata, kind.Approve, kind.ApproveCommand, payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        var (row, terminal) = await ChangeDecisionTargetAsync(context, metadata, kind, kind.ApproveCommand, payloadHash,
+            request.AccountId, request.ExpectedVersion, cancellationToken);
+        if (terminal is not null)
+        {
+            return terminal;
+        }
+
+        if (kind.Number == PassivationKind
+            && await BalanceRefusalAsync(context, kind.Approve, row!.Id, cancellationToken) is { } balanceRefused)
+        {
+            return balanceRefused;
+        }
+
+        return await DecideChangeAsync(context, metadata, kind, kind.ApproveCommand, payloadHash, row!, reason: null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Rejects the pending change: a different actor than its proposer, with a reason, under the kind's
+    /// approve authority. The account stays as it was.
+    /// </summary>
+    public async Task<CashAccountCommandResult> RejectStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountStateChange change, CashAccountStateChangeRejectRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        var kind = KindOf(change);
+        if (await StartAsync(context, metadata, kind.Approve, request.AccountId, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed)
+        {
+            return malformed;
+        }
+
+        if (!IsCanonical(request.Reason))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_invalid"));
+        }
+
+        if (request.Reason.Length > ReasonMaximumLength)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"));
+        }
+
+        var payloadHash = PayloadHash(kind.RejectCommand, request);
+        if (await PriorAsync(context, metadata, kind.Approve, kind.RejectCommand, payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        var (row, terminal) = await ChangeDecisionTargetAsync(context, metadata, kind, kind.RejectCommand, payloadHash,
+            request.AccountId, request.ExpectedVersion, cancellationToken);
+        if (terminal is not null)
+        {
+            return terminal;
+        }
+
+        return await DecideChangeAsync(context, metadata, kind, kind.RejectCommand, payloadHash, row!, request.Reason,
+            cancellationToken);
+    }
+
     public async Task<ReadResult<CashAccountMasterPage>> ListAsync(FinanceContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -240,7 +428,8 @@ public sealed class FinanceCashAccountService(
         var query = dbContext.CashAccounts.AsNoTracking();
         if (!await SeesProposalsAsync(context, cancellationToken))
         {
-            query = query.Where(row => row.Status == Approved);
+            // A passive account stays visible: only proposals and rejections are withheld.
+            query = query.Where(row => row.Status == Approved || row.Status == Passive);
         }
 
         var rows = await query.OrderBy(row => row.DisplayName).ThenBy(row => row.Id).ToListAsync(cancellationToken);
@@ -251,7 +440,9 @@ public sealed class FinanceCashAccountService(
 
         return new ReadResult<CashAccountMasterPage>(ReadOutcome.Found, new CashAccountMasterPage(context.CompanyId,
             [.. rows.Select(row => new CashAccountMasterItem(View(row),
-                string.Equals(row.ProposedBy, context.ActorId, StringComparison.Ordinal)))]));
+                string.Equals(row.ProposedBy, context.ActorId, StringComparison.Ordinal),
+                row.ChangeStatus == ChangePending
+                && string.Equals(row.ChangeProposedBy, context.ActorId, StringComparison.Ordinal)))]));
     }
 
     public async Task<ReadResult<CashAccountView>> GetAsync(FinanceContext context, Guid accountId,
@@ -266,7 +457,8 @@ public sealed class FinanceCashAccountService(
 
         var row = await dbContext.CashAccounts.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == accountId, cancellationToken);
-        if (row is not null && row.Status != Approved && !await SeesProposalsAsync(context, cancellationToken))
+        if (row is not null && row.Status != Approved && row.Status != Passive
+            && !await SeesProposalsAsync(context, cancellationToken))
         {
             // Not disclosed to a read-only caller: the same answer as no account.
             row = null;
@@ -333,13 +525,22 @@ public sealed class FinanceCashAccountService(
 
     private static CashAccountView View(CashAccountRow row) =>
         new CashAccountView(row.Id, row.CompanyId, row.CurrencyId, row.DisplayName, StatusOf(row.Status),
-            IsActive: row.Status == Approved, row.RejectionReason, VersionText(row.Version));
+            IsActive: row.Status == Approved, row.RejectionReason,
+            row.ChangeStatus == ChangePending ? ChangeOf(row.ChangeKind) : null, VersionText(row.Version));
+
+    private static CashAccountStateChange ChangeOf(int? kind) => kind switch
+    {
+        PassivationKind => CashAccountStateChange.Passivation,
+        ReactivationKind => CashAccountStateChange.Reactivation,
+        _ => throw new InvalidOperationException("Kasa hesabı durum değişikliği tanınmıyor."),
+    };
 
     private static CashAccountStatus StatusOf(int status) => status switch
     {
         Proposed => CashAccountStatus.Proposed,
         Approved => CashAccountStatus.Approved,
         Rejected => CashAccountStatus.Rejected,
+        Passive => CashAccountStatus.Passive,
         _ => throw new InvalidOperationException("Kasa hesabı durumu tanınmıyor."),
     };
 
@@ -364,23 +565,14 @@ public sealed class FinanceCashAccountService(
         CommandMetadata metadata, FinanceAction action, string command, string payloadHash, Guid accountId,
         string expectedVersion, CancellationToken cancellationToken)
     {
-        var row = await dbContext.CashAccounts.SingleOrDefaultAsync(candidate => candidate.Id == accountId, cancellationToken);
-        if (row is null)
+        var (row, terminal) = await VersionedTargetAsync(context, metadata, action, command, payloadHash, accountId,
+            expectedVersion, cancellationToken);
+        if (terminal is not null)
         {
-            // Another company's account is not visible either: the same answer, nothing leaks (§7).
-            return (null, await TerminalAsync(context, metadata, action, command, payloadHash, accountId: null,
-                Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "cash_account_not_found")),
-                cancellationToken));
+            return (null, terminal);
         }
 
-        if (!string.Equals(VersionText(row.Version), expectedVersion, StringComparison.Ordinal))
-        {
-            return (null, await TerminalAsync(context, metadata, action, command, payloadHash, row.Id,
-                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
-                cancellationToken));
-        }
-
-        if (row.Status != Proposed)
+        if (row!.Status != Proposed)
         {
             return (null, Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "cash_account_not_proposed")));
         }
@@ -390,6 +582,134 @@ public sealed class FinanceCashAccountService(
             ? (null, Refused(context, CommandOutcome.Denied, Issue("approval", "finance_approver_is_proposer")))
             : (row, null);
     }
+
+    /// <summary>The company's account at the expected version; not found and a stale version are terminal (§7).</summary>
+    private async Task<(CashAccountRow? Row, CashAccountCommandResult? Refusal)> VersionedTargetAsync(FinanceContext context,
+        CommandMetadata metadata, FinanceAction action, string command, string payloadHash, Guid accountId,
+        string expectedVersion, CancellationToken cancellationToken)
+    {
+        var row = await dbContext.CashAccounts.SingleOrDefaultAsync(candidate => candidate.Id == accountId, cancellationToken);
+        if (row is null)
+        {
+            // Another company's account is not visible either: the same answer, nothing leaks (§7).
+            return (null, await TerminalAsync(context, metadata, action, command, payloadHash, accountId: null,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "cash_account_not_found")),
+                cancellationToken));
+        }
+
+        return string.Equals(VersionText(row.Version), expectedVersion, StringComparison.Ordinal)
+            ? (row, null)
+            : (null, await TerminalAsync(context, metadata, action, command, payloadHash, row.Id,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken));
+    }
+
+    /// <summary>
+    /// The pending change a decision names: the account at the expected version, a pending change of this
+    /// kind, and a decider other than the one who proposed the change (maker≠checker).
+    /// </summary>
+    private async Task<(CashAccountRow? Row, CashAccountCommandResult? Refusal)> ChangeDecisionTargetAsync(
+        FinanceContext context, CommandMetadata metadata, StateChangeKind kind, string command, string payloadHash,
+        Guid accountId, string expectedVersion, CancellationToken cancellationToken)
+    {
+        var (row, terminal) = await VersionedTargetAsync(context, metadata, kind.Approve, command, payloadHash, accountId,
+            expectedVersion, cancellationToken);
+        if (terminal is not null)
+        {
+            return (null, terminal);
+        }
+
+        if (row!.ChangeStatus != ChangePending || row.ChangeKind != kind.Number)
+        {
+            return (null, Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "cash_account_change_not_pending")));
+        }
+
+        return string.Equals(row.ChangeProposedBy, context.ActorId, StringComparison.Ordinal)
+            ? (null, Refused(context, CommandOutcome.Denied, Issue("approval", "finance_approver_is_proposer")))
+            : (row, null);
+    }
+
+    private async Task<CashAccountCommandResult> DecideChangeAsync(FinanceContext context, CommandMetadata metadata,
+        StateChangeKind kind, string command, string payloadHash, CashAccountRow row, string? reason,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = row.Version;
+        var before = AccountAudit(row);
+        var approved = reason is null;
+        row.ChangeStatus = approved ? ChangeApproved : ChangeRejected;
+        row.ChangeDecidedBy = context.ActorId;
+        row.ChangeDecidedAtUtc = now;
+        row.ChangeRejectionReason = reason;
+        if (approved)
+        {
+            row.Status = kind.To;
+        }
+
+        row.UpdatedAtUtc = now;
+        row.Version = checked(row.Version + 1);
+        var result = Succeeded(context, row);
+        AddCommand(context, metadata, command, payloadHash, row.Id, result, now);
+        object decision = approved
+            ? new { rule = "O4", proposedBy = row.ChangeProposedBy, approvedBy = context.ActorId }
+            : new { rule = "O4", proposedBy = row.ChangeProposedBy, rejectedBy = context.ActorId };
+        Audit(context, metadata, kind.ApproveEnvelope(envelopes), row.Id,
+            kind.EventPrefix + (approved ? "-approved.v1" : "-rejected.v1"), approved ? "Approve" : "Reject", versionBefore,
+            row.Version, before, AccountAudit(row),
+            JsonSerializer.Serialize(decision, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            approved ? kind.ApproveReason : kind.RejectReason + ": " + reason);
+        return await SaveAsync(context, metadata, kind.Approve, command, payloadHash, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// Passivation rule 2: the balance must read zero now. Asked through the one seam, fenced again after
+    /// it; a balance that is not zero refuses, and one that cannot be read refuses too (fail-closed).
+    /// </summary>
+    private async Task<CashAccountCommandResult?> BalanceRefusalAsync(FinanceContext context, FinanceAction action,
+        Guid accountId, CancellationToken cancellationToken)
+    {
+        var balance = await balances.ReadAsync(context.CompanyId, accountId, cancellationToken);
+        if (await FenceAsync(context, action, accountId, cancellationToken) is { } fenced)
+        {
+            return fenced;
+        }
+
+        return balance switch
+        {
+            CashAccountBalanceState.Zero => null,
+            CashAccountBalanceState.NotZero =>
+                Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "cash_account_balance_not_zero")),
+            _ => Refused(context, CommandOutcome.Unavailable, Issue("accountId", "cash_account_balance_unavailable")),
+        };
+    }
+
+    private static StateChangeKind KindOf(CashAccountStateChange change) => change switch
+    {
+        CashAccountStateChange.Passivation => new StateChangeKind(PassivationKind, Approved, Passive,
+            FinanceAction.ProposeCashAccountPassivation, FinanceAction.ApproveCashAccountPassivation,
+            ProposePassivationCommand, ApprovePassivationCommand, RejectPassivationCommand,
+            "finance.cash-account.passivation", "cash_account_not_active",
+            item => item.ProposePassivation, item => item.ApprovePassivation,
+            "Finans kasa hesabı pasife alma önerisi (bakiye sıfır; para etkisi yok)",
+            "Finans kasa hesabı pasife alma onayı (önerenden farklı tek onay; bakiye sıfır; para etkisi yok)",
+            "Finans kasa hesabı pasife alma reddi (önerenden farklı tek karar; para etkisi yok)"),
+        CashAccountStateChange.Reactivation => new StateChangeKind(ReactivationKind, Passive, Approved,
+            FinanceAction.ProposeCashAccountReactivation, FinanceAction.ApproveCashAccountReactivation,
+            ProposeReactivationCommand, ApproveReactivationCommand, RejectReactivationCommand,
+            "finance.cash-account.reactivation", "cash_account_not_passive",
+            item => item.ProposeReactivation, item => item.ApproveReactivation,
+            "Finans kasa hesabı yeniden etkinleştirme önerisi (para etkisi yok)",
+            "Finans kasa hesabı yeniden etkinleştirme onayı (önerenden farklı tek onay; para etkisi yok)",
+            "Finans kasa hesabı yeniden etkinleştirme reddi (önerenden farklı tek karar; para etkisi yok)"),
+        _ => throw new ArgumentOutOfRangeException(nameof(change)),
+    };
+
+    /// <summary>One kind of state change: where it starts and leads, its authorities, commands and audit texts.</summary>
+    private sealed record StateChangeKind(int Number, int From, int To, FinanceAction Propose, FinanceAction Approve,
+        string ProposeCommand, string ApproveCommand, string RejectCommand, string EventPrefix, string WrongStateCode,
+        Func<FinanceCashAccountEnvelopes, FinanceAuditEnvelope> ProposeEnvelope,
+        Func<FinanceCashAccountEnvelopes, FinanceAuditEnvelope> ApproveEnvelope,
+        string ProposeReason, string ApproveReason, string RejectReason);
 
     private async Task<CashAccountCommandResult> DecideAsync(FinanceContext context, CommandMetadata metadata,
         FinanceAction action, string command, string payloadHash, CashAccountRow row, int status, string? reason,
@@ -652,6 +972,11 @@ public sealed class FinanceCashAccountService(
         row.ProposedBy,
         row.DecidedBy,
         row.RejectionReason,
+        row.ChangeKind,
+        row.ChangeStatus,
+        row.ChangeProposedBy,
+        row.ChangeDecidedBy,
+        row.ChangeRejectionReason,
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
     private static CashAccountCommandResult Succeeded(FinanceContext context, CashAccountRow row) =>
@@ -669,6 +994,20 @@ public sealed class FinanceCashAccountService(
 /// <summary>
 /// The ADR-009 envelopes of the cash-account master's writes: a proposal with the roles that granted
 /// <c>finance.cash-account.propose</c>; an approval or a rejection with those of
-/// <c>finance.cash-account.approve</c>.
+/// <c>finance.cash-account.approve</c>; a passivation or reactivation step with those of its own
+/// <c>finance.cash-account.passivation.*</c> / <c>finance.cash-account.reactivation.*</c> permission.
 /// </summary>
-public sealed record FinanceCashAccountEnvelopes(FinanceAuditEnvelope Propose, FinanceAuditEnvelope Approve);
+public sealed record FinanceCashAccountEnvelopes(FinanceAuditEnvelope Propose, FinanceAuditEnvelope Approve,
+    FinanceAuditEnvelope ProposePassivation, FinanceAuditEnvelope ApprovePassivation,
+    FinanceAuditEnvelope ProposeReactivation, FinanceAuditEnvelope ApproveReactivation);
+
+/// <summary>
+/// The only balance reading there is today: the system has no cash movement, so no cash account can hold
+/// a balance and every account reads zero. It reads nothing and decides nothing else. The slice that adds
+/// cash movements registers its own <see cref="IFinanceCashAccountBalanceReader"/> instead.
+/// </summary>
+public sealed class NoCashMovementBalanceReader : IFinanceCashAccountBalanceReader
+{
+    public Task<CashAccountBalanceState> ReadAsync(Guid companyId, Guid cashAccountId, CancellationToken cancellationToken) =>
+        Task.FromResult(CashAccountBalanceState.Zero);
+}

@@ -20,7 +20,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <para>
 /// Permission and the Settings currency candidates are ISOLATED SYNTHETIC ports: no Finance grant
 /// exists, so these tests prove the store and its rules, not a user outcome. Every identity and
-/// currency below is SENTETIK / NOT_ENV test data. A cash account holds no balance and moves no money.
+/// currency below is SENTETIK / NOT_ENV test data. A cash account moves no money; no cash movement exists, so
+/// the registered balance reading answers zero and a SENTETIK reading stands in for any other answer.
 /// </para>
 /// </summary>
 public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
@@ -654,6 +655,523 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task An_active_cash_account_is_passivated_and_reactivated_by_two_people_stays_readable_and_keeps_its_name()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+
+        // A passivation proposal leaves the account active; its proposer cannot decide it; a rejection keeps it active.
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var proposed = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+            Assert.Equal((CashAccountStatus.Approved, true, (CashAccountStateChange?)CashAccountStateChange.Passivation, "3"),
+                (proposed.Resource!.Status, proposed.Resource.IsActive, proposed.Resource.PendingChange, proposed.Resource.Version));
+
+            var self = await a.Accounts.ApproveStateChangeAsync(a.Context, Key("pa-self"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, self.Outcome);
+            Assert.Equal("finance_approver_is_proposer", Assert.Single(self.Issues).Code);
+        }
+
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var rejected = await b.Accounts.RejectStateChangeAsync(b.Context, Key("pr-1"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK gerekçe"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, CashAccountStatus.Approved, true, (CashAccountStateChange?)null, "4"),
+                (rejected.Outcome, rejected.Resource!.Status, rejected.Resource.IsActive, rejected.Resource.PendingChange,
+                    rejected.Resource.Version));
+        }
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-2"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "4"), CancellationToken.None)).Outcome);
+        }
+
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var passive = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-1"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "5"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, CashAccountStatus.Passive, false, (CashAccountStateChange?)null, "6"),
+                (passive.Outcome, passive.Resource!.Status, passive.Resource.IsActive, passive.Resource.PendingChange,
+                    passive.Resource.Version));
+        }
+
+        // Passive: still the company's account, readable with its state by a read-only caller, and its name stays taken.
+        await using (var reader = run.Open(CompanyA, "SENTETIK-reader", new ReadOnlyPermissions()))
+        {
+            var item = Assert.Single((await reader.Accounts.ListAsync(reader.Context, CancellationToken.None)).Resource!.Items);
+            Assert.Equal((account.Id, CashAccountStatus.Passive, false), (item.Account.Id, item.Account.Status, item.Account.IsActive));
+            var read = await reader.Accounts.GetAsync(reader.Context, account.Id, CancellationToken.None);
+            Assert.Equal((ReadOutcome.Found, CashAccountStatus.Passive), (read.Outcome, read.Resource!.Status));
+        }
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var taken = await a.Accounts.ProposeAsync(a.Context, Key("p-again"),
+                new CashAccountProposeRequest("SENTETIK kasa", Currency), CancellationToken.None);
+            Assert.Equal("cash_account_name_taken", Assert.Single(taken.Issues).Code);
+        }
+
+        // Reactivation: the same two-person flow the other way round.
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var proposed = await b.Accounts.ProposeStateChangeAsync(b.Context, Key("rp-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "6"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, CashAccountStatus.Passive, (CashAccountStateChange?)CashAccountStateChange.Reactivation),
+                (proposed.Outcome, proposed.Resource!.Status, proposed.Resource.PendingChange));
+            var self = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("ra-self"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "7"), CancellationToken.None);
+            Assert.Equal("finance_approver_is_proposer", Assert.Single(self.Issues).Code);
+        }
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var active = await a.Accounts.ApproveStateChangeAsync(a.Context, Key("ra-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "7"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, CashAccountStatus.Approved, true, "8"),
+                (active.Outcome, active.Resource!.Status, active.Resource.IsActive, active.Resource.Version));
+        }
+
+        // The row keeps its opening decision and only the latest change, decided by someone other than its proposer.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 2 AND Version = 8 AND DecidedBy = @approver "
+            + "AND ChangeKind = 2 AND ChangeStatus = 2 AND ChangeProposedBy = @approver AND ChangeDecidedBy = @proposer "
+            + "AND ChangeRejectionReason IS NULL",
+            ("@id", account.Id), ("@approver", Approver), ("@proposer", Proposer)));
+        // Two opening and six state-change records; the self-decisions and the taken name store none.
+        Assert.Equal(8, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(6, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccountCommands WHERE CommandName LIKE N'finance.cash-account.passivation.%' "
+            + "OR CommandName LIKE N'finance.cash-account.reactivation.%'"));
+        Assert.Equal(8, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.CashAccount' AND CorrelationId = @c", ("@c", run.Correlation)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.passivation-rejected.v1' "
+            + "AND PermissionCode = N'finance.cash-account.passivation.approve' "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.rejectedBy') = @approver "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') IS NULL",
+            ("@proposer", Proposer), ("@approver", Approver)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.passivation-approved.v1' "
+            + "AND PermissionCode = N'finance.cash-account.passivation.approve' "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @approver",
+            ("@proposer", Proposer), ("@approver", Approver)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.reactivation-approved.v1' "
+            + "AND PermissionCode = N'finance.cash-account.reactivation.approve' "
+            + "AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @approver AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @proposer",
+            ("@proposer", Proposer), ("@approver", Approver)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.cash-account.passivation-proposed.v1' "
+            + "AND PermissionCode = N'finance.cash-account.passivation.propose' AND ApprovalContextJson IS NULL"));
+        // A state change moves no money.
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
+    [SqlServerFact]
+    public async Task A_passivation_is_refused_unless_the_balance_reads_zero_at_the_proposal_and_at_the_approval()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+
+        foreach (var (state, outcome, code) in new[]
+        {
+            (CashAccountBalanceState.NotZero, CommandOutcome.ValidationFailed, "cash_account_balance_not_zero"),
+            (CashAccountBalanceState.Unavailable, CommandOutcome.Unavailable, "cash_account_balance_unavailable"),
+        })
+        {
+            var balance = new FixedBalance(state);
+            await using var a = run.OpenWithBalance(CompanyA, Proposer, balance);
+            var refused = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-" + code), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal((outcome, code), (refused.Outcome, Assert.Single(refused.Issues).Code));
+            Assert.Null(refused.Resource);
+            Assert.Equal((CompanyA, account.Id), Assert.Single(balance.Seen));
+        }
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+        }
+
+        foreach (var (state, outcome, code) in new[]
+        {
+            (CashAccountBalanceState.NotZero, CommandOutcome.ValidationFailed, "cash_account_balance_not_zero"),
+            (CashAccountBalanceState.Unavailable, CommandOutcome.Unavailable, "cash_account_balance_unavailable"),
+        })
+        {
+            var balance = new FixedBalance(state);
+            await using var b = run.OpenWithBalance(CompanyA, Approver, balance);
+            var refused = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-" + code), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal((outcome, code), (refused.Outcome, Assert.Single(refused.Issues).Code));
+            Assert.Null(refused.Resource);
+            Assert.Equal((CompanyA, account.Id), Assert.Single(balance.Seen));
+        }
+
+        // Nothing of the four refusals reached the store: the account is active with its pending proposal.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 2 AND Version = 3 AND ChangeKind = 1 "
+            + "AND ChangeStatus = 1 AND ChangeDecidedBy IS NULL", ("@id", account.Id)));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.CashAccount'"));
+
+        // A zero reading lets the approval through.
+        var zero = new FixedBalance(CashAccountBalanceState.Zero);
+        await using (var b = run.OpenWithBalance(CompanyA, Approver, zero))
+        {
+            var passive = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-1"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, CashAccountStatus.Passive), (passive.Outcome, passive.Resource!.Status));
+        }
+
+        Assert.Equal((CompanyA, account.Id), Assert.Single(zero.Seen));
+    }
+
+    [SqlServerFact]
+    public async Task The_database_refuses_a_passive_account_without_a_change_a_self_decided_change_and_a_half_written_change()
+    {
+        await using var run = await Run.StartAsync();
+
+        // Without the service: every refusal names the state-change check (547); the opening decision is legal throughout.
+        foreach (var (name, status, kind, changeStatus, proposer, decider, reason) in new[]
+        {
+            ("SENTETIK passive-without-change", "4", "NULL", "NULL", "NULL", "NULL", "NULL"),
+            ("SENTETIK self-decided", "4", "1", "2", "N'z'", "N'z'", "NULL"),
+            ("SENTETIK self-rejected", "2", "1", "3", "N'z'", "N'z'", "N'SENTETIK'"),
+            ("SENTETIK kind-without-state", "2", "1", "NULL", "N'z'", "NULL", "NULL"),
+            ("SENTETIK state-without-kind", "2", "NULL", "1", "N'z'", "NULL", "NULL"),
+            ("SENTETIK pending-without-proposer", "2", "1", "1", "NULL", "NULL", "NULL"),
+            ("SENTETIK pending-in-wrong-state", "4", "1", "1", "N'z'", "NULL", "NULL"),
+            ("SENTETIK approved-in-wrong-state", "2", "1", "2", "N'z'", "N'w'", "NULL"),
+            ("SENTETIK rejected-without-reason", "2", "1", "3", "N'z'", "N'w'", "NULL"),
+            ("SENTETIK unknown-kind", "2", "3", "1", "N'z'", "NULL", "NULL"),
+        })
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+                RawAccount(name, status, kind, changeStatus, proposer, decider, reason), ("@c", CompanyA), ("@cur", Currency)));
+            Assert.Equal(547, error.Number);
+            Assert.Contains("CK_CashAccounts_StateChange", error.Message, StringComparison.Ordinal);
+        }
+
+        // The legal shapes pass: passive by another's decision, a pending reactivation, a rejected passivation.
+        await run.ExecuteAsync(RawAccount("SENTETIK passive", "4", "1", "2", "N'z'", "N'w'", "NULL"), ("@c", CompanyA), ("@cur", Currency));
+        await run.ExecuteAsync(RawAccount("SENTETIK reactivating", "4", "2", "1", "N'z'", "NULL", "NULL"), ("@c", CompanyA), ("@cur", Currency));
+        await run.ExecuteAsync(RawAccount("SENTETIK kept", "2", "1", "3", "N'z'", "N'w'", "N'SENTETIK'"), ("@c", CompanyA), ("@cur", Currency));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccounts"));
+
+        // A passive account keeps its name: a second live row of it is refused (2601).
+        var duplicate = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            RawAccount("SENTETIK passive", "2", "NULL", "NULL", "NULL", "NULL", "NULL"), ("@c", CompanyA), ("@cur", Currency)));
+        Assert.Equal(2601, duplicate.Number);
+        Assert.Contains("UX_CashAccounts_LiveName", duplicate.Message, StringComparison.Ordinal);
+    }
+
+    [SqlServerFact]
+    public async Task Company_B_can_neither_passivate_nor_decide_a_change_of_company_A_cash_account()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK A");
+
+        await using (var b = run.Open(CompanyB, Proposer))
+        {
+            var propose = await b.Accounts.ProposeStateChangeAsync(b.Context, Key("pp-b"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "cash_account_not_found"), (propose.Outcome, Assert.Single(propose.Issues).Code));
+        }
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+        }
+
+        await using (var b = run.Open(CompanyB, Approver))
+        {
+            var approve = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-b"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal("cash_account_not_found", Assert.Single(approve.Issues).Code);
+            var reject = await b.Accounts.RejectStateChangeAsync(b.Context, Key("pr-b"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK gerekçe"), CancellationToken.None);
+            Assert.Equal("cash_account_not_found", Assert.Single(reject.Issues).Code);
+            Assert.Empty((await b.Accounts.ListAsync(b.Context, CancellationToken.None)).Resource!.Items);
+        }
+
+        // A's account is untouched by B: active, with A's own pending proposal.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 2 AND Version = 3 AND ChangeStatus = 1 "
+            + "AND ChangeProposedBy = @proposer", ("@id", account.Id), ("@proposer", Proposer)));
+        // B's three not-found answers are B's keys' terminal records, with no target.
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccountCommands WHERE CompanyId = @b AND CashAccountId IS NULL", ("@b", CompanyB)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.CashAccount' AND CompanyId = @b", ("@b", CompanyB)));
+    }
+
+    [SqlServerFact]
+    public async Task A_state_change_replays_by_its_key_and_a_stale_version_is_a_recorded_refusal()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+        var request = new CashAccountStateChangeRequest(account.Id, "2");
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var first = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"), CashAccountStateChange.Passivation,
+                request, CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, "3"), (first.Outcome, first.IsReplay, first.Resource!.Version));
+
+            var replay = await a.Accounts.ProposeStateChangeAsync(a.Context with { CorrelationId = run.Correlation + "-again" },
+                Key("pp-1"), CashAccountStateChange.Passivation, request, CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, true, "3", run.Correlation),
+                (replay.Outcome, replay.IsReplay, replay.Resource!.Version, replay.OriginalCorrelationId));
+
+            // The key belongs to its command: the same key on a reactivation is that command's own first attempt.
+            var otherCommand = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"), CashAccountStateChange.Reactivation,
+                request, CancellationToken.None);
+            Assert.Equal((CommandOutcome.VersionConflict, false), (otherCommand.Outcome, otherCommand.IsReplay));
+
+            var otherPayload = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"), CashAccountStateChange.Passivation,
+                request with { ExpectedVersion = "3" }, CancellationToken.None);
+            Assert.Equal(CommandOutcome.IdempotencyConflict, otherPayload.Outcome);
+            Assert.Null(otherPayload.Resource);
+        }
+
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var stale = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-stale"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.VersionConflict, false, "version_conflict"),
+                (stale.Outcome, stale.IsReplay, Assert.Single(stale.Issues).Code));
+
+            Assert.Equal(CommandOutcome.Succeeded, (await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None)).Outcome);
+
+            // The recorded stale answer stays its key's answer after the account moved on.
+            var staleAgain = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-stale"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.VersionConflict, true), (staleAgain.Outcome, staleAgain.IsReplay));
+            var approvedAgain = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-1"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, true, CashAccountStatus.Passive, "4"),
+                (approvedAgain.Outcome, approvedAgain.IsReplay, approvedAgain.Resource!.Status, approvedAgain.Resource.Version));
+        }
+
+        Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM finance.CashAccounts WHERE Id = @id", ("@id", account.Id)));
+        // Opening two; the passivation proposal, the reactivation's stale answer, the stale approval and the approval.
+        Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.CashAccount'"));
+    }
+
+    [SqlServerFact]
+    public async Task Permission_revoked_just_before_the_save_refuses_every_passivation_and_reactivation_step_and_stores_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+        var auditsAtStart = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+
+        // Passivation reads the balance: the authority holds at the start and after the reading, then is withdrawn.
+        var beforeSave = new RevocablePermissions(allowedDecisions: 2);
+        await using (var a = run.OpenWithPermissions(CompanyA, Proposer, beforeSave, new SyntheticCandidates()))
+        {
+            var refused = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-fence"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+            Assert.Equal(3, beforeSave.Decisions);
+        }
+
+        Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.CashAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(auditsAtStart, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var first = await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-fence"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, "3"), (first.Outcome, first.IsReplay, first.Resource!.Version));
+        }
+
+        var auditsAfterProposal = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        beforeSave = new RevocablePermissions(allowedDecisions: 2);
+        await using (var b = run.OpenWithPermissions(CompanyA, Approver, beforeSave, new SyntheticCandidates()))
+        {
+            Assert.Equal(CommandOutcome.Denied, (await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-fence"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None)).Outcome);
+            Assert.Equal(3, beforeSave.Decisions);
+        }
+
+        // A rejection reads no balance: the authority withdrawn after the first decision.
+        beforeSave = new RevocablePermissions(allowedDecisions: 1);
+        await using (var b = run.OpenWithPermissions(CompanyA, Approver, beforeSave, new SyntheticCandidates()))
+        {
+            Assert.Equal(CommandOutcome.Denied, (await b.Accounts.RejectStateChangeAsync(b.Context, Key("pr-fence"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK revoke"),
+                CancellationToken.None)).Outcome);
+            Assert.Equal(2, beforeSave.Decisions);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 2 AND Version = 3 AND ChangeStatus = 1 "
+            + "AND ChangeDecidedBy IS NULL AND ChangeDecidedAtUtc IS NULL AND ChangeRejectionReason IS NULL", ("@id", account.Id)));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(auditsAfterProposal, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var approved = await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-fence"), CashAccountStateChange.Passivation,
+                new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, "4"), (approved.Outcome, approved.IsReplay, approved.Resource!.Version));
+        }
+
+        // Reactivation reads no balance: each step fenced at its start and immediately before its save.
+        beforeSave = new RevocablePermissions(allowedDecisions: 1);
+        await using (var b = run.OpenWithPermissions(CompanyA, Approver, beforeSave, new SyntheticCandidates()))
+        {
+            Assert.Equal(CommandOutcome.Denied, (await b.Accounts.ProposeStateChangeAsync(b.Context, Key("rp-fence"),
+                CashAccountStateChange.Reactivation, new CashAccountStateChangeRequest(account.Id, "4"), CancellationToken.None)).Outcome);
+            Assert.Equal(2, beforeSave.Decisions);
+        }
+
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await b.Accounts.ProposeStateChangeAsync(b.Context, Key("rp-fence"),
+                CashAccountStateChange.Reactivation, new CashAccountStateChangeRequest(account.Id, "4"), CancellationToken.None)).Outcome);
+        }
+
+        var auditsBeforeDecision = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        foreach (var reject in new[] { false, true })
+        {
+            beforeSave = new RevocablePermissions(allowedDecisions: 1);
+            await using var a = run.OpenWithPermissions(CompanyA, Proposer, beforeSave, new SyntheticCandidates());
+            var refused = reject
+                ? await a.Accounts.RejectStateChangeAsync(a.Context, Key("rr-fence"), CashAccountStateChange.Reactivation,
+                    new CashAccountStateChangeRejectRequest(account.Id, "5", "SENTETIK revoke"), CancellationToken.None)
+                : await a.Accounts.ApproveStateChangeAsync(a.Context, Key("ra-fence"), CashAccountStateChange.Reactivation,
+                    new CashAccountStateChangeRequest(account.Id, "5"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Equal(2, beforeSave.Decisions);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 4 AND Version = 5 AND ChangeKind = 2 "
+            + "AND ChangeStatus = 1 AND ChangeDecidedBy IS NULL", ("@id", account.Id)));
+        Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(auditsBeforeDecision, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var active = await a.Accounts.ApproveStateChangeAsync(a.Context, Key("ra-fence"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "5"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, CashAccountStatus.Approved, "6"),
+                (active.Outcome, active.IsReplay, active.Resource!.Status, active.Resource.Version));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Two_racing_decisions_on_one_passivation_store_one()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+        }
+
+        // An approval and a rejection by two deciders read the same pending change, then wait for each other at the save.
+        var barrier = new Barrier(2);
+        async Task<CashAccountCommandResult> DecideAsync(string decider, bool approve)
+        {
+            await using var scope = run.OpenWith(CompanyA, decider, new SyntheticCandidates(), new BarrierInterceptor(barrier));
+            return approve
+                ? await scope.Accounts.ApproveStateChangeAsync(scope.Context, Key("pa-" + decider), CashAccountStateChange.Passivation,
+                    new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None)
+                : await scope.Accounts.RejectStateChangeAsync(scope.Context, Key("pr-" + decider), CashAccountStateChange.Passivation,
+                    new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK gerekçe"), CancellationToken.None);
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => DecideAsync(Approver, approve: true)),
+            Task.Run(() => DecideAsync("SENTETIK-approver-2", approve: false)));
+        var won = Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
+        var lost = Assert.Single(results, result => result.Outcome == CommandOutcome.VersionConflict);
+        Assert.Equal("4", won.Resource!.Version);
+        Assert.Equal("concurrent_change", Assert.Single(lost.Issues).Code);
+        Assert.Null(lost.Resource);
+
+        Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM finance.CashAccounts WHERE Id = @id", ("@id", account.Id)));
+        // Opening two, the proposal and the winning decision; the loser's attempt and audit event rolled back.
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType IN (N'finance.cash-account.passivation-approved.v1', "
+            + "N'finance.cash-account.passivation-rejected.v1')"));
+    }
+
+    [SqlServerFact]
+    public async Task The_state_change_migrations_Down_passes_while_accounts_kept_their_opening_decision_and_refuses_after_a_change()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddCashAccountStateChanges().DownOperations[0]).Sql;
+
+        await run.ExecuteAsync(guard);
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+        await run.ExecuteAsync(guard);
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+        }
+
+        var pending = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51051, pending.Number);
+
+        // A rejected change is still a change the old schema cannot hold.
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await b.Accounts.RejectStateChangeAsync(b.Context, Key("pr-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK gerekçe"),
+                CancellationToken.None)).Outcome);
+        }
+
+        var rejected = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51051, rejected.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 2 AND ChangeStatus = 3", ("@id", account.Id)));
+    }
+
+    /// <summary>One SENTETIK account proposed by <c>Proposer</c> and approved by <c>Approver</c>: active at version 2.</summary>
+    private static async Task<CashAccountView> ApprovedAsync(Run run, string name)
+    {
+        CashAccountView proposed;
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("open-p"),
+                new CashAccountProposeRequest(name, Currency), CancellationToken.None)).Resource!;
+        }
+
+        await using var b = run.Open(CompanyA, Approver);
+        var approved = await b.Accounts.ApproveAsync(b.Context, Key("open-a"),
+            new CashAccountApproveRequest(proposed.Id, "1"), CancellationToken.None);
+        Assert.Equal((CommandOutcome.Succeeded, "2"), (approved.Outcome, approved.Resource!.Version));
+        return approved.Resource;
+    }
+
+    /// <summary>A raw SENTETIK row past the service: an approved opening decision with the given change columns (SQL literals).</summary>
+    private static string RawAccount(string name, string status, string kind, string changeStatus, string proposer,
+        string decider, string reason) =>
+        "INSERT INTO finance.CashAccounts (Id, CompanyId, CurrencyId, DisplayName, Status, Version, ProposedBy, ProposedAtUtc, "
+        + "DecidedBy, DecidedAtUtc, UpdatedAtUtc, ChangeKind, ChangeStatus, ChangeProposedBy, ChangeProposedAtUtc, "
+        + "ChangeDecidedBy, ChangeDecidedAtUtc, ChangeRejectionReason) VALUES (NEWID(), @c, @cur, N'" + name + "', "
+        + status + ", 3, N'x', SYSDATETIMEOFFSET(), N'y', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), "
+        + kind + ", " + changeStatus + ", " + proposer + ", " + (proposer == "NULL" ? "NULL" : "SYSDATETIMEOFFSET()") + ", "
+        + decider + ", " + (decider == "NULL" ? "NULL" : "SYSDATETIMEOFFSET()") + ", " + reason + ")";
+
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
     private sealed class Run : IAsyncDisposable
@@ -710,8 +1228,15 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
                 new UnavailableSettingsPrerequisiteProvider(companyContext, new FixedCurrentUser(actor, company)), []);
         }
 
+        /// <summary>The same scope over a SENTETIK balance reading instead of the registered no-movement one.</summary>
+        public Scope OpenWithBalance(Guid company, string actor, IFinanceCashAccountBalanceReader balances) =>
+            Open(company, actor, new SyntheticPermissions(), new SyntheticCandidates(), [], balances);
+
+        private static FinanceAuditEnvelope Envelope(string permission) => new(permission, ["SENTETIK-FINANCE"], "Web");
+
         private Scope Open(Guid company, string actor, IFinancePermissionPort permissions,
-            ISettingsMoneyCandidateReader currencies, Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
+            ISettingsMoneyCandidateReader currencies, Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra,
+            IFinanceCashAccountBalanceReader? balances = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -731,8 +1256,13 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
             var accounts = new FinanceCashAccountService(dbContext, companyContext, currentUser, permissions,
                 currencies, collector,
                 new FinanceCashAccountEnvelopes(
-                    new FinanceAuditEnvelope(FinanceCashAccountService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
-                    new FinanceAuditEnvelope(FinanceCashAccountService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
+                    Envelope(ErpPermissions.FinanceCashAccountPropose),
+                    Envelope(ErpPermissions.FinanceCashAccountApprove),
+                    Envelope(ErpPermissions.FinanceCashAccountPassivationPropose),
+                    Envelope(ErpPermissions.FinanceCashAccountPassivationApprove),
+                    Envelope(ErpPermissions.FinanceCashAccountReactivationPropose),
+                    Envelope(ErpPermissions.FinanceCashAccountReactivationApprove)),
+                balances ?? new NoCashMovementBalanceReader(),
                 TimeProvider.System);
             return new Scope(dbContext, accounts, new FinanceContext(company, actor, Correlation, null));
         }
@@ -854,6 +1384,18 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<MoneyCurrencyCandidateV1>>(
                 [new MoneyCurrencyCandidateV1(Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5b03"), "SENTETIK2", "SENTETIK başka para")]);
+    }
+
+    /// <summary>SENTETIK: one fixed balance reading for every account, and who asked. Not a cash ledger.</summary>
+    private sealed class FixedBalance(CashAccountBalanceState state) : IFinanceCashAccountBalanceReader
+    {
+        public List<(Guid CompanyId, Guid CashAccountId)> Seen { get; } = [];
+
+        public Task<CashAccountBalanceState> ReadAsync(Guid companyId, Guid cashAccountId, CancellationToken cancellationToken)
+        {
+            Seen.Add((companyId, cashAccountId));
+            return Task.FromResult(state);
+        }
     }
 
     /// <summary>Holds a save until the other racer reaches its own, so both have read the same state.</summary>

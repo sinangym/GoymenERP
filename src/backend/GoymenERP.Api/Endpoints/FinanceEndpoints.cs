@@ -1694,8 +1694,10 @@ public static class FinanceEndpoints
     /// ValidationFailed 422, VersionConflict / IdempotencyConflict 409, Denied 403, Unavailable 503, the
     /// ADR-011 replay headers on a replay. The proposer's own decision is Denied (403), in the service and
     /// the database.</item>
+    /// <item><b>Passivation / reactivation</b> (each its own propose/approve authority): proposal, approval
+    /// and rejection with the same answers; the account moves only on approval by a different actor.</item>
     /// <item><b>List / detail</b> (read authority): proposals and rejections only to a proposer or
-    /// approver; a hidden or foreign account is 404.</item>
+    /// approver; approved and passive accounts to every reader; a hidden or foreign account is 404.</item>
     /// <item><b>Currency candidates</b> (propose authority): Settings' candidates as given.</item>
     /// </list>
     /// </summary>
@@ -1898,6 +1900,155 @@ public static class FinanceEndpoints
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        MapCashAccountStateChangeEndpoints(endpoints, CashAccountStateChange.Passivation, "passivation", "Passivation");
+        MapCashAccountStateChangeEndpoints(endpoints, CashAccountStateChange.Reactivation, "reactivation", "Reactivation");
+    }
+
+    /// <summary>
+    /// Passivation or reactivation of a cash account: the proposal, its approval and its rejection, each
+    /// with the account's expected version. Same answers as the opening commands; the proposer's own
+    /// decision is Denied (403). A passivation whose balance is not zero is 422
+    /// <c>cash_account_balance_not_zero</c>.
+    /// </summary>
+    private static void MapCashAccountStateChangeEndpoints(IEndpointRouteBuilder endpoints, CashAccountStateChange change,
+        string segment, string name)
+    {
+        var path = CashAccountsPath + "/{accountId:guid}/" + segment;
+        endpoints.MapPost(path, async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CashAccountStateChangeBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ProposeStateChangeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), change, new CashAccountStateChangeRequest(accountId, body.ExpectedVersion),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceCashAccount" + name + "V1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored proposal (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CashAccountStateChangeBody>("application/json")
+            .Produces<CashAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(path + "/approval", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CashAccountStateChangeBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ApproveStateChangeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), change, new CashAccountStateChangeRequest(accountId, body.ExpectedVersion),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceCashAccount" + name + "V1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored decision (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CashAccountStateChangeBody>("application/json")
+            .Produces<CashAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(path + "/rejection", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceCashAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CashAccountRejectionBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.RejectStateChangeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), change,
+                    new CashAccountStateChangeRejectRequest(accountId, body.ExpectedVersion, body.Reason), cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RejectFinanceCashAccount" + name + "V1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored decision (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CashAccountRejectionBody>("application/json")
+            .Produces<CashAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CashAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
             .ProducesErpServiceUnavailable();
     }
 

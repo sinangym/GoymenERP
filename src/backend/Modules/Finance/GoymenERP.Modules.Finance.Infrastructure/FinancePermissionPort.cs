@@ -78,6 +78,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadCashAccounts => ErpPermissions.FinanceCashAccountRead,
         FinanceAction.ProposeCashAccount => ErpPermissions.FinanceCashAccountPropose,
         FinanceAction.ApproveCashAccount => ErpPermissions.FinanceCashAccountApprove,
+        FinanceAction.ProposeCashAccountPassivation => ErpPermissions.FinanceCashAccountPassivationPropose,
+        FinanceAction.ApproveCashAccountPassivation => ErpPermissions.FinanceCashAccountPassivationApprove,
+        FinanceAction.ProposeCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationPropose,
+        FinanceAction.ApproveCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationApprove,
         _ => null,
     };
 

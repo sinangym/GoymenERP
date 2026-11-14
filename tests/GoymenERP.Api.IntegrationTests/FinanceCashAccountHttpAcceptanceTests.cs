@@ -12,10 +12,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// API-30: the six cash-account routes over HTTP. The owner (<see cref="IFinanceCashAccountMaster"/>) is a
-/// capturing stand-in, so these facts hold the route's own duties: authentication and company context,
-/// the Idempotency-Key and strict-body gates, route → request mapping with a server-resolved context, and
-/// outcome → status / problem code / replay headers. The owner's rules are proven on real SQL in
+/// API-30: the twelve cash-account routes over HTTP — the opening proposal, approval and rejection, the
+/// passivation and reactivation proposal, approval and rejection, the list, the detail and the currency
+/// candidates. The owner (<see cref="IFinanceCashAccountMaster"/>) is a capturing stand-in, so these facts
+/// hold the route's own duties: authentication and company context, the Idempotency-Key and strict-body
+/// gates, route → request (and change kind) mapping with a server-resolved context, and outcome → status /
+/// problem code / replay headers. The owner's rules are proven on real SQL in
 /// <c>FinanceCashAccountSqlServerRelationalAcceptanceTests</c>.
 /// </summary>
 public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory factory)
@@ -29,6 +31,23 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     private static string DetailPath => $"{Path}/{AccountId:D}";
     private static string ApprovalPath => $"{DetailPath}/approval";
     private static string RejectionPath => $"{DetailPath}/rejection";
+    private static string PassivationPath => $"{DetailPath}/passivation";
+    private static string ReactivationPath => $"{DetailPath}/reactivation";
+
+    // Every command route with a well-formed body, in a fixed order: the opening three, then the passivation and
+    // the reactivation proposal, approval and rejection.
+    private static readonly (string Route, object Body)[] Commands =
+    [
+        ("propose", new { displayName = "SENTETIK Kasa", currencyId = CurrencyId }),
+        ("approval", new { expectedVersion = "1" }),
+        ("rejection", new { expectedVersion = "1", reason = "SENTETIK" }),
+        ("passivation", new { expectedVersion = "1" }),
+        ("passivation-approval", new { expectedVersion = "1" }),
+        ("passivation-rejection", new { expectedVersion = "1", reason = "SENTETIK" }),
+        ("reactivation", new { expectedVersion = "1" }),
+        ("reactivation-approval", new { expectedVersion = "1" }),
+        ("reactivation-rejection", new { expectedVersion = "1", reason = "SENTETIK" }),
+    ];
 
     [Fact]
     public async Task Registration_grants_nothing_and_the_real_owner_refuses_every_route()
@@ -39,11 +58,10 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         using var list = await client.GetAsync(Path);
         using var detail = await client.GetAsync(DetailPath);
         using var candidates = await client.GetAsync(CandidatesPath);
-        using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId });
-        using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" });
-        using var reject = await PostAsync(client, RejectionPath, new { expectedVersion = "1", reason = "SENTETIK" });
+        using var commands = await PostEveryCommandAsync(client);
 
-        foreach (var response in new[] { list, detail, candidates, propose, approve, reject })
+        Assert.Equal(Commands.Length, commands.Count);
+        foreach (var response in commands.Concat([list, detail, candidates]))
         {
             await AssertProblemAsync(response, HttpStatusCode.Forbidden, "forbidden");
             PrivateNoStore(response);
@@ -68,10 +86,8 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
             using var list = await client.GetAsync(Path);
             using var detail = await client.GetAsync(DetailPath);
             using var candidates = await client.GetAsync(CandidatesPath);
-            using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId });
-            using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" });
-            using var reject = await PostAsync(client, RejectionPath, new { expectedVersion = "1", reason = "SENTETIK" });
-            foreach (var response in new[] { list, detail, candidates, propose, approve, reject })
+            using var commands = await PostEveryCommandAsync(client);
+            foreach (var response in commands.Concat([list, detail, candidates]))
             {
                 Assert.Equal(expected, response.StatusCode);
             }
@@ -89,10 +105,9 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
 
         using var list = await client.GetAsync(Path);
         using var detail = await client.GetAsync(DetailPath);
-        using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId });
-        using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" });
+        using var commands = await PostEveryCommandAsync(client);
 
-        foreach (var response in new[] { list, detail, propose, approve })
+        foreach (var response in commands.Concat([list, detail]))
         {
             await AssertProblemAsync(response, HttpStatusCode.Forbidden, "forbidden");
         }
@@ -150,6 +165,55 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     }
 
     [Fact]
+    public async Task Each_state_change_route_hands_its_own_kind_account_and_version_to_the_owner()
+    {
+        var master = new CapturingMaster();
+        using var host = Host(master);
+        using var client = Client(host);
+        var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+        (string Route, object Body, StateChangeCall Expected)[] steps =
+        [
+            ("passivation", new { expectedVersion = "3" },
+                new StateChangeCall("propose", CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(AccountId, "3"))),
+            ("passivation-approval", new { expectedVersion = "4" },
+                new StateChangeCall("approve", CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(AccountId, "4"))),
+            ("passivation-rejection", new { expectedVersion = "5", reason = "SENTETIK pasif gerekce" },
+                new StateChangeCall("reject", CashAccountStateChange.Passivation,
+                    new CashAccountStateChangeRejectRequest(AccountId, "5", "SENTETIK pasif gerekce"))),
+            ("reactivation", new { expectedVersion = "6" },
+                new StateChangeCall("propose", CashAccountStateChange.Reactivation, new CashAccountStateChangeRequest(AccountId, "6"))),
+            ("reactivation-approval", new { expectedVersion = "7" },
+                new StateChangeCall("approve", CashAccountStateChange.Reactivation, new CashAccountStateChangeRequest(AccountId, "7"))),
+            ("reactivation-rejection", new { expectedVersion = "8", reason = "SENTETIK aktif gerekce" },
+                new StateChangeCall("reject", CashAccountStateChange.Reactivation,
+                    new CashAccountStateChangeRejectRequest(AccountId, "8", "SENTETIK aktif gerekce"))),
+        ];
+
+        foreach (var (route, body, expected) in steps)
+        {
+            var key = "key-" + route;
+            using var response = await PostAsync(client, RoutePath(route), body, key);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            PrivateNoStore(response);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            Assert.Equal(expected, master.StateChanges[^1]);
+            Assert.Equal(key, master.Metadata?.IdempotencyKey);
+        }
+
+        Assert.Equal(steps.Select(step => step.Expected), master.StateChanges);
+        Assert.Equal(steps.Length, master.Calls);
+        Assert.Null(master.Proposed);
+        Assert.Null(master.Approved);
+        Assert.Null(master.Rejected);
+        Assert.All(master.Contexts, context =>
+        {
+            Assert.Equal(GroupAdminUserId, context.ActorId);
+            Assert.Equal(TestCompanyIds.CompanyA, context.CompanyId);
+            Assert.Equal(correlation, context.CorrelationId);
+        });
+    }
+
+    [Fact]
     public async Task The_answers_carry_the_owners_values_unchanged()
     {
         var master = new CapturingMaster();
@@ -170,13 +234,47 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         using var list = await client.GetAsync(Path);
         var page = await list.Content.ReadFromJsonAsync<CashAccountMasterPage>(FinanceJson.CreateOptions());
         Assert.Equal(TestCompanyIds.CompanyA, page?.CompanyId);
-        Assert.Equal(new CashAccountMasterItem(CapturingMaster.View, true), Assert.Single(page?.Items ?? []));
+        Assert.Equal(new CashAccountMasterItem(CapturingMaster.View, true, false), Assert.Single(page?.Items ?? []));
 
         using var candidates = await client.GetAsync(CandidatesPath);
         var currencies = await candidates.Content.ReadFromJsonAsync<CashAccountCurrencyCandidates>(FinanceJson.CreateOptions());
         Assert.Equal(TestCompanyIds.CompanyA, currencies?.CompanyId);
         Assert.Equal(new CashAccountCurrencyCandidate(CurrencyId, "SENTETIK", "SENTETIK para birimi"),
             Assert.Single(currencies?.Items ?? []));
+    }
+
+    [Fact]
+    public async Task A_passive_account_with_a_pending_reactivation_is_still_read_by_id_and_in_the_list()
+    {
+        var passive = CapturingMaster.View with
+        {
+            Status = CashAccountStatus.Passive,
+            IsActive = false,
+            PendingChange = CashAccountStateChange.Reactivation,
+            Version = "7",
+        };
+        var master = new CapturingMaster { Resource = passive, IsOwnPendingChange = true };
+        using var host = Host(master);
+        using var client = Client(host);
+
+        using var detail = await client.GetAsync(DetailPath);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        var text = await detail.Content.ReadAsStringAsync();
+        Assert.Equal(passive, JsonSerializer.Deserialize<CashAccountView>(text, FinanceJson.CreateOptions()));
+        using (var json = JsonDocument.Parse(text))
+        {
+            Assert.Equal("Passive", json.RootElement.GetProperty("status").GetString());
+            Assert.False(json.RootElement.GetProperty("isActive").GetBoolean());
+            Assert.Equal("Reactivation", json.RootElement.GetProperty("pendingChange").GetString());
+        }
+
+        using var list = await client.GetAsync(Path);
+        var page = await list.Content.ReadFromJsonAsync<CashAccountMasterPage>(FinanceJson.CreateOptions());
+        Assert.Equal(new CashAccountMasterItem(passive, true, true), Assert.Single(page?.Items ?? []));
+
+        using var passivate = await PostAsync(client, PassivationPath, new { expectedVersion = "6" });
+        var result = await passivate.Content.ReadFromJsonAsync<CashAccountCommandResult>(FinanceJson.CreateOptions());
+        Assert.Equal(passive, result?.Resource);
     }
 
     [Theory]
@@ -192,11 +290,10 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         using var client = Client(host);
         var value = key == "129" ? new string('k', 129) : key;
 
-        using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId }, value);
-        using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" }, value);
-        using var reject = await PostAsync(client, RejectionPath, new { expectedVersion = "1", reason = "SENTETIK" }, value);
+        using var commands = await PostEveryCommandAsync(client, value);
 
-        foreach (var response in new[] { propose, approve, reject })
+        Assert.Equal(Commands.Length, commands.Count);
+        foreach (var response in commands)
         {
             await AssertProblemAsync(response, HttpStatusCode.BadRequest, code: null);
             PrivateNoStore(response);
@@ -217,6 +314,10 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
 
         Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
         Assert.Equal(key, master.Metadata?.IdempotencyKey);
+
+        using var reactivate = await PostAsync(client, $"{ReactivationPath}/approval", new { expectedVersion = "1" }, key);
+        Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+        Assert.Equal(key, master.Metadata?.IdempotencyKey);
     }
 
     [Theory]
@@ -230,6 +331,16 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     [InlineData("approval", """{"expectedVersion":"1","accountId":"30a00000-0000-4000-8000-000000000009"}""")]
     [InlineData("rejection", """{"expectedVersion":"1"}""")]
     [InlineData("rejection", """{"expectedVersion":"1","reason":"SENTETIK","approvedBy":"x"}""")]
+    [InlineData("passivation", "{")]
+    [InlineData("passivation", """{}""")]
+    [InlineData("passivation", """{"expectedVersion":1}""")]
+    [InlineData("passivation", """{"expectedVersion":"1","reason":"SENTETIK"}""")]
+    [InlineData("passivation", """{"expectedVersion":"1","change":"Reactivation"}""")]
+    [InlineData("passivation-approval", """{"expectedVersion":"1","accountId":"30a00000-0000-4000-8000-000000000009"}""")]
+    [InlineData("passivation-rejection", """{"expectedVersion":"1"}""")]
+    [InlineData("reactivation", """{"expectedVersion":"1","balance":"0"}""")]
+    [InlineData("reactivation-approval", "null")]
+    [InlineData("reactivation-rejection", """{"expectedVersion":"1","reason":"SENTETIK","rejectedBy":"x"}""")]
     public async Task A_malformed_incomplete_or_over_posted_body_is_refused_before_the_owner(string route, string json)
     {
         var master = new CapturingMaster();
@@ -247,6 +358,12 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     [InlineData("propose")]
     [InlineData("approval")]
     [InlineData("rejection")]
+    [InlineData("passivation")]
+    [InlineData("passivation-approval")]
+    [InlineData("passivation-rejection")]
+    [InlineData("reactivation")]
+    [InlineData("reactivation-approval")]
+    [InlineData("reactivation-rejection")]
     public async Task A_body_that_is_not_JSON_is_an_unsupported_media_type(string route)
     {
         var master = new CapturingMaster();
@@ -264,6 +381,11 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_name_taken")]
     [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_not_found")]
     [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_not_proposed")]
+    [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_not_active")]
+    [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_not_passive")]
+    [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_change_pending")]
+    [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_change_not_pending")]
+    [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_balance_not_zero")]
     [InlineData(CommandOutcome.VersionConflict, 409, "version_conflict")]
     [InlineData(CommandOutcome.VersionConflict, 409, "concurrent_change")]
     [InlineData(CommandOutcome.IdempotencyConflict, 409, null)]
@@ -274,11 +396,10 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         using var host = Host(master);
         using var client = Client(host);
 
-        using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId });
-        using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" });
-        using var reject = await PostAsync(client, RejectionPath, new { expectedVersion = "1", reason = "SENTETIK" });
+        using var commands = await PostEveryCommandAsync(client);
 
-        foreach (var response in new[] { propose, approve, reject })
+        Assert.Equal(Commands.Length, commands.Count);
+        foreach (var response in commands)
         {
             Assert.Equal((HttpStatusCode)status, response.StatusCode);
             PrivateNoStore(response);
@@ -295,19 +416,24 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     public async Task A_denied_or_unavailable_command_is_the_platforms_problem_and_tells_nothing_else(
         CommandOutcome outcome, int status, string code)
     {
-        var master = new CapturingMaster { Outcome = outcome, IssueCode = "finance_approver_is_proposer" };
+        // The owner's own reason (a self-decision, or a balance that cannot be read) stays in the service.
+        var master = new CapturingMaster
+        {
+            Outcome = outcome,
+            IssueCode = outcome == CommandOutcome.Denied ? "finance_approver_is_proposer" : "cash_account_balance_unavailable",
+        };
         using var host = Host(master);
         using var client = Client(host);
 
-        using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId });
-        using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" });
-        using var reject = await PostAsync(client, RejectionPath, new { expectedVersion = "1", reason = "SENTETIK" });
+        using var commands = await PostEveryCommandAsync(client);
 
-        foreach (var response in new[] { propose, approve, reject })
+        Assert.Equal(Commands.Length, commands.Count);
+        foreach (var response in commands)
         {
             var body = await AssertProblemAsync(response, (HttpStatusCode)status, code);
             PrivateNoStore(response);
             Assert.DoesNotContain("finance_approver_is_proposer", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("cash_account_balance_unavailable", body, StringComparison.Ordinal);
             Assert.DoesNotContain(AccountId.ToString("D"), body, StringComparison.OrdinalIgnoreCase);
         }
     }
@@ -328,11 +454,10 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         using var host = Host(master);
         using var client = Client(host);
 
-        using var propose = await PostAsync(client, Path, new { displayName = "SENTETIK Kasa", currencyId = CurrencyId });
-        using var approve = await PostAsync(client, ApprovalPath, new { expectedVersion = "1" });
-        using var reject = await PostAsync(client, RejectionPath, new { expectedVersion = "1", reason = "SENTETIK" });
+        using var commands = await PostEveryCommandAsync(client);
 
-        foreach (var response in new[] { propose, approve, reject })
+        Assert.Equal(Commands.Length, commands.Count);
+        foreach (var response in commands)
         {
             Assert.Equal((HttpStatusCode)status, response.StatusCode);
             Assert.Equal("true", response.Headers.GetValues("Idempotency-Replayed").Single());
@@ -375,13 +500,24 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
 
         using var detail = await client.GetAsync($"{Path}/not-a-guid");
         using var approve = await PostAsync(client, $"{Path}/not-a-guid/approval", new { expectedVersion = "1" });
+        using var passivate = await PostAsync(client, $"{Path}/not-a-guid/passivation", new { expectedVersion = "1" });
+        using var reactivate = await PostAsync(client, $"{Path}/not-a-guid/reactivation/approval", new { expectedVersion = "1" });
+        using var unknownKind = await PostAsync(client, $"{DetailPath}/closure", new { expectedVersion = "1" });
         using var put = await client.PutAsJsonAsync(DetailPath, new { displayName = "SENTETIK Kasa" });
         using var delete = await client.DeleteAsync(DetailPath);
+        using var readChange = await client.GetAsync(PassivationPath);
+        using var deleteChange = await client.DeleteAsync($"{ReactivationPath}/approval");
 
-        Assert.Equal(HttpStatusCode.NotFound, detail.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, approve.StatusCode);
-        Assert.Equal(HttpStatusCode.MethodNotAllowed, put.StatusCode);
-        Assert.Equal(HttpStatusCode.MethodNotAllowed, delete.StatusCode);
+        foreach (var response in new[] { detail, approve, passivate, reactivate, unknownKind })
+        {
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+
+        foreach (var response in new[] { put, delete, readChange, deleteChange })
+        {
+            Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        }
+
         Assert.Equal(0, master.Calls);
     }
 
@@ -390,8 +526,25 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         "propose" => Path,
         "approval" => ApprovalPath,
         "rejection" => RejectionPath,
+        "passivation" => PassivationPath,
+        "passivation-approval" => $"{PassivationPath}/approval",
+        "passivation-rejection" => $"{PassivationPath}/rejection",
+        "reactivation" => ReactivationPath,
+        "reactivation-approval" => $"{ReactivationPath}/approval",
+        "reactivation-rejection" => $"{ReactivationPath}/rejection",
         _ => throw new ArgumentOutOfRangeException(nameof(route)),
     };
+
+    private static async Task<Responses> PostEveryCommandAsync(HttpClient client, string? key = "sentetik-key")
+    {
+        var responses = new Responses();
+        foreach (var (route, body) in Commands)
+        {
+            responses.Add(await PostAsync(client, RoutePath(route), body, key));
+        }
+
+        return responses;
+    }
 
     private WebApplicationFactory<Program> Host(CapturingMaster master) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -457,16 +610,32 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         Assert.Contains("no-cache", response.Headers.Pragma.ToString(), StringComparison.Ordinal);
     }
 
+    private sealed class Responses : List<HttpResponseMessage>, IDisposable
+    {
+        public void Dispose()
+        {
+            foreach (var response in this)
+            {
+                response.Dispose();
+            }
+        }
+    }
+
+    private sealed record StateChangeCall(string Verb, CashAccountStateChange Change, object Request);
+
     private sealed class CapturingMaster : IFinanceCashAccountMaster
     {
         public static readonly CashAccountView View = new(AccountId, TestCompanyIds.CompanyA, CurrencyId,
-            "SENTETIK Kasa", CashAccountStatus.Proposed, false, null, "1");
+            "SENTETIK Kasa", CashAccountStatus.Proposed, false, null, null, "1");
 
         public CommandOutcome Outcome { get; init; } = CommandOutcome.Succeeded;
         public ReadOutcome Read { get; init; } = ReadOutcome.Found;
         public string? IssueCode { get; init; }
         public bool IsReplay { get; init; }
         public string OriginalCorrelationId { get; init; } = "sentetik-correlation";
+        public CashAccountView Resource { get; init; } = View;
+        public bool IsOwnPendingChange { get; init; }
+        public List<StateChangeCall> StateChanges { get; } = [];
         public int Calls => Contexts.Count;
         public List<FinanceContext> Contexts { get; } = [];
         public CommandMetadata? Metadata { get; private set; }
@@ -496,12 +665,33 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
             return Task.FromResult(Result(context, metadata));
         }
 
+        public Task<CashAccountCommandResult> ProposeStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+            CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
+        {
+            StateChanges.Add(new("propose", change, request));
+            return Task.FromResult(Result(context, metadata));
+        }
+
+        public Task<CashAccountCommandResult> ApproveStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+            CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
+        {
+            StateChanges.Add(new("approve", change, request));
+            return Task.FromResult(Result(context, metadata));
+        }
+
+        public Task<CashAccountCommandResult> RejectStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+            CashAccountStateChange change, CashAccountStateChangeRejectRequest request, CancellationToken cancellationToken)
+        {
+            StateChanges.Add(new("reject", change, request));
+            return Task.FromResult(Result(context, metadata));
+        }
+
         public Task<ReadResult<CashAccountMasterPage>> ListAsync(FinanceContext context,
             CancellationToken cancellationToken)
         {
             Contexts.Add(context);
             return Task.FromResult(new ReadResult<CashAccountMasterPage>(Read,
-                Read == ReadOutcome.Found ? new(context.CompanyId, [new(View, true)]) : null));
+                Read == ReadOutcome.Found ? new(context.CompanyId, [new(Resource, true, IsOwnPendingChange)]) : null));
         }
 
         public Task<ReadResult<CashAccountView>> GetAsync(FinanceContext context, Guid accountId,
@@ -509,7 +699,7 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         {
             Contexts.Add(context);
             ReadAccountId = accountId;
-            return Task.FromResult(new ReadResult<CashAccountView>(Read, Read == ReadOutcome.Found ? View : null));
+            return Task.FromResult(new ReadResult<CashAccountView>(Read, Read == ReadOutcome.Found ? Resource : null));
         }
 
         public Task<ReadResult<CashAccountCurrencyCandidates>> CurrencyCandidatesAsync(FinanceContext context,
@@ -526,7 +716,7 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
         {
             Contexts.Add(context);
             Metadata = metadata;
-            return new(Outcome, Outcome == CommandOutcome.Succeeded ? View : null, IsReplay, OriginalCorrelationId,
+            return new(Outcome, Outcome == CommandOutcome.Succeeded ? Resource : null, IsReplay, OriginalCorrelationId,
                 IssueCode is null ? [] : [new ValidationIssue("SENTETIK", IssueCode)]);
         }
     }

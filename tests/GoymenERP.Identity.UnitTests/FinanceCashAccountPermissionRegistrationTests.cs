@@ -15,7 +15,9 @@ namespace GoymenERP.Identity.UnitTests;
 /// The Finance cash-account (kasa) permissions (API-30) are REGISTERED, not granted; who holds which is
 /// a human gate. These cases keep registration and grant apart, pin the company-wide scope, and pin that
 /// propose and approve are Critical like the bank master's pair (user decision of 13 November 2026 on
-/// Issue #66) while read is not.
+/// Issue #66) while read is not. The passivation and reactivation pairs (Issue #66 6857269313;
+/// ASSUMPTION-API30-4) are separate names and Critical like the opening pair; holding one pair grants
+/// nothing of another.
 /// </summary>
 public sealed class FinanceCashAccountPermissionRegistrationTests
 {
@@ -26,6 +28,10 @@ public sealed class FinanceCashAccountPermissionRegistrationTests
         "finance.cash-account.read",
         "finance.cash-account.propose",
         "finance.cash-account.approve",
+        "finance.cash-account.passivation.propose",
+        "finance.cash-account.passivation.approve",
+        "finance.cash-account.reactivation.propose",
+        "finance.cash-account.reactivation.approve",
     ];
 
     public static TheoryData<string> Names { get; } = new(AllNames);
@@ -36,6 +42,10 @@ public sealed class FinanceCashAccountPermissionRegistrationTests
         Assert.Equal("finance.cash-account.read", ErpPermissions.FinanceCashAccountRead);
         Assert.Equal("finance.cash-account.propose", ErpPermissions.FinanceCashAccountPropose);
         Assert.Equal("finance.cash-account.approve", ErpPermissions.FinanceCashAccountApprove);
+        Assert.Equal("finance.cash-account.passivation.propose", ErpPermissions.FinanceCashAccountPassivationPropose);
+        Assert.Equal("finance.cash-account.passivation.approve", ErpPermissions.FinanceCashAccountPassivationApprove);
+        Assert.Equal("finance.cash-account.reactivation.propose", ErpPermissions.FinanceCashAccountReactivationPropose);
+        Assert.Equal("finance.cash-account.reactivation.approve", ErpPermissions.FinanceCashAccountReactivationApprove);
         foreach (var name in AllNames)
         {
             Assert.True(ErpPermissions.IsKnown(name));
@@ -57,6 +67,10 @@ public sealed class FinanceCashAccountPermissionRegistrationTests
     {
         Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountPropose));
         Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountApprove));
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountPassivationPropose));
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountPassivationApprove));
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountReactivationPropose));
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountReactivationApprove));
         Assert.False(ErpPermissions.IsCritical(ErpPermissions.FinanceCashAccountRead));
     }
 
@@ -99,6 +113,8 @@ public sealed class FinanceCashAccountPermissionRegistrationTests
         Assert.True(await service.HasPermissionAsync(ErpPermissions.FinanceCashAccountPropose, company));
         Assert.False(await service.HasPermissionAsync(ErpPermissions.FinanceCashAccountApprove, company));
         Assert.False(await service.HasPermissionAsync(ErpPermissions.FinanceCashAccountRead, company));
+        Assert.False(await service.HasPermissionAsync(ErpPermissions.FinanceCashAccountPassivationPropose, company));
+        Assert.False(await service.HasPermissionAsync(ErpPermissions.FinanceCashAccountReactivationPropose, company));
     }
 
     [Theory]

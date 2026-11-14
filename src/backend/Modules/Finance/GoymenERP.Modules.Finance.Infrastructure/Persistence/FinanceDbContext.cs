@@ -933,8 +933,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     /// <summary>
     /// API-30: the cash account master and its own command records. Maker≠checker is a database fact:
     /// a decided row carries a decider other than the proposer, compared in binary collation so case
-    /// folding cannot make two actors one. A proposed or approved name is unique per company; a rejected
-    /// row frees its name.
+    /// folding cannot make two actors one. A proposed, approved or passive name is unique per company; a
+    /// rejected row frees its name. Passivation and reactivation are held the same way
+    /// (<c>CK_CashAccounts_StateChange</c>).
     /// </summary>
     private void ConfigureCashAccounts(ModelBuilder modelBuilder)
     {
@@ -947,6 +948,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_CashAccounts_Text", "LEN([DisplayName]) > 0 AND LEN([ProposedBy]) > 0");
             table.HasCheckConstraint("CK_CashAccounts_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_CashAccounts_Decision", CashAccountDecisionCheck);
+            table.HasCheckConstraint("CK_CashAccounts_StateChange", CashAccountStateChangeCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -956,9 +958,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.Property(x => x.ChangeProposedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.ChangeDecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.ChangeRejectionReason).HasMaxLength(500);
         entity.HasIndex(x => new { x.CompanyId, x.Status });
         entity.HasIndex(x => new { x.CompanyId, x.DisplayName }, "UX_CashAccounts_LiveName")
-            .HasFilter("[Status] IN (1, 2)").IsUnique();
+            .HasFilter(CashAccountLiveNameFilter).IsUnique();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1000,12 +1005,43 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     /// </summary>
     internal const string CashAccountDecisionCheck =
         "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR "
-        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
         + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
         + "AND [RejectionReason] IS NULL) OR "
         + "([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
         + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
         + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
+
+    /// <summary>A passive account keeps its name: it is still the company's account and may be reactivated.</summary>
+    internal const string CashAccountLiveNameFilter = "[Status] IN (1, 2, 4)";
+
+    /// <summary>
+    /// API-30 passivation/reactivation, maker≠checker: no change at all (never a passive account); or the
+    /// latest change — kind 1 passivation / 2 reactivation — pending (the account still in the state the
+    /// change starts from), approved by someone other than its proposer (the account in the state the
+    /// change leads to) or rejected by someone other than its proposer with a reason (the account unchanged).
+    /// Kind and state are tested for NULL first: a comparison with NULL is unknown, and a check passes on unknown.
+    /// </summary>
+    internal const string CashAccountStateChangeCheck =
+        "([ChangeKind] IS NULL AND [ChangeStatus] IS NULL AND [ChangeProposedBy] IS NULL AND [ChangeProposedAtUtc] IS NULL "
+        + "AND [ChangeDecidedBy] IS NULL AND [ChangeDecidedAtUtc] IS NULL AND [ChangeRejectionReason] IS NULL "
+        + "AND [Status] IN (1, 2, 3)) OR "
+        + "([ChangeKind] IS NOT NULL AND [ChangeStatus] IS NOT NULL "
+        + "AND [ChangeKind] IN (1, 2) AND [ChangeProposedBy] IS NOT NULL AND LEN([ChangeProposedBy]) > 0 "
+        + "AND [ChangeProposedAtUtc] IS NOT NULL AND ("
+        + "([ChangeStatus] = 1 AND [ChangeDecidedBy] IS NULL AND [ChangeDecidedAtUtc] IS NULL "
+        + "AND [ChangeRejectionReason] IS NULL "
+        + "AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4))) OR "
+        + "([ChangeStatus] = 2 AND [ChangeDecidedBy] IS NOT NULL AND [ChangeDecidedAtUtc] IS NOT NULL "
+        + "AND LEN([ChangeDecidedBy]) > 0 "
+        + "AND [ChangeDecidedBy] COLLATE Latin1_General_100_BIN2 <> [ChangeProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ChangeRejectionReason] IS NULL "
+        + "AND (([ChangeKind] = 1 AND [Status] = 4) OR ([ChangeKind] = 2 AND [Status] = 2))) OR "
+        + "([ChangeStatus] = 3 AND [ChangeDecidedBy] IS NOT NULL AND [ChangeDecidedAtUtc] IS NOT NULL "
+        + "AND LEN([ChangeDecidedBy]) > 0 "
+        + "AND [ChangeDecidedBy] COLLATE Latin1_General_100_BIN2 <> [ChangeProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ChangeRejectionReason] IS NOT NULL AND LEN([ChangeRejectionReason]) > 0 "
+        + "AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4)))))";
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -1130,7 +1166,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                     && !IsAllowedCashAccountDecision(entry, cashAccount))
                 {
                     throw new InvalidOperationException(
-                        "Kasa hesabı yalnız önerilmiş durumdan tek onay veya ret kararıyla değişir.");
+                        "Kasa hesabı yalnız açılış kararıyla veya pasife alma/yeniden etkinleştirme öneri ve kararıyla değişir.");
                 }
 
                 if (entry.Entity is FinanceAllocationRow allocation
@@ -1180,11 +1216,16 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(BankAccountRow.PendingIbanProposedAtUtc),
                         nameof(BankAccountRow.PendingIbanReason),
                     ],
-                    // API-30: the one decision; the state-aware guard above admits only proposed → approved/rejected.
+                    // API-30: the opening decision or one step of a passivation/reactivation; the state-aware
+                    // guard above admits only those transitions.
                     CashAccountRow =>
                     [
                         nameof(CashAccountRow.Status), nameof(CashAccountRow.DecidedBy),
                         nameof(CashAccountRow.DecidedAtUtc), nameof(CashAccountRow.RejectionReason),
+                        nameof(CashAccountRow.ChangeKind), nameof(CashAccountRow.ChangeStatus),
+                        nameof(CashAccountRow.ChangeProposedBy), nameof(CashAccountRow.ChangeProposedAtUtc),
+                        nameof(CashAccountRow.ChangeDecidedBy), nameof(CashAccountRow.ChangeDecidedAtUtc),
+                        nameof(CashAccountRow.ChangeRejectionReason),
                         nameof(CashAccountRow.UpdatedAtUtc),
                     ],
                     ReversalProposalRow =>
@@ -1361,20 +1402,75 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         const int proposed = 1;
         const int approved = 2;
         const int rejected = 3;
-        var originalStatus = (int)entry.OriginalValues[nameof(CashAccountRow.Status)]!;
-        var originalDecidedBy = (string?)entry.OriginalValues[nameof(CashAccountRow.DecidedBy)];
-        var originalDecidedAt = (DateTimeOffset?)entry.OriginalValues[nameof(CashAccountRow.DecidedAtUtc)];
-        var originalReason = (string?)entry.OriginalValues[nameof(CashAccountRow.RejectionReason)];
-        if (originalStatus != proposed || originalDecidedBy is not null || originalDecidedAt is not null
-            || originalReason is not null)
+        const int passive = 4;
+        const int pendingChange = 1;
+        const int approvedChange = 2;
+        const int rejectedChange = 3;
+        const int passivation = 1;
+        const int reactivation = 2;
+        // Every opening decision, change proposal and change decision is exactly one version step.
+        var originalVersion = (long)entry.OriginalValues[nameof(CashAccountRow.Version)]!;
+        if (current.Version != checked(originalVersion + 1))
         {
             return false;
         }
 
-        var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
-            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
-        return decided && ((current.Status == approved && current.RejectionReason is null)
-            || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
+        var originalStatus = (int)entry.OriginalValues[nameof(CashAccountRow.Status)]!;
+        var originalDecidedBy = (string?)entry.OriginalValues[nameof(CashAccountRow.DecidedBy)];
+        var originalDecidedAt = (DateTimeOffset?)entry.OriginalValues[nameof(CashAccountRow.DecidedAtUtc)];
+        var originalReason = (string?)entry.OriginalValues[nameof(CashAccountRow.RejectionReason)];
+        var originalChangeKind = (int?)entry.OriginalValues[nameof(CashAccountRow.ChangeKind)];
+        var originalChangeStatus = (int?)entry.OriginalValues[nameof(CashAccountRow.ChangeStatus)];
+        var originalChangeProposedBy = (string?)entry.OriginalValues[nameof(CashAccountRow.ChangeProposedBy)];
+        var originalChangeProposedAt = (DateTimeOffset?)entry.OriginalValues[nameof(CashAccountRow.ChangeProposedAtUtc)];
+        if (originalStatus == proposed)
+        {
+            // The opening decision: proposed → approved/rejected by another actor; no state change with it.
+            if (originalDecidedBy is not null || originalDecidedAt is not null || originalReason is not null
+                || originalChangeKind is not null || current.ChangeKind is not null || current.ChangeStatus is not null
+                || current.ChangeProposedBy is not null || current.ChangeProposedAtUtc is not null
+                || current.ChangeDecidedBy is not null || current.ChangeDecidedAtUtc is not null
+                || current.ChangeRejectionReason is not null)
+            {
+                return false;
+            }
+
+            var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+                && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+            return decided && ((current.Status == approved && current.RejectionReason is null)
+                || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
+        }
+
+        // Past the opening decision that decision is history: only the state change moves.
+        if ((originalStatus != approved && originalStatus != passive)
+            || !string.Equals(current.DecidedBy, originalDecidedBy, StringComparison.Ordinal)
+            || current.DecidedAtUtc != originalDecidedAt
+            || !string.Equals(current.RejectionReason, originalReason, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (originalChangeStatus != pendingChange)
+        {
+            // A new proposal: passivation of an active account or reactivation of a passive one; the account stays.
+            var kind = originalStatus == approved ? passivation : reactivation;
+            return current.Status == originalStatus && current.ChangeKind == kind && current.ChangeStatus == pendingChange
+                && !string.IsNullOrWhiteSpace(current.ChangeProposedBy) && current.ChangeProposedAtUtc is not null
+                && current.ChangeDecidedBy is null && current.ChangeDecidedAtUtc is null
+                && current.ChangeRejectionReason is null;
+        }
+
+        // The decision of the pending change: by another actor; an approval moves the account, a rejection does not.
+        var changeDecided = current.ChangeKind == originalChangeKind
+            && string.Equals(current.ChangeProposedBy, originalChangeProposedBy, StringComparison.Ordinal)
+            && current.ChangeProposedAtUtc == originalChangeProposedAt
+            && !string.IsNullOrWhiteSpace(current.ChangeDecidedBy) && current.ChangeDecidedAtUtc is not null
+            && !string.Equals(current.ChangeDecidedBy, current.ChangeProposedBy, StringComparison.Ordinal);
+        var target = originalChangeKind == passivation ? passive : approved;
+        return changeDecided && ((current.ChangeStatus == approvedChange && current.Status == target
+                && current.ChangeRejectionReason is null)
+            || (current.ChangeStatus == rejectedChange && current.Status == originalStatus
+                && !string.IsNullOrWhiteSpace(current.ChangeRejectionReason)));
     }
 
     private static bool IsAllowedBankAccountTransition(
