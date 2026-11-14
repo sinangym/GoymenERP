@@ -10,9 +10,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { INSTRUCTION_DETAIL_TEXT as T, PROBLEM_CODE_TEXT } from './logisticsText'
+import { formatInstant } from './format'
 import { CUSTOMER_RETURN_CAPABILITY } from './customerReturnApi'
 import type { CustomerReturnResponseV1, CustomerReturnViewV1, RequestCustomerReturnV1 } from './customerReturnContract'
 import {
+  CANCELLED_INSTRUCTION,
   FORBIDDEN_MONEY_WORDS,
   ALL_LOGISTICS,
   INSTRUCTION,
@@ -36,6 +38,7 @@ afterEach(() => {
 })
 
 const path = `/lojistik/yukleme-talimatlari/${INSTRUCTION}`
+const CANCEL_FACT_TEST_IDS = ['logistics-instruction-cancelled-by', 'logistics-instruction-cancelled-at', 'logistics-instruction-cancel-reason']
 const issued = (lines = [instructionLine()], shares: Record<string, unknown>[] = [], version = '3') =>
   instructionDetail({ status: 'Issued', version }, lines, shares)
 
@@ -250,20 +253,33 @@ describe('L-02-DETAIL', () => {
     expect(screen.getByTestId('logistics-shares-empty')).toBeTruthy()
     expect(screen.getByTestId('logistics-issue-button')).toBeTruthy()
     expect(screen.getByTestId('logistics-load-draft-only')).toBeTruthy()
+    // F-020: a live instruction has no cancel facts to show.
+    for (const testId of CANCEL_FACT_TEST_IDS) expect(screen.queryByTestId(testId)).toBeNull()
     for (const word of FORBIDDEN_MONEY_WORDS) expect(document.body.textContent).not.toContain(word)
   })
 
-  it('F-020: a cancelled instruction is shown as "İptal edildi" with its kept records and offers no command', async () => {
+  it('F-020: a cancelled instruction is shown as "İptal edildi" with its kept records, who cancelled it, when and why, and offers no command', async () => {
     const load = { shareId: '00000000-0000-4000-8000-000000000061', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
     const harness = installFetch({
-      onDetail: () => json(instructionDetail({ status: 'Cancelled', version: '4' },
+      onDetail: () => json(instructionDetail({ ...CANCELLED_INSTRUCTION, version: '4' },
         [instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })], [load], weighingRecord())),
     })
     renderLogisticsApp(path)
     await screen.findByTestId('logistics-instruction-id')
     expect(screen.getByTestId('logistics-instruction-status').textContent).toBe('İptal edildi')
     expect(screen.getByTestId('logistics-instruction-cancelled').textContent).toBe(T.cancelledNotice)
+    // The stored cancel facts, verbatim: the canceller is the recorded user id (no name lookup), the time the server's instant.
+    const fact = (testId: string) => {
+      const value = screen.getByTestId(testId)
+      return [value.closest('div')?.querySelector('dt')?.textContent, value.textContent]
+    }
+    expect(fact('logistics-instruction-cancelled-by')).toEqual(['İptal eden', 'SENTETIK-iptal-eden'])
+    expect(fact('logistics-instruction-cancelled-at')).toEqual(['İptal zamanı', formatInstant('2026-09-19T11:15:00Z')])
+    expect(fact('logistics-instruction-cancel-reason')).toEqual(['İptal nedeni', 'Müşteri vazgeçti'])
     expect(screen.getByTestId('logistics-line-1-instructed').textContent).toBe('4.5')
+    // #1152 review P3-1: the kept share row (keyed by the fixture's share id) and the weighbridge record (its netKg) stay readable.
+    expect(screen.getByTestId('logistics-share-00000000-0000-4000-8000-000000000061')).toBeTruthy()
+    expect(screen.getByTestId('logistics-weighing-net').textContent).toBe('4.3')
     expect(screen.queryByTestId('logistics-shares-empty')).toBeNull()
     expect(screen.queryByTestId('logistics-issue-button')).toBeNull()
     expect(screen.queryByTestId('logistics-load')).toBeNull()
@@ -281,6 +297,18 @@ describe('L-02-DETAIL', () => {
     renderLogisticsApp(path)
     await screen.findByText(/Beklenmeyen yanıt/)
     expect(screen.queryByTestId('logistics-instruction-id')).toBeNull()
+  })
+
+  it.each([
+    ['a Cancelled instruction without its cancel facts', { status: 'Cancelled' }],
+    ['a Cancelled instruction without its reason', { ...CANCELLED_INSTRUCTION, cancelReason: null }],
+    ['an Issued instruction carrying cancel facts', { ...CANCELLED_INSTRUCTION, status: 'Issued' }],
+  ])('F-020: %s is refused, not shown', async (_, summary) => {
+    installFetch({ onDetail: () => json(instructionDetail(summary)) })
+    renderLogisticsApp(path)
+    await screen.findByText(/Beklenmeyen yanıt/)
+    expect(screen.queryByTestId('logistics-instruction-id')).toBeNull()
+    for (const testId of CANCEL_FACT_TEST_IDS) expect(screen.queryByTestId(testId)).toBeNull()
   })
 
   it('issues the Draft with the expected version under one key and re-reads the detail', async () => {

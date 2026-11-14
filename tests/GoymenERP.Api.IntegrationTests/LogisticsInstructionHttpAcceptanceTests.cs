@@ -52,7 +52,11 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             Assert.Equal(new Uri(client.BaseAddress!, $"{LogisticsEndpoints.InstructionsPath.TrimStart('/')}/{id:D}"), response.Headers.Location);
             Assert.False(response.Headers.Contains("Idempotency-Replayed"));
-            Assert.Equal(id, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("instruction").GetProperty("id").GetGuid());
+            var instruction = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("instruction");
+            Assert.Equal(id, instruction.GetProperty("id").GetGuid());
+            // F-020: the cancellation facts are on the wire for every instruction (the frontend decoder requires every member), null until it is cancelled.
+            Assert.Equal([JsonValueKind.Null, JsonValueKind.Null, JsonValueKind.Null],
+                new[] { "cancelledBy", "cancelledAtUtc", "cancelReason" }.Select(name => instruction.GetProperty(name).ValueKind).ToArray());
         }
 
         service.Create = () => Task.FromResult(new LoadingInstructionResponse(Detail(id), true, "SENTETIK-first"));
@@ -364,7 +368,14 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         // F-020 wire: 200 with the cancelled instruction, the replay headers on the same key, each 409 with its code, the service's
         // 403 and 404 code-less, and a missing key, a wrong media type or a loose body refused before the service.
         var id = Guid.NewGuid();
-        var cancelled = Detail(id) with { Instruction = Detail(id).Instruction with { Status = "Cancelled", Version = "3" } };
+        var cancelledAt = new DateTimeOffset(2026, 9, 20, 8, 30, 0, TimeSpan.Zero);
+        var cancelled = Detail(id) with
+        {
+            Instruction = Detail(id).Instruction with
+            {
+                Status = "Cancelled", Version = "3", CancelledBy = "SENTETIK-kullanici", CancelledAtUtc = cancelledAt, CancelReason = "Müşteri vazgeçti",
+            },
+        };
         var service = new StubService { Cancel = () => Task.FromResult(new LoadingInstructionResponse(cancelled, false, "SENTETIK-corr")) };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
@@ -377,6 +388,12 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
             var instruction = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("instruction");
             Assert.Equal(("Cancelled", "3", id), (instruction.GetProperty("status").GetString(), instruction.GetProperty("version").GetString(),
                 instruction.GetProperty("id").GetGuid()));
+            // F-020 (LOJ-D6..D8): who cancelled (a user id), when and why are three flat members of the summary; every member is on the wire.
+            Assert.Equal(["id", "companyId", "status", "version", "customerPartyId", "companyAccountId", "effectiveOn", "createdAtUtc", "updatedAtUtc",
+                    "lineCount", "cancelledBy", "cancelledAtUtc", "cancelReason"],
+                instruction.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(("SENTETIK-kullanici", cancelledAt, "Müşteri vazgeçti"), (instruction.GetProperty("cancelledBy").GetString(),
+                instruction.GetProperty("cancelledAtUtc").GetDateTimeOffset(), instruction.GetProperty("cancelReason").GetString()));
         }
 
         // The route binds the instruction, the exact body and the caller's key.
@@ -468,7 +485,8 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
     }
 
     private static LoadingInstructionDetailView Detail(Guid id) => new(
-        new LoadingInstructionSummaryView(id, CompanyA, "Draft", "2", Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 19), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1),
+        new LoadingInstructionSummaryView(id, CompanyA, "Draft", "2", Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 19), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1,
+            null, null, null),
         [new LoadingInstructionLineView(Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), 0, Guid.NewGuid(), Guid.NewGuid(), "6", "0", "0", "0", "6", "0", "0", false)],
         [], null, []);
 
