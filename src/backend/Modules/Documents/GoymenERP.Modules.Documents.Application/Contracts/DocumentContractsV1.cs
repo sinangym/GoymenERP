@@ -12,6 +12,9 @@ public static class DocumentsApiV1
     public const string OwnerIdField = "ownerId";
     public const string FileField = "file";
     public const string ExpectedCurrentVersionField = "expectedCurrentVersion";
+
+    /// <summary>B-26: the sub-route that links an existing document to one more owner record.</summary>
+    public const string LinksSegment = "links";
 }
 
 /// <summary>The command names under which an attempt (ADR-011) is recorded.</summary>
@@ -20,7 +23,10 @@ public static class DocumentCommands
     public const string UploadV1 = "documents.upload.v1";
     public const string AppendVersionV1 = "documents.append-version.v1";
 
-    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1;
+    /// <summary>B-26: link an existing document to one more owner record (DEC-DOC-002).</summary>
+    public const string LinkV1 = "documents.link.v1";
+
+    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1 or LinkV1;
 }
 
 /// <summary>The problem codes of the vault's routes. Platform 401/403/404 and every 503 stay code-less.</summary>
@@ -36,6 +42,12 @@ public static class DocumentProblemCodesV1
 
     /// <summary>The version was not scanned (no scanner configured or it could not answer): it is not served.</summary>
     public const string NotScanned = "document_not_scanned";
+
+    /// <summary>B-26: the document is already linked to that owner record; nothing was written.</summary>
+    public const string AlreadyLinked = "document_already_linked";
+
+    /// <summary>B-26: the owner kind does not accept an existing document (its owner did not opt in); nothing was written.</summary>
+    public const string LinkNotAccepted = "document_link_not_accepted";
 }
 
 /// <summary>What the upload route read from the multipart body; validated by the service.</summary>
@@ -43,6 +55,9 @@ public sealed record UploadDocumentRequest(string? OwnerKind, Guid OwnerId, stri
 
 /// <summary>A new immutable version of an existing logical document.</summary>
 public sealed record AppendDocumentVersionRequest(int ExpectedCurrentVersion, string? FileName, string? DeclaredContentType, byte[] Content);
+
+/// <summary>B-26: link an existing document (at its current version) to one more owner record of the context company.</summary>
+public sealed record LinkDocumentRequest(string? OwnerKind, Guid OwnerId, int ExpectedCurrentVersion);
 
 /// <summary>The command metadata the route read from the headers (the Logistics shape).</summary>
 public sealed record DocumentCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId);
@@ -80,6 +95,12 @@ public sealed record DocumentUploadResponse(DocumentView Document, IReadOnlyList
 
 /// <summary>An append answer; a replay returns the exact version created by the first attempt.</summary>
 public sealed record DocumentVersionWriteResponse(DocumentView Document, bool IsReplay, string OriginalCorrelationId);
+
+/// <summary>
+/// B-26: a link answer — the document shown under the NEWLY linked owner; a replay answers the first attempt's link with
+/// that attempt's correlation.
+/// </summary>
+public sealed record DocumentLinkWriteResponse(DocumentView Document, bool IsReplay, string OriginalCorrelationId);
 
 /// <summary>A deterministic immutable-history page, newest version first.</summary>
 public sealed record DocumentVersionHistoryResponse(Guid DocumentId, IReadOnlyList<DocumentView> Versions, string? NextCursor);
@@ -130,6 +151,10 @@ public interface IDocumentService
         CancellationToken cancellationToken = default);
 
     Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default);
+
+    /// <summary>B-26 / DEC-DOC-002: links an existing document to one more owner record, without a new upload.</summary>
+    Task<DocumentLinkWriteResponse> LinkAsync(Guid documentId, LinkDocumentRequest request, DocumentCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

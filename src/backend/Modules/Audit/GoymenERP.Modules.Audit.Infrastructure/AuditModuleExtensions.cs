@@ -28,6 +28,10 @@ public static class AuditModuleExtensions
                 "SQL Server bağlantı dizesi DB_CONNECTION_STRING secret/env değeriyle tanımlanmalıdır.");
         }
 
+        // F-023 (F023-1): both settings fail closed at startup, before any service is registered.
+        var refusedAttemptRetention = RefusedAttemptRetentionOptions.FromConfiguration(configuration);
+        var refusedAttemptStandaloneWrite = RefusedAttemptStandaloneWriteOptions.FromConfiguration(configuration);
+
         services.AddDbContext<AuditDbContext>(options =>
             options.UseSqlServer(
                 connectionString,
@@ -37,6 +41,9 @@ public static class AuditModuleExtensions
             provider.GetRequiredService<AuditEventCollector>());
         services.AddScoped<AuditSaveChangesInterceptor>();
         services.AddScoped<IAuditQueryService, AuditQueryService>();
+        services.AddSingleton(refusedAttemptRetention);
+        services.AddSingleton(refusedAttemptStandaloneWrite);
+        services.AddScoped<IRefusedAttemptRecorderV1, RefusedAttemptRecorder>();
 
         return services;
     }

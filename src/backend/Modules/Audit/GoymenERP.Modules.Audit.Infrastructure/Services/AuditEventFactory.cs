@@ -72,7 +72,9 @@ internal static class AuditEventFactory
             SourceChannels.Integration,
             SourceChannels.AiAssisted,
             SourceChannels.System);
-        ValidateAllowed(outcome, nameof(draft.Outcome), AuditOutcomes.Succeeded);
+        // F-023 (F023-1): a refused attempt is the only other outcome; it reaches the factory through
+        // IRefusedAttemptRecorderV1, which builds the restricted draft (architecture guard).
+        ValidateAllowed(outcome, nameof(draft.Outcome), AuditOutcomes.Succeeded, AuditOutcomes.Refused);
 
         var id = Guid.NewGuid();
         var occurredAtUtc = DateTimeOffset.UtcNow;

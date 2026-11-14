@@ -23,6 +23,21 @@ public static class DocumentOwnerLinkKindsV1
     /// (Finance owner; #66 6860586175: the PDF is uploaded to the reserved id first).
     /// </summary>
     public const string FinanceOfficialSalesInvoice = "finance.official-sales-invoice";
+
+    /// <summary>A Manufacturing production plan readable in the context company (Manufacturing owner; B-26).</summary>
+    public const string ManufacturingPlan = "manufacturing.plan";
+
+    /// <summary>A Manufacturing production order readable in the context company (Manufacturing owner; B-26).</summary>
+    public const string ManufacturingOrder = "manufacturing.order";
+
+    /// <summary>A Finance manual receipt (tahsilat) source readable in the context company (Finance owner; B-26).</summary>
+    public const string FinanceManualReceipt = "finance.manual-receipt";
+
+    /// <summary>A Finance manual bank payment readable in the context company (Finance owner; B-26).</summary>
+    public const string FinanceManualBankPayment = "finance.manual-bank-payment";
+
+    /// <summary>A Finance customer instrument (çek/senet) readable in the context company (Finance owner; B-26).</summary>
+    public const string FinanceCustomerInstrument = "finance.customer-instrument";
 }
 
 /// <summary>
@@ -35,6 +50,14 @@ public interface IDocumentOwnerLinkPortV1
 {
     /// <summary>The link kind this port answers (one of <see cref="DocumentOwnerLinkKindsV1"/>).</summary>
     string Kind { get; }
+
+    /// <summary>
+    /// B-26 / DEC-DOC-002: whether an EXISTING document may be linked to a record of this kind (the same physical file
+    /// shown on a second record without a second upload). Fail-closed by default: an owner opts in explicitly. The
+    /// Finance official sales invoice stays out (FNS-D36/FNS-D38: its PDF is uploaded to the reserved id and one PDF
+    /// belongs to one invoice record).
+    /// </summary>
+    bool AcceptsExistingDocumentLinks => false;
 
     Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }

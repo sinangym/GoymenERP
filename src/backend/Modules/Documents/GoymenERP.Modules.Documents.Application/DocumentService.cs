@@ -25,6 +25,11 @@ namespace GoymenERP.Modules.Documents.Application;
 /// <item><b>Duplicates</b> (AT-057, DEC-DOC-002): the same content in the same company is a warning, never a refusal —
 /// the new document is stored (the object once), the earlier documents the actor may read are listed, and the count
 /// found at upload time is in the audit event. No retention or deletion exists (OPEN-018/021): nothing is removed.</item>
+/// <item><b>Links</b> (B-26, DEC-DOC-002): an existing document may be linked to one more owner record without a second
+/// upload, under its own name (<see cref="DocumentsPermissionManifestV1.FilesLink"/>), when the actor may read the
+/// document through one of its records AND the new record, and the new record's owner opted in. A document with several
+/// links is readable through ANY readable link (each answer shows only that readable record); a new version changes the
+/// file on every linked record, so appending requires EVERY link to be readable.</item>
 /// </list>
 /// </summary>
 public sealed class DocumentService(
@@ -173,8 +178,8 @@ public sealed class DocumentService(
 
         if (replay is not null)
         {
-            await RequireVersionOwnerReadableAsync(replay.Document, scope, Permission, cancellationToken);
-            return new DocumentVersionWriteResponse(View(replay.Document, scope.CompanyId), true, replay.OriginalCorrelationId);
+            var shown = await RequireReadableLinkAsync(replay.Document, scope, Permission, cancellationToken);
+            return new DocumentVersionWriteResponse(View(replay.Document, scope.CompanyId, shown), true, replay.OriginalCorrelationId);
         }
 
         StoredDocument? current;
@@ -192,8 +197,9 @@ public sealed class DocumentService(
             throw new DocumentServiceException(404, "not_found");
         }
 
-        var owner = DocumentOwnerLink.TryCreate(current.OwnerKind, current.OwnerId)!;
-        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
+        // B-26: a new version changes the file on EVERY linked record, so every linked record must be readable now.
+        var linked = OwnerLinksOf(current);
+        await RequireEveryLinkReadableAsync(scope, Permission, linked, cancellationToken);
         if (current.VersionNo != request.ExpectedCurrentVersion)
         {
             throw new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
@@ -202,8 +208,8 @@ public sealed class DocumentService(
 
         var verdict = await ScanAsync(content, kind.Kind, cancellationToken);
         // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
-        // document owner before interpreting its result or producing any external effect.
-        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
+        // document owners before interpreting its result or producing any external effect.
+        await RequireEveryLinkReadableAsync(scope, Permission, linked, cancellationToken);
         if (verdict == DocumentScanVerdictV1.Infected)
         {
             throw new DocumentServiceException(422, DocumentProblemCodesV1.ContentRejected,
@@ -228,8 +234,9 @@ public sealed class DocumentService(
             var result = await store.StoreVersionAsync(envelope, requestHash, request.ExpectedCurrentVersion,
                 new NewDocumentVersion(documentId, fileName, kind, content.LongLength, sha256, objectKey, scanState,
                     scanState == DocumentScanState.Clean ? scanner!.ScannerId : null, timeProvider.GetUtcNow()),
-                token => RequireWritableOwnerStillAsync(scope, Permission, owner, token), cancellationToken);
-            return new DocumentVersionWriteResponse(View(result.Document, scope.CompanyId), result.IsReplay, result.OriginalCorrelationId);
+                token => RequireEveryLinkReadableAsync(scope, Permission, linked, token), cancellationToken);
+            return new DocumentVersionWriteResponse(View(result.Document, scope.CompanyId, linked[0]), result.IsReplay,
+                result.OriginalCorrelationId);
         }
         catch (DocumentStoreException exception)
         {
@@ -264,7 +271,7 @@ public sealed class DocumentService(
             beforeVersionNo = parsedCursor;
         }
 
-        var current = await FindReadableDocumentAsync(documentId, scope, Permission, cancellationToken);
+        var shownOwner = await FindReadableDocumentAsync(documentId, scope, Permission, cancellationToken);
         IReadOnlyList<StoredDocument> versions;
         try
         {
@@ -276,14 +283,14 @@ public sealed class DocumentService(
             throw Store(exception);
         }
 
-        await RequireOwnerStillReadableAsync(scope, Permission,
-            DocumentOwnerLink.TryCreate(current.OwnerKind, current.OwnerId)!, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, Permission, shownOwner, cancellationToken);
         var hasMore = versions.Count > size;
         var page = versions.Take(size).ToArray();
         var nextCursor = hasMore
             ? page[^1].VersionNo.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : null;
-        return new DocumentVersionHistoryResponse(documentId, [.. page.Select(version => View(version, scope.CompanyId))], nextCursor);
+        return new DocumentVersionHistoryResponse(documentId,
+            [.. page.Select(version => View(version, scope.CompanyId, shownOwner))], nextCursor);
     }
 
     public async Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo,
@@ -313,8 +320,8 @@ public sealed class DocumentService(
             throw new DocumentServiceException(404, "not_found");
         }
 
-        await RequireVersionOwnerReadableAsync(document, scope, Permission, cancellationToken);
-        return await ReadContentAsync(document, scope, Permission, cancellationToken);
+        var readableOwner = await RequireReadableLinkAsync(document, scope, Permission, cancellationToken);
+        return await ReadContentAsync(document, readableOwner, scope, Permission, cancellationToken);
     }
 
     public async Task<DocumentListResponse> ListAsync(string? ownerKind, Guid ownerId, CancellationToken cancellationToken = default)
@@ -345,7 +352,8 @@ public sealed class DocumentService(
         var canUpload = upload.IsGranted && upload.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId);
         await RequireStillAsync(scope, Permission, cancellationToken);
         await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
-        return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId))], canUpload, Limits());
+        // B-26: a document linked to several records is listed under the record asked for, never under the others.
+        return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId, owner))], canUpload, Limits());
     }
 
     public async Task<DocumentContentV1> GetContentAsync(Guid documentId, CancellationToken cancellationToken = default)
@@ -368,19 +376,116 @@ public sealed class DocumentService(
             throw Store(exception);
         }
 
-        // Another company's document is not found (the tenant filter); a document of this company whose owner record the
-        // actor may not read is not found either — the same answer, so neither is disclosed.
-        if (document is null || document.CompanyId != scope.CompanyId
-            || !IsReadableOwner(await GuardedAsync(scope, Permission,
-                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)))
+        // Another company's document is not found (the tenant filter); a document of this company none of whose owner
+        // records the actor may read is not found either — the same answer, so neither is disclosed.
+        if (document is null)
         {
             throw new DocumentServiceException(404, "not_found");
         }
 
-        return await ReadContentAsync(document, scope, Permission, cancellationToken);
+        var readableOwner = await RequireReadableLinkAsync(document, scope, Permission, cancellationToken);
+        return await ReadContentAsync(document, readableOwner, scope, Permission, cancellationToken);
     }
 
-    private async Task<StoredDocument> FindReadableDocumentAsync(Guid documentId, Scope scope, string permission,
+    public async Task<DocumentLinkWriteResponse> LinkAsync(Guid documentId, LinkDocumentRequest request,
+        DocumentCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+        const string Permission = DocumentsPermissionManifestV1.FilesLink;
+        var scope = await RequireAsync(Permission, cancellationToken);
+        if (documentId == Guid.Empty || request.ExpectedCurrentVersion < 1)
+        {
+            throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
+                [new(documentId == Guid.Empty ? "documentId" : "expectedCurrentVersion", DocumentProblemCodesV1.ValidationFailed)]);
+        }
+
+        var target = RequireOwnerLink(request.OwnerKind, request.OwnerId);
+        if (!owners[target.Kind].AcceptsExistingDocumentLinks)
+        {
+            // Fail-closed: only an owner that opted in takes an existing document (FNS-D36/D38: never the official invoice).
+            throw new DocumentServiceException(422, DocumentProblemCodesV1.LinkNotAccepted,
+                [new("ownerKind", DocumentProblemCodesV1.LinkNotAccepted)]);
+        }
+
+        var requestHash = LinkRequestHash(documentId, request.ExpectedCurrentVersion, target);
+        var envelope = Envelope(scope, metadata, Permission);
+        DocumentStoreResult? replay;
+        try
+        {
+            replay = await GuardedAsync(scope, Permission,
+                () => store.FindLinkReplayAsync(envelope, requestHash, documentId, cancellationToken), cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (replay is not null)
+        {
+            // The replay answers under the linked record, so that record must still be readable (non-disclosure).
+            if (replay.Document.CompanyId != scope.CompanyId)
+            {
+                throw new DocumentServiceException(404, "not_found");
+            }
+
+            await RequireOwnerStillReadableAsync(scope, Permission, target, cancellationToken);
+            return new DocumentLinkWriteResponse(View(replay.Document, scope.CompanyId, target), true, replay.OriginalCorrelationId);
+        }
+
+        StoredDocument? current;
+        try
+        {
+            current = await GuardedAsync(scope, Permission, () => store.FindDocumentAsync(documentId, cancellationToken), cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (current is null)
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        // The actor must see the document through one of its records AND the record it is linked to now.
+        var source = await RequireReadableLinkAsync(current, scope, Permission, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, Permission, target, cancellationToken);
+        if (current.VersionNo != request.ExpectedCurrentVersion)
+        {
+            throw new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
+                [new("expectedCurrentVersion", DocumentProblemCodesV1.ConcurrentChange)]);
+        }
+
+        if (current.OwnerLinks.Any(link => string.Equals(link.OwnerKind, target.Kind, StringComparison.Ordinal)
+                && link.OwnerId == target.OwnerId))
+        {
+            throw new DocumentServiceException(409, DocumentProblemCodesV1.AlreadyLinked,
+                [new("ownerId", DocumentProblemCodesV1.AlreadyLinked)]);
+        }
+
+        await RequireStillAsync(scope, Permission, cancellationToken);
+        try
+        {
+            var result = await store.StoreLinkAsync(envelope, requestHash,
+                new NewDocumentLink(documentId, request.ExpectedCurrentVersion, target, timeProvider.GetUtcNow()),
+                async token =>
+                {
+                    await RequireOwnerStillReadableAsync(scope, Permission, source, token);
+                    await RequireOwnerStillReadableAsync(scope, Permission, target, token);
+                },
+                cancellationToken);
+            return new DocumentLinkWriteResponse(View(result.Document, scope.CompanyId, target), result.IsReplay,
+                result.OriginalCorrelationId);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+    }
+
+    private async Task<DocumentOwnerLink> FindReadableDocumentAsync(Guid documentId, Scope scope, string permission,
         CancellationToken cancellationToken)
     {
         if (documentId == Guid.Empty)
@@ -403,22 +508,59 @@ public sealed class DocumentService(
             throw new DocumentServiceException(404, "not_found");
         }
 
-        await RequireVersionOwnerReadableAsync(document, scope, permission, cancellationToken);
-        return document;
+        return await RequireReadableLinkAsync(document, scope, permission, cancellationToken);
     }
 
-    private async Task RequireVersionOwnerReadableAsync(StoredDocument document, Scope scope, string permission,
+    /// <summary>
+    /// B-26: the first owner link of the document (primary first) whose record the actor may read now. None readable is
+    /// 404 (non-disclosure); when none is readable and an owner answered Conflict or Unavailable, that answer (409/503)
+    /// stands, as it did for the single link.
+    /// </summary>
+    private async Task<DocumentOwnerLink> RequireReadableLinkAsync(StoredDocument document, Scope scope, string permission,
         CancellationToken cancellationToken)
     {
-        if (document.CompanyId != scope.CompanyId || !IsReadableOwner(await GuardedAsync(scope, permission,
-                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)))
+        if (document.CompanyId != scope.CompanyId)
         {
             throw new DocumentServiceException(404, "not_found");
         }
+
+        DocumentServiceException? undecided = null;
+        foreach (var owner in OwnerLinksOf(document))
+        {
+            var access = await GuardedAsync(scope, permission,
+                () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken);
+            try
+            {
+                if (IsReadableOwner(access))
+                {
+                    return owner;
+                }
+            }
+            catch (DocumentServiceException exception)
+            {
+                undecided ??= exception;
+            }
+        }
+
+        throw undecided ?? new DocumentServiceException(404, "not_found");
     }
 
-    private async Task<DocumentContentV1> ReadContentAsync(StoredDocument document, Scope scope, string permission,
+    private async Task RequireEveryLinkReadableAsync(Scope scope, string permission, IReadOnlyList<DocumentOwnerLink> links,
         CancellationToken cancellationToken)
+    {
+        foreach (var owner in links)
+        {
+            await RequireOwnerStillReadableAsync(scope, permission, owner, cancellationToken);
+        }
+    }
+
+    /// <summary>The stored links as validated owner links, primary first. A stored link is always well formed.</summary>
+    private static IReadOnlyList<DocumentOwnerLink> OwnerLinksOf(StoredDocument document) =>
+        [.. document.OwnerLinks.Select(link => DocumentOwnerLink.TryCreate(link.OwnerKind, link.OwnerId)
+            ?? throw new InvalidOperationException("Belge bağlantısı geçersiz olarak saklanmış."))];
+
+    private async Task<DocumentContentV1> ReadContentAsync(StoredDocument document, DocumentOwnerLink readableOwner, Scope scope,
+        string permission, CancellationToken cancellationToken)
     {
         if (document.ScanState != DocumentScanState.Clean)
         {
@@ -443,8 +585,7 @@ public sealed class DocumentService(
         }
 
         await RequireStillAsync(scope, permission, cancellationToken);
-        await RequireOwnerStillReadableAsync(scope, permission,
-            DocumentOwnerLink.TryCreate(document.OwnerKind, document.OwnerId)!, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, permission, readableOwner, cancellationToken);
         return new DocumentContentV1(document.Id, document.FileName, DocumentContentPolicy.Info(document.Kind).ContentType, content, document.Sha256);
     }
 
@@ -479,23 +620,28 @@ public sealed class DocumentService(
         var duplicates = new List<DocumentDuplicateView>();
         foreach (var candidate in sameContent)
         {
-            var key = (candidate.OwnerKind, candidate.OwnerId);
-            if (!readable.TryGetValue(key, out var isReadable))
+            // B-26: a duplicate linked to several records is named once, under its first record the actor may read.
+            foreach (var link in candidate.OwnerLinks)
             {
-                // Duplicate disclosure is optional and happens after the primary document was committed. A transient
-                // conflict or unavailable duplicate owner must never turn that committed 201 into a refusal that makes
-                // the client discard its retry key; every non-readable duplicate is simply withheld.
-                isReadable = IsReadableDuplicateOwner(requireReplayFence
-                    ? await GuardedAsync(scope, permission,
-                        () => CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken), cancellationToken)
-                    : await CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken));
-                readable[key] = isReadable;
-            }
+                var key = (link.OwnerKind, link.OwnerId);
+                if (!readable.TryGetValue(key, out var isReadable))
+                {
+                    // Duplicate disclosure is optional and happens after the primary document was committed. A transient
+                    // conflict or unavailable duplicate owner must never turn that committed 201 into a refusal that
+                    // makes the client discard its retry key; every non-readable duplicate is simply withheld.
+                    isReadable = IsReadableDuplicateOwner(requireReplayFence
+                        ? await GuardedAsync(scope, permission,
+                            () => CheckOwnerAsync(link.OwnerKind, link.OwnerId, cancellationToken), cancellationToken)
+                        : await CheckOwnerAsync(link.OwnerKind, link.OwnerId, cancellationToken));
+                    readable[key] = isReadable;
+                }
 
-            if (isReadable)
-            {
-                duplicates.Add(new DocumentDuplicateView(candidate.Id, candidate.FileName, candidate.OwnerKind, candidate.OwnerId,
-                    candidate.UploadedAtUtc));
+                if (isReadable)
+                {
+                    duplicates.Add(new DocumentDuplicateView(candidate.Id, candidate.FileName, link.OwnerKind, link.OwnerId,
+                        candidate.UploadedAtUtc));
+                    break;
+                }
             }
         }
 
@@ -511,14 +657,20 @@ public sealed class DocumentService(
         return new DocumentUploadResponse(View(document, scope.CompanyId), duplicates, result.IsReplay, result.OriginalCorrelationId);
     }
 
-    private static DocumentView View(StoredDocument document, Guid companyId)
+    /// <summary>
+    /// The wire view. <paramref name="shownOwner"/> is the record the answer is about (B-26: the readable link, the listed
+    /// record or the newly linked one); without it the primary link is shown.
+    /// </summary>
+    private static DocumentView View(StoredDocument document, Guid companyId, DocumentOwnerLink? shownOwner = null)
     {
         if (document.CompanyId != companyId)
         {
             throw new InvalidOperationException("Belge okuması şirket bağlamı dışında kayıt döndü.");
         }
 
-        return new DocumentView(document.Id, document.CompanyId, document.OwnerKind, document.OwnerId, document.VersionNo, document.FileName,
+        var ownerKind = shownOwner?.Kind ?? document.OwnerKind;
+        var ownerId = shownOwner?.OwnerId ?? document.OwnerId;
+        return new DocumentView(document.Id, document.CompanyId, ownerKind, ownerId, document.VersionNo, document.FileName,
             DocumentContentPolicy.Info(document.Kind).ContentType, document.SizeBytes, document.Sha256, document.ScanState.ToString(),
             document.ScanState == DocumentScanState.Clean, document.UploadedBy, document.UploadedAtUtc);
     }
@@ -611,6 +763,11 @@ public sealed class DocumentService(
             DocumentCommands.AppendVersionV1, documentId.ToString("D"), expectedCurrentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
             fileName.Value, kind.ContentType, sha256))));
 
+    private static string LinkRequestHash(Guid documentId, int expectedCurrentVersion, DocumentOwnerLink target) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', DocumentCommands.LinkV1,
+            documentId.ToString("D"), expectedCurrentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            target.Kind, target.OwnerId.ToString("D")))));
+
     private static IReadOnlyDictionary<string, IDocumentOwnerLinkPortV1> IndexOwners(IEnumerable<IDocumentOwnerLinkPortV1> ports)
     {
         ArgumentNullException.ThrowIfNull(ports);
@@ -633,6 +790,8 @@ public sealed class DocumentService(
         DocumentStoreCodes.ConcurrentChange => new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
             [new("document", DocumentProblemCodesV1.ConcurrentChange)]),
         DocumentStoreCodes.CompanyContextMismatch => new DocumentServiceException(403, "forbidden"),
+        DocumentStoreCodes.AlreadyLinked => new DocumentServiceException(409, DocumentProblemCodesV1.AlreadyLinked,
+            [new("ownerId", DocumentProblemCodesV1.AlreadyLinked)]),
         _ => new DocumentServiceException(503, "service_unavailable"),
     };
 

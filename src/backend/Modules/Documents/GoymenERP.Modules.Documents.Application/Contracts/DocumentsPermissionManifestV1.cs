@@ -15,5 +15,11 @@ public static class DocumentsPermissionManifestV1
     /// <summary>Upload a document to an owner record (with the owner's read). Its own name: reading confers no upload.</summary>
     public const string FilesUpload = "documents.files.upload";
 
-    public static readonly IReadOnlyList<string> Names = [FilesRead, FilesUpload];
+    /// <summary>
+    /// B-26: link an EXISTING document to one more owner record (with the owner's read of BOTH records). Its own name:
+    /// neither reading nor uploading confers linking. Registered, not granted (a grant is a human gate).
+    /// </summary>
+    public const string FilesLink = "documents.files.link";
+
+    public static readonly IReadOnlyList<string> Names = [FilesRead, FilesUpload, FilesLink];
 }

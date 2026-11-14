@@ -1083,6 +1083,13 @@ public static class ErpPermissions
     /// <inheritdoc cref="DocumentsFilesRead"/>
     public const string DocumentsFilesUpload = "documents.files.upload";
 
+    /// <summary>
+    /// B-26 (DEC-DOC-002): link an EXISTING document to one more owner record without a second upload. Measured ON TOP
+    /// of the owner's read of BOTH records (the document's and the new one's). Registered, not granted: no role, seed or
+    /// user receives it here (a grant is a human gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string DocumentsFilesLink = "documents.files.link";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -1262,6 +1269,7 @@ public static class ErpPermissions
         FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
+            DocumentsFilesLink,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
             SettingsExchangeRatesRead,
@@ -1459,6 +1467,7 @@ public static class ErpPermissions
         FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
+            DocumentsFilesLink,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
             SettingsExchangeRatesRead,

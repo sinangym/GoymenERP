@@ -107,6 +107,9 @@ builder.Configuration.AddJsonFile(
     optional: false,
     reloadOnChange: false);
 
+// F-032: diagnostic file log + OpenTelemetry; both off unless the Observability section turns them on.
+builder.AddErpObservability(isOpenApiDocumentGeneration);
+
 builder.Services.AddErpProblemDetails();
 builder.Services.AddErpOpenApi();
 builder.Services.AddOpenApi(ErpOpenApiContract.DocumentName, options =>
