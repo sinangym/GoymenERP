@@ -137,9 +137,13 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
         Assert.Equal(CommandOutcome.Succeeded, proposal.Outcome);
         var proposalId = proposal.Resource!.Id;
 
+        var allocationId = Guid.NewGuid();
+        var itemVersion = (await run.ScalarAsync<long>(
+            "SELECT Version FROM finance.OpenItems WHERE Id = @id", ("@id", item)))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
         using var finalFence = new Barrier(2);
         var allocation = Task.Run(() => run.AllocateAsync("race-allocate", payment, item, "40",
-            new FinalWriteBarrierPermission(FinanceAction.WriteAllocation, 2, finalFence)));
+            new FinalWriteBarrierPermission(FinanceAction.WriteAllocation, 2, finalFence), allocationId, itemVersion));
         var approval = Task.Run(() => run.ApproveAsync(Checker, "race-approve", proposalId,
             new FinalWriteBarrierPermission(FinanceAction.ApprovePaymentReversal, 3, finalFence)));
         await Task.WhenAll(allocation, approval);
@@ -162,6 +166,32 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
             "SELECT Status FROM finance.PaymentReversalProposals WHERE Id = @id", ("@id", proposalId)));
         Assert.Equal(allocationWon ? "360.00" : "400.00", await run.ScalarAsync<string>(
             "SELECT OutstandingAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", item)));
+        Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = N'finance.payment-allocation.create.v1'"));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @name",
+            ("@name", PaymentReversalProposalService.ApproveCommand)));
+
+        // P3 (#66): the winner's key, sent again with the same request after the race, is a replay of the stored
+        // outcome and the same resource; it writes nothing new.
+        if (allocationWon)
+        {
+            var replay = await run.AllocateAsync("race-allocate", payment, item, "40", null, allocationId, itemVersion);
+            Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+            Assert.True(replay.IsReplay);
+            Assert.Equal(allocation.Result.Resource, replay.Resource);
+        }
+        else
+        {
+            var replay = await run.ApproveAsync(Checker, "race-approve", proposalId);
+            Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+            Assert.True(replay.IsReplay);
+            Assert.Equal(approval.Result.Resource, replay.Resource);
+        }
+        Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentAllocations WHERE PaymentId = @id", ("@id", payment)));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals WHERE PaymentId = @id", ("@id", payment)));
         Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = N'finance.payment-allocation.create.v1'"));
         Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
@@ -371,7 +401,8 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
                 CancellationToken.None), permissions);
 
         public async Task<FinancePaymentAllocationCommandResult> AllocateAsync(string key, Guid payment, Guid openItem,
-            string amount, IFinancePermissionPort? permissions = null)
+            string amount, IFinancePermissionPort? permissions = null, Guid? allocationId = null,
+            string? openItemVersion = null)
         {
             var (companyContext, collector) = Scope();
             await using var dbContext = new FinanceDbContext(Options(companyContext, collector), companyContext);
@@ -382,8 +413,9 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
             var current = await dbContext.OpenItems.AsNoTracking().SingleAsync(row => row.Id == openItem);
             return await service.CreateAsync(new FinanceContext(CompanyA, Maker, $"api23-{Guid.NewGuid():N}", null),
                 new CommandMetadata($"api23-{key}"),
-                new CreateFinancePaymentAllocationRequest(Guid.NewGuid(), payment, "3", openItem,
-                    current.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), amount,
+                new CreateFinancePaymentAllocationRequest(allocationId ?? Guid.NewGuid(), payment, "3", openItem,
+                    openItemVersion ?? current.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    amount,
                     "SENTETIK tedarikci odemesi dagitimi"), CancellationToken.None);
         }
 

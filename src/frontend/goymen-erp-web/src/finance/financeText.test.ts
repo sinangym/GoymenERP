@@ -8,6 +8,7 @@ describe('FIN-T06 refusal text', () => {
     ['finance_allocation_rule_unavailable', 'Dağıtım durumu doğrulanamadı; ters kayıt onayı kapalı.'],
     ['finance_period_rule_unavailable', 'Ters kayıt dönemi doğrulanamadı; onay kapalı.'],
     ['finance_period_not_open', 'Ters kayıt işlem tarihi açık bir muhasebe dönemine ait değil.'],
+    ['finance_reversal_before_receipt', 'Ters kayıt tarihi tahsilat tarihinden önce olamaz.'],
     ['concurrent_change', 'Bu kaynak başka bir işlemle değişti; güncel durumu yeniden okuyun.'],
   ])('maps %s without exposing a raw server code', (code, expected) => {
     expect(issueText(code)).toBe(expected)

@@ -438,6 +438,18 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                 .GetProperty("version").GetString()!;
         }
 
+        // #66 round 20 (the API-23 date rule applied to FIN-T06): the reversal may not precede the receipt
+        // (2026-09-18); the refusal stores no proposal.
+        using (var beforeReceipt = await maker.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/reversal-proposals",
+                   "SENTETIK-reversal-before-receipt", Guid.NewGuid().ToString("N"),
+                   new ProposeReversalRequest(sourceId, sourceVersion, new DateOnly(2026, 9, 17),
+                       "SENTETIK-yanlis-tahsilat"))))
+        {
+            Assert.Equal((HttpStatusCode)422, beforeReceipt.StatusCode);
+            Assert.Equal("finance_reversal_before_receipt", Issue(await Json(beforeReceipt)));
+        }
+
         var reversalOccurredOn = new DateOnly(2026, 9, 19);
         Guid proposalId;
         string proposalVersion;
