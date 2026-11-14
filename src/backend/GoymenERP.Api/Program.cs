@@ -504,6 +504,7 @@ app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
+app.MapSettingsSalesPolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();
 app.MapSettingsManufacturingProfileEndpoints();
 app.MapShellEndpoints();
