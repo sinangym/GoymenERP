@@ -427,7 +427,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Product runtime is on) (84945670… -> 912a850f…).
                 // AI-2a (ADR-SEC-001), after the main merge: +4 security event SQL facts (company isolation and hash;
                 // append-only trigger and checks; Down refusal; empty Down/Up round trip) (912a850f… -> 70eab799…).
-                "70eab7996ea177463e8f1b1c1324ab0709b864821cd238ce2b6b4f253b0d047d",
+                // AI-2a hardening and AI-2b, after the AI-2a merge: +2 security event SQL facts (duplicate EventId
+                // retry/conflict; code-list checks and their migration round trip) and +1 read fact (own-company rows
+                // only; the read is recorded as security.events.read) (70eab799… -> fe173b17…).
+                "fe173b17a635e9978e64acf3fda0cdb766c2ba9b128066ca892cdc00cf4878e8",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -1124,14 +1127,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["MigrateAsync"] = 1
                         }),
                 // AI-2a (ADR-SEC-001): security event channel bootstrap; migrates its own schema like Audit.
+                // AI-2a hardening: registers TimeProvider.System for server-clock retention (4fa27691… -> 308b6836…).
+                // AI-2b: registers the scoped read service ISecurityEventQueryServiceV1 (DI only; same token counts)
+                // (308b6836… -> e27292d7…).
                 ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
                  + "SecurityEventsModuleExtensions.cs"] =
                     new(
-                        "4fa2769122ebc17f3eb6aad84c395f482327b084a8284304dc020667d55a6a15",
+                        "e27292d733da372c2fcf8997ef4306c0242509103637815f635d0e19d0670227",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
+                        }),
+                // AI-2a hardening: the security event store classifies a duplicate EventId (SqlException 2601/2627)
+                // after SaveChanges and re-reads it under the company filter; no connection, command or raw SQL.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Writing/SecurityEventStore.cs"] =
+                    new(
+                        "53f6379121a52a5d6c1754c1f76cdf2bc800c7cbaa7d8092c69fdf2493acc95d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
                         }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
                  + "Executions/SqlGroupSharedCommandTerminalStore.cs"] =

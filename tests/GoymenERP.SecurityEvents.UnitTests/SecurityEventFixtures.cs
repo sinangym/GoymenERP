@@ -8,6 +8,8 @@ namespace GoymenERP.SecurityEvents.UnitTests;
 internal static class SecurityEventFixtures
 {
     public static readonly Guid CompanyA = Guid.Parse("a1a1a1a1-0000-4000-8000-000000000001");
+    public const string UserActorId = "5e0c1d2a-7b3f-4c8e-9a10-000000000042";
+    public const string AdminActorId = "5e0c1d2a-7b3f-4c8e-9a10-0000000000a1";
     public static readonly DateTimeOffset OccurredAt = new(2026, 11, 11, 10, 30, 0, TimeSpan.Zero);
 
     public static SecurityEventV1 Denial(string eventType = SecurityEventTypesV1.AuthorizationDenied) => new()
@@ -17,7 +19,7 @@ internal static class SecurityEventFixtures
         ScopeKind = SecurityEventScopeKindsV1.Company,
         CompanyId = CompanyA,
         ActorType = SecurityEventActorTypesV1.User,
-        ActorId = "user-42",
+        ActorId = UserActorId,
         EventType = eventType,
         Outcome = SecurityEventOutcomesV1.Denied,
         ReasonCode = SecurityEventReasonCodesV1.PermissionMissing,
@@ -34,7 +36,7 @@ internal static class SecurityEventFixtures
         ScopeKind = SecurityEventScopeKindsV1.Company,
         CompanyId = CompanyA,
         ActorType = SecurityEventActorTypesV1.User,
-        ActorId = "admin-1",
+        ActorId = AdminActorId,
         EventType = SecurityEventTypesV1.PermissionChanged,
         Outcome = SecurityEventOutcomesV1.Allowed,
         Severity = SecurityEventSeveritiesV1.High,
@@ -71,4 +73,14 @@ internal static class SecurityEventFixtures
     };
 
     public static SecurityEventRetentionResolver Retention() => new(RetentionClasses());
+
+    /// <summary>The writer's server clock in tests: a fixed instant after <see cref="OccurredAt"/>.</summary>
+    public static readonly DateTimeOffset ServerNow = OccurredAt.AddMinutes(5);
+
+    public static TimeProvider ServerClock() => new FixedTimeProvider(ServerNow);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }

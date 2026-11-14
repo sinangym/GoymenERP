@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.SecurityEvents.Domain.Events;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,21 @@ public static class SecurityEventModelBuilderExtensions
                 table.HasCheckConstraint(
                     "CK_SecurityEvents_AggregationWindow",
                     "([AggregationWindowStartUtc] IS NULL AND [AggregationWindowEndUtc] IS NULL AND [OccurrenceCount] = 1) OR ([AggregationWindowStartUtc] IS NOT NULL AND [AggregationWindowEndUtc] IS NOT NULL AND [AggregationWindowStartUtc] <= [AggregationWindowEndUtc])");
+                // Defence in depth: the code-list columns accept only the contract values even if a future
+                // writer bypassed SecurityEventV1Validator (AI-2a hardening).
+                table.HasCheckConstraint("CK_SecurityEvents_ActorType", InList("ActorType", SecurityEventActorTypesV1.All));
+                table.HasCheckConstraint(
+                    "CK_SecurityEvents_ActorId",
+                    $"([ActorType] = '{SecurityEventActorTypesV1.Anonymous}' AND [ActorId] IS NULL) OR ([ActorType] <> '{SecurityEventActorTypesV1.Anonymous}' AND [ActorId] IS NOT NULL)");
+                table.HasCheckConstraint("CK_SecurityEvents_Severity", InList("Severity", SecurityEventSeveritiesV1.All));
+                table.HasCheckConstraint(
+                    "CK_SecurityEvents_SourceChannel", InList("SourceChannel", SecurityEventV1Validator.SourceChannelsV1));
+                table.HasCheckConstraint(
+                    "CK_SecurityEvents_ReasonCode", NullOrInList("ReasonCode", SecurityEventReasonCodesV1.All));
+                table.HasCheckConstraint(
+                    "CK_SecurityEvents_AiRiskClass", NullOrInList("AiRiskClass", Enum.GetNames<AiToolRiskClassV1>()));
+                table.HasCheckConstraint(
+                    "CK_SecurityEvents_AiDataClass", NullOrInList("AiDataClass", Enum.GetNames<AiDataClassV1>()));
             });
 
             entity.HasKey(x => x.Id);
@@ -95,4 +111,7 @@ public static class SecurityEventModelBuilderExtensions
 
     private static string InList(string column, IEnumerable<string> values) =>
         $"[{column}] IN ({string.Join(", ", values.Select(value => $"'{value}'"))})";
+
+    private static string NullOrInList(string column, IEnumerable<string> values) =>
+        $"[{column}] IS NULL OR {InList(column, values)}";
 }

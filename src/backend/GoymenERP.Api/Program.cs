@@ -478,6 +478,7 @@ app.MapErpHealthEndpoints();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
+app.MapSecurityEventsEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();

@@ -7,7 +7,15 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Writing;
 /// Standalone <see cref="ISecurityEventWriterV1"/>. It never throws for a write failure: the (type, phase) failure
 /// mode decides whether the caller may continue, and every failure increments the loss metric.
 /// </summary>
-internal sealed class SecurityEventWriter(ISecurityEventStore store, SecurityEventRetentionResolver retention)
+/// <remarks>
+/// Retention is measured from the server clock, never only from the caller's <c>OccurredAtUtc</c>: a back-dated
+/// envelope cannot shorten how long its row is kept. A future-dated envelope keeps its own time as the base, so
+/// <c>RetainUntilUtc</c> always ends after the event and no clock-skew tolerance is needed.
+/// </remarks>
+internal sealed class SecurityEventWriter(
+    ISecurityEventStore store,
+    SecurityEventRetentionResolver retention,
+    TimeProvider timeProvider)
     : ISecurityEventWriterV1
 {
     public async Task<SecurityEventWriteResultV1> WriteAsync(SecurityEventV1 securityEvent, CancellationToken cancellationToken = default)
@@ -18,20 +26,38 @@ internal sealed class SecurityEventWriter(ISecurityEventStore store, SecurityEve
             return Fail(securityEvent?.EventType, failureMode, SecurityEventWriteFailureKindsV1.InvalidEvent);
         }
 
-        SecurityEventRecord record;
+        DateTimeOffset retainUntilUtc;
+        string retentionPolicyRef;
         try
         {
-            var (retainUntilUtc, retentionPolicyRef) = retention.Resolve(securityEvent.EventType, securityEvent.OccurredAtUtc);
-            record = SecurityEventRecord.Create(securityEvent, retainUntilUtc, retentionPolicyRef);
+            var serverNowUtc = timeProvider.GetUtcNow().ToUniversalTime();
+            var retentionBaseUtc = securityEvent.OccurredAtUtc > serverNowUtc ? securityEvent.OccurredAtUtc : serverNowUtc;
+            (retainUntilUtc, retentionPolicyRef) = retention.Resolve(securityEvent.EventType, retentionBaseUtc);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        catch (InvalidOperationException)
         {
             return Fail(securityEvent.EventType, failureMode, SecurityEventWriteFailureKindsV1.RetentionUnresolved);
         }
 
+        SecurityEventRecord record;
         try
         {
-            await store.AppendAsync(record, cancellationToken);
+            record = SecurityEventRecord.Create(securityEvent, retainUntilUtc, retentionPolicyRef);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // The resolved retention does not end after the event: a retention configuration fault, not the caller's.
+            return Fail(securityEvent.EventType, failureMode, SecurityEventWriteFailureKindsV1.RetentionUnresolved);
+        }
+        catch (ArgumentException)
+        {
+            return Fail(securityEvent.EventType, failureMode, SecurityEventWriteFailureKindsV1.InvalidEvent);
+        }
+
+        SecurityEventAppendOutcome outcome;
+        try
+        {
+            outcome = await store.AppendAsync(record, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -44,7 +70,9 @@ internal sealed class SecurityEventWriter(ISecurityEventStore store, SecurityEve
             return Fail(securityEvent.EventType, failureMode, SecurityEventWriteFailureKindsV1.StoreUnavailable);
         }
 
-        return SecurityEventWriteResultV1.Written(failureMode);
+        return outcome == SecurityEventAppendOutcome.DuplicateEventId
+            ? Fail(securityEvent.EventType, failureMode, SecurityEventWriteFailureKindsV1.DuplicateEventId)
+            : SecurityEventWriteResultV1.Written(failureMode);
     }
 
     private static SecurityEventWriteResultV1 Fail(string? eventType, SecurityEventWriteFailureMode failureMode, string failureKind)

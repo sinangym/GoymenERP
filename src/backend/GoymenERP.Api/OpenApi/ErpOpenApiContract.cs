@@ -742,6 +742,15 @@ public static partial class ErpOpenApiContract
                 maximumLength: 128);
         }
 
+        // AI-2b (ADR-SEC-001 section 5): the security event read clamps the page size and trims its filters.
+        if (string.Equals(operation.OperationId, "GetSecurityEventsV1", StringComparison.Ordinal))
+        {
+            SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "pageSize", minimum: 1, maximum: 100);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "cursor", maximumLength: 128);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "eventType", maximumLength: 64);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "correlationId", maximumLength: 128);
+        }
+
         if (string.Equals(operation.OperationId, "GetSalesAccountReferencesV1", StringComparison.Ordinal))
         {
             SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "pageSize", 1, 100);

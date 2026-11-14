@@ -1,9 +1,11 @@
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Writing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Modules.SecurityEvents.Infrastructure;
 
@@ -37,10 +39,13 @@ public static class SecurityEventsModuleExtensions
             options.UseSqlServer(
                 connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SecurityEventModelBuilderExtensions.Schema)));
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(retention);
         services.AddSingleton(aggregation);
         services.AddSingleton<ISecurityEventStore, StandaloneSecurityEventStore>();
         services.AddSingleton<ISecurityEventWriterV1, SecurityEventWriter>();
+        // ADR-SEC-001 section 5 company read; it records security.events.read before reading (fail-closed).
+        services.AddScoped<ISecurityEventQueryServiceV1, SecurityEventQueryService>();
 
         return services;
     }

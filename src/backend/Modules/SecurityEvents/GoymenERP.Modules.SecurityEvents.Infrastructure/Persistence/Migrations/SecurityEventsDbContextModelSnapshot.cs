@@ -177,7 +177,15 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
 
                     b.ToTable("SecurityEvents", "security", t =>
                         {
+                            t.HasCheckConstraint("CK_SecurityEvents_ActorId", "([ActorType] = 'Anonymous' AND [ActorId] IS NULL) OR ([ActorType] <> 'Anonymous' AND [ActorId] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_ActorType", "[ActorType] IN ('User', 'System', 'Ai', 'Anonymous')");
+
                             t.HasCheckConstraint("CK_SecurityEvents_AggregationWindow", "([AggregationWindowStartUtc] IS NULL AND [AggregationWindowEndUtc] IS NULL AND [OccurrenceCount] = 1) OR ([AggregationWindowStartUtc] IS NOT NULL AND [AggregationWindowEndUtc] IS NOT NULL AND [AggregationWindowStartUtc] <= [AggregationWindowEndUtc])");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_AiDataClass", "[AiDataClass] IS NULL OR [AiDataClass] IN ('Public', 'Internal', 'Confidential', 'StrictlyConfidential')");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_AiRiskClass", "[AiRiskClass] IS NULL OR [AiRiskClass] IN ('Read', 'Draft', 'Simulate', 'Write')");
 
                             t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read')");
 
@@ -191,9 +199,15 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SecurityEvents_PhaseEventType", "([EventType] = 'ai.tool.called' AND [Phase] IN ('Started', 'Completed')) OR ([EventType] <> 'ai.tool.called' AND [Phase] = 'Single')");
 
+                            t.HasCheckConstraint("CK_SecurityEvents_ReasonCode", "[ReasonCode] IS NULL OR [ReasonCode] IN ('permission_missing', 'company_context_mismatch', 'credentials_invalid', 'account_inactive', 'session_invalid', 'policy_refused', 'ai_tool_not_allowed', 'ai_data_class_not_allowed', 'ai_approval_missing', 'ai_provider_failed', 'operation_failed')");
+
                             t.HasCheckConstraint("CK_SecurityEvents_RetainUntil", "[RetainUntilUtc] > [OccurredAtUtc]");
 
                             t.HasCheckConstraint("CK_SecurityEvents_ScopeCompany", "([ScopeKind] = 'Company' AND [CompanyId] IS NOT NULL) OR ([ScopeKind] = 'Platform' AND [CompanyId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_Severity", "[Severity] IN ('Info', 'Warning', 'High')");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_SourceChannel", "[SourceChannel] IN ('Web', 'Mobile', 'Import', 'Integration', 'AiAssisted', 'System')");
                         });
                 });
 #pragma warning restore 612, 618

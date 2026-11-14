@@ -1085,6 +1085,13 @@ public static class ErpPermissions
     /// company-wide only (user decision 2026-09-28); no seeded role holds it.
     /// </summary>
     public const string IdentityAssignmentsRead = "identity.assignments.read";
+    /// <summary>
+    /// ADR-SEC-001 section 5 read of the company's security event channel (security.SecurityEvents). Company-wide
+    /// only; platform rows need a separate platform permission. Critical (user decision 2026-11-11, Issue #66
+    /// comment 6810051185 item 19: held only by Sinan and the admin; any other holder needs Sinan's approval). No
+    /// seeded role holds it: applying the grant is a human gate.
+    /// </summary>
+    public const string PlatformSecurityEventsRead = "platform.security-events.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1266,6 +1273,7 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
 
@@ -1275,6 +1283,7 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
             FinanceCashAccountPropose,
@@ -1456,6 +1465,7 @@ public static class ErpPermissions
             SettingsManufacturingToleranceProfilesPublish,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
 

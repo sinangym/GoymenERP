@@ -17,7 +17,13 @@ public static class SecurityEventWriteFailureKindsV1
     public const string RetentionUnresolved = "retention_unresolved";
     public const string StoreUnavailable = "store_unavailable";
 
-    public static IReadOnlyList<string> All { get; } = [InvalidEvent, RetentionUnresolved, StoreUnavailable];
+    /// <summary>
+    /// The EventId is already stored and the stored row could not be confirmed as the same event (different content,
+    /// or a platform-scoped row the company-filtered store cannot read back).
+    /// </summary>
+    public const string DuplicateEventId = "duplicate_event_id";
+
+    public static IReadOnlyList<string> All { get; } = [InvalidEvent, RetentionUnresolved, StoreUnavailable, DuplicateEventId];
 }
 
 public sealed record SecurityEventWriteResultV1
