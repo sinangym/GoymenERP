@@ -116,6 +116,8 @@ public sealed class PurchasingDocumentOwnerLinkPortTests
             PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Task<PurchaseOrderLineScheduleHistoryView> GetOrderLineScheduleHistoryAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PurchasingCurrencyCandidatesResponseV1> GetCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task<PurchaseRequestDetailView> GetRequestDetailAsync(Guid requestId, CancellationToken cancellationToken = default) =>

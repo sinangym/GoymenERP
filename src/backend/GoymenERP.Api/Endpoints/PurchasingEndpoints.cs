@@ -418,6 +418,33 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // ALS-D94 / ALS-D81 (F-027): the line's delivery schedule history — every recorded revision, oldest first, with who recorded
+        // it and when; read only under purchasing.orders.read. The last revision is the detail's current schedule.
+        group.MapGet("/{id:guid}/lines/{lineId:guid}/schedule-history", async (Guid id, Guid lineId, HttpContext httpContext,
+            [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetOrderLineScheduleHistoryAsync(id, lineId, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetPurchaseOrderLineScheduleHistoryV1")
+            .Produces<PurchaseOrderLineScheduleHistoryView>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/lines/{lineId:guid}/goods-receipts", (Guid id, Guid lineId, HttpContext httpContext,
                 [FromServices] IPurchaseGoodsReceiptServiceV1 service, ICorrelationContext correlation,
                 CancellationToken cancellationToken) =>

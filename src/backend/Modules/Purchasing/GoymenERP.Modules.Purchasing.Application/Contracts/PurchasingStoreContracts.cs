@@ -94,6 +94,9 @@ public static class PurchasingStoreCodes
     /// approved) request's draft order cannot become a commitment.
     /// </summary>
     public const string SourceRequestNotApproved = "purchasing_source_request_not_approved";
+
+    /// <summary>F-027: a stored schedule revision does not read as one recording (mixed actor or time, or a gap in its slice order).</summary>
+    public const string ScheduleHistoryInconsistent = "purchasing_schedule_history_inconsistent";
 }
 
 public sealed class PurchasingStoreException(string code, string message, Exception? innerException = null,
@@ -120,6 +123,13 @@ public sealed record PurchasingTerminalRefusal(int Status, string Code, IReadOnl
 
 /// <summary>What the key holds: the stored request, the stored order or the recorded refusal — exactly one.</summary>
 public sealed record PurchasingReplay(StoredPurchaseRequest? Request, StoredPurchaseOrder? Order, PurchasingTerminalRefusal? Refusal, string OriginalCorrelationId);
+
+/// <summary>F-027: one stored delivery-schedule revision of a line — the order version it produced, its recorder and time, its slices.</summary>
+public sealed record StoredScheduleRevision(long OrderVersionAfter, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    IReadOnlyList<StoredScheduleSlice> Slices);
+
+/// <summary>F-027: one stored slice of a schedule revision, its quantity in the line's unit.</summary>
+public sealed record StoredScheduleSlice(Guid SliceId, int SliceNo, decimal Quantity, DateOnly DeliveryDate);
 
 public sealed record PurchasingRequestPage(IReadOnlyList<StoredPurchaseRequest> Items, string? NextCursor);
 
@@ -186,6 +196,15 @@ public interface IPurchasingStore
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default);
 
     Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ALS-D94 / ALS-D81 (F-027): the company's recorded delivery-schedule revisions of one order line, oldest first — read only, as
+    /// stored (append-only rows, one revision per order version that recorded it). Another company's order or line, or none, is an
+    /// empty list (never 403). A revision whose slices disagree on who recorded it or when is
+    /// <see cref="PurchasingStoreCodes.ScheduleHistoryInconsistent"/>.
+    /// </summary>
+    Task<IReadOnlyList<StoredScheduleRevision>> ListLineScheduleRevisionsAsync(Guid orderId, Guid lineId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>The company's orders, newest first, by opaque company-bound cursor; status and supplier are optional exact filters.</summary>
     Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,

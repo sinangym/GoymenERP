@@ -531,6 +531,15 @@ function deliverySchedule(value: unknown): value is readonly PurchaseOrderDelive
 }
 
 /**
+ * F-027 (ALS-D94): the line schedule history decoder (`lineScheduleContract.ts`) measures identities, versions, instants and each
+ * revision's slices with exactly these rules, so a history slice is never accepted under a looser rule than the detail's.
+ */
+export const isPurchasingGuid = guid
+export const isPurchasingVersion = canonicalVersion
+export const isPurchasingInstant = instant
+export const isPurchaseOrderDeliverySchedule = deliverySchedule
+
+/**
  * A line before A1-3 (no `cancelled`), after it (`cancelled` a canonical decimal), after A2a-1 (`cancelled` and `price`, null or
  * a valid price) or after A3 API-30 (either of the last two plus `deliverySchedule`, a valid slice list); nothing else.
  */
