@@ -144,9 +144,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U5-b1 (API-36, SAT-D175): registers the two host-side subcontract service order / binding adapters (DI only);
         // no generation, network or hosted-service change (a5bb99f0… -> 096c3e0b…).
         // F-021 / B-24b: registers the Work module and the ERP-000F outbox dispatcher (off by default, hosted service skipped in OpenAPI generation) and initializes Work in Dev/Testing; no network surface change; re-fingerprinted after merging main (096c3e0b… -> ee696d73…).
-        // F-005 D1 (FNS-D17…FNS-D21): registers the Finance official sales invoice host (scoped in-process DI only); no generation,
-        // network or hosted-service change; re-fingerprinted after merging main (ee696d73… -> 1fe3cd9e…).
-        "1fe3cd9e1bfa36a4106d79b007974bbde05cd8a5a5184855b45f89f9646bb0d8";
+        // AI-2a (ADR-SEC-001), after the main merge: also registers AddSecurityEventsModule and runs
+        // InitializeSecurityEventsModuleAsync with the other module initializers (a5bb99f0… -> 015f177e…).
+        // Main merge after #1146: the AI-2a registration (015f177e…) and the U5-b1 and F-021 / B-24b registrations
+        // (ee696d73…) are all present; re-measured on the merged Program.cs, neither parent's value (-> 3a7d166d…).
+        "3a7d166d438520ba0e917ff38cecffdb84d2c8ea0950e292fafc884f17a7fd51";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -423,7 +425,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // empty-store rollback) (69a1024a… -> 84945670…).
                 // F-022: +2 readiness SQL facts (Settings/Documents history drift; price-list drift only while the
                 // Product runtime is on) (84945670… -> 912a850f…).
-                "912a850f59568f33ce197227ac1d945fe3820a2c48ee9ec63dae7ecc95e3438c",
+                // AI-2a (ADR-SEC-001), after the main merge: +4 security event SQL facts (company isolation and hash;
+                // append-only trigger and checks; Down refusal; empty Down/Up round trip) (912a850f… -> 70eab799…).
+                "70eab7996ea177463e8f1b1c1324ab0709b864821cd238ce2b6b4f253b0d047d",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -598,9 +602,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "30b8186c29adf8bff97ea36b88ec378127bc403dfa00421958f27af4e16db6ed";
+        // AI-2a: + GoymenERP.SecurityEvents.UnitTests (75 solution / 22 TestSDK projects) (30b8186c… -> ac738bab…).
+        "ac738bab8ec406611c0c086d01d5b93b6fed75bc7027180fe8033f936e680506";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "9947ab71ffdd0325973206ef714005f4956c83b52186e76b1066e7e848af29f8";
+        "d8f69eef4cfbd97966612909353547696a1cbe2ca4871e39c89f468048efd7d0";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     // Re-fingerprinted for CIH-D5: only the trigger path filter under `on:` changed (prose no job reads does not
@@ -628,6 +633,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
              + "Persistence/AuditDbContext.cs"] =
                 "8fc4d19d4f7efb61d62dcb0f0ed44bce7254ee897aaaf6621c27f0e03ba1ec7a",
+            // AI-2a (ADR-SEC-001): append-only security event channel, company query filter on CompanyId.
+            ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+             + "Persistence/SecurityEventsDbContext.cs"] =
+                "61fc1b4e3dadbdf5f58bd3972e3253d2bed68bda039abf308df585814dd367ac",
             ["src/backend/Modules/Idempotency/"
              + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
              + "CommandExecutionDbContext.cs"] =
@@ -1109,6 +1118,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Audit.Infrastructure/AuditModuleExtensions.cs"] =
                     new(
                         "f953cac522b80c54bf4f9bdb8626690f8428f74f49fb22589c0ecd0a9ab1b3f6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // AI-2a (ADR-SEC-001): security event channel bootstrap; migrates its own schema like Audit.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "SecurityEventsModuleExtensions.cs"] =
+                    new(
+                        "4fa2769122ebc17f3eb6aad84c395f482327b084a8284304dc020667d55a6a15",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2123,6 +2142,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         "AuditDbContext",
                         "38245af104fd713832e2926dba5798614515bb324d2560da8217f9cd49492b56"),
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Persistence/SecurityEventsDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "SecurityEventsDbContext",
+                        "ed53cad05d7bee2554a10758f94e6b2b22236dd3ff4229e4a3021f510c26ddbf"),
                 ["src/backend/Modules/Idempotency/"
                  + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
                  + "CommandExecutionDesignTimeDbContextFactory.cs"] =
@@ -3252,6 +3276,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
+                        }),
+                // AI-2a: Up creates TR_SecurityEvents_RejectUpdateDelete (THROW 51271, append-only); Down refuses
+                // (51270, used by no other migration) while security events exist, then drops the empty table.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Persistence/Migrations/20261111205852_InitialSecurityEvents.cs"] =
+                    new(
+                        "4ac64ee93c5972ef917b045aecab74a86c673e11a3dfd940333c6d1c1a179f08",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
                         }),
                 ["src/backend/Modules/Idempotency/"
                  + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
@@ -9560,13 +9594,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         @"(?<![\p{L}\p{Nd}_])new\s+"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext)(?![\p{L}\p{Nd}_])\s*\(",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext|SecurityEventsDbContext)(?![\p{L}\p{Nd}_])\s*\(",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
-        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext)"
+        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext|SecurityEventsDbContext)"
         + @"(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeIdentifierRegex();
@@ -9581,7 +9615,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"(?<alias>@?[\p{L}_][\p{L}\p{Nd}_]*)\s*=\s*"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext)(?![\p{L}\p{Nd}_])\s*;",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext|SecurityEventsDbContext)(?![\p{L}\p{Nd}_])\s*;",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeAliasRegex();
 
@@ -9598,7 +9632,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"SalesDesignTimeDbContextFactory|"
         + @"LogisticsDesignTimeDbContextFactory|"
         + @"PurchasingDesignTimeDbContextFactory|"
-        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory|SettingsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory|SettingsDesignTimeDbContextFactory|SecurityEventsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

@@ -55,6 +55,7 @@ using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
+using GoymenERP.Modules.SecurityEvents.Infrastructure;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
@@ -225,6 +226,7 @@ builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccou
 builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySalesPartyAccountPortV1>();
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
+builder.Services.AddSecurityEventsModule(builder.Configuration);
 builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -508,6 +510,7 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeSettingsModuleAsync();
     await app.Services.InitializeIdentityModuleAsync();
     await app.Services.InitializeAuditModuleAsync();
+    await app.Services.InitializeSecurityEventsModuleAsync();
     await app.Services.InitializeIdempotencyModuleAsync();
     await app.Services.InitializeCounterpartyModuleAsync();
     // After Organization: Inventory's composite foreign keys reference its tables.
