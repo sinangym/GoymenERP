@@ -49,11 +49,11 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 162
+EXPECTED_MIGRATION_COUNT = 166
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "a2f0c9ef2fcc8fa8f0e7e5c31d75f425d03747f00b6a25a7a36211ee032174cb"
+    "e8ad36c7718894ee68dc27b5fab0d6a0326b0f23f147306b92581e75f4dc769f"
 )
-EXPECTED_DURABLE_STORE_COUNT = 33
+EXPECTED_DURABLE_STORE_COUNT = 34
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -88,9 +88,9 @@ EXPECTED_DURABLE_STORE_COUNT = 33
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 660
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 671
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "612b4705237e20ba60e55bdd50bb83533559e7ea7a2cff916720707295bc1f09"
+    "0c1b967127dd5ef596997603aba56d4276c8a0343facc5bb60b80773f489fc49"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -187,6 +187,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("accounting", "SourceDocumentAdmissions"),
     ("audit", "AuditEvents"),
     ("documents", "DocumentAttempts"),
+    ("finance", "CashAccountCommands"),
     ("finance", "Commands"),
     ("finance", "InvoiceCancellations"),
     ("finance", "OfficialInvoiceImportCommands"),
@@ -414,6 +415,13 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20260930120000_InitialDocuments.cs",
         DOCUMENTS_STORE, ("dbContext.Attempts.Add(new DocumentAttemptRow",),
         mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "finance.cash-account-commands", "Finance", "idempotency", "FinanceDbContext",
+        "CashAccountCommandRow", "finance", "CashAccountCommands", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261112070144_AddCashAccounts.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
+        ("dbContext.CashAccountCommands.Add(new CashAccountCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "finance.command-replay", "Finance", "idempotency", "FinanceDbContext",
@@ -682,6 +690,10 @@ WRITER_METHOD_SCOPES = {
     ("accounting.source-document-admissions", ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE): "WriteAsync",
     ("documents.document-attempts", DOCUMENTS_STORE): "StoreUploadAsync",
     (
+        "finance.cash-account-commands",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
+    ): "AddCommand",
+    (
         "finance.command-replay",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
     ): "DraftSaveAsync",
@@ -866,6 +878,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "UploadAsync",
     ): "f401c2b93e88f45b8146402ac33cf7b96ca81790e01db1c635320fc2f02a5fa1",
     (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
+        "AddCommand",
+    ): "67ee020b63114a1b8930acba8f1276fcc42834755f9651b9d3172d335a5cf381",
+    (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
         "CancelAsync",
     ): "fecf49a7135dc94ba4b5d1c572c52a9106d11ce67a1f8f73ed4d0fff4ce6bb57",
@@ -976,6 +992,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs": "8c7a2eed1888d36d0b61c60b1296d904adaf0338c34f361236befc8e1c1d6274",
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs": "0f79216993cdbbc20d7c92d830ad1c08f3ff2ab5b0ab9084aaae03f765784c1a",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs": "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs": "72827fa6fd5d25e6720ebde9ae981e05d1c340164a59a442d154e7fc16f5c07e",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "51e122131bdd2353fd5126afb3c39b1ceb068b3a810c7f95a40974b0bff84ac5",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs": "a6f808c30925e80f74c967d7856f5aade533e0456bf64c1a85cb0c9c21f1ad42",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs": "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",

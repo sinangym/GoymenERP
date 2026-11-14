@@ -93,6 +93,117 @@ public sealed class StockLedgerTests
     }
 
     [Fact]
+    public void A_negative_stock_refusal_names_the_movement_its_source_line_the_bucket_and_both_quantities()
+    {
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        var orderId = Guid.NewGuid();
+        var issueId = Guid.NewGuid();
+        var issue = Sourced(StockMovementKind.Issue,
+            new StockSourceReference("manufacturing.input-issue", orderId, issueId), Out(Position(), 100.001m));
+
+        var error = Assert.Throws<InventoryRuleException>(() => ledger.Apply(issue));
+
+        // The stable code is unchanged; the shortfall only names the failing line.
+        Assert.Equal(InventoryRuleCodes.NegativePhysicalStock, error.Code);
+        var shortfall = Assert.IsType<StockShortfall>(error.Shortfall);
+        Assert.Equal(StockMovementKind.Issue, shortfall.MovementKind);
+        Assert.Equal("manufacturing.input-issue", shortfall.Source.Kind);
+        Assert.Equal(orderId, shortfall.Source.Id);
+        Assert.Equal(issueId, shortfall.Source.LineId);
+        Assert.Equal(Position(), shortfall.Position);
+        Assert.Equal(Label1, shortfall.Position.LabelId);
+        Assert.Equal(BandProduct, shortfall.Position.ProductId);
+        Assert.Equal(Warehouse1, shortfall.Position.LocationId);
+        Assert.Equal(BlockState.Free, shortfall.Position.Block);
+        Assert.Equal(100.001m, shortfall.Requested.Value);
+        Assert.Equal(100m, shortfall.Available.Value);
+        Assert.Equal(100m, ledger.QuantityAt(Position()).Value);
+    }
+
+    [Fact]
+    public void The_available_quantity_of_a_shortfall_is_its_bucket_just_before_the_failing_line()
+    {
+        // Line one takes 60 of 100, line two is another label, line three asks 60 of the 40 line one left.
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        ledger.Apply(Receipt(Position(label: Label2), 10m));
+        var mixed = Movement(StockMovementKind.Issue,
+            Out(Position(), 60m), Out(Position(label: Label2), 5m), Out(Position(), 60m));
+
+        var shortfall = Assert.IsType<StockShortfall>(
+            Assert.Throws<InventoryRuleException>(() => ledger.Apply(mixed)).Shortfall);
+
+        Assert.Equal(Position(), shortfall.Position);
+        Assert.Equal(60m, shortfall.Requested.Value);
+        Assert.Equal(40m, shortfall.Available.Value);
+        Assert.Equal(mixed.Source, shortfall.Source);
+        Assert.Null(shortfall.Source.LineId);
+        Assert.Equal(100m, ledger.QuantityAt(Position()).Value);
+        Assert.Equal(10m, ledger.QuantityAt(Position(label: Label2)).Value);
+    }
+
+    [Fact]
+    public void A_shortfall_on_a_bucket_that_holds_nothing_reports_zero_available_and_its_own_block_state()
+    {
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        var blocked = Position(block: BlockState.Blocked);
+
+        var shortfall = Assert.IsType<StockShortfall>(Assert.Throws<InventoryRuleException>(
+            () => ledger.Apply(Movement(StockMovementKind.Scrap, Out(blocked, 1m)))).Shortfall);
+
+        Assert.Equal(StockMovementKind.Scrap, shortfall.MovementKind);
+        Assert.Equal(blocked, shortfall.Position);
+        Assert.Equal(Kilograms.Zero, shortfall.Available);
+        Assert.Equal(1m, shortfall.Requested.Value);
+    }
+
+    [Fact]
+    public void Other_refusals_carry_no_shortfall_and_a_movement_that_fits_throws_nothing()
+    {
+        var ledger = new StockLedger();
+        var receipt = Receipt(Position(), 100m);
+        ledger.Apply(receipt);
+
+        var duplicate = Assert.Throws<InventoryRuleException>(() => ledger.Apply(receipt));
+        var secondArrival = Assert.Throws<InventoryRuleException>(() => ledger.Apply(Receipt(Position(), 1m)));
+        var elsewhere = Assert.Throws<InventoryRuleException>(() => ledger.Apply(
+            Movement(StockMovementKind.Return, In(Position(location: Warehouse2), 1m))));
+        Assert.Equal(InventoryRuleCodes.DuplicateMovement, duplicate.Code);
+        Assert.Equal(InventoryRuleCodes.LabelAlreadyInStock, secondArrival.Code);
+        Assert.Equal(InventoryRuleCodes.LabelInTwoPositions, elsewhere.Code);
+        Assert.All(new[] { duplicate, secondArrival, elsewhere }, error => Assert.Null(error.Shortfall));
+
+        // Exactly to zero is not a shortfall.
+        Assert.Null(Record.Exception(() => ledger.Apply(Issue(Position(), 100m))));
+        Assert.Equal(0m, ledger.QuantityAt(Position()).Value);
+    }
+
+    [Fact]
+    public void A_shortfall_exists_only_for_a_positive_request_its_bucket_cannot_cover()
+    {
+        var source = new StockSourceReference("test.source", Guid.NewGuid());
+        var five = Kilograms.Positive(5m);
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new StockShortfall(StockMovementKind.Issue, source, Position(), five, Kilograms.Of(5m)));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new StockShortfall(StockMovementKind.Issue, source, Position(), Kilograms.Zero, Kilograms.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new StockShortfall((StockMovementKind)99, source, Position(), five, Kilograms.Zero));
+        Assert.Throws<ArgumentNullException>(
+            () => new StockShortfall(StockMovementKind.Issue, null!, Position(), five, Kilograms.Zero));
+        Assert.Throws<ArgumentNullException>(
+            () => new StockShortfall(StockMovementKind.Issue, source, null!, five, Kilograms.Zero));
+        Assert.Throws<ArgumentNullException>(() => new InventoryRuleException((StockShortfall)null!, "SENTETIK"));
+        var named = new InventoryRuleException(
+            new StockShortfall(StockMovementKind.Issue, source, Position(), five, Kilograms.Of(4.999m)), "SENTETIK");
+        Assert.Equal(InventoryRuleCodes.NegativePhysicalStock, named.Code);
+        Assert.Equal(4.999m, named.Shortfall!.Available.Value);
+    }
+
+    [Fact]
     public void The_same_movement_is_applied_once()
     {
         var ledger = new StockLedger();

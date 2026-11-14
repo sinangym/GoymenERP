@@ -170,6 +170,20 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getByText('Transfer çıkışı')).not.toBeNull()
     expect(screen.getByText('Transfer kabulü')).not.toBeNull()
   })
+  it('renders a manufacturing genealogy edge as production in the existing genealogy table', async () => {
+    const base = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...base,
+      genealogy: { ...base.genealogy, edges: [
+        { ...base.genealogy.edges[0], kind: 'Manufacturing', outputLabelVersion: '1', outputQuantityKg: '1200' },
+      ] },
+    } })
+
+    mount(); await ready()
+
+    expect(screen.getByRole('cell', { name: 'Üretim' })).not.toBeNull()
+    expect(screen.queryByRole('cell', { name: 'Bölme' })).toBeNull()
+  })
   it('opens the company-wide ST-04 timeline without presenting it as this label\'s filter', async () => {
     const user = userEvent.setup()
     mount(); await ready()

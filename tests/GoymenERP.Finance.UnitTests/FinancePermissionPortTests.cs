@@ -27,6 +27,17 @@ public sealed class FinancePermissionPortTests
         Assert.Equal(ErpPermissions.FinanceBankAccountRead, FinancePermissionPort.NameOf(FinanceAction.ReadBankAccounts));
         Assert.Equal(ErpPermissions.FinanceBankAccountPropose, FinancePermissionPort.NameOf(FinanceAction.ProposeBankAccount));
         Assert.Equal(ErpPermissions.FinanceBankAccountApprove, FinancePermissionPort.NameOf(FinanceAction.ApproveBankAccount));
+        Assert.Equal(ErpPermissions.FinanceCashAccountRead, FinancePermissionPort.NameOf(FinanceAction.ReadCashAccounts));
+        Assert.Equal(ErpPermissions.FinanceCashAccountPropose, FinancePermissionPort.NameOf(FinanceAction.ProposeCashAccount));
+        Assert.Equal(ErpPermissions.FinanceCashAccountApprove, FinancePermissionPort.NameOf(FinanceAction.ApproveCashAccount));
+        Assert.Equal(ErpPermissions.FinanceCashAccountPassivationPropose,
+            FinancePermissionPort.NameOf(FinanceAction.ProposeCashAccountPassivation));
+        Assert.Equal(ErpPermissions.FinanceCashAccountPassivationApprove,
+            FinancePermissionPort.NameOf(FinanceAction.ApproveCashAccountPassivation));
+        Assert.Equal(ErpPermissions.FinanceCashAccountReactivationPropose,
+            FinancePermissionPort.NameOf(FinanceAction.ProposeCashAccountReactivation));
+        Assert.Equal(ErpPermissions.FinanceCashAccountReactivationApprove,
+            FinancePermissionPort.NameOf(FinanceAction.ApproveCashAccountReactivation));
         // Record's name is NOT invented here: card #66 5743678389 §1 names it and sources it to Ö4
         // (Sinan 5722637822), which answers #254 §5's OPEN-009 question FOR THIS COMMAND ONLY — one narrow
         // authorised operator, no second approval, no amount threshold. A name grants nothing: the central
@@ -113,6 +124,8 @@ public sealed class FinancePermissionPortTests
     [Theory]
     [InlineData(FinanceAction.ProposeReversal, FinancePermissionNames.ReversePropose)]
     [InlineData(FinanceAction.ApproveReversal, FinancePermissionNames.ReverseApprove)]
+    [InlineData(FinanceAction.ProposePaymentReversal, FinancePermissionNames.PaymentReversePropose)]
+    [InlineData(FinanceAction.ApprovePaymentReversal, FinancePermissionNames.PaymentReverseApprove)]
     public async Task Each_FIN_T06_command_revalidates_its_own_permission_on_every_call(
         FinanceAction action, string permission)
     {
@@ -131,6 +144,8 @@ public sealed class FinancePermissionPortTests
     [Theory]
     [InlineData(FinanceAction.ProposeReversal, FinancePermissionNames.ReversePropose)]
     [InlineData(FinanceAction.ApproveReversal, FinancePermissionNames.ReverseApprove)]
+    [InlineData(FinanceAction.ProposePaymentReversal, FinancePermissionNames.PaymentReversePropose)]
+    [InlineData(FinanceAction.ApprovePaymentReversal, FinancePermissionNames.PaymentReverseApprove)]
     public async Task A_missing_FIN_T06_grant_is_denied_after_a_real_authority_measurement(
         FinanceAction action, string permission)
     {

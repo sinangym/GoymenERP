@@ -189,9 +189,12 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         // Review A P2-1: a recorded R47 outgoing payment to the same customer account (e.g. an advance refunded) gives that money
         // back, so it is netted off the unallocated credit per currency, down to zero. An outgoing payment to the account that is
         // in fact a supplier payment (a party that is both) can only make the deduction smaller — the receivable larger — never
-        // the other way. Any outgoing row Finance cannot read → null (Unavailable), never a partial netting.
+        // the other way. Any outgoing row Finance cannot read → null (Unavailable), never a partial netting. API-23: an
+        // outgoing payment with an approved reversal gave nothing back, so it is not netted.
         var outgoing = await dbContext.OutgoingMoneyEvents.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId)
+            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                && !dbContext.OutgoingMoneyEventReversals.Any(reversal =>
+                    reversal.CompanyId == companyId && reversal.OriginalEventId == row.Id))
             .Select(row => new { row.CurrencyId, row.AmountText })
             .ToListAsync(cancellationToken);
         foreach (var refund in outgoing)

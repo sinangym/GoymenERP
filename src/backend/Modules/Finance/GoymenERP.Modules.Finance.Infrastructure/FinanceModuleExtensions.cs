@@ -75,6 +75,11 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateBankAccountService);
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
+        // API-30: the cash account (kasa) master; a definition only, audited with the roles of its own permission.
+        services.AddScoped<IFinanceCashAccountMaster>(CreateCashAccountService);
+        // The balance seam of passivation: no cash movement exists yet, so every balance reads zero. The
+        // slice that adds cash movements registers the real reader before this one.
+        services.TryAddScoped<IFinanceCashAccountBalanceReader, NoCashMovementBalanceReader>();
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
@@ -82,6 +87,9 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
+        services.AddScoped(CreatePaymentReversalProposalService);
+        services.AddScoped<IPaymentReversalProposalService>(provider =>
+            provider.GetRequiredService<PaymentReversalProposalService>());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         services.AddScoped<IFinanceAllocationReadService, FinanceAllocationReadService>();
         // F3a / API-20: a recorded payment applied to payable items, behind the same allocation permissions.
@@ -125,6 +133,34 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<TimeProvider>());
     }
 
+    private static FinanceCashAccountService CreateCashAccountService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCashAccountService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCashAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCashAccountPropose, permissions, FinanceAction.ProposeCashAccount),
+                Envelope(provider, ErpPermissions.FinanceCashAccountApprove, permissions, FinanceAction.ApproveCashAccount),
+                Envelope(provider, ErpPermissions.FinanceCashAccountPassivationPropose, permissions,
+                    FinanceAction.ProposeCashAccountPassivation),
+                Envelope(provider, ErpPermissions.FinanceCashAccountPassivationApprove, permissions,
+                    FinanceAction.ApproveCashAccountPassivation),
+                Envelope(provider, ErpPermissions.FinanceCashAccountReactivationPropose, permissions,
+                    FinanceAction.ProposeCashAccountReactivation),
+                Envelope(provider, ErpPermissions.FinanceCashAccountReactivationApprove, permissions,
+                    FinanceAction.ApproveCashAccountReactivation)),
+            provider.GetRequiredService<IFinanceCashAccountBalanceReader>(),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
     private static ReceiptDraftService CreateReceiptDraftService(IServiceProvider provider)
     {
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
@@ -160,6 +196,24 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeReversal),
                 Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
                     FinanceAction.ApproveReversal)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static PaymentReversalProposalService CreatePaymentReversalProposalService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new PaymentReversalProposalService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinancePaymentReversalEnvelopes(
+                Envelope(provider, FinancePermissionNames.PaymentReversePropose, permissions,
+                    FinanceAction.ProposePaymentReversal),
+                Envelope(provider, FinancePermissionNames.PaymentReverseApprove, permissions,
+                    FinanceAction.ApprovePaymentReversal)),
             provider.GetRequiredService<TimeProvider>());
     }
 
