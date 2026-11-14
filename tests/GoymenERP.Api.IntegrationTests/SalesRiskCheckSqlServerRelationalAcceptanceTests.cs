@@ -36,9 +36,10 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Open receivables come from Finance open items ADMITTED through the real <see cref="FinanceOpenItemSourceAdmissionService"/>
 /// (approved official invoice installments) and are read by Sales only through the Finance-owned
 /// <see cref="ISalesPartyRiskReadPortV1"/>; the approved-unshipped remainder from approved priced orders stored through the real
-/// Sales store and a shipment recorded through the real Logistics store (AT-024 port). "Shipped but not invoiced" (S5), the credit
-/// limit and collateral have no owner record on main, and an order amount enters VAT-included (SAT-D46), which is API-03's: the
-/// result is "Unavailable" with every reason — never "Within". The local (TL) totals are reported (SAT-D53). The read
+/// Sales store and a shipment recorded through the real Logistics store (AT-024 port). "Shipped but not invoiced" (plan S0) is the
+/// same order's definite shipped quantity priced by the same approved basis, so it shares the remainder's missing VAT-included
+/// amount (SAT-D46, API-03's); its "invoiced, awaiting Finance" sub-row (SAT-D311) follows it. The credit limit and collateral have
+/// no owner record on main: the result is "Unavailable" with every reason — never "Within". The local (TL) totals are reported (SAT-D53). The read
 /// writes nothing in any module; another company's receivables never reach the check and another company cannot read it (404);
 /// without the draft read it is 403; without the price read every amount is withheld.
 /// <para>
@@ -103,14 +104,15 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
             local.GetProperty("grossRisk").ValueKind, local.GetProperty("grossRiskWithThisOrder").ValueKind));
         Assert.Equal(JsonValueKind.Null, check.GetProperty("inLimitCurrency").ValueKind);
         Assert.Equal(
-            [("ShippedNotInvoiced", "invoicing_owner_missing"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
+            [("ShippedNotInvoiced", "vat_inclusive_amount_unavailable"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
                 ("CreditLimit", "finance_credit_limit_owner_missing")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
         Assert.Equal(
             [
                 ("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "2001.00", null),
-                ("ShippedNotInvoiced", "sales.invoicing", "NoSource", null, null, "invoicing_owner_missing"),
+                ("ShippedNotInvoiced", "sales.unbilled-shipments", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
                 ("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
+                ("InvoicedAwaitingFinance", "sales.finalized-invoices", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
             ],
             check.GetProperty("components").EnumerateArray().Select(Figure));
         // SAT-D48: the checked order is approved — already in the remainder, it adds nothing.

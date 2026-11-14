@@ -39,10 +39,9 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
 
         Assert.Equal(("Unavailable", "Visible"), (check.GetProperty("result").GetString(), check.GetProperty("amountDisclosure").GetString()));
         // The decision's reasons are the missing owners only: the local (TL) total is information only (SAT-D80), so the missing
-        // rate never becomes a decision reason.
+        // rate never becomes a decision reason. Nothing is shipped, so "shipped but not invoiced" (plan S0) is an available zero.
         Assert.Equal(
-            [("ShippedNotInvoiced", "invoicing_owner_missing"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
-                ("CreditLimit", "finance_credit_limit_owner_missing")],
+            [("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"), ("CreditLimit", "finance_credit_limit_owner_missing")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
 
         // The open receivables: one amount per currency, each in its own currency — the USD amount is not converted to TL.
@@ -56,6 +55,10 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         Assert.Equal(2, amounts.Count);
         Assert.Equal(1000m, amounts[Currency]);
         Assert.Equal(250m, amounts[usd]);
+        var unbilled = check.GetProperty("components")[1];
+        Assert.Equal(("ShippedNotInvoiced", "sales.unbilled-shipments", "Available", 0),
+            (unbilled.GetProperty("kind").GetString(), unbilled.GetProperty("source").GetString(),
+                unbilled.GetProperty("state").GetString(), unbilled.GetProperty("amounts").GetArrayLength()));
 
         var local = check.GetProperty("inLocalCurrency");
         Assert.Equal((Currency.ToString("D"), JsonValueKind.Null, JsonValueKind.Null), (local.GetProperty("currencyId").GetString(),

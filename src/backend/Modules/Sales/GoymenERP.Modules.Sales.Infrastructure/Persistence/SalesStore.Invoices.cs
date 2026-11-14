@@ -205,6 +205,29 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         return found.ToHashSet();
     }
 
+    public async Task<IReadOnlySet<Guid>> FindFinalizedInvoiceShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(shipmentIds);
+        RequireResolvedCompany();
+        var ids = shipmentIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        // Plan S0 (a): only a FINALIZED invoice takes a share out of "shipped, not invoiced"; one statement keeps the line and its
+        // invoice's state on the same snapshot, both under the tenant filter.
+        const int finalized = (int)SalesInvoiceState.Finalized;
+        var found = await (from line in dbContext.InvoiceLines.AsNoTracking()
+                           join invoice in dbContext.Invoices.AsNoTracking()
+                               on new { line.CompanyId, Id = line.InvoiceId } equals new { invoice.CompanyId, invoice.Id }
+                           where line.ReleasedAtUtc == null && ids.Contains(line.ShipmentId) && invoice.State == finalized
+                           select line.ShipmentId)
+            .ToListAsync(cancellationToken);
+        return found.ToHashSet();
+    }
+
     public async Task<SalesInvoiceExportBatch> ListFinalizedInvoicesAsync(DateTimeOffset fromUtc, DateTimeOffset toUtcExclusive, int limit,
         CancellationToken cancellationToken = default)
     {

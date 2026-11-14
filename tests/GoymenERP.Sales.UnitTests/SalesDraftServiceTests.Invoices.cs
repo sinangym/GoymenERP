@@ -950,6 +950,19 @@ public sealed partial class SalesDraftServiceTests
             Task.FromResult<IReadOnlySet<Guid>>(shipmentIds.Where(id => Invoiced.Contains(id)
                 || Stored.Values.Any(invoice => invoice.Lines.Any(line => line.Share.ShipmentId == id))).ToHashSet());
 
+        public int FinalizedReads { get; private set; }
+
+        /// <summary>Shipments a finalized invoice took, set directly (the risk check's tests need no full invoice for it).</summary>
+        public HashSet<Guid> FinalizedShipments { get; } = [];
+
+        public Task<IReadOnlySet<Guid>> FindFinalizedInvoiceShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
+            CancellationToken cancellationToken = default)
+        {
+            FinalizedReads++;
+            return Task.FromResult<IReadOnlySet<Guid>>(shipmentIds.Where(id => FinalizedShipments.Contains(id) || Stored.Values.Any(invoice =>
+                invoice.State == SalesInvoiceState.Finalized && invoice.Lines.Any(line => line.Share.ShipmentId == id))).ToHashSet());
+        }
+
         private SalesInvoiceStoreResult? Replay(SalesDraftWriteEnvelope envelope, string requestHash)
         {
             if (!Attempts.TryGetValue(envelope.IdempotencyKey, out var attempt))

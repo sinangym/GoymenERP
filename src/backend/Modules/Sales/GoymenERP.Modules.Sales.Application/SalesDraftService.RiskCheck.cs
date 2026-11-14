@@ -15,7 +15,19 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <see cref="ISalesPartyRiskReadPortV1"/> (never its tables; SAT-D51: Finance owns the limit and collateral, Cari only shows
 /// them). Open receivables are net of the customer's unallocated payments (SAT-D52). Not composed, failing or malformed → each
 /// is "Unavailable".</item>
-/// <item><b>Shipped, not invoiced</b>: invoices are S5 — "NoSource" (never zero), so the result cannot be "Within" yet.</item>
+/// <item><b>Shipped, not invoiced</b> (DEC-FIN-007 second stage, plan S0): per line of every order of the customer that is open
+/// and approved or has a posted shipment share (<see cref="ISalesInvoiceableShipmentReadPortV1"/>, the Logistics owner), the
+/// delivery owner's definite shipped total (AT-024, the SAME fact the remainder subtracts — plan S0 (c): a definite shipment
+/// whose dispatch note is not approved yet is here, exactly once, never in the remainder too) less the shares on a FINALIZED
+/// Sales invoice (plan S0 (a): a draft, pending, approved, rejected or cancelled invoice leaves its share here). Priced like the
+/// remainder: the payable amount (SAT-D46 / SAT-D183) from API-03's calculator at the order's approved basis, one amount per
+/// order. SAT-D311: a finalized invoice Finance has not processed stays in this total and is shown as the
+/// <c>InvoicedAwaitingFinance</c> sub-row; whether Finance processed it must come from the same Finance answer as the open
+/// receivables (plan S0 (b)), which does not carry it yet — so a customer with a finalized share gets both "Unavailable"
+/// (<c>finance_processed_set_unavailable</c>), never a double count or a gap. Posted shares beyond the definite shipments of a
+/// line, an owner not composed, failing or malformed, or more shares than one read takes are "Unavailable" with their reason.
+/// SAT-D313 (the shipment-plan basis of the remainder) waits for the Logistics plan-quantity read; until then the remainder
+/// below is unchanged.</item>
 /// <item><b>Approved, not shipped</b> (SAT-D50: every internally approved order, customer acceptance or not): for every open
 /// approved order of the same customer account (the store's <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per
 /// line the approved quantity − the delivery owner's shipped total, not below zero. The approved basis is the current lines while
@@ -43,6 +55,12 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
     /// </summary>
     public const int MaximumRiskOrders = 200;
 
+    /// <summary>
+    /// The most posted shipment shares of one customer account one risk read takes — the Logistics read's own candidate bound (a
+    /// technical response bound, not a business policy): above it "shipped, not invoiced" is "Unavailable", never a smaller sum.
+    /// </summary>
+    public const int MaximumRiskShares = SalesDispatchApiV1.MaximumCandidateShares;
+
     public async Task<SalesOrderDraftRiskCheckResponse> GetDraftRiskCheckAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -69,7 +87,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        var (party, remainder, shippedNotInvoiced, thisOrder, local, limitCurrency, evaluation) =
+        var (party, remainder, shippedNotInvoiced, awaitingFinance, thisOrder, local, limitCurrency, evaluation) =
             await EvaluateRiskAsync(scope, bindings.ReadPermission, draft, cancellationToken);
 
         // The price read is asked last, after every other fence: the freshest word on whether amounts cross.
@@ -113,8 +131,10 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
             Totals(evaluation.InLimitCurrency),
             [
                 Figure(SalesDraftRiskFigureKindsV1.OpenReceivables, party.OpenReceivablesSource, party.OpenReceivables),
-                Figure(SalesDraftRiskFigureKindsV1.ShippedNotInvoiced, SalesDraftRiskSourcesV1.Invoicing, shippedNotInvoiced),
+                Figure(SalesDraftRiskFigureKindsV1.ShippedNotInvoiced, SalesDraftRiskSourcesV1.UnbilledShipments, shippedNotInvoiced),
                 Figure(SalesDraftRiskFigureKindsV1.ApprovedUnshippedRemainder, SalesDraftRiskSourcesV1.ApprovedOrderRemainders, remainder),
+                // SAT-D311: a sub-row of shipped-not-invoiced (already inside it), shown on its own; never added to the totals again.
+                Figure(SalesDraftRiskFigureKindsV1.InvoicedAwaitingFinance, SalesDraftRiskSourcesV1.FinalizedInvoices, awaitingFinance),
             ],
             Figure(SalesDraftRiskFigureKindsV1.ThisOrder, SalesDraftRiskSourcesV1.ThisOrder, thisOrder),
             Figure(SalesDraftRiskFigureKindsV1.CreditLimit, party.CreditLimitSource, party.CreditLimit),
@@ -138,18 +158,23 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
-        var (_, _, _, _, _, _, evaluation) = await EvaluateRiskAsync(scope, permission, order, cancellationToken);
+        var (_, _, _, _, _, _, _, evaluation) = await EvaluateRiskAsync(scope, permission, order, cancellationToken);
         return evaluation.Outcome;
     }
 
     /// <summary>The inputs and the calculator's evaluation of one order, every owner read fenced on <paramref name="permission"/>.</summary>
-    private async Task<(PartyRiskInputs Party, SalesRiskInput Remainder, SalesRiskInput ShippedNotInvoiced, SalesRiskInput ThisOrder,
-        SalesRiskCurrency? Local, SalesRiskCurrency? LimitCurrency, SalesRiskEvaluation Evaluation)> EvaluateRiskAsync(Scope scope,
-        string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    private async Task<(PartyRiskInputs Party, SalesRiskInput Remainder, SalesRiskInput ShippedNotInvoiced, SalesRiskInput AwaitingFinance,
+        SalesRiskInput ThisOrder, SalesRiskCurrency? Local, SalesRiskCurrency? LimitCurrency, SalesRiskEvaluation Evaluation)>
+        EvaluateRiskAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         var party = await PartyRiskAsync(scope, permission, draft, cancellationToken);
-        var remainder = await ApprovedRemainderAsync(scope, permission, draft, cancellationToken);
-        var shippedNotInvoiced = SalesRiskInput.NoSource(SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing);
+
+        // Plan S0 (c): the remainder and the unbilled stage read the delivery owner's definite shipments once per order and share
+        // that one answer, so a shipped quantity is subtracted from one stage exactly where it is added to the other.
+        var recordedByOrder = new Dictionary<Guid, Dictionary<Guid, (decimal Shipped, decimal Delivered)>>();
+        var (remainder, openOrders) = await ApprovedRemainderAsync(scope, permission, draft, recordedByOrder, cancellationToken);
+        var (shippedNotInvoiced, awaitingFinance) = await UnbilledShipmentsAsync(scope, permission, draft, openOrders, recordedByOrder,
+            cancellationToken);
         var thisOrder = await ThisOrderAsync(scope, permission, draft, cancellationToken);
 
         // SAT-D53: the totals in the company's local currency (TL) and in the credit limit's currency; never the order's.
@@ -161,7 +186,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
             [party.OpenReceivables, shippedNotInvoiced, remainder, thisOrder], cancellationToken);
         var evaluation = SalesCustomerRiskCalculator.Evaluate(local, limitCurrency, party.OpenReceivables, shippedNotInvoiced,
             remainder, thisOrder, party.CreditLimit, rates);
-        return (party, remainder, shippedNotInvoiced, thisOrder, local, limitCurrency, evaluation);
+        return (party, remainder, shippedNotInvoiced, awaitingFinance, thisOrder, local, limitCurrency, evaluation);
     }
 
     /// <summary>
@@ -337,7 +362,13 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
     private sealed record RiskBasisLine(Guid LineId, Guid OrderUnitId, decimal Quantity, CommercialDraftFields Commercial,
         SalesLineTaxSnapshot? Tax);
 
-    private async Task<SalesRiskInput> ApprovedRemainderAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    /// <summary>
+    /// The approved, not yet shipped remainder and the customer's open approved orders it was measured on (null when there are more
+    /// than one read takes). Every delivery answer read here is kept in <paramref name="recordedByOrder"/> for the unbilled stage.
+    /// </summary>
+    private async Task<(SalesRiskInput Remainder, IReadOnlyList<SalesOrderDraft>? Orders)> ApprovedRemainderAsync(Scope scope,
+        string? permission, SalesOrderDraft draft, Dictionary<Guid, Dictionary<Guid, (decimal Shipped, decimal Delivered)>> recordedByOrder,
+        CancellationToken cancellationToken)
     {
         IReadOnlyList<SalesOrderDraft> orders;
         try
@@ -354,9 +385,16 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
 
         if (orders.Count > MaximumRiskOrders)
         {
-            return SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.OrderReadBoundExceeded);
+            return (SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.OrderReadBoundExceeded), null);
         }
 
+        return (await RemainderOfAsync(scope, permission, draft, orders, recordedByOrder, cancellationToken), orders);
+    }
+
+    private async Task<SalesRiskInput> RemainderOfAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        IReadOnlyList<SalesOrderDraft> orders, Dictionary<Guid, Dictionary<Guid, (decimal Shipped, decimal Delivered)>> recordedByOrder,
+        CancellationToken cancellationToken)
+    {
         var amounts = new List<SalesRiskAmount>();
         foreach (var order in orders)
         {
@@ -378,6 +416,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
                 return SalesRiskInput.Unavailable(unread!);
             }
 
+            recordedByOrder[order.Id] = recorded;
             if (OrderRemains(basis, recorded) is not { } remains)
             {
                 return SalesRiskInput.Unavailable(basis.Reason!);
@@ -403,6 +442,243 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
         }
 
         return SalesRiskInput.Available(amounts, SalesRiskTaxBasis.IncludingTax);
+    }
+
+    /// <summary>
+    /// DEC-FIN-007 second stage (plan S0, SAT-D311): the shipped, not yet invoiced amount of the customer and its finalized,
+    /// not-Finance-processed sub-row. Both answers are the same fail-closed state whenever the stage cannot be made whole.
+    /// </summary>
+    private async Task<(SalesRiskInput ShippedNotInvoiced, SalesRiskInput AwaitingFinance)> UnbilledShipmentsAsync(Scope scope,
+        string? permission, SalesOrderDraft draft, IReadOnlyList<SalesOrderDraft>? openOrders,
+        Dictionary<Guid, Dictionary<Guid, (decimal Shipped, decimal Delivered)>> recordedByOrder, CancellationToken cancellationToken)
+    {
+        static (SalesRiskInput, SalesRiskInput) Both(string reasonCode) =>
+            (SalesRiskInput.Unavailable(reasonCode), SalesRiskInput.Unavailable(reasonCode));
+
+        var (shares, sharesUnread) = await PostedSharesAsync(scope, permission, draft, cancellationToken);
+        if (shares is null)
+        {
+            return Both(sharesUnread!);
+        }
+
+        if (openOrders is null)
+        {
+            // The open orders could not all be read: their definite shipments are not known either.
+            return Both(SalesDraftRiskReasonCodesV1.OrderReadBoundExceeded);
+        }
+
+        // Plan S0 (a): a share leaves this stage only on a FINALIZED Sales invoice; draft, pending, approved, rejected and
+        // cancelled invoices (or a released line) keep it here.
+        IReadOnlySet<Guid> finalized;
+        if (invoiceRecords is null)
+        {
+            return Both(SalesDraftRiskReasonCodesV1.InvoiceRecordUnavailable);
+        }
+
+        if (shares.Count == 0)
+        {
+            finalized = new HashSet<Guid>();
+        }
+        else
+        {
+            try
+            {
+                finalized = await GuardedAsync(scope, permission,
+                    () => invoiceRecords.FindFinalizedInvoiceShipmentsAsync([.. shares.Select(share => share.ShipmentId)], cancellationToken),
+                    cancellationToken);
+            }
+            catch (SalesDraftStoreException exception)
+            {
+                throw Store(exception);
+            }
+        }
+
+        if (finalized.Count > 0)
+        {
+            // SAT-D311 / plan S0 (b): a finalized share is either still here (Finance has not processed it — the sub-row) or in
+            // the open receivables (processed). Which one must come from the SAME Finance answer as the receivables, and that
+            // answer does not carry it yet: neither total is made, never a double count or a gap.
+            return Both(SalesDraftRiskReasonCodesV1.FinanceProcessedSetUnavailable);
+        }
+
+        // Every order with something to count: the open approved ones (their definite shipments, plan S0 (c)) and the order of
+        // every posted share (a fully shipped or closed order still waits for its invoice).
+        var orders = openOrders.ToDictionary(order => order.Id);
+        var extra = shares.Select(share => share.SalesOrderId).Where(id => !orders.ContainsKey(id)).Distinct().ToArray();
+        if (orders.Count + extra.Length > MaximumRiskOrders)
+        {
+            return Both(SalesDraftRiskReasonCodesV1.ShipmentReadBoundExceeded);
+        }
+
+        foreach (var orderId in extra)
+        {
+            SalesOrderDraft? order;
+            try
+            {
+                order = await GuardedAsync(scope, permission, () => store.FindDraftAsync(orderId, cancellationToken), cancellationToken);
+            }
+            catch (SalesDraftStoreException exception)
+            {
+                throw Store(exception);
+            }
+
+            if (order is null)
+            {
+                return Both(SalesDraftRiskReasonCodesV1.OrderBasisUnreadable);
+            }
+
+            orders[orderId] = order;
+        }
+
+        var sharedByLine = shares
+            .GroupBy(share => (share.SalesOrderId, share.SalesOrderLineId))
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var amounts = new List<SalesRiskAmount>();
+        foreach (var order in orders.Values)
+        {
+            if (order.CompanyId != scope.CompanyId || order.Header.PartyId != draft.Header.PartyId
+                || order.Header.CompanyAccountId != draft.Header.CompanyAccountId)
+            {
+                return Both(SalesDraftRiskReasonCodesV1.OrderBasisUnreadable);
+            }
+
+            if (!recordedByOrder.TryGetValue(order.Id, out var recorded))
+            {
+                var (read, unread) = await RecordedForRiskAsync(scope, permission, order, cancellationToken);
+                if (read is null)
+                {
+                    return Both(unread!);
+                }
+
+                recorded = read;
+                recordedByOrder[order.Id] = recorded;
+            }
+
+            var lines = order.Lines.ToDictionary(line => line.Id);
+            var unbilled = new Dictionary<Guid, decimal>();
+            foreach (var ((orderId, lineId), lineShares) in sharedByLine)
+            {
+                if (orderId != order.Id)
+                {
+                    continue;
+                }
+
+                if (!lines.TryGetValue(lineId, out var line) || lineShares.Any(share => share.UnitId != line.OrderUnit.UnitId))
+                {
+                    // A share of a line the order does not have, or in another unit than the line's order unit.
+                    return Both(SalesDraftRiskReasonCodesV1.ShipmentAnswerInvalid);
+                }
+
+                var shipped = recorded.TryGetValue(lineId, out var entry) ? entry.Shipped : 0m;
+                if (lineShares.Sum(share => share.Quantity) > shipped)
+                {
+                    // More on approved dispatch notes than the delivery owner's definite shipments: the two facts disagree.
+                    return Both(SalesDraftRiskReasonCodesV1.ShipmentFactsInconsistent);
+                }
+            }
+
+            foreach (var (lineId, entry) in recorded)
+            {
+                // Plan S0 (c): the line's definite shipped total — the remainder subtracts this same number — less what a
+                // finalized invoice took (none here: a finalized share returned above).
+                if (entry.Shipped > 0m)
+                {
+                    unbilled[lineId] = entry.Shipped;
+                }
+            }
+
+            if (unbilled.Count == 0)
+            {
+                continue;
+            }
+
+            if (RiskBasis(order) is not { } basis)
+            {
+                return Both(SalesDraftRiskReasonCodesV1.OrderBasisUnreadable);
+            }
+
+            if (QuantityPayable(basis, unbilled) is not { } payable)
+            {
+                return Both(basis.Reason!);
+            }
+
+            if (payable.Amount > 0m)
+            {
+                amounts.Add(payable);
+            }
+        }
+
+        return (SalesRiskInput.Available(amounts, SalesRiskTaxBasis.IncludingTax),
+            SalesRiskInput.Available([], SalesRiskTaxBasis.IncludingTax));
+    }
+
+    /// <summary>
+    /// The Logistics owner's posted shipment shares of the order's customer (its company account, this party only); null with
+    /// the reason when it cannot say — not composed, failing, malformed or more than one read takes. A refusal is a 403.
+    /// </summary>
+    private async Task<(IReadOnlyList<SalesInvoiceableShipmentV1>? Shares, string? Reason)> PostedSharesAsync(Scope scope,
+        string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    {
+        if (postedShares is null)
+        {
+            return (null, SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable);
+        }
+
+        SalesInvoiceableShipmentAnswerV1? answer;
+        try
+        {
+            answer = await GuardedAsync(scope, permission,
+                () => postedShares.ReadInvoiceableShipmentsAsync(
+                    new SalesInvoiceableShipmentQueryV1(draft.Header.CompanyAccountId, MaximumRiskShares), cancellationToken),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return (null, SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable);
+        }
+
+        if (answer?.Outcome == SalesDispatchReadOutcomeV1.Denied)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        if (answer is null || answer.Outcome != SalesDispatchReadOutcomeV1.Found)
+        {
+            return (null, SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable);
+        }
+
+        if (answer.CompanyId != scope.CompanyId || answer.Shares is null
+            || answer.InvoicedState != SalesInvoicedStateSourceV1.NoSource)
+        {
+            return (null, SalesDraftRiskReasonCodesV1.ShipmentAnswerInvalid);
+        }
+
+        if (answer.HasMore || answer.Shares.Count > MaximumRiskShares)
+        {
+            // More shares than one read takes: never a smaller sum.
+            return (null, SalesDraftRiskReasonCodesV1.ShipmentReadBoundExceeded);
+        }
+
+        var seen = new HashSet<Guid>();
+        var shares = new List<SalesInvoiceableShipmentV1>(answer.Shares.Count);
+        foreach (var share in answer.Shares)
+        {
+            if (share is null || share.CompanyAccountId != draft.Header.CompanyAccountId || share.CustomerPartyId == Guid.Empty
+                || share.ShipmentId == Guid.Empty || share.SalesOrderId == Guid.Empty || share.SalesOrderLineId == Guid.Empty
+                || share.DispatchNoteId == Guid.Empty || share.UnitId == Guid.Empty || share.Quantity <= 0m
+                || string.IsNullOrWhiteSpace(share.SystemNumber) || share.NoteLineNo < 1 || !seen.Add(share.ShipmentId))
+            {
+                return (null, SalesDraftRiskReasonCodesV1.ShipmentAnswerInvalid);
+            }
+
+            // One company account can carry more than one customer: only this customer's shares are its risk.
+            if (share.CustomerPartyId == draft.Header.PartyId)
+            {
+                shares.Add(share);
+            }
+        }
+
+        return (shares, null);
     }
 
     /// <summary>
@@ -448,15 +724,45 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
     /// </summary>
     private static SalesRiskAmount? RemainingPayable(RiskOrderBasis basis, IReadOnlyDictionary<Guid, (decimal Shipped, decimal Delivered)> recorded)
     {
-        var inputs = new List<SalesTotalsLineInput>(basis.Lines.Count);
+        var quantities = new Dictionary<Guid, decimal>();
         foreach (var line in basis.Lines)
         {
             var shipped = recorded.TryGetValue(line.LineId, out var entry) ? entry.Shipped : 0m;
             if (line.Quantity > shipped)
             {
-                inputs.Add(new SalesTotalsLineInput(line.LineId, inputs.Count + 1, line.OrderUnitId, line.Quantity - shipped,
-                    line.Commercial, line.Tax));
+                quantities[line.LineId] = line.Quantity - shipped;
             }
+        }
+
+        return QuantityPayable(basis, quantities);
+    }
+
+    /// <summary>
+    /// SAT-D46 / SAT-D183: the PAYABLE amount of the given quantity per basis line (in the line's order unit, at the basis' approved
+    /// commercial fields and tax snapshot), from the one totals calculator in the basis' currency at its money scale. Null with
+    /// the reason set when it cannot be computed — a quantity for a line the basis does not have included (never dropped).
+    /// </summary>
+    private static SalesRiskAmount? QuantityPayable(RiskOrderBasis basis, IReadOnlyDictionary<Guid, decimal> quantities)
+    {
+        var inputs = new List<SalesTotalsLineInput>(basis.Lines.Count);
+        var taken = 0;
+        foreach (var line in basis.Lines)
+        {
+            if (quantities.TryGetValue(line.LineId, out var quantity))
+            {
+                taken++;
+                if (quantity > 0m)
+                {
+                    inputs.Add(new SalesTotalsLineInput(line.LineId, inputs.Count + 1, line.OrderUnitId, quantity, line.Commercial, line.Tax));
+                }
+            }
+        }
+
+        if (taken != quantities.Count)
+        {
+            // A quantity of a line outside the approved basis has no approved price: no amount, never a smaller one.
+            basis.Reason = SalesDraftRiskReasonCodesV1.OrderBasisUnreadable;
+            return null;
         }
 
         if (inputs.Count == 0)

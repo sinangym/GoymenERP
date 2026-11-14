@@ -47,8 +47,9 @@ function over(): Body {
   })
   body.components = [
     available('OpenReceivables', 'finance.open-items', '7500.00'),
-    available('ShippedNotInvoiced', 'sales.invoicing', null),
+    available('ShippedNotInvoiced', 'sales.unbilled-shipments', null),
     available('ApprovedUnshippedRemainder', 'sales.approved-order-remainders', null),
+    available('InvoicedAwaitingFinance', 'sales.finalized-invoices', null),
   ]
   body.thisOrder = available('ThisOrder', 'sales.this-order', '4500.00')
   body.creditLimit = available('CreditLimit', 'finance.party-credit-limit', '10000.00')
@@ -109,10 +110,14 @@ describe('S-04 customer risk card (API-06 / UI-15)', () => {
     expect(within(section).getByTestId('sales-risk-figure-ApprovedUnshippedRemainder-amount').textContent).toBe(T.recordedZero)
     expect(within(section).getByTestId('sales-risk-figure-ShippedNotInvoiced-amount').textContent).toBe(T.notAvailable)
     expect(within(section).getByTestId('sales-risk-figure-ShippedNotInvoiced-reason').textContent)
-      .toBe(riskReasonText('invoicing_owner_missing'))
+      .toBe(riskReasonText('finance_processed_set_unavailable'))
+    // SAT-D311: the "invoiced, awaiting Finance" sub-row is its own row, with its own reason, never added on the screen.
+    expect(within(section).getByTestId('sales-risk-figure-InvoicedAwaitingFinance-amount').textContent).toBe(T.notAvailable)
+    expect(within(section).getByTestId('sales-risk-figure-InvoicedAwaitingFinance-reason').textContent)
+      .toBe(riskReasonText('finance_processed_set_unavailable'))
     const reasons = within(within(section).getByTestId('sales-risk-reasons')).getAllByRole('listitem')
     expect(reasons.map((item) => item.getAttribute('data-code')))
-      .toEqual(['invoicing_owner_missing', 'vat_inclusive_amount_unavailable', 'finance_credit_limit_owner_missing'])
+      .toEqual(['finance_processed_set_unavailable', 'vat_inclusive_amount_unavailable', 'finance_credit_limit_owner_missing'])
     expect(within(section).queryByTestId('sales-risk-withheld')).toBeNull()
 
     const reads = riskCalls(harness.calls)
@@ -174,6 +179,10 @@ describe('S-04 customer risk card (API-06 / UI-15)', () => {
     expect(decodeRiskCheck({ ...risk(), extra: true }, decodedDetail())).toBeNull()
     expect(decodeRiskCheck({ ...risk(), result: 'Maybe' }, decodedDetail())).toBeNull()
     expect(decodeRiskCheck({ ...risk(), components: risk().components.slice(1) }, decodedDetail())).toBeNull()
+    // SAT-D311: the sub-row follows the three stages; an answer without it or with it out of place is refused.
+    expect(decodeRiskCheck({ ...risk(), components: risk().components.slice(0, 3) }, decodedDetail())).toBeNull()
+    const [receivables, unbilled, remainder, awaitingFinance] = risk().components
+    expect(decodeRiskCheck({ ...risk(), components: [receivables, awaitingFinance, remainder, unbilled] }, decodedDetail())).toBeNull()
     const negative = over()
     negative.creditLimit.amounts = [{ currencyId: TL, amount: '-1' }]
     expect(decodeRiskCheck(negative, decodedDetail())).toBeNull()
