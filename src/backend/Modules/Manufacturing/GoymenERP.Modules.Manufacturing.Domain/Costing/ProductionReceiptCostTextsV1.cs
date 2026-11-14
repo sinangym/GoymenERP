@@ -6,9 +6,9 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Costing;
 /// <summary>
 /// The Turkish user texts of the production receipt cost notes, read from <c>ProductionReceiptCostTextsV1.resx</c> next
 /// to this file (AGENTS: user texts are Turkish and come from a resource file). The texts are those of the options
-/// Sinan chose: "boya maliyeti dahil değil" (#66 6857496471 (5)) and "kg dışı girdi maliyeti dahil değil"
-/// (#66 6864631364 (13)). The neutral resources are read with the invariant culture, so the same order gives the
-/// same text on every server. A missing text is a build fault, never a key shown to a user: it throws.
+/// Sinan chose: "boya maliyeti dahil değil" (SAT-D327 / #66 6857496471 (5)) and "kg dışı girdi maliyeti dahil değil"
+/// (URT-D45 / #66 6864631364 (13)). The neutral resources are read with the invariant culture, so the same order gives
+/// the same text on every server. A missing text is a build fault, never a key shown to a user: it throws.
 /// </summary>
 public static class ProductionReceiptCostTextsV1
 {

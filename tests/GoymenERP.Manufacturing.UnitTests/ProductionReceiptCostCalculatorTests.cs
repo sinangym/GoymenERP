@@ -648,8 +648,9 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void A_usable_remnant_also_returns_at_the_net_raw_material_kg_cost_with_scrap_in_cost()
     {
-        // Author reading of "as a return" (#66 6864631364 (14)) with scrap in cost: the same order, the remnant
-        // takes 2000 TL out and the weighed scrap stays on the product: (40000 - 2000) / 900.
+        // Sinan's decision #66 6874860782 (SINAN-CEVAP (10), answering the remnant share of URT-D46 (6)): with scrap
+        // in cost the remnant returns at the net raw-material kg cost like URT-D46 / #66 6864631364 (14), and the scrap
+        // share is borne by the product only. The same order: remnant 2000 TL, (40000 - 2000) / 900 = 42.22 TL per kg.
         var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
             good: 900m, second: 0m, remnant: 50m, weighedScrap: 50m, scrap: ScrapCostSettingStatus.On));
 
