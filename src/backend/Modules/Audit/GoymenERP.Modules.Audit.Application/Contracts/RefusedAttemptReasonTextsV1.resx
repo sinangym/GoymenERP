@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <data name="Validation" xml:space="preserve"><value>İstek doğrulama kuralına uymadığı için reddedildi.</value></data>
+  <data name="BusinessRule" xml:space="preserve"><value>İşlem iş kuralı nedeniyle reddedildi.</value></data>
+  <data name="Concurrency" xml:space="preserve"><value>Kayıt bu sırada başka bir işlemle değiştiği için reddedildi.</value></data>
+  <data name="Idempotency" xml:space="preserve"><value>İşlem anahtarı kuralına uymadığı için reddedildi.</value></data>
+  <data name="RequestShape" xml:space="preserve"><value>İstek biçimi geçersiz olduğu için reddedildi.</value></data>
+</root>

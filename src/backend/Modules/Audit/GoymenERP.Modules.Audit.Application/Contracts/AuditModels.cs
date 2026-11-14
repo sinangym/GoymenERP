@@ -25,6 +25,11 @@ public static class AuditAiInvolvement
 public static class AuditOutcomes
 {
     public const string Succeeded = "Succeeded";
+
+    /// <summary>
+    /// A refused business attempt (F-023, KIM-D7). Written only through <see cref="IRefusedAttemptRecorderV1"/>.
+    /// </summary>
+    public const string Refused = "Refused";
 }
 
 public sealed record AuditEventDraft(
