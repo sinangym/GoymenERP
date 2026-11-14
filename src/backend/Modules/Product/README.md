@@ -645,3 +645,23 @@ which never reached main and is removed.
 | Rollback | Migration `20261031195253_AddProductItemTypes` (`dotnet ef`): `Down` refuses with `THROW 51132` while any item type or command answer exists (forward fix). Forward-fix migration `20261101144030_MoveProductItemTypesToProductCard` (`dotnet ef`, SAT-D149): `Up` refuses with `THROW 51151` when one product has different item types in different companies (it never chooses), otherwise moves the agreed value (version 1, the latest change's actor/time/company) and drops `product.ProductItemTypes`; `Down` refuses with `THROW 51152` while any shared item type exists, and on an empty store restores the empty company-scoped table. |
 
 Not here: who besides `product.item-type.manage` holders reads the item type (EK20 open item); choosing the order's buyer situation (SAT-D140, Sales follow-up).
+
+## Product dimensions (BS-9, U-08 input)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-11-11*.md` BS-9/BS-17 and `SINAN_KARARLARI_2026-11-12_URUN_EK1.md` URN-D7..D9;
+candidate measures in `docs/delivery/URUN_BIRIM_CEVRIM_KATSAYI_ADAYLARI_v1.md`. A separate "Ebat/kalınlık" tab on the product
+card holds the section measures that the U-08 unit conversion reads. A product without a row has "kaynak yok" (no estimate).
+The density is the company Settings value (not stored on the card); galvanizing is not counted.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, ONE row on the **shared** card keyed by `ProductId` (the SAT-D149 item-type pattern), in `ProductPriceListDbContext`: `product.ProductCardDimensions` (`SectionKind` `IN ('Sheet','Coil','RoundTube','Profile')`, millimetre measures `decimal(18,3)`, `KgPerMetre` `decimal(18,6)`, version, update facts with `UpdatedInCompanyId`); command answers in the company-scoped `product.ProductDimensionAttempts`. Written only through `ProductDimensionService` (DbContext write guard). |
+| Shape | Sheet: thickness, width, length. Coil: thickness, width. RoundTube: outer diameter, wall (2·wall ≤ OD), optional kg/m (table value). Profile: width, height, wall (2·wall ≤ width and ≤ height), kg/m required. Every other measure is null; every measure is > 0. Checked by `ProductDimensionShape` and the database check `CK_ProductCardDimensions_Shape`. URN-D8: inputs are never rounded — a value with more decimals than its column holds is refused (`product_dimension_measure_invalid`). |
+| Authority | ONE name, `product.dimension.manage` (`ProductDimensionPermissionsV1.Manage` = `ErpPermissions.ProductDimensionManage`): company-wide, not Critical, granted to NO role here (the grant is a human gate). A holder in ANY company changes the shared value. Measured fresh first and before the answer / save. |
+| Command | `PUT /api/v1/product-dimensions/{productId}` `{expectedVersion ("0" = none), sectionKind, thicknessMm, widthMm, lengthMm, heightMm, outerDiameterMm, wallThicknessMm, kgPerMetre, reason}`: Idempotency-Key (own attempts, same key + body replays, another body 409), stale version 409, unknown card code-less 404, shape/precision 400; ONE audit event `product.dimension.changed.v1` in the ACTING company with the whole reason; a no-op writes none. `GET` answers the shared row (version "0" and nulls while none) with `updatedInCompanyId`. |
+| Read port | `IProductDimensionReaderV1` (access only, no permission; never throws for a missing card or row) — for the U-08 conversion consumer (STK-S11). The calculator itself is unchanged here. |
+| Screen | `ProductDimensionPanel` on the product card: shows the measures or "girilmemiş (kaynak yok)", says the row is shared (and when the last change was made in another company), changes it with an explicit kind; without the permission the server answers 403 and the panel is hidden. |
+| Rollback | Migration `20261114194618_AddProductCardDimensions` (`dotnet ef`): `Down` refuses with `THROW 51290` while any dimension row or command answer exists (forward fix); an empty store rolls back freely. |
+
+Not here: who besides `product.dimension.manage` holders reads the measures; whether the shared (not per-company) row and the
+per-kind required measures are final (NEEDS-SINAN); overlap with flat-family template fields.
