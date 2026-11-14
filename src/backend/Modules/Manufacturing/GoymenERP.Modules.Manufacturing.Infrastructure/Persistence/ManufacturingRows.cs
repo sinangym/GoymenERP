@@ -95,6 +95,13 @@ internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
     public string? SalesOrderLinkedBy { get; set; }
     public DateTimeOffset? SalesOrderLinkedAtUtc { get; set; }
     public long SalesOrderLinkRevision { get; set; }
+
+    /// <summary>
+    /// Üretim F-010a (URT-D29): the termin a user entered by hand (a calendar day, no time), or null, and how many times it
+    /// was set, changed or removed. Not plan content: the version does not move.
+    /// </summary>
+    public DateOnly? RequestedDueDate { get; set; }
+    public long DueDateRevision { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public string PayloadHash { get; set; } = string.Empty;

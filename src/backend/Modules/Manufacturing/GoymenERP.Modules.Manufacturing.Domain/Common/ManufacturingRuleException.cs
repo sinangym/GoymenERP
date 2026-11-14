@@ -109,6 +109,18 @@ public static class ManufacturingRuleCodes
     public const string PlanSalesOrderLinkNoChange = "manufacturing_plan_sales_order_link_no_change";
 
     /// <summary>
+    /// Üretim F-010a (URT-D29): the plan's termin moved since the caller read it (its termin revision differs); the caller
+    /// reads the plan again. Answered as a conflict.
+    /// </summary>
+    public const string PlanDueDateChanged = "manufacturing_plan_due_date_changed";
+
+    /// <summary>Üretim F-010a (URT-D29): the plan's order is closed; its termin no longer changes.</summary>
+    public const string PlanDueDateOrderClosed = "manufacturing_plan_due_date_order_closed";
+
+    /// <summary>Üretim F-010a (URT-D29): the request sets the termin the plan already has (or removes an absent one).</summary>
+    public const string PlanDueDateNoChange = "manufacturing_plan_due_date_no_change";
+
+    /// <summary>
     /// Üretim U2-b / API-16: the plan's customer-owned inputs belong to a different party than the sales order line's
     /// customer; the link (or a revision under a link) is refused.
     /// </summary>

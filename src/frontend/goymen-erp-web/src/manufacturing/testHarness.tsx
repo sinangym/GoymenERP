@@ -176,6 +176,9 @@ export function plan(overrides: Record<string, unknown> = {}) {
     // U2-b / API-16 (SAT-D219): the approved sales order line the plan supplies, and the link's own revision.
     salesOrderLink: null,
     salesOrderLinkRevision: 0,
+    // F-010a (URT-D29): the hand-entered termin (a calendar day) and its own revision.
+    requestedDueDate: null,
+    dueDateRevision: 0,
     ...overrides,
   }
 }

@@ -2730,6 +2730,136 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Commands);
     }
 
+    private static readonly DateOnly DueDay = new(2026, 12, 31);
+
+    private static (Fixture Fixture, ProductionPlan Plan, ManufacturingCommandService Service) DueDateCase(
+        bool withDueDateStore = true)
+    {
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        fixture.Store.Plans[plan.Id] = plan;
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            planDueDates: withDueDateStore ? fixture.Store : null);
+        return (fixture, plan, service);
+    }
+
+    [Fact]
+    public async Task A_hand_entered_termin_is_stored_once_and_the_key_replays_the_answer()
+    {
+        // Üretim F-010a (URT-D29): the day the user typed is kept as it is; the plan's version stays, its termin revision
+        // moves; the same key answers the stored view without writing again.
+        var (fixture, plan, service) = DueDateCase();
+        var request = new ChangePlanDueDateRequestV1(1, 0, DueDay);
+
+        var first = await service.ChangePlanDueDateAsync(plan.Id, request, "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+        var replay = await service.ChangePlanDueDateAsync(plan.Id, request, "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (first.Status, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Ok, true), (replay.Status, replay.IsReplay));
+        var view = Assert.IsType<PlanViewV1>(first.Resource);
+        Assert.Equal((DueDay as DateOnly?, 1L, 1L), (view.RequestedDueDate, view.DueDateRevision, view.Version));
+        Assert.Equal(view.RequestedDueDate, replay.Resource!.RequestedDueDate);
+        Assert.Single(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Equal((1L, 1L), (plan.Version, plan.DueDateRevision));
+    }
+
+    [Fact]
+    public async Task The_same_key_with_another_day_is_refused_and_writes_nothing_more()
+    {
+        var (fixture, plan, service) = DueDateCase();
+        await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        var other = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay.AddDays(1)), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+            (other.Status, other.Code));
+        Assert.Single(fixture.Store.Writes);
+        Assert.Equal(DueDay, plan.RequestedDueDate);
+    }
+
+    [Fact]
+    public async Task A_termin_is_removed_with_null_and_a_stale_termin_revision_is_409()
+    {
+        var (fixture, plan, service) = DueDateCase();
+        await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        var stale = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, null), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+        var removed = await service.ChangePlanDueDateAsync(plan.Id, new(1, 1, null), "key-3",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.PlanDueDateChanged),
+            (stale.Status, stale.Code));
+        Assert.Equal(ManufacturingApiStatus.Ok, removed.Status);
+        Assert.Null(removed.Resource!.RequestedDueDate);
+        Assert.Equal(2L, removed.Resource.DueDateRevision);
+        Assert.Equal(2, fixture.Store.Writes.Count);
+        Assert.Null(plan.RequestedDueDate);
+    }
+
+    [Fact]
+    public async Task A_closed_order_or_no_change_refuses_the_termin_with_422()
+    {
+        var (fixture, plan, service) = DueDateCase();
+
+        var noChange = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, null), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+        fixture.Store.OrderClosed = true;
+        var closed = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanDueDateNoChange),
+            (noChange.Status, noChange.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanDueDateOrderClosed),
+            (closed.Status, closed.Code));
+        Assert.Equal((null as DateOnly?, 0L), (plan.RequestedDueDate, plan.DueDateRevision));
+    }
+
+    [Fact]
+    public async Task Without_the_termin_store_the_termin_is_503_and_nothing_changes()
+    {
+        var (_, plan, service) = DueDateCase(withDueDateStore: false);
+
+        var result = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.Equal(0L, plan.DueDateRevision);
+    }
+
+    [Fact]
+    public async Task A_malformed_termin_request_is_400_before_any_read()
+    {
+        var (fixture, plan, service) = DueDateCase();
+        var cases = new (ChangePlanDueDateRequestV1? Request, string Field)[]
+        {
+            (null, "expectedVersion"),
+            (new(0, 0, DueDay), "expectedVersion"),
+            (new(1, -1, DueDay), "expectedDueDateRevision"),
+            (new(1, 0, DateOnly.MinValue), "requestedDueDate"),
+        };
+
+        foreach (var (request, field) in cases)
+        {
+            var result = await service.ChangePlanDueDateAsync(plan.Id, request, "key-1", "manufacturing.plans.write",
+                CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (result.Status, result.Field));
+        }
+
+        Assert.Empty(fixture.Calls);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Equal(0L, plan.DueDateRevision);
+    }
+
     private static (Fixture Fixture, ProductionPlan Plan, SubcontractOrderPort Orders, ManufacturingCommandService Service)
         CustomerGoodsLinkCase(bool withOrderPort = true)
     {
@@ -3414,7 +3544,8 @@ public sealed partial class ManufacturingCommandServiceTests
 
     /// <summary>An in-memory store with the store's contract: the company's records, the domain's rules.</summary>
     private sealed class FakeStore : IManufacturingPlanStore, IManufacturingPlanRevisionStore,
-        IManufacturingOrderStore, IManufacturingCommandLog, IManufacturingPlanSalesOrderLinkStore
+        IManufacturingOrderStore, IManufacturingCommandLog, IManufacturingPlanSalesOrderLinkStore,
+        IManufacturingPlanDueDateStore
     {
         /// <summary>Whether the plan's order is closed when the sales order link changes (U2-b).</summary>
         public bool OrderClosed { get; set; }
@@ -3428,6 +3559,19 @@ public sealed partial class ManufacturingCommandServiceTests
             var plan = Plans.GetValueOrDefault(planId)
                 ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
             plan.ChangeSalesOrderLink(expectedVersion, expectedLinkRevision, link, OrderClosed);
+            Complete(metadata, plan);
+            Writes.Add(metadata);
+            return Task.FromResult(plan);
+        }
+
+        public Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
+            DateOnly? dueDate, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var plan = Plans.GetValueOrDefault(planId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
+            plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, OrderClosed);
             Complete(metadata, plan);
             Writes.Add(metadata);
             return Task.FromResult(plan);

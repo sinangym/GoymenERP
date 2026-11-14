@@ -41,7 +41,7 @@ public sealed class ManufacturingStore(
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
-        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore,
+        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore, IManufacturingPlanDueDateStore,
         IManufacturingClosedOrderListStore
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
@@ -672,6 +672,48 @@ public sealed class ManufacturingStore(
         await SaveAsync(cancellationToken);
         return plan;
     }
+
+    /// <summary>
+    /// Üretim F-010a (URT-D29): enters, changes or removes the plan's hand-entered termin in one save — the plan row's termin
+    /// column, termin revision and update time, the audit event (<c>manufacturing.plan.due-date-changed.v1</c>) and the
+    /// command record — or nothing. The plan's version does not move; a concurrent write to the row is refused by its row
+    /// version. The plan's order status is read here so the domain refuses a change under a closed order.
+    /// </summary>
+    public async Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
+        DateOnly? dueDate, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var orderClosed = plan.OrderId is { } orderId
+            && await dbContext.Orders.AsNoTracking()
+                .AnyAsync(order => order.Id == orderId && order.Status == (int)OrderStatus.Closed, cancellationToken);
+        var before = DueDateAudit(plan);
+        var revisionBefore = plan.DueDateRevision;
+
+        // The domain decides: the version fence, not cancelled, the termin revision, the order, a change.
+        plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, orderClosed);
+
+        row.RequestedDueDate = plan.RequestedDueDate;
+        row.DueDateRevision = plan.DueDateRevision;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.due-date-changed.v1",
+            plan.RequestedDueDate is null ? "ClearDueDate" : "SetDueDate", revisionBefore, plan.DueDateRevision, before,
+            DueDateAudit(plan), plan.RequestedDueDate is null ? "Termin kaldırıldı" : "Termin elle girildi");
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    private static string DueDateAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
+    {
+        plan.Id,
+        plan.Version,
+        dueDateRevision = plan.DueDateRevision,
+        requestedDueDate = plan.RequestedDueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+    }, Json);
 
     private static string SalesOrderLinkAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
     {
@@ -1404,7 +1446,9 @@ public sealed class ManufacturingStore(
             // U2-d (URT-D2): the current version's preparer is its last reviser, else the actor who saved the plan.
             headers.Count > 0 ? headers.MaxBy(header => header.RevisionNo)!.RevisedBy : row.CreatedBy,
             RestoreSalesOrderLink(row),
-            row.SalesOrderLinkRevision);
+            row.SalesOrderLinkRevision,
+            row.RequestedDueDate,
+            row.DueDateRevision);
         if ((PlanStatus)row.Status != plan.Status)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
