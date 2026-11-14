@@ -309,7 +309,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
                 // SAT-D262..D267: +4 average-cost ledger/port SQL facts (c005163c... -> 0b766916...), kept ordinal-sorted.
                 // B-03: +6 Manufacturing genealogy/V2 output-class SQL facts (ca832f2d... -> eecee421...), kept ordinal-sorted.
-                "eecee42107a595737df00b6443c1e8c44ad17dc463e04320b99d097eadfba7d3",
+                // SAT-D318: +2 input-issue physical-stock shortfall SQL facts (free and plan-allocated issue), kept
+                // ordinal-sorted (ca832f2d... -> a830a228...).
+                // Re-measured on the combined inventory after merging main 6f1ff559: B-03 (eecee421...) and SAT-D318
+                // (a830a228...) combined, +8 facts in total; neither parent's value.
+                "d7b1ef8cda415caa782dbdd40c6ab03dbb1537535f81d1cb8fa83b9d9048584c",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -358,7 +362,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // URT-D41/URT-D42: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (output above input on a
                 // parent roll refuses the close with no tolerance and no approval path; the read-only report of earlier
                 // closes with output above input) (85d84d52… -> 15ad9659…).
-                "15ad965941fa4a1923d7ae4d3c43787520350b5be37d50c7f184cda8d4286d09",
+                // SAT-D318: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the input issue's physical-stock 409
+                // names the issue, label and place only to its own company) (85d84d52… -> 6fb4cc8d…).
+                // Main merge after #1154: all three facts present (re-derived from the merged inventory) (-> e951ae9a…).
+                "e951ae9aa63765e1bf0b3c2835e1c780ba6c1ae1d66b7ed066a790609b152bbe",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -1185,9 +1192,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MFG inventory realization: the API host opens the Inventory transaction connection and
                 // constructs exactly one ManufacturingDbContext over it. The exact fingerprint and three
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
+                // Re-fingerprinted for SAT-D318: Inventory's physical-stock refusal carries its shortfall to the port only
+                // when it names exactly this input issue; same token count (33399d74 -> 091796f7).
+                // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the shortfall also carries Inventory's usable kg
+                // as computed there, never recomputed here; same token count (091796f7 -> 63ba7632).
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "33399d74a08dc682c165e8b619809be89145c9c54d79cfc3ee8d8b7a58ecdab1",
+                        "63ba7632fb210c72332ff025ca0956ef918c1539d52dae58e63be283331a1598",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1724,7 +1735,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
                         // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its own plan's allocation, legacy-stable issue hash; provider tokens unchanged.
                         // Re-fingerprinted for B-03: V2 output overload, net-issued input read (company-filtered context) and Manufacturing genealogy staging; provider tokens unchanged.
-                        "1a5a23b7eee8e78095d10745f44261c8c0de2c0b876592d1bdcab5b27ea63589",
+                        // Re-fingerprinted for SAT-D318: the input issue's physical-stock refusal (pre-check and ledger fallback)
+                        // names the issue, label, place and checked kg; provider tokens unchanged (72ba6be8 -> 02a98e75).
+                        // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the pre-check hands the free physical kg to
+                        // the shortfall, which derives the usable kg; provider tokens unchanged (02a98e75 -> 4c1a5d57).
+                        // Re-measured on the combined file after merging main 6f1ff559: B-03 (1a5a23b7...) and SAT-D318
+                        // (4c1a5d57...) combined; neither parent's value; provider tokens unchanged.
+                        "b3c4c93d7f8e4014bc1830ea652c20366bb4b9ac2960d93ac92a8c8e97f522e0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,

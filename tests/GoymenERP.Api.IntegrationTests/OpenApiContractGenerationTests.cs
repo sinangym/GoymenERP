@@ -10954,6 +10954,7 @@ public sealed partial class OpenApiContractGenerationTests
         AssertNativeApprovalPolymorphism(schemas);
         AssertSuccessComponentSchemas(schemas);
         AssertProductSchemas(schemas);
+        AssertManufacturingStockShortfallSchemas(schemas);
         AssertDispatchNoteRequestBounds(schemas);
         var mutationAccounts = schemas
             .GetProperty("CounterpartyMutationView")
@@ -12129,9 +12130,11 @@ public sealed partial class OpenApiContractGenerationTests
             return;
         }
 
-        var expectedReference = CodeLessProblemResponses.Contains(responseKey)
-            ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
-            : "#/components/schemas/ErpProblemDetailsContract";
+        var expectedReference = EndpointProblemResponses.TryGetValue(responseKey, out var endpointReference)
+            ? endpointReference
+            : CodeLessProblemResponses.Contains(responseKey)
+                ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                : "#/components/schemas/ErpProblemDetailsContract";
         Assert.Equal(expectedReference, schema.GetProperty("$ref").GetString());
         Assert.False(schema.TryGetProperty("oneOf", out _));
     }

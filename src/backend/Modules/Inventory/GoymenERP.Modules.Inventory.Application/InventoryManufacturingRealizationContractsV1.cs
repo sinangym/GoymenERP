@@ -1,5 +1,7 @@
 using System.Globalization;
 using GoymenERP.Modules.Inventory.Domain;
+using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 
@@ -201,20 +203,43 @@ public static class InventoryManufacturingRealizationCodesV1
 
 public sealed class InventoryManufacturingRealizationException : Exception
 {
-    private InventoryManufacturingRealizationException(int status, string code) : base(code)
+    private InventoryManufacturingRealizationException(int status, string code,
+        InventoryManufacturingStockShortfallV1? stockShortfall) : base(code)
     {
         Status = status;
         Code = code;
+        StockShortfall = stockShortfall;
     }
 
     public int Status { get; }
     public string Code { get; }
 
+    /// <summary>
+    /// SAT-D318: set only on a <see cref="InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient"/> refusal
+    /// of an input issue, naming the refused issue and the stock it would have taken below zero. Null on every other
+    /// refusal, and on this one when the detail could not be built; the code alone stays the stable reason.
+    /// </summary>
+    public InventoryManufacturingStockShortfallV1? StockShortfall { get; }
+
     public static InventoryManufacturingRealizationException Refused(int status, string code) =>
         InventoryManufacturingRealizationCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, stockShortfall: null)
             : throw new InvalidOperationException(
                 "Inventory manufacturing-realization refusal is outside its closed contract.");
+
+    /// <summary>
+    /// The physical-stock refusal with its detail. The detail belongs to exactly that refusal, so any other status or
+    /// code is outside the closed contract.
+    /// </summary>
+    public static InventoryManufacturingRealizationException Refused(int status, string code,
+        InventoryManufacturingStockShortfallV1 stockShortfall)
+    {
+        ArgumentNullException.ThrowIfNull(stockShortfall);
+        return status == 409 && code == InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient
+            ? new(status, code, stockShortfall)
+            : throw new InvalidOperationException(
+                "Only the physical-stock refusal of the manufacturing-realization contract carries a stock shortfall.");
+    }
 
     /// <summary>
     /// B-03: a V2 participant refusal. The V2 code set is the V1 set plus the V2-only codes; the V1 closed set and
@@ -222,9 +247,98 @@ public sealed class InventoryManufacturingRealizationException : Exception
     /// </summary>
     public static InventoryManufacturingRealizationException RefusedV2(int status, string code) =>
         InventoryManufacturingRealizationCodesV2.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, stockShortfall: null)
             : throw new InvalidOperationException(
                 "Inventory manufacturing-realization V2 refusal is outside its closed contract.");
+}
+
+/// <summary>
+/// The refused movement and the stock it would have taken below zero (owner decision of 2026-11-13, SAT-D318: no
+/// operation takes physical stock below zero, and the refusal says which operation and where). It names the causing
+/// source and its line, the label with its product, and the stored location when the label still has one.
+/// <para>
+/// <see cref="FreePhysicalKg"/> is the physical kg of the bucket the line would take from, just before it.
+/// <see cref="ReservedKg"/> is set only when the refusing check counted other demands' active reservations against
+/// that bucket (zero when it found none); a refusal from the stock ledger itself counts no reservation and leaves it
+/// null. <see cref="AvailableKg"/> is what the line could have taken: the free physical kg less those reservations,
+/// never below zero (<see cref="StockAllocation.Unreserved"/>, the rule allocation creation and the stock position read
+/// use), and always less than <see cref="RequestedKg"/>. These quantities are Inventory's own figures for the
+/// participant's host: whether a caller may see them is the host's disclosure decision, not this contract's. Building
+/// one records nothing; a durable record of the refused attempt is a later slice.
+/// </para>
+/// </summary>
+public sealed record InventoryManufacturingStockShortfallV1
+{
+    public InventoryManufacturingStockShortfallV1(StockMovementKind movementKind, string sourceKind, Guid sourceId,
+        Guid? sourceLineId, Guid labelId, Guid productId, Guid? locationId, Kilograms requestedKg,
+        Kilograms freePhysicalKg, Kilograms? reservedKg)
+    {
+        if (!Enum.IsDefined(movementKind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(movementKind), "The movement kind is not defined.");
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceKind) || sourceKind.Length > StockSourceReference.MaximumKindLength
+            || sourceKind != sourceKind.Trim())
+        {
+            throw new ArgumentException("The source kind is a stored, trimmed source token.", nameof(sourceKind));
+        }
+
+        if (sourceId == Guid.Empty || sourceLineId == Guid.Empty || labelId == Guid.Empty || productId == Guid.Empty
+            || locationId == Guid.Empty)
+        {
+            throw new ArgumentException("A shortfall names only real identities.");
+        }
+
+        if (requestedKg.Value <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedKg), "A refused line always asks for a positive mass.");
+        }
+
+        var usable = reservedKg is { } reserved ? StockAllocation.Unreserved(freePhysicalKg, reserved) : freePhysicalKg;
+        if (usable >= requestedKg)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedKg),
+                "A shortfall exists only while the usable kg are less than the requested kg.");
+        }
+
+        MovementKind = movementKind;
+        SourceKind = sourceKind;
+        SourceId = sourceId;
+        SourceLineId = sourceLineId;
+        LabelId = labelId;
+        ProductId = productId;
+        LocationId = locationId;
+        RequestedKg = requestedKg;
+        AvailableKg = usable;
+        FreePhysicalKg = freePhysicalKg;
+        ReservedKg = reservedKg;
+    }
+
+    public StockMovementKind MovementKind { get; }
+
+    /// <summary>The causing module's stored source token, e.g. <c>manufacturing.input-issue</c>.</summary>
+    public string SourceKind { get; }
+
+    public Guid SourceId { get; }
+
+    public Guid? SourceLineId { get; }
+
+    public Guid LabelId { get; }
+
+    public Guid ProductId { get; }
+
+    /// <summary>The stored location of the label's stock; null when the label holds no stock anywhere.</summary>
+    public Guid? LocationId { get; }
+
+    public Kilograms RequestedKg { get; }
+
+    /// <summary>The usable kg the line could have taken: free physical less other demands' active reservations.</summary>
+    public Kilograms AvailableKg { get; }
+
+    public Kilograms FreePhysicalKg { get; }
+
+    public Kilograms? ReservedKg { get; }
 }
 
 public static class InventoryManufacturingRealizationContractV1

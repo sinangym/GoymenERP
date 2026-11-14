@@ -3,6 +3,7 @@ using System.Text.Json;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using Microsoft.EntityFrameworkCore;
@@ -193,7 +194,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// balance must still cover it after every OTHER active allocation of the position.
     /// </summary>
     private async Task<StockPosition> ConsumePlanAllocationAsync(Guid allocationId, Guid planId, ParentLabel parent,
-        Kilograms quantity, InventoryCommandMetadata metadata, CancellationToken cancellationToken)
+        Kilograms quantity, StockSourceReference issueSource, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken)
     {
         var row = await context.Allocations.SingleOrDefaultAsync(candidate => candidate.Id == allocationId,
             cancellationToken);
@@ -220,7 +222,10 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         var others = await ActiveAllocatedKgAsync(parent.Label.Id, source, cancellationToken) - row.RemainingKg;
         if (quantity.Value > source.QuantityKg - others)
         {
-            throw Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
+            // SAT-D318: the issue's own allocation counts as available to it, so only the other demands' active kg
+            // are reported as reserved.
+            throw InputIssueShortfall(issueSource, parent.Label, source.LocationId, quantity, source.QuantityKg,
+                others);
         }
 
         var versionBefore = row.Version;

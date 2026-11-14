@@ -119,8 +119,10 @@ public sealed class StockLedger
             var result = current + delta;
             if (result < 0m)
             {
+                // SAT-D318: the refusal names the failing line and what its bucket held just before it.
                 throw new InventoryRuleException(
-                    InventoryRuleCodes.NegativePhysicalStock,
+                    new StockShortfall(movement.Kind, movement.Source, line.Position, line.Quantity,
+                        Kilograms.Of(current)),
                     "Hareket fiziksel stoğu sıfırın altına düşürür; negatif stok yoktur.");
             }
 
