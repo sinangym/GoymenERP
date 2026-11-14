@@ -90,7 +90,7 @@ EXPECTED_DURABLE_STORE_COUNT = 33
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 658
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "8253ce06b248c2901b503d6d864e15d19e590cde4e2a4f5c9a651dd338473988"
+    "0b5908117ed18930686c969fb672b0e2785e2265ed3ef4429079fe9f82b65de2"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -960,7 +960,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs",
         "AddCommand",
-    ): "b4a71b07dc696ee1125ebb00e0bd9021ff83a416e2bc3f0386dc491f2005ac6d",
+    ): "7692294ce6b3bfdb42f4f03395b151e6fdae9589e38ef31da538dadc4321bf5b",
 }
 
 
@@ -977,7 +977,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs": "0f79216993cdbbc20d7c92d830ad1c08f3ff2ab5b0ab9084aaae03f765784c1a",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs": "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs": "51e122131bdd2353fd5126afb3c39b1ceb068b3a810c7f95a40974b0bff84ac5",
-    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs": "362c03debea43995a71c7312b0fc0f45bee9605e59500a9a326d81228992de25",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs": "abc98b658f29ebfdda744abe780be906d084c331f95931c17b4ad896e5219a1d",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs": "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs": "589f03fddc02ed44c23149eac8358f69805e00a7a28cd867c98eecc9e469c88e",
     "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",
