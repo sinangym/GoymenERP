@@ -46,6 +46,50 @@ public sealed class MaterialLabelTests
     }
 
     [Fact]
+    public void Production_status_is_separate_from_the_classification_and_legacy_labels_have_none()
+    {
+        var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1);
+        Assert.Null(label.ProductionStatus);
+
+        label.Classify(LabelClassification.SecondQuality);
+        Assert.Null(label.ProductionStatus);
+        label.MarkProductionStatus(LabelProductionStatus.UsableRemnant);
+        Assert.Equal((LabelClassification.SecondQuality, LabelProductionStatus.UsableRemnant),
+            (label.Classification, label.ProductionStatus));
+
+        // BS-5: a later manual reclassification keeps the production status.
+        label.Classify(LabelClassification.Standard);
+        Assert.Equal((LabelClassification.Standard, LabelProductionStatus.UsableRemnant),
+            (label.Classification, label.ProductionStatus));
+
+        // Marking the same status again is a no-op, never a second, different status.
+        label.MarkProductionStatus(LabelProductionStatus.UsableRemnant);
+        Assert.Equal(LabelProductionStatus.UsableRemnant, label.ProductionStatus);
+
+        var restored = MaterialLabel.Restore(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId,
+            label.ProductVersion, label.RequiredDocuments, label.HeatNumber, label.CoilNumber,
+            label.Prints, label.DocumentAttachments, LabelClassification.Standard,
+            LabelProductionStatus.UsableRemnant);
+        Assert.Equal((LabelClassification.Standard, LabelProductionStatus.UsableRemnant),
+            (restored.Classification, restored.ProductionStatus));
+        Assert.Null(MaterialLabel.Restore(Label2, CompanyA, CodeOf(Label2), BandProduct, Lot1,
+            null, [], null, null, [], [], LabelClassification.SecondQuality).ProductionStatus);
+    }
+
+    [Fact]
+    public void Undefined_production_status_is_refused()
+    {
+        var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1);
+
+        Assert.Equal(InventoryRuleCodes.InvalidLabelOperation,
+            Assert.Throws<InventoryRuleException>(() =>
+                label.MarkProductionStatus((LabelProductionStatus)99)).Code);
+        Assert.Null(label.ProductionStatus);
+        Assert.Throws<InventoryRuleException>(() => MaterialLabel.Restore(Label2, CompanyA, CodeOf(Label2),
+            BandProduct, Lot1, null, [], null, null, [], [], productionStatus: (LabelProductionStatus)2));
+    }
+
+    [Fact]
     public void A_new_label_keeps_the_exact_opaque_product_version()
     {
         var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1, "product-v7");

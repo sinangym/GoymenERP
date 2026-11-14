@@ -210,7 +210,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        var staged = await StageOutputCoreAsync(request, quantity, classification: null, metadata, cancellationToken);
+        var staged = await StageOutputCoreAsync(request, quantity, classification: null, productionStatus: null,
+            metadata, cancellationToken);
         var result = new InventoryManufacturingOutputResultV1(companyId, request.ManufacturingOrderId,
             request.OutputId, request.ManufacturingOrderVersionAfter, staged.ParentLabelId,
             staged.ParentLabelVersion, request.OutputClass, request.ProductId,
@@ -225,6 +226,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// B-03 (API-22/27): the V2 output declaration. The output class is mapped to a label classification before any
     /// read or write (an unstockable class is refused with no label, movement or genealogy written); the output label
     /// is born with that classification, and the result echoes both together with the recorded genealogy.
+    /// STK-S9 (BS-5/BS-14): a <c>UsableRemnant</c> output is born with the classification the operator chose
+    /// (Standard or SecondQuality, SecondQuality by default) and the separate <c>UsableRemnant</c> production status.
     /// </summary>
     public async Task<InventoryManufacturingOutputResultV2> StageOutputAsync(
         InventoryManufacturingOutputRequestV2 request,
@@ -232,11 +235,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         CancellationToken cancellationToken = default)
     {
         Begin();
-        var (quantity, classification) = InventoryManufacturingRealizationContractV2.Validate(request, metadata,
-            companyId);
+        var (quantity, classification, productionStatus) = InventoryManufacturingRealizationContractV2.Validate(
+            request, metadata, companyId);
         var core = request.ToV1();
         var keyHash = Hash(metadata.IdempotencyKey);
-        var payloadHash = RequestHash(core);
+        var payloadHash = OutputRequestHash(core, classification, productionStatus);
         if (await FindCommandAsync(InventoryManufacturingRealizationContractV2.OutputCommandName,
                 keyHash, cancellationToken) is { } existing)
         {
@@ -246,10 +249,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        var staged = await StageOutputCoreAsync(core, quantity, classification, metadata, cancellationToken);
+        var staged = await StageOutputCoreAsync(core, quantity, classification, productionStatus, metadata,
+            cancellationToken);
         var result = new InventoryManufacturingOutputResultV2(companyId, request.ManufacturingOrderId,
             request.OutputId, request.ManufacturingOrderVersionAfter, staged.ParentLabelId,
-            staged.ParentLabelVersion, request.OutputClass, classification, request.ProductId,
+            staged.ParentLabelVersion, request.OutputClass, classification, productionStatus, request.ProductId,
             request.ExpectedProductVersion, staged.LotId, staged.LabelId, staged.LabelVersion,
             staged.MovementId, quantity.ToString(), staged.GenealogyTransformationId, staged.GenealogyInputs,
             IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
@@ -259,7 +263,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     }
 
     private async Task<StagedOutput> StageOutputCoreAsync(InventoryManufacturingOutputRequestV1 request,
-        Kilograms quantity, InventoryLabelClassificationV1? classification, InventoryCommandMetadata metadata,
+        Kilograms quantity, InventoryLabelClassificationV1? classification,
+        InventoryLabelProductionStatusV1? productionStatus, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
@@ -302,6 +307,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             if (classification is { } stockable)
             {
                 label.Classify(LabelClassificationOf(stockable));
+            }
+
+            if (productionStatus is { } status)
+            {
+                label.MarkProductionStatus(LabelProductionStatusOf(status));
             }
 
             var position = new StockPosition(companyId,
@@ -889,6 +899,30 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             request.QuantityKg,
             request.OccurredAtUtc,
         }, Json));
+
+    /// <summary>
+    /// STK-S9: an output without a production status hashes exactly as before (the V1 core alone), so a replay of an
+    /// output recorded earlier still matches its stored payload hash. A usable-remnant output (always refused before
+    /// STK-S9, so no stored key exists) also binds the effective classification and the production status: an omitted
+    /// choice and an explicit SecondQuality are the same request, an explicit Standard is a different one.
+    /// </summary>
+    private static string OutputRequestHash(InventoryManufacturingOutputRequestV1 core,
+        InventoryLabelClassificationV1 classification, InventoryLabelProductionStatusV1? productionStatus) =>
+        productionStatus is null
+            ? RequestHash(core)
+            : Hash(JsonSerializer.Serialize(new
+            {
+                Core = RequestHash(core),
+                Classification = classification.ToString(),
+                ProductionStatus = productionStatus.Value.ToString(),
+            }, Json));
+
+    private static LabelProductionStatus LabelProductionStatusOf(InventoryLabelProductionStatusV1 status) =>
+        status switch
+        {
+            InventoryLabelProductionStatusV1.UsableRemnant => LabelProductionStatus.UsableRemnant,
+            _ => throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest),
+        };
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();

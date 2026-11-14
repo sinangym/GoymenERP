@@ -35,6 +35,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 {
     public const string Schema = "inventory";
 
+    /// <summary>
+    /// STK-S9 (BS-5): a label's production status is null or one of the LabelProductionStatus values (1 =
+    /// UsableRemnant). Compared by the persistence-model test.
+    /// </summary>
+    internal const string LabelProductionStatusCheck = "[ProductionStatus] IS NULL OR [ProductionStatus] IN (1)";
+
     /// <summary>B-22a: a proved dispatch stores a positive Logistics document version; legacy rows stay null.</summary>
     internal const string TransferDispatchDocumentVersionCheck = "[DocumentVersion] IS NULL OR [DocumentVersion] >= 1";
 
@@ -200,6 +206,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[ProductVersion] IS NULL OR LEN([ProductVersion]) > 0");
             table.HasCheckConstraint("CK_Labels_Classification",
                 "[Classification] IS NULL OR [Classification] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_Labels_ProductionStatus", LabelProductionStatusCheck);
             table.HasCheckConstraint("CK_Labels_Code", "LEN([Code]) > 0");
             table.HasCheckConstraint("CK_Labels_RequiredDocumentsJson", "ISJSON([RequiredDocumentsJson]) = 1");
             table.HasCheckConstraint("CK_Labels_Version", "[Version] >= 1");
