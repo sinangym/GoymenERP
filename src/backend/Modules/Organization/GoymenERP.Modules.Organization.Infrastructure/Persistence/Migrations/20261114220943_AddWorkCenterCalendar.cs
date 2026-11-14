@@ -115,7 +115,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("""IF EXISTS (SELECT 1 FROM [organization].[WorkCenterCalendars]) BEGIN THROW 51274, 'Work-centre calendars exist; AddWorkCenterCalendar is not rolled back (forward fix).', 1; END;""");
+            migrationBuilder.Sql("""IF EXISTS (SELECT 1 FROM [organization].[WorkCenterCalendars]) BEGIN THROW 51361, 'Work-centre calendars exist; AddWorkCenterCalendar is not rolled back (forward fix).', 1; END;""");
 
             migrationBuilder.DropTable(
                 name: "WorkCenterCalendarClosedDates",

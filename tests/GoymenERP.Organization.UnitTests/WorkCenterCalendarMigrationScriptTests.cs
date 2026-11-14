@@ -40,7 +40,7 @@ public sealed class WorkCenterCalendarMigrationScriptTests
             fromMigration: CalendarMigration,
             toMigration: PreviousMigration);
 
-        var refusal = script.IndexOf("THROW 51274", StringComparison.Ordinal);
+        var refusal = script.IndexOf("THROW 51361", StringComparison.Ordinal);
         var firstDrop = script.IndexOf("DROP TABLE", StringComparison.Ordinal);
         Assert.True(refusal >= 0, "The Down script must refuse while calendars exist (forward fix).");
         Assert.True(firstDrop > refusal, "The refusal must run before the first table is dropped.");
@@ -53,7 +53,7 @@ public sealed class WorkCenterCalendarMigrationScriptTests
         var migration = new AddWorkCenterCalendar();
 
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
-        Assert.Contains("THROW 51274", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51361", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[organization].[WorkCenterCalendars]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<SqlOperation>());
         Assert.Empty(migration.UpOperations.OfType<SqlOperation>());

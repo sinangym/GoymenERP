@@ -34,7 +34,7 @@ public sealed class OrganizationWorkCenterCalendarSqlServerRelationalAcceptanceT
 {
     private const string WorkCentersRoute = "/api/v1/organization/work-centers";
     private const string MigrationBeforeCalendar = "20261013155012_AddLocationOperatorParty";
-    private const int ForwardFixRefusal = 51274;
+    private const int ForwardFixRefusal = 51361;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private static readonly string[] CalendarEditorPermissions =
