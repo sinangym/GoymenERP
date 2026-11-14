@@ -391,7 +391,7 @@ public static class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
                 PurchasingProblemCodesV1.OrderNothingToCancel, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
-                PurchasingProblemCodesV1.ConcurrentChange)
+                PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy)
             .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.OrderCancellationReasonRequired,
                 PurchasingProblemCodesV1.OrderCancellationReasonTooLong)
             .ProducesErpServiceUnavailable()
@@ -440,6 +440,7 @@ public static class PurchasingEndpoints
                 PurchaseAcceptanceParticipantCodes.QuantityExceedsRemaining,
                 PurchaseAcceptanceParticipantCodes.IdempotencyConflict,
                 PurchaseAcceptanceParticipantCodes.ConcurrentChange,
+                PurchaseAcceptanceParticipantCodes.LineBusy,
                 InventoryGoodsReceiptCodesV1.LabelAlreadyRegistered,
                 InventoryGoodsReceiptCodesV1.LotOrLabelConflict,
                 InventoryGoodsReceiptCodesV1.IdempotencyConflict,

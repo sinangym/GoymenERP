@@ -81,6 +81,12 @@ public static class PurchasingStoreCodes
     public const string InvalidCursor = "purchasing_invalid_cursor";
 
     /// <summary>
+    /// F-017 F17-1 (§3.4): a purchase general line's serialization lock was not granted in time (another module's or Purchasing's
+    /// write holds it); nothing was stored and the refusal is not terminal (the same key may try again).
+    /// </summary>
+    public const string LineBusy = "purchasing_line_busy";
+
+    /// <summary>
     /// The Σ-shares rule (Sinan #66 5738113623 §1), measured by the store inside the approval's save: the
     /// ordered quantities of the APPROVED orders' general lines bound to one request line, plus this order's,
     /// exceed that request line's quantity. Field errors name the lines. The domain code
