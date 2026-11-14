@@ -73,6 +73,7 @@ import {
   OPEN_ITEM_NO_SCREEN,
   OPEN_ORIGINAL,
   OPEN_PAYMENT,
+  OPEN_REVERSED_PAYMENT,
   OPEN_RECEIPT,
   OPEN_REVERSAL,
   TOTALS,
@@ -140,6 +141,13 @@ function SourceLinks({ entry }: { readonly entry: PartyLedgerEntry }) {
       )
     case 'ManualBankPayment':
       return <Link to={manualBankPaymentDetailPath(entry.sourceId)}>{`${OPEN_PAYMENT} · ${reference(entry.sourceId)}`}</Link>
+    case 'ManualBankPaymentReversal':
+      // The reversal's own source is its proposal (no screen of its own); the reversed payment carries the panel.
+      return entry.reversesSourceId === null ? null : (
+        <Link to={manualBankPaymentDetailPath(entry.reversesSourceId)}>
+          {`${OPEN_REVERSED_PAYMENT} · ${reference(entry.reversesSourceId)}`}
+        </Link>
+      )
     case 'OpenItem':
     case 'PayableOpenItem':
     case 'OpenItemCancellation':

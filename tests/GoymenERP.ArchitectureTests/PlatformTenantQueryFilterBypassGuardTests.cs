@@ -276,8 +276,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #1006 takip: +1 multi-allocation cancellation fact, ordinal-sorted (19001373… -> 7634c7da…).
             // FNS-D16 scale rule: +1 allocation scale refusal fact, ordinal-sorted (7634c7da… -> cbae4f24…).
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
+            // API-23: +3 payment reversal facts, ordinal-sorted (36413356… -> 4684446d…).
+            // API-23 review A: +4 facts (allocation/approval race, double approval, reused key and lost grant, HTTP
+            // company scope), ordinal-sorted (4684446d… -> 96fd63e4…).
             ["tools/relational_inventory/finance.txt"] =
-                "3641335616cf9e1e8f00b26efa4f748648583e7c3c5332f5f36ede493b7c604d",
+                "96fd63e47fb2e9398d706b4725534cca9c8b7ba50c83ca47dcbfc68292264d5e",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -305,9 +308,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/inventory.txt"] =
                 // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
                 // SAT-D262..D267: +4 average-cost ledger/port SQL facts (c005163c... -> 0b766916...), kept ordinal-sorted.
+                // B-03: +6 Manufacturing genealogy/V2 output-class SQL facts (ca832f2d... -> eecee421...), kept ordinal-sorted.
                 // SAT-D318: +2 input-issue physical-stock shortfall SQL facts (free and plan-allocated issue), kept
                 // ordinal-sorted (ca832f2d... -> a830a228...).
-                "a830a2282d04c8b1cbbd32e8b226661f5ade5a500eedd6b7e1bd2887a16deecf",
+                // Re-measured on the combined inventory after merging main 6f1ff559: B-03 (eecee421...) and SAT-D318
+                // (a830a228...) combined, +8 facts in total; neither parent's value.
+                "d7b1ef8cda415caa782dbdd40c6ab03dbb1537535f81d1cb8fa83b9d9048584c",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -793,7 +799,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CK_OpenItems_Status admits 3 = Cancelled (973395d3… -> 578e4f20…).
             // F3a / API-20: PaymentAllocations / PaymentAllocationStates carry the CompanyId filter, company-leading
             // keys to ManualBankPayments and OpenItems, and a release-only write guard (578e4f20… -> 95024798…).
-            "950247983a8a0742e9ce5aed9b14d527f92e5f9a507ad745637a8d01ff0d52b6",
+            // API-23: PaymentReversalProposals / OutgoingMoneyEventReversals carry the CompanyId filter, company-leading
+            // keys to ManualBankPayments and OutgoingMoneyEvents, and an append-only reversal guard (95024798… -> 61b34a3d…).
+            "61b34a3d518e3d9efec34ce79529599073ccb95c5a626affc77c637999a37b48",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -822,7 +830,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/InventoryDbContext.cs"] =
                 // Re-fingerprinted for B-01: plan-input demand check, ReleasedKg column/check/write guard, active plan-input unique index; provider tokens unchanged.
                 // Re-fingerprinted for SAT-D262: AverageCostLedger table (company filter, company-leading unique position key, write guard); provider tokens unchanged.
-                "f367b28bdcfd848da3e3b63b8a8f72ef7475c5ad5a0041870e0b38bda40d254b",
+                // Re-fingerprinted for B-03: CK_LabelTransformations_Kind widened to (1, 2, 3) through a named constant; no filter, key or table change.
+                "ebf77499eb9251b837fa60923f5eea5897f7ecbb6468b87297db4985abdc7194",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -1245,7 +1254,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
                 // Re-fingerprinted for B-01: one internal audit helper for plan-input allocations; provider tokens unchanged.
-                "6c2c4bf3f1109451b8805d13488673f97612ecd782efbfb15f129c1dd161fdad",
+                // Re-fingerprinted for B-03: the staged label carries its classification; provider tokens unchanged.
+                "187a5b922ce98e636707540ba504ab502c308f5660f008187d93f3f5df518e8e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1316,11 +1326,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
                 // items, no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for F3a /
                 // API-20: the payment allocation writer and read service registrations; token counts unchanged.
+                // Re-fingerprinted for API-23: the payment reversal service registration and its two audit envelopes;
+                // token counts unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "8b1954b128e2250150ae17f60f2f3955d43209940a863fb59730fa8e84a719a5",
+                        "58ddb6596d6a72a26f4497d959329eef47cc26420118bb927aa6f2d36f7f614a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1381,7 +1393,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinancePaymentAllocationService.cs"] =
                     new(
-                        "8fdf328ab45447718739ad839a916758e7d71f8e754a76c1a89c09458c949b5b",
+                        // Re-fingerprinted for API-23: a reversed payment is refused with its own code
+                        // (finance_source_already_reversed) through one tracked read; token counts unchanged.
+                        "c982b49e6d2fc4ce05a157d9b4528920a6c07540a4a5b130e8d99a73f0d422bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // API-23: the payment reversal maker-checker writer has the same shape as the allocation writer. SqlClient
+                // is referenced only to classify 2601/2627 races after SaveChanges; no connection, command, raw SQL or bypass.
+                // Re-fingerprinted for the #66 round-20 reversal date rule: one PolicyRefusal arm
+                // (finance_reversal_before_payment); same SqlClient use (a2b0ef1a... -> 11231d88...).
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/PaymentReversalProposalService.cs"] =
+                    new(
+                        "11231d8857d19f4ff642e41df218ca528f2c1f0384afece577711d9e94a15a38",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1708,11 +1734,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
                         // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its own plan's allocation, legacy-stable issue hash; provider tokens unchanged.
+                        // Re-fingerprinted for B-03: V2 output overload, net-issued input read (company-filtered context) and Manufacturing genealogy staging; provider tokens unchanged.
                         // Re-fingerprinted for SAT-D318: the input issue's physical-stock refusal (pre-check and ledger fallback)
                         // names the issue, label, place and checked kg; provider tokens unchanged (72ba6be8 -> 02a98e75).
                         // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the pre-check hands the free physical kg to
                         // the shortfall, which derives the usable kg; provider tokens unchanged (02a98e75 -> 4c1a5d57).
-                        "4c1a5d57b4344276cbc7b6dd7a05bb4388f74a0e8504e8183158dc46fe18d0d6",
+                        // Re-measured on the combined file after merging main 6f1ff559: B-03 (1a5a23b7...) and SAT-D318
+                        // (4c1a5d57...) combined; neither parent's value; provider tokens unchanged.
+                        "b3c4c93d7f8e4014bc1830ea652c20366bb4b9ac2960d93ac92a8c8e97f522e0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2892,6 +2921,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("9af40ee74959eb4524d6166c25a0ebee328cb7a12c9c0fa245fea60e4895fcb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // API-23: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
+                // reversal proposal or recorded payment reversal is stored; the THROW precedes the table drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261111184316_AddPaymentReversals.cs"] =
+                    new("a17ae3ac73ad47179d26ac7d8a05b3b6d21efa289a3e5fcc54ff127910ede1a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment
                 // allocation or payment allocation state is stored; the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261107154419_AddPaymentAllocations.cs"] =
@@ -2984,6 +3019,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // drop. An empty schema rolls back freely; a populated one needs a forward fix.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928161227_AddInventoryStockScraps.cs"] =
                     new("9a4b4e0fd2233b33b8b95ffca4a9df4b06049dc86b7cfd0fd84e1a47b83424d4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // B-03: widens CK_LabelTransformations_Kind to (1, 2, 3) (Manufacturing genealogy); the Down's only raw SQL is the
+                // Inventory refusal (51262, used by no other migration) while a Kind 3 row exists, and the THROW precedes the check swap.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261111205905_WidenInventoryLabelTransformationKindToManufacturing.cs"] =
+                    new("0e75914b6647cf6ee11f83680a1590d354de818b7b4ca24e10e22c164cb255c4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // SAT-D297: widens the ledger reason check to 1..9 (zero_cost_receipt); the Down's only raw SQL is the Inventory

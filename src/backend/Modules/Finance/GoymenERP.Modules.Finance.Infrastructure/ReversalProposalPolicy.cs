@@ -10,7 +10,11 @@ internal enum ReversalPolicyFailure
     VersionConflict,
     SourceNotRecorded,
     ProposalNotPending,
-    ApproverIsProposer
+    ApproverIsProposer,
+
+    /// <summary>API-23 (#66 round 20, coordinator decision under Sinan's delegation): a payment reversal cannot
+    /// occur before the payment it reverses.</summary>
+    OccursBeforeSource,
 }
 
 internal sealed class ReversalPolicyException(ReversalPolicyFailure failure) : InvalidOperationException

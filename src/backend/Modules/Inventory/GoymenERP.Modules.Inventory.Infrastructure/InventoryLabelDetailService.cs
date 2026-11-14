@@ -141,7 +141,8 @@ internal sealed class InventoryLabelDetailService(
                 || edge.SourceLabelId == Guid.Empty || edge.OutputLabelId == Guid.Empty
                 || string.IsNullOrWhiteSpace(edge.SourceCode) || string.IsNullOrWhiteSpace(edge.OutputCode)
                 || edge.Kind is not (nameof(InventoryLabelTransformationKind.Split)
-                    or nameof(InventoryLabelTransformationKind.Merge))
+                    or nameof(InventoryLabelTransformationKind.Merge)
+                    or nameof(InventoryLabelTransformationKind.Manufacturing))
                 || !PositiveVersion(edge.SourceLabelVersion)
                 || !PositiveVersion(edge.OutputLabelVersion)
                 || !CanonicalQuantity(edge.SourceQuantityKg)
@@ -176,7 +177,12 @@ internal sealed class InventoryLabelDetailService(
                     && (sources.Count != 1 || outputs.Count < 2)
                 || first.Kind == nameof(InventoryLabelTransformationKind.Merge)
                     && (sources.Count < 2 || outputs.Count != 1)
-                || !SameQuantityTotal(
+                // B-03: a Manufacturing edge links one output label to its order's net-issued input labels. It stores
+                // raw kilograms (no share), and process loss means the totals need not balance, so only split/merge
+                // keep the mass-balance check.
+                || first.Kind == nameof(InventoryLabelTransformationKind.Manufacturing)
+                    && (sources.Count < 1 || outputs.Count != 1)
+                || first.Kind != nameof(InventoryLabelTransformationKind.Manufacturing) && !SameQuantityTotal(
                     sources.Values.Select(facts => facts.QuantityKg),
                     outputs.Values.Select(facts => facts.QuantityKg)))
             {

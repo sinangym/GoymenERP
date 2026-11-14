@@ -58,9 +58,9 @@ public sealed class FinanceShellRegistrationTests
         var finance = registry.Registrations
             .Where(item => item.Owner == FinanceShellCapabilityProvider.OwnerId)
             .ToArray();
-        // Fifteen routes plus six controls. A declaration still grants nothing:
+        // Fifteen routes plus six controls, later grown; API-23 (Finance 1.8) adds the two payment reversal controls. A declaration still grants nothing:
         // each route or control service measures its own Finance permission afresh.
-        Assert.Equal(23, finance.Length);
+        Assert.Equal(25, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
         // Sales 1.20: thirteen routes (three draft, three request, three quote, S-07, S-08, S-09, UI-80 reports) plus detail controls; Sales 1.25 adds the three S-10 return routes and their three controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.

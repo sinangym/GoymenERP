@@ -64,6 +64,9 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadManualBankPayments => FinancePermissionNames.ManualBankPaymentDraftRead,
         FinanceAction.ApproveManualBankPayment => FinancePermissionNames.ManualBankPaymentApprove,
         FinanceAction.RecordManualBankPayment => FinancePermissionNames.ManualBankPaymentRecord,
+        // API-23: the payment reversal's own names; Unavailable (503) until the central registry knows them.
+        FinanceAction.ProposePaymentReversal => FinancePermissionNames.PaymentReversePropose,
+        FinanceAction.ApprovePaymentReversal => FinancePermissionNames.PaymentReverseApprove,
         // DEC-FIN-016 first release: the portfolio's own names (FinancePermissionNames). Until the central registry
         // knows them the port answers Unavailable (503) — "cannot tell", never a refusal.
         FinanceAction.ReadCustomerInstruments => FinancePermissionNames.CustomerInstrumentRead,

@@ -26,6 +26,7 @@ export const PARTY_LEDGER_ENTRY_KINDS = [
   'PayableOpenItem',
   'OpenItemCancellation',
   'PayableOpenItemCancellation',
+  'ManualBankPaymentReversal',
 ] as const
 export type PartyLedgerEntryKind = (typeof PARTY_LEDGER_ENTRY_KINDS)[number]
 export type PartyLedgerSide = 'Debit' | 'Credit'
@@ -153,6 +154,7 @@ const SIDE_OF: Readonly<Record<PartyLedgerEntryKind, PartyLedgerSide>> = {
   PayableOpenItem: 'Credit',
   OpenItemCancellation: 'Credit',
   PayableOpenItemCancellation: 'Debit',
+  ManualBankPaymentReversal: 'Credit',
 }
 
 /** A receivable or a payable open item (MOD-15): the two kinds that carry the invoice document and due date. */
@@ -162,7 +164,8 @@ const isOpenItemKind = (kind: PartyLedgerEntryKind) => kind === 'OpenItem' || ki
 const isCancellationKind = (kind: PartyLedgerEntryKind) =>
   kind === 'OpenItemCancellation' || kind === 'PayableOpenItemCancellation'
 
-const isReversalKind = (kind: PartyLedgerEntryKind) => kind === 'ManualReceiptReversal' || isCancellationKind(kind)
+const isReversalKind = (kind: PartyLedgerEntryKind) =>
+  kind === 'ManualReceiptReversal' || kind === 'ManualBankPaymentReversal' || isCancellationKind(kind)
 
 function decodeEntry(value: unknown, currencyId: string, from: string, to: string): PartyLedgerEntry | null {
   if (!isRecord(value) || !hasExactKeys(value, ENTRY_KEYS)) return null

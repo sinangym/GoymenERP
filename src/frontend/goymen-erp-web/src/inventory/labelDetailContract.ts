@@ -52,7 +52,7 @@ export interface InventoryLabelBalances {
 
 export interface InventoryLabelGenealogyEdge {
   readonly transformationId: string
-  readonly kind: 'Split' | 'Merge'
+  readonly kind: 'Split' | 'Merge' | 'Manufacturing'
   readonly occurredAtUtc: string
   readonly sourceLabelId: string
   readonly sourceCode: string
@@ -212,7 +212,7 @@ function genealogyEdge(value: unknown): InventoryLabelGenealogyEdge | null {
   if (source === null || !exact(source, [
     'transformationId', 'kind', 'occurredAtUtc', 'sourceLabelId', 'sourceCode', 'sourceLabelVersion',
     'sourceQuantityKg', 'outputLabelId', 'outputCode', 'outputLabelVersion', 'outputQuantityKg',
-  ]) || !guid(source.transformationId) || (source.kind !== 'Split' && source.kind !== 'Merge') ||
+  ]) || !guid(source.transformationId) || (source.kind !== 'Split' && source.kind !== 'Merge' && source.kind !== 'Manufacturing') ||
     !instant(source.occurredAtUtc) || !guid(source.sourceLabelId) || !text(source.sourceCode) ||
     !version(source.sourceLabelVersion) || !positiveQuantity(source.sourceQuantityKg) ||
     !guid(source.outputLabelId) || !text(source.outputCode) || !version(source.outputLabelVersion) ||
@@ -319,10 +319,13 @@ function validGenealogyTransformations(edges: readonly InventoryLabelGenealogyEd
     if ([...sources.keys()].some((labelId) => outputs.has(labelId)) ||
       (first.kind === 'Split' && (sources.size !== 1 || outputs.size < 2)) ||
       (first.kind === 'Merge' && (sources.size < 2 || outputs.size !== 1)) ||
-      !decimalSumsEqual(
+      // B-03: a Manufacturing edge links one output label to its order's net-issued input labels with raw kilograms;
+      // process loss means the totals need not balance, so only split/merge keep the mass-balance check.
+      (first.kind === 'Manufacturing' && (sources.size < 1 || outputs.size !== 1)) ||
+      (first.kind !== 'Manufacturing' && !decimalSumsEqual(
         [...sources.values()].map((facts) => facts.quantityKg),
         [...outputs.values()].map((facts) => facts.quantityKg),
-      )) return false
+      ))) return false
   }
   return true
 }

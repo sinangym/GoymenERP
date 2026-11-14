@@ -240,6 +240,16 @@ public sealed class InventoryManufacturingRealizationException : Exception
             : throw new InvalidOperationException(
                 "Only the physical-stock refusal of the manufacturing-realization contract carries a stock shortfall.");
     }
+
+    /// <summary>
+    /// B-03: a V2 participant refusal. The V2 code set is the V1 set plus the V2-only codes; the V1 closed set and
+    /// <see cref="Refused"/> stay unchanged, so a V1 caller can never observe a V2-only code.
+    /// </summary>
+    public static InventoryManufacturingRealizationException RefusedV2(int status, string code) =>
+        InventoryManufacturingRealizationCodesV2.IsDefined(status, code)
+            ? new(status, code, stockShortfall: null)
+            : throw new InvalidOperationException(
+                "Inventory manufacturing-realization V2 refusal is outside its closed contract.");
 }
 
 /// <summary>

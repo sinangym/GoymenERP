@@ -73,6 +73,13 @@ public sealed class FinancePaymentAllocationService(
         FinanceAllocationMutation mutation;
         try
         {
+            // API-23: an approved reversal closes the payment for good (its allocation state is also set to zero);
+            // name the reason instead of reporting a bare amount shortfall.
+            if (await dbContext.OutgoingMoneyEventReversals.AsNoTracking()
+                    .AnyAsync(row => row.PaymentId == payment.Id, cancellationToken))
+            {
+                throw new FinanceAllocationPolicyException("paymentId", "finance_source_already_reversed");
+            }
             mutation = FinanceAllocationPolicy.CreatePayment(payment, openItem, paymentState, normalizedRequest);
             // The recorded payment's one outgoing money event is the fact being applied: it must exist with the
             // payment's own amount, account and currency, or the payment is not a usable source.
