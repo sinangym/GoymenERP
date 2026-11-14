@@ -351,6 +351,35 @@ export function planList(plans: unknown[] = [planSummary()], nextCursor: string 
   return { plans, nextCursor }
 }
 
+/** SENTETIK product and stored location named by a physical-stock refusal (SAT-D318). */
+export const SHORTFALL_PRODUCT = 'e0000000-0000-4000-8000-000000000030'
+export const SHORTFALL_LOCATION = 'e0000000-0000-4000-8000-000000000031'
+
+/**
+ * A synthetic `ManufacturingStockShortfallViewV1` (SAT-D318), in the server's JSON shape: the refused input issue
+ * `sourceLineId` of ROLL_1 on ORDER, asking for `requestedKg` where only `availableKg` were usable, both in the
+ * server's canonical text.
+ */
+export function stockShortfall(
+  sourceLineId: string,
+  requestedKg: string,
+  availableKg: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    movementKind: 'Issue',
+    sourceKind: 'manufacturing.input-issue',
+    sourceId: ORDER,
+    sourceLineId,
+    labelId: ROLL_1,
+    productId: SHORTFALL_PRODUCT,
+    locationId: SHORTFALL_LOCATION,
+    requestedKg,
+    availableKg,
+    ...overrides,
+  }
+}
+
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,

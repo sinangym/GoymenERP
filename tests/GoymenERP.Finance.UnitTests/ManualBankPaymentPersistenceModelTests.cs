@@ -3,6 +3,8 @@ using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -81,6 +83,73 @@ public sealed class ManualBankPaymentPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration =>
             migration.EndsWith("_AddManualBankPayments", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Payment_reversal_rows_are_company_filtered_and_the_decision_check_is_the_reviewed_text()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model;
+        foreach (var type in new[] { typeof(PaymentReversalProposalRow), typeof(OutgoingMoneyEventReversalRow) })
+        {
+            var entity = context.Model.FindEntityType(type)!;
+            Assert.Equal(FinanceDbContext.Schema, entity.GetSchema());
+            Assert.Single(entity.GetDeclaredQueryFilters());
+        }
+
+        var proposals = design.FindEntityType(typeof(PaymentReversalProposalRow))!;
+        var decision = Assert.Single(proposals.GetCheckConstraints(), check =>
+            check.Name == "CK_PaymentReversalProposals_Decision");
+        Assert.Equal(FinanceDbContext.PaymentReversalProposalDecisionCheck, decision.Sql);
+        Assert.Contains("[ProposedBy] <> [DecidedBy]", decision.Sql, StringComparison.Ordinal);
+        Assert.Equal("Latin1_General_100_BIN2",
+            proposals.FindProperty(nameof(PaymentReversalProposalRow.ProposedBy))!.GetCollation());
+        Assert.Equal("Latin1_General_100_BIN2",
+            proposals.FindProperty(nameof(PaymentReversalProposalRow.DecidedBy))!.GetCollation());
+        Assert.True(proposals.FindProperty(nameof(PaymentReversalProposalRow.Version))!.IsConcurrencyToken);
+        Assert.Equal(["[Status] = 0", "[Status] = 1"], proposals.GetIndexes()
+            .Where(index => index.IsUnique && index.GetFilter() is not null)
+            .Select(index => index.GetFilter()!).Order(StringComparer.Ordinal));
+
+        var reversals = design.FindEntityType(typeof(OutgoingMoneyEventReversalRow))!;
+        Assert.Equal(
+            ["CompanyId,OriginalEventId", "CompanyId,PaymentId", "CompanyId,ProposalId"],
+            reversals.GetIndexes().Where(index => index.IsUnique && index.GetFilter() is null)
+                .Select(index => string.Join(',', index.Properties.Select(property => property.Name)))
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(typeof(string), reversals.FindProperty(nameof(OutgoingMoneyEventReversalRow.AmountText))!.ClrType);
+        Assert.DoesNotContain(reversals.GetProperties(), property => property.ClrType == typeof(decimal));
+    }
+
+    [Fact]
+    public void A_recorded_reversal_event_is_append_only()
+    {
+        using var context = Context();
+        var row = new OutgoingMoneyEventReversalRow
+        {
+            Id = Guid.NewGuid(), CompanyId = Company, PaymentId = Guid.NewGuid(), OriginalEventId = Guid.NewGuid(),
+            ProposalId = Guid.NewGuid(), PartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(),
+            TreasuryAccountId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(), AmountText = "10", ProfileId = "p",
+            ProfileVersion = "1", OccurredOn = new DateOnly(2026, 11, 11), RecordedBy = "checker",
+            CorrelationId = "corr",
+        };
+        context.OutgoingMoneyEventReversals.Attach(row);
+        row.AmountText = "11";
+
+        Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_payment_reversal_migration_is_pure_ddl_up_and_its_rollback_refuses_first_while_a_reversal_exists()
+    {
+        var migration = new AddPaymentReversals();
+
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51051", guard, StringComparison.Ordinal);
+        Assert.Contains("[finance].[PaymentReversalProposals]", guard, StringComparison.Ordinal);
+        Assert.Contains("[finance].[OutgoingMoneyEventReversals]", guard, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
     }
 
     private static FinanceDbContext Context()

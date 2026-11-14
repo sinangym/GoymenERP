@@ -102,6 +102,8 @@ public enum FinanceAction
     ReadPartyLedger, ReadPartyLedgerAmount,
     // FI04: open-item metadata and its monetary disclosure are independent reads.
     ReadOpenItems, ReadOpenItemAmount,
+    // API-23: maker-checker reversal of a recorded outgoing payment; its own names, not the receipt reversal's.
+    ProposePaymentReversal, ApprovePaymentReversal,
     // API-30: the cash account (kasa) master; its own names, aligned with the bank-account master's.
     ReadCashAccounts, ProposeCashAccount, ApproveCashAccount,
     // API-30 passivation/reactivation: each its own propose/approve pair, so who may do which stays a separate grant.

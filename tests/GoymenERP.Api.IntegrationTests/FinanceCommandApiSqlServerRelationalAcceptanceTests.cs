@@ -853,22 +853,23 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
             // The newest Finance migration adds the cash account passivation and reactivation (API-30), after the cash
-            // accounts themselves, the payment allocations (F3a / API-20), the invoice cancellations (F2b), the
-            // invoice exchange columns (MOD-04), the open-item direction (MOD-15) and the Work delivery for the
-            // official-invoice approval source. The source migration still follows DEC-FIN-016's customer
-            // instruments, DEC-FIN-014's POS facts and F-03's allocations.
+            // accounts themselves, the payment reversals (API-23), the payment allocations (F3a / API-20), the invoice
+            // cancellations (F2b), the invoice exchange columns (MOD-04), the open-item direction (MOD-15) and the
+            // Work delivery for the official-invoice approval source. The source migration still follows
+            // DEC-FIN-016's customer instruments, DEC-FIN-014's POS facts and F-03's allocations.
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             Assert.EndsWith("_AddCashAccountStateChanges", applied[^1], StringComparison.Ordinal);
             Assert.EndsWith("_AddCashAccounts", applied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPaymentAllocations", applied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddInvoiceCancellations", applied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOpenItemInvoiceExchange", applied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOpenItemDirection", applied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1", applied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", applied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddCustomerInstruments", applied[^9], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPosCollectionFacts", applied[^10], StringComparison.Ordinal);
-            Assert.EndsWith("_AddFinanceAllocations", applied[^11], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPaymentReversals", applied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPaymentAllocations", applied[^4], StringComparison.Ordinal);
+            Assert.EndsWith("_AddInvoiceCancellations", applied[^5], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOpenItemInvoiceExchange", applied[^6], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOpenItemDirection", applied[^7], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1", applied[^8], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", applied[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCustomerInstruments", applied[^10], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPosCollectionFacts", applied[^11], StringComparison.Ordinal);
+            Assert.EndsWith("_AddFinanceAllocations", applied[^12], StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);
@@ -1069,6 +1070,238 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
             + "AND name = N'ManualBankPaymentId'"));
+    }
+
+    /// <summary>
+    /// API-23 over HTTP (review A P2-2): the five payment-reversal endpoints through the real host. A request without a
+    /// usable Idempotency-Key is 400, a non-JSON body is 415 and a path id that differs from the body id is 400, each
+    /// before any write. The maker's own approval is 403 even with the approve grant. Company B sees no pending item,
+    /// no detail (404) and its approval of company A's proposal is the "not found" refusal. Another checker approves
+    /// once, the key replays with the first correlation, and the pending list is empty afterwards. Party, period and
+    /// grants are SENTETIK inputs in this test's own database.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_payment_reversal_is_company_scoped_needs_another_HTTP_user_and_every_answer_of_a_key_holds()
+    {
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<IFinancePartyAccountPort>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
+            services.RemoveAll<IFinanceRecordPeriodRule>();
+            services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+        });
+        var account = await run.ApprovedBankAccountAsync(CompanyA);
+        await run.GrantAsync(Proposer, CompanyA, [.. ManualPaymentPreparerGrants,
+            FinancePermissionNames.PaymentReversePropose, FinancePermissionNames.PaymentReverseApprove]);
+        await run.GrantAsync(Approver, CompanyA, [.. ManualPaymentDeciderGrants,
+            FinancePermissionNames.PaymentReverseApprove]);
+        await run.GrantAsync(Approver, CompanyB, FinancePermissionNames.ManualBankPaymentDraftRead,
+            FinancePermissionNames.PaymentReverseApprove);
+        using var maker = run.Client(Proposer, CompanyA);
+        using var checker = run.Client(Approver, CompanyA);
+        using var foreignCompany = run.Client(Approver, CompanyB);
+
+        Guid paymentId;
+        using (var saved = await maker.SendAsync(Post(FinanceEndpoints.ManualBankPaymentsPath,
+                   "SENTETIK-payment-reversal-save", Guid.NewGuid().ToString("N"), PaymentSave(account, null))))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            paymentId = (await Json(saved)).GetProperty("resource").GetProperty("id").GetGuid();
+        }
+        using (var approved = await checker.SendAsync(Post($"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/approval",
+                   "SENTETIK-payment-reversal-approve-payment", Guid.NewGuid().ToString("N"),
+                   new ApproveManualBankPaymentRequest(paymentId, "1"))))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        }
+        using (var recorded = await checker.SendAsync(Post($"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/record",
+                   "SENTETIK-payment-reversal-record-payment", Guid.NewGuid().ToString("N"),
+                   new RecordManualBankPaymentRequest(paymentId, "2", BankResultConfirmed: true))))
+        {
+            Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+            Assert.Equal("3", (await Json(recorded)).GetProperty("resource").GetProperty("version").GetString());
+        }
+
+        var proposePath = $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/reversal-proposals";
+        // #66 round 20: the reversal date may equal the payment date (2026-09-18) but not precede it.
+        var proposeBody = new ProposePaymentReversalRequest(paymentId, "3", new DateOnly(2026, 9, 18),
+            "SENTETIK banka iadesi");
+        using (var beforePayment = await maker.SendAsync(Post(proposePath, "SENTETIK-payment-reversal-before-payment",
+                   Guid.NewGuid().ToString("N"), proposeBody with { OccurredOn = new DateOnly(2026, 9, 17) })))
+        {
+            Assert.Equal((HttpStatusCode)422, beforePayment.StatusCode);
+            Assert.Equal("finance_reversal_before_payment", Issue(await Json(beforePayment)));
+        }
+        using (var keyless = Post(proposePath, "SENTETIK-unused", Guid.NewGuid().ToString("N"), proposeBody))
+        {
+            keyless.Headers.Remove("Idempotency-Key");
+            using var response = await maker.SendAsync(keyless);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        using (var notJson = new HttpRequestMessage(HttpMethod.Post, proposePath)
+               {
+                   Content = new StringContent("SENTETIK", Encoding.UTF8, "text/plain"),
+               })
+        {
+            notJson.Headers.Add("Idempotency-Key", "SENTETIK-payment-reversal-not-json");
+            using var response = await maker.SendAsync(notJson);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+        using (var mismatch = await maker.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualBankPaymentsPath}/{Guid.NewGuid():D}/reversal-proposals",
+                   "SENTETIK-payment-reversal-mismatch", Guid.NewGuid().ToString("N"), proposeBody)))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PaymentReversalProposals"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName LIKE N'finance.payment-reversal.%'"));
+
+        var proposeCorrelation = Guid.NewGuid().ToString("N");
+        Guid proposalId;
+        string proposalVersion;
+        using (var proposed = await maker.SendAsync(Post(proposePath, "SENTETIK-payment-reversal-propose",
+                   proposeCorrelation, proposeBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, proposed.StatusCode);
+            Assert.True(proposed.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.False(proposed.Headers.Contains("Idempotency-Replayed"));
+            var resource = (await Json(proposed)).GetProperty("resource");
+            proposalId = resource.GetProperty("id").GetGuid();
+            proposalVersion = resource.GetProperty("version").GetString()!;
+            Assert.Equal("Pending", resource.GetProperty("status").GetString());
+            Assert.Equal(paymentId, resource.GetProperty("paymentId").GetGuid());
+        }
+        using (var replayed = await maker.SendAsync(Post(proposePath, "SENTETIK-payment-reversal-propose",
+                   Guid.NewGuid().ToString("N"), proposeBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            AssertReplayOf(replayed, proposeCorrelation);
+            Assert.Equal(proposalId, (await Json(replayed)).GetProperty("resource").GetProperty("id").GetGuid());
+        }
+
+        var approvalPath = $"{FinanceEndpoints.PaymentReversalProposalsPath}/{proposalId:D}/approval";
+        var rejectionPath = $"{FinanceEndpoints.PaymentReversalProposalsPath}/{proposalId:D}/rejection";
+        var approvalBody = new ApprovePaymentReversalRequest(proposalId, proposalVersion);
+        using (var keyless = Post(approvalPath, "SENTETIK-unused", Guid.NewGuid().ToString("N"), approvalBody))
+        {
+            keyless.Headers.Remove("Idempotency-Key");
+            using var response = await checker.SendAsync(keyless);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        using (var notJson = new HttpRequestMessage(HttpMethod.Post, approvalPath)
+               {
+                   Content = new StringContent("SENTETIK", Encoding.UTF8, "text/plain"),
+               })
+        {
+            notJson.Headers.Add("Idempotency-Key", "SENTETIK-payment-reversal-approval-not-json");
+            using var response = await checker.SendAsync(notJson);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+        using (var mismatch = await checker.SendAsync(Post(
+                   $"{FinanceEndpoints.PaymentReversalProposalsPath}/{Guid.NewGuid():D}/approval",
+                   "SENTETIK-payment-reversal-approval-mismatch", Guid.NewGuid().ToString("N"), approvalBody)))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+        }
+        using (var keyless = Post(rejectionPath, "SENTETIK-unused", Guid.NewGuid().ToString("N"),
+                   new RejectPaymentReversalRequest(proposalId, proposalVersion, "SENTETIK red")))
+        {
+            keyless.Headers.Remove("Idempotency-Key");
+            using var response = await checker.SendAsync(keyless);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        using (var notJson = new HttpRequestMessage(HttpMethod.Post, rejectionPath)
+               {
+                   Content = new StringContent("SENTETIK", Encoding.UTF8, "text/plain"),
+               })
+        {
+            notJson.Headers.Add("Idempotency-Key", "SENTETIK-payment-reversal-rejection-not-json");
+            using var response = await checker.SendAsync(notJson);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+        using (var mismatch = await checker.SendAsync(Post(
+                   $"{FinanceEndpoints.PaymentReversalProposalsPath}/{Guid.NewGuid():D}/rejection",
+                   "SENTETIK-payment-reversal-rejection-mismatch", Guid.NewGuid().ToString("N"),
+                   new RejectPaymentReversalRequest(proposalId, proposalVersion, "SENTETIK red"))))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+        }
+
+        using (var ownApproval = await maker.SendAsync(Post(approvalPath, "SENTETIK-payment-reversal-self",
+                   Guid.NewGuid().ToString("N"), approvalBody)))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, ownApproval.StatusCode);
+            var problem = await Json(ownApproval);
+            Assert.Equal("forbidden", problem.GetProperty("code").GetString());
+            Assert.False(problem.TryGetProperty("issues", out _));
+        }
+
+        using (var foreignPending = await foreignCompany.GetAsync(FinanceEndpoints.PaymentReversalProposalsPath + "/pending"))
+        {
+            Assert.Equal(HttpStatusCode.OK, foreignPending.StatusCode);
+            Assert.Empty((await Json(foreignPending)).GetProperty("items").EnumerateArray());
+        }
+        using (var foreignDetail = await foreignCompany.GetAsync(
+                   $"{FinanceEndpoints.PaymentReversalProposalsPath}/{proposalId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, foreignDetail.StatusCode);
+        }
+        using (var foreignApproval = await foreignCompany.SendAsync(Post(approvalPath,
+                   "SENTETIK-payment-reversal-foreign", Guid.NewGuid().ToString("N"), approvalBody)))
+        {
+            Assert.Equal((HttpStatusCode)422, foreignApproval.StatusCode);
+            Assert.Equal("finance_reversal_proposal_not_found", Issue(await Json(foreignApproval)));
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE Id = @p AND CompanyId = @c AND Status = 0",
+            ("@p", proposalId), ("@c", CompanyA)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals"));
+
+        using (var pending = await checker.GetAsync(FinanceEndpoints.PaymentReversalProposalsPath + "/pending"))
+        {
+            Assert.Equal(HttpStatusCode.OK, pending.StatusCode);
+            Assert.True(pending.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.Equal(proposalId, Single(await Json(pending)).GetProperty("id").GetGuid());
+        }
+        using (var detail = await checker.GetAsync($"{FinanceEndpoints.PaymentReversalProposalsPath}/{proposalId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+            Assert.Equal(paymentId, (await Json(detail)).GetProperty("paymentId").GetGuid());
+        }
+
+        var approvalCorrelation = Guid.NewGuid().ToString("N");
+        Guid reversalEventId;
+        using (var approved = await checker.SendAsync(Post(approvalPath, "SENTETIK-payment-reversal-approve",
+                   approvalCorrelation, approvalBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            var resource = (await Json(approved)).GetProperty("resource");
+            Assert.Equal("Approved", resource.GetProperty("status").GetString());
+            reversalEventId = resource.GetProperty("reversalEventId").GetGuid();
+        }
+        using (var replayed = await checker.SendAsync(Post(approvalPath, "SENTETIK-payment-reversal-approve",
+                   Guid.NewGuid().ToString("N"), approvalBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            AssertReplayOf(replayed, approvalCorrelation);
+            Assert.Equal(reversalEventId, (await Json(replayed)).GetProperty("resource")
+                .GetProperty("reversalEventId").GetGuid());
+        }
+        using (var pending = await checker.GetAsync(FinanceEndpoints.PaymentReversalProposalsPath + "/pending"))
+        {
+            Assert.Equal(HttpStatusCode.OK, pending.StatusCode);
+            Assert.Empty((await Json(pending)).GetProperty("items").EnumerateArray());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals WHERE Id = @id AND PaymentId = @payment "
+            + "AND CompanyId = @c", ("@id", reversalEventId), ("@payment", paymentId), ("@c", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE Id = @p AND Status = 1 "
+            + "AND ProposedBy <> DecidedBy", ("@p", proposalId)));
     }
 
     private static ManualBankPaymentDraftSaveRequest PaymentSave(

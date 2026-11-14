@@ -23,7 +23,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// the fresh authority fence and the envelope it builds, and the mapping of every refusal to one
 /// status. What SQL and the host do is proven by the relational HTTP acceptance tests.
 /// </summary>
-public sealed class ManufacturingCommandServiceTests
+public sealed partial class ManufacturingCommandServiceTests
 {
     private const string Permission = "manufacturing.facts.record";
     // ProductStockCandidateFixture creates draft v1 and activates it; c161e0e7 publishes that exact accepted v2.
@@ -3016,12 +3016,20 @@ public sealed class ManufacturingCommandServiceTests
     {
         public List<ManufacturingInventoryInputIssuePortCommandV1> Commands { get; } = [];
 
+        /// <summary>Inventory's refusal of the issue, thrown before anything is written (SAT-D318 tests).</summary>
+        public Func<ManufacturingCommandMetadata, Exception>? Refusal { get; set; }
+
         public Task<ManufacturingInventoryInputIssuePortResultV1> IssueAsync(
             ManufacturingInventoryInputIssuePortCommandV1 command,
             ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken)
         {
             Commands.Add(command);
+            if (Refusal is { } refusal)
+            {
+                throw refusal(metadata);
+            }
+
             var order = store.Orders[command.OrderId];
             order.IssueInput(command.ExpectedOrderVersion, command.IssueId, command.ParentLabelId,
                 command.Quantity, command.OccurredAtUtc);

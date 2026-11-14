@@ -108,6 +108,7 @@ public static partial class ErpOpenApiContract
             options.AddOperationTransformer(TransformOperationAsync);
             options.AddOperationTransformer(TransformProductOperationAsync);
             options.AddSchemaTransformer(TransformProductSchemaAsync);
+            options.AddSchemaTransformer(TransformManufacturingStockShortfallSchemaAsync);
             options.AddSchemaTransformer((schema, context, _) =>
             {
                 ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);

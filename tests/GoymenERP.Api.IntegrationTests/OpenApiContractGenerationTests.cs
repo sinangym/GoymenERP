@@ -568,6 +568,29 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "404:application/problem+json",
                 "503:application/problem+json"),
             ParameterValues: ["path:proposalId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-bank-payments/{paymentId}/reversal-proposals",
+            "ProposeFinanceManualBankPaymentReversalV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json",
+                "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ProposePaymentReversalRequest", ["path:paymentId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-bank-payments/reversal-proposals/{proposalId}/approval",
+            "ApproveFinanceManualBankPaymentReversalV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json",
+                "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ApprovePaymentReversalRequest", ["path:proposalId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-bank-payments/reversal-proposals/{proposalId}/rejection",
+            "RejectFinanceManualBankPaymentReversalV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json",
+                "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RejectPaymentReversalRequest", ["path:proposalId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/manual-bank-payments/reversal-proposals/pending",
+            "GetPendingFinanceManualBankPaymentReversalsV1",
+            AuthenticatedResponses("200:application/json", "503:application/problem+json")),
+        new("get", "/api/v1/finance/manual-bank-payments/reversal-proposals/{proposalId}",
+            "GetFinanceManualBankPaymentReversalV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues: ["path:proposalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/manual-receipts", "GetFinanceManualReceiptsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:cursor:false:type:string"]),
@@ -1579,6 +1602,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["RejectFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["GetPendingFinanceManualReceiptReversalsV1"] = "ref:ReversalProposalPage",
             ["GetFinanceManualReceiptReversalV1"] = "ref:ReversalProposalView",
+            ["ProposeFinanceManualBankPaymentReversalV1"] = "ref:PaymentReversalProposalCommandResult",
+            ["ApproveFinanceManualBankPaymentReversalV1"] = "ref:PaymentReversalProposalCommandResult",
+            ["RejectFinanceManualBankPaymentReversalV1"] = "ref:PaymentReversalProposalCommandResult",
+            ["GetPendingFinanceManualBankPaymentReversalsV1"] = "ref:PaymentReversalProposalPage",
+            ["GetFinanceManualBankPaymentReversalV1"] = "ref:PaymentReversalProposalView",
             ["GetFinanceManualReceiptsV1"] = "ref:SourcePage",
             ["GetFinanceManualReceiptV1"] = "ref:SourceDetail",
             ["GetFinanceBankAccountsV1"] = "ref:BankAccountPage",
@@ -1938,6 +1966,11 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectFinanceManualReceiptReversalV1",
         "GetPendingFinanceManualReceiptReversalsV1",
         "GetFinanceManualReceiptReversalV1",
+        "ProposeFinanceManualBankPaymentReversalV1",
+        "ApproveFinanceManualBankPaymentReversalV1",
+        "RejectFinanceManualBankPaymentReversalV1",
+        "GetPendingFinanceManualBankPaymentReversalsV1",
+        "GetFinanceManualBankPaymentReversalV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "ReceiveFinanceCustomerInstrumentV1",
@@ -2259,6 +2292,9 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
+        "ProposeFinanceManualBankPaymentReversalV1",
+        "ApproveFinanceManualBankPaymentReversalV1",
+        "RejectFinanceManualBankPaymentReversalV1",
         "CreateSalesOrderDraftV1",
         "SubmitSalesOrderDraftV1",
         "ApproveSalesOrderDraftV1",
@@ -2558,6 +2594,18 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                ["ProposeFinanceManualBankPaymentReversalV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ApproveFinanceManualBankPaymentReversalV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["RejectFinanceManualBankPaymentReversalV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -2806,6 +2854,11 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectFinanceManualReceiptReversalV1",
         "GetPendingFinanceManualReceiptReversalsV1",
         "GetFinanceManualReceiptReversalV1",
+        "ProposeFinanceManualBankPaymentReversalV1",
+        "ApproveFinanceManualBankPaymentReversalV1",
+        "RejectFinanceManualBankPaymentReversalV1",
+        "GetPendingFinanceManualBankPaymentReversalsV1",
+        "GetFinanceManualBankPaymentReversalV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "ReceiveFinanceCustomerInstrumentV1",
@@ -3058,6 +3111,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentV1:404",
         "GetFinanceManualBankPaymentV1:404",
         "GetFinanceManualReceiptReversalV1:404",
+        "GetFinanceManualBankPaymentReversalV1:404",
         "GetSalesOrderDraftV1:404",
         "SubmitSalesOrderDraftV1:404",
         "ApproveSalesOrderDraftV1:404",
@@ -7074,6 +7128,31 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string"),
                     ("issues", "type:array;items:ref:ValidationIssue")),
+                ["PaymentReversalProposalView"] = ObjectSchema(
+                    ["id", "paymentId", "occurredOn", "reason", "status", "proposedBy", "proposedAtUtc",
+                        "decidedBy", "decidedAtUtc", "decisionReason", "reversalEventId", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("paymentId", "type:string;format:uuid"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("reason", "type:string"),
+                    ("status", "ref:ReversalProposalStatus"),
+                    ("proposedBy", "type:string"),
+                    ("proposedAtUtc", "type:string;format:date-time"),
+                    ("decidedBy", "type:null|string"),
+                    ("decidedAtUtc", "type:null|string;format:date-time"),
+                    ("decisionReason", "type:null|string"),
+                    ("reversalEventId", "type:null|string;format:uuid"),
+                    ("version", "type:string")),
+                ["PaymentReversalProposalPage"] = ObjectSchema(
+                    ["items"],
+                    ("items", "type:array;items:ref:PaymentReversalProposalView")),
+                ["PaymentReversalProposalCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:PaymentReversalProposalView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
                 ["MoneyText"] = ObjectSchema(
                     ["amount", "currencyId"],
                     ("amount", "type:string"),
@@ -7230,7 +7309,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("instrumentId", "type:null|string;format:uuid"),
                     ("documentId", "type:null|string;format:uuid"),
                     ("dueOn", "type:null|string;format:date")),
-                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem|OpenItemCancellation|PayableOpenItemCancellation"),
+                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment|PayableOpenItem|OpenItemCancellation|PayableOpenItemCancellation|ManualBankPaymentReversal"),
                 ["PartyLedgerSide"] = ScalarSchema("enum:Debit|Credit"),
                 ["PartyLedgerBalanceView"] = ObjectSchema(
                     ["side", "amount"],
@@ -9595,6 +9674,21 @@ public sealed partial class OpenApiContractGenerationTests
                     ("proposalId", "type:string;format:uuid"),
                     ("expectedVersion", "type:string"),
                     ("reason", "type:string")),
+                ["ProposePaymentReversalRequest"] = ObjectSchema(
+                    ["paymentId", "expectedVersion", "occurredOn", "reason"],
+                    ("paymentId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("reason", "type:string")),
+                ["ApprovePaymentReversalRequest"] = ObjectSchema(
+                    ["proposalId", "expectedVersion"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
+                ["RejectPaymentReversalRequest"] = ObjectSchema(
+                    ["proposalId", "expectedVersion", "reason"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string")),
                 ["ApprovePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -11013,6 +11107,7 @@ public sealed partial class OpenApiContractGenerationTests
         AssertNativeApprovalPolymorphism(schemas);
         AssertSuccessComponentSchemas(schemas);
         AssertProductSchemas(schemas);
+        AssertManufacturingStockShortfallSchemas(schemas);
         AssertDispatchNoteRequestBounds(schemas);
         var mutationAccounts = schemas
             .GetProperty("CounterpartyMutationView")
@@ -12188,9 +12283,11 @@ public sealed partial class OpenApiContractGenerationTests
             return;
         }
 
-        var expectedReference = CodeLessProblemResponses.Contains(responseKey)
-            ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
-            : "#/components/schemas/ErpProblemDetailsContract";
+        var expectedReference = EndpointProblemResponses.TryGetValue(responseKey, out var endpointReference)
+            ? endpointReference
+            : CodeLessProblemResponses.Contains(responseKey)
+                ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                : "#/components/schemas/ErpProblemDetailsContract";
         Assert.Equal(expectedReference, schema.GetProperty("$ref").GetString());
         Assert.False(schema.TryGetProperty("oneOf", out _));
     }

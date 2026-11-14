@@ -393,6 +393,31 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 | Screen | The create form and the Draft edit form call it 400 ms after the last change. They abort the in-flight request of an older content and keep the last answer with the input snapshot it answered. That answer is "güncel" only for that snapshot. Refused and failed previews state the reason and field. The panel lists missing parameters with their labels, and the save is never gated by the preview. |
 | Central step (not in this slice) | OpenAPI baseline: +1 operation and +6 schemas. The `OpenApiContractGenerationTests` expectations. No permission, shell, migration, guard fingerprint or relational-inventory change. |
 
+## MFG-COST — the production receipt cost calculator (#1146, K3: money/formula)
+
+`Domain/Costing/ProductionReceiptCostCalculatorV1` (contract version 1) is the single deterministic production receipt cost of v1: SAT-D305 (4), SAT-D307, SAT-D316, SAT-D317, URT-D40 and Sinan's answers of #66 6857496471 and #66 6864631364, recorded in `docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md` as SAT-D326, SAT-D327 and URT-D44…URT-D47, and #66 6874860782 (SINAN-CEVAP (10), the remnant share with scrap in cost, URT-D46 (6)). It is a pure Domain calculator. There is no endpoint, store, migration, permission or OpenAPI change, and nothing calls it yet: the order-closing slice and the Inventory / Settings ports feed it later.
+
+| Rule | Source |
+|---|---|
+| Net input cost = Σ issued kg × stamped issue cost − Σ returned kg × the linked issue's stamped cost; consumed kg = issued − returned | SAT-D317 (2) |
+| **Net raw-material kg cost** = net input cost / consumed kg, after returns | URT-D44 / #66 6864631364 (1) |
+| A usable remnant returns to stock at the net raw-material kg cost; its value leaves the cost and its kg leave the divisor; with scrap in cost too, the scrap share is borne by the product only | URT-D46 / #66 6864631364 (14); with scrap in cost #66 6874860782 (SINAN-CEVAP (10), answering URT-D46 (6)) |
+| Scrap in cost (default): cost per kg = (net − remnant value) / (good + second quality kg); example: 1000 kg × 40, 900 good, 50 remnant, 50 scrap → remnant 2 000 TL, 38 000 / 900 = 42.22 TL/kg | SAT-D305 (2), SAT-D307, #66 6874860782 (SINAN-CEVAP (10)) |
+| Scrap out of cost: each weighing × the scrap price of **its own month**; cost per kg = (net − remnant value − scrap expense) / (good + second quality kg) | SAT-D316 (1), SAT-D326 (1) / #66 6857496471 (1), URT-D47 / #66 6864631364 (15) |
+| A weighing with kg whose month has no price entered → **pending** (`scrap_price_missing`), never zero; a zero-kg weighing with no price → computed | URT-D47 / #66 6864631364 (15), SAT-D326 (4) / #66 6857496471 (4) |
+| Any scrap price above the net raw-material kg cost → stop (`scrap_price_above_raw_material_cost`); equal computes | SAT-D326 (3) / #66 6857496471 (3), URT-D44 / #66 6864631364 (1) |
+| Paint (litres) and any other non-kg input are not loaded; the value carries a note with the Turkish text of `ProductionReceiptCostTextsV1.resx` ("boya maliyeti dahil değil", "kg dışı girdi maliyeti dahil değil") | SAT-D327 / #66 6857496471 (5), URT-D45 / #66 6864631364 (13) |
+| A cost per kg of zero or below is unreadable; more out (good + second + remnant + weighed scrap + declared process loss) than in is unreadable | SAT-D326 (2) / #66 6857496471 (2), URT-D40 |
+| Open order → pending (`order_not_closed`) | SAT-D317 (1) |
+
+- **Goldens** (`ProductionReceiptCostCalculatorTests`):
+  - 1000 kg × 40 TL; 900 good + 50 second quality; 50 kg scrap × 10 TL → 39 500 / 950 = 41.578947… TL/kg.
+  - 500 kg × 40 + 500 kg × 50, 400 kg of the 50 TL lot returned → net 25 000 / 600 = 41.67 TL/kg; a 43 TL/kg scrap price stops.
+  - 1000 kg × 40; 900 good, 50 remnant, 50 kg scrap × 10 TL → remnant 2 000 TL, (40 000 − 2 000 − 500) / 900 = 41.67 TL/kg.
+  - 1000 kg × 40 TL; 900 good + 50 second quality; 30 kg scrap weighed in October × 10 TL and 20 kg in November × 12 TL (each at its own month's price; the prices are test values) → (40 000 − 540) / 950 TL/kg.
+- Fail-closed: an unreadable answer (issue cost, setting, scrap price, mass, overflow, invalid input) carries no amount and wins over a missing scrap price. Sums run in id order, so the input order never changes the result.
+- **Not here (port contract / NEEDS-SINAN):** the rounding stage and remainder (SAT-D265), the currency and money type, a zero-cost issue (SAT-D297), WIP and the measurement correction (the DEC-PRDCT-006 items, still open in URT-D46 (6)), a reopened order, the per-coil rule of URT-D42, who enters the scrap price and the business date / time zone that places a weighing in a month.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - ~~One approved plan can open more than one order~~ — decided by Sinan (URT-D1, "tek plan = tek emir"); since U2-a a second order for the same plan is refused (`manufacturing_plan_order_exists`), pinned by `ReadOnlyViewTests.One_approved_plan_opens_exactly_one_order`.
@@ -400,9 +425,9 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five process engines (MFG-6…9, DEC-PRDCT-001's order complete) and the mass-balance calculator (MFG-BAL) above, and every parameter is supplied to them.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five process engines (MFG-6…9, DEC-PRDCT-001's order complete), the mass-balance calculator (MFG-BAL) and the production receipt cost calculator (MFG-COST) above, and every parameter is supplied to them.
 - No UI beyond the order screen and its list (MFG-UI, MFG-ORD); HTTP since MFG-API, persistence since MFG-5 (above).
-- No planning, capacity or costing on top of the engines yet: each engine's plan slice (the #342 pattern) comes with its sources.
+- No planning or capacity on top of the engines yet, and the production receipt cost (MFG-COST) is not wired to an order: each engine's plan slice (the #342 pattern) comes with its sources.
 
 ## dependency_wait
 

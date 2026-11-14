@@ -490,6 +490,23 @@ because it sums the outstanding of open payables.
 Not in this slice: the payment allocation screen (the receipt allocation UI is the model), a payment reversal (API-23,
 which must refuse while a payment allocation is active), advances (API-21) and cross-currency allocation (API-22).
 
+## API-23: manual bank payment reversal (maker-checker) — DEC-FIN-006, FNS-D14
+
+A RECORDED manual bank payment is reversed only through a proposal that another authorised user approves (the same
+maker-checker shape as the receipt reversal, FIN-T06). Approval writes one counter fact against the payment's one
+outgoing money event; the original payment and its money event are never edited or deleted.
+
+| Part | What |
+|---|---|
+| HTTP | `POST /api/v1/finance/manual-bank-payments/{paymentId}/reversal-proposals` (`ProposeFinanceManualBankPaymentReversalV1`), `POST /api/v1/finance/manual-bank-payments/reversal-proposals/{proposalId}/approval` (`ApproveFinanceManualBankPaymentReversalV1`), `POST …/{proposalId}/rejection` (`RejectFinanceManualBankPaymentReversalV1`), `GET …/pending` and `GET …/{proposalId}`. Same status codes, `Idempotency-Key` rule and replay headers as the receipt reversal proposals |
+| Authority | New names `finance.manual-bank-payment.reverse.propose` / `.reverse.approve` (registered, company-wide only, not Critical, **not granted** to any role or seed; grant is a human gate). Shell controls `finance.manual-bank-payments.reverse.propose` / `.reverse.approve` on the payment detail route |
+| Rules | Payment `Recorded` with its one outgoing money event; expected payment / proposal version; reason required; one pending proposal per payment (`finance_reversal_proposal_already_pending`), one approved reversal per payment (`finance_source_already_reversed`); the approver is not the proposer (`finance_approver_is_proposer`, ordinal comparison); refused while a payment allocation is active (`finance_reversal_has_allocations`, release first, API-20); the reversal date passes the period rule (`finance_period_rule_unavailable` / period codes) |
+| Persistence | `PaymentReversalProposals` (status Pending/Approved/Rejected, filtered unique indexes `UX_PaymentReversalProposals_PendingPayment` / `_ApprovedPayment`) and `OutgoingMoneyEventReversals` (company-leading FKs to the payment, its original outgoing money event and the proposal; one reversal per original event). New alternate key `AK_OutgoingMoneyEvents_CompanyId_Id` |
+| Idempotency / audit | `finance.Commands` rows `finance.payment-reversal.propose` / `.approve` / `.reject` target the payment; state refusals are recorded terminal answers the same key replays. Audit `finance.payment-reversal.proposed.v1` / `.approved.v1` / `.rejected.v1` |
+| Party ledger | New entry kind `ManualBankPaymentReversal = 9`, side Credit (it cancels the payment's Debit), `sourceId` = proposal id, `reversesSourceId` = the reversed payment id. Balance and risk ports read it the same way |
+| UI | Payment detail page: "Ödeme ters kaydı" panel (propose form; pending proposal with approve/reject for another authorised user; unknown outcome resends with the same key). Ledger row links to the reversed payment |
+| Migration `20261111184316_AddPaymentReversals` | Two tables, indexes and the alternate key. `Down` refuses with `THROW 51051` while any payment reversal proposal or recorded payment reversal is stored (forward fix) |
+
 ## API-30: cash account master (kasa) — FNS-D24
 
 A cash account is a definition only: no balance, no opening balance (API-14), no money movement. It follows the bank

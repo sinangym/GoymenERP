@@ -22,6 +22,7 @@ public static class FinanceEndpoints
     public const string CashAccountsPath = "/api/v1/finance/cash-accounts";
     public const string CashAccountCurrencyCandidatesPath = "/api/v1/finance/cash-accounts/currency-candidates";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
+    public const string PaymentReversalProposalsPath = "/api/v1/finance/manual-bank-payments/reversal-proposals";
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string PaymentAllocationsPath = "/api/v1/finance/payment-allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
@@ -1366,6 +1367,178 @@ public static class FinanceEndpoints
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<ReversalProposalView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        // API-23: maker-checker reversal of a recorded manual bank payment (an appended counter-event).
+        endpoints.MapPost(ManualBankPaymentsPath + "/{paymentId:guid}/reversal-proposals", async (
+                Guid paymentId,
+                HttpContext httpContext,
+                IPaymentReversalProposalService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                if (await ReadBodyAsync<ProposePaymentReversalRequest>(httpContext, cancellationToken) is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+                if (request.PaymentId != paymentId)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                var result = await service.ProposeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceManualBankPaymentReversalV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ProposePaymentReversalRequest>("application/json")
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status200OK)
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(PaymentReversalProposalsPath + "/{proposalId:guid}/approval", async (
+                Guid proposalId,
+                HttpContext httpContext,
+                IPaymentReversalProposalService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                if (await ReadBodyAsync<ApprovePaymentReversalRequest>(httpContext, cancellationToken) is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+                if (request.ProposalId != proposalId)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                var result = await service.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceManualBankPaymentReversalV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ApprovePaymentReversalRequest>("application/json")
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status200OK)
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(PaymentReversalProposalsPath + "/{proposalId:guid}/rejection", async (
+                Guid proposalId,
+                HttpContext httpContext,
+                IPaymentReversalProposalService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                if (await ReadBodyAsync<RejectPaymentReversalRequest>(httpContext, cancellationToken) is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+                if (request.ProposalId != proposalId)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                var result = await service.RejectAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RejectFinanceManualBankPaymentReversalV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<RejectPaymentReversalRequest>("application/json")
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status200OK)
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<PaymentReversalProposalCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(PaymentReversalProposalsPath + "/pending", async (
+                HttpContext httpContext,
+                IPaymentReversalProposalService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.PendingAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetPendingFinanceManualBankPaymentReversalsV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PaymentReversalProposalPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(PaymentReversalProposalsPath + "/{proposalId:guid}", async (
+                Guid proposalId,
+                HttpContext httpContext,
+                IPaymentReversalProposalService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.DetailAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), proposalId, cancellationToken));
+            })
+            .WithName("GetFinanceManualBankPaymentReversalV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PaymentReversalProposalView>()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();

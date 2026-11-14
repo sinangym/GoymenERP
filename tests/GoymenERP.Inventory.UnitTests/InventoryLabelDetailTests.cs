@@ -240,6 +240,46 @@ public sealed class InventoryLabelDetailTests
     }
 
     [Fact]
+    public async Task A_manufacturing_group_has_one_output_any_number_of_inputs_and_no_kg_balance()
+    {
+        var world = new World();
+        var transformationId = Guid.NewGuid();
+        var root = world.Reader.Record!.Label.Id;
+        var occurredAt = DateTimeOffset.UtcNow;
+        const string kind = nameof(InventoryLabelTransformationKind.Manufacturing);
+        world.Genealogy.Result = world.Genealogy.Result! with
+        {
+            Edges = [
+                Edge(Guid.NewGuid(), root, transformationId, kind, occurredAt, "7.5", "4.25"),
+                Edge(Guid.NewGuid(), root, transformationId, kind, occurredAt, "3", "4.25"),
+            ],
+        };
+        var edges = (await world.Service().GetAsync(root)).Genealogy.Edges;
+        Assert.Equal(2, edges.Count);
+        Assert.All(edges, edge => Assert.Equal("Manufacturing", edge.Kind));
+
+        var single = new World();
+        var singleRoot = single.Reader.Record!.Label.Id;
+        single.Genealogy.Result = single.Genealogy.Result! with
+        {
+            Edges = [Edge(Guid.NewGuid(), singleRoot, Guid.NewGuid(), kind, occurredAt, "9", "2")],
+        };
+        Assert.Single((await single.Service().GetAsync(singleRoot)).Genealogy.Edges);
+
+        await RefusedGenealogy(refused =>
+        {
+            var source = Guid.NewGuid();
+            var id = Guid.NewGuid();
+            return [
+                Edge(source, refused.Reader.Record!.Label.Id, id, kind, occurredAt),
+                Edge(source, Guid.NewGuid(), id, kind, occurredAt),
+            ];
+        });
+        await RefusedGenealogy(refused =>
+            [Edge(Guid.NewGuid(), refused.Reader.Record!.Label.Id, Guid.NewGuid(), "Unknown", occurredAt)]);
+    }
+
+    [Fact]
     public async Task Corrupt_transformation_groups_are_fail_closed()
     {
         await RefusedGenealogy(world =>

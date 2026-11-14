@@ -87,6 +87,9 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
+        services.AddScoped(CreatePaymentReversalProposalService);
+        services.AddScoped<IPaymentReversalProposalService>(provider =>
+            provider.GetRequiredService<PaymentReversalProposalService>());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         services.AddScoped<IFinanceAllocationReadService, FinanceAllocationReadService>();
         // F3a / API-20: a recorded payment applied to payable items, behind the same allocation permissions.
@@ -193,6 +196,24 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeReversal),
                 Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
                     FinanceAction.ApproveReversal)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static PaymentReversalProposalService CreatePaymentReversalProposalService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new PaymentReversalProposalService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinancePaymentReversalEnvelopes(
+                Envelope(provider, FinancePermissionNames.PaymentReversePropose, permissions,
+                    FinanceAction.ProposePaymentReversal),
+                Envelope(provider, FinancePermissionNames.PaymentReverseApprove, permissions,
+                    FinanceAction.ApprovePaymentReversal)),
             provider.GetRequiredService<TimeProvider>());
     }
 

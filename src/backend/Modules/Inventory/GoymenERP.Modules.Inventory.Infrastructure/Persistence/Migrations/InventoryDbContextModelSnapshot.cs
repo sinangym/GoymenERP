@@ -1211,7 +1211,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_LabelTransformations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_LabelTransformations_Kind", "[Kind] IN (1, 2)");
+                            t.HasCheckConstraint("CK_LabelTransformations_Kind", "[Kind] IN (1, 2, 3)");
 
                             t.HasCheckConstraint("CK_LabelTransformations_Text", "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([PayloadHash]) = 64");
                         });
