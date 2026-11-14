@@ -401,8 +401,13 @@ read measures `sales.drafts.read` and discloses amounts only with `sales.orders.
   to a party that is both can only make the deduction smaller). Any payment, state or outgoing row Finance cannot read → the
   receivables are `Unavailable` (no partial deduction). No customer named (empty party or account) → `Unavailable`
   (`finance_customer_unidentified`), never a recorded zero. Allocation (matching) continues separately; this read touches nothing.
-- **Credit limit / collateral:** Finance owns them (SAT-D51; the Cari card only shows them), but no master exists on main
-  (W4-RISK); both are `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
+- **Credit limit:** read from Finance's own master (API-85a L1 below). The one APPROVED record of the account gives
+  `Available` with its single amount and currency (`taxBasis` null); no record, or an approved removal, is `NoSource`
+  (`finance_credit_limit_not_set`: "limit yok", never zero or unlimited); two approved records, a record of another party or
+  an unreadable amount/currency is `Unavailable` (`finance_credit_limit_unreadable`); an empty party or account is
+  `Unavailable` (`finance_customer_unidentified`).
+- **Collateral:** Finance owns it (SAT-D51; the Cari card only shows it), but no master exists on main (W4-RISK); it is
+  `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
   input and never enters the gross risk.
 
 ## MOD-15: open-item direction (borç / alacak) — FNS-D2, FNS-D7
@@ -574,3 +579,18 @@ actor to be the recorder.
 
 Not in this slice: the single "Kaydet" screen (reserve → upload → record, resumable with the same keys), the Sales
 read port (D3), correcting or cancelling an approved record (FNS-D20), reservation expiry and PDF retention.
+
+## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a, F018 §L1
+
+| Part | What |
+|---|---|
+| HTTP | `POST /api/v1/finance/credit-limits` (set, one step), `POST …/credit-limits/removals` (remove, one step), `POST …/credit-limits/proposals` (propose a set or a removal), `POST …/credit-limits/proposals/{proposalId}/approval`, `POST …/credit-limits/proposals/{proposalId}/rejection` (written reason), `GET …/credit-limits`, `GET …/credit-limits/accounts/{companyAccountId}`, `GET …/credit-limits/accounts/{companyAccountId}/history`, `GET …/credit-limits/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
+| Permissions | `finance.credit-limits.read`, `finance.credit-limits.propose`, `finance.credit-limits.approve`: registered, company-wide, **not granted and not Critical** (grant/rol/Critical is a human gate). The approver sets or removes a limit in one save (FNS-D27a); the proposer only proposes, and another approver decides (`finance_approver_is_proposer`, checked by the service and by `CK_PartyCreditLimits_Decision`) |
+| Record | Per company account: kind `Set` (positive exact decimal text amount + currency) or `Remove`; status Proposed / Approved / Rejected / Superseded. At most one live (Proposed or Approved) record per account and status (`UX_PartyCreditLimits_Live`); every approval moves the account revision by one (`UX_PartyCreditLimits_Revision`), the previous approved record becomes Superseded. Commands carry `expectedRevision` (account) or `expectedVersion` (proposal) |
+| Idempotency / audit | `finance.PartyCreditLimitCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; a stale revision is a recorded `VersionConflict` |
+| Sales port | `FinanceSalesPartyRiskReadPortV1` reads the approved record (MOD-01 above); the port name and shape are unchanged |
+| Migration `20261114200445_AddPartyCreditLimits` | Pure DDL up (records and commands). `Down` refuses with `THROW 51274` while any credit limit record or recorded attempt exists (forward fix): it is the history of who set which limit; an empty store rolls back |
+
+Not in this slice: the threshold-based second approval (OPEN-009 / F018 N-3), the shell route and capability wiring of the
+screen (`src/frontend/goymen-erp-web/src/finance/CreditLimitPage.tsx` is built, not mounted), and the Cari-side ownership check
+of party/account (F018 N-2).

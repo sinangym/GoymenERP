@@ -559,6 +559,7 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
                 var rollback = await Assert.ThrowsAsync<SqlException>(() =>
                     context.GetService<IMigrator>().MigrateAsync(BeforeDecisionsMigration));
                 Assert.Equal(51273, rollback.Number);
+                // API-85a's newer AddPartyCreditLimits rolled back first on its empty store (its own transaction).
                 Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal",
                     (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
             }

@@ -168,9 +168,10 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
         // The rollback above also ran MOD-15's AddOpenItemDirection, MOD-04's AddOpenItemInvoiceExchange, F2b's
         // AddInvoiceCancellations, F3a's AddPaymentAllocations, API-23's AddPaymentReversals, F-005 D1's
-        // AddOfficialSalesInvoices, API-30's AddCashAccounts and AddCashAccountStateChanges and FNS-D39's
-        // AddOfficialSalesInvoiceRejectionAndWithdrawal Downs on an empty store; the reapply ends with the newest one.
-        Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal",
+        // AddOfficialSalesInvoices, API-30's AddCashAccounts and AddCashAccountStateChanges, FNS-D39's
+        // AddOfficialSalesInvoiceRejectionAndWithdrawal and API-85a's AddPartyCreditLimits Downs on an empty store;
+        // the reapply ends with the newest one.
+        Assert.EndsWith("_AddPartyCreditLimits",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
     }
 

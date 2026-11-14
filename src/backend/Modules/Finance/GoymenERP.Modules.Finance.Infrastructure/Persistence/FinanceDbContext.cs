@@ -41,6 +41,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<CashAccountCommandRow> CashAccountCommands => Set<CashAccountCommandRow>();
 
+    internal DbSet<PartyCreditLimitRow> PartyCreditLimits => Set<PartyCreditLimitRow>();
+
+    internal DbSet<PartyCreditLimitCommandRow> PartyCreditLimitCommands => Set<PartyCreditLimitCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -118,6 +122,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigurePaymentReversalProposals(modelBuilder);
         ConfigureOutgoingMoneyEventReversals(modelBuilder);
         ConfigureCashAccounts(modelBuilder);
+        ConfigurePartyCreditLimits(modelBuilder);
         ConfigureOfficialSalesInvoices(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -1301,6 +1306,125 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "AND [ChangeRejectionReason] IS NOT NULL AND LEN([ChangeRejectionReason]) > 0 "
         + "AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4)))))";
 
+    /// <summary>
+    /// API-85a (FNS-D27/D27a): the party credit limit history and its own command records. The account's
+    /// effective record is its one approved row and at most one proposal is pending per account
+    /// (<c>UX_PartyCreditLimits_Live</c>); an approved
+    /// row's account revision is unique per account, so two concurrent changes from the same revision cannot
+    /// both win. A proposal is decided by another actor (binary collation); a direct record is decided by its
+    /// own author, who holds the approve authority (FNS-D27). No foreign key reaches the party or the company
+    /// account: they are Counterparty's (read through <see cref="Contracts.IFinancePartyAccountPort"/>).
+    /// </summary>
+    private void ConfigurePartyCreditLimits(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyCreditLimitRow>();
+        entity.ToTable("PartyCreditLimits", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PartyCreditLimits_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_PartyCreditLimits_Payload", PartyCreditLimitPayloadCheck);
+            table.HasCheckConstraint("CK_PartyCreditLimits_Revision",
+                "[Version] >= 1 AND [BaseRevision] >= 0 AND ([AccountRevision] IS NULL OR [AccountRevision] > [BaseRevision])");
+            table.HasCheckConstraint("CK_PartyCreditLimits_Decision", PartyCreditLimitDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.AmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation);
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        // Status is a key column on purpose: a save that moves one row out of a live state and another into it
+        // (an approval superseding the effective record) is ordered by EF Core on this index's values only
+        // when a key column changes, so the row leaving the state is written first.
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.Status }, PartyCreditLimitLiveIndex)
+            .HasFilter(PartyCreditLimitLiveFilter).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.AccountRevision }, "UX_PartyCreditLimits_Revision")
+            .HasFilter("[AccountRevision] IS NOT NULL").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.ProposedAtUtc }, "IX_PartyCreditLimits_History");
+        entity.HasIndex(x => new { x.CompanyId, x.Status });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<PartyCreditLimitCommandRow>();
+        command.ToTable("PartyCreditLimitCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal (not found, stale revision or version, a
+            // rule refusal) whose answer names no record (ADR-011 §7).
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_Target",
+                "([PartyCreditLimitId] IS NOT NULL AND [PartyCreditLimitId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([PartyCreditLimitId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') IN ('ValidationFailed', 'VersionConflict'))");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.PartyCreditLimitId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<PartyCreditLimitRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PartyCreditLimitId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// Per account at most one row per live state: one proposal awaiting its decision (status 1) and one
+    /// effective record, its approved row (status 2, a Set or a Remove).
+    /// </summary>
+    internal const string PartyCreditLimitLiveIndex = "UX_PartyCreditLimits_Live";
+
+    internal const string PartyCreditLimitLiveFilter = "[Status] IN (1, 2)";
+
+    /// <summary>
+    /// API-85a: a Set (kind 1) names a currency and an unsigned decimal text with at least one non-zero digit
+    /// (digits and at most one inner dot); a Remove (kind 2) names neither. The service holds the exact parse;
+    /// the database refuses what cannot be an amount at all. Kind is tested for NULL first by NOT NULL columns.
+    /// </summary>
+    internal const string PartyCreditLimitPayloadCheck =
+        "([Kind] = 1 AND [CurrencyId] IS NOT NULL AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [AmountText] IS NOT NULL AND LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' "
+        + "AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' "
+        + "AND [AmountText] LIKE '%[1-9]%') OR "
+        + "([Kind] = 2 AND [CurrencyId] IS NULL AND [AmountText] IS NULL)";
+
+    /// <summary>
+    /// FNS-D27/D27a: a proposal carries no decision and no revision. An approved record carries a decider and
+    /// a revision: a direct record is decided by its author (FNS-D27, one step by an approver), a proposal by
+    /// someone other than its proposer (FNS-D27a). A rejection is a proposal's, by someone other than its
+    /// proposer, with a reason. A superseded record is either a proposal never decided or an approved record,
+    /// with the same rules as when it was approved. Actors compare in binary collation.
+    /// </summary>
+    internal const string PartyCreditLimitDecisionCheck =
+        "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
+        + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
+        + "AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) "
+        + "AND (([IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2) "
+        + "OR ([IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2))) OR "
+        + "([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+        + "AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [AccountRevision] IS NULL "
+        + "AND [SupersededAtUtc] IS NULL) OR "
+        + "([Status] = 4 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
+        + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NOT NULL)";
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
@@ -1435,6 +1559,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Kasa hesabı yalnız açılış kararıyla veya pasife alma/yeniden etkinleştirme öneri ve kararıyla değişir.");
                 }
 
+                if (entry.Entity is PartyCreditLimitRow creditLimit
+                    && !IsAllowedPartyCreditLimitTransition(entry, creditLimit))
+                {
+                    throw new InvalidOperationException(
+                        "Kredi limiti kaydı yalnız öneri kararıyla veya yerine yenisi geçerek, sürümü bir artarak değişir.");
+                }
+
                 if (entry.Entity is FinanceAllocationRow allocation
                     && !IsAllowedAllocationRelease(entry, allocation))
                 {
@@ -1512,6 +1643,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(CashAccountRow.ChangeDecidedBy), nameof(CashAccountRow.ChangeDecidedAtUtc),
                         nameof(CashAccountRow.ChangeRejectionReason),
                         nameof(CashAccountRow.UpdatedAtUtc),
+                    ],
+                    // API-85a: a proposal's decision, or a record superseded by a newer one; the state-aware guard
+                    // above admits only those steps. The limit itself (kind, currency, amount) never changes.
+                    PartyCreditLimitRow =>
+                    [
+                        nameof(PartyCreditLimitRow.Status), nameof(PartyCreditLimitRow.DecidedBy),
+                        nameof(PartyCreditLimitRow.DecidedAtUtc), nameof(PartyCreditLimitRow.RejectionReason),
+                        nameof(PartyCreditLimitRow.AccountRevision), nameof(PartyCreditLimitRow.SupersededAtUtc),
+                        nameof(PartyCreditLimitRow.UpdatedAtUtc),
                     ],
                     ReversalProposalRow =>
                     [
@@ -1730,6 +1870,59 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && !string.IsNullOrWhiteSpace(current.ReleasedBy)
             && current.ReleasedAtUtc is not null
             && !string.IsNullOrWhiteSpace(current.ReleaseReason);
+    }
+
+    /// <summary>
+    /// API-85a: one version step and one of four moves — a proposal approved (a decider other than its
+    /// proposer and the account's next revision) or rejected (another decider and a reason), a proposal
+    /// superseded undecided, or an approved record superseded with its decision kept.
+    /// </summary>
+    private static bool IsAllowedPartyCreditLimitTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        PartyCreditLimitRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        const int superseded = 4;
+        var originalVersion = (long)entry.OriginalValues[nameof(PartyCreditLimitRow.Version)]!;
+        var originalStatus = (int)entry.OriginalValues[nameof(PartyCreditLimitRow.Status)]!;
+        var originalDecidedBy = (string?)entry.OriginalValues[nameof(PartyCreditLimitRow.DecidedBy)];
+        var originalDecidedAt = (DateTimeOffset?)entry.OriginalValues[nameof(PartyCreditLimitRow.DecidedAtUtc)];
+        var originalRevision = (long?)entry.OriginalValues[nameof(PartyCreditLimitRow.AccountRevision)];
+        if (current.Version != checked(originalVersion + 1)
+            || entry.OriginalValues[nameof(PartyCreditLimitRow.RejectionReason)] is not null
+            || entry.OriginalValues[nameof(PartyCreditLimitRow.SupersededAtUtc)] is not null)
+        {
+            return false;
+        }
+
+        if (originalStatus == approved)
+        {
+            return current.Status == superseded && current.SupersededAtUtc is not null
+                && string.Equals(current.DecidedBy, originalDecidedBy, StringComparison.Ordinal)
+                && current.DecidedAtUtc == originalDecidedAt && current.AccountRevision == originalRevision
+                && current.RejectionReason is null;
+        }
+
+        if (originalStatus != proposed || originalDecidedBy is not null || originalDecidedAt is not null
+            || originalRevision is not null || current.IsDirect)
+        {
+            return false;
+        }
+
+        var otherDecider = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+        return current.Status switch
+        {
+            approved => otherDecider && current.AccountRevision is not null && current.RejectionReason is null
+                && current.SupersededAtUtc is null,
+            rejected => otherDecider && current.AccountRevision is null
+                && !string.IsNullOrWhiteSpace(current.RejectionReason) && current.SupersededAtUtc is null,
+            superseded => current.DecidedBy is null && current.DecidedAtUtc is null && current.AccountRevision is null
+                && current.RejectionReason is null && current.SupersededAtUtc is not null,
+            _ => false,
+        };
     }
 
     private static bool IsAllowedCashAccountDecision(
