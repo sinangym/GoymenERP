@@ -384,7 +384,8 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51152, rollback.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        // Later, empty Product migrations (BS-9 dimensions) may roll back before the refusal; the move and what precedes it stay.
+        Assert.Equal(applied.Take(migration + 1), (await context.Database.GetAppliedMigrationsAsync()).Take(migration + 1));
     }
 
     [SqlServerFact]

@@ -76,6 +76,7 @@ import {
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
 import { DuplicateCandidatesPanel } from './DuplicateCandidates'
 import { ProductItemTypePanel } from './ProductItemTypePanel'
+import { ProductDimensionPanel } from './ProductDimensionPanel'
 import {
   duplicateIds,
   duplicateQueryKey,
@@ -943,6 +944,11 @@ function ProductCardView({
 
       {itemTypeCompany !== null && itemTypeNamespace !== null ? (
         <ProductItemTypePanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
+      ) : null}
+
+      {/* BS-9: the "Ebat/kalınlık" row of the shared card, read like the item type in a single-company context. */}
+      {itemTypeCompany !== null && itemTypeNamespace !== null ? (
+        <ProductDimensionPanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
       ) : null}
 
       <section className={styles.section} aria-labelledby="product-roles-heading">
