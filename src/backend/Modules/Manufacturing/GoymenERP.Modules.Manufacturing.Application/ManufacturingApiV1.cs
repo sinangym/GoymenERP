@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -319,6 +320,31 @@ public sealed record RollMassBalanceViewV1(Guid ParentRollId, MassDifferenceView
 /// <summary>The order's mass balance, roll by roll, through the one calculator the close uses; the order's version it was read at.</summary>
 public sealed record MassBalanceViewV1(Guid OrderId, long Version, string FormulaVersion, IReadOnlyList<RollMassBalanceViewV1> Rolls);
 
+/// <summary>
+/// SAT-D318 (owner decision of 2026-11-13): the public answer to "which operation, and where" on an input issue that
+/// Inventory refused because it would take physical stock below zero. It names the refused movement kind and source
+/// (Inventory's opaque names), the order and the issue fact, the parent label, its product and the stored location
+/// (absent when the label holds no stock anywhere), the kilograms the issue asked for and the usable kilograms it could
+/// have taken there, both as lossless invariant text.
+/// <para>
+/// The usable kilograms are shown with the requested ones (owner answer of 2026-11-13 on Issue #66, SINAN-CEVAP (8)
+/// question 5: the message shows the kg on hand and the kg asked for together, so the user sees the gap and can ask for
+/// a count). They are Inventory's free physical kilograms less other demands' active reservations, never negative and
+/// always less than the requested kilograms. The reserved kilograms are deliberately not a member. Absent from every
+/// other refusal, and from older servers.
+/// </para>
+/// </summary>
+public sealed record ManufacturingStockShortfallViewV1(
+    string MovementKind,
+    string SourceKind,
+    Guid SourceId,
+    Guid? SourceLineId,
+    Guid LabelId,
+    Guid ProductId,
+    Guid? LocationId,
+    string RequestedKg,
+    string AvailableKg);
+
 /// <summary>How a command ended, before HTTP: the endpoint maps it and adds nothing of its own.</summary>
 public enum ManufacturingApiStatus
 {
@@ -339,7 +365,15 @@ public enum ManufacturingApiStatus
 public sealed record ManufacturingApiResult<T>(
     ManufacturingApiStatus Status, T? Resource, bool IsReplay, string? Code, string? Field = null,
     long? ExpectedVersion = null, long? CurrentVersion = null, string? OriginalCorrelationId = null)
-    where T : class;
+    where T : class
+{
+    /// <summary>
+    /// SAT-D318: set only on a fresh physical-stock refusal of an input issue. That refusal is not terminal, so it is
+    /// never stored: the member is not serialized and a stored answer stays byte for byte what it was.
+    /// </summary>
+    [JsonIgnore]
+    public ManufacturingStockShortfallViewV1? StockShortfall { get; init; }
+}
 
 /// <summary>Codes the command surface adds; everything else is the domain's, the store's or Settings'.</summary>
 public static class ManufacturingApiCodes
@@ -2219,7 +2253,10 @@ public sealed partial class ManufacturingCommandService(
             result = exception.Status == ManufacturingApiStatus.NotFound
                 ? NotFoundResult<T>()
                 : new ManufacturingApiResult<T>(exception.Status, null, false, exception.Code,
-                    exception.Field, exception.ExpectedVersion, exception.CurrentVersion);
+                    exception.Field, exception.ExpectedVersion, exception.CurrentVersion)
+                {
+                    StockShortfall = StockShortfallView(exception.StockShortfall),
+                };
         }
         catch (ManufacturingVersionConflictException exception)
         {
@@ -3022,6 +3059,18 @@ public sealed partial class ManufacturingCommandService(
     /// <summary>Lossless invariant text without trailing zeros: 5.00 and 5 are both "5".</summary>
     internal static string Text(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// SAT-D318: the disclosed part of the port's shortfall: the identities, the requested kilograms and Inventory's
+    /// usable kilograms (SINAN-CEVAP (8) question 5). The free physical and reserved kilograms stop here; the view has
+    /// no member for them.
+    /// </summary>
+    internal static ManufacturingStockShortfallViewV1? StockShortfallView(ManufacturingInventoryStockShortfallV1? shortfall) =>
+        shortfall is null
+            ? null
+            : new ManufacturingStockShortfallViewV1(shortfall.MovementKind, shortfall.SourceKind, shortfall.SourceId,
+                shortfall.SourceLineId, shortfall.LabelId, shortfall.ProductId, shortfall.LocationId,
+                Text(shortfall.RequestedKg.Value), Text(shortfall.AvailableKg.Value));
 
     private static ManufacturingApiResult<T> Invalid<T>(string field) where T : class =>
         new(ManufacturingApiStatus.Invalid, null, false, ManufacturingApiCodes.RequestInvalid, field);

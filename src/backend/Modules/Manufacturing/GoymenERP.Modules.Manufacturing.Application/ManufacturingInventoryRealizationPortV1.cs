@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 
@@ -116,7 +117,8 @@ public sealed class ManufacturingInventoryRealizationPortException(
     string code,
     string? field = null,
     long? expectedVersion = null,
-    long? currentVersion = null)
+    long? currentVersion = null,
+    ManufacturingInventoryStockShortfallV1? stockShortfall = null)
     : Exception(code)
 {
     public ManufacturingApiStatus Status { get; } = status;
@@ -124,6 +126,111 @@ public sealed class ManufacturingInventoryRealizationPortException(
     public string? Field { get; } = field;
     public long? ExpectedVersion { get; } = expectedVersion;
     public long? CurrentVersion { get; } = currentVersion;
+
+    /// <summary>
+    /// SAT-D318: the refused operation and its place, present only on Inventory's physical-stock conflict and only
+    /// when Inventory named the refused input issue. Its absence changes nothing: status and code stay the reason.
+    /// </summary>
+    public ManufacturingInventoryStockShortfallV1? StockShortfall { get; } =
+        RequirePhysicalStockConflict(status, code, stockShortfall);
+
+    private static ManufacturingInventoryStockShortfallV1? RequirePhysicalStockConflict(ManufacturingApiStatus status,
+        string code, ManufacturingInventoryStockShortfallV1? stockShortfall) =>
+        stockShortfall is null
+        || (status == ManufacturingApiStatus.Conflict
+            && string.Equals(code, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+                StringComparison.Ordinal))
+            ? stockShortfall
+            : throw new ArgumentException("A stock shortfall rides only on Inventory's physical-stock conflict.",
+                nameof(stockShortfall));
+}
+
+/// <summary>
+/// SAT-D318 (owner decision of 2026-11-13): no operation takes physical stock below zero, and a refusal says which
+/// operation it stopped and where. Inventory owns every value; Manufacturing carries the opaque kind names and the
+/// identities without interpreting them, as it does for <see cref="ManufacturingInventoryPositionSnapshotV1"/>.
+/// <para>
+/// Version 1 of this shape: a changed shape is a new type, never an edited one, and a refusal without it stays exactly
+/// as it was. <see cref="AvailableKg"/> is disclosed with the requested kg (owner answer of 2026-11-13 on Issue #66,
+/// SINAN-CEVAP (8) question 5: the message shows the kg on hand and the kg asked for together).
+/// <see cref="FreePhysicalKg"/> and <see cref="ReservedKg"/> stay in process for the later refused-attempt record; the
+/// public API does not disclose them.
+/// </para>
+/// </summary>
+public sealed record ManufacturingInventoryStockShortfallV1
+{
+    public ManufacturingInventoryStockShortfallV1(string movementKind, string sourceKind, Guid sourceId,
+        Guid? sourceLineId, Guid labelId, Guid productId, Guid? locationId, Kilograms requestedKg,
+        Kilograms availableKg, Kilograms freePhysicalKg, Kilograms? reservedKg)
+    {
+        MovementKind = RequireName(movementKind, nameof(movementKind));
+        SourceKind = RequireName(sourceKind, nameof(sourceKind));
+        SourceId = RequireIdentity(sourceId, nameof(sourceId));
+        SourceLineId = sourceLineId is { } line ? RequireIdentity(line, nameof(sourceLineId)) : null;
+        LabelId = RequireIdentity(labelId, nameof(labelId));
+        ProductId = RequireIdentity(productId, nameof(productId));
+        LocationId = locationId is { } location ? RequireIdentity(location, nameof(locationId)) : null;
+        if (requestedKg.Value <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedKg), "A refused operation always asks for a positive mass.");
+        }
+
+        // Inventory computes the usable kg; Manufacturing only refuses a figure that could not be a shortfall's.
+        if (availableKg.Value >= requestedKg.Value || availableKg.Value > freePhysicalKg.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(availableKg),
+                "The usable kg of a shortfall are less than the requested kg and never more than the free physical kg.");
+        }
+
+        RequestedKg = requestedKg;
+        AvailableKg = availableKg;
+        FreePhysicalKg = freePhysicalKg;
+        ReservedKg = reservedKg;
+    }
+
+    /// <summary>Inventory's name of the refused movement kind (for an input issue, <c>Issue</c>).</summary>
+    public string MovementKind { get; }
+
+    /// <summary>Inventory's source kind of the refused movement (for an input issue, its stable source name).</summary>
+    public string SourceKind { get; }
+
+    /// <summary>The source the refused movement answered (for an input issue, the order).</summary>
+    public Guid SourceId { get; }
+
+    /// <summary>The source line, when the movement answers one line (for an input issue, the issue fact).</summary>
+    public Guid? SourceLineId { get; }
+
+    /// <summary>The label the refused line would have taken below zero.</summary>
+    public Guid LabelId { get; }
+
+    /// <summary>The label's product.</summary>
+    public Guid ProductId { get; }
+
+    /// <summary>The stored location of that stock; absent when the label holds no stock anywhere.</summary>
+    public Guid? LocationId { get; }
+
+    /// <summary>What the refused line asked for.</summary>
+    public Kilograms RequestedKg { get; }
+
+    /// <summary>
+    /// Disclosed: the usable kg the refused line could have taken there, after other demands' active reservations;
+    /// always less than <see cref="RequestedKg"/>.
+    /// </summary>
+    public Kilograms AvailableKg { get; }
+
+    /// <summary>In process only: what the location held before the refused line.</summary>
+    public Kilograms FreePhysicalKg { get; }
+
+    /// <summary>In process only: what other demands held there, when a reservation decided the refusal.</summary>
+    public Kilograms? ReservedKg { get; }
+
+    private static string RequireName(string value, string parameterName) =>
+        !string.IsNullOrWhiteSpace(value) && value.Trim().Length == value.Length
+            ? value
+            : throw new ArgumentException("A kind name is non-blank and trimmed.", parameterName);
+
+    private static Guid RequireIdentity(Guid value, string parameterName) =>
+        value != Guid.Empty ? value : throw new ArgumentException("An identity is never empty.", parameterName);
 }
 
 /// <summary>

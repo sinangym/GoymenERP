@@ -18,6 +18,7 @@ import {
   READER_CAPABILITIES,
   RECORDER_CAPABILITIES,
   ROLL_1,
+  SHORTFALL_LOCATION,
   installFetch,
   json,
   massBalance,
@@ -27,6 +28,7 @@ import {
   requestsFor,
   roll,
   rollBalance,
+  stockShortfall,
   unavailable,
   type RecordedRequest,
 } from './testHarness'
@@ -133,7 +135,8 @@ interface Scenario {
 function stub(
   options: {
     reads?: Array<() => Response>
-    commands?: Array<() => Response>
+    /** A command responder may read the request it answers (e.g. to echo the fact id it carried). */
+    commands?: Array<(init?: RequestInit) => Response>
     capabilities?: readonly string[] | (() => readonly string[])
     /** GDC-BAL/1 reads (BAL slice 2), answered on their own so they never consume an order read. */
     balances?: Array<() => Response>
@@ -194,7 +197,7 @@ function stub(
       if ((init?.method ?? 'GET') === 'POST') {
         const respond = commands[Math.min(commandIndex, commands.length - 1)]
         commandIndex += 1
-        return respond()
+        return respond(init)
       }
       const respond = reads[Math.min(readIndex, reads.length - 1)]
       readIndex += 1
@@ -1016,6 +1019,50 @@ describe('fact forms', () => {
 
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     expect(await screen.findByText('İşlem reddedildi (manufacturing_new_rule).')).toBeTruthy()
+  })
+
+  it('names the refused input issue, its parent label, the place and the usable and requested kg on a physical-stock refusal (SAT-D318)', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      commands: [
+        (init) => {
+          // The server names the issue it refused: echo the fact id the screen sent.
+          const sent = JSON.parse(String(init?.body)) as { issueId: string }
+          return problem(409, {
+            code: 'inventory_manufacturing_physical_stock_insufficient',
+            stockShortfall: stockShortfall(sent.issueId, '500', '480'),
+          })
+        },
+      ],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kg: '500' })
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    const alert = await screen.findByText(/fiziksel stok sıfırın altına düşürülemez/)
+    const [post] = posts(recorded)
+    const issueId = (post.body as { issueId: string }).issueId
+    expect(alert.textContent).toContain(`olgu ${issueId}`)
+    expect(alert.textContent).toContain(`Ana rulo etiketi: ${ROLL_1}.`)
+    expect(alert.textContent).toContain(`Konum: ${SHORTFALL_LOCATION}.`)
+    // SINAN-CEVAP (8) question 5, in the owner's example words: the usable and the requested kg together.
+    expect(alert.textContent).toContain('Etikette kullanılabilir 480 kg var, 500 kg istendi.')
+    // Reserved kilograms stay in the server: the sentence states no other stock figure.
+    expect(alert.textContent).not.toMatch(/mevcut|rezerve|serbest/i)
+    expect(alert.closest('[data-outcome="failed"]')?.getAttribute('data-failure')).toBe('rule')
+  })
+
+  it('keeps the plain physical-stock refusal when the 409 carries no shortfall detail', async () => {
+    const user = userEvent.setup()
+    stub({ commands: [() => problem(409, { code: 'inventory_manufacturing_physical_stock_insufficient' })] })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Ana ruloda istenen kütle kadar serbest fiziksel stok yok.')).toBeTruthy()
+    expect(screen.queryByText(/fiziksel stok sıfırın altına düşürülemez/)).toBeNull()
   })
 
   it('closes the forms on a closed order', async () => {

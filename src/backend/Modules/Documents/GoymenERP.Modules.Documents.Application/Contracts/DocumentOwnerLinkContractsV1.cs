@@ -17,6 +17,12 @@ public static class DocumentOwnerLinkKindsV1
 
     /// <summary>A Sales order readable in the context company (Sales owner).</summary>
     public const string SalesOrder = "sales.order";
+
+    /// <summary>
+    /// A Finance official sales invoice record, or its reserved id before the record exists, in the context company
+    /// (Finance owner; #66 6860586175: the PDF is uploaded to the reserved id first).
+    /// </summary>
+    public const string FinanceOfficialSalesInvoice = "finance.official-sales-invoice";
 }
 
 /// <summary>

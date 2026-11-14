@@ -77,9 +77,21 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, invoiceCancellations) < Array.IndexOf(migrations, paymentAllocations));
         const string paymentReversals = "20261111184316_AddPaymentReversals";
         Assert.True(Array.IndexOf(migrations, paymentAllocations) < Array.IndexOf(migrations, paymentReversals));
-        // The NEWEST migration is pinned by name on purpose: the payment reversals (API-23) are the reviewed append
-        // after the payment allocations, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal(paymentReversals, migrations.Last());
+        const string officialSalesInvoices = "20261111233047_AddOfficialSalesInvoices";
+        Assert.True(Array.IndexOf(migrations, paymentReversals) < Array.IndexOf(migrations, officialSalesInvoices));
+        const string cashAccounts = "20261112070144_AddCashAccounts";
+        Assert.True(Array.IndexOf(migrations, officialSalesInvoices) < Array.IndexOf(migrations, cashAccounts));
+        const string cashAccountStateChanges = "20261113161917_AddCashAccountStateChanges";
+        Assert.True(Array.IndexOf(migrations, cashAccounts) < Array.IndexOf(migrations, cashAccountStateChanges));
+        const string officialSalesInvoiceDecisions = "20261114073527_AddOfficialSalesInvoiceRejectionAndWithdrawal";
+        Assert.True(Array.IndexOf(migrations, cashAccountStateChanges)
+            < Array.IndexOf(migrations, officialSalesInvoiceDecisions));
+        // The NEWEST migration is pinned by name on purpose: the rejection and withdrawal of a pending official sales
+        // invoice record (FNS-D39) is the reviewed append, never an unreviewed migration that silently becomes
+        // authoritative. By migration id the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits
+        // between the payment reversals (API-23) and the cash accounts (API-30), whose passivation and reactivation
+        // precede the newest one.
+        Assert.Equal(officialSalesInvoiceDecisions, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

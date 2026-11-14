@@ -37,6 +37,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<BankAccountRow> BankAccounts => Set<BankAccountRow>();
 
+    internal DbSet<CashAccountRow> CashAccounts => Set<CashAccountRow>();
+
+    internal DbSet<CashAccountCommandRow> CashAccountCommands => Set<CashAccountCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -77,6 +81,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<CustomerInstrumentMovementRow> CustomerInstrumentMovements => Set<CustomerInstrumentMovementRow>();
 
+    /// <summary>F-005 D1: the manual official sales invoice record (maker≠approver) and its command receipts.</summary>
+    internal DbSet<FinanceOfficialSalesInvoiceRow> OfficialSalesInvoices => Set<FinanceOfficialSalesInvoiceRow>();
+
+    internal DbSet<FinanceOfficialSalesInvoiceCommandRow> OfficialSalesInvoiceCommands => Set<FinanceOfficialSalesInvoiceCommandRow>();
+
+    /// <summary>#66 6860586175 (PDF first): the record ids reserved before the PDF upload; each record consumes one.</summary>
+    internal DbSet<FinanceOfficialSalesInvoiceReservationRow> OfficialSalesInvoiceReservations =>
+        Set<FinanceOfficialSalesInvoiceReservationRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -104,6 +117,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigurePaymentAllocationStates(modelBuilder);
         ConfigurePaymentReversalProposals(modelBuilder);
         ConfigureOutgoingMoneyEventReversals(modelBuilder);
+        ConfigureCashAccounts(modelBuilder);
+        ConfigureOfficialSalesInvoices(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -709,6 +724,159 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>Maximum official invoice number length; mirrors Sales' SalesInvoice.MaximumOfficialNoLength.</summary>
+    internal const int OfficialSalesInvoiceMaximumOfficialNoLength = 64;
+
+    /// <summary>Canonical lowercase "D" GUID text of an ETTN; mirrors Sales' SalesInvoice.EttnLength.</summary>
+    internal const int OfficialSalesInvoiceEttnLength = 36;
+
+    /// <summary>
+    /// FNS-D39 technical bound of the rejection reason; the same 1000-character bound as Finance's other decision
+    /// reasons. It is not a business policy (OPEN: Sinan may set another length).
+    /// </summary>
+    internal const int OfficialSalesInvoiceMaximumRejectionReasonLength = 1000;
+
+    /// <summary>
+    /// FNS-D20 + maker≠approver + FNS-D39: a pending row carries no decision and is at version 1; an approved row
+    /// names a DIFFERENT actor than the recorder; a rejected row names a DIFFERENT actor than the recorder and a
+    /// non-empty reason; a withdrawn row names the recorder itself. Actors are compared byte-exact whatever the column
+    /// collation is. Each decided state carries only its own decision columns.
+    /// </summary>
+    internal const string OfficialSalesInvoiceApprovalCheck =
+        "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1 "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL "
+        + "AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR "
+        + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 "
+        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL "
+        + "AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR "
+        + "([Status] = 3 AND [RejectedBy] IS NOT NULL AND [RejectedAtUtc] IS NOT NULL AND LEN([RejectedBy]) > 0 "
+        + "AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR "
+        + "([Status] = 4 AND [WithdrawnBy] IS NOT NULL AND [WithdrawnAtUtc] IS NOT NULL "
+        + "AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [RecordedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)";
+
+    /// <summary>
+    /// FNS-D39 (author reading, reviewed with the migration): the official number, ETTN and PDF content are unique
+    /// only among live records (pending or approved), so a rejected or withdrawn record frees them.
+    /// </summary>
+    internal const string OfficialSalesInvoiceLiveFilter = "[Status] IN (1, 2)";
+
+    private void ConfigureOfficialSalesInvoices(ModelBuilder modelBuilder)
+    {
+        var reservation = modelBuilder.Entity<FinanceOfficialSalesInvoiceReservationRow>();
+        reservation.ToTable("OfficialSalesInvoiceReservations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceReservations_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceReservations_Text",
+                "LEN([ReservedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        reservation.HasKey(x => x.Id);
+        reservation.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        reservation.Property(x => x.Id).ValueGeneratedNever();
+        reservation.Property(x => x.ReservedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        reservation.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        reservation.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        reservation.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        reservation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var invoice = modelBuilder.Entity<FinanceOfficialSalesInvoiceRow>();
+        invoice.ToTable("OfficialSalesInvoices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[PdfDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Text",
+                "LEN([OfficialNo]) > 0 AND DATALENGTH([Ettn]) = 36 "
+                + "AND [Ettn] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%' "
+                + "AND LEN([PayableAmountText]) > 0 AND LEN([PayableFunctionalAmountText]) > 0 "
+                + "AND LEN([TaxBaseFunctionalAmountText]) > 0 "
+                + "AND LEN([VatFunctionalAmountText]) > 0 AND LEN([WithholdingFunctionalAmountText]) > 0 "
+                + "AND [PdfDocumentVersionNo] >= 1 AND DATALENGTH([PdfSha256]) = 64 "
+                + "AND [PdfSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' "
+                + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", OfficialSalesInvoiceApprovalCheck);
+        });
+        invoice.HasKey(x => x.Id);
+        invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.OfficialNo).HasMaxLength(OfficialSalesInvoiceMaximumOfficialNoLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.Ettn).HasMaxLength(OfficialSalesInvoiceEttnLength).IsUnicode(false).IsFixedLength()
+            .UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.PayableAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.PayableFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.TaxBaseFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.VatFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.WithholdingFunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        invoice.Property(x => x.PdfSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength()
+            .UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.Version).IsConcurrencyToken();
+        invoice.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.Property(x => x.RejectedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.Property(x => x.RejectionReason).HasMaxLength(OfficialSalesInvoiceMaximumRejectionReasonLength);
+        invoice.Property(x => x.WithdrawnBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        invoice.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        // FNS-D39: unique among live records only; a rejected or withdrawn record frees its number, ETTN and PDF.
+        invoice.HasIndex(x => new { x.CompanyId, x.OfficialNo }).IsUnique()
+            .HasFilter(OfficialSalesInvoiceLiveFilter)
+            .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo");
+        invoice.HasIndex(x => new { x.CompanyId, x.Ettn }).IsUnique()
+            .HasFilter(OfficialSalesInvoiceLiveFilter)
+            .HasDatabaseName("UX_OfficialSalesInvoices_Ettn");
+        // #66 6860586175: one PDF content (vault SHA-256) belongs to at most one live record per company.
+        invoice.HasIndex(x => new { x.CompanyId, x.PdfSha256 }).IsUnique()
+            .HasFilter(OfficialSalesInvoiceLiveFilter)
+            .HasDatabaseName("UX_OfficialSalesInvoices_PdfSha256");
+        invoice.HasIndex(x => new { x.CompanyId, x.Status, x.RecordedAtUtc, x.Id })
+            .HasDatabaseName("IX_OfficialSalesInvoices_List");
+        invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // Every record consumes a reservation of its own company, once (the record id is the reservation id).
+        invoice.HasOne<FinanceOfficialSalesInvoiceReservationRow>().WithOne()
+            .HasForeignKey<FinanceOfficialSalesInvoiceRow>(x => new { x.CompanyId, x.Id })
+            .HasPrincipalKey<FinanceOfficialSalesInvoiceReservationRow>(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<FinanceOfficialSalesInvoiceCommandRow>();
+        command.ToTable("OfficialSalesInvoiceCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceCommands_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[InvoiceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceCommands_Content",
+                "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 "
+                + "AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+        });
+        command.HasKey(x => x.Id);
+        command.Property(x => x.Id).ValueGeneratedNever();
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ResultJson).IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     internal const string PaymentAllocationIdentityCheck =
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
         + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
@@ -1020,6 +1188,119 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// API-30: the cash account master and its own command records. Maker≠checker is a database fact:
+    /// a decided row carries a decider other than the proposer, compared in binary collation so case
+    /// folding cannot make two actors one. A proposed, approved or passive name is unique per company; a
+    /// rejected row frees its name. Passivation and reactivation are held the same way
+    /// (<c>CK_CashAccounts_StateChange</c>).
+    /// </summary>
+    private void ConfigureCashAccounts(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CashAccountRow>();
+        entity.ToTable("CashAccounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashAccounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CashAccounts_Text", "LEN([DisplayName]) > 0 AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_CashAccounts_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_CashAccounts_Decision", CashAccountDecisionCheck);
+            table.HasCheckConstraint("CK_CashAccounts_StateChange", CashAccountStateChangeCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.Property(x => x.ChangeProposedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.ChangeDecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.ChangeRejectionReason).HasMaxLength(500);
+        entity.HasIndex(x => new { x.CompanyId, x.Status });
+        entity.HasIndex(x => new { x.CompanyId, x.DisplayName }, "UX_CashAccounts_LiveName")
+            .HasFilter(CashAccountLiveNameFilter).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<CashAccountCommandRow>();
+        command.ToTable("CashAccountCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashAccountCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_CashAccountCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_CashAccountCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_CashAccountCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal whose target does not exist (ADR-011 §7).
+            table.HasCheckConstraint("CK_CashAccountCommands_Target",
+                "([CashAccountId] IS NOT NULL AND [CashAccountId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([CashAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CashAccountId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<CashAccountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CashAccountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// API-30 maker≠checker: a proposal carries no decision; an approval carries a decider other than the
+    /// proposer and no reason; a rejection carries a decider other than the proposer and its reason.
+    /// </summary>
+    internal const string CashAccountDecisionCheck =
+        "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
+
+    /// <summary>A passive account keeps its name: it is still the company's account and may be reactivated.</summary>
+    internal const string CashAccountLiveNameFilter = "[Status] IN (1, 2, 4)";
+
+    /// <summary>
+    /// API-30 passivation/reactivation, maker≠checker: no change at all (never a passive account); or the
+    /// latest change — kind 1 passivation / 2 reactivation — pending (the account still in the state the
+    /// change starts from), approved by someone other than its proposer (the account in the state the
+    /// change leads to) or rejected by someone other than its proposer with a reason (the account unchanged).
+    /// Kind and state are tested for NULL first: a comparison with NULL is unknown, and a check passes on unknown.
+    /// </summary>
+    internal const string CashAccountStateChangeCheck =
+        "([ChangeKind] IS NULL AND [ChangeStatus] IS NULL AND [ChangeProposedBy] IS NULL AND [ChangeProposedAtUtc] IS NULL "
+        + "AND [ChangeDecidedBy] IS NULL AND [ChangeDecidedAtUtc] IS NULL AND [ChangeRejectionReason] IS NULL "
+        + "AND [Status] IN (1, 2, 3)) OR "
+        + "([ChangeKind] IS NOT NULL AND [ChangeStatus] IS NOT NULL "
+        + "AND [ChangeKind] IN (1, 2) AND [ChangeProposedBy] IS NOT NULL AND LEN([ChangeProposedBy]) > 0 "
+        + "AND [ChangeProposedAtUtc] IS NOT NULL AND ("
+        + "([ChangeStatus] = 1 AND [ChangeDecidedBy] IS NULL AND [ChangeDecidedAtUtc] IS NULL "
+        + "AND [ChangeRejectionReason] IS NULL "
+        + "AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4))) OR "
+        + "([ChangeStatus] = 2 AND [ChangeDecidedBy] IS NOT NULL AND [ChangeDecidedAtUtc] IS NOT NULL "
+        + "AND LEN([ChangeDecidedBy]) > 0 "
+        + "AND [ChangeDecidedBy] COLLATE Latin1_General_100_BIN2 <> [ChangeProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ChangeRejectionReason] IS NULL "
+        + "AND (([ChangeKind] = 1 AND [Status] = 4) OR ([ChangeKind] = 2 AND [Status] = 2))) OR "
+        + "([ChangeStatus] = 3 AND [ChangeDecidedBy] IS NOT NULL AND [ChangeDecidedAtUtc] IS NOT NULL "
+        + "AND LEN([ChangeDecidedBy]) > 0 "
+        + "AND [ChangeDecidedBy] COLLATE Latin1_General_100_BIN2 <> [ChangeProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ChangeRejectionReason] IS NOT NULL AND LEN([ChangeRejectionReason]) > 0 "
+        + "AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4)))))";
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
@@ -1093,6 +1374,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             throw new InvalidOperationException("Resmî fatura import kaynak, onay ve komut kayıtları append-only'dir.");
         }
 
+        if (ChangeTracker.Entries<FinanceOfficialSalesInvoiceCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialSalesInvoiceReservationRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Resmî satış faturası komut ve kimlik ayırma kayıtları append-only'dir.");
+        }
+
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -1139,6 +1428,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Banka hesabı yalnız ilk onay veya bekleyen IBAN öneri/onay geçişiyle değişir.");
                 }
 
+                if (entry.Entity is CashAccountRow cashAccount
+                    && !IsAllowedCashAccountDecision(entry, cashAccount))
+                {
+                    throw new InvalidOperationException(
+                        "Kasa hesabı yalnız açılış kararıyla veya pasife alma/yeniden etkinleştirme öneri ve kararıyla değişir.");
+                }
+
                 if (entry.Entity is FinanceAllocationRow allocation
                     && !IsAllowedAllocationRelease(entry, allocation))
                 {
@@ -1160,8 +1456,27 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Müşteri çeki/senedi yalnız izinli bir durum adımıyla, sürümü bir artarak değişir.");
                 }
 
+                if (entry.Entity is FinanceOfficialSalesInvoiceRow officialSalesInvoice
+                    && !IsAllowedOfficialSalesInvoiceDecision(entry, officialSalesInvoice))
+                {
+                    // FNS-D20 + FNS-D39: the only change is one step out of PendingApproval: Approved or Rejected by
+                    // a different actor, or Withdrawn by the recorder; a decided record never changes again.
+                    throw new InvalidOperationException(
+                        "Resmî satış faturası kaydı yalnız bekleyen durumdan bir kez onay, ret veya geri çekme ile değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
+                    FinanceOfficialSalesInvoiceRow =>
+                    [
+                        nameof(FinanceOfficialSalesInvoiceRow.Status), nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy),
+                        nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc),
+                        nameof(FinanceOfficialSalesInvoiceRow.RejectedBy),
+                        nameof(FinanceOfficialSalesInvoiceRow.RejectedAtUtc),
+                        nameof(FinanceOfficialSalesInvoiceRow.RejectionReason),
+                        nameof(FinanceOfficialSalesInvoiceRow.WithdrawnBy),
+                        nameof(FinanceOfficialSalesInvoiceRow.WithdrawnAtUtc),
+                    ],
                     ReceiptDraftRow =>
                     [
                         nameof(ReceiptDraftRow.PartyId), nameof(ReceiptDraftRow.CompanyAccountId),
@@ -1185,6 +1500,18 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(BankAccountRow.PendingIbanProposedBy),
                         nameof(BankAccountRow.PendingIbanProposedAtUtc),
                         nameof(BankAccountRow.PendingIbanReason),
+                    ],
+                    // API-30: the opening decision or one step of a passivation/reactivation; the state-aware
+                    // guard above admits only those transitions.
+                    CashAccountRow =>
+                    [
+                        nameof(CashAccountRow.Status), nameof(CashAccountRow.DecidedBy),
+                        nameof(CashAccountRow.DecidedAtUtc), nameof(CashAccountRow.RejectionReason),
+                        nameof(CashAccountRow.ChangeKind), nameof(CashAccountRow.ChangeStatus),
+                        nameof(CashAccountRow.ChangeProposedBy), nameof(CashAccountRow.ChangeProposedAtUtc),
+                        nameof(CashAccountRow.ChangeDecidedBy), nameof(CashAccountRow.ChangeDecidedAtUtc),
+                        nameof(CashAccountRow.ChangeRejectionReason),
+                        nameof(CashAccountRow.UpdatedAtUtc),
                     ],
                     ReversalProposalRow =>
                     [
@@ -1264,6 +1591,50 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
             }
         }
+    }
+
+    private static bool IsAllowedOfficialSalesInvoiceDecision(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        FinanceOfficialSalesInvoiceRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.Status)]!;
+        var originalVersion = (long)entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.Version)]!;
+        if (originalStatus != (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
+            || current.Version != originalVersion + 1
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.RejectedBy)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.RejectedAtUtc)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.RejectionReason)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.WithdrawnBy)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.WithdrawnAtUtc)] is not null)
+        {
+            return false;
+        }
+
+        var noRejection = current.RejectedBy is null && current.RejectedAtUtc is null
+                          && current.RejectionReason is null;
+        var noWithdrawal = current.WithdrawnBy is null && current.WithdrawnAtUtc is null;
+        var noApproval = current.ApprovedBy is null && current.ApprovedAtUtc is null;
+        return current.Status switch
+        {
+            (int)FinanceOfficialSalesInvoiceStatusV1.Approved =>
+                noRejection && noWithdrawal
+                && !string.IsNullOrWhiteSpace(current.ApprovedBy)
+                && !string.Equals(current.ApprovedBy, current.RecordedBy, StringComparison.Ordinal)
+                && current.ApprovedAtUtc is not null,
+            (int)FinanceOfficialSalesInvoiceStatusV1.Rejected =>
+                noApproval && noWithdrawal
+                && !string.IsNullOrWhiteSpace(current.RejectedBy)
+                && !string.Equals(current.RejectedBy, current.RecordedBy, StringComparison.Ordinal)
+                && current.RejectedAtUtc is not null
+                && !string.IsNullOrWhiteSpace(current.RejectionReason),
+            (int)FinanceOfficialSalesInvoiceStatusV1.Withdrawn =>
+                noApproval && noRejection
+                && string.Equals(current.WithdrawnBy, current.RecordedBy, StringComparison.Ordinal)
+                && current.WithdrawnAtUtc is not null,
+            _ => false,
+        };
     }
 
     private static bool IsAllowedManualBankPaymentTransition(
@@ -1359,6 +1730,84 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && !string.IsNullOrWhiteSpace(current.ReleasedBy)
             && current.ReleasedAtUtc is not null
             && !string.IsNullOrWhiteSpace(current.ReleaseReason);
+    }
+
+    private static bool IsAllowedCashAccountDecision(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        CashAccountRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        const int passive = 4;
+        const int pendingChange = 1;
+        const int approvedChange = 2;
+        const int rejectedChange = 3;
+        const int passivation = 1;
+        const int reactivation = 2;
+        // Every opening decision, change proposal and change decision is exactly one version step.
+        var originalVersion = (long)entry.OriginalValues[nameof(CashAccountRow.Version)]!;
+        if (current.Version != checked(originalVersion + 1))
+        {
+            return false;
+        }
+
+        var originalStatus = (int)entry.OriginalValues[nameof(CashAccountRow.Status)]!;
+        var originalDecidedBy = (string?)entry.OriginalValues[nameof(CashAccountRow.DecidedBy)];
+        var originalDecidedAt = (DateTimeOffset?)entry.OriginalValues[nameof(CashAccountRow.DecidedAtUtc)];
+        var originalReason = (string?)entry.OriginalValues[nameof(CashAccountRow.RejectionReason)];
+        var originalChangeKind = (int?)entry.OriginalValues[nameof(CashAccountRow.ChangeKind)];
+        var originalChangeStatus = (int?)entry.OriginalValues[nameof(CashAccountRow.ChangeStatus)];
+        var originalChangeProposedBy = (string?)entry.OriginalValues[nameof(CashAccountRow.ChangeProposedBy)];
+        var originalChangeProposedAt = (DateTimeOffset?)entry.OriginalValues[nameof(CashAccountRow.ChangeProposedAtUtc)];
+        if (originalStatus == proposed)
+        {
+            // The opening decision: proposed → approved/rejected by another actor; no state change with it.
+            if (originalDecidedBy is not null || originalDecidedAt is not null || originalReason is not null
+                || originalChangeKind is not null || current.ChangeKind is not null || current.ChangeStatus is not null
+                || current.ChangeProposedBy is not null || current.ChangeProposedAtUtc is not null
+                || current.ChangeDecidedBy is not null || current.ChangeDecidedAtUtc is not null
+                || current.ChangeRejectionReason is not null)
+            {
+                return false;
+            }
+
+            var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+                && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+            return decided && ((current.Status == approved && current.RejectionReason is null)
+                || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
+        }
+
+        // Past the opening decision that decision is history: only the state change moves.
+        if ((originalStatus != approved && originalStatus != passive)
+            || !string.Equals(current.DecidedBy, originalDecidedBy, StringComparison.Ordinal)
+            || current.DecidedAtUtc != originalDecidedAt
+            || !string.Equals(current.RejectionReason, originalReason, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (originalChangeStatus != pendingChange)
+        {
+            // A new proposal: passivation of an active account or reactivation of a passive one; the account stays.
+            var kind = originalStatus == approved ? passivation : reactivation;
+            return current.Status == originalStatus && current.ChangeKind == kind && current.ChangeStatus == pendingChange
+                && !string.IsNullOrWhiteSpace(current.ChangeProposedBy) && current.ChangeProposedAtUtc is not null
+                && current.ChangeDecidedBy is null && current.ChangeDecidedAtUtc is null
+                && current.ChangeRejectionReason is null;
+        }
+
+        // The decision of the pending change: by another actor; an approval moves the account, a rejection does not.
+        var changeDecided = current.ChangeKind == originalChangeKind
+            && string.Equals(current.ChangeProposedBy, originalChangeProposedBy, StringComparison.Ordinal)
+            && current.ChangeProposedAtUtc == originalChangeProposedAt
+            && !string.IsNullOrWhiteSpace(current.ChangeDecidedBy) && current.ChangeDecidedAtUtc is not null
+            && !string.Equals(current.ChangeDecidedBy, current.ChangeProposedBy, StringComparison.Ordinal);
+        var target = originalChangeKind == passivation ? passive : approved;
+        return changeDecided && ((current.ChangeStatus == approvedChange && current.Status == target
+                && current.ChangeRejectionReason is null)
+            || (current.ChangeStatus == rejectedChange && current.Status == originalStatus
+                && !string.IsNullOrWhiteSpace(current.ChangeRejectionReason)));
     }
 
     private static bool IsAllowedBankAccountTransition(

@@ -1158,6 +1158,133 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
   return { factId: snapshot.factId, ...common }
 }
 
+// ---- SAT-D318: the input issue's physical-stock refusal (`ManufacturingStockShortfallViewV1`) ------------------
+
+/**
+ * SAT-D318 (owner decision of 2026-11-13): an input issue refused because it would take physical stock below zero
+ * names the refused issue, its parent label with the product, the stored place of the label's stock, the requested
+ * kilograms and, by the owner's answer SINAN-CEVAP (8) question 5 on Issue #66, the usable kilograms the issue could
+ * have taken there. It is an OPTIONAL member of that one 409 (`stockShortfall`): absent on every other code, on a
+ * replayed answer and from an older server. Reserved kilograms are not part of it, so the screen never shows or
+ * guesses one; the usable kilograms are shown as the server computed them, never recomputed here.
+ */
+export interface StockShortfallView {
+  readonly movementKind: 'Issue'
+  readonly sourceKind: 'manufacturing.input-issue'
+  /** The order the issue was posted to. */
+  readonly sourceId: string
+  /** The refused issue: the fact id the screen sent. */
+  readonly sourceLineId: string
+  /** The parent roll's label. */
+  readonly labelId: string
+  readonly productId: string
+  /** Where the label's stock lies; null when the label holds no stock anywhere. */
+  readonly locationId: string | null
+  /** The server's lossless invariant kilogram text (`KG_OUT`). */
+  readonly requestedKg: string
+  /**
+   * The usable kilograms the issue could have taken there, in the same text: the server's free physical kilograms
+   * less other demands' active reservations, never negative and always less than `requestedKg`.
+   */
+  readonly availableKg: string
+}
+
+const STOCK_SHORTFALL_FIELDS = [
+  'movementKind',
+  'sourceKind',
+  'sourceId',
+  'sourceLineId',
+  'labelId',
+  'productId',
+  'locationId',
+  'requestedKg',
+  'availableKg',
+] as const
+
+/** The input issue the screen sent: a shortfall is used only when it names exactly this issue. */
+export interface StockShortfallExpectation {
+  readonly orderId: string
+  readonly issueId: string
+  readonly labelId: string
+  /** The kilogram text the command sent (`KG_IN`); compared with the server's by value, never by spelling. */
+  readonly kg: string
+}
+
+/**
+ * Decodes `stockShortfall` against the issue the screen sent. A missing or extra member, a nil or malformed id,
+ * another movement or source kind, another order, issue or label, another quantity, or usable kilograms that are not
+ * less than the requested ones (that would be no shortfall) is null: the caller keeps the definite refusal without
+ * the detail, because a detail that does not name this issue, or contradicts itself, says nothing about it.
+ */
+export function decodeStockShortfall(
+  value: unknown,
+  expected: StockShortfallExpectation,
+): StockShortfallView | null {
+  if (!isObject(value) || !hasExactKeys(value, STOCK_SHORTFALL_FIELDS)) return null
+  if (value.movementKind !== 'Issue' || value.sourceKind !== 'manufacturing.input-issue') return null
+  const sourceId = nonNilGuid(value.sourceId)
+  const sourceLineId = nonNilGuid(value.sourceLineId)
+  const labelId = nonNilGuid(value.labelId)
+  const productId = nonNilGuid(value.productId)
+  const locationId = value.locationId === null ? null : nonNilGuid(value.locationId)
+  const requestedKg = kg(value.requestedKg)
+  const availableKg = kg(value.availableKg)
+  if (
+    sourceId === null ||
+    sourceLineId === null ||
+    labelId === null ||
+    productId === null ||
+    (value.locationId !== null && locationId === null) ||
+    requestedKg === null ||
+    requestedKg === '0' ||
+    availableKg === null ||
+    compareKg(availableKg, requestedKg) >= 0
+  ) {
+    return null
+  }
+  if (
+    !sameId(sourceId, expected.orderId) ||
+    !sameId(sourceLineId, expected.issueId) ||
+    !sameId(labelId, expected.labelId) ||
+    requestedKg !== canonicalKg(expected.kg)
+  ) {
+    return null
+  }
+  return {
+    movementKind: 'Issue',
+    sourceKind: 'manufacturing.input-issue',
+    sourceId,
+    sourceLineId,
+    labelId,
+    productId,
+    locationId,
+    requestedKg,
+    availableKg,
+  }
+}
+
+function sameId(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase()
+}
+
+/** Compares two of the server's kilogram texts (`KG_OUT`) by value, exactly: -1, 0 or 1, never through a float. */
+function compareKg(left: string, right: string): number {
+  const [leftInteger, leftFraction = ''] = left.split('.')
+  const [rightInteger, rightFraction = ''] = right.split('.')
+  const scale = Math.max(leftFraction.length, rightFraction.length)
+  const difference =
+    BigInt(leftInteger + leftFraction.padEnd(scale, '0')) - BigInt(rightInteger + rightFraction.padEnd(scale, '0'))
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0
+}
+
+/** The server's `Text(decimal)` of the kilograms a command sent: 250.50, 250.5 and 250.500 are all "250.5". */
+function canonicalKg(value: string): string | null {
+  if (!KG_IN.test(value)) return null
+  if (!value.includes('.')) return value
+  const trimmed = value.replace(/0+$/, '')
+  return trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed
+}
+
 // ---- GDC-BAL/1: `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` (MassBalanceViewV1) ----------------
 
 export type EngineOutcome = 'Computed' | 'Unavailable' | 'Refused'
