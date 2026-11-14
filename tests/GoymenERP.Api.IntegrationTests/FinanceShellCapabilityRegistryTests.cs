@@ -35,6 +35,9 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.manual-bank-payments.detail", "F-02-PAYMENT-DETAIL", null),
                 ("finance.manual-bank-payments.list", "F-02-PAYMENTS", null),
                 ("finance.manual-bank-payments.record", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
+                // API-23 (Finance 1.8): the maker-checker payment reversal controls of the payment detail.
+                ("finance.manual-bank-payments.reverse.approve", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
+                ("finance.manual-bank-payments.reverse.propose", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
                 ("finance.official-invoice-import.approve", "F-02-OFFICIAL-INVOICE-APPROVALS", null),
                 ("finance.official-invoice-import.upload", "F-02-OFFICIAL-INVOICE-UPLOAD", null),
                 ("finance.open-items.detail", "F-03-OPEN-ITEM-DETAIL", null),
@@ -70,7 +73,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(23, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(25, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

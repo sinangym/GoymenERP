@@ -10,7 +10,7 @@ internal sealed class OrganizationCompanyReference
     public Guid Id { get; set; }
 }
 
-/// <summary>The instruction header; only Status, Version and UpdatedAtUtc move after the first commit.</summary>
+/// <summary>The instruction header; only Status, Version, UpdatedAtUtc and (F-020) the cancel marks move after the first commit.</summary>
 internal sealed class LoadingInstructionRow : ILogisticsTenantRow
 {
     public Guid Id { get; set; }
@@ -20,6 +20,12 @@ internal sealed class LoadingInstructionRow : ILogisticsTenantRow
     public int Status { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
+
+    /// <summary>F-020: the cancel marks, all null until the instruction is cancelled (<c>CK_LoadingInstructions_Cancel</c>).</summary>
+    public string? CancelledBy { get; set; }
+
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public string? CancelReason { get; set; }
     public DateOnly EffectiveOn { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }

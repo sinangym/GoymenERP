@@ -239,8 +239,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             + "AND EventType = N'inventory.movement.recorded.v1' "
             + "AND EntityType = N'Inventory.StockMovement'",
             ("@correlation", returnMetadata.CorrelationId)));
-        Assert.Equal(4, await run.ScalarAsync<int>(
+        Assert.Equal(5, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.label-transformation.recorded.v1' "
+            + "AND EntityType = N'Inventory.LabelTransformation'",
             ("@correlation", outputMetadata.CorrelationId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "

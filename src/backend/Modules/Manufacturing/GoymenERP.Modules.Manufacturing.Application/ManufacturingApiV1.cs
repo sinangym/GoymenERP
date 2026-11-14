@@ -435,7 +435,9 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingPlanAllocationPortV1? planAllocations = null,
     IInventoryLabelDetailsV1? labelDetails = null,
     IManufacturingPlanSalesOrderLinkStore? planSalesOrderLinks = null,
-    IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null)
+    IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null,
+    IManufacturingSubcontractServiceOrderPortV1? subcontractServiceOrders = null,
+    IManufacturingClosedOrderListStore? closedOrders = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1637,10 +1639,13 @@ public sealed partial class ManufacturingCommandService(
     /// Closes the order at the version the caller read. Settings supplies the exact company/line/process/date tolerance
     /// (URT-D6: the order's work center version, else the process version, else the version-0 catalog, URT-D23);
     /// Manufacturing persists it with its source and version and derives fire (Scrap + ProcessLoss) and net issued mass
-    /// from its own facts. A roll's unexplained difference within the ± mass-balance tolerance is accepted as it is
-    /// (URT-D5; never reclassified); outside it, or a fire percent above the maximum (URT-D7), the close requires the
-    /// separate permission passed by the host and a reason bound to company/order/actor/order version/policy version.
-    /// Without a known mass-balance tolerance a positive unexplained difference still requires an explicit fact.
+    /// from its own facts. Output above input on any planned parent roll is refused
+    /// (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>, URT-D41 (1)-(2), URT-D42 (1)-(2)): the tolerance does
+    /// not apply in that direction and the refusal is answered before any approval step, with or without a reason.
+    /// A roll's unexplained shortfall within the mass-balance tolerance is accepted as it is (URT-D5; never
+    /// reclassified); outside it, or a fire percent above the maximum (URT-D7), the close requires the separate
+    /// permission passed by the host and a reason bound to company/order/actor/order version/policy version.
+    /// Without a known mass-balance tolerance a shortfall still requires an explicit fact.
     /// A closed order refuses a second close; the same key replays the first answer (ADR-011 §4), and a stale version
     /// is a recorded terminal conflict (§7).
     /// </summary>

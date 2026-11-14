@@ -29,7 +29,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// Inventory facts. The host remains the sole owner of commit, rollback and borrowed handles.
 /// </summary>
 public sealed partial class InventoryManufacturingRealizationParticipant
-    : IInventoryManufacturingRealizationParticipantV1, IInventoryManufacturingPlanAllocationParticipantV1
+    : IInventoryManufacturingRealizationParticipantV1, IInventoryManufacturingRealizationParticipantV2,
+        IInventoryManufacturingPlanAllocationParticipantV1
 {
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
@@ -208,6 +209,58 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
+        var staged = await StageOutputCoreAsync(request, quantity, classification: null, metadata, cancellationToken);
+        var result = new InventoryManufacturingOutputResultV1(companyId, request.ManufacturingOrderId,
+            request.OutputId, request.ManufacturingOrderVersionAfter, staged.ParentLabelId,
+            staged.ParentLabelVersion, request.OutputClass, request.ProductId,
+            request.ExpectedProductVersion, staged.LotId, staged.LabelId, staged.LabelVersion,
+            staged.MovementId, quantity.ToString(), IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
+        await SaveCommandAsync(InventoryManufacturingRealizationContractV1.OutputCommandName,
+            keyHash, payloadHash, request.OutputId, result, metadata, cancellationToken);
+        return result;
+    }
+
+    /// <summary>
+    /// B-03 (API-22/27): the V2 output declaration. The output class is mapped to a label classification before any
+    /// read or write (an unstockable class is refused with no label, movement or genealogy written); the output label
+    /// is born with that classification, and the result echoes both together with the recorded genealogy.
+    /// </summary>
+    public async Task<InventoryManufacturingOutputResultV2> StageOutputAsync(
+        InventoryManufacturingOutputRequestV2 request,
+        InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        Begin();
+        var (quantity, classification) = InventoryManufacturingRealizationContractV2.Validate(request, metadata,
+            companyId);
+        var core = request.ToV1();
+        var keyHash = Hash(metadata.IdempotencyKey);
+        var payloadHash = RequestHash(core);
+        if (await FindCommandAsync(InventoryManufacturingRealizationContractV2.OutputCommandName,
+                keyHash, cancellationToken) is { } existing)
+        {
+            EnsureReplay(existing, metadata, payloadHash);
+            var replay = JsonSerializer.Deserialize<InventoryManufacturingOutputResultV2>(existing.ResultJson, Json)
+                ?? throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+            return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
+        }
+
+        var staged = await StageOutputCoreAsync(core, quantity, classification, metadata, cancellationToken);
+        var result = new InventoryManufacturingOutputResultV2(companyId, request.ManufacturingOrderId,
+            request.OutputId, request.ManufacturingOrderVersionAfter, staged.ParentLabelId,
+            staged.ParentLabelVersion, request.OutputClass, classification, request.ProductId,
+            request.ExpectedProductVersion, staged.LotId, staged.LabelId, staged.LabelVersion,
+            staged.MovementId, quantity.ToString(), staged.GenealogyTransformationId, staged.GenealogyInputs,
+            IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
+        await SaveCommandAsync(InventoryManufacturingRealizationContractV2.OutputCommandName,
+            keyHash, payloadHash, request.OutputId, result, metadata, cancellationToken);
+        return result;
+    }
+
+    private async Task<StagedOutput> StageOutputCoreAsync(InventoryManufacturingOutputRequestV1 request,
+        Kilograms quantity, InventoryLabelClassificationV1? classification, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: false, cancellationToken);
         // Manufacturing itself permits an output only for an issued planned roll. Inventory keeps
@@ -227,6 +280,14 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw Refused(409, InventoryManufacturingRealizationCodesV1.OutputLabelAlreadyRegistered);
         }
 
+        // B-03 (DEC-PRDCT-003): the output descends from every input label still net-issued to this order now.
+        // Read before any write; an output with no net-issued input would have an empty genealogy and is refused.
+        var genealogyInputs = await NetIssuedInputsAsync(request.ManufacturingOrderId, cancellationToken);
+        if (genealogyInputs.Count == 0)
+        {
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentInputNotIssued);
+        }
+
         MaterialLot lot;
         MaterialLabel label;
         StockMovement movement;
@@ -237,6 +298,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             label = new MaterialLabel(request.LabelId, companyId, request.LabelCode, request.ProductId,
                 request.LotId, request.ExpectedProductVersion, request.RequiredDocuments,
                 request.HeatNumber, request.CoilNumber);
+            if (classification is { } stockable)
+            {
+                label.Classify(LabelClassificationOf(stockable));
+            }
+
             var position = new StockPosition(companyId,
                 new StockOwner(request.OwnerKind, request.OwnerId),
                 new StockCustodian(request.CustodianKind, request.CustodianId),
@@ -252,6 +318,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
         }
 
+        var transformationId = GenealogyTransformationId(request.OutputId);
+        long labelVersion;
         try
         {
             if (await store.SaveLotAsync(lot, [label], metadata, cancellationToken) != InventoryWriteOutcome.Recorded)
@@ -263,6 +331,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             {
                 throw Refused(409, InventoryManufacturingRealizationCodesV1.IdempotencyConflict);
             }
+
+            labelVersion = await context.Labels.AsNoTracking().Where(row => row.Id == label.Id)
+                .Select(row => row.Version).SingleAsync(cancellationToken);
+            store.StageManufacturingGenealogy(transformationId, request.OccurredAtUtc, genealogyInputs, label.Id,
+                labelVersion, quantity, metadata);
         }
         catch (InventoryManufacturingRealizationException)
         {
@@ -277,17 +350,90 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
         }
 
-        var result = new InventoryManufacturingOutputResultV1(companyId, request.ManufacturingOrderId,
-            request.OutputId, request.ManufacturingOrderVersionAfter, parent.Label.Id,
-            parent.Row.Version.ToString(CultureInfo.InvariantCulture), request.OutputClass, request.ProductId,
-            request.ExpectedProductVersion, lot.Id, label.Id,
-            (await context.Labels.AsNoTracking().Where(row => row.Id == label.Id).Select(row => row.Version)
-                .SingleAsync(cancellationToken)).ToString(CultureInfo.InvariantCulture),
-            movement.Id, quantity.ToString(), IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
-        await SaveCommandAsync(InventoryManufacturingRealizationContractV1.OutputCommandName,
-            keyHash, payloadHash, request.OutputId, result, metadata, cancellationToken);
-        return result;
+        return new StagedOutput(parent.Label.Id, parent.Row.Version.ToString(CultureInfo.InvariantCulture), lot.Id,
+            label.Id, labelVersion.ToString(CultureInfo.InvariantCulture), movement.Id, transformationId,
+            genealogyInputs.Select(input => new InventoryManufacturingGenealogyInputV2(input.LabelId,
+                input.LabelVersion.ToString(CultureInfo.InvariantCulture), input.Quantity.ToString())).ToArray());
     }
+
+    /// <summary>
+    /// The input labels issued to <paramref name="orderId"/> whose issued minus returned kilograms is still positive,
+    /// with their current version, ordered by label id. Raw kilograms only: no share or percentage is derived.
+    /// </summary>
+    private async Task<IReadOnlyList<InventoryStore.ManufacturingGenealogyInput>> NetIssuedInputsAsync(Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        var issued = await (from movement in context.Movements
+                join line in context.MovementLines on movement.Id equals line.MovementId
+                where movement.Kind == (int)StockMovementKind.Issue
+                    && movement.SourceKind == InventoryManufacturingRealizationContractV1.InputIssueSourceKind
+                    && movement.SourceId == orderId && movement.SourceLineId != null
+                    && movement.SourceGrain == (int)StockSourceGrain.Line
+                    && line.Direction == (int)StockDirection.Out
+                group line.QuantityKg by line.LabelId into labelLines
+                select new { LabelId = labelLines.Key, QuantityKg = labelLines.Sum() })
+            .ToListAsync(cancellationToken);
+        var returned = await (from movement in context.Movements
+                join line in context.MovementLines on movement.Id equals line.MovementId
+                where movement.Kind == (int)StockMovementKind.Return
+                    && movement.SourceKind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind
+                    && movement.SourceId == orderId && movement.SourceLineId != null
+                    && movement.SourceGrain == (int)StockSourceGrain.Line
+                    && line.Direction == (int)StockDirection.In
+                group line.QuantityKg by line.LabelId into labelLines
+                select new { LabelId = labelLines.Key, QuantityKg = labelLines.Sum() })
+            .ToDictionaryAsync(row => row.LabelId, row => row.QuantityKg, cancellationToken);
+        var net = issued
+            .Select(row => (row.LabelId, QuantityKg: row.QuantityKg - returned.GetValueOrDefault(row.LabelId)))
+            .Where(row => row.QuantityKg > 0m)
+            .OrderBy(row => row.LabelId)
+            .ToArray();
+        if (net.Length == 0)
+        {
+            return [];
+        }
+
+        var labelIds = net.Select(row => row.LabelId).ToArray();
+        var versions = await context.Labels.AsNoTracking().Where(row => labelIds.Contains(row.Id))
+            .ToDictionaryAsync(row => row.Id, row => row.Version, cancellationToken);
+        if (versions.Count != labelIds.Length)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        try
+        {
+            return net.Select(row => new InventoryStore.ManufacturingGenealogyInput(row.LabelId,
+                versions[row.LabelId], Kilograms.Positive(row.QuantityKg))).ToArray();
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+    }
+
+    /// <summary>
+    /// A deterministic, company-scoped genealogy id for one output (a name-based version 8 UUID), so a replay or a
+    /// recovery can name the same transformation and a client-chosen split/merge id cannot be the bare output id.
+    /// </summary>
+    private Guid GenealogyTransformationId(Guid outputId)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(string.Create(CultureInfo.InvariantCulture,
+            $"inventory.manufacturing-output.genealogy.v1:{companyId:D}:{outputId:D}")));
+        var value = bytes.AsSpan(0, 16).ToArray();
+        value[6] = (byte)((value[6] & 0x0F) | 0x80);
+        value[8] = (byte)((value[8] & 0x3F) | 0x80);
+        return new Guid(value, bigEndian: true);
+    }
+
+    private static LabelClassification LabelClassificationOf(InventoryLabelClassificationV1 classification) =>
+        classification switch
+        {
+            InventoryLabelClassificationV1.Standard => LabelClassification.Standard,
+            InventoryLabelClassificationV1.SecondQuality => LabelClassification.SecondQuality,
+            InventoryLabelClassificationV1.Scrap => LabelClassification.Scrap,
+            _ => throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest),
+        };
 
     private async Task<ParentLabel> LoadParentAsync(Guid labelId, string expectedVersion,
         bool requireReleasable, CancellationToken cancellationToken)
@@ -703,5 +849,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     }
 
     private sealed record ParentLabel(LabelRow Row, MaterialLabel Label);
+    private sealed record StagedOutput(Guid ParentLabelId, string ParentLabelVersion, Guid LotId, Guid LabelId,
+        string LabelVersion, Guid MovementId, Guid GenealogyTransformationId,
+        IReadOnlyList<InventoryManufacturingGenealogyInputV2> GenealogyInputs);
     private sealed record InputTrace(StockPosition Position, decimal IssuedKg, decimal ReturnedKg);
 }

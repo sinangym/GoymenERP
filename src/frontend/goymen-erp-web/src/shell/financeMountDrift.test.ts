@@ -60,7 +60,8 @@ const ROUTED = [
 /**
  * CONTROLS are capabilities the lane offers INSIDE a screen, never as a screen of their own: the
  * bank-account approval on F-04's list, and the Record of a definitive receipt on F-02's detail
- * (FIN-T05a), and reversal proposal on that recorded receipt (FIN-T06). Each is deliberately absent
+ * (FIN-T05a), and reversal proposal on that recorded receipt (FIN-T06), and the API-23 payment reversal
+ * propose/approve controls on the recorded payment's detail. Each is deliberately absent
  * from the shell's table, from `CAPABILITY_ROUTE` and from
  * `CAPABILITY_NAV_LABEL` — a control with a route would be a second entry point to an action that
  * belongs inside its list, and a control with a nav label would be a sidebar link to something that
@@ -73,6 +74,8 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.receiptsReversePropose,
   FINANCE_CAPABILITY.manualBankPaymentsApprove,
   FINANCE_CAPABILITY.manualBankPaymentsRecord,
+  FINANCE_CAPABILITY.manualBankPaymentsReversePropose,
+  FINANCE_CAPABILITY.manualBankPaymentsReverseApprove,
   FINANCE_CAPABILITY.allocationsWrite,
 ]
 

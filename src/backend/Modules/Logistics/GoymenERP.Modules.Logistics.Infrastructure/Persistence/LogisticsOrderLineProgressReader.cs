@@ -1,12 +1,13 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Domain.Loading;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
 /// <summary>
 /// AT-025: Logistics's own recorded totals per Sales order line and unit for the sales section of the operations work list —
-/// instructed, loaded, shipped and delivered summed over every instruction of the context company (the
+/// instructed, loaded, shipped and delivered summed over every non-cancelled instruction of the context company (the
 /// <see cref="LogisticsSalesOrderDeliveryReadPort"/> shape, for a page of order lines at once). It reads Logistics's own
 /// company-filtered lines only (another company's instructions are invisible, never a 403), untracked, and creates nothing.
 /// The totals are the stored share totals the store moves in the same save as each appended share, so a replayed command
@@ -39,8 +40,14 @@ internal sealed class LogisticsOrderLineProgressReader(LogisticsDbContext dbCont
             return [];
         }
 
-        var totals = await dbContext.Lines.AsNoTracking()
-            .Where(line => ids.Contains(line.SourceOrderLineId))
+        // F-020: the lines of a cancelled instruction no longer hold instructed or loaded quantity (the Sales loading read and the
+        // aggregate limits leave them out the same way); a cancel is refused once a shipment exists.
+        var totals = await (
+                from line in dbContext.Lines.AsNoTracking()
+                join instruction in dbContext.Instructions.AsNoTracking()
+                    on new { line.CompanyId, line.InstructionId } equals new { instruction.CompanyId, InstructionId = instruction.Id }
+                where ids.Contains(line.SourceOrderLineId) && instruction.Status != (int)LoadingInstructionStatus.Cancelled
+                select line)
             .GroupBy(line => new { line.SourceOrderLineId, line.UnitId })
             .Select(group => new
             {

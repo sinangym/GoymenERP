@@ -102,6 +102,8 @@ public enum FinanceAction
     ReadPartyLedger, ReadPartyLedgerAmount,
     // FI04: open-item metadata and its monetary disclosure are independent reads.
     ReadOpenItems, ReadOpenItemAmount,
+    // API-23: maker-checker reversal of a recorded outgoing payment; its own names, not the receipt reversal's.
+    ProposePaymentReversal, ApprovePaymentReversal,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

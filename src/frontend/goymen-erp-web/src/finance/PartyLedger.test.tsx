@@ -162,6 +162,36 @@ describe('party ledger invoice cancellation rows (F2b)', () => {
   })
 })
 
+describe('party ledger payment reversal row (API-23)', () => {
+  const proposalId = 'e7000000-0000-4000-8000-0000000000a7'
+  /** The USD block's receipt turned into the counter entry of an approved payment reversal. */
+  const reversed = () => {
+    const body = ledger({ withUsd: true })
+    const usd = currencies(body)[1].entries as Record<string, unknown>[]
+    Object.assign(usd[0], { kind: 'ManualBankPaymentReversal', sourceId: proposalId, reversesSourceId: IDS.payment })
+    return { body, usd }
+  }
+
+  it('accepts it only in the credit column and only with the reversed payment', () => {
+    expect(decodePartyLedgerAnswer(reversed().body, COMPANY_A).ok).toBe(true)
+    const crossed = reversed()
+    crossed.usd[0].side = 'Debit'
+    expect(decodePartyLedgerAnswer(crossed.body, COMPANY_A).ok).toBe(false)
+    const unlinked = reversed()
+    unlinked.usd[0].reversesSourceId = null
+    expect(decodePartyLedgerAnswer(unlinked.body, COMPANY_A).ok).toBe(false)
+  })
+
+  it('shows its own row and opens the reversed payment, not the proposal', async () => {
+    const { container } = renderLedger(found(reversed().body))
+    await waitFor(() => expect(container.querySelectorAll('table[data-ledger-currency]')).toHaveLength(2))
+    const reversal = row(container, 'ManualBankPaymentReversal')
+    expect(within(reversal).getByRole('rowheader').textContent).toBe('Ödeme ters kaydı')
+    expect(within(reversal).queryAllByRole('link').map((link) => link.getAttribute('href')))
+      .toEqual([`/finans/odemeler/${IDS.payment}`])
+  })
+})
+
 function renderLedger(reply: ReturnType<typeof found>, onRange = vi.fn()) {
   const { port, reads } = recordingPort(() => reply)
   const view = renderFinance(

@@ -141,6 +141,7 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
         ManufacturingRuleCodes.PlanSalesOrderLineNotApproved,
         ManufacturingRuleCodes.PlanSalesOrderLineNotFound,
+        ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder,
     ];
 
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
@@ -587,6 +588,27 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-D42 (3): the company's already-closed orders whose output exceeded input on a parent roll, per roll — listed,
+        // never reopened or changed. The order list's paging and the order read's grant; a read: nothing is stored.
+        group.MapGet("/reports/output-above-input-closures", async (
+                int? pageSize,
+                string? cursor,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext,
+                    await service.ListOutputAboveInputClosuresAsync(pageSize, cursor, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOutputAboveInputClosureReportV1")
+            .Produces<OutputAboveInputClosureReportViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         return endpoints;
     }
 
@@ -922,6 +944,7 @@ internal static class ManufacturingProblemCodes
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.FireMassMismatch,
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.NetIssuedMassMismatch,
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.NegativeDifferenceReview,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.OutputExceedsInput,
         GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound,
         ManufacturingRuleCodes.RollNotInOrder,
         ManufacturingRuleCodes.RollNotIssued,

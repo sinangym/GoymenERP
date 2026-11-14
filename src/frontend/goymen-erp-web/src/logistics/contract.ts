@@ -8,6 +8,9 @@
  *   GET  /api/v1/logistics/loading-instructions?pageSize&cursor&status → LoadingInstructionListResponse
  *   GET  /api/v1/logistics/loading-instructions/{id}            → LoadingInstructionDetailView
  *   POST /api/v1/logistics/loading-instructions/{id}/issue      → 200 LoadingInstructionResponse (Draft → Issued)
+ *   (F-020, LOJ-D6…D8: an instruction may also be `Cancelled`. The summary then carries who cancelled it (a user id, as on
+ *    the dispatch note — no name lookup), when (UTC) and why; all three are null on any other status. The cancel command
+ *    is not sent from here.)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
  *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
  *   POST …/{id}/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 LoadingInstructionResponse
@@ -49,7 +52,7 @@ export const MUTATION_STATUS = 200
 export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const ORIGINAL_CORRELATION_HEADER = 'Idempotency-Original-Correlation-Id'
 
-export const INSTRUCTION_STATUS = { draft: 'Draft', issued: 'Issued' } as const
+export const INSTRUCTION_STATUS = { draft: 'Draft', issued: 'Issued', cancelled: 'Cancelled' } as const
 export type InstructionStatus = (typeof INSTRUCTION_STATUS)[keyof typeof INSTRUCTION_STATUS]
 const INSTRUCTION_STATUSES: readonly string[] = Object.values(INSTRUCTION_STATUS)
 
@@ -169,6 +172,10 @@ export interface InstructionSummary {
   readonly createdAtUtc: string
   readonly updatedAtUtc: string
   readonly lineCount: number
+  /** F-020 (LOJ-D6…D8): the canceller's user id, the UTC instant and the trimmed reason — all three exactly when Cancelled. */
+  readonly cancelledBy: string | null
+  readonly cancelledAtUtc: string | null
+  readonly cancelReason: string | null
 }
 
 /** The four §7.4 shares and the derived remainders, all exact text; the Sales binding (D4). */
@@ -393,6 +400,10 @@ export function isVersionString(value: unknown): value is string {
 const isInstant = (v: unknown): v is string => typeof v === 'string' && INSTANT_RE.test(v) && !Number.isNaN(Date.parse(v))
 const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max
 const isNullable = <T>(v: unknown, check: (x: unknown) => x is T): v is T | null => v === null || check(v)
+/** A recorded actor: the user id the server stored (≤ 128, the column), shown as is. */
+const isActor = (v: unknown): v is string => isText(v, 128)
+/** A cancel reason as stored: trimmed, at most CANCEL_REASON_MAX characters. */
+const isReason = (v: unknown): v is string => isText(v, CANCEL_REASON_MAX) && v.trim() === v
 const isNonNegativeInt = (v: unknown, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max
 const isPositiveInt = (v: unknown, max: number): v is number => isNonNegativeInt(v, max) && v >= 1
@@ -451,9 +462,13 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
 
 const SUMMARY_KEYS = [
   'id', 'companyId', 'status', 'version', 'customerPartyId', 'companyAccountId', 'effectiveOn',
-  'createdAtUtc', 'updatedAtUtc', 'lineCount',
+  'createdAtUtc', 'updatedAtUtc', 'lineCount', 'cancelledBy', 'cancelledAtUtc', 'cancelReason',
 ] as const
 
+/**
+ * F-020's shape, as the store's check pins it (CK_LoadingInstructions_Cancel): a Cancelled instruction carries its canceller,
+ * time and reason; a Draft or Issued one carries none of them. A partial or misplaced cancel record is not shown.
+ */
 export function decodeInstructionSummary(value: unknown): InstructionSummary | null {
   const o = exact(value, SUMMARY_KEYS)
   if (
@@ -468,10 +483,16 @@ export function decodeInstructionSummary(value: unknown): InstructionSummary | n
     !isDateOnly(o.effectiveOn) ||
     !isInstant(o.createdAtUtc) ||
     !isInstant(o.updatedAtUtc) ||
-    !isPositiveInt(o.lineCount, LIMITS.lines)
+    !isPositiveInt(o.lineCount, LIMITS.lines) ||
+    !isNullable(o.cancelledBy, isActor) ||
+    !isNullable(o.cancelledAtUtc, isInstant) ||
+    !isNullable(o.cancelReason, isReason)
   ) {
     return null
   }
+  const cancelled = o.cancelledBy !== null && o.cancelledAtUtc !== null && o.cancelReason !== null
+  const notCancelled = o.cancelledBy === null && o.cancelledAtUtc === null && o.cancelReason === null
+  if (o.status === INSTRUCTION_STATUS.cancelled ? !cancelled : !notCancelled) return null
   return {
     id: o.id,
     companyId: o.companyId,
@@ -483,6 +504,9 @@ export function decodeInstructionSummary(value: unknown): InstructionSummary | n
     createdAtUtc: o.createdAtUtc,
     updatedAtUtc: o.updatedAtUtc,
     lineCount: o.lineCount,
+    cancelledBy: o.cancelledBy,
+    cancelledAtUtc: o.cancelledAtUtc,
+    cancelReason: o.cancelReason,
   }
 }
 
@@ -654,8 +678,6 @@ const DISPATCH_NOTE_KEYS = [
 
 const isNumberText = (v: unknown): v is string => isText(v, 32)
 const isEDispatchNumber = (v: unknown): v is string => typeof v === 'string' && E_DISPATCH_NUMBER_PATTERN.test(v)
-const isActor = (v: unknown): v is string => isText(v, 128)
-const isReason = (v: unknown): v is string => isText(v, CANCEL_REASON_MAX) && v.trim() === v
 
 /**
  * The lifecycle shape, member by member: a Draft carries nothing of approval or cancellation; an Approved note has its number,
@@ -800,9 +822,11 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
   let weighing: InstructionWeighing | null = null
   if (o.weighing !== null) {
     weighing = decodeWeighing(o.weighing)
-    // A weighbridge record exists only on an issued instruction.
-    if (weighing === null || instruction.status !== INSTRUCTION_STATUS.issued) return null
+    // A weighbridge record is taken on an issued instruction and is kept when that instruction is cancelled (LOJ-D7); a Draft has none.
+    if (weighing === null || instruction.status === INSTRUCTION_STATUS.draft) return null
   }
+  // F-020 / LOJ-D8: an instruction with a recorded shipment cannot be cancelled, so a cancelled one carries loads only.
+  if (instruction.status === INSTRUCTION_STATUS.cancelled && shares.some((share) => share.kind !== SHARE_KIND.loaded)) return null
   const dispatchNotes = decodeDispatchNotes(o.dispatchNotes, lines, shares)
   if (dispatchNotes === null) return null
   return { instruction, lines, shares, weighing, dispatchNotes }

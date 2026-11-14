@@ -109,5 +109,7 @@ public sealed class ManualBankPaymentContractTests
         Assert.Equal("finance.manual-bank-payment.draft.read", FinancePermissionNames.ManualBankPaymentDraftRead);
         Assert.Equal("finance.manual-bank-payment.approve", FinancePermissionNames.ManualBankPaymentApprove);
         Assert.Equal("finance.manual-bank-payment.record", FinancePermissionNames.ManualBankPaymentRecord);
+        Assert.Equal("finance.manual-bank-payment.reverse.propose", FinancePermissionNames.PaymentReversePropose);
+        Assert.Equal("finance.manual-bank-payment.reverse.approve", FinancePermissionNames.PaymentReverseApprove);
     }
 }

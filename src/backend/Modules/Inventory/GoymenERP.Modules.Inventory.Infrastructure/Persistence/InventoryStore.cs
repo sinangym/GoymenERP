@@ -193,6 +193,8 @@ public sealed partial class InventoryStore(
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
                 RequiredDocumentsJson = JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
+                // B-03: a Manufacturing output label is born classified; every other new label stays null (unknown).
+                Classification = label.Classification is { } classification ? (int)classification : null,
                 Version = 1,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,

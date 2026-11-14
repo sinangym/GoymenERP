@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(23, declarations.Count);
+        Assert.Equal(25, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.7", provider.ContractVersion);
+        Assert.Equal("1.8", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -77,6 +77,14 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.manual-bank-payments.record", "finance.manual-bank-payments.detail", "/finans/odemeler/:paymentId",
                 "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.ManualBankPaymentRecord,
+                    ErpPermissions.AccountingPeriodsRead]),
+            // API-23: the reversal of a recorded payment is two controls of the payment detail (no new route).
+            ("finance.manual-bank-payments.reverse.propose", "finance.manual-bank-payments.detail",
+                "/finans/odemeler/:paymentId", "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.PaymentReversePropose]),
+            ("finance.manual-bank-payments.reverse.approve", "finance.manual-bank-payments.detail",
+                "/finans/odemeler/:paymentId", "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.PaymentReverseApprove,
                     ErpPermissions.AccountingPeriodsRead]),
             ("finance.allocations.list", "finance.allocations.list", "/finans/dagitimlar", "F-03",
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.AllocationRead]),
@@ -143,7 +151,18 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal(paymentDetail.CapabilityId, paymentRecord.ParentCapabilityId);
         Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
             paymentRecord.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
-        Assert.Equal(6, declarations.Count(item => item.ParentCapabilityId is not null));
+        foreach (var id in new[]
+                 {
+                     FinanceShellCapabilityProvider.ManualBankPaymentReverseProposeCapabilityId,
+                     FinanceShellCapabilityProvider.ManualBankPaymentReverseApproveCapabilityId,
+                 })
+        {
+            var control = Assert.Single(declarations, item => item.CapabilityId == id);
+            Assert.Equal(paymentDetail.CapabilityId, control.ParentCapabilityId);
+            Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+                control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        }
+        Assert.Equal(8, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]

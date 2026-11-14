@@ -6,6 +6,9 @@ public enum LoadingInstructionStatus
 {
     Draft = 1,
     Issued = 2,
+
+    /// <summary>F-020: cancelled before any shipment was recorded; nothing is deleted and no further command applies.</summary>
+    Cancelled = 3,
 }
 
 /// <summary>How a loaded quantity was established (§7.4): read per package, or a vehicle total spread over packages.</summary>
@@ -64,6 +67,12 @@ public sealed class LoadingInstruction
 
     public LoadingInstructionStatus Status { get; private set; } = LoadingInstructionStatus.Draft;
     public long Version { get; private set; } = 1;
+
+    /// <summary>F-020: who cancelled the instruction, when and why; all null until it is cancelled.</summary>
+    public string? CancelledBy { get; private set; }
+
+    public DateTimeOffset? CancelledAtUtc { get; private set; }
+    public string? CancelReason { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
@@ -139,10 +148,47 @@ public sealed class LoadingInstruction
         Touch(now);
     }
 
+    /// <summary>
+    /// F-020 (LOJ-D6..D8): cancels a Draft or Issued instruction with a reason while no shipment is recorded. Nothing is deleted: the
+    /// lines, shares, weighing and dispatch notes stay as they are and the cancel marks (who, when, why) are kept on the instruction.
+    /// Loaded-but-not-shipped quantity is released by the status itself (no shipment, so no stock movement); a recorded shipment
+    /// share refuses the cancel. A cancelled instruction cannot be cancelled again or changed.
+    /// </summary>
+    public void CancelInstruction(long expectedVersion, string cancelledBy, string reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireActor(cancelledBy, "Talimatı iptal eden kullanıcı belirtilmelidir.", nameof(cancelledBy));
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > DispatchNoteCancelReasonMaximumLength)
+        {
+            throw new ArgumentException("İptal gerekçesi boş olamaz ve en fazla 500 karakterdir.", nameof(reason));
+        }
+
+        RequireNotCancelled();
+        if (shares.Any(share => share.Kind == LoadingShareKind.Shipped))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.InstructionShipped, "Sevki kaydedilmiş talimat iptal edilemez.");
+        }
+
+        CancelledBy = cancelledBy.Trim();
+        CancelledAtUtc = now.ToUniversalTime();
+        CancelReason = reason.Trim();
+        Status = LoadingInstructionStatus.Cancelled;
+        Touch(now);
+    }
+
+    private void RequireNotCancelled()
+    {
+        if (Status == LoadingInstructionStatus.Cancelled)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.InstructionCancelled, "İptal edilmiş talimat değiştirilemez.");
+        }
+    }
+
     /// <summary>A quality or ownership block on a line (its source is Inventory/Quality): loads and shipments are refused while it stands.</summary>
     public void BlockLine(long expectedVersion, Guid lineId, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
+        RequireNotCancelled();
         FindLine(lineId).SetBlocked(true);
         Touch(now);
     }
@@ -150,6 +196,7 @@ public sealed class LoadingInstruction
     public void UnblockLine(long expectedVersion, Guid lineId, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
+        RequireNotCancelled();
         FindLine(lineId).SetBlocked(false);
         Touch(now);
     }
