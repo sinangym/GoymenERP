@@ -168,7 +168,9 @@ sınıfı yazar; yazar veya merge eden kendi merge'üne `DELTA-OK` veremez. K3't
 --remerge-diff` boş ya da yalnız taze üretici çıktısı, üretici ve testler exit 0, patch-id eşit, CI yeşil) ayrı
 `DELTA-OK` aranmaz; bu makine kanıtı makbuza yazılır. Elle çakışma çözümünde GOV-D1/GOV-D6 sürer. GOV-D8
 (`docs/decisions/SINAN_KARARLARI_2026-11-14_TREN_GOV_D8.md`): iş PR'ları bir `claude/tren-<n>` dalına review ve
-yerel hızlı kontrollerle girer; tam zorunlu CI ve bu kontrol tren → main head'inde bir kez yapılır. Makbuza main SHA'sı, (a)/(b) kararı ve yeni
+yerel hızlı kontrollerle girer; tam zorunlu CI ve bu kontrol tren → main head'inde bir kez yapılır. GOV-D9
+(`docs/decisions/SINAN_KARARLARI_2026-11-14_KOD_ONCE_GOV_D9.md`): kod önce yazılır, testler yazılır ama koşulmaz; pin üretimi, tam
+test, tam CI ve review'lar tren head'inde sonra yapılır; main'e yalnız yeşil ve review'lı ağaç girer. Makbuza main SHA'sı, (a)/(b) kararı ve yeni
 yeşil CI run kimliği yazılır ((c)'de yeni koşu yoktur; head'deki yeşil koşunun kimliği yazılır). Squash'taki `sha=` parametresi yalnız
 head'i doğrular, base'i doğrulamaz; kontrol ile merge çağrısı arasında saniyelik bir yarış kalır.
 Merge eden, çağrıdan önce main ilerlediyse kontrolü yineler. GitHub "Require branches to be up to
