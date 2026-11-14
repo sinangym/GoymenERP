@@ -4,7 +4,7 @@
   "companyAccountId": "55555555-5555-5555-5555-555555555555",
   "result": "Unavailable",
   "reasons": [
-    { "component": "ShippedNotInvoiced", "code": "invoicing_owner_missing" },
+    { "component": "ShippedNotInvoiced", "code": "finance_processed_set_unavailable" },
     { "component": "ThisOrder", "code": "vat_inclusive_amount_unavailable" },
     { "component": "CreditLimit", "code": "finance_credit_limit_owner_missing" }
   ],
@@ -26,11 +26,11 @@
     },
     {
       "kind": "ShippedNotInvoiced",
-      "source": "sales.invoicing",
-      "state": "NoSource",
+      "source": "sales.unbilled-shipments",
+      "state": "Unavailable",
       "taxBasis": null,
       "amounts": null,
-      "reasonCode": "invoicing_owner_missing"
+      "reasonCode": "finance_processed_set_unavailable"
     },
     {
       "kind": "ApprovedUnshippedRemainder",
@@ -39,6 +39,14 @@
       "taxBasis": "IncludingTax",
       "amounts": [],
       "reasonCode": null
+    },
+    {
+      "kind": "InvoicedAwaitingFinance",
+      "source": "sales.finalized-invoices",
+      "state": "Unavailable",
+      "taxBasis": null,
+      "amounts": null,
+      "reasonCode": "finance_processed_set_unavailable"
     }
   ],
   "thisOrder": {

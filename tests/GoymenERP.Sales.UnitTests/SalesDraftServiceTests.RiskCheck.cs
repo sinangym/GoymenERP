@@ -8,7 +8,8 @@ namespace GoymenERP.Sales.UnitTests;
 /// <summary>
 /// MOD-01 / API-06 over SYNTHETIC owners: the risk check reads open receivables, the credit limit and collateral from the
 /// customer-finance owner's port, the approved-unshipped remainder from the customer's open approved orders and the delivery
-/// owner's shipped totals, and "shipped but not invoiced" is "NoSource" (S5). SAT-D46: order amounts enter VAT-included, which is
+/// owner's shipped totals, and "shipped but not invoiced" from the Logistics share owner and Sales' invoice records (plan S0 — here
+/// not composed, so "Unavailable"; its own cases are in SalesDraftServiceTests.RiskUnbilled). SAT-D46: order amounts enter VAT-included, which is
 /// API-03's — so a remainder above zero and an unapproved order are "Unavailable" (never the VAT-excluded net). SAT-D48: this
 /// order is its own part. SAT-D53: totals in the local currency (TL) and in the limit's currency. Any part whose owner cannot
 /// answer makes the result "Unavailable" — never "Within"; amounts cross only with the price read; the read writes nothing and is
@@ -45,7 +46,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(check.InLimitCurrency);
         Assert.Equal(
             [
-                new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing),
+                new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable),
                 new SalesDraftRiskReasonV1("ApprovedUnshippedRemainder", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
                 new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_owner_missing"),
             ],
@@ -53,9 +54,13 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(
             [
                 ("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "100.00", null),
-                ("ShippedNotInvoiced", SalesDraftRiskSourcesV1.Invoicing, "NoSource", null, null, SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing),
+                ("ShippedNotInvoiced", SalesDraftRiskSourcesV1.UnbilledShipments, "Unavailable", null, null,
+                    SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable),
                 ("ApprovedUnshippedRemainder", SalesDraftRiskSourcesV1.ApprovedOrderRemainders, "Unavailable", null, null,
                     SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
+                // SAT-D311: the sub-row shares the unbilled stage's state; it never adds a reason of its own.
+                ("InvoicedAwaitingFinance", SalesDraftRiskSourcesV1.FinalizedInvoices, "Unavailable", null, null,
+                    SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable),
             ],
             check.Components.Select(Flat));
         // SAT-D48: this order's current revision is approved — already in the remainder, it adds nothing.
@@ -278,7 +283,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("Available", "IncludingTax"), (check.Components[2].State, check.Components[2].TaxBasis));
         Assert.Empty(check.Components[2].Amounts!);
         Assert.DoesNotContain(check.Reasons, reason => reason.Component is "ThisOrder" or "ApprovedUnshippedRemainder");
-        // Still never "Within": invoices (S5) and the limit have no source.
+        // Still never "Within": the unbilled stage's owners are not composed here and the limit has no source.
         Assert.Equal(SalesDraftRiskResultsV1.Unavailable, check.Result);
     }
 

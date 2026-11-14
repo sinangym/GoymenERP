@@ -1495,15 +1495,17 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var service = new StubDraftService
         {
             RiskCheck = id => Task.FromResult(new SalesOrderDraftRiskCheckResponse("4", party, account, "Unavailable",
-                [new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing)],
+                [new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.FinanceProcessedSetUnavailable)],
                 SalesPriceDisclosure.Visible, new SalesDraftRiskTotalsV1(currency, null, null), null,
                 [
                     new SalesDraftRiskFigureV1("OpenReceivables", "finance.open-items", "Available", "IncludingTax",
                         [new SalesDraftRiskAmountV1(currency, "100.00")], null),
-                    new SalesDraftRiskFigureV1("ShippedNotInvoiced", SalesDraftRiskSourcesV1.Invoicing, "NoSource", null, null,
-                        SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing),
+                    new SalesDraftRiskFigureV1("ShippedNotInvoiced", SalesDraftRiskSourcesV1.UnbilledShipments, "Unavailable", null, null,
+                        SalesDraftRiskReasonCodesV1.FinanceProcessedSetUnavailable),
                     new SalesDraftRiskFigureV1("ApprovedUnshippedRemainder", SalesDraftRiskSourcesV1.ApprovedOrderRemainders, "Available",
                         "IncludingTax", [], null),
+                    new SalesDraftRiskFigureV1("InvoicedAwaitingFinance", SalesDraftRiskSourcesV1.FinalizedInvoices, "Unavailable", null, null,
+                        SalesDraftRiskReasonCodesV1.FinanceProcessedSetUnavailable),
                 ],
                 new SalesDraftRiskFigureV1("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Unavailable", null, null,
                     SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
@@ -1536,17 +1538,21 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 body.GetProperty("thisOrder").GetProperty("state").GetString(), body.GetProperty("thisOrder").GetProperty("reasonCode").GetString()));
             var reason = Assert.Single(body.GetProperty("reasons").EnumerateArray());
             Assert.Equal(["component", "code"], reason.EnumerateObject().Select(member => member.Name));
-            Assert.Equal(("ShippedNotInvoiced", "invoicing_owner_missing"),
+            Assert.Equal(("ShippedNotInvoiced", "finance_processed_set_unavailable"),
                 (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString()));
             var components = body.GetProperty("components").EnumerateArray().ToArray();
-            Assert.Equal(["OpenReceivables", "ShippedNotInvoiced", "ApprovedUnshippedRemainder"],
+            Assert.Equal(["OpenReceivables", "ShippedNotInvoiced", "ApprovedUnshippedRemainder", "InvoicedAwaitingFinance"],
                 components.Select(component => component.GetProperty("kind").GetString()));
             Assert.All(components.Append(body.GetProperty("thisOrder")).Append(body.GetProperty("creditLimit")).Append(body.GetProperty("collateral")), figure =>
                 Assert.Equal(["kind", "source", "state", "taxBasis", "amounts", "reasonCode"], figure.EnumerateObject().Select(member => member.Name)));
             var amount = Assert.Single(components[0].GetProperty("amounts").EnumerateArray());
             Assert.Equal((currency.ToString("D"), "100.00"), (amount.GetProperty("currencyId").GetString(), amount.GetProperty("amount").GetString()));
-            Assert.Equal((JsonValueKind.Null, "invoicing_owner_missing"), (components[1].GetProperty("amounts").ValueKind,
-                components[1].GetProperty("reasonCode").GetString()));
+            Assert.Equal((JsonValueKind.Null, "sales.unbilled-shipments", "finance_processed_set_unavailable"),
+                (components[1].GetProperty("amounts").ValueKind, components[1].GetProperty("source").GetString(),
+                    components[1].GetProperty("reasonCode").GetString()));
+            Assert.Equal((JsonValueKind.Null, "sales.finalized-invoices", "finance_processed_set_unavailable"),
+                (components[3].GetProperty("amounts").ValueKind, components[3].GetProperty("source").GetString(),
+                    components[3].GetProperty("reasonCode").GetString()));
             Assert.Equal((JsonValueKind.Array, 0), (components[2].GetProperty("amounts").ValueKind, components[2].GetProperty("amounts").GetArrayLength()));
             Assert.Equal(("NoSource", "finance_credit_limit_owner_missing"), (body.GetProperty("creditLimit").GetProperty("state").GetString(),
                 body.GetProperty("creditLimit").GetProperty("reasonCode").GetString()));

@@ -779,7 +779,7 @@ export function riskCheckOf(detail: unknown): Response {
     companyAccountId: body.draft.companyAccountId,
     result: 'Unavailable',
     reasons: [
-      { component: 'ShippedNotInvoiced', code: 'invoicing_owner_missing' },
+      { component: 'ShippedNotInvoiced', code: 'shipment_provider_unavailable' },
       { component: 'CreditLimit', code: 'finance_credit_limit_owner_missing' },
     ],
     amountDisclosure: visible ? 'Visible' : 'Withheld',
@@ -787,8 +787,9 @@ export function riskCheckOf(detail: unknown): Response {
     inLimitCurrency: null,
     components: [
       figure('OpenReceivables', 'finance.open-items', 'Available', null),
-      figure('ShippedNotInvoiced', 'sales.invoicing', 'NoSource', 'invoicing_owner_missing'),
+      figure('ShippedNotInvoiced', 'sales.unbilled-shipments', 'Unavailable', 'shipment_provider_unavailable'),
       figure('ApprovedUnshippedRemainder', 'sales.approved-order-remainders', 'Available', null),
+      figure('InvoicedAwaitingFinance', 'sales.finalized-invoices', 'Unavailable', 'shipment_provider_unavailable'),
     ],
     thisOrder: figure('ThisOrder', 'sales.this-order', 'Available', null),
     creditLimit: figure('CreditLimit', 'finance.party-credit-limit', 'NoSource', 'finance_credit_limit_owner_missing'),

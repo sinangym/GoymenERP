@@ -257,7 +257,11 @@ public static class SalesModuleExtensions
         serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>(),
         // SAT-D219 (EK38): the declarations of the supply owners that RECORD links to Sales order lines (Purchasing #998, Production #1085): a recorded kind
         // without an adapter is Unreadable, and only a kind nobody records is "no source".
-        serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>(),
+        // API-06 / plan S0 (DEC-FIN-007 second stage): Sales' own invoice records (which shares a FINALIZED invoice took) and the
+        // Logistics owner's posted shipment shares; without the latter "shipped, not invoiced" is "Unavailable", never zero.
+        serviceProvider.GetService<ISalesInvoiceStore>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

@@ -552,6 +552,14 @@ public interface ISalesInvoiceStore
     Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// API-06 / plan S0 (a): the shipments among <paramref name="shipmentIds"/> on an active line of a FINALIZED invoice of this
+    /// company — the only moment a share leaves "shipped, not invoiced". A draft, pending, approved (not yet finalized), rejected or
+    /// cancelled invoice does not take it (a rejected or cancelled invoice has released its lines anyway).
+    /// </summary>
+    Task<IReadOnlySet<Guid>> FindFinalizedInvoiceShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// API-34: this company's FINALISED invoices whose finalisation instant is in [<paramref name="fromUtc"/>,
     /// <paramref name="toUtcExclusive"/>), oldest finalisation first (then id), at most <paramref name="limit"/>, with lines, match
     /// and finalisation, and whether more exist.

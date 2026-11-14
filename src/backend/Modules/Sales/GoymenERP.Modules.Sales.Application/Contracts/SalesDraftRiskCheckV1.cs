@@ -29,7 +29,7 @@ public static class SalesDraftRiskFigureStatesV1
 {
     public const string Available = "Available";
 
-    /// <summary>The owner module or record does not exist on main yet (invoices S5, credit-limit and collateral masters).</summary>
+    /// <summary>The owner module or record does not exist on main yet (credit-limit and collateral masters).</summary>
     public const string NoSource = "NoSource";
 
     /// <summary>The owner exists but is not composed, failed or answered a malformed value: no number.</summary>
@@ -42,6 +42,14 @@ public static class SalesDraftRiskFigureKindsV1
     public const string OpenReceivables = "OpenReceivables";
     public const string ShippedNotInvoiced = "ShippedNotInvoiced";
     public const string ApprovedUnshippedRemainder = "ApprovedUnshippedRemainder";
+
+    /// <summary>
+    /// SAT-D311 (EK60): the part of <see cref="ShippedNotInvoiced"/> whose Sales invoice is finalized but not yet processed by
+    /// Finance. A displayed SUB-ROW of the shipped-not-invoiced total, never added to the gross risk a second time; once Finance
+    /// processes the invoice the amount leaves this row and the total and is in <see cref="OpenReceivables"/> (no double count).
+    /// </summary>
+    public const string InvoicedAwaitingFinance = "InvoicedAwaitingFinance";
+
     public const string CreditLimit = "CreditLimit";
     public const string Collateral = "Collateral";
 
@@ -55,8 +63,14 @@ public static class SalesDraftRiskSourcesV1
     /// <summary>The customer's open approved orders in the Sales store, with the delivery owner's shipped totals (AT-024 port).</summary>
     public const string ApprovedOrderRemainders = "sales.approved-order-remainders";
 
-    /// <summary>The invoicing owner (S5): it does not exist on main, so "shipped but not invoiced" has no source.</summary>
-    public const string Invoicing = "sales.invoicing";
+    /// <summary>
+    /// DEC-FIN-007 second stage (plan S0): the Logistics owner's posted shipment shares (<see cref="ISalesInvoiceableShipmentReadPortV1"/>)
+    /// and its definite shipments (AT-024) less the shares on a FINALIZED Sales invoice, priced by Sales' totals calculator.
+    /// </summary>
+    public const string UnbilledShipments = "sales.unbilled-shipments";
+
+    /// <summary>SAT-D311: the shares of the customer on a finalized Sales invoice that Finance has not processed yet.</summary>
+    public const string FinalizedInvoices = "sales.finalized-invoices";
 
     /// <summary>The customer-finance owner of <see cref="ISalesPartyRiskReadPortV1"/>, when it is not composed or did not answer.</summary>
     public const string PartyRiskOwner = "party-risk-owner";
@@ -74,8 +88,30 @@ public static class SalesDraftRiskReasonCodesV1
     /// <summary>The customer-finance owner answered another company or customer, or a malformed figure.</summary>
     public const string PartyRiskAnswerInvalid = "party_risk_answer_invalid";
 
-    /// <summary>Invoices are S5: no owner can tell what was shipped but not invoiced.</summary>
-    public const string InvoicingOwnerMissing = "invoicing_owner_missing";
+    /// <summary>The Logistics owner of <see cref="ISalesInvoiceableShipmentReadPortV1"/> is not composed or failed.</summary>
+    public const string ShipmentProviderUnavailable = "shipment_provider_unavailable";
+
+    /// <summary>The Logistics owner answered another company or customer account, a malformed share or a duplicate shipment.</summary>
+    public const string ShipmentAnswerInvalid = "shipment_answer_invalid";
+
+    /// <summary>The customer has more posted shares (or orders behind them) than one read takes: never a partial (smaller) sum.</summary>
+    public const string ShipmentReadBoundExceeded = "shipment_read_bound_exceeded";
+
+    /// <summary>
+    /// Plan S0 (c): the posted shares of an order line exceed the definite shipments the delivery owner recorded for it — the two
+    /// owner facts the remainder and the unbilled stage rest on disagree, so neither part is counted.
+    /// </summary>
+    public const string ShipmentFactsInconsistent = "shipment_facts_inconsistent";
+
+    /// <summary>Sales' own invoice records could not be read: which shares are on a finalized invoice is unknown.</summary>
+    public const string InvoiceRecordUnavailable = "invoice_record_unavailable";
+
+    /// <summary>
+    /// SAT-D311 / plan S0 (b): a share is on a finalized Sales invoice, and whether Finance already processed it (then it is in the
+    /// open receivables) must come from the SAME Finance answer as the open receivables — that answer does not carry it yet. Neither
+    /// counting it (a possible double count) nor leaving it out (a possible gap) is safe, so the stage is not answered.
+    /// </summary>
+    public const string FinanceProcessedSetUnavailable = "finance_processed_set_unavailable";
 
     /// <summary>An open approved order exists but the delivery owner (AT-024) is not composed or failed.</summary>
     public const string DeliveryProviderUnavailable = "delivery_provider_unavailable";
@@ -113,7 +149,9 @@ public static class SalesDraftRiskReasonCodesV1
 /// known. <c>grossRisk</c> = open receivables + shipped-not-invoiced + approved-unshipped remainder (DEC-FIN-007);
 /// <c>grossRiskWithThisOrder</c> adds <c>thisOrder</c> (SAT-D48). Amounts in another currency need the DEC-FIN-010 rate
 /// (SAT-D47); without a rate record the total is null.</item>
-/// <item><c>components</c>: the three stages in that order; <c>thisOrder</c>; <c>creditLimit</c>; <c>collateral</c> — shown
+/// <item><c>components</c>: the three stages in that order (open receivables, shipped-not-invoiced, approved-unshipped remainder),
+/// then the SAT-D311 sub-row <c>InvoicedAwaitingFinance</c> — a part of shipped-not-invoiced shown on its own, never added again;
+/// <c>thisOrder</c>; <c>creditLimit</c>; <c>collateral</c> — shown
 /// only, never part of the gross risk (net-risk policy, OPEN-010 open).</item>
 /// <item><c>amountDisclosure</c>: <c>Withheld</c> without the price read — every amount is then null; the states, sources,
 /// reasons, currencies and the result stay.</item>

@@ -1696,8 +1696,15 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders);
+                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
+                InvoiceRecords, PostedShares);
         }
+
+        /// <summary>Plan S0 / SAT-D311: Sales' own invoice records for the risk check (null = not composed).</summary>
+        public ISalesInvoiceStore? InvoiceRecords { get; set; }
+
+        /// <summary>Plan S0: the Logistics owner's posted shipment shares for the risk check (null = not composed).</summary>
+        public ISalesInvoiceableShipmentReadPortV1? PostedShares { get; set; }
 
         /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
         public IProductItemTypeReaderV1? ItemTypes { get; set; }

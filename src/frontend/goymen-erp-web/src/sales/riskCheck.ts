@@ -8,8 +8,9 @@
  * not carry it. Rules taken from the backend contract (`SalesDraftRiskCheckV1.cs`, the Sales README "Customer risk check"):
  *  - every member is present, nullable ones as explicit null; unknown members, results, states, kinds or tax bases are refused;
  *  - the answer is bound to the detail on screen: the same version, party and customer account;
- *  - `components` are the three stages of the gross risk, in that order; `thisOrder`, `creditLimit` and `collateral` carry
- *    their own kind;
+ *  - `components` are the three stages of the gross risk, in that order, then the SAT-D311 "invoiced, awaiting Finance"
+ *    sub-row — a part of "shipped but not invoiced" shown on its own, never a fourth stage nor added to it here; `thisOrder`,
+ *    `creditLimit` and `collateral` carry their own kind;
  *  - a figure that is not `Available` has no tax basis and no amounts and names its reason; an `Available` one has no reason;
  *  - `Within` / `Over` carry no reason (the decision answered); `Unavailable` is fail-closed and lists why;
  *  - `Withheld` (no `sales.orders.price.read`): every amount — figures and totals — is null; the states, reasons and the
@@ -37,17 +38,22 @@ export const RISK_FIGURE_KIND = {
   openReceivables: 'OpenReceivables',
   shippedNotInvoiced: 'ShippedNotInvoiced',
   approvedUnshippedRemainder: 'ApprovedUnshippedRemainder',
+  invoicedAwaitingFinance: 'InvoicedAwaitingFinance',
   thisOrder: 'ThisOrder',
   creditLimit: 'CreditLimit',
   collateral: 'Collateral',
 } as const
 export type RiskFigureKind = (typeof RISK_FIGURE_KIND)[keyof typeof RISK_FIGURE_KIND]
 
-/** The three stages of the gross risk (DEC-FIN-007), in the order the server answers them. */
+/**
+ * The three stages of the gross risk (DEC-FIN-007), then the SAT-D311 sub-row of the second stage (already inside it), in the
+ * order the server answers them.
+ */
 export const RISK_COMPONENT_KINDS = [
   RISK_FIGURE_KIND.openReceivables,
   RISK_FIGURE_KIND.shippedNotInvoiced,
   RISK_FIGURE_KIND.approvedUnshippedRemainder,
+  RISK_FIGURE_KIND.invoicedAwaitingFinance,
 ] as const
 
 /** `SalesRiskTaxBasis` as the wire spells it. */
