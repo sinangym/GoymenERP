@@ -12,6 +12,8 @@ public sealed class FinanceManualBankPaymentPermissionRegistrationTests
         { FinancePermissionNames.ManualBankPaymentApprove, ErpPermissions.FinanceManualBankPaymentApprove },
         { FinancePermissionNames.ManualBankPaymentRecord, ErpPermissions.FinanceManualBankPaymentRecord },
         { FinancePermissionNames.AllocationWrite, ErpPermissions.FinanceAllocationWrite },
+        { FinancePermissionNames.PaymentReversePropose, ErpPermissions.FinanceManualBankPaymentReversePropose },
+        { FinancePermissionNames.PaymentReverseApprove, ErpPermissions.FinanceManualBankPaymentReverseApprove },
     };
 
     [Theory]

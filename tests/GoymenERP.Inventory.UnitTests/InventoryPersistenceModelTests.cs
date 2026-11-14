@@ -181,7 +181,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryLabelProductVersion", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryAverageCostLedger", StringComparison.Ordinal));
-        Assert.Equal("RelaxInventoryAverageCostReasonToZeroCostReceipt", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_RelaxInventoryAverageCostReasonToZeroCostReceipt", StringComparison.Ordinal));
+        Assert.Equal("WidenInventoryLabelTransformationKindToManufacturing", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -441,6 +443,27 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("[UnreadableReason] = 9", guard.Sql, StringComparison.Ordinal);
         Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_manufacturing_genealogy_kind_migration_widens_the_kind_check_and_its_Down_refuses_first()
+    {
+        using var context = Context();
+        var transformations = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LabelTransformationRow))!;
+        Assert.Equal("[Kind] IN (1, 2, 3)", InventoryDbContext.LabelTransformationKindCheck);
+        Assert.Equal(InventoryDbContext.LabelTransformationKindCheck,
+            Assert.Single(transformations.GetCheckConstraints(),
+                check => check.Name == "CK_LabelTransformations_Kind").Sql);
+
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.WidenInventoryLabelTransformationKindToManufacturing();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51262", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[LabelTransformations] WHERE [Kind] = 3", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var restored = Assert.Single(migration.DownOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>());
+        Assert.Equal("[Kind] IN (1, 2)", restored.Sql);
     }
 
     [Fact]

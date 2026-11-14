@@ -44,6 +44,12 @@ public enum PartyLedgerEntryKind
 
     /// <summary>F2b: the reversal of a PAYABLE open item whose purchase invoice was cancelled — debit.</summary>
     PayableOpenItemCancellation = 8,
+
+    /// <summary>
+    /// API-23: the counter-event of an approved payment reversal — its own row, the reverse side of the original
+    /// payment (credit); the payment's row stays as recorded.
+    /// </summary>
+    ManualBankPaymentReversal = 9,
 }
 
 /// <summary>The column a row is written in, from the company's view of the party's account: borç / alacak.</summary>
