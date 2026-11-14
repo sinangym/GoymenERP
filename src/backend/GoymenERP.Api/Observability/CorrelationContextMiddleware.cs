@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Observability;
 
@@ -45,6 +46,12 @@ public sealed class CorrelationContextMiddleware(
                     .WriteCorrelationMetadataInvalidAsync(httpContext);
             }
 
+            ErpActivityRedactionProcessor.EnrichRequestActivity(
+                Activity.Current,
+                httpContext,
+                correlationContext,
+                includeStatusCode: true);
+
             if (requestEvidenceRecorder is not null)
             {
                 await requestEvidenceRecorder.RecordAsync(httpContext, rejectedRequestCorrelationId);
@@ -57,9 +64,24 @@ public sealed class CorrelationContextMiddleware(
         ResolveContext(httpContext, correlationContext, correlationId, causationId);
         httpContext.Response.Headers[CorrelationHeaderName] = correlationId;
 
-        using (logger.BeginScope(CreateLoggingScope(correlationContext)))
+        var completed = false;
+        try
         {
-            await next(httpContext);
+            using (logger.BeginScope(CreateLoggingScope(correlationContext)))
+            {
+                await next(httpContext);
+            }
+
+            completed = true;
+        }
+        finally
+        {
+            // F-032: bounded request values for the (default-off) trace exporter; no-op without a listener.
+            ErpActivityRedactionProcessor.EnrichRequestActivity(
+                Activity.Current,
+                httpContext,
+                correlationContext,
+                includeStatusCode: completed);
         }
 
         if (requestEvidenceRecorder is not null)
