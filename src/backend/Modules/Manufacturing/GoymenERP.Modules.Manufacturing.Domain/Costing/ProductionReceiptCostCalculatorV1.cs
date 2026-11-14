@@ -18,10 +18,10 @@ public enum IssueCostReadStatus
 /// One kg input issue of the order with the moving-average unit cost (TL per kg) Inventory stamped on the issue
 /// movement at issue time. <see cref="UnitCostPerKg"/> is set only for <see cref="IssueCostReadStatus.Value"/>.
 /// Every issue needs a readable cost, also one that is fully returned: its stamped cost values the return
-/// (SAT-D317 (2)) and it counts in the raw-material kg cost (see <see cref="ProductionReceiptCostCalculatorV1"/>).
-/// A stamped cost of zero is not taken as a cost: how a zero-cost issue reads in the production cost (alignment
-/// with SAT-D297, where a zero unit cost is "cost unknown") is left to the port contract and is not decided
-/// (SINAN_KARARLARI_2026-11-13 "Sinirlar"), so until then zero gives <c>input_cost_unreadable</c> and no amount.
+/// (SAT-D317 (2)). A stamped cost of zero is not taken as a cost: how a zero-cost issue reads in the production cost
+/// (alignment with SAT-D297, where a zero unit cost is "cost unknown") is left to the port contract and is not
+/// decided (SINAN_KARARLARI_2026-11-13 "Sinirlar"), so until then zero gives <c>input_cost_unreadable</c> and no
+/// amount.
 /// </summary>
 public sealed record IssueCostInput(Guid IssueMovementId, Kilograms Mass, IssueCostReadStatus Status,
     decimal? UnitCostPerKg);
@@ -42,8 +42,8 @@ public enum ScrapCostSettingStatus
 }
 
 /// <summary>
-/// How the scrap price (TL per kg of weighed scrap) was read for the order: <see cref="Missing"/> is a price that
-/// was not entered for the period, <see cref="Unreadable"/> one that could not be read.
+/// How the scrap price of one weighing's month was read: <see cref="Missing"/> is a price that was not entered for
+/// that month, <see cref="Unreadable"/> one that could not be read.
 /// </summary>
 public enum ScrapPriceReadStatus
 {
@@ -53,14 +53,17 @@ public enum ScrapPriceReadStatus
 }
 
 /// <summary>
-/// The scrap price in TL per kg that values the weighed scrap when scrap is out of cost (SAT-D316 (1)). It is the
-/// period's scrap price entered by hand (SAT-D316 (3)-(4)); the calculator takes it as an explicit input and never
-/// picks a value. With weighed scrap to value, a missing or unreadable price gives no amount (SAT-D316 (6)); with
-/// no weighed scrap and no price entered (<see cref="Missing"/>) the cost is computed (#66 6857496471 (4)). A price
-/// above the order's raw-material kg cost stops the calculation (#66 6857496471 (3), see
-/// <see cref="ProductionReceiptCostCalculatorV1"/>). Which period's price the caller reads (the order's or the
-/// receipt's) and who enters it are not decided (SINAN_KARARLARI_2026-11-13 "Sinirlar"); the calculator chooses
-/// neither. <see cref="TlPerKg"/> is set only for <see cref="ScrapPriceReadStatus.Value"/>.
+/// The scrap price in TL per kg that values one scrap weighing when scrap is out of cost (SAT-D316 (1)). It is the
+/// monthly scrap price entered by hand (SAT-D316 (3)-(4)) of the month the scrap was weighed in: each weighing takes
+/// its own month's price, so an order that spans two months values each weighing at its own month's price
+/// (#66 6864631364 (15)). The caller reads that month's price for each weighing; the calculator takes it as an
+/// explicit input and never picks a month or a value. A weighing with scrap kg whose month has no price entered
+/// (<see cref="Missing"/>) leaves the cost pending until the price is entered (#66 6864631364 (15), the chosen option:
+/// "fiyat girilene kadar bekler"); a price that cannot be read, or a malformed one, gives no amount (SAT-D316 (6)).
+/// A weighing of zero kg with no price entered is computed with no expense (#66 6857496471 (4)). A price above the
+/// order's net raw-material kg cost stops the calculation (#66 6857496471 (3), #66 6864631364 (1), see
+/// <see cref="ProductionReceiptCostCalculatorV1"/>). Who enters the price is not decided (SINAN_KARARLARI_2026-11-13
+/// "Sinirlar"). <see cref="TlPerKg"/> is set only for <see cref="ScrapPriceReadStatus.Value"/>.
 /// </summary>
 public sealed record ScrapPriceInput(ScrapPriceReadStatus Status, decimal? TlPerKg)
 {
@@ -68,15 +71,25 @@ public sealed record ScrapPriceInput(ScrapPriceReadStatus Status, decimal? TlPer
 }
 
 /// <summary>
-/// Whether the order consumed an input that is not tracked in kg; the calculator costs kg inputs only.
+/// One weighing of the order's scrap: the scrap output's id, its weighed kg and the scrap price of the month it was
+/// weighed in (#66 6864631364 (15), <see cref="ScrapPriceInput"/>). The order's weighed scrap is the sum of its
+/// weighings; an output id given twice is <c>mass_unbalanced</c>, as a movement given twice is.
+/// </summary>
+public sealed record ScrapWeighingInput(Guid ScrapOutputId, Kilograms Mass, ScrapPriceInput Price);
+
+/// <summary>
+/// Which inputs not tracked in kg the order consumed; the calculator costs kg inputs only (#66 6864631364 (13), the
+/// chosen option: "Urun maliyeti yalniz kg girdilerden hesaplanir").
 /// <list type="bullet">
 /// <item><see cref="None"/>: kg inputs only.</item>
 /// <item><see cref="PaintLitres"/>: the Paint process's paint, tracked in litres (Master PNT-006, URT-D9,
 /// URT-D41 (3)). Its cost is not loaded on the product in v1 and the result says so
-/// (<c>non_kg_input_cost_not_included</c>) instead of leaving it out silently (#66 6857496471 (5)).</item>
-/// <item><see cref="Other"/>: any other input that is not tracked in kg, also together with paint. How it is
-/// costed is not decided (processes other than Paint whose input is not in kg, SINAN_KARARLARI_2026-11-13
-/// "Sinirlar"), so the result is unreadable (<c>non_kg_input_unpriced</c>) and carries no amount.</item>
+/// (<see cref="ProductionReceiptCostResult.PaintCostNote"/>) instead of leaving it out silently
+/// (#66 6857496471 (5)).</item>
+/// <item><see cref="Other"/>: any other input consumed in pieces, litres or metres instead of kg. Like the paint, its
+/// cost is not loaded on the product in v1 and the result says so
+/// (<see cref="ProductionReceiptCostResult.NonKgInputCostNote"/>, #66 6864631364 (13)).</item>
+/// <item><see cref="PaintLitresAndOther"/>: both; the result carries both notes.</item>
 /// </list>
 /// There is no default: an undefined value is <c>cost_input_invalid</c>.
 /// </summary>
@@ -85,19 +98,21 @@ public enum NonKgInputUse
     None = 1,
     PaintLitres = 2,
     Other = 3,
+    PaintLitresAndOther = 4,
 }
 
 /// <summary>
-/// The order's facts the production receipt cost needs: its stock outputs by class, the weighed scrap, the declared
-/// process loss, the inputs not tracked in kg and whether it is closed. <see cref="UsableRemnant"/> is carried so a
-/// remnant keeps the answer fail-closed: how a remnant shares the input cost is not decided (OC-3); a caller must
-/// give a remnant here, never as second quality, or it would take a product's cost. <see cref="DeclaredProcessLoss"/>
-/// is the order's declared process loss (the <c>ProcessLoss</c> output class): fire is exactly the weighed scrap plus
-/// the declared process loss (#66 5917438293 item 3A). Consumed kg that no output, weighed scrap or declared process
-/// loss accounts for is the unexplained difference; it never becomes process loss or scrap ("aciklanamayan fark
-/// otomatik fire olmaz", URT-D5). WIP and measurement correction, which DEC-PRDCT-006 reconciles apart, are not
-/// inputs here: which side of the out / in comparison they belong on is not decided (NEEDS-SINAN,
-/// SINAN_KARARLARI_2026-11-13); a caller gives neither as any of the classes here.
+/// The order's facts the production receipt cost needs: its stock outputs by class, its scrap weighings, the declared
+/// process loss, the inputs not tracked in kg and whether it is closed. <see cref="UsableRemnant"/> is the usable
+/// remnant returned to stock (for example a narrow strip or a short piece): it returns like an unused input at the
+/// net raw-material kg cost, and its kg and value are taken out of both the divisor and the cost
+/// (#66 6864631364 (14)); a caller gives a remnant here, never as second quality, or it would take a product's
+/// cost. <see cref="DeclaredProcessLoss"/> is the order's declared process loss (the <c>ProcessLoss</c> output class):
+/// fire is exactly the weighed scrap plus the declared process loss (#66 5917438293 item 3A). Consumed kg that no
+/// output, remnant, weighed scrap or declared process loss accounts for is the unexplained difference; it never
+/// becomes process loss or scrap ("aciklanamayan fark otomatik fire olmaz", URT-D5). WIP and measurement correction,
+/// which DEC-PRDCT-006 reconciles apart, are not inputs here: which side of the out / in comparison they belong on is
+/// not decided (NEEDS-SINAN, SINAN_KARARLARI_2026-11-13); a caller gives neither as any of the classes here.
 /// </summary>
 public sealed record ProductionReceiptCostInput(
     bool OrderClosed,
@@ -106,10 +121,9 @@ public sealed record ProductionReceiptCostInput(
     Kilograms GoodProduct,
     Kilograms SecondQuality,
     Kilograms UsableRemnant,
-    Kilograms WeighedScrap,
+    IReadOnlyList<ScrapWeighingInput> ScrapWeighings,
     Kilograms DeclaredProcessLoss,
     ScrapCostSettingStatus ScrapSetting,
-    ScrapPriceInput ScrapPrice,
     NonKgInputUse NonKgInput);
 
 public enum ProductionReceiptCostStatus
@@ -124,16 +138,18 @@ public static class ProductionReceiptCostCodesV1
     public const string InputCostUnreadable = "input_cost_unreadable";
     public const string ScrapSettingUnreadable = "scrap_setting_unreadable";
     public const string MassUnbalanced = "mass_unbalanced";
-    public const string UsableRemnantUnpriced = "usable_remnant_unpriced";
-    public const string NonKgInputUnpriced = "non_kg_input_unpriced";
     public const string ScrapPriceUnreadable = "scrap_price_unreadable";
     public const string ScrapPriceAboveRawMaterialCost = "scrap_price_above_raw_material_cost";
-    public const string ScrapValueExceedsInputCost = "scrap_value_exceeds_input_cost";
     public const string ProductCostNotPositive = "product_cost_not_positive";
     public const string InputInvalid = "cost_input_invalid";
     public const string ArithmeticOverflow = "cost_arithmetic_overflow";
 
-    // A marker on a value, not an unreadable code.
+    // Why a result is pending; not unreadable codes.
+    public const string OrderNotClosed = "order_not_closed";
+    public const string ScrapPriceMissing = "scrap_price_missing";
+
+    // The notes on a value; not unreadable codes.
+    public const string PaintCostNotIncluded = "paint_cost_not_included";
     public const string NonKgInputCostNotIncluded = "non_kg_input_cost_not_included";
 
     public const string BasisWithScrap = "production-input-average-plus-scrap";
@@ -141,89 +157,125 @@ public static class ProductionReceiptCostCodesV1
 }
 
 /// <summary>
+/// A note on a value: a stable code and its Turkish user text from <see cref="ProductionReceiptCostTextsV1"/>.
+/// </summary>
+public sealed record ProductionReceiptCostNoteV1(string Code, string Text);
+
+/// <summary>
 /// The result: a <see cref="ProductionReceiptCostStatus.Value"/> carries the same TL-per-kg cost for the good
-/// product and the second quality output, always above zero (#66 6857496471 (2)), <see cref="WeighedScrapExpense"/>:
-/// the TL of the weighed scrap line of the separate scrap / period expense (zero when scrap is in the product cost
-/// or when there is no weighed scrap), and <see cref="ProcessLossKg"/>: the declared process loss in kg, with
-/// <see cref="ProcessLossRatio"/> = declared process loss kg / consumed kg (consumed = issued - returned), a fraction
-/// (0.02 = 2 %), not a percent. The process loss carries no amount: its value is zero and its cost stays on the
-/// product (SAT-D316 (2)). The kg and the ratio are display facts only and no money depends on them; that a report
+/// product and the second quality output, always above zero (#66 6857496471 (2));
+/// <see cref="RawMaterialCostPerKg"/>: the order's net raw-material kg cost (net input cost / consumed kg,
+/// #66 6864631364 (1)), which is also the TL per kg a usable remnant enters stock at (#66 6864631364 (14));
+/// <see cref="UsableRemnantValue"/>: the TL the usable remnant takes out of the cost (remnant kg x net raw-material
+/// kg cost, zero when there is no remnant); <see cref="WeighedScrapExpense"/>: the TL of the weighed scrap line of the
+/// separate scrap / period expense (the sum of each weighing's kg x its month's price; zero when scrap is in the
+/// product cost or when there is no weighed scrap); and <see cref="ProcessLossKg"/>: the declared process loss in kg,
+/// with <see cref="ProcessLossRatio"/> = declared process loss kg / consumed kg (consumed = issued - returned), a
+/// fraction (0.02 = 2 %), not a percent. The process loss carries no amount: its value is zero and its cost stays on
+/// the product (SAT-D316 (2)). The kg and the ratio are display facts only and no money depends on them; that a report
 /// shows them as a separate line and that the ratio's divisor is the consumed kg are author readings, not decisions
 /// (#66 6826603722 (b) and the report sentence of 6826763903 (c) were not asked, SINAN_KARARLARI_2026-11-13
-/// "Sinirlar"). <see cref="UnexplainedKg"/> is the consumed kg no output, weighed scrap or declared process loss
-/// accounts for (never negative: more out than in is <c>mass_unbalanced</c>, URT-D40); it is outside the scrap /
+/// "Sinirlar"). <see cref="UnexplainedKg"/> is the consumed kg no output, remnant, weighed scrap or declared process
+/// loss accounts for (never negative: more out than in is <c>mass_unbalanced</c>, URT-D40); it is outside the scrap /
 /// process loss lines and never fire (URT-D5), and like the process loss it adds nothing to the expense, so the cost
-/// per kg is the same whichever of the two a kg is in. <see cref="CostExclusion"/> is set on a value only:
-/// <c>non_kg_input_cost_not_included</c> when the order consumed the Paint process's paint, whose cost is not in
-/// the cost per kg (#66 6857496471 (5)); null otherwise. A pending or unreadable result carries no amount, kg, ratio
-/// or marker (never zero).
+/// per kg is the same whichever of the two a kg is in. <see cref="PaintCostNote"/> (<c>paint_cost_not_included</c>,
+/// "boya maliyeti dahil değil", #66 6857496471 (5)) and <see cref="NonKgInputCostNote"/>
+/// (<c>non_kg_input_cost_not_included</c>, "kg dışı girdi maliyeti dahil değil", #66 6864631364 (13)) are set on a
+/// value only, when the order consumed such an input whose cost is not in the cost per kg; null otherwise.
+/// <see cref="PendingCode"/> says why a result is pending: <c>order_not_closed</c> (SAT-D317 (1)) or
+/// <c>scrap_price_missing</c> (#66 6864631364 (15)). A pending or unreadable result carries no amount, kg, ratio or
+/// note (never zero).
 /// </summary>
-public sealed record ProductionReceiptCostResult(ProductionReceiptCostStatus Status, decimal? CostPerKg,
-    decimal? WeighedScrapExpense, decimal? ProcessLossKg, decimal? ProcessLossRatio, decimal? UnexplainedKg,
-    string? CostBasis, string? CostExclusion, string? UnreadableCode)
+public sealed record ProductionReceiptCostResult(
+    ProductionReceiptCostStatus Status,
+    decimal? CostPerKg,
+    decimal? RawMaterialCostPerKg,
+    decimal? UsableRemnantValue,
+    decimal? WeighedScrapExpense,
+    decimal? ProcessLossKg,
+    decimal? ProcessLossRatio,
+    decimal? UnexplainedKg,
+    string? CostBasis,
+    ProductionReceiptCostNoteV1? PaintCostNote,
+    ProductionReceiptCostNoteV1? NonKgInputCostNote,
+    string? PendingCode,
+    string? UnreadableCode)
 {
-    public static ProductionReceiptCostResult Pending { get; } = new(ProductionReceiptCostStatus.Pending, null, null,
-        null, null, null, null, null, null);
+    public static ProductionReceiptCostResult Pending(string code) =>
+        new(ProductionReceiptCostStatus.Pending, null, null, null, null, null, null, null, null, null, null, code,
+            null);
 
     public static ProductionReceiptCostResult Unreadable(string code) =>
-        new(ProductionReceiptCostStatus.Unreadable, null, null, null, null, null, null, null, code);
+        new(ProductionReceiptCostStatus.Unreadable, null, null, null, null, null, null, null, null, null, null, null,
+            code);
 }
 
 /// <summary>
-/// SAT-D305 (4), SAT-D307, SAT-D316, SAT-D317, URT-D40 and Sinan's answers of #66 6857496471: the single
-/// deterministic production receipt cost of v1.
+/// SAT-D305 (4), SAT-D307, SAT-D316, SAT-D317, URT-D40 and Sinan's answers of #66 6857496471 and #66 6864631364:
+/// the single deterministic production receipt cost of v1.
 /// <list type="bullet">
-/// <item>net input cost = sum(issued kg x stamped issue cost) - sum(returned kg x the linked issue's stamped cost);</item>
-/// <item>scrap in cost (default, SAT-D305 (2)): cost per kg = net / (good product kg + second quality kg), the
-/// same for both classes (SAT-D307 (1)-(2)), so scrap, process loss and any unexplained kg raise the cost of what
-/// was produced;</item>
-/// <item>scrap out of cost (SAT-D316, which sets the amount of SAT-D308 (1)-(2) and partly replaces them): the
-/// weighed scrap is valued at the scrap price, that amount is taken off the cost and reported apart, and the rest
-/// of the net cost is loaded on the product (SAT-D316 (1)): weighed scrap expense = weighed scrap kg x scrap
-/// price, cost per kg = (net - weighed scrap expense) / (good product kg + second quality kg). The divisor is
-/// Sinan's answer #66 6857496471 (1) ("Saglam + 2. kalite kg"), whose example the option text counted as the
-/// golden example: 1000 kg x 40 TL, 900 kg good + 50 kg second quality, 50 kg weighed scrap x 10 TL = 500 TL
-/// expense, 39500 / 950 = 41.578947... TL per kg. The process loss has value zero, so its cost stays on the
-/// product (SAT-D316 (2)). The scrap price is the period's hand-entered TL per kg (SAT-D316 (3)); with weighed
-/// scrap, a missing or unreadable scrap price is unreadable (SAT-D316 (6)); with no weighed scrap and no price
-/// entered the cost is computed with a zero expense (#66 6857496471 (4)). The expense is only computed here; no
-/// expense record is enabled (SAT-D308 (5));</item>
-/// <item>a scrap price above the order's raw-material kg cost stops the calculation so the price is checked
-/// (#66 6857496471 (3), "Hesap dursun, fiyat kontrol edilsin"); a price equal to it computes. The raw-material kg
-/// cost is the weighted issue unit cost of the order's kg inputs, sum(issued kg x stamped issue cost) /
-/// sum(issued kg), before returns. That definition is this code's reading, not Sinan's words, and is to be
-/// confirmed; the reading written under that answer (net cost / consumed kg) gives the same value when nothing is
-/// returned. The check runs where the price is used (scrap out of cost), also when a price is given with no weighed
-/// scrap (author reading);</item>
+/// <item>net input cost = sum(issued kg x stamped issue cost) - sum(returned kg x the linked issue's stamped cost);
+/// consumed kg = issued kg - returned kg; net raw-material kg cost = net input cost / consumed kg
+/// (#66 6864631364 (1), the chosen option "Net": the same basis as the product cost; golden: 500 kg x 40 TL and
+/// 500 kg x 50 TL issued, 400 kg of the 50 TL lot returned, (20000 + 5000) / 600 = 41.67 TL per kg, so a 43 TL scrap
+/// price stops);</item>
+/// <item>a usable remnant returns to stock like an unused input at the net raw-material kg cost: usable remnant value
+/// = remnant kg x net raw-material kg cost is taken out of the cost, and the remnant kg are not in the divisor
+/// (#66 6864631364 (14), the chosen option "Iade gibi stoga donsun"; golden: 1000 kg x 40 TL, 900 kg good, 50 kg
+/// remnant, 50 kg weighed scrap x 10 TL, (40000 - 2000 - 500) / 900 = 41.67 TL per kg). The answer's example has
+/// scrap out of cost; that the remnant returns so with scrap in cost too is the author reading of "as a
+/// return";</item>
+/// <item>scrap in cost (default, SAT-D305 (2)): cost per kg = (net - usable remnant value) / (good product kg + second
+/// quality kg), the same for both classes (SAT-D307 (1)-(2)), so scrap, process loss and any unexplained kg raise the
+/// cost of what was produced;</item>
+/// <item>scrap out of cost (SAT-D316, which sets the amount of SAT-D308 (1)-(2) and partly replaces them): each scrap
+/// weighing is valued at the scrap price of the month it was weighed in (#66 6864631364 (15)), that amount is taken
+/// off the cost and reported apart, and the rest is loaded on the product (SAT-D316 (1)): weighed scrap expense =
+/// sum(weighing kg x its month's scrap price), cost per kg = (net - usable remnant value - weighed scrap expense) /
+/// (good product kg + second quality kg). The divisor is Sinan's answer #66 6857496471 (1) ("Saglam + 2. kalite kg"),
+/// whose example the option text counted as the golden example: 1000 kg x 40 TL, 900 kg good + 50 kg second quality,
+/// 50 kg weighed scrap x 10 TL = 500 TL expense, 39500 / 950 = 41.578947... TL per kg. The process loss has value
+/// zero, so its cost stays on the product (SAT-D316 (2)). A weighing with scrap kg whose month has no price entered
+/// leaves the cost pending (<c>scrap_price_missing</c>, never zero) until the price is entered (#66 6864631364 (15));
+/// a price that cannot be read or is malformed is unreadable (SAT-D316 (6)); a weighing of zero kg with no price
+/// entered, or no weighing at all, is computed with no expense for it (#66 6857496471 (4)). The expense is only
+/// computed here; no expense record is enabled (SAT-D308 (5));</item>
+/// <item>a scrap price above the net raw-material kg cost stops the calculation so the price is checked
+/// (#66 6857496471 (3), "Hesap dursun, fiyat kontrol edilsin"; #66 6864631364 (1)); a price equal to it computes. The
+/// check runs on each weighing's price where prices are used (scrap out of cost), also on a weighing of zero kg
+/// (author reading). Because no weighing's price is above the net raw-material kg cost, the remnant and scrap values
+/// together never exceed the net input cost;</item>
 /// <item>a cost per kg of zero or below is unreadable, never a value (#66 6857496471 (2); "zero or below" is the
 /// text of the option chosen in 6857438754 "2-a", and the note under (2), not Sinan's words, aligns it with
 /// SAT-D297);</item>
-/// <item>kg inputs only: the cost of the Paint process's paint, tracked in litres, is not loaded on the product in
-/// v1 and the result is marked (#66 6857496471 (5), <see cref="NonKgInputUse"/>); any other input not tracked in
-/// kg is unreadable;</item>
-/// <item>no labour or overhead in v1. The calculator carries no currency: issue costs and the scrap price are taken
+/// <item>kg inputs only: the cost of the Paint process's paint, tracked in litres, and of any other input consumed in
+/// pieces, litres or metres is not loaded on the product in v1, and the result carries a note for each
+/// (#66 6857496471 (5), #66 6864631364 (13), <see cref="NonKgInputUse"/>);</item>
+/// <item>no labour or overhead in v1. The calculator carries no currency: issue costs and the scrap prices are taken
 /// as TL per kg as given (for a purchase in a foreign currency, the TL value of SAT-D295 (2) / BS-1); the port
 /// contract guarantees that and the calculator does not check it. Nothing is rounded here: SAT-D265 sets the moving
 /// average's internal precision at 4 decimals (2) and keeps the existing Money rounding, half away from zero (4);
-/// where they are applied to the cost per kg and to the scrap expense, and where a rounding remainder goes, are the
-/// port contract's to fix (SINAN_KARARLARI_2026-11-13 "Sinirlar").</item>
+/// where they are applied to the cost per kg, the remnant value and the scrap expense, and where a rounding remainder
+/// goes, are the port contract's to fix (SINAN_KARARLARI_2026-11-13 "Sinirlar").</item>
 /// </list>
-/// The cost is calculated for closed orders only; an open order gives pending and no amount (SAT-D317 (1)). In a
-/// closed order an issue cost that is still pending is unreadable, not pending. More out than in gives no amount
-/// even inside the closing tolerance (URT-D40 (1)-(2), URT-D41 (1)): "out" is good product + second quality +
-/// weighed scrap + declared process loss and "in" is the consumed kg (issued - returned), the reading of
-/// URT-D40 (3). The rule is measured per input coil at order closing (URT-D42 (1)), which is the closing slice's
-/// work; this calculator has the order totals only and refuses when the totals alone already break the rule. The
-/// short side (the tolerance and the approval of URT-D6, URT-D41 (2), URT-D42 (2)) is the closing step's too: the
-/// calculator takes a closed order as having passed it and puts no limit on the unexplained kg (author reading).
-/// Any issue cost that is not a positive value, an unknown scrap setting, a usable remnant, an input not tracked in
-/// kg other than paint, a return without its issue or over its issue, a movement id used twice (also as both an
-/// issue and a return), outputs, weighed scrap and declared process loss over the consumed kg, a zero divisor, a
-/// scrap price above the raw-material kg cost, a scrap value over the net cost, a cost per kg of zero or below, a
-/// missing input, list or element or an undefined <see cref="NonKgInputUse"/> (<c>cost_input_invalid</c>) or an
-/// arithmetic overflow (<c>cost_arithmetic_overflow</c>) gives <see cref="ProductionReceiptCostStatus.Unreadable"/>;
-/// the calculator does not throw for its input's content. Sums run in <see cref="IssueCostInput.IssueMovementId"/>
-/// order, so the result does not depend on the order the movements are given in.
+/// The cost is calculated for closed orders only; an open order gives pending (<c>order_not_closed</c>) and no amount
+/// (SAT-D317 (1)). In a closed order an issue cost that is still pending is unreadable, not pending. More out than in
+/// gives no amount even inside the closing tolerance (URT-D40 (1)-(2), URT-D41 (1)): "out" is good product + second
+/// quality + usable remnant + weighed scrap + declared process loss and "in" is the consumed kg (issued - returned),
+/// the reading of URT-D40 (3). The rule is measured per input coil at order closing (URT-D42 (1)), which is the
+/// closing slice's work; this calculator has the order totals only and refuses when the totals alone already break
+/// the rule. The short side (the tolerance and the approval of URT-D6, URT-D41 (2), URT-D42 (2)) is the closing
+/// step's too: the calculator takes a closed order as having passed it and puts no limit on the unexplained kg (author
+/// reading). Any issue cost that is not a positive value, an unknown scrap setting, a return without its issue or over
+/// its issue, a movement id used twice (also as both an issue and a return), a scrap output id used twice, outputs,
+/// remnant, weighed scrap and declared process loss over the consumed kg, a zero divisor, an unreadable or malformed
+/// scrap price, a scrap price above the net raw-material kg cost, a cost per kg of zero or below, a missing input,
+/// list or element or an undefined <see cref="NonKgInputUse"/> (<c>cost_input_invalid</c>) or an arithmetic overflow
+/// (<c>cost_arithmetic_overflow</c>) gives <see cref="ProductionReceiptCostStatus.Unreadable"/>; an unreadable answer
+/// wins over a missing scrap price, since entering the price would not make it readable. The calculator does not
+/// throw for its input's content. Sums run in movement id and scrap output id order and the price checks are
+/// evaluated over all weighings before one answer is chosen, so the result does not depend on the order the
+/// movements and weighings are given in.
 /// </summary>
 public static class ProductionReceiptCostCalculatorV1
 {
@@ -238,11 +290,12 @@ public static class ProductionReceiptCostCalculatorV1
 
         if (!input.OrderClosed)
         {
-            return ProductionReceiptCostResult.Pending;
+            return ProductionReceiptCostResult.Pending(ProductionReceiptCostCodesV1.OrderNotClosed);
         }
 
-        if (input.Issues is null || input.Returns is null
-            || input.NonKgInput is not (NonKgInputUse.None or NonKgInputUse.PaintLitres or NonKgInputUse.Other))
+        if (input.Issues is null || input.Returns is null || input.ScrapWeighings is null
+            || input.NonKgInput is not (NonKgInputUse.None or NonKgInputUse.PaintLitres or NonKgInputUse.Other
+                or NonKgInputUse.PaintLitresAndOther))
         {
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.InputInvalid);
         }
@@ -307,19 +360,24 @@ public static class ProductionReceiptCostCalculatorV1
             returned[item.IssueMovementId] = total;
         }
 
+        // SortedDictionary enumerates by scrap output id: the sums are the same whatever order the input lists.
+        var weighings = new SortedDictionary<Guid, ScrapWeighingInput>();
+        foreach (var weighing in input.ScrapWeighings)
+        {
+            if (weighing is null)
+            {
+                return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.InputInvalid);
+            }
+
+            if (!weighings.TryAdd(weighing.ScrapOutputId, weighing))
+            {
+                return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.MassUnbalanced);
+            }
+        }
+
         if (input.ScrapSetting is not (ScrapCostSettingStatus.On or ScrapCostSettingStatus.Off))
         {
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapSettingUnreadable);
-        }
-
-        if (input.UsableRemnant.Value > 0m)
-        {
-            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.UsableRemnantUnpriced);
-        }
-
-        if (input.NonKgInput == NonKgInputUse.Other)
-        {
-            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.NonKgInputUnpriced);
         }
 
         // SortedDictionary enumerates by issue movement id: the sums are the same whatever order the input lists.
@@ -332,74 +390,99 @@ public static class ProductionReceiptCostCalculatorV1
             consumed += kept;
         }
 
+        var weighedScrap = 0m;
+        foreach (var weighing in weighings.Values)
+        {
+            weighedScrap += weighing.Mass.Value;
+        }
+
         var produced = input.GoodProduct.Value + input.SecondQuality.Value;
-        var weighedScrap = input.WeighedScrap.Value;
+        var remnant = input.UsableRemnant.Value;
         var processLoss = input.DeclaredProcessLoss.Value;
         // URT-D40 (1)-(3): what came out cannot be more than what went in; no tolerance on this side (URT-D41 (1)).
-        var unexplained = consumed - produced - weighedScrap - processLoss;
+        var unexplained = consumed - produced - remnant - weighedScrap - processLoss;
         if (produced <= 0m || unexplained < 0m)
         {
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.MassUnbalanced);
         }
 
+        // consumed >= produced > 0 here. #66 6864631364 (1): the net raw-material kg cost, after returns.
+        var rawMaterialCostPerKg = netCost / consumed;
+        // #66 6864631364 (14): the remnant returns at the net raw-material kg cost and leaves the divisor.
+        var remnantValue = remnant * rawMaterialCostPerKg;
         var processLossRatio = processLoss / consumed;
+        var amounts = new Amounts(rawMaterialCostPerKg, remnantValue, processLoss, processLossRatio, unexplained);
         if (input.ScrapSetting == ScrapCostSettingStatus.On)
         {
-            return Value(input, netCost / produced, 0m, processLoss, processLossRatio, unexplained,
+            return Value(input, (netCost - remnantValue) / produced, 0m, amounts,
                 ProductionReceiptCostCodesV1.BasisWithScrap);
         }
 
         var scrapExpense = 0m;
-        // #66 6857496471 (4): no weighed scrap and no scrap price entered for the period computes with no expense.
-        if (weighedScrap > 0m || input.ScrapPrice is not { Status: ScrapPriceReadStatus.Missing, TlPerKg: null })
+        var priceUnreadable = false;
+        var priceAboveRawMaterialCost = false;
+        var priceMissing = false;
+        foreach (var weighing in weighings.Values)
         {
-            if (input.ScrapPrice is not { Status: ScrapPriceReadStatus.Value, TlPerKg: { } price } || price < 0m)
+            var mass = weighing.Mass.Value;
+            switch (weighing.Price)
             {
-                return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
-            }
-
-            // #66 6857496471 (3): a scrap price above the raw-material kg cost stops the calculation.
-            if (price > RawMaterialCostPerKg(issues))
-            {
-                return ProductionReceiptCostResult.Unreadable(
-                    ProductionReceiptCostCodesV1.ScrapPriceAboveRawMaterialCost);
-            }
-
-            scrapExpense = weighedScrap * price;
-            if (scrapExpense > netCost)
-            {
-                return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapValueExceedsInputCost);
+                // #66 6857496471 (4): no scrap kg and no price entered adds nothing.
+                case { Status: ScrapPriceReadStatus.Missing, TlPerKg: null } when mass == 0m:
+                    break;
+                // #66 6864631364 (15): the weighing's month has no price yet; the cost waits for it.
+                case { Status: ScrapPriceReadStatus.Missing, TlPerKg: null }:
+                    priceMissing = true;
+                    break;
+                // #66 6857496471 (3), #66 6864631364 (1): above the net raw-material kg cost stops the calculation.
+                case { Status: ScrapPriceReadStatus.Value, TlPerKg: { } price } when price >= 0m:
+                    priceAboveRawMaterialCost |= price > rawMaterialCostPerKg;
+                    scrapExpense += mass * price;
+                    break;
+                default:
+                    priceUnreadable = true;
+                    break;
             }
         }
 
-        return Value(input, (netCost - scrapExpense) / produced, scrapExpense, processLoss, processLossRatio,
-            unexplained, ProductionReceiptCostCodesV1.BasisWithoutScrap);
+        if (priceUnreadable)
+        {
+            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
+        }
+
+        if (priceAboveRawMaterialCost)
+        {
+            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ScrapPriceAboveRawMaterialCost);
+        }
+
+        if (priceMissing)
+        {
+            return ProductionReceiptCostResult.Pending(ProductionReceiptCostCodesV1.ScrapPriceMissing);
+        }
+
+        return Value(input, (netCost - remnantValue - scrapExpense) / produced, scrapExpense, amounts,
+            ProductionReceiptCostCodesV1.BasisWithoutScrap);
     }
 
     // #66 6857496471 (2): a cost per kg of zero or below (also one that rounds to zero) is unreadable, never a value.
     private static ProductionReceiptCostResult Value(ProductionReceiptCostInput input, decimal costPerKg,
-        decimal scrapExpense, decimal processLoss, decimal processLossRatio, decimal unexplained, string basis) =>
+        decimal scrapExpense, Amounts amounts, string basis) =>
         costPerKg <= 0m
             ? ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.ProductCostNotPositive)
-            : new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, costPerKg, scrapExpense, processLoss,
-                processLossRatio, unexplained, basis,
-                input.NonKgInput == NonKgInputUse.PaintLitres
-                    ? ProductionReceiptCostCodesV1.NonKgInputCostNotIncluded
+            : new ProductionReceiptCostResult(ProductionReceiptCostStatus.Value, costPerKg,
+                amounts.RawMaterialCostPerKg, amounts.RemnantValue, scrapExpense, amounts.ProcessLoss,
+                amounts.ProcessLossRatio, amounts.Unexplained, basis,
+                input.NonKgInput is NonKgInputUse.PaintLitres or NonKgInputUse.PaintLitresAndOther
+                    ? new ProductionReceiptCostNoteV1(ProductionReceiptCostCodesV1.PaintCostNotIncluded,
+                        ProductionReceiptCostTextsV1.PaintCostNotIncluded)
                     : null,
+                input.NonKgInput is NonKgInputUse.Other or NonKgInputUse.PaintLitresAndOther
+                    ? new ProductionReceiptCostNoteV1(ProductionReceiptCostCodesV1.NonKgInputCostNotIncluded,
+                        ProductionReceiptCostTextsV1.NonKgInputCostNotIncluded)
+                    : null,
+                null,
                 null);
 
-    // The weighted issue unit cost of the order's kg inputs before returns (author reading of "emirde kullanilan
-    // hammaddenin kg maliyeti", #66 6857496471 (3), to be confirmed). The mass check guarantees issued kg > 0.
-    private static decimal RawMaterialCostPerKg(SortedDictionary<Guid, (decimal Mass, decimal Cost)> issues)
-    {
-        var issuedCost = 0m;
-        var issuedKg = 0m;
-        foreach (var issue in issues.Values)
-        {
-            issuedCost += issue.Mass * issue.Cost;
-            issuedKg += issue.Mass;
-        }
-
-        return issuedCost / issuedKg;
-    }
+    private readonly record struct Amounts(decimal RawMaterialCostPerKg, decimal RemnantValue, decimal ProcessLoss,
+        decimal ProcessLossRatio, decimal Unexplained);
 }
