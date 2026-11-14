@@ -110,7 +110,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     const { url, headers, init } = requested()
     expect(url.pathname).toBe('/api/v1/inventory/positions')
     expect(url.search).toBe('?q=ROLL&limit=25')
-    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
     expect(headers.get('X-Company-Id')).toBe(COMPANY)
     expect(init.cache).toBe('no-store')
   })
@@ -137,7 +137,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     fetchMock.mockResolvedValue(json(status, problem))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'http', status, body: problem })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
   })
 
   it('does not send a request for a filter the server would refuse', async () => {
@@ -166,7 +166,7 @@ describe('fetchStockDisplayPage — the location display inside the 3.0 selectio
     expect(outcome.type === 'ok-single' && outcome.data.nextCursor).toBe('next-1')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const { url, headers } = requested()
-    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
     expect(url.searchParams.get('cursor')).toBe('opaque-1')
     expect(url.searchParams.get('locationId')).toBe(LOCATION)
   })
@@ -179,7 +179,7 @@ describe('fetchStockDisplayPage — the location display inside the 3.0 selectio
     fetchMock.mockResolvedValue(json(200, { items: [body()], searchWindowFull: false, nextCursor: null }))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
   })
 })
 
@@ -190,7 +190,7 @@ describe('fetchStockDisplayPage — the 3.0 (Product + Location + Owner) selecti
     await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const sent = Object.entries(init.headers as Record<string, string>).filter(([name]) => name.toLowerCase() === STOCK_DISPLAY_HEADER.toLowerCase())
-    expect(sent).toEqual([[STOCK_DISPLAY_HEADER, '3.0']])
+    expect(sent).toEqual([[STOCK_DISPLAY_HEADER, '4.0']])
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -219,7 +219,44 @@ describe('fetchStockDisplayPage — the 3.0 (Product + Location + Owner) selecti
     fetchMock.mockResolvedValue(json(200, { items: [body()], searchWindowFull: false, nextCursor: null }))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
+  })
+})
+
+/**
+ * P03.2: the screen selects the #738 `4.0` shape. It is the `3.0` row whose Product technical block carries the
+ * required-nullable nominal `lengthMm`; a `3.0` technical block (no key) is not silently accepted for it.
+ */
+describe('fetchStockDisplayPage — the 4.0 (nominal length) selection', () => {
+  const technical = (extra: Record<string, unknown>) => ({
+    family: { familyId: FAMILY, familyCode: 'cut-sheet', sourceRevision: '#66/stock-display' },
+    template: { templateId: FAMILY_2, templateVersion: '1', templateCode: 'cut-sheet-v1', sourceRevision: '#66/stock-display' },
+    thicknessMm: 3, widthMm: 1500, ...extra,
+  })
+  const withTechnical = (extra: Record<string, unknown>) =>
+    ({ ...row(), productDisplay: { ...row().productDisplay, technical: technical(extra) } })
+
+  it('reads a cut sheet’s nominal length as the published text and a coil’s null as null, in one request', async () => {
+    const coil = { ...withTechnical({ lengthMm: null }), labelId: '22222222-2222-4222-8222-222222222223', labelCode: 'ROLL-2' }
+    fetchMock.mockResolvedValue(json(200, { items: [withTechnical({ lengthMm: 2500.125 }), coil], searchWindowFull: false, nextCursor: null }))
+    const outcome = await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)
+    expect(outcome.type === 'ok-single' && outcome.data.items.map((item) => item.productDisplay.technical?.lengthMm))
+      .toEqual(['2500.125', null])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
+    // Length is displayed, not filtered: no length key reaches the wire.
+    expect([...requested().url.searchParams.keys()].some((key) => /length/i.test(key))).toBe(false)
+  })
+
+  it.each([
+    ['the 3.0 technical block (no lengthMm key)', () => withTechnical({})],
+    ['a length that is not a millimetre value', () => withTechnical({ lengthMm: '2500,125' })],
+    ['a length of the wrong type', () => withTechnical({ lengthMm: true })],
+  ])('answers %s as malformed — no 3.0 or older fallback, no second request', async (_, body) => {
+    fetchMock.mockResolvedValue(json(200, { items: [body()], searchWindowFull: false, nextCursor: null }))
+    expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
   })
 })
 
@@ -277,7 +314,7 @@ describe('stockPositionQuery — family, thickness and width (#690)', () => {
     const { url, headers } = requested()
     expect(url.pathname).toBe('/api/v1/inventory/positions')
     expect(url.search).toBe(`?limit=25&cursor=c-1&productFamilyId=${FAMILY}&thicknessMinMm=1&thicknessMaxMm=3&widthMm=1250`)
-    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('4.0')
   })
 })
 

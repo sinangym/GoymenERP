@@ -806,4 +806,51 @@ describe('technical card: fixed family facts and the three open unit roles (P03.
     expect(refusal.textContent).toBe('Seçilen referans geçersiz veya artık mevcut değil.')
     expect(screen.getByTestId('product-closed-unit-price').textContent).toContain('Kayıtlı değer: Adet (adet)')
   })
+
+  /** P03.2: reopening the accepted cut-sheet card (#729) with its stored nominal thickness, width and length. */
+  describe('a cut sheet’s nominal measures on reopen', () => {
+    const measure = (key: string, role: string) => ({ key, kind: 'measureMillimetre', role, required: true, dictionary: null,
+      allowsCandidate: false, appliesWhenField: null, appliesWhenCode: null, parentField: null })
+    const cutSheetOptions = () => ({ ...technicalOptions(), templates: [{ id: TEMPLATE, version: '1',
+      displayName: 'GDC Sıcak Haddelenmiş Kesilmiş Sac/Levha Teknik Kartı',
+      fields: [measure('thickness-mm', 'thickness'), measure('width-mm', 'width'), measure('length-mm', 'length')] }] })
+    const stored = () => productCard({
+      product: productCore({ familyId: FAMILY_FLAT }),
+      references: references({ templateId: TEMPLATE, templateVersion: '1',
+        attributes: { 'thickness-mm': 3, 'width-mm': 1500, 'length-mm': 2500.125 },
+        units: { ...references().units, stock: KG } }),
+    })
+    const valueOf = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value
+
+    it('reopens the stored digits under Turkish names and sends nothing for an untouched measure', async () => {
+      const loaded = stored()
+      const { calls } = installFetch({ capabilities: EDIT_ONLY, onOptions: () => json(cutSheetOptions()), onCard: () => json(loaded) })
+      renderProductApp(`/urun/${String(loaded.product.id)}/duzenle`)
+      await screen.findByLabelText('Nominal boy (mm) *')
+      expect([valueOf('Nominal kalınlık (mm) *'), valueOf('Nominal en (mm) *'), valueOf('Nominal boy (mm) *')])
+        .toEqual(['3', '1500', '2500.125'])
+      expect(screen.queryByText(/length-mm/)).toBeNull()
+
+      await userEvent.type(screen.getByLabelText('Ürün adı', { exact: false }), ' A')
+      await userEvent.type(screen.getByLabelText('Değişiklik gerekçesi'), 'Ad düzeltildi')
+      await userEvent.click(screen.getByRole('button', { name: 'Değişiklikleri kaydet' }))
+      await waitFor(() => expect(calls.some(c => c.method === 'PATCH')).toBe(true))
+      const patch = JSON.parse(calls.find(c => c.method === 'PATCH')!.body!)
+      expect(patch.changes.references).toBeUndefined()
+    })
+
+    it('sends a changed nominal length as the typed digits and keeps the other measures as stored', async () => {
+      const loaded = stored()
+      const { calls } = installFetch({ capabilities: EDIT_ONLY, onOptions: () => json(cutSheetOptions()), onCard: () => json(loaded) })
+      renderProductApp(`/urun/${String(loaded.product.id)}/duzenle`)
+      const length = await screen.findByLabelText('Nominal boy (mm) *')
+      await userEvent.clear(length)
+      await userEvent.type(length, '6000,5')
+      await userEvent.type(screen.getByLabelText('Değişiklik gerekçesi'), 'Boy düzeltildi')
+      await userEvent.click(screen.getByRole('button', { name: 'Değişiklikleri kaydet' }))
+      await waitFor(() => expect(calls.some(c => c.method === 'PATCH')).toBe(true))
+      const patch = JSON.parse(calls.find(c => c.method === 'PATCH')!.body!)
+      expect(patch.changes.references.attributes).toEqual({ 'thickness-mm': 3, 'width-mm': 1500, 'length-mm': 6000.5 })
+    })
+  })
 })
