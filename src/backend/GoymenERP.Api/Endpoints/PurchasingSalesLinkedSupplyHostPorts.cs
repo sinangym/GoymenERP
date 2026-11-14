@@ -1,6 +1,9 @@
+using System.Data.Common;
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
@@ -112,5 +115,24 @@ public sealed class PurchasingRequestSalesSourcePort(ISalesOrderLineReferencePor
         {
             return PurchaseRequestSalesSourceOutcomeV1.Unavailable;
         }
+    }
+}
+
+/// <summary>
+/// F-017 F17-1 (ALIS_F017 v1 §3.4, STOK_F017 §3.2 step 0): the host's binder of the Purchasing-owned purchase line serialization
+/// lock, registered by the host because Inventory does not reference Purchasing. It binds the lock to the caller's own open
+/// connection and transaction under the server-resolved company only (never a caller-supplied company); without a resolved company
+/// it refuses before any statement runs. It grants nothing: the caller measures its own authority.
+/// </summary>
+public sealed class PurchaseLineSerializationLockHostBinder(ICompanyContext companyContext) : IPurchaseLineSerializationLockBinderV1
+{
+    public IPurchaseLineSerializationLockV1 Bind(DbConnection connection, DbTransaction transaction)
+    {
+        if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Satır kilidi yalnız çözümlenmiş şirket bağlamında alınır.");
+        }
+
+        return PurchaseLineSerializationLock.Bind(connection, transaction, companyContext.CompanyId);
     }
 }

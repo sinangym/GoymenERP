@@ -794,6 +794,7 @@ public sealed partial class PurchasingService(
     {
         PurchasingStoreCodes.SameKeyPayloadMismatch => new PurchasingServiceException(409, PurchasingProblemCodesV1.SameKeyPayloadMismatch),
         PurchasingStoreCodes.ConcurrentChange => new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange),
+        PurchasingStoreCodes.LineBusy => new PurchasingServiceException(409, PurchasingProblemCodesV1.LineBusy),
         PurchasingStoreCodes.RequestLineOverSourced => new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestLineOverSourced, exception.Errors),
         PurchasingStoreCodes.SourceRequestNotApproved => new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestState, exception.Errors),
         PurchasingStoreCodes.InvalidCursor => new PurchasingServiceException(400, PurchasingProblemCodesV1.InvalidCursor),

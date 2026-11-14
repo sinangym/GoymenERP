@@ -15,6 +15,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
 using GoymenERP.Api.WorkRuntime;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -387,6 +388,8 @@ builder.Services.AddSingleton(new PurchasingServiceBindings(
 builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
 builder.Services.AddScoped<IPurchaseGoodsReceiptTransactionV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddScoped<IPurchaseGoodsReceiptReadsV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
+// F-017 F17-1 (§3.4): Inventory's future allocation takes the purchase general line's lock through this binder (no module reference).
+builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineSerializationLockHostBinder>();
 builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

@@ -26,6 +26,12 @@ public sealed record PurchaseAcceptanceStageRequestV1(
     string AcceptedQuantity,
     DateTimeOffset OccurredAtUtc);
 
+/// <summary>
+/// The staged acceptance share. F-017 F17-1 (ALIS_F017 v1 §3.4/§5): <see cref="PurchaseOrderGeneralLineId"/> is the purchase GENERAL
+/// line whose serialization lock the participant took — the accepted line itself, or its general line when a technical slice was
+/// accepted — so the host's Inventory side converts the future allocations of that general line in the same transaction. The field
+/// is additive and trailing (a result recorded before F17-1 deserializes it as null and the participant resolves it from the line).
+/// </summary>
 public sealed record PurchaseAcceptanceStageResultV1(
     Guid CompanyId,
     Guid AcceptanceId,
@@ -35,7 +41,8 @@ public sealed record PurchaseAcceptanceStageResultV1(
     string AcceptedQuantity,
     string RemainingQuantity,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    Guid? PurchaseOrderGeneralLineId = null);
 
 public sealed record ValidatedPurchaseAcceptanceV1(
     long ExpectedPurchaseOrderVersion,
@@ -116,6 +123,12 @@ public static class PurchaseAcceptanceParticipantCodes
     public const string IdempotencyConflict = "purchasing_acceptance_idempotency_conflict";
     public const string ConcurrentChange = "purchasing_acceptance_concurrent_change";
     public const string Unavailable = "purchasing_acceptance_unavailable";
+
+    /// <summary>
+    /// F-017 §3.4: the purchase general line's serialization lock was not granted in time; nothing was staged (409). The same
+    /// code as <c>PurchaseLineSerializationLockContractV1.BusyCode</c>.
+    /// </summary>
+    public const string LineBusy = "purchasing_line_busy";
 }
 
 public sealed class PurchaseAcceptanceParticipantException(

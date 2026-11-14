@@ -563,6 +563,12 @@ public static class PurchasingProblemCodesV1
     public const string SameKeyPayloadMismatch = "same_key_payload_mismatch";
     public const string ConcurrentChange = "concurrent_change";
 
+    /// <summary>
+    /// 409, retryable (F-017 §3.4): the purchase general line's serialization lock is held by another write (an Inventory future
+    /// allocation, an acceptance share or a cancel on the same line) beyond the short lock wait; nothing was stored.
+    /// </summary>
+    public const string LineBusy = "purchasing_line_busy";
+
     /// <summary>422: the unit is not an approved kilogram profile for this company on the date, or the quantity's scale exceeds it (Ö2).</summary>
     public const string UnsupportedUnit = "unsupported_unit";
 
