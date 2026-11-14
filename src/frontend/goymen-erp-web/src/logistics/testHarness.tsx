@@ -66,8 +66,19 @@ export function instructionSummary(overrides: Record<string, unknown> = {}): Rec
     createdAtUtc: '2026-09-19T09:00:00Z',
     updatedAtUtc: '2026-09-19T09:00:00Z',
     lineCount: 1,
+    cancelledBy: null,
+    cancelledAtUtc: null,
+    cancelReason: null,
     ...overrides,
   }
+}
+
+/** F-020: a Cancelled instruction's summary members as the server stores them (all three present only when Cancelled). */
+export const CANCELLED_INSTRUCTION: Readonly<Record<string, unknown>> = {
+  status: 'Cancelled',
+  cancelledBy: 'SENTETIK-iptal-eden',
+  cancelledAtUtc: '2026-09-19T11:15:00Z',
+  cancelReason: 'Müşteri vazgeçti',
 }
 
 export function instructionLine(overrides: Record<string, unknown> = {}): Record<string, unknown> {

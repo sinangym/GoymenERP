@@ -969,7 +969,8 @@ public sealed partial class LogisticsInstructionService(
         var instruction = stored.Instruction;
         return new LoadingInstructionSummaryView(instruction.Id, instruction.CompanyId, instruction.Status.ToString(),
             instruction.Version.ToString(CultureInfo.InvariantCulture), instruction.CustomerPartyId, instruction.CompanyAccountId,
-            stored.EffectiveOn, instruction.CreatedAtUtc, instruction.UpdatedAtUtc, instruction.Lines.Count);
+            stored.EffectiveOn, instruction.CreatedAtUtc, instruction.UpdatedAtUtc, instruction.Lines.Count,
+            instruction.CancelledBy, instruction.CancelledAtUtc, instruction.CancelReason);
     }
 
     private static LoadingInstructionDetailView Detail(StoredLoadingInstruction stored)
