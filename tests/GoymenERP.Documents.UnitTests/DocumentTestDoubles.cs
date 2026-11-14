@@ -43,11 +43,16 @@ internal sealed class GrantedAuthority : IErpAuthorityRevalidationService
     }
 }
 
-/// <summary>The Cari owner as a set of (company, party) pairs the actor may read.</summary>
+/// <summary>
+/// One owner kind (the Cari owner unless another kind is given) as a set of (company, record) pairs the actor may read;
+/// <paramref name="acceptsExisting"/> is the B-26 opt-in for linking an existing document.
+/// </summary>
 internal sealed class FixedOwnerPort(
     ICompanyContext companyContext,
     HashSet<(Guid Company, Guid Party)> readable,
-    Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> outcomes) : IDocumentOwnerLinkPortV1
+    Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> outcomes,
+    string kind = DocumentOwnerLinkKindsV1.CounterpartyParty,
+    bool acceptsExisting = false) : IDocumentOwnerLinkPortV1
 {
     public HashSet<(Guid Company, Guid Party)> Readable => readable;
 
@@ -55,7 +60,9 @@ internal sealed class FixedOwnerPort(
 
     public Exception? Error { get; set; }
 
-    public string Kind => DocumentOwnerLinkKindsV1.CounterpartyParty;
+    public string Kind => kind;
+
+    public bool AcceptsExistingDocumentLinks => acceptsExisting;
 
     public Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
@@ -136,8 +143,8 @@ internal sealed class FixedScanner(DocumentScanVerdictV1 verdict) : IDocumentCon
 
 /// <summary>
 /// An in-memory metadata store with the real store's contract: company-filtered reads, the attempt answered for the same
-/// actor and request hash, one document per upload with its single owner link. Every document of every company is kept
-/// in one list so that a test can prove the company filter.
+/// actor and request hash, one document per upload with its owner links (the upload's first; B-26 adds more). Every
+/// document of every company is kept in one list so that a test can prove the company filter.
 /// </summary>
 internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harness.SharedWorld world) : IDocumentStore
 {
@@ -169,10 +176,69 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             throw new DocumentStoreException(DocumentStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
         }
 
-        return Task.FromResult<DocumentStoreResult?>(new DocumentStoreResult(world.Versions.Single(document => document.Id == attempt.DocumentId
-                && document.VersionNo == attempt.VersionNo), true,
+        return Task.FromResult<DocumentStoreResult?>(new DocumentStoreResult(WithLinks(world.Versions.Single(document => document.Id == attempt.DocumentId
+                && document.VersionNo == attempt.VersionNo)), true,
             attempt.Correlation));
     }
+
+    public Task<DocumentStoreResult?> FindLinkReplayAsync(DocumentWriteEnvelope envelope, string requestHash, Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(LinkReplay(envelope, requestHash, documentId));
+
+    public async Task<DocumentStoreResult> StoreLinkAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentLink link,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        if (LinkReplay(envelope, requestHash, link.DocumentId) is { } replay)
+        {
+            return replay;
+        }
+
+        BeforeWrite?.Invoke();
+        await beforeWrite(cancellationToken);
+        var existing = Visible().SingleOrDefault(document => document.Id == link.DocumentId);
+        if (existing is null || existing.VersionNo != link.ExpectedCurrentVersion)
+        {
+            throw new DocumentStoreException(DocumentStoreCodes.ConcurrentChange, "SENTETIK");
+        }
+
+        var links = world.Links[(existing.CompanyId, existing.Id)];
+        if (links.Any(candidate => candidate.OwnerKind == link.Owner.Kind && candidate.OwnerId == link.Owner.OwnerId))
+        {
+            throw new DocumentStoreException(DocumentStoreCodes.AlreadyLinked, "SENTETIK");
+        }
+
+        Envelopes.Add(envelope);
+        links.Add(new StoredDocumentLink(link.Owner.Kind, link.Owner.OwnerId));
+        Attempts.Add((existing.CompanyId, DocumentCommands.LinkV1, envelope.IdempotencyKey, requestHash, envelope.ActorId, existing.Id,
+            existing.VersionNo, envelope.CorrelationId));
+        return new DocumentStoreResult(WithLinks(existing), false, envelope.CorrelationId);
+    }
+
+    /// <summary>The links each document carries now, primary first.</summary>
+    public IReadOnlyList<StoredDocumentLink> LinksOf(Guid company, Guid documentId) =>
+        world.Links.TryGetValue((company, documentId), out var links) ? [.. links] : [];
+
+    private DocumentStoreResult? LinkReplay(DocumentWriteEnvelope envelope, string requestHash, Guid documentId)
+    {
+        var attempt = Attempts.SingleOrDefault(candidate => candidate.Company == companyContext.CompanyId
+            && candidate.Command == DocumentCommands.LinkV1 && candidate.Key == envelope.IdempotencyKey);
+        if (attempt == default)
+        {
+            return null;
+        }
+
+        if (attempt.Actor != envelope.ActorId || attempt.RequestHash != requestHash || attempt.DocumentId != documentId)
+        {
+            throw new DocumentStoreException(DocumentStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
+        }
+
+        return new DocumentStoreResult(Visible().Single(document => document.Id == documentId), true, attempt.Correlation);
+    }
+
+    private StoredDocument WithLinks(StoredDocument document) =>
+        world.Links.TryGetValue((document.CompanyId, document.Id), out var links) ? document with { Links = [.. links] } : document;
 
     public async Task<DocumentStoreResult?> FindVersionReplayAsync(DocumentWriteEnvelope envelope, string requestHash, Guid documentId,
         int resultVersionNo, CancellationToken cancellationToken = default)
@@ -199,9 +265,10 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             upload.UploadedAtUtc);
         Documents.Add(stored);
         world.Versions.Add(stored);
+        world.Links[(companyId, upload.DocumentId)] = [new StoredDocumentLink(upload.Owner.Kind, upload.Owner.OwnerId)];
         Attempts.Add((companyId, DocumentCommands.UploadV1, envelope.IdempotencyKey, requestHash, envelope.ActorId, upload.DocumentId, 1,
             envelope.CorrelationId));
-        return new DocumentStoreResult(stored, false, envelope.CorrelationId);
+        return new DocumentStoreResult(WithLinks(stored), false, envelope.CorrelationId);
     }
 
     public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
@@ -219,32 +286,32 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         var stored = new StoredDocument(version.DocumentId, existing.CompanyId, existing.OwnerKind, existing.OwnerId,
             expectedCurrentVersion + 1, version.FileName.Value, version.Kind.Kind, version.SizeBytes, version.Sha256, version.ObjectKey,
             version.ScanState, version.ScannerId, envelope.ActorId, version.UploadedAtUtc);
-        Documents.Remove(existing);
+        Documents.RemoveAll(document => document.CompanyId == existing.CompanyId && document.Id == existing.Id);
         Documents.Add(stored);
         world.Versions.Add(stored);
         Attempts.Add((existing.CompanyId, DocumentCommands.AppendVersionV1, envelope.IdempotencyKey, requestHash, envelope.ActorId,
             version.DocumentId, stored.VersionNo, envelope.CorrelationId));
-        return new DocumentStoreResult(stored, false, envelope.CorrelationId);
+        return new DocumentStoreResult(WithLinks(stored), false, envelope.CorrelationId);
     }
 
     public Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Visible().SingleOrDefault(document => document.Id == documentId));
 
     public Task<StoredDocument?> FindDocumentVersionAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default) =>
-        Task.FromResult(world.Versions.SingleOrDefault(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId
-            && document.VersionNo == versionNo));
+        Task.FromResult(world.Versions.Where(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId
+            && document.VersionNo == versionNo).Select(WithLinks).SingleOrDefault());
 
     public Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
         CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<StoredDocument>>(
             [.. world.Versions.Where(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId)
                 .Where(document => !beforeVersionNo.HasValue || document.VersionNo < beforeVersionNo.Value)
-                .OrderByDescending(document => document.VersionNo).Take(limit)]);
+                .OrderByDescending(document => document.VersionNo).Take(limit).Select(WithLinks)]);
 
     public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default)
     {
         BeforeList?.Invoke();
         return Task.FromResult<IReadOnlyList<StoredDocument>>(
-            [.. Visible().Where(document => document.OwnerKind == ownerKind && document.OwnerId == ownerId)
+            [.. Visible().Where(document => document.OwnerLinks.Any(link => link.OwnerKind == ownerKind && link.OwnerId == ownerId))
                 .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
     }
 
@@ -257,7 +324,8 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
                 .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
     }
 
-    private IEnumerable<StoredDocument> Visible() => Documents.Where(document => document.CompanyId == companyContext.CompanyId);
+    private IEnumerable<StoredDocument> Visible() =>
+        Documents.Where(document => document.CompanyId == companyContext.CompanyId).Select(WithLinks);
 }
 
 /// <summary>One request's wiring: a company, an actor, grants, the Cari owner, the stores and the scanner.</summary>
@@ -277,11 +345,14 @@ internal sealed class Harness
         Correlation.Set($"SENTETIK-{Guid.NewGuid():N}", null, SourceChannels.Web, "127.0.0.1", "SENTETIK-agent");
         User = new FixedUser(actor, CompanyA, CompanyB);
         Owner = new FixedOwnerPort(Company, World.Readable, World.OwnerOutcomes);
+        LinkTarget = new FixedOwnerPort(Company, World.TargetReadable, World.TargetOutcomes, DocumentOwnerLinkKindsV1.ManufacturingOrder,
+            acceptsExisting: true);
+        ClosedTarget = new FixedOwnerPort(Company, World.TargetReadable, World.TargetOutcomes, DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice);
 
         Store = new MemoryDocumentStore(Company, World);
         Objects = World.Objects;
         Scanner = scanner;
-        Service = new DocumentService(Company, User, Authority, Correlation, [Owner], Store, withObjects ? Objects : null,
+        Service = new DocumentService(Company, User, Authority, Correlation, [Owner, LinkTarget, ClosedTarget], Store, withObjects ? Objects : null,
             scanner, new DocumentsServiceBindings(maximumBytes), TimeProvider.System);
     }
 
@@ -296,6 +367,12 @@ internal sealed class Harness
     public GrantedAuthority Authority { get; } = new();
 
     public FixedOwnerPort Owner { get; }
+
+    /// <summary>B-26: an owner kind that takes existing documents (the Manufacturing order stands for every opted-in kind).</summary>
+    public FixedOwnerPort LinkTarget { get; }
+
+    /// <summary>B-26: an owner kind that does not take existing documents (the official sales invoice, FNS-D36/D38).</summary>
+    public FixedOwnerPort ClosedTarget { get; }
 
     public MemoryDocumentStore Store { get; }
 
@@ -328,6 +405,12 @@ internal sealed class Harness
         public HashSet<(Guid Company, Guid Party)> Readable { get; } = [];
 
         public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> OwnerOutcomes { get; } = [];
+
+        public HashSet<(Guid Company, Guid Party)> TargetReadable { get; } = [];
+
+        public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> TargetOutcomes { get; } = [];
+
+        public Dictionary<(Guid Company, Guid DocumentId), List<StoredDocumentLink>> Links { get; } = [];
 
         public List<StoredDocument> Documents { get; } = [];
 

@@ -241,6 +241,10 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
 
         public Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<DocumentLinkWriteResponse> LinkAsync(Guid documentId, LinkDocumentRequest request,
+            DocumentCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class NoOpAuditCollector : IAuditEventCollector
