@@ -41,7 +41,8 @@ public sealed class ManufacturingStore(
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
-        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore
+        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore,
+        IManufacturingClosedOrderListStore
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -1132,6 +1133,72 @@ public sealed class ManufacturingStore(
             hasMore && last is not null ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id) : null);
     }
 
+    /// <summary>
+    /// URT-D42 (3): one page of this company's closed orders, the latest close first (the stored closedAtUtc and id), each
+    /// rebuilt from its stored facts through the order read's own <see cref="RestoreOrder"/>, so a close stored under an
+    /// earlier rule replays unchanged. It writes nothing. A closed order takes no further write: every fact and close path
+    /// refuses a closed order and the order version is a concurrency token, so the facts read after the page's rows are
+    /// exactly the ones committed with or before each close and no re-read is needed. A stored order that does not
+    /// rebuild is refused (<see cref="ManufacturingRuleCodes.StoredRecordInvalid"/>), never skipped.
+    /// </summary>
+    public async Task<ManufacturingClosedOrderPage> ListClosedOrdersAsync(int pageSize, string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        if (pageSize is < 1 or > MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), pageSize,
+                $"Sayfa boyutu 1–{MaximumPageSize} olmalıdır (varsayılan {DefaultPageSize}).");
+        }
+
+        const int closed = (int)OrderStatus.Closed;
+        var query = dbContext.Orders.AsNoTracking().Where(row => row.Status == closed && row.ClosedAtUtc != null);
+        if (cursor is not null)
+        {
+            var (closedAtUtc, id) = ListCursor.Decode(cursor, companyId, ListCursor.ClosedOrdering);
+            query = query.Where(row => row.ClosedAtUtc < closedAtUtc
+                || (row.ClosedAtUtc == closedAtUtc && row.Id.CompareTo(id) < 0));
+        }
+
+        var rows = await query
+            .OrderByDescending(row => row.ClosedAtUtc).ThenByDescending(row => row.Id)
+            .Take(pageSize + 1)
+            .ToListAsync(cancellationToken);
+        var hasMore = rows.Count > pageSize;
+        var page = hasMore ? rows.Take(pageSize).ToList() : rows;
+        if (page.Count == 0)
+        {
+            return new ManufacturingClosedOrderPage([], null);
+        }
+
+        // The single order read's three reads (inputs, facts, closure decision), once for the whole page.
+        var ids = page.Select(row => row.Id).ToArray();
+        var inputs = await dbContext.OrderInputs.AsNoTracking()
+            .Where(input => ids.Contains(input.OrderId))
+            .ToListAsync(cancellationToken);
+        var facts = await dbContext.Facts.AsNoTracking()
+            .Where(fact => ids.Contains(fact.OrderId))
+            .ToListAsync(cancellationToken);
+        var decisions = await dbContext.OrderClosureDecisions.AsNoTracking()
+            .Where(decision => ids.Contains(decision.OrderId))
+            .ToListAsync(cancellationToken);
+
+        var orders = new List<ProductionOrder>(page.Count);
+        foreach (var row in page)
+        {
+            var orderInputs = inputs.Where(input => input.OrderId == row.Id).OrderBy(input => input.Sequence).ToList();
+            var orderFacts = facts.Where(fact => fact.OrderId == row.Id).ToList();
+            orders.Add(RestoreOrder(row, orderInputs, kind => orderFacts.Where(fact => fact.Kind == (int)kind),
+                decisions.SingleOrDefault(decision => decision.OrderId == row.Id)));
+        }
+
+        var last = page[^1];
+        return new ManufacturingClosedOrderPage(orders,
+            hasMore && last.ClosedAtUtc is { } lastClosedAtUtc
+                ? ListCursor.Encode(companyId, lastClosedAtUtc, last.Id, ListCursor.ClosedOrdering)
+                : null);
+    }
+
     public async Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -2218,6 +2285,12 @@ public sealed class ManufacturingStore(
         /// cursor is refused by the order list and an order cursor by the plan list, never read as the other's page.
         /// </summary>
         internal const string PlanOrdering = "plans: createdAtUtc desc, id desc";
+
+        /// <summary>
+        /// The closed-order list's ordering (URT-D42 (3) report): the stored close moment and id. Named apart like the
+        /// plan list's, so an order-list or plan-list cursor is refused by it and its cursor by them.
+        /// </summary>
+        internal const string ClosedOrdering = "closed orders: closedAtUtc desc, id desc";
 
         public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
             Encode(companyId, createdAtUtc, id, Ordering);

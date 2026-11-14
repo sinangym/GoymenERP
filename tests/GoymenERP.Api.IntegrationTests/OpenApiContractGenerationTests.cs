@@ -1215,6 +1215,11 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/orders/{orderId}/close", "CloseManufacturingOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/CloseOrderRequestV1", ["path:orderId:true:type:string;format:uuid"]),
+        // URT-D42 (3): a read-only page of closed orders whose output exceeded input on a parent roll;
+        // the order read's grant, the list's page size and cursor rules, no status filter.
+        new("get", "/api/v1/manufacturing/reports/output-above-input-closures", "GetManufacturingOutputAboveInputClosureReportV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
         new("get", "/api/v1/logistics/loading-instructions/approved-order-lines", "GetLogisticsApprovedOrderLinesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
@@ -1760,6 +1765,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ListManufacturingOrdersV1"] = "ref:OrderListViewV1",
             ["ListManufacturingPlansV1"] = "ref:PlanListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
+            ["GetManufacturingOutputAboveInputClosureReportV1"] = "ref:OutputAboveInputClosureReportViewV1",
             ["GetLogisticsApprovedOrderLinesV1"] = "ref:LogisticsApprovedOrderLinePage",
             ["GetLogisticsSalesWorkV1"] = "ref:LogisticsSalesWorkPage",
             ["GetLogisticsPurchaseWorkV1"] = "ref:LogisticsPurchaseWorkPage",
@@ -2128,6 +2134,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ListManufacturingOrdersV1",
         "ListManufacturingPlansV1",
         "CloseManufacturingOrderV1",
+        "GetManufacturingOutputAboveInputClosureReportV1",
         "GetLogisticsApprovedOrderLinesV1",
         "GetLogisticsSalesWorkV1",
         "GetLogisticsPurchaseWorkV1",
@@ -3359,7 +3366,7 @@ public sealed partial class OpenApiContractGenerationTests
         "manufacturing_closure_approval_required", "manufacturing_closure_approval_invalid",
         "manufacturing_closure_approval_unexpected", "manufacturing_closure_roll_input_invalid",
         "manufacturing_closure_fire_mass_mismatch", "manufacturing_closure_net_issued_mass_mismatch",
-        "manufacturing_closure_negative_difference_review",
+        "manufacturing_closure_negative_difference_review", "manufacturing_closure_output_exceeds_input",
         "settings_manufacturing_tolerance_profile_not_found",
         "manufacturing_value_does_not_fit",
         "manufacturing_wip_already_measured", "manufacturing_wip_measurement_not_latest",
@@ -4011,6 +4018,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["CloseManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CloseManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CloseManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
+            // URT-D42 (3): the report refuses a bad page size or cursor (another list's cursor too) on the field.
+            ["GetManufacturingOutputAboveInputClosureReportV1:400"] = ["manufacturing_request_invalid"],
             ["GetLogisticsApprovedOrderLinesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetLogisticsSalesWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetLogisticsPurchaseWorkV1:400"] = ["invalid_cursor", "validation_failed"],
@@ -4567,6 +4576,29 @@ public sealed partial class OpenApiContractGenerationTests
                     ("difference", "ref:MassDifferenceViewV1"),
                     ("scrapPercent", "ref:EngineAnswerViewV1"),
                     ("actualUnitKg", "ref:EngineAnswerViewV1")),
+                // URT-D42 (3): closed orders whose output exceeded input, each with only its plus-direction parent
+                // rolls; the difference is the mass-balance read's own MassDifferenceViewV1.
+                ["OutputAboveInputClosureReportViewV1"] = ObjectSchema(
+                    ["formulaVersion", "examinedOrderCount", "closures", "nextCursor"],
+                    ("formulaVersion", "type:string"),
+                    ("examinedOrderCount", "type:integer|string;format:int32"),
+                    ("closures", "type:array;items:ref:OutputAboveInputClosureViewV1"),
+                    ("nextCursor", "type:null|string")),
+                ["OutputAboveInputClosureViewV1"] = ObjectSchema(
+                    ["orderId", "planId", "workCenterId", "process", "version", "closedByUserId", "closedAtUtc", "closedWithExceptionApproval", "rolls"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("planId", "type:string;format:uuid"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("process", "type:string"),
+                    ("version", "type:integer|string;format:int64"),
+                    ("closedByUserId", "type:string;format:uuid"),
+                    ("closedAtUtc", "type:string;format:date-time"),
+                    ("closedWithExceptionApproval", "type:boolean"),
+                    ("rolls", "type:array;items:ref:OutputAboveInputRollViewV1")),
+                ["OutputAboveInputRollViewV1"] = ObjectSchema(
+                    ["parentRollId", "difference"],
+                    ("parentRollId", "type:string;format:uuid"),
+                    ("difference", "ref:MassDifferenceViewV1")),
                 ["JournalDetailV1"] = ObjectSchema(
                     ["journal", "lines"],
                     ("journal", "ref:JournalSummaryV1"),

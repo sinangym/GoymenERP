@@ -986,7 +986,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "f6256b174193626723fc65e9d2e7be43732f4debc840a097dba096a5a1ad5ccc",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
-    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "06f00d738be6477a85de2ababadee9b23605785dc2453d783f03a769f011c54c",
+    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "746238d8af4ab0481a5aa7a42a8b2d940f678b96cd874b77df0be441066c9831",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
