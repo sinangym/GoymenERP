@@ -114,10 +114,40 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<FactRow> Facts => Set<FactRow>();
 
+    /// <summary>F-009 D2: output reversals, each linked to the output declaration it takes mass back from (append-only).</summary>
+    internal DbSet<OutputReversalRow> OutputReversals => Set<OutputReversalRow>();
+
     internal DbSet<CommandRow> Commands => Set<CommandRow>();
 
     /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
     public const string IdentityCollation = "Latin1_General_100_BIN2";
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): a fact carries no plan output line (every fact but an output, and an output stored before
+    /// D2), or an output carries exactly one well-formed line — a slit line by its 1-based position, a cut line by its
+    /// id, or its class line; only a good product binds to a slit or cut line (ASSUMPTION-URT-F009-1).
+    /// </summary>
+    internal const string FactOutputLineCheck =
+        "([OutputLineKind] IS NULL AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL) "
+        + "OR ([Kind] = 3 AND ("
+        + "([OutputLineKind] = 1 AND [OutputClass] = 1 AND [OutputLineSequence] >= 1 AND [OutputLineId] IS NULL) "
+        + "OR ([OutputLineKind] = 2 AND [OutputClass] = 1 AND [OutputLineSequence] IS NULL "
+        + "AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') "
+        + "OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))";
+
+    /// <summary>F-009 D2: every id of an output reversal is set.</summary>
+    internal const string OutputReversalIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>F-009 D2: a reversal names an output declaration (fact kind 3) and takes back a positive mass.</summary>
+    internal const string OutputReversalMassCheck = "[OutputKind] = 3 AND [MassKg] > 0";
+
+    /// <summary>F-009 D2: the reason, the recorder and the correlation are never blank.</summary>
+    internal const string OutputReversalTextCheck =
+        "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -136,6 +166,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigureOrderInputs(modelBuilder);
         ConfigureOrderClosureDecisions(modelBuilder);
         ConfigureFacts(modelBuilder);
+        ConfigureOutputReversals(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -662,6 +693,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4, 5) AND [CostStatus] IN (1, 2, 3)) "
                 + "OR ([Kind] <> 3 AND [OutputClass] IS NULL AND [CostStatus] IS NULL)");
             table.HasCheckConstraint("CK_Facts_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_Facts_OutputLine", FactOutputLineCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Kind, x.Id });
         entity.Property(x => x.MassKg).HasPrecision(18, 3);
@@ -669,6 +701,36 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.OrderId });
+        OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// F-009 D2 (URT-D28, analysis §4.3): one row per output reversal, keyed by (company, id). It is bound by
+    /// (company, order) to its order and by (company, kind 3, output id) to the output declaration it reverses, so it
+    /// can never name another company's order or a fact that is not an output. The bound "reversals ≤ declaration" is
+    /// the domain's, held under the order's concurrency token.
+    /// </summary>
+    private void ConfigureOutputReversals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutputReversalRow>();
+        entity.ToTable("OutputReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutputReversals_Identity", OutputReversalIdentityCheck);
+            table.HasCheckConstraint("CK_OutputReversals_Mass", OutputReversalMassCheck);
+            table.HasCheckConstraint("CK_OutputReversals_Text", OutputReversalTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.MassKg).HasPrecision(18, 3);
+        entity.Property(x => x.Reason).HasMaxLength(OutputReversal.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId });
+        entity.HasOne<FactRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         OrderOf(entity);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
