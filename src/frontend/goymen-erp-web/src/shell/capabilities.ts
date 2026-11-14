@@ -265,6 +265,12 @@ export const CAPABILITY = {
   settingsSalesDiscountLimits: 'settings.sales-discount-limits.manage',
   /** MOD-03 Ayarlar > Vergi: the tax master. Route `/ayarlar/vergi`, owner Settings; one non-Critical name, granted to no role. */
   settingsTaxMaster: 'settings.tax-master.manage',
+  /**
+   * F-025 / B-11 Ayarlar > Ana Veriler > Kurlar: the exchange rate days, correction, half-day mark, reverification and
+   * import. Route `/ayarlar/kurlar`, owner Settings 1.2, on the read name; the three command controls are separate names
+   * (`settings/capabilities.ts` `SETTINGS_EXCHANGE_RATE_CONTROL`). Non-Critical, granted to no role here.
+   */
+  settingsExchangeRates: 'settings.exchange-rates.read',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -385,6 +391,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
+  [CAPABILITY.settingsExchangeRates]: '/ayarlar/kurlar',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
