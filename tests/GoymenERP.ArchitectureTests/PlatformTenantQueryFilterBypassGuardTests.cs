@@ -144,7 +144,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U5-b1 (API-36, SAT-D175): registers the two host-side subcontract service order / binding adapters (DI only);
         // no generation, network or hosted-service change (a5bb99f0… -> 096c3e0b…).
         // F-021 / B-24b: registers the Work module and the ERP-000F outbox dispatcher (off by default, hosted service skipped in OpenAPI generation) and initializes Work in Dev/Testing; no network surface change; re-fingerprinted after merging main (096c3e0b… -> ee696d73…).
-        "ee696d734546e4656dcd2cf03d623812a794822a69972dc409b1d9e81bcc428e";
+        // AI-2a (ADR-SEC-001), after the main merge: also registers AddSecurityEventsModule and runs
+        // InitializeSecurityEventsModuleAsync with the other module initializers (a5bb99f0… -> 015f177e…).
+        // Main merge after #1146: the AI-2a registration (015f177e…) and the U5-b1 and F-021 / B-24b registrations
+        // (ee696d73…) are all present; re-measured on the merged Program.cs, neither parent's value (-> 3a7d166d…).
+        "3a7d166d438520ba0e917ff38cecffdb84d2c8ea0950e292fafc884f17a7fd51";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -358,7 +362,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // URT-D41/URT-D42: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (output above input on a
                 // parent roll refuses the close with no tolerance and no approval path; the read-only report of earlier
                 // closes with output above input) (85d84d52… -> 15ad9659…).
-                "15ad965941fa4a1923d7ae4d3c43787520350b5be37d50c7f184cda8d4286d09",
+                // Üretim U2-b follow-up: +1 supply read fact (revised plan read at its current revision kg) and +3
+                // ManufacturingApiSqlServerRelationalAcceptanceTests facts (host link/replay/unlink, half link and Sales
+                // refusals, grant lost during the Sales read) (1b1e7223… -> a4032147…).
+                // Main merge after #1104: both fact sets present (re-derived from the merged inventory) (-> 8a43892e…).
+                // Main merge after #1146: the U2-b follow-up facts (8a43892e…) and the U5-b1 and URT-D41/URT-D42 facts
+                // (15ad9659…) are all present; re-derived from the merged inventory, neither parent's value
+                // (-> e17f2323…).
+                "e17f23237661c184b0fde041cf9dc506889df8f85bae4a2a5f6e71efd3543a40",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -391,7 +402,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // empty-store rollback) (69a1024a… -> 84945670…).
                 // F-022: +2 readiness SQL facts (Settings/Documents history drift; price-list drift only while the
                 // Product runtime is on) (84945670… -> 912a850f…).
-                "912a850f59568f33ce197227ac1d945fe3820a2c48ee9ec63dae7ecc95e3438c",
+                // AI-2a (ADR-SEC-001), after the main merge: +4 security event SQL facts (company isolation and hash;
+                // append-only trigger and checks; Down refusal; empty Down/Up round trip) (912a850f… -> 70eab799…).
+                "70eab7996ea177463e8f1b1c1324ab0709b864821cd238ce2b6b4f253b0d047d",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -426,8 +439,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // A2a-5a (ALS-D3, Fable F-015): +3 order approval SQL facts (preparer refused + another actor's approval stored, audited
             // and rebuilt; the approval check on direct writes + a legacy approval still loads; Down refusal 51172), kept
             // ordinal-sorted (70821828… -> c307bc9f…).
+            // A3 API-30 (ALS-D33, ALS-D21): +3 line delivery schedule SQL facts (an append-only revision stored in one save, replayed,
+            // rebuilt between the acceptance shares + the slice checks and keys on direct writes; a Draft schedule before the
+            // approval + company isolation; Down refusal 51173), kept ordinal-sorted (c307bc9f… -> f81eff47…).
+            // A3 API-30 r3 (review A P3): +1 same-line schedule race SQL fact (two saves at one version yield one revision, one
+            // audit record and a concurrent change for the loser), kept ordinal-sorted (f81eff47… -> 11e38799…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "c307bc9f360db7c5e06c2de24a0eeab32d18223044dba7da4a4b902d1978715d",
+                "11e38799e3ed22a443b4ea313a753e062ae8501c347907dd218675af6cd90084",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -561,9 +579,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "30b8186c29adf8bff97ea36b88ec378127bc403dfa00421958f27af4e16db6ed";
+        // AI-2a: + GoymenERP.SecurityEvents.UnitTests (75 solution / 22 TestSDK projects) (30b8186c… -> ac738bab…).
+        "ac738bab8ec406611c0c086d01d5b93b6fed75bc7027180fe8033f936e680506";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "9947ab71ffdd0325973206ef714005f4956c83b52186e76b1066e7e848af29f8";
+        "d8f69eef4cfbd97966612909353547696a1cbe2ca4871e39c89f468048efd7d0";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     // Re-fingerprinted for CIH-D5: only the trigger path filter under `on:` changed (prose no job reads does not
@@ -591,6 +610,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
              + "Persistence/AuditDbContext.cs"] =
                 "8fc4d19d4f7efb61d62dcb0f0ed44bce7254ee897aaaf6621c27f0e03ba1ec7a",
+            // AI-2a (ADR-SEC-001): append-only security event channel, company query filter on CompanyId.
+            ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+             + "Persistence/SecurityEventsDbContext.cs"] =
+                "61fc1b4e3dadbdf5f58bd3972e3253d2bed68bda039abf308df585814dd367ac",
             ["src/backend/Modules/Idempotency/"
              + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
              + "CommandExecutionDbContext.cs"] =
@@ -748,9 +771,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for A2a-5a (ALS-D3, Fable F-015): the order's two nullable approval columns (ApprovedBy 128, ApprovedAtUtc)
             // and their own check (both or neither, only on an approved order, approver ≠ CreatedBy in binary collation); the
             // write guard's allow-list, filters and keys unchanged.
+            // Re-measured for A3 API-30 (ALS-D33, ALS-D21): the append-only tenant table PurchaseOrderLineDeliverySlices (its DbSet,
+            // the CompanyId query filter, key, checks, the line and order foreign keys, indexes); the write guard refuses any update
+            // or delete of a slice; the other filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "d5951612b1c87d85256e84f6f268a72c760422cdbf63f12cf88a26f4c3a5e301",
+                "80279983cc9b39029be05cf8d58fe1199d907681932e555a351b68b828a97dfa",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1042,6 +1068,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Audit.Infrastructure/AuditModuleExtensions.cs"] =
                     new(
                         "f953cac522b80c54bf4f9bdb8626690f8428f74f49fb22589c0ecd0a9ab1b3f6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // AI-2a (ADR-SEC-001): security event channel bootstrap; migrates its own schema like Audit.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "SecurityEventsModuleExtensions.cs"] =
+                    new(
+                        "4fa2769122ebc17f3eb6aad84c395f482327b084a8284304dc020667d55a6a15",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1733,7 +1769,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedPurchaseAcceptanceParticipantPath] =
                     new(
-                        "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
+                        // Re-fingerprinted for A3 API-30 (ALS-D33, ALS-D21): the order rebuild also reads the line's delivery
+                        // slices (a tenant-filtered, no-tracking read on the same context) so it replays the schedule revisions;
+                        // the reviewed constructions and provider tokens unchanged.
+                        "2a8118ebaba60ed5e05b7153ecbfe9379957fa12799d065f4458c9355c5167be",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1758,10 +1797,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for A2a-5a: the create envelope's actor stamped as the order's preparer before the row is written
                 // (row CreatedBy, domain and audit agree); the approver and approval time written, audited and rebuilt through the
                 // domain, a legacy approval rebuilt without an approver; same SqlClient use.
+                // Re-fingerprinted for A3 API-30 (ALS-D33, ALS-D21): a line schedule revision appended in the order's one save (the
+                // header version, the slices, the attempt and the audit), the snapshot's deliverySchedule, and every revision
+                // rebuilt through the domain at its version between the acceptance shares; same SqlClient use. Review fix: the
+                // Σ-within-need check runs for every command but the schedule command (pre-existing behaviour kept).
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "0b46c5c5edd90c7e6f584c17d948ad334266563ae8df2be734df4ff844e66cc2",
+                        "63bf4e7a7282bfe0e6b09b40550862546ecab72d21b4d74f84ea746ff40cb064",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1999,6 +2042,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         "AuditDbContext",
                         "38245af104fd713832e2926dba5798614515bb324d2560da8217f9cd49492b56"),
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Persistence/SecurityEventsDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "SecurityEventsDbContext",
+                        "ed53cad05d7bee2554a10758f94e6b2b22236dd3ff4229e4a3021f510c26ddbf"),
                 ["src/backend/Modules/Idempotency/"
                  + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
                  + "CommandExecutionDesignTimeDbContextFactory.cs"] =
@@ -2488,6 +2536,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261107063820_AddPurchaseOrderLinePrice.cs"] =
                     new(
                         "2c29e418a7a2afbf62d8f2953385135b1a5c03ad2a2164d6aa6389a862ae91a1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // A3 API-30 (ALS-D33, ALS-D21): one reviewed statement, before the drop. Down refuses (51173, used by no other
+                // migration) while any delivery slice exists, which dropping the table would erase (the recorded schedules every
+                // rebuilt order version counts). Up only creates the table; nothing is backfilled.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261112014446_AddPurchaseOrderLineDeliverySchedule.cs"] =
+                    new(
+                        "b79ebfa7f83116ac87a83100b47023432e4fb2adcc7fedd8657e2c47eda95ce2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
@@ -3089,6 +3148,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
+                        }),
+                // AI-2a: Up creates TR_SecurityEvents_RejectUpdateDelete (THROW 51271, append-only); Down refuses
+                // (51270, used by no other migration) while security events exist, then drops the empty table.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Persistence/Migrations/20261111205852_InitialSecurityEvents.cs"] =
+                    new(
+                        "4ac64ee93c5972ef917b045aecab74a86c673e11a3dfd940333c6d1c1a179f08",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
                         }),
                 ["src/backend/Modules/Idempotency/"
                  + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
@@ -9397,13 +9466,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         @"(?<![\p{L}\p{Nd}_])new\s+"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext)(?![\p{L}\p{Nd}_])\s*\(",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext|SecurityEventsDbContext)(?![\p{L}\p{Nd}_])\s*\(",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
-        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext)"
+        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext|SecurityEventsDbContext)"
         + @"(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeIdentifierRegex();
@@ -9418,7 +9487,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"(?<alias>@?[\p{L}_][\p{L}\p{Nd}_]*)\s*=\s*"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext)(?![\p{L}\p{Nd}_])\s*;",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext|SettingsDbContext|SecurityEventsDbContext)(?![\p{L}\p{Nd}_])\s*;",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeAliasRegex();
 
@@ -9435,7 +9504,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"SalesDesignTimeDbContextFactory|"
         + @"LogisticsDesignTimeDbContextFactory|"
         + @"PurchasingDesignTimeDbContextFactory|"
-        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory|SettingsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory|SettingsDesignTimeDbContextFactory|SecurityEventsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

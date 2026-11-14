@@ -125,6 +125,61 @@ describe('purchasing read contract', () => {
     expect(decodePurchaseOrderDetail({ order: { ...summary, lineCount: 2 }, lines: [line] })).toBeNull()
   })
 
+  it('decodes a line carrying its delivery schedule (A3 API-30) and still accepts the shapes before it', () => {
+    const deliverySchedule = [
+      { sliceId: '99999999-9999-4999-8999-999999999991', sliceNo: 1, quantity: '4.5', deliveryDate: '2026-10-01' },
+      { sliceId: '99999999-9999-4999-8999-999999999992', sliceNo: 2, quantity: '5.5', deliveryDate: '2026-09-15' },
+    ]
+    const current = { ...line, cancelled: '0' }
+    const priced = { ...current, price: null }
+    const currentBody = (lines: unknown[]) => ({ lines, acceptances: [], cancellation: null })
+    const pricedBody = (lines: unknown[]) => ({ ...currentBody(lines), priceDisclosure: 'Withheld', currency: null, pricePending: null })
+    for (const body of [
+      currentBody([{ ...current, deliverySchedule }]),
+      pricedBody([{ ...priced, deliverySchedule }]),
+      pricedBody([{ ...priced, deliverySchedule: [] }]),
+    ]) {
+      const expected = (body.lines[0] as { deliverySchedule: unknown }).deliverySchedule
+      expect(decodePurchaseOrderDetail({ order: summary, ...body })?.lines[0].deliverySchedule).toEqual(expected)
+      expect(decodePurchaseOrderCommandResponse({
+        detail: { order: commandSummary, ...body }, isReplay: false, originalCorrelationId: 'corr-1',
+      })?.detail.lines[0].deliverySchedule).toEqual(expected)
+    }
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line] })?.lines[0].deliverySchedule).toBeUndefined()
+    expect(decodePurchaseOrderDetail({ order: summary, ...currentBody([current]) })?.lines[0].deliverySchedule).toBeUndefined()
+    expect(decodePurchaseOrderDetail({ order: summary, ...pricedBody([priced]) })?.lines[0].deliverySchedule).toBeUndefined()
+    // A schedule never rides on a line from before A1-3.
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...line, deliverySchedule }] })).toBeNull()
+  })
+
+  it('fails closed on a malformed delivery schedule', () => {
+    const slice = { sliceId: '99999999-9999-4999-8999-999999999991', sliceNo: 1, quantity: '10', deliveryDate: '2026-10-01' }
+    const priced = { ...line, cancelled: '0', price: null }
+    const body = { acceptances: [], cancellation: null, priceDisclosure: 'Withheld', currency: null, pricePending: null }
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...priced, deliverySchedule: [slice] }], ...body })).not.toBeNull()
+    const refused = [
+      null,
+      {},
+      [{ ...slice, extra: true }],
+      [{ ...slice, sliceId: 'not-a-guid' }],
+      [{ ...slice, sliceId: '00000000-0000-0000-0000-000000000000' }],
+      [{ ...slice, sliceNo: 2 }],
+      [{ ...slice, quantity: '0' }],
+      [{ ...slice, quantity: '-1' }],
+      [{ ...slice, quantity: 10 }],
+      [{ ...slice, deliveryDate: '2026-02-30' }],
+      [{ ...slice, deliveryDate: '2026-10-01T00:00:00Z' }],
+      [{ ...slice, quantity: '5' }, { ...slice, sliceNo: 2, quantity: '5' }],
+      [{ ...slice, quantity: '5' }, { ...slice, sliceId: slice.sliceId.toUpperCase(), sliceNo: 2, quantity: '5' }],
+      Array.from({ length: 501 }, (_, index) => ({
+        ...slice, sliceId: `99999999-9999-4999-8999-${String(index).padStart(12, '0')}`, sliceNo: index + 1, quantity: '1',
+      })),
+    ]
+    for (const deliverySchedule of refused) {
+      expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...priced, deliverySchedule }], ...body })).toBeNull()
+    }
+  })
+
   it('fails closed on non-canonical versions, invalid instants, dates and line kinds', () => {
     expect(decodePurchaseOrderList({ items: [{ ...summary, version: '02' }], nextCursor: null })).toBeNull()
     expect(decodePurchaseOrderList({ items: [{ ...summary, updatedAtUtc: 'not-an-instant' }], nextCursor: null })).toBeNull()

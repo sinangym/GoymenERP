@@ -55,6 +55,19 @@ export interface PurchaseOrderLine {
    * when the prices are withheld (PRS-02); absent in a body from before A2a-1.
    */
   readonly price?: PurchaseOrderLinePrice | null
+  /**
+   * A3 API-30 (ALS-D21): the line's current delivery schedule in slice order — empty until one is recorded; absent in a body from
+   * before A3 API-30.
+   */
+  readonly deliverySchedule?: readonly PurchaseOrderDeliverySlice[]
+}
+
+/** A3 API-30: one delivery slice of a line's current schedule, its quantity as exact text in the line's unit. */
+export interface PurchaseOrderDeliverySlice {
+  readonly sliceId: string
+  readonly sliceNo: number
+  readonly quantity: string
+  readonly deliveryDate: string
 }
 
 /** A2a-1 (ALS-D5): a priced line — exact texts; the net and the line amount are the server's, never recomputed here. */
@@ -492,15 +505,43 @@ function decodeCurrency(value: unknown): PurchaseOrderCurrency | null | undefine
     : undefined
 }
 
+/** The backend's slice cap per line (`PurchaseOrder.MaximumScheduleSlices`). */
+const MAXIMUM_SCHEDULE_SLICES = 500
+
 /**
- * A line before A1-3 (no `cancelled`), after it (`cancelled` a canonical decimal) or after A2a-1 (`cancelled` and `price`, null or
- * a valid price); nothing else.
+ * A3 API-30: exactly the slices in slice order — at most the backend's cap, each a distinct slice id, `sliceNo` its 1-based
+ * position, a canonical decimal quantity above zero and a calendar date; nothing else. The sum is the backend's rule and is not
+ * re-checked here.
+ */
+function deliverySchedule(value: unknown): value is readonly PurchaseOrderDeliverySlice[] {
+  if (!Array.isArray(value) || value.length > MAXIMUM_SCHEDULE_SLICES) return false
+  const ids = new Set<string>()
+  return value.every((item, index) => {
+    const slice = record(item)
+    if (
+      slice === null || !exact(slice, ['sliceId', 'sliceNo', 'quantity', 'deliveryDate']) ||
+      !guid(slice.sliceId) || ids.has((slice.sliceId as string).toLowerCase()) ||
+      slice.sliceNo !== index + 1 ||
+      !text(slice.quantity) || !DECIMAL.test(slice.quantity as string) || !/[1-9]/.test(slice.quantity as string) ||
+      !dateOnly(slice.deliveryDate)
+    ) return false
+    ids.add((slice.sliceId as string).toLowerCase())
+    return true
+  })
+}
+
+/**
+ * A line before A1-3 (no `cancelled`), after it (`cancelled` a canonical decimal), after A2a-1 (`cancelled` and `price`, null or
+ * a valid price) or after A3 API-30 (either of the last two plus `deliverySchedule`, a valid slice list); nothing else.
  */
 function decodeLine(value: unknown): PurchaseOrderLine | null {
   const source = record(value)
   if (source === null) return null
-  const priced = exact(source, [...LINE_FIELDS, 'cancelled', 'price'])
-  const current = priced || exact(source, [...LINE_FIELDS, 'cancelled'])
+  const scheduled = Object.prototype.hasOwnProperty.call(source, 'deliverySchedule')
+  if (scheduled && !deliverySchedule(source.deliverySchedule)) return null
+  const extra = scheduled ? ['deliverySchedule'] : []
+  const priced = exact(source, [...LINE_FIELDS, 'cancelled', 'price', ...extra])
+  const current = priced || exact(source, [...LINE_FIELDS, 'cancelled', ...extra])
   if (current && (!text(source.cancelled) || !DECIMAL.test(source.cancelled as string))) return null
   if (priced && source.price !== null && decodeLinePrice(source.price) === null) return null
   if (

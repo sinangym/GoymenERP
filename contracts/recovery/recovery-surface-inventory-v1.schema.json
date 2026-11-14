@@ -38,10 +38,10 @@
       ],
       "properties": {
         "dbContexts": {
-          "const": 18
+          "const": 19
         },
         "migrations": {
-          "const": 162
+          "const": 164
         },
         "durableStores": {
           "const": 32
@@ -50,8 +50,8 @@
     },
     "dbContexts": {
       "type": "array",
-      "minItems": 18,
-      "maxItems": 18,
+      "minItems": 19,
+      "maxItems": 19,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -79,8 +79,8 @@
     },
     "migrations": {
       "type": "array",
-      "minItems": 162,
-      "maxItems": 162,
+      "minItems": 164,
+      "maxItems": 164,
       "uniqueItems": true,
       "items": {
         "type": "object",
