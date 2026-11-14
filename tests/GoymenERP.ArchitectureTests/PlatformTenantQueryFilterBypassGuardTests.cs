@@ -3356,6 +3356,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["Microsoft.Extensions.Hosting.Abstractions"] = "10.0.8",
             ["Microsoft.Extensions.Options.ConfigurationExtensions"] = "10.0.8",
             ["Microsoft.OpenApi"] = "[2.7.5]",
+            ["OpenTelemetry.Exporter.OpenTelemetryProtocol"] = "1.20.1",
+            ["OpenTelemetry.Extensions.Hosting"] = "1.20.1",
             ["PDFsharp"] = "6.2.4"
         };
 
