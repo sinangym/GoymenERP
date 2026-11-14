@@ -67012,6 +67012,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -67570,6 +67571,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -67961,6 +67963,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -68381,6 +68384,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -68803,6 +68807,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -69225,6 +69230,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -69691,6 +69697,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -70498,6 +70505,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -71141,6 +71149,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -71564,6 +71573,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -71983,6 +71993,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -72402,6 +72413,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -72825,6 +72837,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -73244,6 +73257,7 @@
               "manufacturing_closure_fire_mass_mismatch",
               "manufacturing_closure_negative_difference_review",
               "manufacturing_closure_net_issued_mass_mismatch",
+              "manufacturing_closure_output_exceeds_input",
               "manufacturing_closure_policy_invalid",
               "manufacturing_closure_policy_not_effective",
               "manufacturing_closure_policy_scope_mismatch",
@@ -73759,6 +73773,218 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/manufacturing/reports/output-above-input-closures": {
+      "get": {
+        "tags": [
+          "Manufacturing"
+        ],
+        "operationId": "GetManufacturingOutputAboveInputClosureReportV1",
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputAboveInputClosureReportViewV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "manufacturing_request_invalid"
+            ]
           },
           "503": {
             "description": "Service Unavailable",
@@ -117853,6 +118079,112 @@
           },
           "locationName": {
             "type": "string"
+          }
+        }
+      },
+      "OutputAboveInputClosureReportViewV1": {
+        "required": [
+          "formulaVersion",
+          "examinedOrderCount",
+          "closures",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "formulaVersion": {
+            "type": "string"
+          },
+          "examinedOrderCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "closures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputAboveInputClosureViewV1"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "OutputAboveInputClosureViewV1": {
+        "required": [
+          "orderId",
+          "planId",
+          "workCenterId",
+          "process",
+          "version",
+          "closedByUserId",
+          "closedAtUtc",
+          "closedWithExceptionApproval",
+          "rolls"
+        ],
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "planId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workCenterId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "process": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "closedByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "closedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedWithExceptionApproval": {
+            "type": "boolean"
+          },
+          "rolls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputAboveInputRollViewV1"
+            }
+          }
+        }
+      },
+      "OutputAboveInputRollViewV1": {
+        "required": [
+          "parentRollId",
+          "difference"
+        ],
+        "type": "object",
+        "properties": {
+          "parentRollId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "difference": {
+            "$ref": "#/components/schemas/MassDifferenceViewV1"
           }
         }
       },
