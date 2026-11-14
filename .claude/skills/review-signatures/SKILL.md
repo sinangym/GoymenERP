@@ -103,7 +103,13 @@ separate re-pin commit on top breaks `^1`). Hand conflict resolution in `src/**`
 Stack: after the front PR is squashed, if `git rev-parse origin/main^{tree}` equals the previous stack head's tree,
 merge the next PR without a new CI run, after aligning it with `git merge -s ours origin/main` (lineage only, tree
 unchanged); write both tree hashes in the receipt. Trees differ: the tiers above. Update only the next PR or stack
-after a merge. P3: the
+after a merge.
+**GOV-D8** (`docs/decisions/SINAN_KARARLARI_2026-11-14_TREN_GOV_D8.md`; author reading, reversible): work PRs target a
+`claude/tren-<n>` branch cut from main and merge there after their own review gate plus local fast checks written in
+the receipt (build, relevant unit/architecture tests, generator exit 0); their GitHub CI run is not required and may be
+cancelled. The train → main PR regenerates the pins once and needs green full required CI on its head plus this Faz 0
+check; a GOV-D7-mechanical difference from the work PRs' signed heads needs no new review, hand resolution in `src/**`,
+`tests/**` or a migration falls back to GOV-D1/GOV-D6. The #66 receipt lists the work PRs and their review links. P3: the
 squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
 merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
 
