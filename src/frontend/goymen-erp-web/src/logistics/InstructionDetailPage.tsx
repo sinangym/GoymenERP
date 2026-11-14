@@ -21,6 +21,7 @@
  * AT-055 adds the dispatch-note (irsaliye) DRAFT (DispatchNoteCommand.tsx): the drafts and their lines are shown to every
  * reader; the form offers the definite shipments not on a live note (a shipment is linked to at most one non-cancelled note);
  * each note can be approved (the server numbers it), cancelled with a reason (releasing its shipments) and given its e-İrsaliye no.
+ * F-020 (LOJ-D6…D8): a cancelled instruction is read only — it shows who cancelled it, when and why, and offers no command.
  */
 
 import { useRef, useState } from 'react'
@@ -391,6 +392,23 @@ export function InstructionView({
           <dt>{T.status}</dt>
           <dd>{INSTRUCTION_STATUS_TEXT[instruction.status]}</dd>
         </div>
+        {/* F-020: the stored cancel facts, verbatim — the canceller is the recorded user id (no name lookup), the reason as typed. */}
+        {!cancelled || instruction.cancelledBy === null || instruction.cancelledAtUtc === null || instruction.cancelReason === null ? null : (
+          <>
+            <div>
+              <dt>{T.cancelledBy}</dt>
+              <dd className={styles.identifier} data-testid="logistics-instruction-cancelled-by">{instruction.cancelledBy}</dd>
+            </div>
+            <div>
+              <dt>{T.cancelledAt}</dt>
+              <dd data-testid="logistics-instruction-cancelled-at">{formatInstant(instruction.cancelledAtUtc)}</dd>
+            </div>
+            <div>
+              <dt>{T.cancelReason}</dt>
+              <dd data-testid="logistics-instruction-cancel-reason">{instruction.cancelReason}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>{T.version}</dt>
           <dd data-testid="logistics-instruction-version">{instruction.version}</dd>
