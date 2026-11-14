@@ -265,6 +265,15 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<int?>("OutputClass")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("OutputLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("OutputLineKind")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("OutputLineSequence")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("ParentRollId")
                         .HasColumnType("uniqueidentifier");
 
@@ -295,6 +304,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Facts_Mass", "([Kind] = 4 AND [MassKg] >= 0) OR ([Kind] IN (1, 2, 3) AND [MassKg] > 0)");
 
                             t.HasCheckConstraint("CK_Facts_Output", "([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4, 5) AND [CostStatus] IN (1, 2, 3)) OR ([Kind] <> 3 AND [OutputClass] IS NULL AND [CostStatus] IS NULL)");
+
+                            t.HasCheckConstraint("CK_Facts_OutputLine", "([OutputLineKind] IS NULL AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL) OR ([Kind] = 3 AND (([OutputLineKind] = 1 AND [OutputClass] = 1 AND [OutputLineSequence] >= 1 AND [OutputLineId] IS NULL) OR ([OutputLineKind] = 2 AND [OutputClass] = 1 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))");
 
                             t.HasCheckConstraint("CK_Facts_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
@@ -535,6 +546,73 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.ToTable("WorkCenters", "organization", t =>
                         {
                             t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputReversalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("MassKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OutputId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("OutputKind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ParentRollId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "OrderId");
+
+                    b.HasIndex("CompanyId", "OutputKind", "OutputId");
+
+                    b.ToTable("OutputReversals", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutputReversals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [OutputId] <> '00000000-0000-0000-0000-000000000000' AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OutputReversals_Mass", "[OutputKind] = 3 AND [MassKg] > 0");
+
+                            t.HasCheckConstraint("CK_OutputReversals_Text", "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
                 });
 
@@ -1419,6 +1497,22 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationWorkCenterReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "WorkCenterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputReversalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.FactRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OutputKind", "OutputId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

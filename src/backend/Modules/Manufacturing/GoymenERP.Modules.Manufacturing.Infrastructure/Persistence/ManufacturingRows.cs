@@ -413,6 +413,45 @@ internal sealed class FactRow : IManufacturingTenantRow
     public DateTimeOffset OccurredAtUtc { get; set; }
     public int? OutputClass { get; set; }
     public int? CostStatus { get; set; }
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): the plan output line kind of an output (1 slit line, 2 cut line, 3 class line); null for an
+    /// output stored before D2 ("satırsız") and for every other kind of fact.
+    /// </summary>
+    public int? OutputLineKind { get; set; }
+
+    /// <summary>F-009 D2: the slit line's 1-based position, set only with <see cref="OutputLineKind"/> 1.</summary>
+    public int? OutputLineSequence { get; set; }
+
+    /// <summary>F-009 D2: the cut line's id, set only with <see cref="OutputLineKind"/> 2.</summary>
+    public Guid? OutputLineId { get; set; }
+
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// F-009 D2 (URT-D28, analysis §4.3): one output reversal — its own id, its order, the output declaration it takes
+/// mass back from (with that declaration's parent roll), the mass, the reason, when it happened and who recorded it.
+/// Append-only (R6): the declaration row is never changed. <see cref="PayloadHash"/> tells a replay from a different
+/// reversal offered under the same id.
+/// </summary>
+internal sealed class OutputReversalRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
+
+    /// <summary>Always <see cref="FactKind.OutputDeclaration"/>: with <see cref="OutputId"/> it names the reversed fact.</summary>
+    public int OutputKind { get; set; }
+
+    public Guid OutputId { get; set; }
+    public Guid ParentRollId { get; set; }
+    public decimal MassKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset OccurredAtUtc { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
