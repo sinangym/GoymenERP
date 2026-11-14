@@ -1069,6 +1069,66 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task The_schedule_history_route_answers_every_revision_privately_and_refuses_a_query_before_the_service()
+    {
+        // F-027 (ALS-D94, ALS-D81): GET …/lines/{lineId}/schedule-history reads only; each revision carries its order version, its
+        // recorder and time and its slices; an unknown query is a 400 before the service; 403 / 404 / 503 stay code-less.
+        var id = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var firstSlice = Guid.NewGuid();
+        var service = new StubService
+        {
+            ScheduleHistory = (orderId, line) => Task.FromResult(new PurchaseOrderLineScheduleHistoryView(orderId, line, "5",
+            [
+                new PurchaseOrderLineScheduleRevisionView("3", "synthetic-actor", DateTimeOffset.UnixEpoch,
+                    [new PurchaseOrderDeliverySliceView(firstSlice, 1, "10", new DateOnly(2026, 12, 1))]),
+                new PurchaseOrderLineScheduleRevisionView("5", "synthetic-actor", DateTimeOffset.UnixEpoch.AddDays(1),
+                [
+                    new PurchaseOrderDeliverySliceView(firstSlice, 1, "4", new DateOnly(2026, 12, 1)),
+                    new PurchaseOrderDeliverySliceView(Guid.NewGuid(), 2, "6", new DateOnly(2027, 1, 15)),
+                ]),
+            ])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{PurchasingApiV1.OrdersPath}/{id:D}/lines/{lineId:D}/schedule-history";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateNoStore(response);
+            var history = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal((id.ToString("D"), lineId.ToString("D"), "5"), (history.GetProperty("orderId").GetString(),
+                history.GetProperty("lineId").GetString(), history.GetProperty("orderVersion").GetString()));
+            var revisions = history.GetProperty("revisions");
+            Assert.Equal(2, revisions.GetArrayLength());
+            Assert.Equal(("3", "synthetic-actor"), (revisions[0].GetProperty("orderVersion").GetString(),
+                revisions[0].GetProperty("recordedBy").GetString()));
+            Assert.Equal(JsonValueKind.String, revisions[0].GetProperty("recordedAtUtc").ValueKind);
+            Assert.Equal(("6", "2027-01-15", 2), (revisions[1].GetProperty("slices")[1].GetProperty("quantity").GetString(),
+                revisions[1].GetProperty("slices")[1].GetProperty("deliveryDate").GetString(),
+                revisions[1].GetProperty("slices")[1].GetProperty("sliceNo").GetInt32()));
+        }
+
+        var calls = service.Calls;
+        using (var response = await client.GetAsync($"{path}?version=3"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+        foreach (var (status, code) in new[] { (403, "forbidden"), (404, "not_found"), (503, "service_unavailable") })
+        {
+            service.ScheduleHistory = (_, _) => throw new PurchasingServiceException(status, code);
+            using var response = await client.GetAsync(path);
+            Assert.Equal((HttpStatusCode)status, response.StatusCode);
+            var payload = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(lineId.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("revisions", payload, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task The_totals_route_answers_the_owners_view_privately_and_refuses_a_query_before_the_service()
     {
         // A2a-2 (plan API-20): GET …/totals reads only; withholding is "NotComputable" (unreadable share, ALS-D78) and its amounts null; an unknown query
@@ -1305,6 +1365,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Guid, Guid, SetPurchaseOrderLineScheduleRequest, Task<PurchaseOrderResponse>> SetLineSchedule { get; set; }
             = (_, _, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderTotalsView>> Totals { get; set; } = _ => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, Task<PurchaseOrderLineScheduleHistoryView>> ScheduleHistory { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
@@ -1426,6 +1488,13 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             Calls++;
             return Totals(orderId);
+        }
+
+        public Task<PurchaseOrderLineScheduleHistoryView> GetOrderLineScheduleHistoryAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return ScheduleHistory(orderId, lineId);
         }
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>

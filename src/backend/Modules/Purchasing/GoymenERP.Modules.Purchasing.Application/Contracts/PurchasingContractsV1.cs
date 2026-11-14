@@ -224,6 +224,22 @@ public sealed record PurchaseOrderLineView(
 public sealed record PurchaseOrderDeliverySliceView(Guid SliceId, int SliceNo, string Quantity, DateOnly DeliveryDate);
 
 /// <summary>
+/// ALS-D94 / ALS-D81 (F-027): a purchase order line's delivery schedule history under the read name — every recorded schedule
+/// revision of the line, oldest first, up to the order's <see cref="OrderVersion"/>; the last revision is the line's current
+/// <see cref="PurchaseOrderLineView.DeliverySchedule"/>. Empty while no schedule is recorded (and always for a technical line).
+/// The history is append-only: a revision is never changed or removed, so a termin change on an approved order stays visible.
+/// </summary>
+public sealed record PurchaseOrderLineScheduleHistoryView(
+    Guid OrderId, Guid LineId, string OrderVersion, IReadOnlyList<PurchaseOrderLineScheduleRevisionView> Revisions);
+
+/// <summary>
+/// One schedule revision: the order version it produced, who recorded it and when (the same actor id the detail already shows for
+/// an approval or a cancellation), and its slices in slice order, each quantity as exact text in the line's unit.
+/// </summary>
+public sealed record PurchaseOrderLineScheduleRevisionView(
+    string OrderVersion, string RecordedBy, DateTimeOffset RecordedAtUtc, IReadOnlyList<PurchaseOrderDeliverySliceView> Slices);
+
+/// <summary>
 /// A2a-1 (TEK-01, API-20): a priced line's price as exact text in the order's currency — the unit price and its price unit, the
 /// discount as given (a percent or an amount, or neither), the exact net unit price (never rounded, SAT-D76) and the line amount
 /// (ordered quantity × net, rounded once half away from zero to the money profile's scale, SAT-D11), all from the one backend
@@ -635,6 +651,7 @@ public static class PurchasingApiV1
     public const string OrderTotalsPath = "/api/v1/purchasing/orders/{id}/totals";
     public const string OrderCancellationPath = "/api/v1/purchasing/orders/{id}/cancellation";
     public const string OrderLineSchedulePath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule";
+    public const string OrderLineScheduleHistoryPath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule-history";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string CurrencyCandidatesPath = "/api/v1/purchasing/references/currencies";
     public const string IdempotencyHeader = "Idempotency-Key";

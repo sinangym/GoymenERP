@@ -602,6 +602,31 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         return row is null ? null : (await RestoreOrdersAsync([row], cancellationToken)).Single();
     }
 
+    public async Task<IReadOnlyList<StoredScheduleRevision>> ListLineScheduleRevisionsAsync(Guid orderId, Guid lineId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        // F-027: the append-only slice rows of one line, read as stored; the tenant filter keeps another company's rows invisible.
+        var rows = await dbContext.DeliverySlices.AsNoTracking()
+            .Where(slice => slice.OrderId == orderId && slice.LineId == lineId)
+            .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo)
+            .ToListAsync(cancellationToken);
+        return [.. rows.GroupBy(slice => slice.OrderVersionAfter).OrderBy(revision => revision.Key).Select(revision =>
+        {
+            var slices = revision.OrderBy(slice => slice.SliceNo).ToArray();
+            var first = slices[0];
+            if (slices.Any(slice => !string.Equals(slice.RecordedBy, first.RecordedBy, StringComparison.Ordinal)
+                || slice.RecordedAtUtc != first.RecordedAtUtc))
+            {
+                throw new PurchasingStoreException(PurchasingStoreCodes.ScheduleHistoryInconsistent,
+                    "Kayıtlı termin revizyonu tek bir kayıt olarak okunmuyor.");
+            }
+
+            return new StoredScheduleRevision(revision.Key, first.RecordedBy, first.RecordedAtUtc,
+                [.. slices.Select(slice => new StoredScheduleSlice(slice.SliceId, slice.SliceNo, slice.Quantity, slice.DeliveryDate))]);
+        })];
+    }
+
     public async Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,
         CancellationToken cancellationToken = default)
     {
