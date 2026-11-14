@@ -35022,6 +35022,373 @@
         ]
       }
     },
+    "/api/v1/identity/session/login": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "LoginLocalAccountV1",
+        "parameters": [
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalAccountLoginRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "login_rate_limited"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        }
+      }
+    },
+    "/api/v1/identity/session/logout": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "LogoutLocalAccountV1",
+        "parameters": [
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "correlation_metadata_invalid"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/counterparties": {
       "get": {
         "tags": [
@@ -124720,6 +125087,21 @@
           "recordedAtUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "LocalAccountLoginRequestV1": {
+        "required": [
+          "userName",
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "userName": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
           }
         }
       },

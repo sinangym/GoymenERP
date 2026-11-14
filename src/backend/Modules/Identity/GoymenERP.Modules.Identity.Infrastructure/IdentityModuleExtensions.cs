@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.SqlServer;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
@@ -74,6 +75,14 @@ public static class IdentityModuleExtensions
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).
         services.AddScoped<IUserCompanyMembershipReadPortV1, UserDirectoryReadPortV1>();
+        // ID-1 local account login. The settings are validated (fail-closed) by the host only when the
+        // LocalAccount authentication mode is on; the password hasher is supplied by the host.
+        services.AddOptions<LocalAccountOptions>()
+            .Bind(configuration.GetSection(LocalAccountOptions.SectionName));
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ILocalCredentialStore, SqlLocalCredentialStore>();
+        services.AddScoped<ILocalAccountLoginService, LocalAccountLoginService>();
+        services.AddScoped<ILocalAccountSessionValidator, LocalAccountSessionValidator>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);

@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Identity.Domain.Approvals;
 using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Credentials;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using Microsoft.EntityFrameworkCore;
@@ -9,9 +10,16 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence;
 public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> options)
     : DbContext(options)
 {
+    /// <summary>ID-1: login counters are never negative and every stored hash names its format version.</summary>
+    internal const string LocalCredentialCountersCheck = "[FailedAccessCount] >= 0 AND [HashFormatVersion] >= 1";
+
+    internal const string BinaryCollation = "Latin1_General_100_BIN2";
+
     public DbSet<UserAccount> Users => Set<UserAccount>();
 
     public DbSet<ExternalIdentityLink> ExternalIdentities => Set<ExternalIdentityLink>();
+
+    public DbSet<LocalCredential> LocalCredentials => Set<LocalCredential>();
 
     public DbSet<RoleDefinition> Roles => Set<RoleDefinition>();
 
@@ -29,6 +37,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
         ConfigureUser(modelBuilder);
         ConfigureExternalIdentity(modelBuilder);
+        ConfigureLocalCredential(modelBuilder);
         ConfigureRole(modelBuilder);
         ConfigureRolePermission(modelBuilder);
         ConfigureRoleAssignment(modelBuilder);
@@ -67,6 +76,31 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         entity.HasOne<UserAccount>()
             .WithMany()
             .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureLocalCredential(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<LocalCredential>();
+        entity.ToTable(
+            "LocalCredentials",
+            "identity",
+            table => table.HasCheckConstraint("CK_LocalCredentials_Counters", LocalCredentialCountersCheck));
+        entity.HasKey(x => x.UserId);
+        entity.Property(x => x.UserId).ValueGeneratedNever();
+        entity.Property(x => x.UserName).HasMaxLength(LocalUserName.MaxLength).IsRequired();
+        entity.Property(x => x.NormalizedUserName)
+            .HasMaxLength(LocalUserName.MaxLength)
+            .UseCollation(BinaryCollation)
+            .IsRequired();
+        entity.Property(x => x.PasswordHash).HasMaxLength(512).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.HasIndex(x => x.NormalizedUserName)
+            .IsUnique()
+            .HasDatabaseName("UX_LocalCredentials_NormalizedUserName");
+        entity.HasOne<UserAccount>()
+            .WithOne()
+            .HasForeignKey<LocalCredential>(x => x.UserId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 

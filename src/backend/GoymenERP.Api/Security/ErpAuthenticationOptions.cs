@@ -23,4 +23,7 @@ public static class AuthenticationModes
     public const string DevelopmentBootstrap = "DevelopmentBootstrap";
 
     public const string OidcJwtBearer = "OidcJwtBearer";
+
+    /// <summary>ID-1 local accounts: <c>Identity:LocalAccount</c> settings and a server-validated session cookie.</summary>
+    public const string LocalAccount = "LocalAccount";
 }

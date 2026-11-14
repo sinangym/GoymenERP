@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -15,12 +17,20 @@ public static class ErpAuthenticationExtensions
     {
         services.Configure<BootstrapIdentityOptions>(
             configuration.GetSection(BootstrapIdentityOptions.SectionName));
+        LocalAccountStartupGuard.EnsureDevelopmentWeakPasswordSource(configuration, environment);
+
+        // The local account parts are registered in every mode so the service graph stays complete; they are built
+        // only when a login or session request reaches them, and those requests exist only in LocalAccount mode.
+        services.AddSingleton<ILocalPasswordHasher, LocalAccountPasswordHasher>();
+        services.AddSingleton<LocalAccountLoginRateLimiter>();
 
         var settings = configuration
             .GetSection(ErpAuthenticationOptions.SectionName)
             .Get<ErpAuthenticationOptions>() ?? new ErpAuthenticationOptions();
         var mode = environment.IsEnvironment("Testing")
-            ? AuthenticationModes.DevelopmentBootstrap
+            ? IsExplicitLocalAccountMode(configuration)
+                ? AuthenticationModes.LocalAccount
+                : AuthenticationModes.DevelopmentBootstrap
             : string.IsNullOrWhiteSpace(settings.Mode)
                 ? AuthenticationModes.OidcJwtBearer
                 : settings.Mode.Trim();
@@ -94,6 +104,22 @@ public static class ErpAuthenticationExtensions
                     };
                 });
         }
+        else if (string.Equals(
+                     mode,
+                     AuthenticationModes.LocalAccount,
+                     StringComparison.OrdinalIgnoreCase))
+        {
+            var localAccountOptions = configuration
+                .GetSection(LocalAccountOptions.SectionName)
+                .Get<LocalAccountOptions>() ?? new LocalAccountOptions();
+            localAccountOptions.EnsureValid();
+
+            services
+                .AddAuthentication(LocalAccountSession.SchemeName)
+                .AddCookie(
+                    LocalAccountSession.SchemeName,
+                    options => LocalAccountSession.Configure(options, localAccountOptions.Session));
+        }
         else
         {
             throw new InvalidOperationException($"Desteklenmeyen kimlik modu: {mode}");
@@ -123,6 +149,16 @@ public static class ErpAuthenticationExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Testing hosts use DevelopmentBootstrap unless a test asks for the local account mode by name; no other mode
+    /// can be chosen there.
+    /// </summary>
+    private static bool IsExplicitLocalAccountMode(IConfiguration configuration) =>
+        string.Equals(
+            configuration[$"{ErpAuthenticationOptions.SectionName}:Mode"]?.Trim(),
+            AuthenticationModes.LocalAccount,
+            StringComparison.Ordinal);
 
     private static void ValidateDevelopmentBootstrapHeaders(BootstrapIdentityOptions options)
     {

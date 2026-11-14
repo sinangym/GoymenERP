@@ -310,8 +310,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // BLG-03: +1 IdentityAuditReadFreshAuthoritySqlServerRelationalAcceptanceTests fact (a521143a… -> 9a5ea313…).
             // MOD-08: +1 IdentityUserDirectorySqlServerRelationalAcceptanceTests fact (9a5ea313… -> b2ba31aa…).
             // SAT-D27 (1): +1 sales-owner picker holder-filter SQL fact, ordinal-sorted (b2ba31aa… -> 12e280b9…).
+            // ID-1: +5 IdentityLocalCredentialSqlServerRelationalAcceptanceTests facts, ordinal-sorted (12e280b9… -> aa5edfd7…).
             ["tools/relational_inventory/identity.txt"] =
-                "12e280b982af6d86c6eabf1db09d4d636029bc5c1c4046e386ec13ebe4999815",
+                "aa5edfd7eaf2c3b635b9b980ca3147417fc6357f4f05b7f754416028bbb96a72",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -648,7 +649,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "3622036369dbfa41ea6f9fb8dbf1c68d63574f36cdb69a53a11e987990220118",
             ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
              + "Persistence/IdentityDbContext.cs"] =
-                "31367b8ff08de6b112ffaf4a5e99c6d4d195fcc7dcde8d73bb4c0d888ede92e4",
+                // Re-fingerprinted for ID-1: the identity.LocalCredentials mapping (one row per user, a restricted FK
+                // to Users, a unique binary-collated normalized user name, fail-closed counter/format checks). Like Users
+                // it is group-wide and carries no CompanyId (spec "Kullanıcı rolleri ve CompanyId kapsamı"); the
+                // existing company query filters and tenant write guard are unchanged (31367b8f… -> 4cf3e94b…).
+                "4cf3e94b50bd5eee6fc9044b8f8ceb7a7a40bb59520643f4f8a89a111a9f7b04",
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
@@ -1194,8 +1199,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // with its comment (f2b86575… -> a27b4290…); the database startup surface and its counts are unchanged.
                     // Re-fingerprinted for SAT-D66: the same directory also registered as the read-only
                     // IUserCompanyMembershipReadPortV1, with its comment (a27b4290… -> 355ade3a…); counts unchanged.
+                    // Re-fingerprinted for ID-1: the LocalAccount options binding and the scoped local credential
+                    // store, login service and session validator registrations (355ade3a… -> 935e8a44…); the database
+                    // startup surface and its counts are unchanged.
                     new(
-                        "355ade3a20461764b70b6626c23cb91f2429c8264199c93003ba8ad4289c1192",
+                        "935e8a44ea542249826559d28780acb93495949735c304032d5c8befb7d63c01",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -3290,6 +3298,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // again the module's existing rollback refusal (51042/51043) while such a row is stored.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260928120000_AllowProductLifecycleAssignments.cs"] =
                     new("a5a3b8dd24acab43331d6e2558c9c885fdf9a19db4ecafa927f81169587964ae",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // ID-1: the Down's only raw SQL refuses (51280, used by no other migration) while a local credential
+                // exists; Up is plain EF schema operations.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261114164716_AddLocalCredentials.cs"] =
+                    new("bc8b5203f4181c7719470391984baa2e95da8d3b4bc92eaefdbad970bdfa5ff0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260928120100_AllowProductLifecycleTerminals.cs"] =
