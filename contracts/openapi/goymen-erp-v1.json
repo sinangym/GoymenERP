@@ -119148,7 +119148,10 @@
           "effectiveOn",
           "createdAtUtc",
           "updatedAtUtc",
-          "lineCount"
+          "lineCount",
+          "cancelledBy",
+          "cancelledAtUtc",
+          "cancelReason"
         ],
         "type": "object",
         "properties": {
@@ -119193,6 +119196,25 @@
               "string"
             ],
             "format": "int32"
+          },
+          "cancelledBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cancelledAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "cancelReason": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
