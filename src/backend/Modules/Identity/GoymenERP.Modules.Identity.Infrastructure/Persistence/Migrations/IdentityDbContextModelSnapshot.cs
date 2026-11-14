@@ -246,6 +246,73 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("FailedAccessCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("HashFormatVersion")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("LockoutEndUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NormalizedUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("PasswordChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<Guid>("SecurityStamp")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("TemporaryPasswordConsumedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("TemporaryPasswordExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("TemporaryPasswordIssuedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("TwoFactorEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LocalCredentials_NormalizedUserName");
+
+                    b.ToTable("LocalCredentials", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalCredentials_Counters", "[FailedAccessCount] >= 0 AND [HashFormatVersion] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Roles.RoleDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -453,6 +520,15 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "RoleAssignmentId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
+                        .WithOne()
+                        .HasForeignKey("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", "UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

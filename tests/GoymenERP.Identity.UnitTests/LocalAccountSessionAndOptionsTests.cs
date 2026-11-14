@@ -1,0 +1,161 @@
+using GoymenERP.Modules.Identity.Domain.Credentials;
+using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
+
+namespace GoymenERP.Identity.UnitTests;
+
+/// <summary>
+/// ID-1 per-request session check against the stored security stamp, and the fail-closed
+/// <c>Identity:LocalAccount</c> settings validation. SENTETIK.
+/// </summary>
+public sealed class LocalAccountSessionAndOptionsTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 11, 14, 9, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task A_session_with_the_stored_stamp_of_an_active_user_is_current()
+    {
+        var (credential, store) = NewStore();
+
+        Assert.True(await new LocalAccountSessionValidator(store).IsCurrentAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_renewed_stamp_ends_the_session()
+    {
+        var (credential, store) = NewStore();
+        var oldStamp = credential.SecurityStamp;
+        store.ReplaceStamp(Guid.NewGuid());
+
+        Assert.False(await new LocalAccountSessionValidator(store).IsCurrentAsync(credential.UserId, oldStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_deactivated_user_loses_the_session()
+    {
+        var (credential, store) = NewStore();
+        store.UserIsActive = false;
+
+        Assert.False(await new LocalAccountSessionValidator(store).IsCurrentAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_forced_password_change_ends_the_session()
+    {
+        var (credential, store) = NewStore(mustChangePassword: true);
+
+        Assert.False(await new LocalAccountSessionValidator(store).IsCurrentAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task An_unknown_user_or_an_empty_identifier_is_never_current()
+    {
+        var (credential, store) = NewStore();
+        var validator = new LocalAccountSessionValidator(store);
+
+        Assert.False(await validator.IsCurrentAsync(Guid.NewGuid(), credential.SecurityStamp, CancellationToken.None));
+        Assert.False(await validator.IsCurrentAsync(Guid.Empty, credential.SecurityStamp, CancellationToken.None));
+        Assert.False(await validator.IsCurrentAsync(credential.UserId, Guid.Empty, CancellationToken.None));
+    }
+
+    [Fact]
+    public void Complete_settings_are_valid_and_give_the_configured_lockout_policy()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+
+        Assert.Empty(options.Validate());
+        options.EnsureValid();
+        Assert.Equal(new LocalCredentialLockoutPolicy(3, TimeSpan.FromMinutes(15)), options.ToLockoutPolicy());
+    }
+
+    [Fact]
+    public void Empty_settings_name_every_missing_value_and_stop_the_host()
+    {
+        var options = new LocalAccountOptions();
+
+        var errors = options.Validate();
+
+        foreach (var key in new[]
+        {
+            "Lockout:MaxFailedAttempts", "Lockout:Duration", "Session:IdleTimeout", "Session:AbsoluteLifetime",
+            "PasswordHashing:Algorithm", "PasswordHashing:Pbkdf2Iterations", "RateLimit:Login:PermitLimit",
+            "RateLimit:Login:Window", "RateLimit:Login:PartitionBy",
+        })
+        {
+            Assert.Contains(errors, error => error.Contains(LocalAccountOptions.SectionName + ":" + key, StringComparison.Ordinal));
+        }
+
+        Assert.Throws<InvalidOperationException>(options.EnsureValid);
+    }
+
+    [Fact]
+    public void Missing_rate_limit_values_alone_keep_the_mode_closed()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.RateLimit.Login = new LocalAccountLoginRateLimitSettings();
+
+        Assert.Equal(3, options.Validate().Count);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void A_lockout_threshold_below_one_is_invalid(int maxFailedAttempts)
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.Lockout.MaxFailedAttempts = maxFailedAttempts;
+
+        Assert.Single(options.Validate());
+    }
+
+    [Fact]
+    public void An_idle_timeout_longer_than_the_absolute_lifetime_is_invalid()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.Session.IdleTimeout = options.Session.AbsoluteLifetime + TimeSpan.FromMinutes(1);
+
+        Assert.Single(options.Validate());
+    }
+
+    [Fact]
+    public void An_iteration_count_below_the_framework_default_is_invalid()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.PasswordHashing.Pbkdf2Iterations = LocalAccountOptions.MinimumPbkdf2Iterations - 1;
+
+        Assert.Single(options.Validate());
+    }
+
+    [Theory]
+    [InlineData("pbkdf2")]
+    [InlineData("Argon2id")]
+    [InlineData("")]
+    public void Only_the_pbkdf2_algorithm_is_accepted(string algorithm)
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.PasswordHashing.Algorithm = algorithm;
+
+        Assert.Single(options.Validate());
+    }
+
+    [Fact]
+    public void An_undefined_partition_value_is_invalid()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.RateLimit.Login.PartitionBy = (LocalAccountLoginRateLimitPartition)99;
+
+        Assert.Single(options.Validate());
+    }
+
+    private static (LocalCredential Credential, InMemoryLocalCredentialStore Store) NewStore(bool mustChangePassword = false)
+    {
+        var credential = new LocalCredential(
+            Guid.NewGuid(),
+            "sentetik.kullanici",
+            FakePasswordHasher.HashWithCost(SyntheticPasswords.New(), FakePasswordHasher.CurrentCost),
+            FakePasswordHasher.CurrentFormatVersion,
+            mustChangePassword,
+            Now,
+            Guid.NewGuid());
+        return (credential, new InMemoryLocalCredentialStore(credential, userIsActive: true));
+    }
+}
