@@ -183,6 +183,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryAverageCostLedger", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_RelaxInventoryAverageCostReasonToZeroCostReceipt", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_WidenInventoryLabelTransformationKindToManufacturing", StringComparison.Ordinal));
         Assert.Equal("AddInventoryTransferDispatchDocumentVersion", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
