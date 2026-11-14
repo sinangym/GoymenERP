@@ -439,6 +439,25 @@ Validation: Settings unit tests (synthetic catalogs for invariants and windows; 
 values asserted against their SAT sources) and the host wiring tests. No persistence changed;
 rollback is removing the registration and the files, with no data rollback.
 
+## Persistent Sales delivery tolerance and approval threshold (F-029 S4b; SAT-D5, SAT-D6)
+
+Source: `docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md` §5.4(1), URN-D2…D5. The provider port
+`ISettingsSalesPolicyProviderV1` keeps its signature; per company and family its source moves from the compiled catalog
+to the version table at a one-time, audited **baseline transfer**. Values are not changed by this slice.
+
+| Part | What |
+|---|---|
+| Tables | `SalesPolicyBaselineTransfers` (one marker per company and family, insert-only), `SalesDeliveryToleranceVersions` (warn/approval/block `decimal(7,4)`, ordered by a CHECK), `SalesApprovalAmountThresholdVersions` (per currency; enabled ⇒ amount `decimal(28,8)` with its entered scale). Every row carries `CompanyId` under the company query filter; versions are insert-only with a start date; windows are derived (`SalesPolicyTimelineV1`), and a later version on the same date supersedes the earlier one. |
+| Migration | `20261114184046_AddSalesPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51311` while any version or transfer marker exists (forward fix); an empty store rolls back freely. |
+| Provider | Until the family's marker exists the catalog answers (the InMemory host and any untransferred company); afterwards only the table answers. An unreadable table is 503 (`settings_provider_unavailable`), never a catalog fallback. |
+| Names | `settings.sales-delivery-tolerances.manage`, `settings.sales-approval-thresholds.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/sales-policies/delivery-tolerance`, `POST …/delivery-tolerance/baseline-transfer` (204), `POST …/delivery-tolerance/versions` (204), `GET …/approval-thresholds`, `POST …/approval-thresholds/baseline-transfer` (204), `POST …/approval-thresholds/{currencyId}/versions` (204). |
+| Commands | Idempotency-Key (trimmed), expected version, reason (≤ 1000), one save with the execution row and one audit event (`settings.sales-delivery-tolerance.baseline-transferred.v1` / `.recorded.v1`, `settings.sales-approval-threshold.baseline-transferred.v1` / `.recorded.v1`). Terminal refusals are stored and replay; a start date before today (Europe/Istanbul) is 422. |
+| Evidence | Unit: `SalesPolicyTimelineV1Tests`. Model: `SettingsSalesPolicyPersistenceModelTests`. Names: `SettingsSalesPolicyPermissionRegistrationTests`. Real SQL: `SettingsSalesPolicySqlServerRelationalAcceptanceTests`. |
+
+Not in this slice: a draft/publish or withdraw step (a same-date record supersedes), per-product/operation tolerance
+overrides, the frontend screen and its shell capabilities.
+
 ## e-Fatura scenario policy (SAT-D102)
 
 Sources: SAT-D102 (`docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK13.md`): the e-Fatura scenario default is a

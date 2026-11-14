@@ -745,6 +745,145 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesApprovalAmountThresholdVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DecisionReference")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<decimal?>("ThresholdAmount")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)");
+
+                    b.Property<byte?>("ThresholdAmountScale")
+                        .HasColumnType("tinyint");
+
+                    b.HasKey("CompanyId", "CurrencyId", "Version");
+
+                    b.HasIndex("CompanyId", "ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("SalesApprovalAmountThresholdVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsSalesApprovalAmountThresholdVersions_Amount", "([IsEnabled] = 1 AND [ThresholdAmount] IS NOT NULL AND [ThresholdAmount] > 0 AND [ThresholdAmountScale] IS NOT NULL AND [ThresholdAmountScale] <= 8) OR ([IsEnabled] = 0 AND [ThresholdAmount] IS NULL AND [ThresholdAmountScale] IS NULL)");
+
+                            t.HasCheckConstraint("CK_SettingsSalesApprovalAmountThresholdVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsSalesApprovalAmountThresholdVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsSalesApprovalAmountThresholdVersions_Source", "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDeliveryToleranceVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("ApprovalPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("decimal(7,4)");
+
+                    b.Property<decimal>("BlockPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("decimal(7,4)");
+
+                    b.Property<string>("DecisionReference")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<decimal>("WarnPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("decimal(7,4)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.HasIndex("CompanyId", "ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("SalesDeliveryToleranceVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsSalesDeliveryToleranceVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsSalesDeliveryToleranceVersions_Percents", "[WarnPercent] >= 0 AND [WarnPercent] <= [ApprovalPercent] AND [ApprovalPercent] <= [BlockPercent] AND [BlockPercent] <= 100");
+
+                            t.HasCheckConstraint("CK_SettingsSalesDeliveryToleranceVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsSalesDeliveryToleranceVersions_Source", "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitGroupRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -987,6 +1126,46 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Replacement", "[ReplacedByVersion] IS NULL OR [ReplacedByVersion] > [LimitVersion]");
 
                             t.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Version", "[LimitVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesPolicyBaselineTransferRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PolicyFamily")
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("TransferredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TransferredBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "PolicyFamily");
+
+                    b.ToTable("SalesPolicyBaselineTransfers", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsSalesPolicyBaselineTransfers_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsSalesPolicyBaselineTransfers_EntryCount", "[EntryCount] >= 0");
+
+                            t.HasCheckConstraint("CK_SettingsSalesPolicyBaselineTransfers_Family", "[PolicyFamily] IN ('DeliveryTolerance','ApprovalAmountThreshold')");
+
+                            t.HasCheckConstraint("CK_SettingsSalesPolicyBaselineTransfers_Recorded", "LEN(LTRIM(RTRIM([TransferredBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
                         });
                 });
 

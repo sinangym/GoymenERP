@@ -40,6 +40,9 @@ public static class SettingsModuleExtensions
         // SAT-D65…D70: the limit administration. The person directory is the host's Identity adapter; until it is
         // composed the people search and the binding write answer 503.
         services.AddScoped<ISettingsSalesDiscountLimitAdministrationV1, SettingsSalesDiscountLimitAdministration>();
+        // F-029 S4b (SAT-D5/SAT-D6): the persistent delivery tolerance and approval amount threshold administration; the
+        // policy port above reads the table once a family's compiled baseline is transferred (the catalog until then).
+        services.AddScoped<ISettingsSalesPolicyAdministrationV1, SettingsSalesPolicyAdministration>();
         // MOD-03 tax master (SAT-D83/D133/D135/D139/D140): the administration and the line tax port Sales consumes. The product's
         // item type comes from the host's Product adapter (ISettingsProductItemTypeSourceV1); until it is composed the
         // product-based read answers 503.
