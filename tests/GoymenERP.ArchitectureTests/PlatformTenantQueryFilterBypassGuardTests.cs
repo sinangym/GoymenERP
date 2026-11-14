@@ -353,9 +353,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Üretim U5-b1 (API-36): +1 ManufacturingSqlServerRelationalAcceptanceTests fact (Sales's binding read of
                 // linked, not cancelled plans) (1b1e7223… -> d3ffa8f8…).
                 // Main merge after #1104: both facts present (re-derived from the merged inventory) (-> 85d84d52…).
-                // SAT-D318: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the input issue's physical-stock 409
-                // names the issue, label and place only to its own company) (85d84d52… -> 6fb4cc8d…).
-                "6fb4cc8d5470cc2d862f970134dfa8383e16079ec19f82ce39c2b640a5eac9b7",
+                // URT-D41/URT-D42: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (output above input on a
+                // parent roll refuses the close with no tolerance and no approval path; the read-only report of earlier
+                // closes with output above input) (85d84d52… -> 15ad9659…).
+                "15ad965941fa4a1923d7ae4d3c43787520350b5be37d50c7f184cda8d4286d09",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -1496,11 +1497,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the same ManufacturingStore; the provider branch and its token counts are unchanged.
                 // Re-fingerprinted for Üretim U5-b1: the binding read for Sales (SAT-D175) over ManufacturingDbContext; the
                 // provider branch and its token counts are unchanged.
+                // Re-fingerprinted for URT-D42 (3): one scoped registration of the read-only closed-order list port over
+                // the same ManufacturingStore; the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "d36a03c33fb1bb1c76f489482ad7af03233d9a64ba1c0e52b45c7fd41eeb79cc",
+                        "3c86ebeab9c02eef1fc37452cb130ca4043b3d0af2d0f43552800bc4c224eead",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1531,10 +1534,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Üretim U2-b: the sales order link change (plan row, link revision, audit, command record in one save) and
                 // the bounded open-supply read by sales order, through the same filtered context; SqlClient count
                 // unchanged (1).
+                // URT-D42 (3): the read-only page of closed orders (closedAtUtc desc, id desc, a company- and
+                // ordering-bound cursor) rebuilt through the same filtered context and RestoreOrder; it writes nothing;
+                // SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "06f00d738be6477a85de2ababadee9b23605785dc2453d783f03a769f011c54c",
+                        "746238d8af4ab0481a5aa7a42a8b2d940f678b96cd874b77df0be441066c9831",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

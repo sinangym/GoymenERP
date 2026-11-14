@@ -13,9 +13,10 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// <list type="bullet">
 /// <item><see cref="Source"/> (URT-D23): <see cref="CatalogSource"/> for the reviewed version-0 starting value
 /// (<see cref="PolicyVersion"/> 0), <see cref="SettingsSource"/> for a published version (≥ 1).</item>
-/// <item><see cref="MassBalanceDifferenceTolerancePercent"/> (URT-D6): the ± percent of a roll's unexplained difference
-/// accepted without approval; null = unknown (a version published before the field existed): a non-zero difference
-/// then keeps the earlier fail-closed answers (declare a fact / review).</item>
+/// <item><see cref="MassBalanceDifferenceTolerancePercent"/> (URT-D6): the percent of a roll's unexplained shortfall
+/// accepted without approval; null = unknown (a version published before the field existed): a shortfall then keeps
+/// the earlier fail-closed answer (declare a fact). Since URT-D41 (2) it applies only to a shortfall: output above input
+/// on a roll is refused whatever the value (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>).</item>
 /// <item><see cref="WorkCenterId"/>: the line the version is scoped to; null for a process-wide version.</item>
 /// </list>
 /// </summary>
@@ -119,7 +120,20 @@ public static class ClosureAssessmentCodesV1
     public const string RollInputInvalid = "manufacturing_closure_roll_input_invalid";
     public const string FireMassMismatch = "manufacturing_closure_fire_mass_mismatch";
     public const string NetIssuedMassMismatch = "manufacturing_closure_net_issued_mass_mismatch";
+
+    /// <summary>
+    /// The pre-URT-D41 answer for a negative difference without a known mass-balance tolerance. A new close never gets
+    /// it any more (<see cref="OutputExceedsInput"/> comes first); it is kept for the replay of a close stored under the
+    /// earlier rule and for contract stability.
+    /// </summary>
     public const string NegativeDifferenceReview = "manufacturing_closure_negative_difference_review";
+
+    /// <summary>
+    /// URT-D41 (1)-(2), URT-D42 (1)-(2): on at least one planned parent roll the accounted output is above the issued
+    /// input. Refused: the ± tolerance does not apply in this direction and there is no approval path, even when the
+    /// order as a whole is short.
+    /// </summary>
+    public const string OutputExceedsInput = "manufacturing_closure_output_exceeds_input";
 
     /// <summary>URT-D5/D6: the roll's unexplained difference is outside the ± mass-balance tolerance (approval required).</summary>
     public const string MassDifferenceOutsideTolerance = "manufacturing_closure_mass_difference_outside_tolerance";
@@ -163,7 +177,19 @@ public static class OrderClosureAssessmentCalculatorV1
     public static OrderClosureAssessmentV1 Assess(
         ProductionOrder order,
         ClosureTolerancePolicySnapshotV1 policy,
-        IReadOnlyList<RollScrapPercentInputV1> scrapPercentInputs)
+        IReadOnlyList<RollScrapPercentInputV1> scrapPercentInputs) =>
+        Assess(order, policy, scrapPercentInputs, replayingStoredClose: false);
+
+    /// <summary>
+    /// <paramref name="replayingStoredClose"/> is true only while <see cref="ProductionOrder.Restore"/> replays a close
+    /// that is already stored: URT-D42 (3) — "Kural yeni kapanışlara uygulanır" — so an order closed before URT-D41 with
+    /// output above input is neither reopened nor made unreadable; it is listed by the read-only report instead.
+    /// </summary>
+    internal static OrderClosureAssessmentV1 Assess(
+        ProductionOrder order,
+        ClosureTolerancePolicySnapshotV1 policy,
+        IReadOnlyList<RollScrapPercentInputV1> scrapPercentInputs,
+        bool replayingStoredClose)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(policy);
@@ -258,9 +284,10 @@ public static class OrderClosureAssessmentCalculatorV1
         }
 
         var supplied = inputs.ToDictionary(input => input.ParentRollId);
+        // URT-D42 (1): every planned parent roll is measured on its own; rolls never offset each other.
         var rolls = order.PlannedInputs
             .Select(input => AssessRoll(order.BalanceOf(input.ParentRollId), supplied.GetValueOrDefault(input.ParentRollId),
-                policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent))
+                policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent, replayingStoredClose))
             .ToArray();
 
         var disposition = rolls.Select(roll => roll.Disposition).OrderByDescending(Priority).First();
@@ -274,16 +301,29 @@ public static class OrderClosureAssessmentCalculatorV1
         MassBalance balance,
         RollScrapPercentInputV1? supplied,
         decimal maximumFirePercent,
-        decimal? massBalanceTolerancePercent)
+        decimal? massBalanceTolerancePercent,
+        bool replayingStoredClose)
     {
         var difference = balance.Unexplained;
+
+        // URT-D41 (1)-(2), URT-D42 (1)-(2): output above input on a planned parent roll refuses the close — the ±
+        // tolerance is not consulted in this direction and no approval can carry it, even when the order total is short.
+        // A stored close replays the rule it was written under (URT-D42 (3)).
+        if (balance.OutputExceedsInput && !replayingStoredClose)
+        {
+            return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
+                code: ClosureAssessmentCodesV1.OutputExceedsInput);
+        }
+
         decimal? differencePercent = null;
         var massOutside = false;
         if (difference != 0m && massBalanceTolerancePercent is { } tolerance)
         {
             // URT-D5/D6: the unexplained difference is measured against the roll's net issued mass and compared with the
-            // ± tolerance. It stays its own category either way — within tolerance it is accepted as it is (never
-            // reclassified as fire or any output), outside it the close needs the exception approval.
+            // tolerance. It stays its own category either way — within tolerance it is accepted as it is (never
+            // reclassified as fire or any output), outside it the close needs the exception approval. A new close
+            // reaches this point only with a shortfall (URT-D41 (2)); a replayed earlier close keeps the ± comparison
+            // it was written under.
             var percent = MassBalanceEngineV1.DifferencePercent(
                 new MassDifferencePercentInputV1(difference, balance.NetIssued.Value));
             if (percent.Outcome == EngineOutcome.Unavailable)
@@ -303,6 +343,7 @@ public static class OrderClosureAssessmentCalculatorV1
         }
         else if (difference < 0m)
         {
+            // Reached only by a replayed earlier close (the plus direction is refused above for a new one).
             return Roll(balance.ParentRollId, ClosureDispositionV1.ReviewRequired, difference,
                 code: ClosureAssessmentCodesV1.NegativeDifferenceReview);
         }

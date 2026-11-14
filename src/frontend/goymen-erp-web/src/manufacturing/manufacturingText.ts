@@ -278,6 +278,10 @@ const RULE_TEXT: Record<string, string> = {
     'Kapanış onayı güncel şirket, emir, sürüm veya tolerans profiliyle eşleşmiyor.',
   manufacturing_closure_approval_unexpected:
     'Bu kapanış tolerans içinde; istisna onayı gönderilmemelidir.',
+  // URT-D41/URT-D42 (SINAN_KARARLARI_2026-11-13): output above input never closes; no tolerance and no approval path.
+  manufacturing_closure_output_exceeds_input:
+    'Emir kapanmadı: en az bir ana ruloda çıkan kg girenden fazla. Bu yönde tolerans ve onay yolu yoktur; o rulonun ' +
+    'giriş ve çıkış kayıtları kontrol edilmelidir.',
   manufacturing_roll_not_in_order: 'Bu ana rulo emirde yok.',
   manufacturing_roll_not_issued: 'Bu ana rulodan henüz girdi çıkışı yapılmadı.',
   manufacturing_input_already_issued: 'Bu olgu kimliğiyle bir girdi çıkışı zaten var.',

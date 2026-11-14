@@ -1149,6 +1149,30 @@ describe('the close (MFG-ORD)', () => {
     expect(screen.queryByLabelText('Onay gerekçesi')).toBeNull()
   })
 
+  it('shows output above input as a plain refusal with no approval path, even for the exception approver', async () => {
+    // URT-D41/URT-D42: more kg out than in on a parent roll never closes; no tolerance and no reasoned approval.
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: EXCEPTION_APPROVER_CAPABILITIES,
+      commands: [() => problem(422, { code: 'manufacturing_closure_output_exceeds_input' })],
+    })
+    renderAt(PATH)
+
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+
+    const refusal = await screen.findByTestId('close-refusal')
+    expect(refusal.textContent).toContain('çıkan kg girenden fazla')
+    expect(refusal.textContent).toContain('tolerans ve onay yolu yoktur')
+    expect(refusal.textContent).not.toContain('manufacturing_closure_output_exceeds_input')
+    expect(screen.queryByTestId('close-exception-approval')).toBeNull()
+    expect(screen.queryByLabelText('Onay gerekçesi')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Gerekçeyle onayla ve kapat' })).toBeNull()
+    expect(posts(recorded).filter((request) => request.url.endsWith('/close'))).toHaveLength(1)
+    expect(screen.queryByTestId('order-already-closed')).toBeNull()
+  })
+
   it('answers an approval-required result with a new frozen reasoned attempt only for its dedicated capability', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
