@@ -51,6 +51,8 @@ public static class ManufacturingModuleExtensions
         // Üretim U2-b / API-16: the plan's sales order link and Sales's linked-supply read, the same DbContext as the plan.
         services.AddScoped<IManufacturingPlanSalesOrderLinkStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
+        // Üretim F-010a (URT-D29): the plan's hand-entered termin, the same store and DbContext as the plan.
+        services.AddScoped<IManufacturingPlanDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderBindingReadPortV1, ManufacturingSalesOrderBindingReadPort>();
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-D42 (3): the read-only list of closed orders for the output-above-input report, the same store and DbContext.

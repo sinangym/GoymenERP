@@ -109,6 +109,18 @@ public static class ManufacturingRuleCodes
     public const string PlanSalesOrderLinkNoChange = "manufacturing_plan_sales_order_link_no_change";
 
     /// <summary>
+    /// Üretim F-010a (URT-D29): the plan's termin moved since the caller read it (its termin revision differs); the caller
+    /// reads the plan again. Answered as a conflict.
+    /// </summary>
+    public const string PlanDueDateChanged = "manufacturing_plan_due_date_changed";
+
+    /// <summary>Üretim F-010a (URT-D29): the plan's order is closed; its termin no longer changes.</summary>
+    public const string PlanDueDateOrderClosed = "manufacturing_plan_due_date_order_closed";
+
+    /// <summary>Üretim F-010a (URT-D29): the request sets the termin the plan already has (or removes an absent one).</summary>
+    public const string PlanDueDateNoChange = "manufacturing_plan_due_date_no_change";
+
+    /// <summary>
     /// Üretim U2-b / API-16: the plan's customer-owned inputs belong to a different party than the sales order line's
     /// customer; the link (or a revision under a link) is refused.
     /// </summary>
@@ -142,6 +154,31 @@ public static class ManufacturingRuleCodes
     /// Product snapshot captured for that roll). Refused, never cut to the coil.
     /// </summary>
     public const string PlanNetWidthExceedsParent = "manufacturing_plan_net_width_exceeds_parent";
+
+    /// <summary>F-009 D2: the output a reversal names was never declared on this order.</summary>
+    public const string OutputNotDeclared = "manufacturing_output_not_declared";
+
+    /// <summary>
+    /// F-009 D2 (URT-D30, analysis §3): the output declaration carries no plan output line ("satırsız", stored before
+    /// D2), so the line bound of its correction cannot be derived. Refused fail-closed; no line is assigned to it here.
+    /// </summary>
+    public const string OutputLineMissing = "manufacturing_output_line_missing";
+
+    /// <summary>
+    /// F-009 D2 (URT-D30, ASSUMPTION-URT-F009-1): the plan output line a declaration names is not one of the order's
+    /// plan output lines, or does not fit the output class (only a good product binds to a plan line; every other
+    /// class, and a good product of a plan without output lines, binds to its class line).
+    /// </summary>
+    public const string OutputLineNotInPlan = "manufacturing_output_line_not_in_plan";
+
+    /// <summary>F-009 D2: this output reversal id was already recorded.</summary>
+    public const string OutputReversalAlreadyRecorded = "manufacturing_output_reversal_already_recorded";
+
+    /// <summary>
+    /// F-009 D2 (analysis §4.3): the reversals of one output declaration would add up to more than the declared mass;
+    /// its net output never goes below zero.
+    /// </summary>
+    public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
 
     /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace

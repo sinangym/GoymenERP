@@ -23,6 +23,8 @@ public sealed class ProductionOrder
     private readonly List<InputReturn> _returns = [];
     private readonly List<WipMeasurement> _wipMeasurements = [];
     private readonly List<OutputDeclaration> _outputs = [];
+    private readonly List<OutputReversal> _outputReversals = [];
+    private readonly List<PlanOutputLineReference> _plannedOutputLines;
 
     private ProductionOrder(Guid id, ProductionPlan plan)
     {
@@ -34,6 +36,7 @@ public sealed class ProductionOrder
         Process = plan.Process;
         Target = plan.Target;
         _plannedInputs = plan.Inputs.ToList();
+        _plannedOutputLines = PlanOutputLineReference.LinesOf(plan.Spec, plan.CutToLengthSpec).ToList();
         Status = OrderStatus.Open;
     }
 
@@ -82,6 +85,15 @@ public sealed class ProductionOrder
 
     public IReadOnlyList<OutputDeclaration> Outputs => _outputs.AsReadOnly();
 
+    /// <summary>F-009 D2: the reversals of output declarations, each linked to the declaration it takes mass back from.</summary>
+    public IReadOnlyList<OutputReversal> OutputReversals => _outputReversals.AsReadOnly();
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): the plan's output lines as they stood when the order was created — slit lines by position,
+    /// cut lines by id. Empty for a plan without output lines; its outputs bind to their class line.
+    /// </summary>
+    public IReadOnlyList<PlanOutputLineReference> PlannedOutputLines => _plannedOutputLines.AsReadOnly();
+
     /// <summary>
     /// Opens the order of an approved plan. Üretim U2-a (URT-D1, "tek plan = tek emir"): a plan opens exactly one order —
     /// a plan that already opened one is refused (<see cref="ManufacturingRuleCodes.PlanOrderExists"/>), and the plan
@@ -119,6 +131,12 @@ public sealed class ProductionOrder
     /// input on a roll stays readable as it is; it is listed by the read-only report, never reopened
     /// or changed. A stored record that breaks a rule is refused, not repaired; the stored version
     /// must be exactly the one its facts add up to.
+    /// <para>
+    /// F-009 D2: <paramref name="plannedOutputLines"/> is the plan's output line snapshot (none for a plan without
+    /// output lines); a stored declaration's line is checked against it again. Output reversals are replayed after the
+    /// outputs (each names a declaration) and before the WIP readings, in time order, through
+    /// <see cref="ReverseOutput"/>; a stored close is replayed after them, so the close is evaluated on net outputs.
+    /// </para>
     /// </summary>
     public static ProductionOrder Restore(
         Guid id,
@@ -136,7 +154,9 @@ public sealed class ProductionOrder
         DateTimeOffset? closedAtUtc,
         long version,
         ClosureTolerancePolicySnapshotV1? closurePolicy = null,
-        ClosureExceptionApprovalV1? closureExceptionApproval = null)
+        ClosureExceptionApprovalV1? closureExceptionApproval = null,
+        IEnumerable<PlanOutputLineReference>? plannedOutputLines = null,
+        IEnumerable<OutputReversal>? outputReversals = null)
     {
         ArgumentNullException.ThrowIfNull(issues);
         ArgumentNullException.ThrowIfNull(returns);
@@ -146,6 +166,19 @@ public sealed class ProductionOrder
         // The plan's own rules decide the snapshot: at least one input, each parent roll once.
         var snapshot = new ProductionPlan(planId, companyId, workCenterId, process, plannedInputs, target);
         var order = new ProductionOrder(id, snapshot);
+        if (plannedOutputLines is not null)
+        {
+            var lines = plannedOutputLines.ToList();
+            if (lines.Any(line => line is null || line.Kind == PlanOutputLineKind.ClassLine)
+                || lines.Distinct().Count() != lines.Count)
+            {
+                throw new ManufacturingRuleException(
+                    ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı plan çıktı satırları her satırı bir kez ve yalnız plan satırı olarak taşımalı.");
+            }
+
+            order._plannedOutputLines.AddRange(lines);
+        }
 
         foreach (var issue in issues.OrderBy(fact => fact.IssuedAtUtc))
         {
@@ -166,7 +199,13 @@ public sealed class ProductionOrder
             }
 
             order.DeclareOutput(order.Version, output.OutputId, output.ParentRollId, output.Class, output.Mass,
-                output.DeclaredAtUtc);
+                output.DeclaredAtUtc, output.OutputLine);
+        }
+
+        foreach (var reversal in (outputReversals ?? Enumerable.Empty<OutputReversal>()).OrderBy(fact => fact.ReversedAtUtc))
+        {
+            order.ReverseOutput(order.Version, reversal.ReversalId, reversal.OutputId, reversal.Mass, reversal.Reason,
+                reversal.ReversedAtUtc);
         }
 
         foreach (var measurement in wipMeasurements.OrderBy(fact => fact.MeasuredAtUtc))
@@ -264,9 +303,17 @@ public sealed class ProductionOrder
     /// <summary>
     /// One output of the run, bound to the parent roll it was cut from. Cost is not calculated
     /// in this phase (plan v2 R6), so every declaration carries <see cref="CostResult.NotCalculated"/>.
+    /// <para>
+    /// F-009 D2 (URT-D30, ASSUMPTION-URT-F009-1): <paramref name="outputLine"/> binds the declaration to a plan output
+    /// line — a good product to one of <see cref="PlannedOutputLines"/> (or to its class line when the plan has none),
+    /// every other class to its class line; anything else is refused with
+    /// <see cref="ManufacturingRuleCodes.OutputLineNotInPlan"/>. A declaration without a line ("satırsız") is still
+    /// accepted as before D2; it counts in every balance but cannot be corrected (<see cref="ReverseOutput"/>).
+    /// </para>
     /// </summary>
     public OutputDeclaration DeclareOutput(
-        long expectedVersion, Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt)
+        long expectedVersion, Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
+        PlanOutputLineReference? outputLine = null)
     {
         RequireVersion(expectedVersion);
         RequireOpen();
@@ -283,11 +330,90 @@ public sealed class ProductionOrder
             throw new ManufacturingRuleException(ManufacturingRuleCodes.OutputAlreadyDeclared, "Bu çıktı zaten beyan edildi.");
         }
 
+        if (outputLine is not null)
+        {
+            RequireOutputLineFits(outputClass, outputLine);
+        }
+
         var declaration = new OutputDeclaration(
-            outputId, parentRollId, outputClass, mass, declaredAt.ToUniversalTime(), CostResult.NotCalculated);
+            outputId, parentRollId, outputClass, mass, declaredAt.ToUniversalTime(), CostResult.NotCalculated, outputLine);
         _outputs.Add(declaration);
         Version++;
         return declaration;
+    }
+
+    /// <summary>
+    /// F-009 D2 (URT-D28, analysis §4.3): takes <paramref name="mass"/> back from one output declaration as a new fact
+    /// linked to it (R6 — the declaration itself never changes). Refused when the order is closed
+    /// (<see cref="ManufacturingRuleCodes.OrderClosed"/>, analysis §4.6), when the output was never declared here
+    /// (<see cref="ManufacturingRuleCodes.OutputNotDeclared"/>), when the declaration has no plan output line
+    /// (<see cref="ManufacturingRuleCodes.OutputLineMissing"/>, fail-closed, URT-D30), for a reversal id already recorded
+    /// (<see cref="ManufacturingRuleCodes.OutputReversalAlreadyRecorded"/>), and when the reversals of the declaration
+    /// would add up to more than its mass (<see cref="ManufacturingRuleCodes.OutputReversalExceedsDeclared"/>). Every
+    /// output class is reversed the same way. The bound on mass already used downstream (URT-D31) and the matching
+    /// stock movement belong to the correction command and to Inventory, not to this method.
+    /// </summary>
+    public OutputReversal ReverseOutput(
+        long expectedVersion, Guid reversalId, Guid outputId, Kilograms mass, string reason, DateTimeOffset reversedAt)
+    {
+        RequireVersion(expectedVersion);
+        if (Status != OrderStatus.Open)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderClosed, "Kapanmış emirde düzeltme yapılamaz.");
+        }
+
+        RequireId(reversalId, nameof(reversalId));
+        RequireId(outputId, nameof(outputId));
+        RequirePositive(mass, nameof(mass));
+        var text = RequireReversalReason(reason);
+        var declaration = _outputs.SingleOrDefault(output => output.OutputId == outputId)
+            ?? throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputNotDeclared, "Düzeltilen çıktı bu emirde beyan edilmedi.");
+        if (declaration.OutputLine is null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputLineMissing,
+                "Plan çıktı satırına bağlı olmayan eski beyan düzeltilemez.");
+        }
+
+        if (_outputReversals.Any(entry => entry.ReversalId == reversalId))
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputReversalAlreadyRecorded, "Bu çıktı düzeltmesi zaten kaydedildi.");
+        }
+
+        if (ReversedOf(outputId) + mass.Value > declaration.Mass.Value)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputReversalExceedsDeclared,
+                "Bir beyanın düzeltmeleri toplamı beyan edilen kütleyi aşamaz.");
+        }
+
+        var reversal = new OutputReversal(reversalId, outputId, mass, text, reversedAt.ToUniversalTime());
+        _outputReversals.Add(reversal);
+        Version++;
+        return reversal;
+    }
+
+    /// <summary>F-009 D2: the declaration's mass minus its reversals (never below zero).</summary>
+    public Kilograms NetMassOf(Guid outputId)
+    {
+        var declaration = _outputs.SingleOrDefault(output => output.OutputId == outputId)
+            ?? throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputNotDeclared, "Çıktı bu emirde beyan edilmedi.");
+        return NetMassOf(declaration);
+    }
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): the net output of one plan output line of one class — the sum of the net masses of the
+    /// declarations bound to it. A declaration without a line counts towards no line.
+    /// </summary>
+    public Kilograms NetOutputOfLine(OutputClass outputClass, PlanOutputLineReference outputLine)
+    {
+        ArgumentNullException.ThrowIfNull(outputLine);
+        return _outputs
+            .Where(output => output.Class == outputClass && output.OutputLine == outputLine)
+            .Aggregate(Kilograms.Zero, (sum, output) => sum + NetMassOf(output));
     }
 
     /// <summary>
@@ -325,12 +451,13 @@ public sealed class ProductionOrder
     public MassBalance BalanceOf(Guid parentRollId)
     {
         RequirePlannedRoll(parentRollId);
+        // F-009 D2 (analysis §4.6): the balance counts each declaration net of its reversals.
         var byClass = _outputs
             .Where(output => output.ParentRollId == parentRollId)
             .GroupBy(output => output.Class)
             .ToDictionary(
                 group => group.Key,
-                group => group.Aggregate(Kilograms.Zero, (sum, output) => sum + output.Mass));
+                group => group.Aggregate(Kilograms.Zero, (sum, output) => sum + NetMassOf(output)));
 
         return new MassBalance(
             parentRollId,
@@ -488,7 +615,7 @@ public sealed class ProductionOrder
     /// <summary>
     /// The open part of the plan's declared target: parent-roll mass issued net of returns for
     /// <see cref="TargetBasis.InputMass"/>, good-product output for
-    /// <see cref="TargetBasis.GoodOutputMass"/>. Without a declared target the answer is
+    /// <see cref="TargetBasis.GoodOutputMass"/> (net of output reversals, F-009 D2). Without a declared target the answer is
     /// <see cref="RemainingTarget.Unavailable"/>.
     /// </summary>
     public RemainingTarget RemainingTargetOf()
@@ -504,7 +631,7 @@ public sealed class ProductionOrder
                 Kilograms.Zero, (sum, input) => sum + BalanceOf(input.ParentRollId).NetIssued),
             TargetBasis.GoodOutputMass => _outputs
                 .Where(output => output.Class == OutputClass.GoodProduct)
-                .Aggregate(Kilograms.Zero, (sum, output) => sum + output.Mass),
+                .Aggregate(Kilograms.Zero, (sum, output) => sum + NetMassOf(output)),
             // ProductionTarget refuses any other basis at construction.
             _ => throw new UnreachableException(),
         };
@@ -516,6 +643,38 @@ public sealed class ProductionOrder
 
     private decimal ReturnedOf(Guid parentRollId) =>
         _returns.Where(entry => entry.ParentRollId == parentRollId).Sum(entry => entry.Mass.Value);
+
+    private decimal ReversedOf(Guid outputId) =>
+        _outputReversals.Where(entry => entry.OutputId == outputId).Sum(entry => entry.Mass.Value);
+
+    private Kilograms NetMassOf(OutputDeclaration declaration) =>
+        new(declaration.Mass.Value - ReversedOf(declaration.OutputId));
+
+    private void RequireOutputLineFits(OutputClass outputClass, PlanOutputLineReference outputLine)
+    {
+        var fits = outputLine.Kind == PlanOutputLineKind.ClassLine
+            ? outputClass != OutputClass.GoodProduct || _plannedOutputLines.Count == 0
+            : outputClass == OutputClass.GoodProduct && _plannedOutputLines.Contains(outputLine);
+        if (!fits)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputLineNotInPlan,
+                "Çıktı satırı bu emrin plan çıktı satırlarından biri değil veya çıktı sınıfına uymuyor.");
+        }
+    }
+
+    private static string RequireReversalReason(string? reason)
+    {
+        var text = reason?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length > OutputReversal.ReasonMaximumLength || text.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                $"Düzeltme gerekçesi 1–{OutputReversal.ReasonMaximumLength} karakter olmalı ve kontrol karakteri taşımamalıdır.",
+                nameof(reason));
+        }
+
+        return text;
+    }
 
     private WipMeasurement? LatestWipOf(Guid parentRollId) =>
         _wipMeasurements

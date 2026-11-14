@@ -25,7 +25,8 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
-            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(CommandRow)];
+            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
+            typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -128,7 +129,60 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanInputAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanSalesOrderLinks", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanDueDate", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOutputReversals", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void An_output_reversal_is_an_append_only_fact_bound_to_an_output_and_its_rollback_refuses_while_one_exists()
+    {
+        // F-009 D2 (URT-D28, URT-D30): a declaration's plan output line is three nullable all-or-none columns (null for a
+        // declaration stored before D2); a reversal is its own row keyed by (company, id), bound by (company, kind 3,
+        // output id) to the output declaration it reverses and by (company, order) to its order. Up is pure DDL; Down
+        // refuses (THROW 51284) while a reversal or a line reference exists (forward fix).
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var facts = model.FindEntityType(typeof(FactRow))!;
+        foreach (var name in new[]
+                 {
+                     nameof(FactRow.OutputLineKind), nameof(FactRow.OutputLineSequence), nameof(FactRow.OutputLineId),
+                 })
+        {
+            Assert.True(facts.FindProperty(name)!.IsNullable, name);
+        }
+
+        Assert.Equal(ManufacturingDbContext.FactOutputLineCheck,
+            facts.GetCheckConstraints().Single(check => check.Name == "CK_Facts_OutputLine").Sql);
+
+        var reversals = model.FindEntityType(typeof(OutputReversalRow))!;
+        Assert.Equal(("manufacturing", "OutputReversals"), (reversals.GetSchema(), reversals.GetTableName()));
+        Assert.Equal(["CompanyId", "Id"], reversals.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(3, reversals.FindProperty(nameof(OutputReversalRow.MassKg))!.GetScale());
+        Assert.Equal(GoymenERP.Modules.Manufacturing.Domain.Orders.OutputReversal.ReasonMaximumLength,
+            reversals.FindProperty(nameof(OutputReversalRow.Reason))!.GetMaxLength());
+        var checks = reversals.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(ManufacturingDbContext.OutputReversalIdentityCheck, checks["CK_OutputReversals_Identity"]);
+        Assert.Equal(ManufacturingDbContext.OutputReversalMassCheck, checks["CK_OutputReversals_Mass"]);
+        Assert.Equal(ManufacturingDbContext.OutputReversalTextCheck, checks["CK_OutputReversals_Text"]);
+        Assert.Contains(reversals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FactRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OutputKind", "OutputId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Contains(reversals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrderRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OrderId"]));
+
+        var migration = new AddManufacturingOutputReversals();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51284", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[OutputReversals]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[OutputLineKind] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation { Name: "OutputReversals" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Facts", Name: "OutputLineKind" });
     }
 
     [Fact]
@@ -191,6 +245,36 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
             { Table: "Plans", Name: "SalesOrderLineId" });
+    }
+
+    [Fact]
+    public void The_plan_termin_is_a_nullable_day_counted_by_its_revision_and_its_rollback_refuses_while_one_was_entered()
+    {
+        // Üretim F-010a (URT-D29): the hand-entered termin is a nullable `date` (no time); its revision starts at 0 and is
+        // at least 1 while a termin is held. Up is pure DDL; Down refuses (THROW 51281) while any plan holds or ever held a
+        // termin (forward fix).
+        using var context = Context();
+        var plan = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PlanRow))!;
+        var dueDate = plan.FindProperty(nameof(PlanRow.RequestedDueDate))!;
+        Assert.True(dueDate.IsNullable);
+        Assert.Equal("date", dueDate.GetColumnType());
+        var revision = plan.FindProperty(nameof(PlanRow.DueDateRevision))!;
+        Assert.False(revision.IsNullable);
+        Assert.Equal(0L, revision.GetDefaultValue());
+        Assert.Equal(ManufacturingDbContext.PlanDueDateRevisionCheck,
+            plan.GetCheckConstraints().Single(check => check.Name == "CK_Plans_DueDateRevision").Sql);
+
+        var migration = new AddManufacturingPlanDueDate();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51281", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[Plans]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DueDateRevision] > 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Plans", Name: "RequestedDueDate" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Plans", Name: "DueDateRevision" });
     }
 
     [Fact]
@@ -445,6 +529,9 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("delete-plan-revision-cut-line")]
     [InlineData("edit-order-closure-decision")]
     [InlineData("delete-order-closure-decision")]
+    [InlineData("edit-output-reversal-mass")]
+    [InlineData("delete-output-reversal")]
+    [InlineData("edit-fact-output-line")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
         using var context = Context();
@@ -520,6 +607,16 @@ public sealed class ManufacturingPersistenceModelTests
                 break;
             case "delete-order-closure-decision":
                 context.OrderClosureDecisions.Remove(Attach(context, ClosureDecision()));
+                break;
+            // F-009 D2: a reversal is a new fact and is final; a declaration's plan output line never changes.
+            case "edit-output-reversal-mass":
+                Attach(context, Reversal()).MassKg = 2m;
+                break;
+            case "delete-output-reversal":
+                context.OutputReversals.Remove(Attach(context, Reversal()));
+                break;
+            case "edit-fact-output-line":
+                Attach(context, Fact()).OutputLineKind = 3;
                 break;
             default:
                 Attach(context, Order()).CompanyId = CompanyB;
@@ -706,6 +803,14 @@ public sealed class ManufacturingPersistenceModelTests
         CompanyId = CompanyA, Kind = (int)FactKind.InputIssue, Id = Guid.NewGuid(), OrderId = Guid.NewGuid(),
         ParentRollId = Guid.NewGuid(), MassKg = 1m, OccurredAtUtc = At, PayloadHash = new string('0', 64),
         RecordedAtUtc = At, RecordedBy = "synthetic-actor", CorrelationId = "synthetic-correlation",
+    };
+
+    private static OutputReversalRow Reversal() => new()
+    {
+        CompanyId = CompanyA, Id = Guid.NewGuid(), OrderId = Guid.NewGuid(), OutputKind = (int)FactKind.OutputDeclaration,
+        OutputId = Guid.NewGuid(), ParentRollId = Guid.NewGuid(), MassKg = 1m, Reason = "sentetik gerekçe",
+        OccurredAtUtc = At, PayloadHash = new string('0', 64), RecordedAtUtc = At, RecordedBy = "synthetic-actor",
+        CorrelationId = "synthetic-correlation",
     };
 
     private static OrderClosureDecisionRow ClosureDecision() => new()

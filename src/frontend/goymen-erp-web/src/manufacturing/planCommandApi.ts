@@ -343,6 +343,17 @@ export type PlanLifecycleSnapshot =
       readonly idempotencyKey: string
       readonly request: RevisePlanRequest
     }
+  /**
+   * F-010a (URT-D29): the hand-entered termin — a calendar day, or null to remove it. The plan version does not move; the
+   * termin revision read with it is sent back. Held in memory only, like the approval.
+   */
+  | {
+      readonly kind: 'due-date'
+      readonly idempotencyKey: string
+      readonly expectedVersion: number
+      readonly expectedDueDateRevision: number
+      readonly requestedDueDate: string | null
+    }
 
 export type PlanLifecycleOutcome<T> =
   | {
@@ -945,6 +956,48 @@ export async function revisePlan(
     !sameCutToLengthSpec(plan, request) ||
     !sameLineSpeed(plan.lineSpeedMetresPerMinute, request.lineSpeedMetresPerMinute) ||
     !sameProcessSpec(plan.processSpec, request.processSpec)
+  ) {
+    return { type: 'unknown', reason: 'undecodable' }
+  }
+  return { type: 'applied', resource: plan, ...metadata }
+}
+
+/**
+ * F-010a (URT-D29): enters, changes or removes the plan's hand-entered termin (`POST /plans/{planId}/due-date`). Only an
+ * answer for exactly this plan, at the same version, one termin revision on and with exactly the sent day is applied;
+ * anything else is unknown and the same frozen attempt may be sent again.
+ */
+export async function changePlanDueDate(
+  companyId: string,
+  planId: string,
+  snapshot: Extract<PlanLifecycleSnapshot, { kind: 'due-date' }>,
+  signal?: AbortSignal,
+): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(
+    `${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/due-date`,
+    companyId,
+    snapshot.idempotencyKey,
+    {
+      expectedVersion: snapshot.expectedVersion,
+      expectedDueDateRevision: snapshot.expectedDueDateRevision,
+      requestedDueDate: snapshot.requestedDueDate,
+    },
+    200,
+    signal,
+  )
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  if (
+    metadata === null ||
+    plan === null ||
+    plan.planId !== planId ||
+    plan.companyId !== companyId ||
+    plan.status === 'Cancelled' ||
+    plan.version !== snapshot.expectedVersion ||
+    plan.dueDateRevision !== snapshot.expectedDueDateRevision + 1 ||
+    plan.requestedDueDate !== snapshot.requestedDueDate
   ) {
     return { type: 'unknown', reason: 'undecodable' }
   }

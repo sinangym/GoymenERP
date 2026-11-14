@@ -6,6 +6,7 @@ import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath, planListPath 
 import {
   approvePlan,
   cancelPlan,
+  changePlanDueDate,
   createOrder,
   decisionReason,
   rejectPlan,
@@ -22,6 +23,8 @@ import {
 } from './planCommandApi'
 import type { ProductionPlanView } from './contract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { DUE_DATE_TEXT, dueDateFailureText } from './dueDateText'
+import { DueDateEditor, DueDateFacts } from './DueDateEditor'
 import { CUT_LINE_TEXT, PLAN_EDIT_TEXT, revisionFailureText } from './planEditText'
 import { PLAN_STATUS_LABEL } from './planListText'
 import { lifecycleFailureText, lifecycleUnknownText, PLAN_DETAIL_TEXT, PLAN_FORM_TEXT } from './planText'
@@ -52,6 +55,8 @@ type RefreshExpectation =
   | { readonly kind: 'revised'; readonly revised: ProductionPlanView }
   | { readonly kind: 'rejected'; readonly rejected: ProductionPlanView }
   | { readonly kind: 'cancelled'; readonly cancelled: ProductionPlanView }
+  /** F-010a: the termin changed; the plan's version did not move, its termin revision did. */
+  | { readonly kind: 'due-dated'; readonly dueDated: ProductionPlanView }
   | { readonly kind: 'conflict'; readonly failure: string }
 
 function newId(): string {
@@ -69,11 +74,13 @@ function failureText(
   process: string,
 ): string {
   if (kind === 'revise') return revisionFailureText(outcome.status, outcome.code, outcome.field, process)
+  if (kind === 'due-date') return dueDateFailureText(outcome.status, outcome.code)
   return lifecycleFailureText(kind, outcome.status, outcome.code)
 }
 
 function unknownText(kind: PlanLifecycleSnapshot['kind']): string {
   if (kind === 'revise') return PLAN_EDIT_TEXT.unknown
+  if (kind === 'due-date') return DUE_DATE_TEXT.unknown
   return lifecycleUnknownText(kind)
 }
 
@@ -172,7 +179,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const allowed = useCallback((kind: PlanLifecycleSnapshot['kind']) =>
     kind === 'approve' || kind === 'reject' ? canApprove
       : kind === 'cancel' ? canCancel
-        : kind === 'revise' ? canEdit : canCreateOrder,
+        : kind === 'revise' || kind === 'due-date' ? canEdit : canCreateOrder,
   [canApprove, canCancel, canCreateOrder, canEdit])
 
   const refreshPlan = useCallback(async (expectation: RefreshExpectation) => {
@@ -207,6 +214,16 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.cancelledRefreshed })
       return
     }
+    if (isCurrent && expectation.kind === 'due-dated' && fresh.version === expectation.dueDated.version
+      && fresh.dueDateRevision === expectation.dueDated.dueDateRevision
+      && fresh.requestedDueDate === expectation.dueDated.requestedDueDate) {
+      queryClient.setQueryData(queryKey, refreshed)
+      setAttempt({
+        phase: 'applied',
+        message: fresh.requestedDueDate === null ? DUE_DATE_TEXT.clearedRefreshed : DUE_DATE_TEXT.setRefreshed,
+      })
+      return
+    }
     if (isCurrent && expectation.kind === 'conflict') {
       queryClient.setQueryData(queryKey, refreshed)
       await queryClient.invalidateQueries({ queryKey: historyKey })
@@ -224,7 +241,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             ? PLAN_DETAIL_TEXT.rejectedRefreshPending
             : expectation.kind === 'cancelled'
               ? PLAN_DETAIL_TEXT.cancelledRefreshPending
-              : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
+              : expectation.kind === 'due-dated'
+                ? DUE_DATE_TEXT.refreshPending
+                : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
     })
   }, [boundary, companyId, historyKey, planId, queryClient, queryKey])
 
@@ -258,7 +277,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           ? await cancelPlan(companyId, planId, pending.snapshot)
           : pending.snapshot.kind === 'revise'
             ? await revisePlan(companyId, planId, pending.snapshot)
-            : await createOrder(companyId, planId, pending.snapshot)
+            : pending.snapshot.kind === 'due-date'
+              ? await changePlanDueDate(companyId, planId, pending.snapshot)
+              : await createOrder(companyId, planId, pending.snapshot)
     if (commandGeneration !== generation.current) return
     inFlight.current = false
     if (outcome.type === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
@@ -290,6 +311,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       await refreshPlan(pending.snapshot.kind === 'reject'
         ? { kind: 'rejected', rejected: outcome.resource as ProductionPlanView }
         : { kind: 'cancelled', cancelled: outcome.resource as ProductionPlanView })
+      return
+    }
+    if (pending.snapshot.kind === 'due-date') {
+      await refreshPlan({ kind: 'due-dated', dueDated: outcome.resource as ProductionPlanView })
       return
     }
     if (pending.snapshot.kind === 'revise') {
@@ -385,6 +410,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             )}
           </dd>
         </div>
+        {/* F-010a (URT-D29): the termin a user entered by hand; never computed from line speed or a calendar. */}
+        <DueDateFacts plan={plan} />
         <div>
           <dt>{PLAN_DETAIL_TEXT.target}</dt>
           <dd>
@@ -520,6 +547,22 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
               <p role="status" className={styles.success}>
                 {attempt.message}{attempt.orderId === undefined ? '' : PLAN_DETAIL_TEXT.orderSuffix(attempt.orderId)}
               </p>
+            ) : null}
+            {!editing ? (
+              <DueDateEditor
+                key={`${plan.version}:${plan.dueDateRevision}`}
+                plan={plan}
+                canChange={canEdit}
+                busy={busy}
+                sending={busy && attempt.phase === 'sending' && attempt.pending.snapshot.kind === 'due-date'}
+                onSubmit={(requestedDueDate) => start({
+                  kind: 'due-date',
+                  idempotencyKey: newId(),
+                  expectedVersion: plan.version,
+                  expectedDueDateRevision: plan.dueDateRevision,
+                  requestedDueDate,
+                })}
+              />
             ) : null}
             {editable && !editing ? (
               editReady ? (

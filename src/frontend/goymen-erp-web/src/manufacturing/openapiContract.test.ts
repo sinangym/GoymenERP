@@ -154,9 +154,12 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
         (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH
           && name !== 'parameterSnapshot' && name !== LINE_SPEED && name !== 'orderId' && name !== 'rejections'
           && name !== 'cancellation' && name !== PROCESS_SPEC && name !== 'preparedBy'
-          && name !== 'salesOrderLink' && name !== 'salesOrderLinkRevision',
+          && name !== 'salesOrderLink' && name !== 'salesOrderLinkRevision'
+          && name !== 'requestedDueDate' && name !== 'dueDateRevision',
       ),
     )
+    // F-010a (URT-D29): the termin is an optional nullable calendar day, never required.
+    expect(schema('PlanViewV1').properties?.requestedDueDate).toMatchObject({ format: 'date' })
     // U2-d (URT-D2): the preparer is an optional nullable actor id, never required.
     expect(schema('PlanViewV1').properties?.preparedBy).toEqual({ type: ['null', 'string'] })
     // U2-b / API-16: the sales order link is optional and additive; its view has exactly the eight members the decoder reads.
@@ -520,6 +523,9 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(operation?.operationId).toBe('ListManufacturingPlanRevisionsV1')
     expect((document.paths[`${plans}/{planId}/revision`]?.post as { readonly operationId?: string } | undefined)
       ?.operationId).toBe('ReviseManufacturingPlanV1')
+    // F-010a (URT-D29): the termin command the detail screen sends.
+    expect((document.paths[`${plans}/{planId}/due-date`]?.post as { readonly operationId?: string } | undefined)
+      ?.operationId).toBe('ChangeManufacturingPlanDueDateV1')
   })
 
   it('reads exactly the properties CapturedPlanTechnicalSnapshotViewV1 declares, lengthMm required and nullable text', () => {
