@@ -80,9 +80,16 @@ public sealed record SetEDispatchNumberRequest(string ExpectedVersion, string ED
 
 // ---- views --------------------------------------------------------------------------------------
 
+/// <summary>
+/// One loading instruction's header. <paramref name="Status"/> is "Draft" | "Issued" | "Cancelled".
+/// The cancellation facts (F-020, LOJ-D6..D8) are what the cancel command recorded: who cancelled
+/// (<paramref name="CancelledBy"/>, a user id like every actor on these views), when (UTC) and the trimmed reason.
+/// All three are null unless the instruction is Cancelled, and all three are set when it is. Nothing is ever deleted.
+/// </summary>
 public sealed record LoadingInstructionSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, Guid CustomerPartyId, Guid CompanyAccountId,
-    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount);
+    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount,
+    string? CancelledBy, DateTimeOffset? CancelledAtUtc, string? CancelReason);
 
 /// <summary>The four shares of a line as exact text (§7.4), plus the derived remainders; the source order binding (D4).</summary>
 public sealed record LoadingInstructionLineView(
