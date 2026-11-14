@@ -144,6 +144,8 @@ function ManualBankPaymentDetailRoute() {
     canEdit={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsCreate)}
     canApprove={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsApprove)}
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsRecord)}
+    canReversePropose={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsReversePropose)}
+    canReverseApprove={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsReverseApprove)}
     onOpen={(id) => navigate(manualBankPaymentDetailPath(id))} />
 }
 

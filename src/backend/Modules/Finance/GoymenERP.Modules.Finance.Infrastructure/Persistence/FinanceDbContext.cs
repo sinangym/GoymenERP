@@ -69,6 +69,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<OutgoingMoneyEventRow> OutgoingMoneyEvents => Set<OutgoingMoneyEventRow>();
 
+    internal DbSet<PaymentReversalProposalRow> PaymentReversalProposals => Set<PaymentReversalProposalRow>();
+
+    internal DbSet<OutgoingMoneyEventReversalRow> OutgoingMoneyEventReversals => Set<OutgoingMoneyEventReversalRow>();
+
     internal DbSet<CustomerInstrumentRow> CustomerInstruments => Set<CustomerInstrumentRow>();
 
     internal DbSet<CustomerInstrumentMovementRow> CustomerInstrumentMovements => Set<CustomerInstrumentMovementRow>();
@@ -98,6 +102,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureCustomerInstrumentMovements(modelBuilder);
         ConfigurePaymentAllocations(modelBuilder);
         ConfigurePaymentAllocationStates(modelBuilder);
+        ConfigurePaymentReversalProposals(modelBuilder);
+        ConfigureOutgoingMoneyEventReversals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -724,6 +730,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [ReversalSourceId] IS NULL "
         + "AND [ProposedBy] <> [DecidedBy])";
 
+    internal const string PaymentReversalProposalDecisionCheck =
+        "([Status] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL AND [ReversalEventId] IS NULL) OR "
+        + "([Status] = 1 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NULL AND [ReversalEventId] IS NOT NULL AND [ProposedBy] <> [DecidedBy]) OR "
+        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [ReversalEventId] IS NULL "
+        + "AND [ProposedBy] <> [DecidedBy])";
+
     internal const string ManualBankPaymentStatusCheck =
         "([Status] = 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RecordedBy] IS NULL "
         + "AND [RecordedAtUtc] IS NULL AND [BankResultConfirmed] = 0) OR "
@@ -786,6 +800,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
         });
         entity.HasKey(x => x.Id);
+        // API-23: the reversal references the original event within the same company.
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
         entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
@@ -799,6 +815,85 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ManualBankPaymentRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigurePaymentReversalProposals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PaymentReversalProposalRow>();
+        entity.ToTable("PaymentReversalProposals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PaymentReversalProposals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[PaymentId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PaymentReversalProposals_Text",
+                "LEN([Reason]) > 0 AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_PaymentReversalProposals_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_PaymentReversalProposals_Decision", PaymentReversalProposalDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.DecisionReason).HasMaxLength(1000);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.HasIndex(x => new { x.CompanyId, x.PaymentId }, "UX_PaymentReversalProposals_PendingPayment")
+            .HasFilter("[Status] = 0").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.PaymentId }, "UX_PaymentReversalProposals_ApprovedPayment")
+            .HasFilter("[Status] = 1").IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ManualBankPaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureOutgoingMoneyEventReversals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutgoingMoneyEventReversalRow>();
+        entity.ToTable("OutgoingMoneyEventReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutgoingMoneyEventReversals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PaymentId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalEventId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProposalId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> [OriginalEventId]");
+            table.HasCheckConstraint("CK_OutgoingMoneyEventReversals_Text",
+                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        // Exactly once: a payment is reversed at most once, whoever races; one proposal yields one reversal.
+        entity.HasIndex(x => new { x.CompanyId, x.PaymentId }).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.OriginalEventId }).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.ProposalId }).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ManualBankPaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OutgoingMoneyEventRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalEventId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PaymentReversalProposalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ProposalId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1096,6 +1191,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReversalProposalRow.Status), nameof(ReversalProposalRow.DecidedBy),
                         nameof(ReversalProposalRow.DecidedAtUtc), nameof(ReversalProposalRow.DecisionReason),
                         nameof(ReversalProposalRow.ReversalSourceId),
+                    ],
+                    // API-23: only the decision; the reversal event itself is append-only (no entry here).
+                    PaymentReversalProposalRow =>
+                    [
+                        nameof(PaymentReversalProposalRow.Status), nameof(PaymentReversalProposalRow.DecidedBy),
+                        nameof(PaymentReversalProposalRow.DecidedAtUtc),
+                        nameof(PaymentReversalProposalRow.DecisionReason),
+                        nameof(PaymentReversalProposalRow.ReversalEventId),
                     ],
                     ManualBankPaymentRow =>
                     [

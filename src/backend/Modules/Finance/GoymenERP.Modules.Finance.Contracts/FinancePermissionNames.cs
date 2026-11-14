@@ -34,6 +34,11 @@ public static class FinancePermissionNames
     public const string ManualBankPaymentApprove = "finance.manual-bank-payment.approve";
     public const string ManualBankPaymentRecord = "finance.manual-bank-payment.record";
 
+    // API-23: maker-checker reversal of a recorded outgoing payment. Registration only; a human grants them, and the
+    // approver must be a different user from the proposer.
+    public const string PaymentReversePropose = "finance.manual-bank-payment.reverse.propose";
+    public const string PaymentReverseApprove = "finance.manual-bank-payment.reverse.approve";
+
     // F-03 technical declaration only. Central registration and every real grant remain separate.
     public const string AllocationWrite = "finance.allocation.write";
     // Sinan #66/5916282504: viewing/reopening is independent from create/release.

@@ -20,6 +20,14 @@ public sealed class PartyLedgerPolicyDirectionTests
     }
 
     [Fact]
+    public void A_payment_is_debit_and_its_approved_reversal_is_credit()
+    {
+        // API-23: the reversal is the reverse side of the payment it reverses, as its own row.
+        Assert.Equal(PartyLedgerSide.Debit, PartyLedgerPolicy.SideOf(PartyLedgerEntryKind.ManualBankPayment));
+        Assert.Equal(PartyLedgerSide.Credit, PartyLedgerPolicy.SideOf(PartyLedgerEntryKind.ManualBankPaymentReversal));
+    }
+
+    [Fact]
     public void A_party_that_is_customer_and_supplier_keeps_both_rows_and_a_balance_of_the_difference()
     {
         var at = new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
