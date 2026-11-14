@@ -31,7 +31,9 @@ internal sealed class FinanceOfficialSalesInvoiceRow : IFinanceTenantRow
     public string? CausationId { get; set; }
 }
 
-/// <summary>ADR-011 command receipt local to the official sales invoice record/approve commands. Append-only.</summary>
+/// <summary>
+/// ADR-011 command receipt local to the official sales invoice reserve/record/approve commands. Append-only.
+/// </summary>
 internal sealed class FinanceOfficialSalesInvoiceCommandRow : IFinanceTenantRow
 {
     public Guid Id { get; set; }
@@ -44,4 +46,20 @@ internal sealed class FinanceOfficialSalesInvoiceCommandRow : IFinanceTenantRow
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// #66 6860586175 (PDF first): a server-generated record id reserved by one actor in one company before the PDF
+/// upload, so the PDF can be owned by (finance.official-sales-invoice, Id). The record consumes it once (the record's
+/// primary key is the same id and references this row). No money effect; append-only, never deleted and no expiry is
+/// chosen here.
+/// </summary>
+internal sealed class FinanceOfficialSalesInvoiceReservationRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public string ReservedBy { get; set; } = string.Empty;
+    public DateTimeOffset ReservedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
 }

@@ -42,6 +42,27 @@ public sealed record FinanceOfficialSalesInvoiceRecordRequestV1(
 
 public sealed record FinanceOfficialSalesInvoiceApproveRequestV1(Guid InvoiceId, string ExpectedVersion);
 
+/// <summary>
+/// #66 6860586175 (FNS-D17 stays, PDF first): one "Kaydet" step first reserves the record id, then uploads the PDF
+/// to the owner (finance.official-sales-invoice, that id), then records with the same id. The request carries
+/// nothing; the server generates the id for the context company. A reservation has no money effect, no expiry and
+/// is never deleted.
+/// </summary>
+public sealed record FinanceOfficialSalesInvoiceReservationRequestV1();
+
+public sealed record FinanceOfficialSalesInvoiceReservationV1(
+    Guid InvoiceId,
+    Guid CompanyId,
+    string ReservedBy,
+    DateTimeOffset ReservedAtUtc);
+
+public sealed record FinanceOfficialSalesInvoiceReservationResultV1(
+    CommandOutcome Outcome,
+    FinanceOfficialSalesInvoiceReservationV1? Resource,
+    bool IsReplay,
+    string OriginalCorrelationId,
+    IReadOnlyList<ValidationIssue> Issues);
+
 public sealed record FinanceOfficialSalesInvoiceViewV1(
     Guid InvoiceId,
     Guid CompanyId,
@@ -64,12 +85,17 @@ public sealed record FinanceOfficialSalesInvoiceViewV1(
     string? ApprovedBy,
     DateTimeOffset? ApprovedAtUtc);
 
+/// <summary>
+/// ExistingOfficialNo is set only with the <c>pdf_already_recorded</c> refusal (#66 6860586175): the official
+/// number of the record that already holds the same PDF content in this company; null otherwise.
+/// </summary>
 public sealed record FinanceOfficialSalesInvoiceResultV1(
     CommandOutcome Outcome,
     FinanceOfficialSalesInvoiceViewV1? Resource,
     bool IsReplay,
     string OriginalCorrelationId,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues,
+    string? ExistingOfficialNo);
 
 public sealed record FinanceOfficialSalesInvoicePageV1(
     Guid CompanyId,
@@ -107,25 +133,47 @@ public sealed record FinanceOfficialSalesInvoicePdfCheckV1(
 
 /// <summary>
 /// FNS-D18 host port over the Documents vault. Finance never reads document tables: the host answers with the
-/// actor's own Documents read authority whether the document is a clean, downloadable PDF linked to the customer
-/// party, and which version/hash it is. <paramref name="versionNo"/> null asks for the latest version (record);
-/// a value asks for that exact pinned version (approve re-check). Any doubt answers a non-Accepted outcome.
+/// actor's own Documents read authority whether the document is a clean, downloadable PDF owned by this record
+/// (owner kind finance.official-sales-invoice, owner id <paramref name="invoiceId"/>; #66 6860586175), and which
+/// version/hash it is. A PDF owned by any other record or owner answers OwnerMismatch.
+/// <paramref name="versionNo"/> null asks for the latest version (record); a value asks for that exact pinned
+/// version (approve re-check). Any doubt answers a non-Accepted outcome.
 /// </summary>
 public interface IFinanceOfficialSalesInvoiceDocumentPortV1
 {
     Task<FinanceOfficialSalesInvoicePdfCheckV1> CheckAsync(
         FinanceContext context,
         Guid documentId,
-        Guid customerPartyId,
+        Guid invoiceId,
         int? versionNo,
         CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// FNS-D20: there is no edit, cancel or withdraw command; an approved record never changes.
+/// #66 6860586175: answers the Documents owner link (finance.official-sales-invoice) for a record id. Found only
+/// for a reservation or record of the context company while the actor holds Record or Approve company-wide; an
+/// unknown id or another company's id answers NotFound, no authority Denied. It never creates or changes anything.
+/// </summary>
+public interface IFinanceOfficialSalesInvoiceOwnerReadV1
+{
+    Task<ReadOutcome> CheckReadableAsync(
+        FinanceContext context,
+        Guid invoiceId,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// FNS-D20: there is no edit, cancel or withdraw command; an approved record never changes. A reservation
+/// (#66 6860586175) only pre-allocates the record id for the PDF upload; it is consumed once by the record.
 /// </summary>
 public interface IFinanceOfficialSalesInvoiceServiceV1
 {
+    Task<FinanceOfficialSalesInvoiceReservationResultV1> ReserveAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceReservationRequestV1 request,
+        CancellationToken cancellationToken);
+
     Task<FinanceOfficialSalesInvoiceResultV1> RecordAsync(
         FinanceContext context,
         CommandMetadata metadata,

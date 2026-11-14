@@ -18,6 +18,7 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
         services.AddScoped<IFinanceOfficialSalesInvoiceAuthorityV1>(provider =>
             provider.GetRequiredService<FinanceOfficialSalesInvoiceAuthority>());
         services.AddScoped<IFinanceOfficialSalesInvoiceDocumentPortV1, FinanceOfficialSalesInvoiceDocumentPort>();
+        services.AddScoped<IFinanceOfficialSalesInvoiceOwnerReadV1, FinanceOfficialSalesInvoiceOwnerReadV1>();
         services.AddScoped<IFinanceOfficialSalesInvoiceServiceV1>(CreateService);
         return services;
     }
@@ -128,22 +129,21 @@ public sealed class FinanceOfficialSalesInvoiceAuthority(
 
 /// <summary>
 /// FNS-D18 adapter over the Documents vault, answered with the actor's own Documents read authority (Finance never
-/// reads document tables). Documents has no Finance owner kind yet, so the PDF must be a clean, downloadable
-/// <c>application/pdf</c> linked to the invoice's customer party (<c>counterparty.party</c>). Anything else, or any
-/// failure, answers a non-Accepted outcome (fail closed).
+/// reads document tables). #66 6860586175: the PDF must be a clean, downloadable <c>application/pdf</c> owned by this
+/// record (<see cref="DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice"/>, owner id = the reserved invoice id).
+/// Anything else, or any failure, answers a non-Accepted outcome (fail closed).
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceDocumentPort(IDocumentService documents)
     : IFinanceOfficialSalesInvoiceDocumentPortV1
 {
-    internal const string CustomerOwnerKind = "counterparty.party";
     internal const string PdfContentType = "application/pdf";
 
     public async Task<FinanceOfficialSalesInvoicePdfCheckV1> CheckAsync(FinanceContext context, Guid documentId,
-        Guid customerPartyId, int? versionNo, CancellationToken cancellationToken)
+        Guid invoiceId, int? versionNo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (documentId == Guid.Empty || customerPartyId == Guid.Empty || versionNo is < 1)
+        if (documentId == Guid.Empty || invoiceId == Guid.Empty || versionNo is < 1)
         {
             return Refused(FinanceOfficialSalesInvoicePdfOutcomeV1.NotFound);
         }
@@ -183,8 +183,9 @@ public sealed class FinanceOfficialSalesInvoiceDocumentPort(IDocumentService doc
         {
             return Refused(FinanceOfficialSalesInvoicePdfOutcomeV1.Unavailable);
         }
-        if (!string.Equals(view.OwnerKind, CustomerOwnerKind, StringComparison.Ordinal)
-            || view.OwnerId != customerPartyId)
+        if (!string.Equals(view.OwnerKind, DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice,
+                StringComparison.Ordinal)
+            || view.OwnerId != invoiceId)
         {
             return Refused(FinanceOfficialSalesInvoicePdfOutcomeV1.OwnerMismatch);
         }

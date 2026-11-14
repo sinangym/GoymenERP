@@ -5,6 +5,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +17,7 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-1111111111a5");
     private static readonly Guid Document = Guid.Parse("22222222-2222-4222-8222-2222222222a5");
-    private static readonly Guid Customer = Guid.Parse("33333333-3333-4333-8333-3333333333a5");
+    private static readonly Guid Invoice = Guid.Parse("33333333-3333-4333-8333-3333333333a5");
     private const string Actor = "finance-official-sales-actor";
     private static readonly string Sha = new('c', 64);
 
@@ -48,6 +49,8 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
             scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceAuthorityV1>());
         Assert.IsType<FinanceOfficialSalesInvoiceDocumentPort>(
             scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceDocumentPortV1>());
+        Assert.IsType<FinanceOfficialSalesInvoiceOwnerReadV1>(
+            scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceOwnerReadV1>());
     }
 
     [Theory]
@@ -106,13 +109,13 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
     }
 
     [Fact]
-    public async Task Document_port_accepts_a_clean_customer_pdf_and_asks_for_the_pinned_version()
+    public async Task Document_port_accepts_a_clean_pdf_owned_by_the_record_id_and_asks_for_the_pinned_version()
     {
         var documents = new Documents(History(View()));
         var port = new FinanceOfficialSalesInvoiceDocumentPort(documents);
 
-        var latest = await port.CheckAsync(Context(), Document, Customer, null, CancellationToken.None);
-        var pinned = await port.CheckAsync(Context(), Document, Customer, 3, CancellationToken.None);
+        var latest = await port.CheckAsync(Context(), Document, Invoice, null, CancellationToken.None);
+        var pinned = await port.CheckAsync(Context(), Document, Invoice, 3, CancellationToken.None);
 
         Assert.Equal(new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 3, Sha),
             latest);
@@ -123,7 +126,8 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
     public static TheoryData<string, FinanceOfficialSalesInvoicePdfOutcomeV1> RefusedViews => new()
     {
         { "other-owner-kind", FinanceOfficialSalesInvoicePdfOutcomeV1.OwnerMismatch },
-        { "other-customer", FinanceOfficialSalesInvoicePdfOutcomeV1.OwnerMismatch },
+        { "former-customer-owner-kind", FinanceOfficialSalesInvoicePdfOutcomeV1.OwnerMismatch },
+        { "other-record-id", FinanceOfficialSalesInvoicePdfOutcomeV1.OwnerMismatch },
         { "not-pdf", FinanceOfficialSalesInvoicePdfOutcomeV1.NotPdf },
         { "not-downloadable", FinanceOfficialSalesInvoicePdfOutcomeV1.NotDownloadable },
         { "foreign-company", FinanceOfficialSalesInvoicePdfOutcomeV1.Unavailable },
@@ -132,13 +136,15 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
 
     [Theory]
     [MemberData(nameof(RefusedViews))]
-    public async Task Document_port_refuses_anything_but_a_clean_customer_pdf(string variant,
+    public async Task Document_port_refuses_anything_but_a_clean_pdf_owned_by_the_record_id(string variant,
         FinanceOfficialSalesInvoicePdfOutcomeV1 expected)
     {
         var view = variant switch
         {
             "other-owner-kind" => View() with { OwnerKind = "sales.order" },
-            "other-customer" => View() with { OwnerId = Guid.NewGuid() },
+            // #66 6860586175: the customer party is no longer the owner; a PDF of another record id is a mismatch.
+            "former-customer-owner-kind" => View() with { OwnerKind = "counterparty.party" },
+            "other-record-id" => View() with { OwnerId = Guid.NewGuid() },
             "not-pdf" => View() with { ContentType = "image/png" },
             "not-downloadable" => View() with { Downloadable = false },
             "foreign-company" => View() with { CompanyId = Guid.NewGuid() },
@@ -146,7 +152,7 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
         };
         var port = new FinanceOfficialSalesInvoiceDocumentPort(new Documents(History(view)));
 
-        var result = await port.CheckAsync(Context(), Document, Customer, null, CancellationToken.None);
+        var result = await port.CheckAsync(Context(), Document, Invoice, null, CancellationToken.None);
 
         Assert.Equal(expected, result.Outcome);
         Assert.Null(result.VersionNo);
@@ -163,7 +169,7 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
         var port = new FinanceOfficialSalesInvoiceDocumentPort(
             new Documents(failure: new DocumentServiceException(status, "document_failure")));
 
-        var result = await port.CheckAsync(Context(), Document, Customer, null, CancellationToken.None);
+        var result = await port.CheckAsync(Context(), Document, Invoice, null, CancellationToken.None);
 
         Assert.Equal(expected, result.Outcome);
     }
@@ -177,15 +183,15 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
         var broken = new FinanceOfficialSalesInvoiceDocumentPort(new Documents(failure: new TimeoutException()));
 
         Assert.Equal(FinanceOfficialSalesInvoicePdfOutcomeV1.NotFound,
-            (await empty.CheckAsync(Context(), Document, Customer, 3, CancellationToken.None)).Outcome);
+            (await empty.CheckAsync(Context(), Document, Invoice, 3, CancellationToken.None)).Outcome);
         Assert.Equal(FinanceOfficialSalesInvoicePdfOutcomeV1.Unavailable,
-            (await empty.CheckAsync(Context(), Document, Customer, null, CancellationToken.None)).Outcome);
+            (await empty.CheckAsync(Context(), Document, Invoice, null, CancellationToken.None)).Outcome);
         Assert.Equal(FinanceOfficialSalesInvoicePdfOutcomeV1.Unavailable,
-            (await wrongVersion.CheckAsync(Context(), Document, Customer, 3, CancellationToken.None)).Outcome);
+            (await wrongVersion.CheckAsync(Context(), Document, Invoice, 3, CancellationToken.None)).Outcome);
         Assert.Equal(FinanceOfficialSalesInvoicePdfOutcomeV1.Unavailable,
-            (await broken.CheckAsync(Context(), Document, Customer, null, CancellationToken.None)).Outcome);
+            (await broken.CheckAsync(Context(), Document, Invoice, null, CancellationToken.None)).Outcome);
         Assert.Equal(FinanceOfficialSalesInvoicePdfOutcomeV1.NotFound,
-            (await broken.CheckAsync(Context(), Guid.Empty, Customer, null, CancellationToken.None)).Outcome);
+            (await broken.CheckAsync(Context(), Guid.Empty, Invoice, null, CancellationToken.None)).Outcome);
     }
 
     private static FinanceOfficialSalesInvoiceAuthority Create(Revalidation revalidation) =>
@@ -196,8 +202,8 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
     private static PermissionScope Allowed(string role) => new(true, true, new HashSet<string> { role },
         new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
 
-    private static DocumentView View() => new(Document, Company, FinanceOfficialSalesInvoiceDocumentPort.CustomerOwnerKind,
-        Customer, 3, "fatura.pdf", "application/pdf", 1024, Sha, "Clean", true, "uploader",
+    private static DocumentView View() => new(Document, Company, DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice,
+        Invoice, 3, "fatura.pdf", "application/pdf", 1024, Sha, "Clean", true, "uploader",
         DateTimeOffset.Parse("2026-11-11T10:00:00Z", System.Globalization.CultureInfo.InvariantCulture));
 
     private static DocumentVersionHistoryResponse History(DocumentView view) => new(Document, [view], null);

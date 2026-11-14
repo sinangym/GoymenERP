@@ -18,10 +18,11 @@ public sealed record FinanceOfficialSalesInvoiceAuditEnvelopesV1(
     FinanceAuditEnvelope Approve);
 
 /// <summary>
-/// F-005 D1 (FNS-D17…FNS-D21, FNS-D26): the manual official sales invoice record. One actor records every mandatory field
-/// with a clean PDF from the Documents vault; a different actor approves it (maker≠approver, also enforced by the
-/// database check). Only an approved record is a fact other modules may read (D3). There is no edit, cancel or
-/// withdraw command (FNS-D20).
+/// F-005 D1 (FNS-D17…FNS-D21, FNS-D26): the manual official sales invoice record. One actor reserves the record id,
+/// uploads the PDF to that id in the Documents vault and records every mandatory field with it (#66 6860586175: PDF
+/// first, one "Kaydet" step); a different actor approves it (maker≠approver, also enforced by the database check).
+/// Only an approved record is a fact other modules may read (D3). There is no edit, cancel or withdraw command
+/// (FNS-D20).
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceServiceV1(
     FinanceDbContext dbContext,
@@ -35,15 +36,97 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     TimeProvider timeProvider)
     : IFinanceOfficialSalesInvoiceServiceV1
 {
+    public const string ReserveCommand = "finance.official-sales-invoices.reserve";
     public const string RecordCommand = "finance.official-sales-invoices.record";
     public const string ApproveCommand = "finance.official-sales-invoices.approve";
     private const string EntityType = "Finance.OfficialSalesInvoice";
+    private const string ReservationEntityType = "Finance.OfficialSalesInvoiceReservation";
     private const int IdentityMaximumLength = 128;
     private const int PageSize = 50;
     private const int MaximumOffset = 1_000_000;
     private const long PendingVersion = 1;
     private const long ApprovedVersion = 2;
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
+
+    /// <summary>
+    /// #66 6860586175: pre-allocates the record id so the PDF can be uploaded to its owner before the record exists.
+    /// It needs Record authority, has no money effect, no expiry and is never deleted; the same key replays the first
+    /// reservation. The id is generated here for the context company, never taken from the client.
+    /// </summary>
+    public async Task<FinanceOfficialSalesInvoiceReservationResultV1> ReserveAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceReservationRequestV1 request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The host refuses Record authority for an empty id, so the fence carries this candidate id; a replay answers
+        // the first reservation's id instead and the candidate is never stored.
+        var action = FinanceOfficialSalesInvoiceAuthorityActionV1.Record;
+        var invoiceId = Guid.NewGuid();
+        if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } denied)
+        {
+            return Reservation(denied);
+        }
+        if (!ValidIdentity(metadata.IdempotencyKey) || !ValidIdentity(context.ActorId)
+            || !ValidIdentity(context.CorrelationId))
+        {
+            return Reservation(Refused(context, CommandOutcome.ValidationFailed,
+                Issue("request", "finance_value_does_not_fit")));
+        }
+
+        var keyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
+        var payloadHash = Hash(JsonSerializer.Serialize(request, Json));
+        if (await PriorReservationAsync(context, action, invoiceId, keyHash, payloadHash, cancellationToken)
+            is { } prior)
+        {
+            return prior;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var row = new FinanceOfficialSalesInvoiceReservationRow
+        {
+            Id = invoiceId,
+            CompanyId = context.CompanyId,
+            ReservedBy = context.ActorId,
+            ReservedAtUtc = now,
+            CorrelationId = context.CorrelationId,
+            CausationId = context.CausationId,
+        };
+        var resource = new FinanceOfficialSalesInvoiceReservationV1(row.Id, row.CompanyId, row.ReservedBy,
+            row.ReservedAtUtc);
+        var result = new FinanceOfficialSalesInvoiceReservationResultV1(CommandOutcome.Succeeded, resource, false,
+            context.CorrelationId, []);
+        dbContext.OfficialSalesInvoiceReservations.Add(row);
+        AddCommand(context, ReserveCommand, keyHash, payloadHash, row.Id, result, now);
+
+        if (await FenceAsync(context, action, row.Id, cancellationToken) is { } beforeSave)
+        {
+            dbContext.ChangeTracker.Clear();
+            return Reservation(beforeSave);
+        }
+
+        Audit(context, metadata, ReservationEntityType, row.Id, "finance.official-sales-invoice.reserved.v1",
+            "Reserve", null, null, "{}", JsonSerializer.Serialize(resource, Json), envelopes.Record,
+            "Resmî satış faturası kaydı için kimlik ayrıldı; para etkisi yok");
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return result;
+        }
+        catch (DbUpdateException exception) when (IsLostRace(exception))
+        {
+            // §8: the same key raced; the winner's reservation is the answer.
+            dbContext.ChangeTracker.Clear();
+            return await PriorReservationAsync(context, action, invoiceId, keyHash, payloadHash, cancellationToken)
+                ?? Reservation(Refused(context, CommandOutcome.VersionConflict,
+                    Issue("request", "concurrent_change")));
+        }
+    }
 
     public async Task<FinanceOfficialSalesInvoiceResultV1> RecordAsync(
         FinanceContext context,
@@ -82,24 +165,10 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         }
 
         var officialNo = request.OfficialNo;
-        var sameId = await dbContext.OfficialSalesInvoices.AsNoTracking()
-            .AnyAsync(row => row.Id == request.InvoiceId, cancellationToken);
-        var sameNo = await dbContext.OfficialSalesInvoices.AsNoTracking()
-            .AnyAsync(row => row.OfficialNo == officialNo, cancellationToken);
-        var sameEttn = await dbContext.OfficialSalesInvoices.AsNoTracking()
-            .AnyAsync(row => row.Ettn == ettn, cancellationToken);
-        if (await FenceAsync(context, action, request.InvoiceId, cancellationToken) is { } afterRead)
+        if (await ConflictRefusalAsync(context, action, request.InvoiceId, officialNo, ettn, pdfSha256: null,
+                cancellationToken) is { } conflict)
         {
-            return afterRead;
-        }
-        if (sameId)
-        {
-            return Refused(context, CommandOutcome.IdempotencyConflict, Issue("invoiceId", "invoice_already_exists"));
-        }
-        if (sameNo || sameEttn)
-        {
-            return Refused(context, CommandOutcome.ValidationFailed,
-                [.. DuplicateIssues(sameNo, sameEttn)]);
+            return conflict;
         }
         if (await CurrencyRefusalAsync(context, action, request.InvoiceId, request.CurrencyId, cancellationToken)
             is { } currencyRefused)
@@ -107,11 +176,18 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return currencyRefused;
         }
 
-        var pdf = await documents.CheckAsync(context, request.PdfDocumentId, request.CustomerPartyId, null,
+        // #66 6860586175: the PDF must already belong to this record id (uploaded after the reservation); its hash
+        // comes only from the vault's metadata.
+        var pdf = await documents.CheckAsync(context, request.PdfDocumentId, request.InvoiceId, null,
             cancellationToken);
         if (PdfRefusal(context, pdf, expectedVersionNo: null, expectedSha256: null) is { } pdfRefused)
         {
             return pdfRefused;
+        }
+        if (await ConflictRefusalAsync(context, action, request.InvoiceId, officialNo, ettn, pdf!.Sha256,
+                cancellationToken) is { } pdfConflict)
+        {
+            return pdfConflict;
         }
 
         var now = timeProvider.GetUtcNow();
@@ -149,10 +225,12 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return beforeSave;
         }
 
-        Audit(context, metadata, row.Id, "finance.official-sales-invoice.recorded.v1", "Record", null,
+        Audit(context, metadata, EntityType, row.Id, "finance.official-sales-invoice.recorded.v1", "Record", null,
             PendingVersion, "{}", AuditJson(row), envelopes.Record,
             "Resmî satış faturası elle kaydedildi; ikinci kişinin onayını bekliyor");
-        return await SaveAsync(context, RecordCommand, action, row.Id, keyHash, payloadHash, cancellationToken)
+        return await SaveAsync(context, RecordCommand, action, row.Id, keyHash, payloadHash,
+                () => ConflictRefusalAsync(context, action, row.Id, officialNo, ettn, row.PdfSha256,
+                    cancellationToken), cancellationToken)
             ?? result;
     }
 
@@ -224,8 +302,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return currencyRefused;
         }
 
-        var pdf = await documents.CheckAsync(context, row.PdfDocumentId, row.CustomerPartyId,
-            row.PdfDocumentVersionNo, cancellationToken);
+        var pdf = await documents.CheckAsync(context, row.PdfDocumentId, row.Id, row.PdfDocumentVersionNo,
+            cancellationToken);
         if (PdfRefusal(context, pdf, row.PdfDocumentVersionNo, row.PdfSha256) is { } pdfRefused)
         {
             dbContext.ChangeTracker.Clear();
@@ -247,10 +325,11 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return beforeSave;
         }
 
-        Audit(context, metadata, row.Id, "finance.official-sales-invoice.approved.v1", "Approve", PendingVersion,
-            ApprovedVersion, before, AuditJson(row), envelopes.Approve,
+        Audit(context, metadata, EntityType, row.Id, "finance.official-sales-invoice.approved.v1", "Approve",
+            PendingVersion, ApprovedVersion, before, AuditJson(row), envelopes.Approve,
             "Kaydedenden farklı yetkili finans kullanıcısı resmî satış faturasını onayladı");
-        return await SaveAsync(context, ApproveCommand, action, row.Id, keyHash, payloadHash, cancellationToken)
+        return await SaveAsync(context, ApproveCommand, action, row.Id, keyHash, payloadHash, conflicts: null,
+                cancellationToken)
             ?? result;
     }
 
@@ -427,6 +506,60 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         if (sameEttn) yield return Issue("ettn", "ettn_already_recorded");
     }
 
+    /// <summary>
+    /// The record's conflicts, read through the company filter: the id already recorded (409), no reservation of this
+    /// id by this actor (422 <c>reservation_not_found</c>), a duplicate official number or ETTN (422) and, once the
+    /// vault has answered the hash, the same PDF content in another record (422 <c>pdf_already_recorded</c> carrying
+    /// that record's official number in <c>ExistingOfficialNo</c>; #66 6860586175). It runs before the PDF check,
+    /// after it, and after a save that lost a race to a unique index, so the race answers what the check would have.
+    /// None of these is terminal: nothing is recorded.
+    /// </summary>
+    private async Task<FinanceOfficialSalesInvoiceResultV1?> ConflictRefusalAsync(
+        FinanceContext context, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId, string officialNo,
+        string ettn, string? pdfSha256, CancellationToken cancellationToken)
+    {
+        var companyId = context.CompanyId;
+        var sameId = await dbContext.OfficialSalesInvoices.AsNoTracking()
+            .AnyAsync(row => row.Id == invoiceId, cancellationToken);
+        var reservedBy = await dbContext.OfficialSalesInvoiceReservations.AsNoTracking()
+            .Where(row => row.Id == invoiceId && row.CompanyId == companyId)
+            .Select(row => row.ReservedBy)
+            .SingleOrDefaultAsync(cancellationToken);
+        var sameNo = await dbContext.OfficialSalesInvoices.AsNoTracking()
+            .AnyAsync(row => row.OfficialNo == officialNo, cancellationToken);
+        var sameEttn = await dbContext.OfficialSalesInvoices.AsNoTracking()
+            .AnyAsync(row => row.Ettn == ettn, cancellationToken);
+        var pdfHolderOfficialNo = pdfSha256 is null
+            ? null
+            : await dbContext.OfficialSalesInvoices.AsNoTracking()
+                .Where(row => row.PdfSha256 == pdfSha256 && row.CompanyId == companyId)
+                .Select(row => row.OfficialNo)
+                .SingleOrDefaultAsync(cancellationToken);
+        if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } afterRead)
+        {
+            return afterRead;
+        }
+        if (sameId)
+        {
+            return Refused(context, CommandOutcome.IdempotencyConflict, Issue("invoiceId", "invoice_already_exists"));
+        }
+        // Fail closed: only the reserving actor consumes a reservation (another company's id is not visible either).
+        if (!string.Equals(reservedBy, context.ActorId, StringComparison.Ordinal))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("invoiceId", "reservation_not_found"));
+        }
+
+        List<ValidationIssue> issues = [.. DuplicateIssues(sameNo, sameEttn)];
+        if (pdfHolderOfficialNo is not null)
+        {
+            issues.Add(Issue("pdfDocumentId", "pdf_already_recorded"));
+        }
+        return issues.Count == 0
+            ? null
+            : new FinanceOfficialSalesInvoiceResultV1(CommandOutcome.ValidationFailed, null, false,
+                context.CorrelationId, issues, pdfHolderOfficialNo);
+    }
+
     private static FinanceOfficialSalesInvoiceResultV1? PdfRefusal(
         FinanceContext context,
         FinanceOfficialSalesInvoicePdfCheckV1? pdf,
@@ -461,7 +594,11 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         };
     }
 
-    private async Task<FinanceOfficialSalesInvoiceResultV1?> PriorAsync(
+    /// <summary>
+    /// The stored answer of a key, after the fence: none, a refusal (another actor or payload under the key), or the
+    /// first answer's JSON for the caller to replay.
+    /// </summary>
+    private async Task<(string? ResultJson, FinanceOfficialSalesInvoiceResultV1? Refusal)> PriorJsonAsync(
         FinanceContext context, string command, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId,
         string keyHash, string payloadHash, CancellationToken cancellationToken)
     {
@@ -470,36 +607,68 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
                 cancellationToken);
         if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } denied)
         {
-            return denied;
+            return (null, denied);
         }
-        if (prior is null) return null;
+        if (prior is null) return (null, null);
         if (!string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal)
             || !string.Equals(prior.PayloadHash, payloadHash, StringComparison.Ordinal))
         {
-            return Refused(context, CommandOutcome.IdempotencyConflict);
+            return (null, Refused(context, CommandOutcome.IdempotencyConflict));
         }
-        var stored = JsonSerializer.Deserialize<FinanceOfficialSalesInvoiceResultV1>(prior.ResultJson, Json)
+        return (prior.ResultJson, null);
+    }
+
+    private async Task<FinanceOfficialSalesInvoiceResultV1?> PriorAsync(
+        FinanceContext context, string command, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId,
+        string keyHash, string payloadHash, CancellationToken cancellationToken)
+    {
+        var (json, refusal) = await PriorJsonAsync(context, command, action, invoiceId, keyHash, payloadHash,
+            cancellationToken);
+        if (refusal is not null || json is null) return refusal;
+        var stored = JsonSerializer.Deserialize<FinanceOfficialSalesInvoiceResultV1>(json, Json)
             ?? throw new InvalidOperationException("Kayıtlı resmî satış faturası komut sonucu okunamadı.");
         return stored with { IsReplay = true };
     }
 
+    private async Task<FinanceOfficialSalesInvoiceReservationResultV1?> PriorReservationAsync(
+        FinanceContext context, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId, string keyHash,
+        string payloadHash, CancellationToken cancellationToken)
+    {
+        var (json, refusal) = await PriorJsonAsync(context, ReserveCommand, action, invoiceId, keyHash, payloadHash,
+            cancellationToken);
+        if (refusal is not null) return Reservation(refusal);
+        if (json is null) return null;
+        var stored = JsonSerializer.Deserialize<FinanceOfficialSalesInvoiceReservationResultV1>(json, Json)
+            ?? throw new InvalidOperationException("Kayıtlı resmî satış faturası kimlik ayırma sonucu okunamadı.");
+        return stored with { IsReplay = true };
+    }
+
+    /// <summary>
+    /// One save. A lost race answers the winner's record for the same key (§8), else what
+    /// <paramref name="conflicts"/> finds now (a unique index the pre-check could not see yet), else
+    /// <c>concurrent_change</c>.
+    /// </summary>
     private async Task<FinanceOfficialSalesInvoiceResultV1?> SaveAsync(
         FinanceContext context, string command, FinanceOfficialSalesInvoiceAuthorityActionV1 action, Guid invoiceId,
-        string keyHash, string payloadHash, CancellationToken cancellationToken)
+        string keyHash, string payloadHash, Func<Task<FinanceOfficialSalesInvoiceResultV1?>>? conflicts,
+        CancellationToken cancellationToken)
     {
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
             return null;
         }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || exception.InnerException is SqlException { Number: 2601 or 2627 })
+        catch (DbUpdateException exception) when (IsLostRace(exception))
         {
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, command, action, invoiceId, keyHash, payloadHash, cancellationToken)
+                ?? (conflicts is null ? null : await conflicts())
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
         }
     }
+
+    private static bool IsLostRace(DbUpdateException exception) => exception is DbUpdateConcurrencyException
+        || exception.InnerException is SqlException { Number: 2601 or 2627 };
 
     /// <summary>
     /// ADR-011 §7: an authorized terminal refusal is the key's result for good. It is recorded alone (no business
@@ -516,7 +685,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             dbContext.ChangeTracker.Clear();
             return fenced;
         }
-        return await SaveAsync(context, command, action, invoiceId, keyHash, payloadHash, cancellationToken)
+        return await SaveAsync(context, command, action, invoiceId, keyHash, payloadHash, conflicts: null,
+                cancellationToken)
             ?? refusal;
     }
 
@@ -588,8 +758,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         FinanceContext context, Guid invoiceId, CancellationToken cancellationToken) where T : class =>
         await ReadFenceAsync<T>(context, invoiceId, cancellationToken) ?? new(ReadOutcome.Unavailable, null);
 
-    private void AddCommand(FinanceContext context, string command, string keyHash, string payloadHash,
-        Guid invoiceId, FinanceOfficialSalesInvoiceResultV1 result, DateTimeOffset now) =>
+    private void AddCommand<TResult>(FinanceContext context, string command, string keyHash, string payloadHash,
+        Guid invoiceId, TResult result, DateTimeOffset now) =>
         dbContext.OfficialSalesInvoiceCommands.Add(new FinanceOfficialSalesInvoiceCommandRow
         {
             Id = Guid.NewGuid(),
@@ -604,20 +774,24 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             RecordedAtUtc = now,
         });
 
-    private void Audit(FinanceContext context, CommandMetadata metadata, Guid invoiceId, string eventType,
-        string operation, long? beforeVersion, long afterVersion, string before, string after,
+    private void Audit(FinanceContext context, CommandMetadata metadata, string entityType, Guid entityId,
+        string eventType, string operation, long? beforeVersion, long? afterVersion, string before, string after,
         FinanceAuditEnvelope envelope, string reason)
-        => auditEvents.Enqueue(new AuditEventDraft(context.CompanyId, eventType, EntityType, invoiceId.ToString("D"),
+        => auditEvents.Enqueue(new AuditEventDraft(context.CompanyId, eventType, entityType, entityId.ToString("D"),
             operation, beforeVersion, afterVersion, AuditActorTypes.User, context.ActorId, envelope.PermissionCode,
             envelope.RoleCodes, before, after, reason, null, AuditAiInvolvement.None, null, envelope.SourceChannel,
             envelope.ClientIpAddress, envelope.UserAgent, context.CorrelationId, context.CausationId,
             metadata.IdempotencyKey));
 
-    private bool SameContext(FinanceContext context) => currentUser.IsAuthenticated
-        && !string.IsNullOrWhiteSpace(currentUser.UserId)
-        && string.Equals(currentUser.UserId, context.ActorId, StringComparison.Ordinal)
-        && companyContext.IsResolved && companyContext.CompanyId == context.CompanyId
-        && context.CompanyId != Guid.Empty && currentUser.CanAccessCompany(context.CompanyId);
+    private bool SameContext(FinanceContext context) => SameContext(currentUser, companyContext, context);
+
+    /// <summary>The live user and company are still the captured actor and company (shared with the owner read).</summary>
+    internal static bool SameContext(ICurrentUser user, ICompanyContext company, FinanceContext context) =>
+        user.IsAuthenticated
+        && !string.IsNullOrWhiteSpace(user.UserId)
+        && string.Equals(user.UserId, context.ActorId, StringComparison.Ordinal)
+        && company.IsResolved && company.CompanyId == context.CompanyId
+        && context.CompanyId != Guid.Empty && user.CanAccessCompany(context.CompanyId);
 
     private static FinanceOfficialSalesInvoiceViewV1 View(FinanceOfficialSalesInvoiceRow row) => new(
         row.Id, row.CompanyId, row.OfficialNo, row.Ettn, row.CustomerPartyId, row.CurrencyId,
@@ -677,8 +851,79 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
 
     private static FinanceOfficialSalesInvoiceResultV1 Succeeded(FinanceContext context,
         FinanceOfficialSalesInvoiceViewV1 resource) => new(CommandOutcome.Succeeded, resource, false,
-        context.CorrelationId, []);
+        context.CorrelationId, [], null);
 
     private static FinanceOfficialSalesInvoiceResultV1 Refused(FinanceContext context, CommandOutcome outcome,
-        params ValidationIssue[] issues) => new(outcome, null, false, context.CorrelationId, issues);
+        params ValidationIssue[] issues) => new(outcome, null, false, context.CorrelationId, issues, null);
+
+    private static FinanceOfficialSalesInvoiceReservationResultV1 Reservation(
+        FinanceOfficialSalesInvoiceResultV1 refusal) => new FinanceOfficialSalesInvoiceReservationResultV1(
+        refusal.Outcome, null, refusal.IsReplay, refusal.OriginalCorrelationId, refusal.Issues);
+}
+
+/// <summary>
+/// #66 6860586175: the Finance answer behind the Documents owner kind <c>finance.official-sales-invoice</c>. The
+/// actor must hold Record or Approve company-wide (the host's Read answer) before and after the read; the id must be
+/// a reservation of the context company (every record consumed one, so a record is found through it). It only reads,
+/// through the tenant-filtered context, and answers Unavailable on any failure (fail closed).
+/// </summary>
+public sealed class FinanceOfficialSalesInvoiceOwnerReadV1(
+    FinanceDbContext dbContext,
+    ICompanyContext companyContext,
+    ICurrentUser currentUser,
+    IFinanceOfficialSalesInvoiceAuthorityV1 authority)
+    : IFinanceOfficialSalesInvoiceOwnerReadV1
+{
+    public async Task<ReadOutcome> CheckReadableAsync(
+        FinanceContext context,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await FenceAsync(context, invoiceId, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+        if (invoiceId == Guid.Empty)
+        {
+            return ReadOutcome.NotFound;
+        }
+
+        bool reserved;
+        try
+        {
+            var companyId = context.CompanyId;
+            reserved = await dbContext.OfficialSalesInvoiceReservations.AsNoTracking()
+                .AnyAsync(row => row.Id == invoiceId && row.CompanyId == companyId, cancellationToken);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return await FenceAsync(context, invoiceId, cancellationToken) ?? ReadOutcome.Unavailable;
+        }
+
+        return await FenceAsync(context, invoiceId, cancellationToken)
+            ?? (reserved ? ReadOutcome.Found : ReadOutcome.NotFound);
+    }
+
+    private async Task<ReadOutcome?> FenceAsync(FinanceContext context, Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        if (!FinanceOfficialSalesInvoiceServiceV1.SameContext(currentUser, companyContext, context))
+        {
+            return ReadOutcome.Denied;
+        }
+        var decision = await authority.CheckAsync(context, FinanceOfficialSalesInvoiceAuthorityActionV1.Read,
+            invoiceId, cancellationToken);
+        if (!FinanceOfficialSalesInvoiceServiceV1.SameContext(currentUser, companyContext, context))
+        {
+            return ReadOutcome.Denied;
+        }
+        return decision switch
+        {
+            PermissionDecision.Allowed => null,
+            PermissionDecision.Unavailable => ReadOutcome.Unavailable,
+            _ => ReadOutcome.Denied,
+        };
+    }
 }

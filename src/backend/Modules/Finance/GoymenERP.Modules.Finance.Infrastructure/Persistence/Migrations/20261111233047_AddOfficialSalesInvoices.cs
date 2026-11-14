@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -34,6 +34,33 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     table.CheckConstraint("CK_OfficialSalesInvoiceCommands_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000'");
                     table.ForeignKey(
                         name: "FK_OfficialSalesInvoiceCommands_Companies_CompanyId",
+                        column: x => x.CompanyId,
+                        principalSchema: "organization",
+                        principalTable: "Companies",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "OfficialSalesInvoiceReservations",
+                schema: "finance",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReservedBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    ReservedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    CausationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true, collation: "Latin1_General_100_BIN2")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_OfficialSalesInvoiceReservations", x => x.Id);
+                    table.UniqueConstraint("AK_OfficialSalesInvoiceReservations_CompanyId_Id", x => new { x.CompanyId, x.Id });
+                    table.CheckConstraint("CK_OfficialSalesInvoiceReservations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+                    table.CheckConstraint("CK_OfficialSalesInvoiceReservations_Text", "LEN([ReservedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                    table.ForeignKey(
+                        name: "FK_OfficialSalesInvoiceReservations_Companies_CompanyId",
                         column: x => x.CompanyId,
                         principalSchema: "organization",
                         principalTable: "Companies",
@@ -84,6 +111,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         principalTable: "Companies",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_OfficialSalesInvoices_OfficialSalesInvoiceReservations_CompanyId_Id",
+                        columns: x => new { x.CompanyId, x.Id },
+                        principalSchema: "finance",
+                        principalTable: "OfficialSalesInvoiceReservations",
+                        principalColumns: new[] { "CompanyId", "Id" },
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateIndex(
@@ -112,17 +146,26 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                 table: "OfficialSalesInvoices",
                 columns: new[] { "CompanyId", "OfficialNo" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "UX_OfficialSalesInvoices_PdfSha256",
+                schema: "finance",
+                table: "OfficialSalesInvoices",
+                columns: new[] { "CompanyId", "PdfSha256" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // Finance's module refusal (51051), forward fix: dropping a stored official sales invoice record (or its
-            // command receipts) would lose an approved official number/ETTN, its PDF pin and who recorded/approved it
-            // (FNS-D20: an approved record is never removed). An empty store rolls back freely.
+            // Finance's module refusal (51051), forward fix: dropping a stored official sales invoice record, its
+            // command receipts or its id reservations would lose an approved official number/ETTN, its PDF pin and
+            // who reserved/recorded/approved it (FNS-D20: an approved record is never removed; a reserved id may already
+            // own an uploaded PDF). An empty store rolls back freely.
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [finance].[OfficialSalesInvoices])
                     OR EXISTS (SELECT 1 FROM [finance].[OfficialSalesInvoiceCommands])
+                    OR EXISTS (SELECT 1 FROM [finance].[OfficialSalesInvoiceReservations])
                 BEGIN
                     THROW 51051, 'Finance official sales invoice records are stored; AddOfficialSalesInvoices is not rolled back (forward fix).', 1;
                 END;
@@ -134,6 +177,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "OfficialSalesInvoices",
+                schema: "finance");
+
+            migrationBuilder.DropTable(
+                name: "OfficialSalesInvoiceReservations",
                 schema: "finance");
         }
     }

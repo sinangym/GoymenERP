@@ -280,8 +280,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #1070 P3: +1 receipt Create scale refusal fact, ordinal-sorted (cbae4f24… -> 36413356…).
             // F-005 D1: +3 official sales invoice facts (maker≠approver, CK refusals, Down guard), ordinal-sorted (36413356… -> 41ad9daf…).
             // F-005 D1 review: +3 facts (approval race, same-key record race, another company), ordinal-sorted (41ad9daf… -> d9eae78e…).
+            // #66 6860586175 (PDF first): +4 facts (reservation consumed once + FK, owner read/other company, same PDF
+            // content per company, same-content race) and the Down-guard fact renamed to the reservation, ordinal-sorted
+            // (d9eae78e… -> e823c44f…).
             ["tools/relational_inventory/finance.txt"] =
-                "d9eae78e919f161d438889b7ee6ab451b3f28ed78aa6d6ad02d713240d08ab55",
+                "e823c44ffb1b44aff7d41ecbfb1139d7417f29e7a905393a42cd9f21d8f41c0b",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -792,7 +795,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F-005 D1 (FNS-D17…FNS-D21): OfficialSalesInvoices / OfficialSalesInvoiceCommands carry the CompanyId filter,
             // company-leading keys, unique ETTN/official number per company and CK_OfficialSalesInvoices_Approval
             // (approver ≠ recorder) (95024798… -> 6bb4c498…).
-            "6bb4c498870310264019ef73609068ea92a379b0024b8fb0e5182433c459a9f6",
+            // #66 6860586175 (PDF first): OfficialSalesInvoiceReservations carries the CompanyId filter, a company-leading
+            // alternate key and an append-only write guard; each invoice references its reservation (CompanyId, Id),
+            // restrict; UX_OfficialSalesInvoices_PdfSha256 keeps one PDF content per company (6bb4c498… -> b43a052c…).
+            "b43a052c6e34a4739efb34969fb3482544ba5fb75517da275a4c1fe0a29ddd7b",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -942,12 +948,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     ("FinanceDbContext", 2),
-                // F-005 D1: the three counted sites are the host's target-typed audit envelope and the document port's two
-                // PDF check results; the context is DI-resolved.
+                // F-005 D1: the counted sites are the host's target-typed audit envelope and the document port's PDF
+                // check results; the context is DI-resolved (#66 6860586175: the owner read is registered here too).
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
                     ("FinanceDbContext", 3),
-                // F-005 D1: target-typed result/view/cursor/ReadResult sites in the official sales invoice service are
-                // conservatively counted; 14 is its exact source count, not a new DbContext writer.
+                // F-005 D1: target-typed result/view/cursor/ReadResult sites in the official sales invoice service
+                // (#66 6860586175: with the reservation and the owner read) are conservatively counted; the pin is its
+                // exact source count, not a new DbContext writer.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialSalesInvoiceServiceV1.cs"] = ("FinanceDbContext", 14),
                 // The conservative target-typed scanner includes DTO/ReadResult return sites in the
@@ -1391,11 +1398,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // F-005 D1 (FNS-D17…FNS-D21): the official sales invoice service writes and reads through the tenant-filtered
                 // FinanceDbContext only. SqlClient is referenced only to classify 2601/2627 races after SaveChanges; no
-                // connection, command, raw SQL or bypass.
+                // connection, command, raw SQL or bypass. #66 6860586175: the reservation, the one-PDF-per-company check
+                // and the owner read use the same filtered context (362c03de… -> abc98b65…).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs"] =
                     new(
-                        "362c03debea43995a71c7312b0fc0f45bee9605e59500a9a326d81228992de25",
+                        "abc98b658f29ebfdda744abe780be906d084c331f95931c17b4ad896e5219a1d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1496,8 +1504,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("d6eb42c3009778d83872e20dfdbb2112c50230eff5893f1568930ed6de8bdf10",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-005 D1: the official sales invoice host resolves FinanceDbContext only through DI; no direct database API.
+                // #66 6860586175: the PDF check asks the finance.official-sales-invoice owner (26e7f8d1… -> cbdeeed2…).
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
-                    new("26e7f8d185becccc18f07ef0ab77a7813d7394042db5939dd9bd0683abbd8819",
+                    new("cbdeeed235cda8f5e46c8edf3d6cbcce3034397169252381504a6e8758f8c535",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =
@@ -2902,9 +2911,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
                 // F-005 D1: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any official sales
-                // invoice record or its command is stored; the THROW precedes the table drops. Forward fix.
+                // invoice reservation, record or command is stored (#66 6860586175: reservations added in place, the
+                // designer and snapshot regenerated); the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261111233047_AddOfficialSalesInvoices.cs"] =
-                    new("975c3e52e536703b841ca37cdfbe5f0ffca03ae70e56e3cac95be325ef5e6ffe",
+                    new("ba2a7e0d86e0ba0b1aa9dcfb02e61394c87ee4ae2ac1a091d902bb4d68b6bcfd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment

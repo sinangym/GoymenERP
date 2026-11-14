@@ -369,10 +369,47 @@ public static class FinanceEndpoints
             : PermissionDecision.Denied;
     }
 
-    // F-005 D1 (FNS-D17…FNS-D21, FNS-D26): manual official sales invoice record. Record and approve only; there is no
-    // edit, cancel or withdraw route.
+    // F-005 D1 (FNS-D17…FNS-D21, FNS-D26): manual official sales invoice record. Reserve (#66 6860586175: the id the
+    // PDF is uploaded to first), record and approve only; there is no edit, cancel or withdraw route.
     private static void MapOfficialSalesInvoiceEndpoints(IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapPost($"{OfficialSalesInvoicesPath}/reservations", async (
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialSalesInvoiceReservationRequestV1>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.ReserveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ReserveFinanceOfficialSalesInvoiceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<FinanceOfficialSalesInvoiceReservationRequestV1>("application/json")
+            .Produces<FinanceOfficialSalesInvoiceReservationResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialSalesInvoiceReservationResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialSalesInvoiceReservationResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
         endpoints.MapPost(OfficialSalesInvoicesPath, async (
                 HttpContext httpContext,
                 IFinanceOfficialSalesInvoiceServiceV1 service,

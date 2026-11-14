@@ -1077,6 +1077,44 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceReservationRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ReservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReservedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OfficialSalesInvoiceReservations", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OfficialSalesInvoiceReservations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialSalesInvoiceReservations_Text", "LEN([ReservedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1190,6 +1228,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompanyId", "OfficialNo")
                         .IsUnique()
                         .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo");
+
+                    b.HasIndex("CompanyId", "PdfSha256")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OfficialSalesInvoices_PdfSha256");
 
                     b.HasIndex("CompanyId", "Status", "RecordedAtUtc", "Id")
                         .HasDatabaseName("IX_OfficialSalesInvoices_List");
@@ -2237,11 +2279,27 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceReservationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceReservationRow", null)
+                        .WithOne()
+                        .HasForeignKey("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceRow", "CompanyId", "Id")
+                        .HasPrincipalKey("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialSalesInvoiceReservationRow", "CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

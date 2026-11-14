@@ -18,6 +18,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-0000000000a1");
     private static readonly Guid ForeignCompany = Guid.Parse("10000000-0000-0000-0000-0000000000b2");
     private static readonly Guid Invoice = Guid.Parse("20000000-0000-0000-0000-0000000000a1");
+    private static readonly Guid ForeignInvoice = Guid.Parse("20000000-0000-0000-0000-0000000000b2");
     private static readonly Guid Customer = Guid.Parse("30000000-0000-0000-0000-0000000000a1");
     private static readonly Guid Currency = Guid.Parse("40000000-0000-0000-0000-0000000000a1");
     private static readonly Guid Pdf = Guid.Parse("50000000-0000-0000-0000-0000000000a1");
@@ -88,7 +89,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         Assert.Equal(Sha, view.PdfSha256);
         Assert.Equal("maker", view.RecordedBy);
         Assert.Null(view.ApprovedBy);
-        Assert.Equal([(Pdf, Customer, (int?)null)], documents.Requests);
+        // #66 6860586175: the PDF is asked for as owned by this record id, never by the customer party.
+        Assert.Equal([(Pdf, Invoice, (int?)null)], documents.Requests);
         var stored = Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
         Assert.Equal(Company, stored.CompanyId);
         Assert.Equal("1250.50", stored.PayableAmountText);
@@ -134,7 +136,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         Assert.Equal("2", approved.Resource.Version);
         Assert.Equal("checker", approved.Resource.ApprovedBy);
         Assert.NotNull(approved.Resource.ApprovedAtUtc);
-        Assert.Equal([(Pdf, Customer, (int?)1)], documents.Requests);
+        Assert.Equal([(Pdf, Invoice, (int?)1)], documents.Requests);
         Assert.Equal(CommandOutcome.VersionConflict, again.Outcome);
         Assert.Contains(again.Issues, issue => issue.Field == "expectedVersion" && issue.Code == "version_conflict");
         Assert.Single(fixture.Audit.Events, e => e.EventType == "finance.official-sales-invoice.approved.v1");
@@ -257,15 +259,18 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     {
         var fixture = Fixture.Create();
         await Record(fixture);
-        fixture.Db.ChangeTracker.Clear();
+        var noId = Guid.Parse("20000000-0000-0000-0000-0000000000a3");
+        var ettnId = Guid.Parse("20000000-0000-0000-0000-0000000000a4");
+        fixture.Reserve(noId);
+        fixture.Reserve(ettnId);
         var service = fixture.Service("maker", new Documents());
 
         var sameId = await service.RecordAsync(Context("maker"), new CommandMetadata("key-id"),
             Request() with { OfficialNo = "GYM2026000000002", Ettn = Guid.NewGuid().ToString("D") }, default);
         var sameNo = await service.RecordAsync(Context("maker"), new CommandMetadata("key-no"),
-            Request() with { InvoiceId = Guid.NewGuid(), Ettn = Guid.NewGuid().ToString("D") }, default);
+            Request() with { InvoiceId = noId, Ettn = Guid.NewGuid().ToString("D") }, default);
         var sameEttn = await service.RecordAsync(Context("maker"), new CommandMetadata("key-ettn"),
-            Request() with { InvoiceId = Guid.NewGuid(), OfficialNo = "GYM2026000000003" }, default);
+            Request() with { InvoiceId = ettnId, OfficialNo = "GYM2026000000003" }, default);
 
         Assert.Equal(CommandOutcome.IdempotencyConflict, sameId.Outcome);
         Assert.Contains(sameId.Issues, issue => issue.Code == "invoice_already_exists");
@@ -466,7 +471,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         var databaseName = $"finance-official-sales-{Guid.NewGuid():N}";
         var fixture = Fixture.Create(Company, databaseName);
         var foreign = Fixture.Create(ForeignCompany, databaseName);
-        var foreignInvoice = Guid.Parse("20000000-0000-0000-0000-0000000000b2");
+        var foreignInvoice = ForeignInvoice;
 
         var first = await fixture.Service("maker", new Documents())
             .RecordAsync(Context("maker"), new CommandMetadata("shared-key"), Request(), default);
@@ -598,7 +603,10 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         var fixture = Fixture.Create();
         await Record(fixture);
         var second = Guid.Parse("20000000-0000-0000-0000-0000000000a2");
-        await fixture.Service("maker", new Documents()).RecordAsync(Context("maker"), new CommandMetadata("key-2"),
+        fixture.Reserve(second);
+        var secondPdf = new Documents(
+            new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 1, OtherSha));
+        await fixture.Service("maker", secondPdf).RecordAsync(Context("maker"), new CommandMetadata("key-2"),
             Request() with { InvoiceId = second, OfficialNo = "GYM2026000000002", Ettn = Guid.NewGuid().ToString("D") },
             default);
         await fixture.Service("checker", new Documents())
@@ -714,7 +722,267 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         Assert.Contains("THROW 51051", guard, StringComparison.Ordinal);
         Assert.Contains("[finance].[OfficialSalesInvoices]", guard, StringComparison.Ordinal);
         Assert.Contains("[finance].[OfficialSalesInvoiceCommands]", guard, StringComparison.Ordinal);
+        Assert.Contains("[finance].[OfficialSalesInvoiceReservations]", guard, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void The_model_keys_each_record_to_one_reservation_and_one_pdf_content_per_company()
+    {
+        var model = Fixture.Create().Db.GetService<IDesignTimeModel>().Model;
+        var reservation = model.FindEntityType(typeof(FinanceOfficialSalesInvoiceReservationRow))!;
+        var invoice = model.FindEntityType(typeof(FinanceOfficialSalesInvoiceRow))!;
+
+        Assert.Equal("OfficialSalesInvoiceReservations", reservation.GetTableName());
+        Assert.Equal("finance", reservation.GetSchema());
+        Assert.Contains(reservation.GetCheckConstraints(),
+            c => c.Name == "CK_OfficialSalesInvoiceReservations_Identity");
+        Assert.Contains(reservation.GetCheckConstraints(), c => c.Name == "CK_OfficialSalesInvoiceReservations_Text");
+        var pdf = Assert.Single(invoice.GetIndexes(),
+            index => index.GetDatabaseName() == "UX_OfficialSalesInvoices_PdfSha256");
+        Assert.True(pdf.IsUnique);
+        Assert.Equal(["CompanyId", "PdfSha256"], pdf.Properties.Select(property => property.Name));
+        var consumed = Assert.Single(invoice.GetForeignKeys(), key => key.PrincipalEntityType == reservation);
+        Assert.True(consumed.IsUnique);
+        Assert.Equal(DeleteBehavior.Restrict, consumed.DeleteBehavior);
+        Assert.Equal(["CompanyId", "Id"], consumed.Properties.Select(property => property.Name));
+        Assert.Equal(["CompanyId", "Id"], consumed.PrincipalKey.Properties.Select(property => property.Name));
+    }
+
+    [Fact]
+    public async Task Reserve_allocates_a_server_id_for_the_actor_and_the_same_key_replays_it()
+    {
+        var fixture = Fixture.Create();
+        var documents = new Documents();
+
+        var reserved = await fixture.Service("maker", documents).ReserveAsync(Context("maker"),
+            new CommandMetadata("reserve-key"), new FinanceOfficialSalesInvoiceReservationRequestV1(), default);
+        fixture.Db.ChangeTracker.Clear();
+        var replay = await fixture.Service("maker", documents).ReserveAsync(
+            Context("maker") with { CorrelationId = "correlation-retry" }, new CommandMetadata("reserve-key"),
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), default);
+        var otherActor = await fixture.Service("other", documents).ReserveAsync(Context("other"),
+            new CommandMetadata("reserve-key"), new FinanceOfficialSalesInvoiceReservationRequestV1(), default);
+        var invalidKey = await fixture.Service("maker", documents).ReserveAsync(Context("maker"),
+            new CommandMetadata(new string('k', 129)), new FinanceOfficialSalesInvoiceReservationRequestV1(), default);
+
+        Assert.Equal(CommandOutcome.Succeeded, reserved.Outcome);
+        Assert.False(reserved.IsReplay);
+        var resource = reserved.Resource!;
+        Assert.NotEqual(Guid.Empty, resource.InvoiceId);
+        Assert.NotEqual(Invoice, resource.InvoiceId);
+        Assert.Equal(Company, resource.CompanyId);
+        Assert.Equal("maker", resource.ReservedBy);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(resource, replay.Resource);
+        Assert.Equal("correlation-maker", replay.OriginalCorrelationId);
+        Assert.Equal(CommandOutcome.IdempotencyConflict, otherActor.Outcome);
+        Assert.Null(otherActor.Resource);
+        Assert.Equal(CommandOutcome.ValidationFailed, invalidKey.Outcome);
+        Assert.Equal([new ValidationIssue("request", "finance_value_does_not_fit")], invalidKey.Issues);
+        Assert.Equal(0, documents.Calls);
+        var stored = Assert.Single(await fixture.Db.OfficialSalesInvoiceReservations.AsNoTracking()
+            .Where(row => row.Id == resource.InvoiceId).ToListAsync());
+        Assert.Equal(Company, stored.CompanyId);
+        Assert.Equal("maker", stored.ReservedBy);
+        Assert.Equal("correlation-maker", stored.CorrelationId);
+        var command = Assert.Single(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+        Assert.Equal(FinanceOfficialSalesInvoiceServiceV1.ReserveCommand, command.CommandName);
+        Assert.Equal(resource.InvoiceId, command.InvoiceId);
+        Assert.Single(fixture.Audit.Events, e => e.EventType == "finance.official-sales-invoice.reserved.v1");
+        Assert.Empty(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(PermissionDecision.Denied, CommandOutcome.Denied)]
+    [InlineData(PermissionDecision.Unavailable, CommandOutcome.Unavailable)]
+    public async Task Reserve_is_refused_without_fresh_record_authority_and_writes_nothing(PermissionDecision decision,
+        CommandOutcome outcome)
+    {
+        var fixture = Fixture.Create();
+        var authority = new Authority(decision);
+
+        var result = await fixture.Service("maker", new Documents(), authority).ReserveAsync(Context("maker"),
+            new CommandMetadata("reserve-key"), new FinanceOfficialSalesInvoiceReservationRequestV1(), default);
+
+        Assert.Equal(outcome, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Equal(1, authority.Calls);
+        Assert.Equal(Invoice, Assert.Single(await fixture.Db.OfficialSalesInvoiceReservations.AsNoTracking()
+            .ToListAsync()).Id);
+        Assert.Empty(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+        Assert.Empty(fixture.Audit.Events);
+    }
+
+    [Fact]
+    public async Task A_reserved_id_records_with_the_pdf_owned_by_that_id_and_is_consumed_once()
+    {
+        var fixture = Fixture.Create();
+        var documents = new Documents();
+        var reserved = await fixture.Service("maker", documents).ReserveAsync(Context("maker"),
+            new CommandMetadata("reserve-key"), new FinanceOfficialSalesInvoiceReservationRequestV1(), default);
+        var invoiceId = reserved.Resource!.InvoiceId;
+        fixture.Db.ChangeTracker.Clear();
+
+        var recorded = await fixture.Service("maker", documents).RecordAsync(Context("maker"),
+            new CommandMetadata("record-key"), Request() with { InvoiceId = invoiceId }, default);
+        fixture.Db.ChangeTracker.Clear();
+        var again = await fixture.Service("maker", documents).RecordAsync(Context("maker"),
+            new CommandMetadata("record-key-2"),
+            Request() with
+            {
+                InvoiceId = invoiceId, OfficialNo = "GYM2026000000002", Ettn = Guid.NewGuid().ToString("D"),
+            }, default);
+
+        Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+        Assert.Equal(invoiceId, recorded.Resource!.InvoiceId);
+        Assert.Null(recorded.ExistingOfficialNo);
+        Assert.Equal([(Pdf, invoiceId, (int?)null)], documents.Requests);
+        Assert.Equal(CommandOutcome.IdempotencyConflict, again.Outcome);
+        Assert.Equal([new ValidationIssue("invoiceId", "invoice_already_exists")], again.Issues);
+        Assert.Equal(invoiceId, Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync()).Id);
+        Assert.Equal(2, await fixture.Db.OfficialSalesInvoiceReservations.AsNoTracking().CountAsync());
+    }
+
+    public static TheoryData<string> UnreservedIds => new() { "unknown", "reserved-by-another-actor", "other-company" };
+
+    [Theory]
+    [MemberData(nameof(UnreservedIds))]
+    public async Task Record_refuses_an_id_this_actor_did_not_reserve_in_this_company_before_the_pdf_check(
+        string variant)
+    {
+        var databaseName = $"finance-official-sales-{Guid.NewGuid():N}";
+        var fixture = Fixture.Create(Company, databaseName);
+        var invoiceId = variant switch
+        {
+            "unknown" => Guid.Parse("20000000-0000-0000-0000-0000000000c3"),
+            "reserved-by-another-actor" => Guid.Parse("20000000-0000-0000-0000-0000000000c4"),
+            "other-company" => ForeignInvoice,
+            _ => throw new ArgumentOutOfRangeException(nameof(variant)),
+        };
+        if (variant == "reserved-by-another-actor") fixture.Reserve(invoiceId, "other");
+        if (variant == "other-company") _ = Fixture.Create(ForeignCompany, databaseName);
+        var documents = new Documents();
+
+        var result = await fixture.Service("maker", documents).RecordAsync(Context("maker"),
+            new CommandMetadata("record-key"), Request() with { InvoiceId = invoiceId }, default);
+
+        Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal([new ValidationIssue("invoiceId", "reservation_not_found")], result.Issues);
+        Assert.Null(result.ExistingOfficialNo);
+        Assert.Equal(0, documents.Calls);
+        Assert.Empty(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().ToListAsync());
+        Assert.Empty(fixture.Audit.Events);
+    }
+
+    [Fact]
+    public async Task The_same_pdf_content_in_a_second_record_is_refused_with_the_first_official_number()
+    {
+        var fixture = Fixture.Create();
+        await Record(fixture);
+        var second = Guid.Parse("20000000-0000-0000-0000-0000000000a2");
+        var secondPdf = Guid.Parse("50000000-0000-0000-0000-0000000000a2");
+        fixture.Reserve(second);
+        var request = Request() with
+        {
+            InvoiceId = second, OfficialNo = "GYM2026000000002", Ettn = Guid.NewGuid().ToString("D"),
+            PdfDocumentId = secondPdf,
+        };
+        var samePdf = new Documents();
+        var otherPdf = new Documents(
+            new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 1, OtherSha));
+
+        var refused = await fixture.Service("maker", samePdf)
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key-2"), request, default);
+        fixture.Db.ChangeTracker.Clear();
+        var accepted = await fixture.Service("maker", otherPdf)
+            .RecordAsync(Context("maker"), new CommandMetadata("record-key-3"), request, default);
+
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.Null(refused.Resource);
+        Assert.Equal([new ValidationIssue("pdfDocumentId", "pdf_already_recorded")], refused.Issues);
+        Assert.Equal("GYM2026000000001", refused.ExistingOfficialNo);
+        Assert.Equal([(secondPdf, second, (int?)null)], samePdf.Requests);
+        Assert.Equal(CommandOutcome.Succeeded, accepted.Outcome);
+        Assert.Null(accepted.ExistingOfficialNo);
+        Assert.Equal(OtherSha, accepted.Resource!.PdfSha256);
+        Assert.Equal(2, await fixture.Db.OfficialSalesInvoices.AsNoTracking().CountAsync());
+        // The refusal is on the merits and not recorded: only the two successful records hold a command.
+        Assert.Equal(2, await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().CountAsync());
+    }
+
+    [Fact]
+    public async Task The_owner_read_finds_only_an_id_reserved_in_the_context_company()
+    {
+        var databaseName = $"finance-official-sales-{Guid.NewGuid():N}";
+        var fixture = Fixture.Create(Company, databaseName);
+        await Record(fixture);
+        var pendingReservation = Guid.Parse("20000000-0000-0000-0000-0000000000a2");
+        fixture.Reserve(pendingReservation, "other");
+        _ = Fixture.Create(ForeignCompany, databaseName);
+        var read = fixture.OwnerRead("reader");
+
+        var recorded = await read.CheckReadableAsync(Context("reader"), Invoice, default);
+        var reservedOnly = await read.CheckReadableAsync(Context("reader"), pendingReservation, default);
+        var unknown = await read.CheckReadableAsync(Context("reader"), Guid.NewGuid(), default);
+        var empty = await read.CheckReadableAsync(Context("reader"), Guid.Empty, default);
+        var otherCompany = await read.CheckReadableAsync(Context("reader"), ForeignInvoice, default);
+        var crossContext = await read.CheckReadableAsync(Context("reader", ForeignCompany), ForeignInvoice, default);
+
+        Assert.Equal(ReadOutcome.Found, recorded);
+        Assert.Equal(ReadOutcome.Found, reservedOnly);
+        Assert.Equal(ReadOutcome.NotFound, unknown);
+        Assert.Equal(ReadOutcome.NotFound, empty);
+        Assert.Equal(ReadOutcome.NotFound, otherCompany);
+        Assert.Equal(ReadOutcome.Denied, crossContext);
+    }
+
+    [Theory]
+    [InlineData(PermissionDecision.Denied, ReadOutcome.Denied)]
+    [InlineData(PermissionDecision.Unavailable, ReadOutcome.Unavailable)]
+    public async Task The_owner_read_is_refused_without_fresh_read_authority(PermissionDecision decision,
+        ReadOutcome outcome)
+    {
+        var fixture = Fixture.Create();
+        var authority = new Authority(decision);
+
+        var result = await fixture.OwnerRead("reader", authority).CheckReadableAsync(Context("reader"), Invoice, default);
+        var emptyId = await fixture.OwnerRead("reader", authority)
+            .CheckReadableAsync(Context("reader"), Guid.Empty, default);
+
+        Assert.Equal(outcome, result);
+        Assert.Equal(outcome, emptyId);
+    }
+
+    [Fact]
+    public async Task The_owner_read_fails_closed_when_the_store_cannot_be_read()
+    {
+        var fixture = Fixture.Create();
+        var read = fixture.OwnerRead("reader");
+        await fixture.Db.DisposeAsync();
+
+        var result = await read.CheckReadableAsync(Context("reader"), Invoice, default);
+
+        Assert.Equal(ReadOutcome.Unavailable, result);
+    }
+
+    [Fact]
+    public void The_write_guard_keeps_reservations_append_only()
+    {
+        var fixture = Fixture.Create();
+
+        var row = fixture.Db.OfficialSalesInvoiceReservations.Single();
+        row.ReservedBy = "someone-else";
+        Assert.Throws<InvalidOperationException>(() => fixture.Db.SaveChanges());
+        fixture.Db.ChangeTracker.Clear();
+
+        fixture.Db.OfficialSalesInvoiceReservations.Remove(fixture.Db.OfficialSalesInvoiceReservations.Single());
+        Assert.Throws<InvalidOperationException>(() => fixture.Db.SaveChanges());
+        fixture.Db.ChangeTracker.Clear();
+
+        var stored = Assert.Single(fixture.Db.OfficialSalesInvoiceReservations.AsNoTracking().ToList());
+        Assert.Equal("maker", stored.ReservedBy);
     }
 
     private static async Task<List<FinanceOfficialSalesInvoiceCommandRow>> ApprovalCommands(Fixture fixture) =>
@@ -784,7 +1052,34 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
             context.Set(companyId);
             var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
                 .UseInMemoryDatabase(databaseName ?? $"finance-official-sales-{Guid.NewGuid():N}").Options, context);
-            return new Fixture(db, companyId, new AuditCollector());
+            var fixture = new Fixture(db, companyId, new AuditCollector());
+            // #66 6860586175: every record consumes the recorder's reservation; each company's fixed id is reserved
+            // directly (no reserve command), so the command counts below stay the record/approve ones.
+            fixture.Reserve(companyId == ForeignCompany ? ForeignInvoice : Invoice);
+            return fixture;
+        }
+
+        public void Reserve(Guid invoiceId, string actor = "maker")
+        {
+            Db.OfficialSalesInvoiceReservations.Add(new FinanceOfficialSalesInvoiceReservationRow
+            {
+                Id = invoiceId,
+                CompanyId = CompanyId,
+                ReservedBy = actor,
+                ReservedAtUtc = DateTimeOffset.UtcNow,
+                CorrelationId = $"correlation-{actor}",
+            });
+            Db.SaveChanges();
+            Db.ChangeTracker.Clear();
+        }
+
+        public FinanceOfficialSalesInvoiceOwnerReadV1 OwnerRead(string actor,
+            IFinanceOfficialSalesInvoiceAuthorityV1? authority = null)
+        {
+            var context = new CompanyContext();
+            context.Set(CompanyId);
+            return new FinanceOfficialSalesInvoiceOwnerReadV1(Db, context, new User(actor, CompanyId),
+                authority ?? new Authority());
         }
 
         public FinanceOfficialSalesInvoiceServiceV1 Service(string actor, Documents documents,
@@ -830,13 +1125,13 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
     private sealed class Documents(FinanceOfficialSalesInvoicePdfCheckV1? answer = null)
         : IFinanceOfficialSalesInvoiceDocumentPortV1
     {
-        public List<(Guid Document, Guid Customer, int? Version)> Requests { get; } = [];
+        public List<(Guid Document, Guid Owner, int? Version)> Requests { get; } = [];
         public int Calls => Requests.Count;
 
         public Task<FinanceOfficialSalesInvoicePdfCheckV1> CheckAsync(FinanceContext context, Guid documentId,
-            Guid customerPartyId, int? versionNo, CancellationToken cancellationToken)
+            Guid invoiceId, int? versionNo, CancellationToken cancellationToken)
         {
-            Requests.Add((documentId, customerPartyId, versionNo));
+            Requests.Add((documentId, invoiceId, versionNo));
             return Task.FromResult(answer
                 ?? new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 1, Sha));
         }

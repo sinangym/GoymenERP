@@ -78,6 +78,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceOfficialSalesInvoiceCommandRow> OfficialSalesInvoiceCommands => Set<FinanceOfficialSalesInvoiceCommandRow>();
 
+    /// <summary>#66 6860586175 (PDF first): the record ids reserved before the PDF upload; each record consumes one.</summary>
+    internal DbSet<FinanceOfficialSalesInvoiceReservationRow> OfficialSalesInvoiceReservations =>
+        Set<FinanceOfficialSalesInvoiceReservationRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -726,6 +730,25 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     private void ConfigureOfficialSalesInvoices(ModelBuilder modelBuilder)
     {
+        var reservation = modelBuilder.Entity<FinanceOfficialSalesInvoiceReservationRow>();
+        reservation.ToTable("OfficialSalesInvoiceReservations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceReservations_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialSalesInvoiceReservations_Text",
+                "LEN([ReservedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        reservation.HasKey(x => x.Id);
+        reservation.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        reservation.Property(x => x.Id).ValueGeneratedNever();
+        reservation.Property(x => x.ReservedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        reservation.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        reservation.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        reservation.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        reservation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
         var invoice = modelBuilder.Entity<FinanceOfficialSalesInvoiceRow>();
         invoice.ToTable("OfficialSalesInvoices", Schema, table =>
         {
@@ -770,9 +793,17 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo");
         invoice.HasIndex(x => new { x.CompanyId, x.Ettn }).IsUnique()
             .HasDatabaseName("UX_OfficialSalesInvoices_Ettn");
+        // #66 6860586175: one PDF content (vault SHA-256) belongs to at most one record per company.
+        invoice.HasIndex(x => new { x.CompanyId, x.PdfSha256 }).IsUnique()
+            .HasDatabaseName("UX_OfficialSalesInvoices_PdfSha256");
         invoice.HasIndex(x => new { x.CompanyId, x.Status, x.RecordedAtUtc, x.Id })
             .HasDatabaseName("IX_OfficialSalesInvoices_List");
         invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // Every record consumes a reservation of its own company, once (the record id is the reservation id).
+        invoice.HasOne<FinanceOfficialSalesInvoiceReservationRow>().WithOne()
+            .HasForeignKey<FinanceOfficialSalesInvoiceRow>(x => new { x.CompanyId, x.Id })
+            .HasPrincipalKey<FinanceOfficialSalesInvoiceReservationRow>(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
@@ -1097,9 +1128,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         }
 
         if (ChangeTracker.Entries<FinanceOfficialSalesInvoiceCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialSalesInvoiceReservationRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
-            throw new InvalidOperationException("Resmî satış faturası komut kayıtları append-only'dir.");
+            throw new InvalidOperationException("Resmî satış faturası komut ve kimlik ayırma kayıtları append-only'dir.");
         }
 
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())

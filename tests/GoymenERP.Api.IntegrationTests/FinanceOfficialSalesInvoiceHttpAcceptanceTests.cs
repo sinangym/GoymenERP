@@ -18,8 +18,9 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// F-005 D1 over HTTP (FNS-D17…FNS-D21, FNS-D26; ADR-011 §4/§7). The shipped runtime grants neither name. With both
-/// names granted, the real service records, replays, refuses the maker as approver, lets a second person approve and
-/// replays the recorded terminal refusals. The idempotency header and the strict body answer before the service.
+/// names granted, the real service reserves the id (#66 6860586175), records, replays, refuses the maker as approver,
+/// lets a second person approve and replays the recorded terminal refusals. The idempotency header and the strict
+/// body answer before the service.
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
@@ -32,16 +33,21 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     private static readonly Guid Customer = Guid.Parse("15000000-0000-0000-0000-000000000001");
     private static readonly Guid Currency = Guid.Parse("15000000-0000-0000-0000-000000000002");
     private static readonly Guid Pdf = Guid.Parse("15000000-0000-0000-0000-000000000003");
-    private static readonly string Sha = new('e', 64);
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
     private static string Path => FinanceEndpoints.OfficialSalesInvoicesPath;
+    private static string ReservationsPath => Path + "/reservations";
 
     [Fact]
     public async Task Shipped_runtime_grants_neither_name_so_every_route_is_forbidden_and_nothing_is_stored()
     {
         var invoiceId = Guid.NewGuid();
         using var client = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+        var reservationsBefore = await ReservationCountAsync();
 
+        using var reserve = await client.PostAsJsonAsync(ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), Json);
+        await AssertProblemAsync(reserve, HttpStatusCode.Forbidden, "forbidden");
+        PrivateNoStore(reserve);
         using var record = await client.PostAsJsonAsync(Path, Request(invoiceId), Json);
         await AssertProblemAsync(record, HttpStatusCode.Forbidden, "forbidden");
         PrivateNoStore(record);
@@ -60,6 +66,14 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         Assert.False(await finance.OfficialSalesInvoices.IgnoreQueryFilters().AnyAsync(x => x.Id == invoiceId));
         Assert.False(await finance.OfficialSalesInvoiceCommands.IgnoreQueryFilters()
             .AnyAsync(x => x.InvoiceId == invoiceId));
+        Assert.Equal(reservationsBefore, await ReservationCountAsync());
+    }
+
+    private async Task<int> ReservationCountAsync()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<FinanceDbContext>().OfficialSalesInvoiceReservations
+            .IgnoreQueryFilters().CountAsync();
     }
 
     [Fact]
@@ -68,7 +82,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         using var host = RealHost();
         using var recorder = Client(host, TestUsers.GroupAdmin);
         using var checker = Client(host, TestUsers.CompanyA);
-        var invoiceId = Guid.NewGuid();
+        var invoiceId = await ReserveAsync(recorder);
         var request = Request(invoiceId);
 
         var recordKey = Key();
@@ -86,7 +100,9 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
                 "1", Recorder, (string?)null),
             (pending.InvoiceId, pending.CompanyId, pending.OfficialNo, pending.Status, pending.Version,
                 pending.RecordedBy, pending.ApprovedBy));
-        Assert.Equal((Pdf, 1, Sha), (pending.PdfDocumentId, pending.PdfDocumentVersionNo, pending.PdfSha256));
+        Assert.Equal((Pdf, 1, ShaFor(invoiceId)),
+            (pending.PdfDocumentId, pending.PdfDocumentVersionNo, pending.PdfSha256));
+        Assert.Null(first.ExistingOfficialNo);
 
         using var replayed = await SendAsync(recorder, Path, request, recordKey, Correlation());
         Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
@@ -150,7 +166,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         using var host = RealHost();
         using var recorder = Client(host, TestUsers.GroupAdmin);
         using var checker = Client(host, TestUsers.CompanyA);
-        var invoiceId = Guid.NewGuid();
+        var invoiceId = await ReserveAsync(recorder);
         using var recorded = await SendAsync(recorder, Path, Request(invoiceId), Key(), Correlation());
         Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
 
@@ -184,6 +200,92 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         var view = Assert.IsType<FinanceOfficialSalesInvoiceViewV1>(
             await detail.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceViewV1>(Json));
         Assert.Equal((FinanceOfficialSalesInvoiceStatusV1.PendingApproval, "1"), (view.Status, view.Version));
+    }
+
+    [Fact]
+    public async Task A_reservation_replays_under_its_key_and_another_actor_under_the_key_is_a_conflict()
+    {
+        using var host = RealHost();
+        using var recorder = Client(host, TestUsers.GroupAdmin);
+        using var checker = Client(host, TestUsers.CompanyA);
+        var key = Key();
+        var correlation = Correlation();
+
+        using var reserved = await SendAsync(recorder, ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), key, correlation);
+        Assert.Equal(HttpStatusCode.OK, reserved.StatusCode);
+        PrivateNoStore(reserved);
+        Assert.False(reserved.Headers.Contains(Replayed));
+        var first = await ReservationAsync(reserved);
+        Assert.Equal((CommandOutcome.Succeeded, false, correlation), (first.Outcome, first.IsReplay,
+            first.OriginalCorrelationId));
+        var reservation = Assert.IsType<FinanceOfficialSalesInvoiceReservationV1>(first.Resource);
+        Assert.NotEqual(Guid.Empty, reservation.InvoiceId);
+        Assert.Equal((TestCompanyIds.CompanyA, Recorder), (reservation.CompanyId, reservation.ReservedBy));
+
+        using var replayed = await SendAsync(recorder, ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), key, Correlation());
+        Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+        AssertReplay(replayed, correlation);
+        Assert.Equal(reservation, (await ReservationAsync(replayed)).Resource);
+
+        // The approver holds the key's name but not its first actor: a conflict, never the recorder's id.
+        using var other = await SendAsync(checker, ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), key, Correlation());
+        Assert.Equal(HttpStatusCode.Conflict, other.StatusCode);
+        var conflict = await ReservationAsync(other);
+        Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
+        Assert.Null(conflict.Resource);
+
+        // A reservation is the recorder's own: another actor recording on it is refused before the PDF check.
+        using var foreign = await SendAsync(checker, Path, Request(reservation.InvoiceId), Key(), Correlation());
+        await AssertRefusalAsync(foreign, HttpStatusCode.UnprocessableEntity, CommandOutcome.ValidationFailed,
+            "invoiceId", "reservation_not_found");
+        using var unreserved = await SendAsync(recorder, Path, Request(Guid.NewGuid()), Key(), Correlation());
+        await AssertRefusalAsync(unreserved, HttpStatusCode.UnprocessableEntity, CommandOutcome.ValidationFailed,
+            "invoiceId", "reservation_not_found");
+    }
+
+    [Fact]
+    public async Task The_same_pdf_content_in_a_second_record_answers_422_with_the_first_official_number()
+    {
+        var firstPdf = Guid.NewGuid();
+        var secondPdf = Guid.NewGuid();
+        var sameContent = ShaFor(Guid.NewGuid());
+        using var host = RealHost(new CleanPdf(new Dictionary<Guid, string>
+        {
+            [firstPdf] = sameContent,
+            [secondPdf] = sameContent,
+        }));
+        using var recorder = Client(host, TestUsers.GroupAdmin);
+        var firstId = await ReserveAsync(recorder);
+        var secondId = await ReserveAsync(recorder);
+        var firstRequest = Request(firstId) with { PdfDocumentId = firstPdf };
+        using var recorded = await SendAsync(recorder, Path, firstRequest, Key(), Correlation());
+        Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+
+        var key = Key();
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var refused = await SendAsync(recorder, Path, Request(secondId) with { PdfDocumentId = secondPdf },
+                key, Correlation());
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+            PrivateNoStore(refused);
+            Assert.False(refused.Headers.Contains(Replayed));
+            var result = await ResultAsync(refused);
+            Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
+            Assert.Null(result.Resource);
+            Assert.Equal(new[] { new ValidationIssue("pdfDocumentId", "pdf_already_recorded") }, result.Issues);
+            Assert.Equal(firstRequest.OfficialNo, result.ExistingOfficialNo);
+            using var raw = JsonDocument.Parse(await refused.Content.ReadAsStringAsync());
+            Assert.Equal(firstRequest.OfficialNo, raw.RootElement.GetProperty("existingOfficialNo").GetString());
+        }
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var finance = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+        Assert.False(await finance.OfficialSalesInvoices.IgnoreQueryFilters().AnyAsync(x => x.Id == secondId));
+        Assert.False(await finance.OfficialSalesInvoiceCommands.IgnoreQueryFilters()
+            .AnyAsync(x => x.InvoiceId == secondId && x.CommandName == "finance.official-sales-invoices.record"));
     }
 
     [Theory]
@@ -241,13 +343,16 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     [InlineData("approve-missing-member")]
     [InlineData("approve-other-route-id")]
     [InlineData("approve-not-json")]
+    [InlineData("reserve-unknown-member")]
+    [InlineData("reserve-not-json")]
     public async Task The_strict_body_and_the_route_identity_are_refused_before_the_service(string fault)
     {
         var service = new CapturingService();
         using var host = FakeHost(service);
         using var client = Client(host, TestUsers.GroupAdmin);
         var invoiceId = Guid.NewGuid();
-        var (path, body) = Commands(invoiceId)[fault.StartsWith("record", StringComparison.Ordinal) ? 0 : 1];
+        var (path, body) = Commands(invoiceId)[fault.StartsWith("record", StringComparison.Ordinal) ? 0
+            : fault.StartsWith("approve", StringComparison.Ordinal) ? 1 : 2];
         if (fault.EndsWith("unknown-member", StringComparison.Ordinal)) body["note"] = "SENTETIK";
         if (fault == "record-missing-member") body.Remove("taxBaseFunctionalAmount");
         if (fault == "approve-missing-member") body.Remove("expectedVersion");
@@ -287,12 +392,15 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         var correlation = Correlation();
         var record = Request(invoiceId);
 
+        using var reserved = await SendAsync(client, ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), key, correlation);
         using var recorded = await SendAsync(client, Path, record, key, correlation);
         using var approved = await SendAsync(client, ApprovalPath(invoiceId), Approval(invoiceId), key, correlation);
 
+        Assert.Equal(HttpStatusCode.OK, reserved.StatusCode);
         Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
-        Assert.Equal(2, service.Calls);
+        Assert.Equal(3, service.Calls);
         Assert.Equal(record, service.Recorded);
         Assert.Equal(Approval(invoiceId), service.Approved);
         Assert.All(service.Contexts, context =>
@@ -312,10 +420,12 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         using var client = Client(host, TestUsers.GroupAdmin);
         var invoiceId = Guid.NewGuid();
 
+        using var reserved = await SendAsync(client, ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), Key(), Correlation());
         using var recorded = await SendAsync(client, Path, Request(invoiceId), Key(), Correlation());
         using var approved = await SendAsync(client, ApprovalPath(invoiceId), Approval(invoiceId), Key(), Correlation());
 
-        foreach (var response in new[] { recorded, approved })
+        foreach (var response in new[] { reserved, recorded, approved })
         {
             await AssertProblemAsync(response, status, code);
             PrivateNoStore(response);
@@ -324,7 +434,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
                 StringComparison.Ordinal);
         }
 
-        Assert.Equal(2, service.Calls);
+        Assert.Equal(3, service.Calls);
     }
 
     [Fact]
@@ -335,15 +445,18 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         using var client = Client(host, TestUsers.GroupAdmin, includeCompany: false);
         var invoiceId = Guid.NewGuid();
 
+        using var reserved = await SendAsync(client, ReservationsPath,
+            new FinanceOfficialSalesInvoiceReservationRequestV1(), Key(), Correlation());
         using var recorded = await SendAsync(client, Path, Request(invoiceId), Key(), Correlation());
         using var approved = await SendAsync(client, ApprovalPath(invoiceId), Approval(invoiceId), Key(), Correlation());
 
+        await AssertProblemAsync(reserved, HttpStatusCode.BadRequest, "company_context_invalid");
         await AssertProblemAsync(recorded, HttpStatusCode.BadRequest, "company_context_invalid");
         await AssertProblemAsync(approved, HttpStatusCode.BadRequest, "company_context_invalid");
         Assert.Equal(0, service.Calls);
     }
 
-    private WebApplicationFactory<Program> RealHost() =>
+    private WebApplicationFactory<Program> RealHost(CleanPdf? pdf = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             var authority = new GrantedAuthority();
@@ -352,7 +465,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             services.AddSingleton<IErpAuthorizationService>(authority);
             services.AddSingleton<IErpAuthorityRevalidationService>(authority);
             services.RemoveAll<IFinanceOfficialSalesInvoiceDocumentPortV1>();
-            services.AddSingleton<IFinanceOfficialSalesInvoiceDocumentPortV1>(new CleanPdf());
+            services.AddSingleton<IFinanceOfficialSalesInvoiceDocumentPortV1>(pdf ?? new CleanPdf());
             services.RemoveAll<ISettingsMoneyCandidateReader>();
             services.AddSingleton<ISettingsMoneyCandidateReader>(new OneCurrency());
         }));
@@ -388,7 +501,23 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     [
         (Path, JsonSerializer.SerializeToNode(Request(invoiceId), Json)!.AsObject()),
         (ApprovalPath(invoiceId), JsonSerializer.SerializeToNode(Approval(invoiceId), Json)!.AsObject()),
+        (ReservationsPath, JsonSerializer.SerializeToNode(new FinanceOfficialSalesInvoiceReservationRequestV1(), Json)!
+            .AsObject()),
     ];
+
+    /// <summary>#66 6860586175: every record consumes the recorder's own server-generated reservation.</summary>
+    private static async Task<Guid> ReserveAsync(HttpClient client)
+    {
+        using var response = await SendAsync(client, ReservationsPath, new FinanceOfficialSalesInvoiceReservationRequestV1(),
+            Key(), Correlation());
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return Assert.IsType<FinanceOfficialSalesInvoiceReservationV1>((await ReservationAsync(response)).Resource)
+            .InvoiceId;
+    }
+
+    /// <summary>The vault's content hash of the PDF uploaded to that record id (distinct per record).</summary>
+    private static string ShaFor(Guid invoiceId) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(invoiceId.ToByteArray()));
 
     private static FinanceOfficialSalesInvoiceRecordRequestV1 Request(Guid invoiceId) => new(
         invoiceId, "GYM" + invoiceId.ToString("N")[..13].ToUpperInvariant(), Guid.NewGuid().ToString("D"),
@@ -407,6 +536,11 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     private static async Task<FinanceOfficialSalesInvoiceResultV1> ResultAsync(HttpResponseMessage response) =>
         Assert.IsType<FinanceOfficialSalesInvoiceResultV1>(
             await response.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceResultV1>(Json));
+
+    private static async Task<FinanceOfficialSalesInvoiceReservationResultV1> ReservationAsync(
+        HttpResponseMessage response) =>
+        Assert.IsType<FinanceOfficialSalesInvoiceReservationResultV1>(
+            await response.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceReservationResultV1>(Json));
 
     private static async Task AssertRefusalAsync(HttpResponseMessage response, HttpStatusCode status,
         CommandOutcome outcome, string field, string code)
@@ -449,6 +583,19 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         public FinanceOfficialSalesInvoiceRecordRequestV1? Recorded { get; private set; }
         public FinanceOfficialSalesInvoiceApproveRequestV1? Approved { get; private set; }
 
+        public async Task<FinanceOfficialSalesInvoiceReservationResultV1> ReserveAsync(FinanceContext context,
+            CommandMetadata metadata, FinanceOfficialSalesInvoiceReservationRequestV1 request,
+            CancellationToken cancellationToken)
+        {
+            var answer = await Answer(context, metadata);
+            return new FinanceOfficialSalesInvoiceReservationResultV1(answer.Outcome,
+                answer.Outcome == CommandOutcome.Succeeded
+                    ? new FinanceOfficialSalesInvoiceReservationV1(Guid.NewGuid(), context.CompanyId, context.ActorId,
+                        DateTimeOffset.UnixEpoch)
+                    : null,
+                false, context.CorrelationId, answer.Issues);
+        }
+
         public Task<FinanceOfficialSalesInvoiceResultV1> RecordAsync(FinanceContext context, CommandMetadata metadata,
             FinanceOfficialSalesInvoiceRecordRequestV1 request, CancellationToken cancellationToken)
         {
@@ -478,7 +625,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
                 ? []
                 : [new ValidationIssue("permission", ServiceDetail)];
             return Task.FromResult(new FinanceOfficialSalesInvoiceResultV1(Outcome, null, false, context.CorrelationId,
-                issues));
+                issues, null));
         }
     }
 
@@ -509,14 +656,23 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
     }
 
-    private sealed class CleanPdf : IFinanceOfficialSalesInvoiceDocumentPortV1
+    /// <summary>
+    /// The standard PDF answers the content hash of the record id it was uploaded to; <paramref name="sameContent"/>
+    /// maps other documents to a fixed hash (two uploads of one PDF).
+    /// </summary>
+    private sealed class CleanPdf(IReadOnlyDictionary<Guid, string>? sameContent = null)
+        : IFinanceOfficialSalesInvoiceDocumentPortV1
     {
         public Task<FinanceOfficialSalesInvoicePdfCheckV1> CheckAsync(FinanceContext context, Guid documentId,
-            Guid customerPartyId, int? versionNo, CancellationToken cancellationToken) =>
-            Task.FromResult(documentId == Pdf && versionNo is null or 1
-                ? new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 1, Sha)
+            Guid invoiceId, int? versionNo, CancellationToken cancellationToken)
+        {
+            string? sha = sameContent is not null && sameContent.TryGetValue(documentId, out var fixedSha) ? fixedSha
+                : documentId == Pdf ? ShaFor(invoiceId) : null;
+            return Task.FromResult(sha is not null && versionNo is null or 1
+                ? new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, 1, sha)
                 : new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.NotFound, null,
                     null));
+        }
     }
 
     private sealed class OneCurrency : ISettingsMoneyCandidateReader
