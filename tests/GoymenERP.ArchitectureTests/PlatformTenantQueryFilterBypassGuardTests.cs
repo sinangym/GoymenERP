@@ -144,7 +144,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Üretim U5-b1 (API-36, SAT-D175): registers the two host-side subcontract service order / binding adapters (DI only);
         // no generation, network or hosted-service change (a5bb99f0… -> 096c3e0b…).
         // F-021 / B-24b: registers the Work module and the ERP-000F outbox dispatcher (off by default, hosted service skipped in OpenAPI generation) and initializes Work in Dev/Testing; no network surface change; re-fingerprinted after merging main (096c3e0b… -> ee696d73…).
-        "ee696d734546e4656dcd2cf03d623812a794822a69972dc409b1d9e81bcc428e";
+        // F-005 D1 (FNS-D17…FNS-D21): registers the Finance official sales invoice host (scoped in-process DI only); no generation,
+        // network or hosted-service change; re-fingerprinted after merging main (ee696d73… -> 1fe3cd9e…).
+        "1fe3cd9e1bfa36a4106d79b007974bbde05cd8a5a5184855b45f89f9646bb0d8";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -279,8 +281,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // API-23: +3 payment reversal facts, ordinal-sorted (36413356… -> 4684446d…).
             // API-23 review A: +4 facts (allocation/approval race, double approval, reused key and lost grant, HTTP
             // company scope), ordinal-sorted (4684446d… -> 96fd63e4…).
+            // API-30: +4 cash-account master facts, ordinal-sorted (36413356… -> b4e424b4…).
+            // API-30 K3 review: +8 cash-account facts (replay/conflict, recorded refusals, rejection audit, races,
+            // currency re-check), ordinal-sorted (b4e424b4… -> 0a36a1d0…).
+            // API-30 K3 review B P2-1: +1 cash-account fact (authority withdrawn during the Settings read or just
+            // before the save), ordinal-sorted (0a36a1d0… -> b93d6306…).
+            // API-30 passivation/reactivation (#66, 13 November 2026): +8 cash-account facts (two-person change flow,
+            // balance seam, database checks, company, replay/stale, permission revoked, race, Down guard),
+            // ordinal-sorted (b93d6306… -> dbfc6f19…).
+            // Stack merge of API-23 (#1095) and API-30 (#1109): both fact sets are present; recomputed over the
+            // union, ordinal-sorted (96fd63e4… + dbfc6f19… -> e549e2b4…).
+            // F-005 D1: +3 official sales invoice facts (maker≠approver, CK refusals, Down guard), ordinal-sorted (36413356… -> 41ad9daf…).
+            // F-005 D1 review: +3 facts (approval race, same-key record race, another company), ordinal-sorted (41ad9daf… -> d9eae78e…).
+            // #66 6860586175 (PDF first): +4 facts (reservation consumed once + FK, owner read/other company, same PDF
+            // content per company, same-content race) and the Down-guard fact renamed to the reservation, ordinal-sorted
+            // (d9eae78e… -> e823c44f…).
+            // FNS-D39: +2 facts (number/ETTN/PDF reuse after reject or withdraw while two live records still collide,
+            // the reject/withdraw Down guard), ordinal-sorted (e823c44f… -> cff641d7…).
+            // Stack merge of API-23 + API-30 (#1095, #1109) and F-005 D1 (#1102): all three fact sets are present;
+            // recomputed over the union, ordinal-sorted (e549e2b4… + cff641d7… -> bfdc3f20…).
             ["tools/relational_inventory/finance.txt"] =
-                "96fd63e47fb2e9398d706b4725534cca9c8b7ba50c83ca47dcbfc68292264d5e",
+                "bfdc3f208e167e029acbcda9e9c9436389ba819b5b37671fe660ffaac4339c79",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -309,7 +330,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for B-01: six plan-input allocation SQL acceptance tests added to the inventory.
                 // SAT-D262..D267: +4 average-cost ledger/port SQL facts (c005163c... -> 0b766916...), kept ordinal-sorted.
                 // B-03: +6 Manufacturing genealogy/V2 output-class SQL facts (ca832f2d... -> eecee421...), kept ordinal-sorted.
-                "eecee42107a595737df00b6443c1e8c44ad17dc463e04320b99d097eadfba7d3",
+                // SAT-D318: +2 input-issue physical-stock shortfall SQL facts (free and plan-allocated issue), kept
+                // ordinal-sorted (ca832f2d... -> a830a228...).
+                // Re-measured on the combined inventory after merging main 6f1ff559: B-03 (eecee421...) and SAT-D318
+                // (a830a228...) combined, +8 facts in total; neither parent's value.
+                "d7b1ef8cda415caa782dbdd40c6ab03dbb1537535f81d1cb8fa83b9d9048584c",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -358,7 +383,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // URT-D41/URT-D42: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (output above input on a
                 // parent roll refuses the close with no tolerance and no approval path; the read-only report of earlier
                 // closes with output above input) (85d84d52… -> 15ad9659…).
-                "15ad965941fa4a1923d7ae4d3c43787520350b5be37d50c7f184cda8d4286d09",
+                // SAT-D318: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the input issue's physical-stock 409
+                // names the issue, label and place only to its own company) (85d84d52… -> 6fb4cc8d…).
+                // Main merge after #1154: all three facts present (re-derived from the merged inventory) (-> e951ae9a…).
+                "e951ae9aa63765e1bf0b3c2835e1c780ba6c1ae1d66b7ed066a790609b152bbe",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -794,7 +822,25 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // keys to ManualBankPayments and OpenItems, and a release-only write guard (578e4f20… -> 95024798…).
             // API-23: PaymentReversalProposals / OutgoingMoneyEventReversals carry the CompanyId filter, company-leading
             // keys to ManualBankPayments and OutgoingMoneyEvents, and an append-only reversal guard (95024798… -> 61b34a3d…).
-            "61b34a3d518e3d9efec34ce79529599073ccb95c5a626affc77c637999a37b48",
+            // API-30: CashAccounts / CashAccountCommands carry the CompanyId filter and company-leading keys;
+            // CK_CashAccounts_Decision (maker≠decider, BIN2), UX_CashAccounts_LiveName and a decision-only write
+            // guard (95024798… -> e9c49087…).
+            // API-30 passivation/reactivation: CashAccounts gains the change columns, CK_CashAccounts_StateChange,
+            // the decision check and live-name filter widened to the passive status, and a write guard that also
+            // admits one change proposal or decision per save; the filter and keys are unchanged (e9c49087… -> c4668c43…).
+            // Stack merge of API-23 (#1095) and API-30 (#1109): both sets of entities, filters and write guards
+            // are present; recomputed on the merged context (61b34a3d… + c4668c43… -> fe8918ac…).
+            // F-005 D1 (FNS-D17…FNS-D21): OfficialSalesInvoices / OfficialSalesInvoiceCommands carry the CompanyId filter,
+            // company-leading keys, unique ETTN/official number per company and CK_OfficialSalesInvoices_Approval
+            // (approver ≠ recorder) (95024798… -> 6bb4c498…).
+            // #66 6860586175 (PDF first): OfficialSalesInvoiceReservations carries the CompanyId filter, a company-leading
+            // alternate key and an append-only write guard; each invoice references its reservation (CompanyId, Id),
+            // restrict; UX_OfficialSalesInvoices_PdfSha256 keeps one PDF content per company (6bb4c498… -> b43a052c…).
+            // FNS-D39: the three unique indexes are filtered to live records ([Status] IN (1, 2)) and
+            // CK_OfficialSalesInvoices_Approval admits Rejected/Withdrawn with their actor fields (b43a052c… -> e342b071…).
+            // Stack merge of API-23 + API-30 (#1095, #1109) and F-005 D1 (#1102): all three sets of entities, filters
+            // and write guards are present; recomputed on the merged context (fe8918ac… + e342b071… -> a17bc2d3…).
+            "a17bc2d3afc646ae2fd39697a5931a09dc2beff0ef9e837842a92961a41116c9",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -945,6 +991,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     ("FinanceDbContext", 2),
+                // F-005 D1: the counted sites are the host's target-typed audit envelope and the document port's PDF
+                // check results; the context is DI-resolved (#66 6860586175: the owner read is registered here too).
+                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
+                    ("FinanceDbContext", 3),
+                // F-005 D1: target-typed result/view/cursor/ReadResult sites in the official sales invoice service
+                // (#66 6860586175: with the reservation and the owner read) are conservatively counted; the pin is its
+                // exact source count, not a new DbContext writer.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialSalesInvoiceServiceV1.cs"] = ("FinanceDbContext", 14),
                 // The conservative target-typed scanner includes DTO/ReadResult return sites in the
                 // reviewed approval service; 21 is its exact source count, not a new DbContext writer.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -1185,9 +1240,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MFG inventory realization: the API host opens the Inventory transaction connection and
                 // constructs exactly one ManufacturingDbContext over it. The exact fingerprint and three
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
+                // Re-fingerprinted for SAT-D318: Inventory's physical-stock refusal carries its shortfall to the port only
+                // when it names exactly this input issue; same token count (33399d74 -> 091796f7).
+                // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the shortfall also carries Inventory's usable kg
+                // as computed there, never recomputed here; same token count (091796f7 -> 63ba7632).
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "33399d74a08dc682c165e8b619809be89145c9c54d79cfc3ee8d8b7a58ecdab1",
+                        "63ba7632fb210c72332ff025ca0956ef918c1539d52dae58e63be283331a1598",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1317,11 +1376,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API-20: the payment allocation writer and read service registrations; token counts unchanged.
                 // Re-fingerprinted for API-23: the payment reversal service registration and its two audit envelopes;
                 // token counts unchanged.
+                // Re-fingerprinted for API-30: the cash-account master service registration; token counts unchanged.
+                // Re-fingerprinted for API-30 passivation: the four change envelopes and the zero-answering balance
+                // reader (TryAddScoped); token counts unchanged (5e7d06a8… -> 79b587d8…).
+                // Stack merge of API-23 (#1095) and API-30 (#1109): both registrations are present; recomputed on the
+                // merged source, token counts unchanged (58ddb659… + 79b587d8… -> 13043002…).
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "58ddb6596d6a72a26f4497d959329eef47cc26420118bb927aa6f2d36f7f614a",
+                        "1304300210d555e618a8e1b3174b2fcd41229750e10f3631b039d1748e2fe663",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1401,6 +1465,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // F-005 D1 (FNS-D17…FNS-D21): the official sales invoice service writes and reads through the tenant-filtered
+                // FinanceDbContext only. SqlClient is referenced only to classify 2601/2627 races after SaveChanges; no
+                // connection, command, raw SQL or bypass. #66 6860586175: the reservation, the one-PDF-per-company check
+                // and the owner read use the same filtered context (362c03de… -> abc98b65…). FNS-D39: reject and withdraw
+                // use the same filtered context and race classification (abc98b65… -> a6f808c3…).
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs"] =
+                    new(
+                        "a6f808c30925e80f74c967d7856f5aade533e0456bf64c1a85cb0c9c21f1ad42",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // F3a / API-20 reads use only the tenant-filtered FinanceDbContext through EF/DI.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinancePaymentAllocationReadService.cs"] =
@@ -1464,6 +1541,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // API-30: the cash-account master writer; the SqlClient namespace only to recognise a
+                // unique-key violation (SqlException 2601/2627, UX_CashAccounts_LiveName) after SaveChanges,
+                // as FinanceBankAccountService does. No connection, command or raw SQL.
+                // Re-fingerprinted for API-30 K3 review B P3-5: a rejection's audit context names the decider
+                // as rejectedBy instead of approvedBy; same token count (5540ddc5… -> ff441d02…).
+                // Re-fingerprinted for API-30 passivation/reactivation: the change proposal, approval and rejection
+                // through the same fence, replay, attempt and audit path, and the balance seam; still no
+                // connection, command or raw SQL, same token count (ff441d02… -> 72827fa6…).
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs"] =
+                    new(
+                        "72827fa6fd5d25e6720ebde9ae981e05d1c340164a59a442d154e7fc16f5c07e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // FIN-T06: the reversal workflow is the module's third writer. SqlClient is used only
                 // to recognise unique-key violations (2601/2627) after SaveChanges; there is no
                 // connection, command, raw SQL or query-filter bypass.
@@ -1495,6 +1588,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Empty API inventories plus exact fingerprints keep direct SQL, connection and filter-bypass surfaces closed.
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     new("d6eb42c3009778d83872e20dfdbb2112c50230eff5893f1568930ed6de8bdf10",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                // F-005 D1: the official sales invoice host resolves FinanceDbContext only through DI; no direct database API.
+                // #66 6860586175: the PDF check asks the finance.official-sales-invoice owner (26e7f8d1… -> cbdeeed2…).
+                // FNS-D39: Reject maps to Approve and Withdraw to the new Withdraw permission (cbdeeed2… -> 863996fc…).
+                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
+                    new("863996fc80f0c4f9794f0d9f9f721e2fcadc154b8fae7d44ee734e1f8fc79dc6",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =
@@ -1724,7 +1823,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
                         // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its own plan's allocation, legacy-stable issue hash; provider tokens unchanged.
                         // Re-fingerprinted for B-03: V2 output overload, net-issued input read (company-filtered context) and Manufacturing genealogy staging; provider tokens unchanged.
-                        "1a5a23b7eee8e78095d10745f44261c8c0de2c0b876592d1bdcab5b27ea63589",
+                        // Re-fingerprinted for SAT-D318: the input issue's physical-stock refusal (pre-check and ledger fallback)
+                        // names the issue, label, place and checked kg; provider tokens unchanged (72ba6be8 -> 02a98e75).
+                        // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the pre-check hands the free physical kg to
+                        // the shortfall, which derives the usable kg; provider tokens unchanged (02a98e75 -> 4c1a5d57).
+                        // Re-measured on the combined file after merging main 6f1ff559: B-03 (1a5a23b7...) and SAT-D318
+                        // (4c1a5d57...) combined; neither parent's value; provider tokens unchanged.
+                        "b3c4c93d7f8e4014bc1830ea652c20366bb4b9ac2960d93ac92a8c8e97f522e0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2908,6 +3013,34 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // reversal proposal or recorded payment reversal is stored; the THROW precedes the table drops. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261111184316_AddPaymentReversals.cs"] =
                     new("a17ae3ac73ad47179d26ac7d8a05b3b6d21efa289a3e5fcc54ff127910ede1a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // API-30: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any cash account
+                // or cash-account command is stored; the THROW precedes the table drops. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261112070144_AddCashAccounts.cs"] =
+                    new("d48f0b982c32c16ed5c011576277a3045fab26dc1fd30a66ffdf68ceada82f8b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // API-30 passivation and reactivation (#66, 13 November 2026): Up is pure DDL (seven nullable change columns,
+                // the widened decision check and live-name filter, CK_CashAccounts_StateChange); the Down's only raw SQL is
+                // Finance's module refusal (51051) while any cash account is passive or carries a change; the THROW precedes
+                // every index, constraint and column drop. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261113161917_AddCashAccountStateChanges.cs"] =
+                    new("9edb092789cf1388583bc6cb5aa9972b9ccd45b3118cf6967d183a0e2fc3420e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F-005 D1: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any official sales
+                // invoice reservation, record or command is stored (#66 6860586175: reservations added in place, the
+                // designer and snapshot regenerated); the THROW precedes the table drops. Forward fix.
+                // FNS-D39: Up is pure DDL (the three unique indexes become filtered to live records, the approval check
+                // widens to the rejected and withdrawn states); the Down's only raw SQL is Finance's refusal (51273) while any
+                // rejected or withdrawn record is stored; the THROW precedes the index and check changes. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261114073527_AddOfficialSalesInvoiceRejectionAndWithdrawal.cs"] =
+                    new("fc2d6e8edabd46c29cb7af28b85f09c54b9197e96c91f0f9517edbcd19f85df8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261111233047_AddOfficialSalesInvoices.cs"] =
+                    new("ba2a7e0d86e0ba0b1aa9dcfb02e61394c87ee4ae2ac1a091d902bb4d68b6bcfd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // F3a / API-20: Up is pure DDL; the Down's only raw SQL is Finance's module refusal (51051) while any payment

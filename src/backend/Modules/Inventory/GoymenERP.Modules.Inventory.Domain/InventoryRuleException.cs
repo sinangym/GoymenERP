@@ -1,12 +1,38 @@
+using GoymenERP.Modules.Inventory.Domain.Balances;
+
 namespace GoymenERP.Modules.Inventory.Domain;
 
 /// <summary>
 /// A stock rule refused the operation. <see cref="Code"/> is the stable, machine-readable
 /// reason; the message is for people. Nothing is partly applied when this is thrown.
 /// </summary>
-public sealed class InventoryRuleException(string code, string message) : Exception(message)
+public sealed class InventoryRuleException : Exception
 {
-    public string Code { get; } = code;
+    public InventoryRuleException(string code, string message)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    /// <summary>
+    /// A negative-stock refusal that names the line it stopped (SAT-D318). The code is always
+    /// <see cref="InventoryRuleCodes.NegativePhysicalStock"/>; the shortfall only adds which line and which bucket.
+    /// </summary>
+    public InventoryRuleException(StockShortfall shortfall, string message)
+        : base(message)
+    {
+        ArgumentNullException.ThrowIfNull(shortfall);
+        Code = InventoryRuleCodes.NegativePhysicalStock;
+        Shortfall = shortfall;
+    }
+
+    public string Code { get; }
+
+    /// <summary>
+    /// Set only on a <see cref="InventoryRuleCodes.NegativePhysicalStock"/> refusal raised by the ledger: the refused
+    /// movement line and the bucket it would have taken below zero. Null for every other refusal.
+    /// </summary>
+    public StockShortfall? Shortfall { get; }
 }
 
 /// <summary>The stable refusal codes. A consumer maps these, never the message text.</summary>

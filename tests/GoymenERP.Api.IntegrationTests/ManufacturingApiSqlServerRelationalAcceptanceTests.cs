@@ -1500,6 +1500,31 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             (await ScalarAsync<long>("SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", labelId)))
                 .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+        /// <summary>
+        /// SAT-D318: a quality block of a <see cref="StockedLabelAsync"/> label through Inventory's owner store. These
+        /// kilograms leave Free stock for Blocked stock at the same place, whatever the label's allocations hold.
+        /// </summary>
+        public async Task BlockAsync(Guid labelId, decimal kilograms)
+        {
+            var location = await ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
+            var code = await ScalarAsync<string>(
+                "SELECT Code FROM inventory.Labels WHERE CompanyId = @c AND Id = @id", ("@c", CompanyA), ("@id", labelId));
+            var label = new MaterialLabel(labelId, CompanyA, code, ProductFixture.ProductId, Lot,
+                ProductFixture.ProductVersion);
+            var free = new StockPosition(CompanyA, new StockOwner(StockPartyKind.Company, CompanyA),
+                new StockCustodian(StockPartyKind.Company, CompanyA), location, label, BlockState.Free);
+            var quantity = GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(kilograms);
+            var writer = Guid.NewGuid();
+            await using var scope = InventoryStore(writer);
+            Assert.Equal(InventoryWriteOutcome.Recorded, await scope.Store.RecordMovementAsync(
+                new StockMovement(Guid.NewGuid(), CompanyA, StockMovementKind.Block, At,
+                    new StockSourceReference("synthetic.manufacturing.block", Guid.NewGuid()),
+                    [new StockMovementLine(free, StockDirection.Out, quantity),
+                        new StockMovementLine(free.WithBlock(BlockState.Blocked), StockDirection.In, quantity)]),
+                InventoryMetadata(writer)));
+        }
+
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
         public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(
             string user,
