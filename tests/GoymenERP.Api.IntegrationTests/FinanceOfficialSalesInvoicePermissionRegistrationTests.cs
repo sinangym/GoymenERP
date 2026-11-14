@@ -4,8 +4,8 @@ using GoymenERP.Modules.Finance.Contracts;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// F-005 D1 (FNS-D26): the two owner names are the registered central names — once, company-wide only, NOT Critical —
-/// and handed to nobody by the shipped seed (the grant is a human gate).
+/// F-005 D1 (FNS-D26) and FNS-D39: the three owner names are the registered central names — once, company-wide only,
+/// NOT Critical — and handed to nobody by the shipped seed (the grant is a human gate).
 /// </summary>
 public sealed class FinanceOfficialSalesInvoicePermissionRegistrationTests
 {
@@ -16,6 +16,8 @@ public sealed class FinanceOfficialSalesInvoicePermissionRegistrationTests
         ErpPermissions.FinanceOfficialSalesInvoicesRecord)]
     [InlineData(FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
         ErpPermissions.FinanceOfficialSalesInvoicesApprove)]
+    [InlineData(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw,
+        ErpPermissions.FinanceOfficialSalesInvoicesWithdraw)]
     public void Owner_command_name_is_the_known_central_name_company_wide_and_not_critical(
         string ownerName, string centralName)
     {
@@ -27,13 +29,14 @@ public sealed class FinanceOfficialSalesInvoicePermissionRegistrationTests
     }
 
     [Fact]
-    public void No_seeded_role_carries_either_name()
+    public void No_seeded_role_carries_any_of_the_names()
     {
         var seed = File.ReadAllText(Path.Combine(FindRepositoryRoot(), SeedPath));
         Assert.Contains(ErpPermissions.OrganizationLocationsRead, seed, StringComparison.Ordinal);
         Assert.DoesNotContain("finance.official-sales-invoices.", seed, StringComparison.Ordinal);
         Assert.DoesNotContain(FinanceOfficialSalesInvoicePermissionNamesV1.Record, seed, StringComparison.Ordinal);
         Assert.DoesNotContain(FinanceOfficialSalesInvoicePermissionNamesV1.Approve, seed, StringComparison.Ordinal);
+        Assert.DoesNotContain(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw, seed, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

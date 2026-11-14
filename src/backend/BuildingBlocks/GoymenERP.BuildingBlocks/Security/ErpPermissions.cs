@@ -206,8 +206,20 @@ public static class ErpPermissions
     /// </summary>
     public const string FinanceOfficialSalesInvoicesRecord = "finance.official-sales-invoices.record";
 
-    /// <inheritdoc cref="FinanceOfficialSalesInvoicesRecord"/>
+    /// <summary>
+    /// F-005 D1 (FNS-D17…FNS-D21) and FNS-D39: approve a pending official sales invoice record, or reject it with a
+    /// written reason. Registered, not granted (same human gate as Record). Company-wide only. Not Critical; the owner
+    /// service and a database check keep the approver or rejecter different from the recorder (FNS-D26).
+    /// </summary>
     public const string FinanceOfficialSalesInvoicesApprove = "finance.official-sales-invoices.approve";
+
+    /// <summary>
+    /// FNS-D39: the recorder withdraws their own pending official sales invoice record (nothing is deleted; its
+    /// number, ETTN and PDF become free). Registered, not granted: no role, seed or user receives it here; the grant
+    /// is a human gate. Company-wide only, like Record and Approve. Not Critical; "only the recorder" is a per-person
+    /// rule of the owner service and a database check, not of this catalogue.
+    /// </summary>
+    public const string FinanceOfficialSalesInvoicesWithdraw = "finance.official-sales-invoices.withdraw";
 
     /// <summary>
     /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
@@ -1156,6 +1168,7 @@ public static class ErpPermissions
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
             FinanceOfficialSalesInvoicesApprove,
+            FinanceOfficialSalesInvoicesWithdraw,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -1333,6 +1346,7 @@ public static class ErpPermissions
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
             FinanceOfficialSalesInvoicesApprove,
+            FinanceOfficialSalesInvoicesWithdraw,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,

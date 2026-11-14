@@ -1,9 +1,10 @@
 namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 
 /// <summary>
-/// F-005 D1 (FNS-D17/D18/D20): the manual official sales invoice record. It is inserted once as PendingApproval and
-/// may change exactly once, to Approved, by a different actor (maker≠approver, also a database constraint). An
-/// approved row never changes; there is no edit, cancel or withdraw path.
+/// F-005 D1 (FNS-D17/D18/D20, FNS-D39): the manual official sales invoice record. It is inserted once as
+/// PendingApproval and may change exactly once: to Approved or Rejected by a different actor (maker≠approver, also a
+/// database constraint; a rejection carries a reason), or to Withdrawn by its recorder. An approved, rejected or
+/// withdrawn row never changes and is never deleted; there is no edit or cancel path.
 /// </summary>
 internal sealed class FinanceOfficialSalesInvoiceRow : IFinanceTenantRow
 {
@@ -27,12 +28,17 @@ internal sealed class FinanceOfficialSalesInvoiceRow : IFinanceTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string? ApprovedBy { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTimeOffset? RejectedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public string? WithdrawnBy { get; set; }
+    public DateTimeOffset? WithdrawnAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public string? CausationId { get; set; }
 }
 
 /// <summary>
-/// ADR-011 command receipt local to the official sales invoice reserve/record/approve commands. Append-only.
+/// ADR-011 command receipt local to the official sales invoice reserve/record/approve/reject/withdraw commands. Append-only.
 /// </summary>
 internal sealed class FinanceOfficialSalesInvoiceCommandRow : IFinanceTenantRow
 {

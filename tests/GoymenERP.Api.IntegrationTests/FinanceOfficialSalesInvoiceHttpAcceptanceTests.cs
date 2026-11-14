@@ -19,8 +19,10 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// F-005 D1 over HTTP (FNS-D17…FNS-D21, FNS-D26; ADR-011 §4/§7). The shipped runtime grants neither name. With both
 /// names granted, the real service reserves the id (#66 6860586175), records, replays, refuses the maker as approver,
-/// lets a second person approve and replays the recorded terminal refusals. The idempotency header and the strict
-/// body answer before the service.
+/// lets a second person approve and replays the recorded terminal refusals. FNS-D39: an approver other than the
+/// recorder rejects a pending record with a reason, the recorder withdraws their own pending record, and the official
+/// number and ETTN of a rejected or withdrawn record are free again. The idempotency header and the strict body answer
+/// before the service.
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
@@ -53,6 +55,12 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         PrivateNoStore(record);
         using var approve = await client.PostAsJsonAsync(ApprovalPath(invoiceId), Approval(invoiceId), Json);
         await AssertProblemAsync(approve, HttpStatusCode.Forbidden, "forbidden");
+        using var reject = await client.PostAsJsonAsync(RejectionPath(invoiceId), Rejection(invoiceId), Json);
+        await AssertProblemAsync(reject, HttpStatusCode.Forbidden, "forbidden");
+        PrivateNoStore(reject);
+        using var withdraw = await client.PostAsJsonAsync(WithdrawalPath(invoiceId), Withdrawal(invoiceId), Json);
+        await AssertProblemAsync(withdraw, HttpStatusCode.Forbidden, "forbidden");
+        PrivateNoStore(withdraw);
         using var detail = await client.GetAsync(DetailPath(invoiceId));
         Assert.Equal(HttpStatusCode.Forbidden, detail.StatusCode);
         using var list = await client.GetAsync(Path);
@@ -158,6 +166,96 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             await list.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoicePageV1>(Json));
         Assert.Equal(TestCompanyIds.CompanyA, page.CompanyId);
         Assert.DoesNotContain(page.Items, item => item.InvoiceId == invoiceId);
+    }
+
+    [Fact]
+    public async Task Granted_actors_reject_with_a_reason_or_withdraw_their_own_pending_record_and_reuse_its_number()
+    {
+        using var host = RealHost();
+        using var recorder = Client(host, TestUsers.GroupAdmin);
+        using var checker = Client(host, TestUsers.CompanyA);
+        var rejectedId = await ReserveAsync(recorder);
+        var original = Request(rejectedId);
+        using var recorded = await SendAsync(recorder, Path, original, Key(), Correlation());
+        Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+        var pending = Assert.IsType<FinanceOfficialSalesInvoiceViewV1>((await ResultAsync(recorded)).Resource);
+
+        // The maker as rejecter and a missing reason are refusals on the merits: answered, never stored.
+        using var self = await SendAsync(recorder, RejectionPath(rejectedId), Rejection(rejectedId), Key(),
+            Correlation());
+        await AssertRefusalAsync(self, HttpStatusCode.UnprocessableEntity, CommandOutcome.ValidationFailed,
+            "approver", "approver_must_differ_from_recorder");
+        using var blank = await SendAsync(checker, RejectionPath(rejectedId),
+            Rejection(rejectedId) with { Reason = " " }, Key(), Correlation());
+        await AssertRefusalAsync(blank, HttpStatusCode.UnprocessableEntity, CommandOutcome.ValidationFailed,
+            "reason", "reason_required");
+        using var foreignWithdrawal = await SendAsync(checker, WithdrawalPath(rejectedId), Withdrawal(rejectedId),
+            Key(), Correlation());
+        await AssertRefusalAsync(foreignWithdrawal, HttpStatusCode.UnprocessableEntity,
+            CommandOutcome.ValidationFailed, "withdrawer", "withdrawer_must_be_recorder");
+
+        var rejectKey = Key();
+        var rejectCorrelation = Correlation();
+        using var rejected = await SendAsync(checker, RejectionPath(rejectedId), Rejection(rejectedId), rejectKey,
+            rejectCorrelation);
+        Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        PrivateNoStore(rejected);
+        Assert.False(rejected.Headers.Contains(Replayed));
+        var rejectedView = Assert.IsType<FinanceOfficialSalesInvoiceViewV1>((await ResultAsync(rejected)).Resource);
+        Assert.Equal((FinanceOfficialSalesInvoiceStatusV1.Rejected, "2", Checker, Rejection(rejectedId).Reason),
+            (rejectedView.Status, rejectedView.Version, rejectedView.RejectedBy, rejectedView.RejectionReason));
+        Assert.NotNull(rejectedView.RejectedAtUtc);
+        Assert.Equal(pending with
+        {
+            Status = rejectedView.Status, Version = rejectedView.Version, RejectedBy = rejectedView.RejectedBy,
+            RejectedAtUtc = rejectedView.RejectedAtUtc, RejectionReason = rejectedView.RejectionReason,
+        }, rejectedView);
+        using var rejectedAgain = await SendAsync(checker, RejectionPath(rejectedId), Rejection(rejectedId),
+            rejectKey, Correlation());
+        Assert.Equal(HttpStatusCode.OK, rejectedAgain.StatusCode);
+        AssertReplay(rejectedAgain, rejectCorrelation);
+        Assert.Equal(rejectedView, (await ResultAsync(rejectedAgain)).Resource);
+
+        // A rejected record never changes again: a recorded terminal conflict for the recorder's withdrawal too.
+        using var late = await SendAsync(recorder, WithdrawalPath(rejectedId),
+            Withdrawal(rejectedId) with { ExpectedVersion = "2" }, Key(), Correlation());
+        await AssertRefusalAsync(late, HttpStatusCode.Conflict, CommandOutcome.VersionConflict, "expectedVersion",
+            "version_conflict");
+
+        // FNS-D39: the rejected record's official number and ETTN are free for a new record on a new reservation.
+        var withdrawnId = await ReserveAsync(recorder);
+        var reused = Request(withdrawnId) with { OfficialNo = original.OfficialNo, Ettn = original.Ettn };
+        using var again = await SendAsync(recorder, Path, reused, Key(), Correlation());
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        Assert.Equal(FinanceOfficialSalesInvoiceStatusV1.PendingApproval,
+            Assert.IsType<FinanceOfficialSalesInvoiceViewV1>((await ResultAsync(again)).Resource).Status);
+
+        var withdrawKey = Key();
+        var withdrawCorrelation = Correlation();
+        using var withdrawn = await SendAsync(recorder, WithdrawalPath(withdrawnId), Withdrawal(withdrawnId),
+            withdrawKey, withdrawCorrelation);
+        Assert.Equal(HttpStatusCode.OK, withdrawn.StatusCode);
+        PrivateNoStore(withdrawn);
+        var withdrawnView = Assert.IsType<FinanceOfficialSalesInvoiceViewV1>((await ResultAsync(withdrawn)).Resource);
+        Assert.Equal((FinanceOfficialSalesInvoiceStatusV1.Withdrawn, "2", Recorder, (string?)null, (string?)null),
+            (withdrawnView.Status, withdrawnView.Version, withdrawnView.WithdrawnBy, withdrawnView.ApprovedBy,
+                withdrawnView.RejectedBy));
+        Assert.NotNull(withdrawnView.WithdrawnAtUtc);
+        using var withdrawnAgain = await SendAsync(recorder, WithdrawalPath(withdrawnId), Withdrawal(withdrawnId),
+            withdrawKey, Correlation());
+        Assert.Equal(HttpStatusCode.OK, withdrawnAgain.StatusCode);
+        AssertReplay(withdrawnAgain, withdrawCorrelation);
+        Assert.Equal(withdrawnView, (await ResultAsync(withdrawnAgain)).Resource);
+
+        // Both stay readable with their trail; the pending list holds neither.
+        using var detail = await checker.GetAsync(DetailPath(rejectedId));
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Equal(rejectedView, await detail.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceViewV1>(Json));
+        using var list = await checker.GetAsync(Path + "?pendingOnly=true");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        var page = Assert.IsType<FinanceOfficialSalesInvoicePageV1>(
+            await list.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoicePageV1>(Json));
+        Assert.DoesNotContain(page.Items, item => item.InvoiceId == rejectedId || item.InvoiceId == withdrawnId);
     }
 
     [Fact]
@@ -345,18 +443,37 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     [InlineData("approve-not-json")]
     [InlineData("reserve-unknown-member")]
     [InlineData("reserve-not-json")]
+    [InlineData("reject-unknown-member")]
+    [InlineData("reject-missing-member")]
+    [InlineData("reject-other-route-id")]
+    [InlineData("reject-not-json")]
+    [InlineData("withdraw-unknown-member")]
+    [InlineData("withdraw-missing-member")]
+    [InlineData("withdraw-other-route-id")]
+    [InlineData("withdraw-not-json")]
     public async Task The_strict_body_and_the_route_identity_are_refused_before_the_service(string fault)
     {
         var service = new CapturingService();
         using var host = FakeHost(service);
         using var client = Client(host, TestUsers.GroupAdmin);
         var invoiceId = Guid.NewGuid();
-        var (path, body) = Commands(invoiceId)[fault.StartsWith("record", StringComparison.Ordinal) ? 0
-            : fault.StartsWith("approve", StringComparison.Ordinal) ? 1 : 2];
+        var (path, body) = Commands(invoiceId)[fault[..fault.IndexOf('-', StringComparison.Ordinal)] switch
+        {
+            "record" => 0,
+            "approve" => 1,
+            "reserve" => 2,
+            "reject" => 3,
+            "withdraw" => 4,
+            _ => throw new ArgumentOutOfRangeException(nameof(fault)),
+        }];
         if (fault.EndsWith("unknown-member", StringComparison.Ordinal)) body["note"] = "SENTETIK";
         if (fault == "record-missing-member") body.Remove("taxBaseFunctionalAmount");
         if (fault == "approve-missing-member") body.Remove("expectedVersion");
+        if (fault == "reject-missing-member") body.Remove("reason");
+        if (fault == "withdraw-missing-member") body.Remove("expectedVersion");
         if (fault == "approve-other-route-id") path = ApprovalPath(Guid.NewGuid());
+        if (fault == "reject-other-route-id") path = RejectionPath(Guid.NewGuid());
+        if (fault == "withdraw-other-route-id") path = WithdrawalPath(Guid.NewGuid());
         using var request = new HttpRequestMessage(HttpMethod.Post, path)
         {
             Content = new StringContent(body.ToJsonString(), Encoding.UTF8,
@@ -396,13 +513,21 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             new FinanceOfficialSalesInvoiceReservationRequestV1(), key, correlation);
         using var recorded = await SendAsync(client, Path, record, key, correlation);
         using var approved = await SendAsync(client, ApprovalPath(invoiceId), Approval(invoiceId), key, correlation);
+        using var rejected = await SendAsync(client, RejectionPath(invoiceId), Rejection(invoiceId), key,
+            correlation);
+        using var withdrawn = await SendAsync(client, WithdrawalPath(invoiceId), Withdrawal(invoiceId), key,
+            correlation);
 
         Assert.Equal(HttpStatusCode.OK, reserved.StatusCode);
         Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
-        Assert.Equal(3, service.Calls);
+        Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, withdrawn.StatusCode);
+        Assert.Equal(5, service.Calls);
         Assert.Equal(record, service.Recorded);
         Assert.Equal(Approval(invoiceId), service.Approved);
+        Assert.Equal(Rejection(invoiceId), service.Rejected);
+        Assert.Equal(Withdrawal(invoiceId), service.Withdrawn);
         Assert.All(service.Contexts, context =>
             Assert.Equal((TestCompanyIds.CompanyA, Recorder, correlation), (context.CompanyId, context.ActorId,
                 context.CorrelationId)));
@@ -424,8 +549,12 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             new FinanceOfficialSalesInvoiceReservationRequestV1(), Key(), Correlation());
         using var recorded = await SendAsync(client, Path, Request(invoiceId), Key(), Correlation());
         using var approved = await SendAsync(client, ApprovalPath(invoiceId), Approval(invoiceId), Key(), Correlation());
+        using var rejected = await SendAsync(client, RejectionPath(invoiceId), Rejection(invoiceId), Key(),
+            Correlation());
+        using var withdrawn = await SendAsync(client, WithdrawalPath(invoiceId), Withdrawal(invoiceId), Key(),
+            Correlation());
 
-        foreach (var response in new[] { reserved, recorded, approved })
+        foreach (var response in new[] { reserved, recorded, approved, rejected, withdrawn })
         {
             await AssertProblemAsync(response, status, code);
             PrivateNoStore(response);
@@ -434,7 +563,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
                 StringComparison.Ordinal);
         }
 
-        Assert.Equal(3, service.Calls);
+        Assert.Equal(5, service.Calls);
     }
 
     [Fact]
@@ -453,6 +582,12 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         await AssertProblemAsync(reserved, HttpStatusCode.BadRequest, "company_context_invalid");
         await AssertProblemAsync(recorded, HttpStatusCode.BadRequest, "company_context_invalid");
         await AssertProblemAsync(approved, HttpStatusCode.BadRequest, "company_context_invalid");
+        using var rejected = await SendAsync(client, RejectionPath(invoiceId), Rejection(invoiceId), Key(),
+            Correlation());
+        await AssertProblemAsync(rejected, HttpStatusCode.BadRequest, "company_context_invalid");
+        using var withdrawn = await SendAsync(client, WithdrawalPath(invoiceId), Withdrawal(invoiceId), Key(),
+            Correlation());
+        await AssertProblemAsync(withdrawn, HttpStatusCode.BadRequest, "company_context_invalid");
         Assert.Equal(0, service.Calls);
     }
 
@@ -503,6 +638,8 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         (ApprovalPath(invoiceId), JsonSerializer.SerializeToNode(Approval(invoiceId), Json)!.AsObject()),
         (ReservationsPath, JsonSerializer.SerializeToNode(new FinanceOfficialSalesInvoiceReservationRequestV1(), Json)!
             .AsObject()),
+        (RejectionPath(invoiceId), JsonSerializer.SerializeToNode(Rejection(invoiceId), Json)!.AsObject()),
+        (WithdrawalPath(invoiceId), JsonSerializer.SerializeToNode(Withdrawal(invoiceId), Json)!.AsObject()),
     ];
 
     /// <summary>#66 6860586175: every record consumes the recorder's own server-generated reservation.</summary>
@@ -526,6 +663,15 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     private static FinanceOfficialSalesInvoiceApproveRequestV1 Approval(Guid invoiceId) => new(invoiceId, "1");
 
     private static string ApprovalPath(Guid invoiceId) => $"{Path}/{invoiceId:D}/approval";
+
+    private static FinanceOfficialSalesInvoiceRejectRequestV1 Rejection(Guid invoiceId) =>
+        new(invoiceId, "1", "SENTETIK tutar faturayla uyuşmuyor");
+
+    private static FinanceOfficialSalesInvoiceWithdrawRequestV1 Withdrawal(Guid invoiceId) => new(invoiceId, "1");
+
+    private static string RejectionPath(Guid invoiceId) => $"{Path}/{invoiceId:D}/rejection";
+
+    private static string WithdrawalPath(Guid invoiceId) => $"{Path}/{invoiceId:D}/withdrawal";
 
     private static string DetailPath(Guid invoiceId) => $"{Path}/{invoiceId:D}";
 
@@ -582,6 +728,8 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         public List<string> Keys { get; } = [];
         public FinanceOfficialSalesInvoiceRecordRequestV1? Recorded { get; private set; }
         public FinanceOfficialSalesInvoiceApproveRequestV1? Approved { get; private set; }
+        public FinanceOfficialSalesInvoiceRejectRequestV1? Rejected { get; private set; }
+        public FinanceOfficialSalesInvoiceWithdrawRequestV1? Withdrawn { get; private set; }
 
         public async Task<FinanceOfficialSalesInvoiceReservationResultV1> ReserveAsync(FinanceContext context,
             CommandMetadata metadata, FinanceOfficialSalesInvoiceReservationRequestV1 request,
@@ -607,6 +755,20 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             FinanceOfficialSalesInvoiceApproveRequestV1 request, CancellationToken cancellationToken)
         {
             Approved = request;
+            return Answer(context, metadata);
+        }
+
+        public Task<FinanceOfficialSalesInvoiceResultV1> RejectAsync(FinanceContext context, CommandMetadata metadata,
+            FinanceOfficialSalesInvoiceRejectRequestV1 request, CancellationToken cancellationToken)
+        {
+            Rejected = request;
+            return Answer(context, metadata);
+        }
+
+        public Task<FinanceOfficialSalesInvoiceResultV1> WithdrawAsync(FinanceContext context, CommandMetadata metadata,
+            FinanceOfficialSalesInvoiceWithdrawRequestV1 request, CancellationToken cancellationToken)
+        {
+            Withdrawn = request;
             return Answer(context, metadata);
         }
 
@@ -649,7 +811,8 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         private static bool Granted(string permission, Guid companyId) =>
             companyId == TestCompanyIds.CompanyA
             && permission is ErpPermissions.FinanceOfficialSalesInvoicesRecord
-                or ErpPermissions.FinanceOfficialSalesInvoicesApprove;
+                or ErpPermissions.FinanceOfficialSalesInvoicesApprove
+                or ErpPermissions.FinanceOfficialSalesInvoicesWithdraw;
 
         private static PermissionScope Scope(string permission, Guid companyId) =>
             new(Granted(permission, companyId), true, new HashSet<string>(StringComparer.Ordinal) { "F005-HTTP" },

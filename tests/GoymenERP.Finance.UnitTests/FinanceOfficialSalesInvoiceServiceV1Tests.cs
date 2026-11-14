@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Finance.UnitTests;
 
-public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
+public sealed partial class FinanceOfficialSalesInvoiceServiceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-0000000000a1");
     private static readonly Guid ForeignCompany = Guid.Parse("10000000-0000-0000-0000-0000000000b2");
@@ -660,10 +660,16 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         Assert.Equal(FinanceDbContext.OfficialSalesInvoiceApprovalCheck, approval.Sql);
         Assert.Contains("[ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy]", approval.Sql,
             StringComparison.Ordinal);
+        Assert.Contains("[RejectedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy]", approval.Sql,
+            StringComparison.Ordinal);
+        Assert.Contains("[WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [RecordedBy]", approval.Sql,
+            StringComparison.Ordinal);
+        // FNS-D39: the official number and ETTN are unique only among live (pending + approved) records.
         Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.GetDatabaseName()
-            == "UX_OfficialSalesInvoices_OfficialNo");
+            == "UX_OfficialSalesInvoices_OfficialNo" && index.GetFilter() == "[Status] IN (1, 2)");
         Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.GetDatabaseName()
-            == "UX_OfficialSalesInvoices_Ettn");
+            == "UX_OfficialSalesInvoices_Ettn" && index.GetFilter() == "[Status] IN (1, 2)");
+        Assert.Equal("[Status] IN (1, 2)", FinanceDbContext.OfficialSalesInvoiceLiveFilter);
         Assert.Equal("finance", entity.GetSchema());
     }
 
@@ -741,6 +747,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
         var pdf = Assert.Single(invoice.GetIndexes(),
             index => index.GetDatabaseName() == "UX_OfficialSalesInvoices_PdfSha256");
         Assert.True(pdf.IsUnique);
+        Assert.Equal(FinanceDbContext.OfficialSalesInvoiceLiveFilter, pdf.GetFilter());
         Assert.Equal(["CompanyId", "PdfSha256"], pdf.Properties.Select(property => property.Name));
         var consumed = Assert.Single(invoice.GetForeignKeys(), key => key.PrincipalEntityType == reservation);
         Assert.True(consumed.IsUnique);
@@ -1092,7 +1099,9 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1Tests
                 currencies ?? new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]), Audit,
                 new FinanceOfficialSalesInvoiceAuditEnvelopesV1(
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Record, [], "unit-test"),
-                    new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve, [], "unit-test")),
+                    new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve, [], "unit-test"),
+                    new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve, [], "unit-test"),
+                    new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw, [], "unit-test")),
                 TimeProvider.System);
         }
     }

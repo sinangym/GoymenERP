@@ -39,7 +39,11 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
                 Envelope(FinanceOfficialSalesInvoicePermissionNamesV1.Record,
                     authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Record), correlation),
                 Envelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
-                    authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Approve), correlation)),
+                    authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Approve), correlation),
+                Envelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
+                    authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Reject), correlation),
+                Envelope(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw,
+                    authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Withdraw), correlation)),
             provider.GetRequiredService<TimeProvider>());
     }
 
@@ -49,8 +53,10 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
 }
 
 /// <summary>
-/// Fresh company-wide authority for the official sales invoice record (FNS-D17…FNS-D21, FNS-D26). Read is not a third
-/// permission: a holder of Record or Approve may read. An unregistered central name answers Unavailable.
+/// Fresh company-wide authority for the official sales invoice record (FNS-D17…FNS-D21, FNS-D26, FNS-D39). Read is not
+/// a separate permission: a holder of Record or Approve may read. Reject is answered with Approve (the approver
+/// rejects), Withdraw with Withdraw; the service adds the per-person rules (rejecter≠recorder, withdrawer=recorder).
+/// An unregistered central name answers Unavailable.
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceAuthority(
     IErpAuthorityRevalidationService authority,
@@ -80,6 +86,12 @@ public sealed class FinanceOfficialSalesInvoiceAuthority(
                     cancellationToken),
             FinanceOfficialSalesInvoiceAuthorityActionV1.Approve =>
                 await CheckOneAsync(context, action, FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
+                    cancellationToken),
+            FinanceOfficialSalesInvoiceAuthorityActionV1.Reject =>
+                await CheckOneAsync(context, action, FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
+                    cancellationToken),
+            FinanceOfficialSalesInvoiceAuthorityActionV1.Withdraw =>
+                await CheckOneAsync(context, action, FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw,
                     cancellationToken),
             FinanceOfficialSalesInvoiceAuthorityActionV1.Read => await CheckReadAsync(context, cancellationToken),
             _ => PermissionDecision.Unavailable,

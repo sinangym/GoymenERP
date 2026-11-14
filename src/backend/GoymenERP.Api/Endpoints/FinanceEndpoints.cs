@@ -369,8 +369,9 @@ public static class FinanceEndpoints
             : PermissionDecision.Denied;
     }
 
-    // F-005 D1 (FNS-D17…FNS-D21, FNS-D26): manual official sales invoice record. Reserve (#66 6860586175: the id the
-    // PDF is uploaded to first), record and approve only; there is no edit, cancel or withdraw route.
+    // F-005 D1 (FNS-D17…FNS-D21, FNS-D26, FNS-D39): manual official sales invoice record. Reserve (#66 6860586175: the
+    // id the PDF is uploaded to first), record, approve, and for a pending record only reject (approver, with a reason)
+    // or withdraw (recorder); there is no edit or cancel route.
     private static void MapOfficialSalesInvoiceEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost($"{OfficialSalesInvoicesPath}/reservations", async (
@@ -523,6 +524,88 @@ public static class FinanceEndpoints
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
                 StatusCodes.Status422UnprocessableEntity)
             .Accepts<FinanceOfficialSalesInvoiceApproveRequestV1>("application/json")
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost($"{OfficialSalesInvoicesPath}/{{invoiceId:guid}}/rejection", async (
+                Guid invoiceId,
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialSalesInvoiceRejectRequestV1>(httpContext, cancellationToken)
+                    is not { } request || request.InvoiceId != invoiceId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.RejectAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RejectFinanceOfficialSalesInvoiceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // FNS-D39. The replayable results: the stored rejection (200) and the recorded terminal refusals
+            // (ADR-011 §7): a stale version or a record no longer pending (409) and an unknown record (422).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<FinanceOfficialSalesInvoiceRejectRequestV1>("application/json")
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost($"{OfficialSalesInvoicesPath}/{{invoiceId:guid}}/withdrawal", async (
+                Guid invoiceId,
+                HttpContext httpContext,
+                IFinanceOfficialSalesInvoiceServiceV1 service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialSalesInvoiceWithdrawRequestV1>(httpContext, cancellationToken)
+                    is not { } request || request.InvoiceId != invoiceId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.WithdrawAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("WithdrawFinanceOfficialSalesInvoiceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // FNS-D39. The replayable results: the stored withdrawal (200) and the recorded terminal refusals
+            // (ADR-011 §7): a stale version or a record no longer pending (409) and an unknown record (422).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<FinanceOfficialSalesInvoiceWithdrawRequestV1>("application/json")
             .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status200OK)
             .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status409Conflict)
             .Produces<FinanceOfficialSalesInvoiceResultV1>(StatusCodes.Status422UnprocessableEntity)

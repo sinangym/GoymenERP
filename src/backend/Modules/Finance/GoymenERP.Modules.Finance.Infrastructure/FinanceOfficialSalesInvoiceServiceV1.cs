@@ -15,14 +15,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 
 public sealed record FinanceOfficialSalesInvoiceAuditEnvelopesV1(
     FinanceAuditEnvelope Record,
-    FinanceAuditEnvelope Approve);
+    FinanceAuditEnvelope Approve,
+    FinanceAuditEnvelope Reject,
+    FinanceAuditEnvelope Withdraw);
 
 /// <summary>
 /// F-005 D1 (FNS-D17…FNS-D21, FNS-D26): the manual official sales invoice record. One actor reserves the record id,
 /// uploads the PDF to that id in the Documents vault and records every mandatory field with it (#66 6860586175: PDF
 /// first, one "Kaydet" step); a different actor approves it (maker≠approver, also enforced by the database check).
-/// Only an approved record is a fact other modules may read (D3). There is no edit, cancel or withdraw command
-/// (FNS-D20).
+/// Only an approved record is a fact other modules may read (D3). There is no edit or cancel command (FNS-D20).
+/// FNS-D39: a pending record may instead be rejected with a reason by an approver who is not the recorder, or
+/// withdrawn by its recorder; the row and its trail stay, and its official number, ETTN and PDF content become free
+/// for a new record (uniqueness covers live records only).
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceServiceV1(
     FinanceDbContext dbContext,
@@ -39,6 +43,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     public const string ReserveCommand = "finance.official-sales-invoices.reserve";
     public const string RecordCommand = "finance.official-sales-invoices.record";
     public const string ApproveCommand = "finance.official-sales-invoices.approve";
+    public const string RejectCommand = "finance.official-sales-invoices.reject";
+    public const string WithdrawCommand = "finance.official-sales-invoices.withdraw";
     private const string EntityType = "Finance.OfficialSalesInvoice";
     private const string ReservationEntityType = "Finance.OfficialSalesInvoiceReservation";
     private const int IdentityMaximumLength = 128;
@@ -46,6 +52,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     private const int MaximumOffset = 1_000_000;
     private const long PendingVersion = 1;
     private const long ApprovedVersion = 2;
+    private const long DecidedVersion = 2;
+    private const int RejectionReasonMaximumLength = FinanceDbContext.OfficialSalesInvoiceMaximumRejectionReasonLength;
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
     /// <summary>
@@ -333,6 +341,181 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             ?? result;
     }
 
+    /// <summary>
+    /// FNS-D39: an approver (Approve authority) who is not the recorder rejects a pending record with a written reason.
+    /// Nothing is deleted; the record keeps its trail and frees its official number, ETTN and PDF content. A record
+    /// that is no longer pending (approved, rejected or withdrawn) or a stale version is a recorded terminal conflict.
+    /// </summary>
+    public async Task<FinanceOfficialSalesInvoiceResultV1> RejectAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceRejectRequestV1 request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var action = FinanceOfficialSalesInvoiceAuthorityActionV1.Reject;
+        if (await FenceAsync(context, action, request.InvoiceId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+        // The house reason rule (FinanceBankAccountService): required, no surrounding whitespace, bounded.
+        if (string.IsNullOrWhiteSpace(request.Reason)
+            || !string.Equals(request.Reason, request.Reason.Trim(), StringComparison.Ordinal))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_required"));
+        }
+        if (request.Reason.Length > RejectionReasonMaximumLength)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"));
+        }
+
+        var reason = request.Reason;
+        return await DecidePendingAsync(context, metadata, action, RejectCommand, request.InvoiceId,
+            request.ExpectedVersion, JsonSerializer.Serialize(request, Json),
+            row => string.Equals(row.RecordedBy, context.ActorId, StringComparison.Ordinal)
+                ? Refused(context, CommandOutcome.ValidationFailed,
+                    Issue("approver", "approver_must_differ_from_recorder"))
+                : null,
+            (row, now) =>
+            {
+                row.Status = (int)FinanceOfficialSalesInvoiceStatusV1.Rejected;
+                row.RejectedBy = context.ActorId;
+                row.RejectedAtUtc = now;
+                row.RejectionReason = reason;
+            },
+            "finance.official-sales-invoice.rejected.v1", "Reject", envelopes.Reject,
+            "Kaydedenden farklı yetkili finans kullanıcısı bekleyen resmî satış faturası kaydını gerekçeyle reddetti",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// FNS-D39: the recorder withdraws their own pending record (Withdraw authority and the recorder itself). Nothing is
+    /// deleted; the record keeps its trail and frees its official number, ETTN and PDF content. A record that is no
+    /// longer pending or a stale version is a recorded terminal conflict.
+    /// </summary>
+    public async Task<FinanceOfficialSalesInvoiceResultV1> WithdrawAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceWithdrawRequestV1 request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var action = FinanceOfficialSalesInvoiceAuthorityActionV1.Withdraw;
+        if (await FenceAsync(context, action, request.InvoiceId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+
+        return await DecidePendingAsync(context, metadata, action, WithdrawCommand, request.InvoiceId,
+            request.ExpectedVersion, JsonSerializer.Serialize(request, Json),
+            row => string.Equals(row.RecordedBy, context.ActorId, StringComparison.Ordinal)
+                ? null
+                : Refused(context, CommandOutcome.ValidationFailed,
+                    Issue("withdrawer", "withdrawer_must_be_recorder")),
+            (row, now) =>
+            {
+                row.Status = (int)FinanceOfficialSalesInvoiceStatusV1.Withdrawn;
+                row.WithdrawnBy = context.ActorId;
+                row.WithdrawnAtUtc = now;
+            },
+            "finance.official-sales-invoice.withdrawn.v1", "Withdraw", envelopes.Withdraw,
+            "Kaydeden kullanıcı bekleyen resmî satış faturası kaydını geri çekti",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The shared K3 path of a pending record's reject / withdraw (FNS-D39): identity, replay, load, terminal
+    /// not-found / not-pending / stale version, the actor rule (422, not recorded), one version step, one save with
+    /// the command receipt and the audit event. No money effect, so no currency or PDF re-check.
+    /// </summary>
+    private async Task<FinanceOfficialSalesInvoiceResultV1> DecidePendingAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceAuthorityActionV1 action,
+        string command,
+        Guid invoiceId,
+        string expectedVersion,
+        string payloadJson,
+        Func<FinanceOfficialSalesInvoiceRow, FinanceOfficialSalesInvoiceResultV1?> actorRefusal,
+        Action<FinanceOfficialSalesInvoiceRow, DateTimeOffset> decide,
+        string eventType,
+        string operation,
+        FinanceAuditEnvelope envelope,
+        string auditReason,
+        CancellationToken cancellationToken)
+    {
+        if (!ValidIdentity(metadata.IdempotencyKey) || !ValidIdentity(expectedVersion)
+            || !ValidIdentity(context.ActorId) || !ValidIdentity(context.CorrelationId))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("request", "finance_value_does_not_fit"));
+        }
+        if (invoiceId == Guid.Empty)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("invoiceId", "identity_required"));
+        }
+
+        var keyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
+        var payloadHash = Hash(payloadJson);
+        if (await PriorAsync(context, command, action, invoiceId, keyHash, payloadHash, cancellationToken)
+            is { } prior)
+        {
+            return prior;
+        }
+
+        var row = await dbContext.OfficialSalesInvoices
+            .SingleOrDefaultAsync(candidate => candidate.Id == invoiceId, cancellationToken);
+        if (await FenceAsync(context, action, invoiceId, cancellationToken) is { } afterRead)
+        {
+            return afterRead;
+        }
+        if (row is null)
+        {
+            // Another company's record is not visible either: the same answer, nothing leaks (terminal, §7).
+            return await TerminalAsync(context, command, action, invoiceId, keyHash, payloadHash,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("invoiceId", "invoice_not_found")),
+                cancellationToken);
+        }
+        if (row.Status != (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
+            || !string.Equals(expectedVersion, VersionText(row.Version), StringComparison.Ordinal))
+        {
+            // FNS-D20 / FNS-D39: an approved, rejected or withdrawn record never changes again (terminal, §7).
+            return await TerminalAsync(context, command, action, row.Id, keyHash, payloadHash,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
+        }
+        if (actorRefusal(row) is { } refusedActor)
+        {
+            return refusedActor;
+        }
+
+        var before = AuditJson(row);
+        var now = timeProvider.GetUtcNow();
+        decide(row, now);
+        row.Version = DecidedVersion;
+        var result = Succeeded(context, View(row));
+        AddCommand(context, command, keyHash, payloadHash, row.Id, result, now);
+
+        if (await FenceAsync(context, action, row.Id, cancellationToken) is { } beforeSave)
+        {
+            dbContext.ChangeTracker.Clear();
+            return beforeSave;
+        }
+
+        Audit(context, metadata, EntityType, row.Id, eventType, operation, PendingVersion, DecidedVersion, before,
+            AuditJson(row), envelope, auditReason);
+        return await SaveAsync(context, command, action, row.Id, keyHash, payloadHash, conflicts: null,
+                cancellationToken)
+            ?? result;
+    }
+
     public async Task<ReadResult<FinanceOfficialSalesInvoiceViewV1>> GetAsync(
         FinanceContext context,
         Guid invoiceId,
@@ -510,7 +693,9 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
     /// The record's conflicts, read through the company filter: the id already recorded (409), no reservation of this
     /// id by this actor (422 <c>reservation_not_found</c>), a duplicate official number or ETTN (422) and, once the
     /// vault has answered the hash, the same PDF content in another record (422 <c>pdf_already_recorded</c> carrying
-    /// that record's official number in <c>ExistingOfficialNo</c>; #66 6860586175). It runs before the PDF check,
+    /// that record's official number in <c>ExistingOfficialNo</c>; #66 6860586175). FNS-D39: the number, ETTN and PDF
+    /// duplicates count only live records (pending or approved), like the filtered unique indexes; a rejected or
+    /// withdrawn record frees them. The id is never reused, whatever the record's state. It runs before the PDF check,
     /// after it, and after a save that lost a race to a unique index, so the race answers what the check would have.
     /// None of these is terminal: nothing is recorded.
     /// </summary>
@@ -525,13 +710,14 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             .Where(row => row.Id == invoiceId && row.CompanyId == companyId)
             .Select(row => row.ReservedBy)
             .SingleOrDefaultAsync(cancellationToken);
-        var sameNo = await dbContext.OfficialSalesInvoices.AsNoTracking()
-            .AnyAsync(row => row.OfficialNo == officialNo, cancellationToken);
-        var sameEttn = await dbContext.OfficialSalesInvoices.AsNoTracking()
-            .AnyAsync(row => row.Ettn == ettn, cancellationToken);
+        var live = dbContext.OfficialSalesInvoices.AsNoTracking()
+            .Where(row => row.Status == (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
+                          || row.Status == (int)FinanceOfficialSalesInvoiceStatusV1.Approved);
+        var sameNo = await live.AnyAsync(row => row.OfficialNo == officialNo, cancellationToken);
+        var sameEttn = await live.AnyAsync(row => row.Ettn == ettn, cancellationToken);
         var pdfHolderOfficialNo = pdfSha256 is null
             ? null
-            : await dbContext.OfficialSalesInvoices.AsNoTracking()
+            : await live
                 .Where(row => row.PdfSha256 == pdfSha256 && row.CompanyId == companyId)
                 .Select(row => row.OfficialNo)
                 .SingleOrDefaultAsync(cancellationToken);
@@ -799,7 +985,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         row.VatFunctionalAmountText,
         row.WithholdingFunctionalAmountText, row.PdfDocumentId, row.PdfDocumentVersionNo, row.PdfSha256,
         (FinanceOfficialSalesInvoiceStatusV1)row.Status, VersionText(row.Version), row.RecordedBy, row.RecordedAtUtc,
-        row.ApprovedBy, row.ApprovedAtUtc);
+        row.ApprovedBy, row.ApprovedAtUtc, row.RejectedBy, row.RejectedAtUtc, row.RejectionReason, row.WithdrawnBy,
+        row.WithdrawnAtUtc);
 
     private static string AuditJson(FinanceOfficialSalesInvoiceRow row) => JsonSerializer.Serialize(View(row), Json);
 

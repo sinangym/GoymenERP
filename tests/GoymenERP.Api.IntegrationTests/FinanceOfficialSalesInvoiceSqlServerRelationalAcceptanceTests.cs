@@ -13,13 +13,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Real SQL Server evidence for the F-005 D1 manual official sales invoice record (FNS-D17…FNS-D21) and its
 /// reservation (#66 6860586175: reserve → upload → record; one PDF content per company). Every row, number, ETTN, PDF
-/// pin and permission in this class is SENTETIK test data; this is not a real invoice, grant or UAT.
+/// pin and permission in this class is SENTETIK test data; this is not a real invoice, grant or UAT. FNS-D39: a rejected
+/// or withdrawn record keeps its row and frees its official number, ETTN and PDF content (unique among live records).
 /// </summary>
 public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTests
 {
@@ -32,6 +34,7 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
     private const string OfficialNo = "SNT2026000000001";
     private const string ReservationFk = "FK_OfficialSalesInvoices_OfficialSalesInvoiceReservations_CompanyId_Id";
     private const string PreviousMigration = "20261107154419_AddPaymentAllocations";
+    private const string BeforeDecisionsMigration = "20261111233047_AddOfficialSalesInvoices";
 
     [SqlServerFact]
     public async Task A_different_actor_approves_the_record_and_rows_commands_and_audits_persist_together()
@@ -416,6 +419,154 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
             "SELECT COUNT(*) FROM finance.OfficialSalesInvoiceReservations WHERE CompanyId = @a", ("@a", Company)));
     }
 
+    [SqlServerFact]
+    public async Task A_rejected_or_withdrawn_record_frees_its_number_ettn_and_pdf_while_two_live_records_still_collide()
+    {
+        await using var run = await Run.StartAsync();
+        var rejected = await RecordAsync(run);
+        await using (var checker = run.Service("SENTETIK-checker"))
+        {
+            var reject = await checker.Service.RejectAsync(checker.Context, new CommandMetadata("reject-key"),
+                new FinanceOfficialSalesInvoiceRejectRequestV1(rejected, "1", "SENTETIK tutar uyuşmuyor"), default);
+            Assert.Equal(CommandOutcome.Succeeded, reject.Outcome);
+            Assert.Equal(FinanceOfficialSalesInvoiceStatusV1.Rejected, reject.Resource!.Status);
+        }
+
+        // The same number, ETTN and PDF content (one hash for every record here) record again on a new reservation.
+        var withdrawn = await ReserveAsync(run, "SENTETIK-maker");
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await maker.Service.RecordAsync(maker.Context,
+                new CommandMetadata("record-after-reject"), Request(withdrawn), default)).Outcome);
+            var withdraw = await maker.Service.WithdrawAsync(maker.Context, new CommandMetadata("withdraw-key"),
+                new FinanceOfficialSalesInvoiceWithdrawRequestV1(withdrawn, "1"), default);
+            Assert.Equal(CommandOutcome.Succeeded, withdraw.Outcome);
+            Assert.Equal(FinanceOfficialSalesInvoiceStatusV1.Withdrawn, withdraw.Resource!.Status);
+        }
+
+        var live = await ReserveAsync(run, "SENTETIK-maker");
+        var refusedLive = await ReserveAsync(run, "SENTETIK-maker");
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await maker.Service.RecordAsync(maker.Context,
+                new CommandMetadata("record-after-withdraw"), Request(live), default)).Outcome);
+            // A second live record with the same content is still refused while the first one is pending.
+            var duplicate = await maker.Service.RecordAsync(maker.Context, new CommandMetadata("record-live-copy"),
+                Request(refusedLive), default);
+            Assert.Equal(CommandOutcome.ValidationFailed, duplicate.Outcome);
+            Assert.Null(duplicate.Resource);
+        }
+
+        // Every row stays (nothing is deleted); one number is held by a rejected, a withdrawn and a live record.
+        Assert.Equal("3|4|1", await run.ScalarAsync<string>(
+            "SELECT STRING_AGG(CAST(Status AS nvarchar(1)), N'|') WITHIN GROUP (ORDER BY RecordedAtUtc, Status) "
+            + "FROM finance.OfficialSalesInvoices WHERE CompanyId = @a AND OfficialNo = @no AND Ettn = @ettn",
+            ("@a", Company), ("@no", OfficialNo), ("@ettn", Ettn)));
+        Assert.Equal("SENTETIK-checker|SENTETIK tutar uyuşmuyor|SENTETIK-maker", await run.ScalarAsync<string>(
+            "SELECT CONCAT((SELECT RejectedBy COLLATE DATABASE_DEFAULT FROM finance.OfficialSalesInvoices WHERE Id = @r), "
+            + "N'|', (SELECT RejectionReason FROM finance.OfficialSalesInvoices WHERE Id = @r), N'|', "
+            + "(SELECT WithdrawnBy COLLATE DATABASE_DEFAULT FROM finance.OfficialSalesInvoices WHERE Id = @w))",
+            ("@r", rejected), ("@w", withdrawn)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialSalesInvoices WHERE Id = @id", ("@id", refusedLive)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.official-sales-invoice.rejected.v1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.official-sales-invoice.withdrawn.v1'"));
+
+        // The unique indexes are filtered to live records (pending, approved) and still hold among them: the withdrawn
+        // row put back to pending collides, and so does a live copy that shares any one of the three keys.
+        foreach (var index in new[] { "UX_OfficialSalesInvoices_Ettn", "UX_OfficialSalesInvoices_OfficialNo",
+                     "UX_OfficialSalesInvoices_PdfSha256" })
+        {
+            Assert.Equal("[Status] IN (1, 2)|1", await run.ScalarAsync<string>(
+                "SELECT CONCAT(i.filter_definition, N'|', CAST(i.is_unique AS int)) FROM sys.indexes i "
+                + "WHERE i.object_id = OBJECT_ID(N'finance.OfficialSalesInvoices') AND i.name = @name",
+                ("@name", index)));
+        }
+
+        var revived = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.OfficialSalesInvoices SET Status = 1, Version = 1, WithdrawnBy = NULL, "
+            + "WithdrawnAtUtc = NULL WHERE Id = @id", ("@id", withdrawn)));
+        Assert.Equal(2601, revived.Number);
+        Assert.Contains("UX_OfficialSalesInvoices_", revived.Message, StringComparison.Ordinal);
+        var otherKeys = new Dictionary<string, string>
+        {
+            ["OfficialNo"] = "SNT2026000000009",
+            ["Ettn"] = "98000000-0000-4000-8000-000000000008",
+            ["PdfSha256"] = Sha("SENTETIK-other-content"),
+        };
+        foreach (var column in otherKeys.Keys)
+        {
+            // A live copy that differs in the other two keys still collides on this one.
+            var changed = otherKeys.Where(pair => pair.Key != column).ToArray();
+            var copied = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+                "UPDATE finance.OfficialSalesInvoices SET Status = 1, Version = 1, WithdrawnBy = NULL, "
+                + "WithdrawnAtUtc = NULL, " + string.Join(", ", changed.Select(pair => $"{pair.Key} = @{pair.Key}"))
+                + " WHERE Id = @id",
+                [("@id", withdrawn), .. changed.Select(pair => ("@" + pair.Key, (object)pair.Value))]));
+            Assert.Equal(2601, copied.Number);
+            Assert.Contains("UX_OfficialSalesInvoices_" + column, copied.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT Status FROM finance.OfficialSalesInvoices WHERE Id = @id", ("@id", withdrawn)));
+    }
+
+    [SqlServerFact]
+    public async Task The_decision_migrations_Down_passes_with_live_records_and_refuses_while_a_rejected_or_withdrawn_record_exists()
+    {
+        var guard = Assert.IsType<SqlOperation>(new GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
+            .AddOfficialSalesInvoiceRejectionAndWithdrawal().DownOperations[0]).Sql;
+        foreach (var decision in new[] { "reject", "withdraw" })
+        {
+            await using var run = await Run.StartAsync();
+            var pending = await RecordAsync(run);
+            var approved = await ReserveAsync(run, "SENTETIK-maker");
+            await using (var maker = run.Service("SENTETIK-maker", pdfSha: Sha("SENTETIK-approved-content")))
+            {
+                Assert.Equal(CommandOutcome.Succeeded, (await maker.Service.RecordAsync(maker.Context,
+                    new CommandMetadata("record-approved"), Second(approved), default)).Outcome);
+            }
+            await using (var checker = run.Service("SENTETIK-checker"))
+            {
+                Assert.Equal(CommandOutcome.Succeeded, (await checker.Service.ApproveAsync(checker.Context,
+                    new CommandMetadata("approve-key"), new FinanceOfficialSalesInvoiceApproveRequestV1(approved, "1"),
+                    default)).Outcome);
+            }
+
+            // Only pending and approved records: the guard passes (it changes nothing).
+            await run.ExecuteAsync(guard);
+
+            await using (var actor = run.Service(decision == "reject" ? "SENTETIK-checker" : "SENTETIK-maker"))
+            {
+                var decided = decision == "reject"
+                    ? await actor.Service.RejectAsync(actor.Context, new CommandMetadata("decide-key"),
+                        new FinanceOfficialSalesInvoiceRejectRequestV1(pending, "1", "SENTETIK gerekçe"), default)
+                    : await actor.Service.WithdrawAsync(actor.Context, new CommandMetadata("decide-key"),
+                        new FinanceOfficialSalesInvoiceWithdrawRequestV1(pending, "1"), default);
+                Assert.Equal(CommandOutcome.Succeeded, decided.Outcome);
+            }
+
+            var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+            Assert.Equal(51273, refused.Number);
+            Assert.Contains("forward fix", refused.Message, StringComparison.Ordinal);
+
+            await using (var context = run.Context())
+            {
+                var rollback = await Assert.ThrowsAsync<SqlException>(() =>
+                    context.GetService<IMigrator>().MigrateAsync(BeforeDecisionsMigration));
+                Assert.Equal(51273, rollback.Number);
+                Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal",
+                    (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            }
+
+            Assert.Equal(decision == "reject" ? "2|3" : "2|4", await run.ScalarAsync<string>(
+                "SELECT STRING_AGG(CAST(Status AS nvarchar(1)), N'|') WITHIN GROUP (ORDER BY Status) "
+                + "FROM finance.OfficialSalesInvoices"));
+        }
+    }
+
     private static async Task<Guid> ReserveAsync(Run run, string actor, Guid? company = null, string? key = null)
     {
         await using var scope = run.Service(actor, company);
@@ -500,6 +651,10 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Record,
                         ["SENTETIK-FINANCE"], "Integration"),
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
+                        ["SENTETIK-FINANCE"], "Integration"),
+                    new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Approve,
+                        ["SENTETIK-FINANCE"], "Integration"),
+                    new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw,
                         ["SENTETIK-FINANCE"], "Integration")),
                 TimeProvider.System);
             return new Scope(db, service,

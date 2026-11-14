@@ -3,23 +3,31 @@ using System.Text.Json.Serialization;
 namespace GoymenERP.Modules.Finance.Contracts;
 
 /// <summary>
-/// F-005 D1 (FNS-D17…FNS-D21): the two technical names of the manual official sales invoice record. They are
-/// registered declarations only, not granted (FNS-D26: the Finance and Accounting roles may hold both, but no role
-/// or seed receives them here; the grant is a human gate). Maker≠approver is enforced per person.
+/// F-005 D1 (FNS-D17…FNS-D21, FNS-D39): the technical names of the manual official sales invoice record. They are
+/// registered declarations only, not granted (FNS-D26: the Finance and Accounting roles may hold Record and Approve,
+/// but no role or seed receives them here; the grant is a human gate). Maker≠approver is enforced per person.
+/// FNS-D39: Approve also covers the rejection of a pending record (the approver rejects); Withdraw lets the recorder
+/// withdraw their own pending record (the service also requires the actor to be the recorder).
 /// </summary>
 public static class FinanceOfficialSalesInvoicePermissionNamesV1
 {
     public const string Record = "finance.official-sales-invoices.record";
     public const string Approve = "finance.official-sales-invoices.approve";
+    public const string Withdraw = "finance.official-sales-invoices.withdraw";
 }
 
 /// <summary>
-/// Read is not a third permission: the host answers it for a holder of Record OR Approve (company-wide).
+/// Read is not a separate permission: the host answers it for a holder of Record OR Approve (company-wide). Reject
+/// is answered with Approve, Withdraw with Withdraw (FNS-D39).
 /// </summary>
-public enum FinanceOfficialSalesInvoiceAuthorityActionV1 { Record, Approve, Read }
+public enum FinanceOfficialSalesInvoiceAuthorityActionV1 { Record, Approve, Read, Reject, Withdraw }
 
+/// <summary>
+/// FNS-D39: Rejected and Withdrawn are final states of a once-pending record. The row stays (nothing is deleted);
+/// its official number, ETTN and PDF content become free for a new record.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<FinanceOfficialSalesInvoiceStatusV1>))]
-public enum FinanceOfficialSalesInvoiceStatusV1 { PendingApproval = 1, Approved = 2 }
+public enum FinanceOfficialSalesInvoiceStatusV1 { PendingApproval = 1, Approved = 2, Rejected = 3, Withdrawn = 4 }
 
 /// <summary>
 /// FNS-D17: every field is mandatory. Amounts are exact decimal text (DEC-FIN-014): PayableAmount is in
@@ -41,6 +49,17 @@ public sealed record FinanceOfficialSalesInvoiceRecordRequestV1(
     Guid PdfDocumentId);
 
 public sealed record FinanceOfficialSalesInvoiceApproveRequestV1(Guid InvoiceId, string ExpectedVersion);
+
+/// <summary>
+/// FNS-D39: the approver rejects a pending record with a written reason (required, no surrounding whitespace, at
+/// most 1000 characters).
+/// </summary>
+public sealed record FinanceOfficialSalesInvoiceRejectRequestV1(Guid InvoiceId, string ExpectedVersion, string Reason);
+
+/// <summary>
+/// FNS-D39: the recorder withdraws their own pending record.
+/// </summary>
+public sealed record FinanceOfficialSalesInvoiceWithdrawRequestV1(Guid InvoiceId, string ExpectedVersion);
 
 /// <summary>
 /// #66 6860586175 (FNS-D17 stays, PDF first): one "Kaydet" step first reserves the record id, then uploads the PDF
@@ -83,7 +102,12 @@ public sealed record FinanceOfficialSalesInvoiceViewV1(
     string RecordedBy,
     DateTimeOffset RecordedAtUtc,
     string? ApprovedBy,
-    DateTimeOffset? ApprovedAtUtc);
+    DateTimeOffset? ApprovedAtUtc,
+    string? RejectedBy,
+    DateTimeOffset? RejectedAtUtc,
+    string? RejectionReason,
+    string? WithdrawnBy,
+    DateTimeOffset? WithdrawnAtUtc);
 
 /// <summary>
 /// ExistingOfficialNo is set only with the <c>pdf_already_recorded</c> refusal (#66 6860586175): the official
@@ -163,8 +187,10 @@ public interface IFinanceOfficialSalesInvoiceOwnerReadV1
 }
 
 /// <summary>
-/// FNS-D20: there is no edit, cancel or withdraw command; an approved record never changes. A reservation
-/// (#66 6860586175) only pre-allocates the record id for the PDF upload; it is consumed once by the record.
+/// FNS-D20: there is no edit or cancel command; an approved record never changes. FNS-D39: only a pending record
+/// may be rejected (by an approver other than the recorder, with a reason) or withdrawn (by its recorder); the row
+/// and its trail stay. A reservation (#66 6860586175) only pre-allocates the record id for the PDF upload; it is
+/// consumed once by the record.
 /// </summary>
 public interface IFinanceOfficialSalesInvoiceServiceV1
 {
@@ -184,6 +210,18 @@ public interface IFinanceOfficialSalesInvoiceServiceV1
         FinanceContext context,
         CommandMetadata metadata,
         FinanceOfficialSalesInvoiceApproveRequestV1 request,
+        CancellationToken cancellationToken);
+
+    Task<FinanceOfficialSalesInvoiceResultV1> RejectAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceRejectRequestV1 request,
+        CancellationToken cancellationToken);
+
+    Task<FinanceOfficialSalesInvoiceResultV1> WithdrawAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialSalesInvoiceWithdrawRequestV1 request,
         CancellationToken cancellationToken);
 
     Task<ReadResult<FinanceOfficialSalesInvoiceViewV1>> GetAsync(

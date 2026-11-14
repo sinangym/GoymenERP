@@ -2197,6 +2197,18 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                         .HasColumnType("nvarchar(128)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<DateTimeOffset?>("RejectedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -2214,6 +2226,14 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<DateTimeOffset?>("WithdrawnAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WithdrawnBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<string>("WithholdingFunctionalAmountText")
                         .IsRequired()
                         .IsUnicode(false)
@@ -2225,22 +2245,25 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                     b.HasIndex("CompanyId", "Ettn")
                         .IsUnique()
-                        .HasDatabaseName("UX_OfficialSalesInvoices_Ettn");
+                        .HasDatabaseName("UX_OfficialSalesInvoices_Ettn")
+                        .HasFilter("[Status] IN (1, 2)");
 
                     b.HasIndex("CompanyId", "OfficialNo")
                         .IsUnique()
-                        .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo");
+                        .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo")
+                        .HasFilter("[Status] IN (1, 2)");
 
                     b.HasIndex("CompanyId", "PdfSha256")
                         .IsUnique()
-                        .HasDatabaseName("UX_OfficialSalesInvoices_PdfSha256");
+                        .HasDatabaseName("UX_OfficialSalesInvoices_PdfSha256")
+                        .HasFilter("[Status] IN (1, 2)");
 
                     b.HasIndex("CompanyId", "Status", "RecordedAtUtc", "Id")
                         .HasDatabaseName("IX_OfficialSalesInvoices_List");
 
                     b.ToTable("OfficialSalesInvoices", "finance", t =>
                         {
-                            t.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2)");
+                            t.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1 AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 3 AND [RejectedBy] IS NOT NULL AND [RejectedAtUtc] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 4 AND [WithdrawnBy] IS NOT NULL AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)");
 
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [PdfDocumentId] <> '00000000-0000-0000-0000-000000000000'");
 

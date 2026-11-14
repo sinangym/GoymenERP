@@ -720,13 +720,40 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     internal const int OfficialSalesInvoiceEttnLength = 36;
 
     /// <summary>
-    /// FNS-D20 + maker≠approver: a pending row carries no approval and is at version 1; an approved row names a
-    /// DIFFERENT actor than the recorder, compared byte-exact whatever the column collation is.
+    /// FNS-D39 technical bound of the rejection reason; the same 1000-character bound as Finance's other decision
+    /// reasons. It is not a business policy (OPEN: Sinan may set another length).
+    /// </summary>
+    internal const int OfficialSalesInvoiceMaximumRejectionReasonLength = 1000;
+
+    /// <summary>
+    /// FNS-D20 + maker≠approver + FNS-D39: a pending row carries no decision and is at version 1; an approved row
+    /// names a DIFFERENT actor than the recorder; a rejected row names a DIFFERENT actor than the recorder and a
+    /// non-empty reason; a withdrawn row names the recorder itself. Actors are compared byte-exact whatever the column
+    /// collation is. Each decided state carries only its own decision columns.
     /// </summary>
     internal const string OfficialSalesInvoiceApprovalCheck =
-        "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1) OR "
+        "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1 "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL "
+        + "AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR "
         + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 "
-        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2)";
+        + "AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL "
+        + "AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR "
+        + "([Status] = 3 AND [RejectedBy] IS NOT NULL AND [RejectedAtUtc] IS NOT NULL AND LEN([RejectedBy]) > 0 "
+        + "AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR "
+        + "([Status] = 4 AND [WithdrawnBy] IS NOT NULL AND [WithdrawnAtUtc] IS NOT NULL "
+        + "AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [RecordedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)";
+
+    /// <summary>
+    /// FNS-D39 (author reading, reviewed with the migration): the official number, ETTN and PDF content are unique
+    /// only among live records (pending or approved), so a rejected or withdrawn record frees them.
+    /// </summary>
+    internal const string OfficialSalesInvoiceLiveFilter = "[Status] IN (1, 2)";
 
     private void ConfigureOfficialSalesInvoices(ModelBuilder modelBuilder)
     {
@@ -787,14 +814,21 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         invoice.Property(x => x.Version).IsConcurrencyToken();
         invoice.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         invoice.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.Property(x => x.RejectedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        invoice.Property(x => x.RejectionReason).HasMaxLength(OfficialSalesInvoiceMaximumRejectionReasonLength);
+        invoice.Property(x => x.WithdrawnBy).HasMaxLength(128).UseCollation(IdentityCollation);
         invoice.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         invoice.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        // FNS-D39: unique among live records only; a rejected or withdrawn record frees its number, ETTN and PDF.
         invoice.HasIndex(x => new { x.CompanyId, x.OfficialNo }).IsUnique()
+            .HasFilter(OfficialSalesInvoiceLiveFilter)
             .HasDatabaseName("UX_OfficialSalesInvoices_OfficialNo");
         invoice.HasIndex(x => new { x.CompanyId, x.Ettn }).IsUnique()
+            .HasFilter(OfficialSalesInvoiceLiveFilter)
             .HasDatabaseName("UX_OfficialSalesInvoices_Ettn");
-        // #66 6860586175: one PDF content (vault SHA-256) belongs to at most one record per company.
+        // #66 6860586175: one PDF content (vault SHA-256) belongs to at most one live record per company.
         invoice.HasIndex(x => new { x.CompanyId, x.PdfSha256 }).IsUnique()
+            .HasFilter(OfficialSalesInvoiceLiveFilter)
             .HasDatabaseName("UX_OfficialSalesInvoices_PdfSha256");
         invoice.HasIndex(x => new { x.CompanyId, x.Status, x.RecordedAtUtc, x.Id })
             .HasDatabaseName("IX_OfficialSalesInvoices_List");
@@ -1203,12 +1237,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
 
                 if (entry.Entity is FinanceOfficialSalesInvoiceRow officialSalesInvoice
-                    && !IsAllowedOfficialSalesInvoiceApproval(entry, officialSalesInvoice))
+                    && !IsAllowedOfficialSalesInvoiceDecision(entry, officialSalesInvoice))
                 {
-                    // FNS-D20: the only change is PendingApproval → Approved by a different actor; an approved
-                    // record never changes and there is no edit, cancel or withdraw.
+                    // FNS-D20 + FNS-D39: the only change is one step out of PendingApproval: Approved or Rejected by
+                    // a different actor, or Withdrawn by the recorder; a decided record never changes again.
                     throw new InvalidOperationException(
-                        "Resmî satış faturası kaydı yalnız bekleyen durumdan başka bir kişinin onayıyla değişir.");
+                        "Resmî satış faturası kaydı yalnız bekleyen durumdan bir kez onay, ret veya geri çekme ile değişir.");
                 }
 
                 string[] allowed = entry.Entity switch
@@ -1217,6 +1251,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                     [
                         nameof(FinanceOfficialSalesInvoiceRow.Status), nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy),
                         nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc),
+                        nameof(FinanceOfficialSalesInvoiceRow.RejectedBy),
+                        nameof(FinanceOfficialSalesInvoiceRow.RejectedAtUtc),
+                        nameof(FinanceOfficialSalesInvoiceRow.RejectionReason),
+                        nameof(FinanceOfficialSalesInvoiceRow.WithdrawnBy),
+                        nameof(FinanceOfficialSalesInvoiceRow.WithdrawnAtUtc),
                     ],
                     ReceiptDraftRow =>
                     [
@@ -1314,20 +1353,48 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         }
     }
 
-    private static bool IsAllowedOfficialSalesInvoiceApproval(
+    private static bool IsAllowedOfficialSalesInvoiceDecision(
         Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
         FinanceOfficialSalesInvoiceRow current)
     {
         var originalStatus = (int)entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.Status)]!;
         var originalVersion = (long)entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.Version)]!;
-        return originalStatus == (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
-               && current.Status == (int)FinanceOfficialSalesInvoiceStatusV1.Approved
-               && current.Version == originalVersion + 1
-               && entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy)] is null
-               && entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc)] is null
-               && !string.IsNullOrWhiteSpace(current.ApprovedBy)
-               && !string.Equals(current.ApprovedBy, current.RecordedBy, StringComparison.Ordinal)
-               && current.ApprovedAtUtc is not null;
+        if (originalStatus != (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval
+            || current.Version != originalVersion + 1
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.ApprovedAtUtc)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.RejectedBy)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.RejectedAtUtc)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.RejectionReason)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.WithdrawnBy)] is not null
+            || entry.OriginalValues[nameof(FinanceOfficialSalesInvoiceRow.WithdrawnAtUtc)] is not null)
+        {
+            return false;
+        }
+
+        var noRejection = current.RejectedBy is null && current.RejectedAtUtc is null
+                          && current.RejectionReason is null;
+        var noWithdrawal = current.WithdrawnBy is null && current.WithdrawnAtUtc is null;
+        var noApproval = current.ApprovedBy is null && current.ApprovedAtUtc is null;
+        return current.Status switch
+        {
+            (int)FinanceOfficialSalesInvoiceStatusV1.Approved =>
+                noRejection && noWithdrawal
+                && !string.IsNullOrWhiteSpace(current.ApprovedBy)
+                && !string.Equals(current.ApprovedBy, current.RecordedBy, StringComparison.Ordinal)
+                && current.ApprovedAtUtc is not null,
+            (int)FinanceOfficialSalesInvoiceStatusV1.Rejected =>
+                noApproval && noWithdrawal
+                && !string.IsNullOrWhiteSpace(current.RejectedBy)
+                && !string.Equals(current.RejectedBy, current.RecordedBy, StringComparison.Ordinal)
+                && current.RejectedAtUtc is not null
+                && !string.IsNullOrWhiteSpace(current.RejectionReason),
+            (int)FinanceOfficialSalesInvoiceStatusV1.Withdrawn =>
+                noApproval && noRejection
+                && string.Equals(current.WithdrawnBy, current.RecordedBy, StringComparison.Ordinal)
+                && current.WithdrawnAtUtc is not null,
+            _ => false,
+        };
     }
 
     private static bool IsAllowedManualBankPaymentTransition(

@@ -77,10 +77,13 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, invoiceCancellations) < Array.IndexOf(migrations, paymentAllocations));
         const string officialSalesInvoices = "20261111233047_AddOfficialSalesInvoices";
         Assert.True(Array.IndexOf(migrations, paymentAllocations) < Array.IndexOf(migrations, officialSalesInvoices));
-        // The NEWEST migration is pinned by name on purpose: the official sales invoice record (F-005 D1, FNS-D17…D21)
-        // is the reviewed append after the payment allocations, never an unreviewed migration that silently becomes
-        // authoritative.
-        Assert.Equal(officialSalesInvoices, migrations.Last());
+        const string officialSalesInvoiceDecisions = "20261114073527_AddOfficialSalesInvoiceRejectionAndWithdrawal";
+        Assert.True(Array.IndexOf(migrations, officialSalesInvoices)
+            < Array.IndexOf(migrations, officialSalesInvoiceDecisions));
+        // The NEWEST migration is pinned by name on purpose: the rejection and withdrawal of a pending official sales
+        // invoice record (FNS-D39) is the reviewed append after the record itself (F-005 D1, FNS-D17…D21), never an
+        // unreviewed migration that silently becomes authoritative.
+        Assert.Equal(officialSalesInvoiceDecisions, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

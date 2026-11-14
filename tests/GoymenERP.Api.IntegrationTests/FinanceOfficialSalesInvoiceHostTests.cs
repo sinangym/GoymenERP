@@ -57,6 +57,11 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
     [InlineData(FinanceOfficialSalesInvoiceAuthorityActionV1.Record, FinanceOfficialSalesInvoicePermissionNamesV1.Record)]
     [InlineData(FinanceOfficialSalesInvoiceAuthorityActionV1.Approve,
         FinanceOfficialSalesInvoicePermissionNamesV1.Approve)]
+    // FNS-D39: the approver rejects (Approve); the recorder withdraws (Withdraw; the service checks the recorder).
+    [InlineData(FinanceOfficialSalesInvoiceAuthorityActionV1.Reject,
+        FinanceOfficialSalesInvoicePermissionNamesV1.Approve)]
+    [InlineData(FinanceOfficialSalesInvoiceAuthorityActionV1.Withdraw,
+        FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw)]
     public async Task Commands_use_their_exact_company_wide_permission_and_keep_audit_roles_live(
         FinanceOfficialSalesInvoiceAuthorityActionV1 action, string permission)
     {

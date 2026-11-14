@@ -508,6 +508,14 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/FinanceOfficialSalesInvoiceApproveRequestV1",
             ParameterValues: ["path:invoiceId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/official-sales-invoices/{invoiceId}/rejection", "RejectFinanceOfficialSalesInvoiceV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/FinanceOfficialSalesInvoiceRejectRequestV1",
+            ParameterValues: ["path:invoiceId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/official-sales-invoices/{invoiceId}/withdrawal", "WithdrawFinanceOfficialSalesInvoiceV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/FinanceOfficialSalesInvoiceWithdrawRequestV1",
+            ParameterValues: ["path:invoiceId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/official-invoice-imports/approved-sources", "GetFinanceApprovedOfficialInvoiceImportSourcesV1",
             AuthenticatedResponses("200:application/json", "503:application/problem+json"),
             ParameterValues: ["query:cursor:false:type:string"]),
@@ -1529,6 +1537,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["ListFinanceOfficialSalesInvoicesV1"] = "ref:FinanceOfficialSalesInvoicePageV1",
             ["GetFinanceOfficialSalesInvoiceV1"] = "ref:FinanceOfficialSalesInvoiceViewV1",
             ["ApproveFinanceOfficialSalesInvoiceV1"] = "ref:FinanceOfficialSalesInvoiceResultV1",
+            ["RejectFinanceOfficialSalesInvoiceV1"] = "ref:FinanceOfficialSalesInvoiceResultV1",
+            ["WithdrawFinanceOfficialSalesInvoiceV1"] = "ref:FinanceOfficialSalesInvoiceResultV1",
             ["GetFinanceApprovedOfficialInvoiceImportSourcesV1"] = "ref:ApprovedFinanceOpenItemSourcePage",
             ["ApplyFinanceOfficialInvoiceImportV1"] = "ref:FinanceOfficialInvoiceImportApplyResultV1",
             ["GetFinanceOfficialInvoiceImportV1"] = "ref:FinanceOfficialInvoiceAppliedBatchV1",
@@ -1903,6 +1913,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ListFinanceOfficialSalesInvoicesV1",
         "GetFinanceOfficialSalesInvoiceV1",
         "ApproveFinanceOfficialSalesInvoiceV1",
+        "RejectFinanceOfficialSalesInvoiceV1",
+        "WithdrawFinanceOfficialSalesInvoiceV1",
         "GetFinanceApprovedOfficialInvoiceImportSourcesV1",
         "ApplyFinanceOfficialInvoiceImportV1",
         "GetFinanceOfficialInvoiceImportV1",
@@ -2208,6 +2220,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ReserveFinanceOfficialSalesInvoiceV1",
         "RecordFinanceOfficialSalesInvoiceV1",
         "ApproveFinanceOfficialSalesInvoiceV1",
+        "RejectFinanceOfficialSalesInvoiceV1",
+        "WithdrawFinanceOfficialSalesInvoiceV1",
         "ApplyFinanceOfficialInvoiceImportV1",
         "RecordFinanceManualReceiptV1",
         "ReceiveFinanceCustomerInstrumentV1",
@@ -2455,6 +2469,15 @@ public sealed partial class OpenApiContractGenerationTests
                 // F-005 D1 (ADR-011 §7): approve replays its recorded terminal refusals — a stale version (409)
                 // and an unknown record (422) — as well as the approval.
                 ["ApproveFinanceOfficialSalesInvoiceV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                // FNS-D39: reject and withdraw replay the same recorded terminal refusals as approve.
+                ["RejectFinanceOfficialSalesInvoiceV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["WithdrawFinanceOfficialSalesInvoiceV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
@@ -2749,6 +2772,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ReserveFinanceOfficialSalesInvoiceV1",
         "RecordFinanceOfficialSalesInvoiceV1",
         "ApproveFinanceOfficialSalesInvoiceV1",
+        "RejectFinanceOfficialSalesInvoiceV1",
+        "WithdrawFinanceOfficialSalesInvoiceV1",
         "ApplyFinanceOfficialInvoiceImportV1",
         "RecordFinanceManualReceiptV1",
         "SaveFinanceManualBankPaymentDraftV1",
@@ -3192,6 +3217,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ReserveFinanceOfficialSalesInvoiceV1:400",
         "RecordFinanceOfficialSalesInvoiceV1:400",
         "ApproveFinanceOfficialSalesInvoiceV1:400",
+        "RejectFinanceOfficialSalesInvoiceV1:400",
+        "WithdrawFinanceOfficialSalesInvoiceV1:400",
         "ApplyFinanceOfficialInvoiceImportV1:400",
         "RecordFinanceManualReceiptV1:400",
         "GetFinanceManualReceiptsV1:400",
@@ -6768,9 +6795,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("companyId", "type:string;format:uuid"),
                     ("items", "type:array;items:ref:FinanceOfficialSalesInvoiceViewV1"),
                     ("nextCursor", "type:null|string")),
-                ["FinanceOfficialSalesInvoiceStatusV1"] = ScalarSchema("enum:PendingApproval|Approved"),
+                ["FinanceOfficialSalesInvoiceStatusV1"] = ScalarSchema("enum:PendingApproval|Approved|Rejected|Withdrawn"),
                 ["FinanceOfficialSalesInvoiceViewV1"] = ObjectSchema(
-                    ["invoiceId", "companyId", "officialNo", "ettn", "customerPartyId", "currencyId", "payableAmount", "payableFunctionalAmount", "taxBaseFunctionalAmount", "vatFunctionalAmount", "withholdingFunctionalAmount", "pdfDocumentId", "pdfDocumentVersionNo", "pdfSha256", "status", "version", "recordedBy", "recordedAtUtc", "approvedBy", "approvedAtUtc"],
+                    ["invoiceId", "companyId", "officialNo", "ettn", "customerPartyId", "currencyId", "payableAmount", "payableFunctionalAmount", "taxBaseFunctionalAmount", "vatFunctionalAmount", "withholdingFunctionalAmount", "pdfDocumentId", "pdfDocumentVersionNo", "pdfSha256", "status", "version", "recordedBy", "recordedAtUtc", "approvedBy", "approvedAtUtc", "rejectedBy", "rejectedAtUtc", "rejectionReason", "withdrawnBy", "withdrawnAtUtc"],
                     ("invoiceId", "type:string;format:uuid"),
                     ("companyId", "type:string;format:uuid"),
                     ("officialNo", "type:string"),
@@ -6790,7 +6817,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("recordedBy", "type:string"),
                     ("recordedAtUtc", "type:string;format:date-time"),
                     ("approvedBy", "type:null|string"),
-                    ("approvedAtUtc", "type:null|string;format:date-time")),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("rejectedBy", "type:null|string"),
+                    ("rejectedAtUtc", "type:null|string;format:date-time"),
+                    ("rejectionReason", "type:null|string"),
+                    ("withdrawnBy", "type:null|string"),
+                    ("withdrawnAtUtc", "type:null|string;format:date-time")),
                 ["FinanceOfficialInvoiceImportBatchViewV1"] = ObjectSchema(
                     ["batchId", "companyId", "batchVersion", "batchChecksum", "templateVersion", "status", "version", "rowCount", "uploadedBy", "uploadedAtUtc", "approvedBy", "approvedAtUtc"],
                     ("batchId", "type:string;format:uuid"),
@@ -9419,6 +9451,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("expectedOpenItemVersion", "type:string"),
                     ("reason", "type:string")),
                 ["FinanceOfficialSalesInvoiceApproveRequestV1"] = ObjectSchema(
+                    ["invoiceId", "expectedVersion"],
+                    ("invoiceId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
+                ["FinanceOfficialSalesInvoiceRejectRequestV1"] = ObjectSchema(
+                    ["invoiceId", "expectedVersion", "reason"],
+                    ("invoiceId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string")),
+                ["FinanceOfficialSalesInvoiceWithdrawRequestV1"] = ObjectSchema(
                     ["invoiceId", "expectedVersion"],
                     ("invoiceId", "type:string;format:uuid"),
                     ("expectedVersion", "type:string")),
