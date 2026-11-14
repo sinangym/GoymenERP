@@ -356,7 +356,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // URT-D41/URT-D42: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (output above input on a
                 // parent roll refuses the close with no tolerance and no approval path; the read-only report of earlier
                 // closes with output above input) (85d84d52… -> 15ad9659…).
-                "15ad965941fa4a1923d7ae4d3c43787520350b5be37d50c7f184cda8d4286d09",
+                // SAT-D318: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (the input issue's physical-stock 409
+                // names the issue, label and place only to its own company) (85d84d52… -> 6fb4cc8d…).
+                // Main merge after #1154: all three facts present (re-derived from the merged inventory) (-> e951ae9a…).
+                "e951ae9aa63765e1bf0b3c2835e1c780ba6c1ae1d66b7ed066a790609b152bbe",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).

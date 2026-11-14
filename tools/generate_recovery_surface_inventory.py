@@ -90,7 +90,7 @@ EXPECTED_DURABLE_STORE_COUNT = 32
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 654
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "a980f826af5d9aa49f787c67cb75d5a2038a11e74cb53edfa61dda4ba3439fbc"
+    "58737b198dacf05b6f4db836b4c666ea6dcfe8dc23cfa6a5510ec448d5348653"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
