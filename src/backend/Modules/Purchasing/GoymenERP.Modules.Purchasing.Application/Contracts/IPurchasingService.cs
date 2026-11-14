@@ -59,6 +59,13 @@ public interface IPurchasingService
 
     Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// ALS-D94 / ALS-D81 (F-027): a line's delivery schedule history under the read name — every recorded revision, oldest first;
+    /// reads only. An unknown order or line is 404.
+    /// </summary>
+    Task<PurchaseOrderLineScheduleHistoryView> GetOrderLineScheduleHistoryAsync(Guid orderId, Guid lineId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>A2a-2 (API-20): the order's totals under the read name; amounts only with the price read (PRS-02).</summary>
     Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default);
 

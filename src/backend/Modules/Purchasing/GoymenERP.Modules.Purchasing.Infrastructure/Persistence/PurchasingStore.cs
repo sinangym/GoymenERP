@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -9,6 +10,7 @@ using GoymenERP.Modules.Purchasing.Domain.Quantities;
 using GoymenERP.Modules.Purchasing.Domain.Requests;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
@@ -386,6 +388,14 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             return null;
         }
 
+        // F-017 F17-1 (§3.4): a remainder cancel changes every general line's cancelled share, so it takes every general line's
+        // serialization lock (ascending, the one canonical order) in its own transaction BEFORE the order is read; an Inventory future
+        // allocation or an acceptance share on one of those lines waits for, or is refused by, this write. Disposing the transaction
+        // without its commit (a refusal, a domain refusal or a technical failure) rolls it back and releases the locks.
+        await using var lockTransaction = commandName == PurchasingCommands.OrderCancelV1
+            ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken)
+            : null;
+
         // The header and the lines are tracked (the header's version is this write's concurrency token).
         var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
         if (row is null)
@@ -465,8 +475,60 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, audit.EventType, audit.Operation, versionBefore, order.Version, before, Snapshot(order), audit.Reason);
         await SaveAsync(cancellationToken);
+        if (lockTransaction is not null)
+        {
+            await lockTransaction.CommitAsync(cancellationToken);
+        }
+
         return new PurchasingOrderStoreResult(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)),
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>
+    /// F-017 F17-1 (§3.4): takes the serialization lock of every general line of the order in one transaction and returns that
+    /// transaction for the caller to commit; when the caller already runs inside a transaction the locks join it and null is returned
+    /// (the outer owner commits). A lock that is not granted in time refuses the write with <see cref="PurchasingStoreCodes.LineBusy"/>
+    /// and nothing is written. An order without lines (or not in this company) takes no lock; the caller's own read answers it.
+    /// </summary>
+    private async Task<IDbContextTransaction?> LockOrderGeneralLinesAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken)
+    {
+        var owned = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            var transaction = dbContext.Database.CurrentTransaction
+                ?? throw new InvalidOperationException("Satır kilidi için etkin işlem bulunamadı.");
+            var generalLineIds = await dbContext.OrderLines.AsNoTracking()
+                .Where(line => line.OrderId == orderId && line.Kind == (int)PurchaseOrderLineKind.General)
+                .Select(line => line.LineId)
+                .ToListAsync(cancellationToken);
+            if (generalLineIds.Count > 0)
+            {
+                await PurchaseLineSerializationLock.Bind(dbContext.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId)
+                    .AcquireAllAsync(generalLineIds, cancellationToken);
+            }
+
+            return owned;
+        }
+        catch (PurchaseLineBusyException exception)
+        {
+            if (owned is not null)
+            {
+                await owned.DisposeAsync();
+            }
+
+            throw Refused(PurchasingStoreCodes.LineBusy, "Sipariş satırı başka bir işlem tarafından kilitli; hiçbir şey kaydedilmedi.", exception);
+        }
+        catch
+        {
+            if (owned is not null)
+            {
+                await owned.DisposeAsync();
+            }
+
+            throw;
+        }
     }
 
     /// <summary>
@@ -538,6 +600,31 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         RequireResolvedCompany();
         var row = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
         return row is null ? null : (await RestoreOrdersAsync([row], cancellationToken)).Single();
+    }
+
+    public async Task<IReadOnlyList<StoredScheduleRevision>> ListLineScheduleRevisionsAsync(Guid orderId, Guid lineId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        // F-027: the append-only slice rows of one line, read as stored; the tenant filter keeps another company's rows invisible.
+        var rows = await dbContext.DeliverySlices.AsNoTracking()
+            .Where(slice => slice.OrderId == orderId && slice.LineId == lineId)
+            .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo)
+            .ToListAsync(cancellationToken);
+        return [.. rows.GroupBy(slice => slice.OrderVersionAfter).OrderBy(revision => revision.Key).Select(revision =>
+        {
+            var slices = revision.OrderBy(slice => slice.SliceNo).ToArray();
+            var first = slices[0];
+            if (slices.Any(slice => !string.Equals(slice.RecordedBy, first.RecordedBy, StringComparison.Ordinal)
+                || slice.RecordedAtUtc != first.RecordedAtUtc))
+            {
+                throw new PurchasingStoreException(PurchasingStoreCodes.ScheduleHistoryInconsistent,
+                    "Kayıtlı termin revizyonu tek bir kayıt olarak okunmuyor.");
+            }
+
+            return new StoredScheduleRevision(revision.Key, first.RecordedBy, first.RecordedAtUtc,
+                [.. slices.Select(slice => new StoredScheduleSlice(slice.SliceId, slice.SliceNo, slice.Quantity, slice.DeliveryDate))]);
+        })];
     }
 
     public async Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,

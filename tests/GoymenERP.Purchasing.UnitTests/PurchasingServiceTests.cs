@@ -814,7 +814,17 @@ public sealed partial class PurchasingServiceTests
                     [new PurchasingFieldError("sourceRequestId", "not_approved")]);
             }
 
-            mutate(stored.Order, TimeProvider.System.GetUtcNow());
+            var schedulesBefore = stored.Order.Lines.ToDictionary(line => line.Id, line => line.DeliverySchedule);
+            var now = TimeProvider.System.GetUtcNow();
+            mutate(stored.Order, now);
+            foreach (var line in stored.Order.Lines.Where(line => !ReferenceEquals(schedulesBefore[line.Id], line.DeliverySchedule)))
+            {
+                // F-027: like the SQL store, a schedule command appends the line's whole new set as a revision at the new version.
+                ScheduleRevisions.Add((orderId, line.Id, new StoredScheduleRevision(stored.Order.Version, envelope.ActorId, now,
+                    [.. line.DeliverySchedule.Select(slice => new StoredScheduleSlice(slice.SliceId, slice.SliceNo, slice.Quantity.Value,
+                        slice.DeliveryDate))])));
+            }
+
             _attempts[(commandName, envelope.IdempotencyKey)] = new Attempt(envelope.ActorId, requestHash, null, stored, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
             Audits.Add(audit);
@@ -824,6 +834,26 @@ public sealed partial class PurchasingServiceTests
 
         public Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_orders.SingleOrDefault(candidate => candidate.Order.Id == orderId));
+
+        /// <summary>F-027: the recorded schedule revisions per (order, line), in recording order; a test may add or replace entries.</summary>
+        public List<(Guid OrderId, Guid LineId, StoredScheduleRevision Revision)> ScheduleRevisions { get; } = [];
+
+        /// <summary>F-027: when set, the history read fails with it (the SQL store's inconsistent-revision refusal).</summary>
+        public Exception? ScheduleHistoryFault { get; set; }
+
+        public int ScheduleHistoryReads { get; private set; }
+
+        public Task<IReadOnlyList<StoredScheduleRevision>> ListLineScheduleRevisionsAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default)
+        {
+            ScheduleHistoryReads++;
+            return ScheduleHistoryFault is not null
+                ? Task.FromException<IReadOnlyList<StoredScheduleRevision>>(ScheduleHistoryFault)
+                : Task.FromResult<IReadOnlyList<StoredScheduleRevision>>([.. ScheduleRevisions
+                    .Where(item => item.OrderId == orderId && item.LineId == lineId)
+                    .Select(item => item.Revision)
+                    .OrderBy(revision => revision.OrderVersionAfter)]);
+        }
 
         public Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,
             CancellationToken cancellationToken = default) =>

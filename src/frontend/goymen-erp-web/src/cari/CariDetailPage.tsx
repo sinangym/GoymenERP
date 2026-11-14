@@ -31,6 +31,7 @@ import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import { CariTradeNamePanel } from './CariTradeNamePanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
 import {
@@ -217,6 +218,9 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     [namespace, queryClient, readCount],
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
+  const onTradeNameChanged = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: detailQueryKey })
+  }, [detailQueryKey, queryClient])
   const readOutcomeType = query.data?.type ?? null
   const fetchStatus = query.fetchStatus
   useEffect(() => {
@@ -380,6 +384,17 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         </dl>
         {/* AT-009: the party's VKN/TCKN (one per party, like the facts above), its duplicate warning in THIS
             company, and the maker-checker change. Its own read, bound to the selected company. */}
+        {/* F-027 / C-02: the names edited in place — the trade name directly, the legal name read-only (CARI-DEC-004
+            makes its change approval-bound). Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariTradeNamePanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onChanged={onTradeNameChanged}
+          />
+        ) : null}
         {namespace !== null && activeCompanyId !== null ? (
           <CariTaxIdentityPanel
             partyId={detail.id}

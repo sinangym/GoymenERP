@@ -24,6 +24,7 @@ import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
+import { LineSchedulePanel } from './LineSchedulePanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
@@ -256,6 +257,9 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         </tr>)}
       </RecordTable>
     </section>
+    {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions, read only. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><LineSchedulePanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>
