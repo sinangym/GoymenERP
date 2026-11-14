@@ -13,7 +13,7 @@ Sources: `AGENTS.md`, `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v4.md` §1/§3,
 
 | Level | Scope | Reviews | CI |
 |---|---|---|---|
-| **K3** | DB migration/constraint · money/formula/tolerance · permission/role · cross-module contract · `.github/**` · production activation | two independent **full** exact-head reviews (A, B); a later head may take `DELTA-OK` **only if the delta is mechanical**: (1) conflict-free main merge, (2) conflicts only in generator-owned files resolved by re-running the generator, (3) test rename/format with byte-identical asserts, (4) comments/docs; hand-resolved conflicts in `src/**`, `tests/**` or migrations are not mechanical — any business logic, migration, money, permission, contract, `.github/**` or production change needs two new full reviews (GOV-D1, 2026-11-07) | fresh required CI on the head + real SQL/browser/failure evidence |
+| **K3** | DB migration/constraint · money/formula/tolerance · permission/role · cross-module contract · `.github/**` · production activation | two independent **full** exact-head reviews (A, B); a later head may take `DELTA-OK` **only if the delta is mechanical**: (1) conflict-free main merge, (2) conflicts only in generator-owned files resolved by re-running the generator, (3) test rename/format with byte-identical asserts, (4) comments/docs; hand-resolved conflicts in `src/**`, `tests/**` or migrations are not mechanical — any business logic, migration, money, permission, contract, `.github/**` or production change needs two new full reviews (GOV-D1, 2026-11-07). A mechanical merge that meets GOV-D7 needs no separate `DELTA-OK`; the machine evidence goes in the receipt (§4) | fresh required CI on the head + real SQL/browser/failure evidence |
 | **K1/K2** | everything else | one independent exact-head review; later heads by `DELTA-OK` | fresh required CI |
 | **Docs/governance** | `docs/**`, `AGENTS.md`, `.claude/**` (and decisions) | two independent exact-head reviews | none for doc/settings-only; `docs/decisions/**`, `docs/backlog/**`, `.github/**` need the local light checks (`decision-docs-validation`) recorded in the PR |
 
@@ -40,8 +40,9 @@ review), scope (`git diff origin/main...<sha>`, file count), sources checked (de
 (CompanyId, authority, idempotency/replay, audit, concurrency, migration/rollback, OpenAPI ↔ decoder, UI states,
 tests), "Bulgular" with P0/P1/P2/P3 and `path:line`, "Kanıt" (commands run, CI run).
 
-Delta mode falls back to a full review when the delta contains an `origin/main` merge or touches a file outside the
-REVIEW-READY diff.
+Delta mode falls back to a full review when the delta touches a file outside the REVIEW-READY diff, or contains an
+`origin/main` merge that is neither GOV-D1/GOV-D6 mechanical (then one independent `DELTA-OK`) nor GOV-D7 mechanical
+(then no `DELTA-OK`, machine evidence in the receipt, §4).
 
 ## 3. Posting
 
@@ -92,7 +93,17 @@ way is a **non-empty mechanical merge commit** of origin/main into the PR branch
 `git rev-parse <new head>^1` equals `<old head>`, and `git diff <old head> <new head>` equals
 `git diff $(git merge-base origin/main <old head>) origin/main` (a conflict resolution breaks the equality and leaves
 (b)). An independent reviewer signs, writing the `--stat` and the class; the author or merger cannot sign their own
-merge. K3 keeps its two exact-head reviews; (b) covers only the mechanical delta. Receipt for (a)/(b): main SHA, tier, new green CI run id. P3: the
+merge. K3 keeps its two exact-head reviews; (b) covers only the mechanical delta. Receipt for (a)/(b): main SHA, tier, new green CI run id.
+**GOV-D7** (`docs/decisions/SINAN_KARARLARI_2026-11-14_TREN_GOV_D7.md`; the conditions are an author reading,
+reversible): no separate `DELTA-OK` when **all** hold: `<head>^1` is the signed head and `<head>^2` is origin/main (or
+the previous stack PR head that meets the same conditions); `git show --remerge-diff <head>` is empty or shows only
+generator-owned files equal to fresh generator output; generator and recovery/release tests exit 0; patch-id equal
+outside generator files; required CI green on the tested tree. Regenerated files must be inside the merge commit (a
+separate re-pin commit on top breaks `^1`). Hand conflict resolution in `src/**`, `tests/**` or a migration: GOV-D1/GOV-D6.
+Stack: after the front PR is squashed, if `git rev-parse origin/main^{tree}` equals the previous stack head's tree,
+merge the next PR without a new CI run, after aligning it with `git merge -s ours origin/main` (lineage only, tree
+unchanged); write both tree hashes in the receipt. Trees differ: the tiers above. Update only the next PR or stack
+after a merge. P3: the
 squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
 merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
 
@@ -106,7 +117,7 @@ enabling workflows in Settings → Actions, grant/rol/Critical, production activ
 ## 5. Issue #66 receipt (one line, right after merge)
 
 ```
-MERGED #<n> <40-char merge sha> — <K-level> <short title>; reviews: <url A> · <url B> (head <8-char sha>)[; CI <x>/<y> green][; main <8-char sha> ancestor exit 0 | main <8-char sha> Faz 0 (c) exit 0/0]
+MERGED #<n> <40-char merge sha> — <K-level> <short title>; reviews: <url A> · <url B> (head <8-char sha>)[; CI <x>/<y> green][; main <8-char sha> ancestor exit 0 | main <8-char sha> Faz 0 (c) exit 0/0][; GOV-D7 ^1 <8> ^2 <8> remerge-diff empty|generator-only, gen/tests exit 0, patch-id equal, CI run <id> | GOV-D7 stack tree <8> = <8>]
 ```
 ```bash
 gh api repos/sinangym/GoymenERP/issues/66/comments -f body='MERGED #… …'
@@ -132,4 +143,7 @@ form (slice, owner, base, exact files, K level).
 - Short shas are fine in prose, but the first-line signature uses the full 40-char sha.
 - GOV-D1 (`docs/decisions/SINAN_KARARLARI_2026-11-07_K3_DELTA.md`): K3 `DELTA-OK` is allowed only for a mechanical
   delta, written by one of the A/B reviewers, who says why it is mechanical. When in doubt, two full reviews.
+  GOV-D6 (`docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md`): one independent `DELTA-OK` is enough for a mechanical
+  main-merge diff. GOV-D7: a merge that meets every §4 GOV-D7 condition needs no `DELTA-OK`; if any condition is
+  missing (a separate re-pin commit, a hand resolution), it does.
 - Do not write review evidence only in the PR body; it must be a review/comment by the reviewer agent.
