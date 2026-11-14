@@ -21,19 +21,29 @@ public enum AverageCostStatus
     Known = 1,
 
     /// <summary>
-    /// A decision that is not taken (see <see cref="AverageCostUnreadableReason"/>) makes the average unreadable. The state
-    /// is sticky: the core never reopens it by itself (that would be a policy choice).
+    /// The average cannot be read (see <see cref="AverageCostUnreadableReason"/>). The state is sticky: the core never
+    /// reopens it by itself (that would be a policy choice).
     /// </summary>
     Unreadable = 2,
 }
 
 /// <summary>
-/// Why a position is unreadable. Every value is a case the decisions leave open (SINAN_KARARLARI_2026-11-10_SATIS_EK52
-/// "Sınırlar"); none of them is given a value here. The numbers are persisted: never renumber.
+/// Why a position is unreadable. Each value is a case that has no figure (SINAN_KARARLARI_2026-11-10_SATIS_EK52 "Sınırlar";
+/// SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER for SAT-D301…D306); none of them is given a value here. SAT-D301 (2)
+/// ("giriş gelince düzelir") is superseded by SAT-D323 (1) (SINAN_KARARLARI_2026-11-13_URETIM_MALIYETI_VE_EKSI_STOK); see
+/// <see cref="AverageCostUnreadableReason.NegativeStock"/>. The numbers are persisted: never renumber.
 /// </summary>
 public enum AverageCostUnreadableReason
 {
-    /// <summary>OPEN-INV-AVGCOST-NEGATIVE-STOCK (NEEDS-SINAN): stock would go below zero.</summary>
+    /// <summary>
+    /// OPEN-INV-AVGCOST-NEGATIVE-STOCK (Sinan decided: SAT-D318, SAT-D323): stock never goes below zero in any module
+    /// (SAT-D318 (1)), so an issue beyond the physical stock before it is an invariant breach (SAT-D318 (4)). In this core
+    /// the reason arises only then: <see cref="AverageCostUnreadableReason.LedgerStockMismatch"/> is checked first. No
+    /// recovery-from-negative formula is written for any case (SAT-D323 (1)-(2)). Staying fail-closed (the cost is
+    /// "hesaplanamadı": no value is made up, it is not counted as zero) and sticky (a receipt never reopens it) is the
+    /// decision file's author reading (SAT-D318 (4), SAT-D323 (2)); the safety behaviour for a violated record is
+    /// NEEDS-SINAN (that file's "Sınırlar").
+    /// </summary>
     NegativeStock = 1,
 
     /// <summary>OPEN-INV-AVGCOST-UNIT-CONVERSION (NEEDS-SINAN): the cost is not per stock kilogram.</summary>
@@ -42,7 +52,10 @@ public enum AverageCostUnreadableReason
     /// <summary>OPEN-INV-AVGCOST-FX (NEEDS-SINAN): rate and date for a foreign-currency cost are not decided.</summary>
     ForeignCurrency = 3,
 
-    /// <summary>OPEN-INV-AVGCOST-LANDED (NEEDS-SINAN): freight, customs and other additional costs.</summary>
+    /// <summary>
+    /// SAT-D302 (Sinan decided, OPEN-INV-AVGCOST-LANDED): additional cost does not enter the v1 average, so the v1 core
+    /// never produces this reason. The number stays reserved for the later setting (ALS-D80); never reuse it.
+    /// </summary>
     LandedOrAdditionalCost = 4,
 
     /// <summary>OPEN-INV-AVGCOST-RETURN (NEEDS-SINAN): effect of sales and purchase returns.</summary>
@@ -56,7 +69,8 @@ public enum AverageCostUnreadableReason
 
     /// <summary>
     /// The movement's physical stock before it differs from what the ledger tracked (for example opening stock that never
-    /// had a cost). The ledger cannot blend a quantity it never costed (OPEN-INV-AVGCOST-UNCOSTED-STOCK, NEEDS-SINAN).
+    /// had a cost). The ledger cannot blend a quantity it never costed (SAT-D304: cost is "yok" until an approved opening
+    /// cost exists; that command is a later slice).
     /// </summary>
     LedgerStockMismatch = 8,
 
