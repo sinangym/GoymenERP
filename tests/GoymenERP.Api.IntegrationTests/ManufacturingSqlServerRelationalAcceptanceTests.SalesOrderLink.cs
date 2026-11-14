@@ -10,7 +10,8 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Üretim U2-b / API-16 at the store on a REAL SQL Server: the link is stored with its snapshot and audit event, Sales's
-/// open-supply read answers the company's open plans and orders of the order (narrowed by line), and the link migration's
+/// open-supply read answers the company's open plans and orders of the order (narrowed by line) with the planned kg of the
+/// plan's current revision, and the link migration's
 /// Down passes while no plan holds or held a link and refuses (51261) once one did.
 /// </summary>
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
@@ -74,6 +75,39 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.sales-order-linked.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task A_revised_linked_plan_is_read_with_the_planned_kg_of_its_current_revision()
+    {
+        await using var run = await Run.StartAsync();
+        var workCenter = await run.WorkCenterOfAsync(CompanyA);
+        var plan = NewPlan(CompanyA, workCenter);
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.SavePlanAsync(plan, Metadata(run));
+            await store.SalesOrderLinks.ChangeSalesOrderLinkAsync(plan.Id, 1, 0, SalesLink(run, LinkedSalesLine),
+                Metadata(run));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            Assert.Equal(15_000m, Assert.Single(await SupplyReadPort(context, CompanyA)
+                .ListOpenForSalesOrderAsync(CompanyA, LinkedSalesOrder, null)).PlannedKg);
+        }
+
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
+                [new PlannedInput(RollB, Kg(4_000m), 5), new PlannedInput(RollA, Kg(2_500m), 6)], null,
+                "bağlı plan revize", Metadata(run));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            Assert.Equal(6_500m, Assert.Single(await SupplyReadPort(context, CompanyA)
+                .ListOpenForSalesOrderAsync(CompanyA, LinkedSalesOrder, null)).PlannedKg);
+        }
     }
 
     [SqlServerFact]
