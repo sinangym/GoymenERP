@@ -475,11 +475,12 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.official-sales-invoice.withdrawn.v1'"));
 
         // The unique indexes are filtered to live records (pending, approved) and still hold among them: the withdrawn
-        // row put back to pending collides, and so does a live copy that shares any one of the three keys.
+        // row put back to pending collides, and so does a live copy that shares any one of the three keys. SQL Server
+        // stores the filter in its normalized form, so the expected text is that form of "[Status] IN (1, 2)".
         foreach (var index in new[] { "UX_OfficialSalesInvoices_Ettn", "UX_OfficialSalesInvoices_OfficialNo",
                      "UX_OfficialSalesInvoices_PdfSha256" })
         {
-            Assert.Equal("[Status] IN (1, 2)|1", await run.ScalarAsync<string>(
+            Assert.Equal("([Status] IN ((1), (2)))|1", await run.ScalarAsync<string>(
                 "SELECT CONCAT(i.filter_definition, N'|', CAST(i.is_unique AS int)) FROM sys.indexes i "
                 + "WHERE i.object_id = OBJECT_ID(N'finance.OfficialSalesInvoices') AND i.name = @name",
                 ("@name", index)));
@@ -528,7 +529,8 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
                 Assert.Equal(CommandOutcome.Succeeded, (await maker.Service.RecordAsync(maker.Context,
                     new CommandMetadata("record-approved"), Second(approved), default)).Outcome);
             }
-            await using (var checker = run.Service("SENTETIK-checker"))
+            // Approval re-checks the pinned document, so the checker sees the same content the record pinned.
+            await using (var checker = run.Service("SENTETIK-checker", pdfSha: Sha("SENTETIK-approved-content")))
             {
                 Assert.Equal(CommandOutcome.Succeeded, (await checker.Service.ApproveAsync(checker.Context,
                     new CommandMetadata("approve-key"), new FinanceOfficialSalesInvoiceApproveRequestV1(approved, "1"),
