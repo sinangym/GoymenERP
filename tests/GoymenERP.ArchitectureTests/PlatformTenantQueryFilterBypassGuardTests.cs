@@ -358,7 +358,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // URT-D41/URT-D42: +2 ManufacturingApiSqlServerRelationalAcceptanceTests facts (output above input on a
                 // parent roll refuses the close with no tolerance and no approval path; the read-only report of earlier
                 // closes with output above input) (85d84d52… -> 15ad9659…).
-                "15ad965941fa4a1923d7ae4d3c43787520350b5be37d50c7f184cda8d4286d09",
+                // Üretim U2-b follow-up: +1 supply read fact (revised plan read at its current revision kg) and +3
+                // ManufacturingApiSqlServerRelationalAcceptanceTests facts (host link/replay/unlink, half link and Sales
+                // refusals, grant lost during the Sales read) (1b1e7223… -> a4032147…).
+                // Main merge after #1104: both fact sets present (re-derived from the merged inventory) (-> 8a43892e…).
+                // Main merge after #1146: the U2-b follow-up facts (8a43892e…) and the U5-b1 and URT-D41/URT-D42 facts
+                // (15ad9659…) are all present; re-derived from the merged inventory, neither parent's value
+                // (-> e17f2323…).
+                "e17f23237661c184b0fde041cf9dc506889df8f85bae4a2a5f6e71efd3543a40",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
