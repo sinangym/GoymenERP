@@ -585,12 +585,24 @@ Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
   read returns kind `Manufacturing` without the split/merge kg balance check (scrap and loss make the totals differ).
 - **Participant V2:** `IInventoryManufacturingRealizationParticipantV2` keeps the V1 issue/return shapes. Its output
   maps the output class before any read or write: `GoodProduct` -> `Standard`, `SecondQuality` -> `SecondQuality`,
-  `Scrap` -> `Scrap`. `ProcessLoss`, `UsableRemnant` (fail-closed until its production status field is decided, BS-5)
-  and any other token are refused with `400 inventory_manufacturing_output_class_not_stockable`. The label is created
-  classified, and the result echoes both the output class and the classification. V1 stays unchanged until the
-  Manufacturing consumer moves to V2 in its own slice.
+  `Scrap` -> `Scrap` (URT-D43). `ProcessLoss` and any other token are refused with
+  `400 inventory_manufacturing_output_class_not_stockable`. The label is created classified, and the result echoes
+  both the output class and the classification. V1 stays unchanged until the Manufacturing consumer moves to V2 in its
+  own slice.
+- **Usable remnant (STK-S9, BS-5/BS-14):** `UsableRemnant` is stockable. Its classification is the operator's choice
+  sent as `RemnantClassification` (`Standard` or `SecondQuality`; null means the production default `SecondQuality`).
+  `Scrap`, an undefined value, or a `RemnantClassification` on any other output class is refused with
+  `400 inventory_manufacturing_remnant_classification_invalid` before any read or write. The label also carries the
+  separate production status `UsableRemnant` (`inventory.Labels.ProductionStatus` = 1, null for every other label);
+  the result echoes it as `ProductionStatus`. It is descriptive only (no movement, block, disposal or sellability
+  effect; sellability stays with DEC-PRDCT-007), written once at label creation and not in the label's modifiable
+  columns, so a later manual reclassification keeps it. Split/merge children do not inherit it. A non-remnant output
+  hashes its idempotency payload exactly as before; a remnant output also binds the effective classification. The
+  field is not on the HTTP label reads yet.
 - **Migration:** `WidenInventoryLabelTransformationKindToManufacturing` widens `CK_LabelTransformations_Kind` to
   `IN (1, 2, 3)`. Its `Down` refuses (THROW 51262) while any kind 3 row exists (forward fix).
+  `AddInventoryLabelProductionStatus` adds nullable `Labels.ProductionStatus` with `CK_Labels_ProductionStatus`
+  (`IS NULL OR IN (1)`); its `Down` refuses (THROW 51291) while any label carries a production status (forward fix).
 
 ## Average purchase cost ledger and read port V1 (SAT-D262..D267, slice 1)
 

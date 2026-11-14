@@ -92,6 +92,14 @@ public static class ErpPermissions
     public const string ProductItemTypeManage = "product.item-type.manage";
 
     /// <summary>
+    /// BS-9 (Sinan, 2026-11-11, <c>SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md</c>): the Product owner's ONE name for reading and
+    /// setting the "Ebat/kalınlık" row (section kind and measures, the U-08 conversion input) of a product on the shared card
+    /// (<c>ProductDimensionPermissionsV1.Manage</c>). Registered, not granted: no role, seed or user receives it here; who
+    /// receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductDimensionManage = "product.dimension.manage";
+
+    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -1133,6 +1141,7 @@ public static class ErpPermissions
             ProductPriceListsWrite,
             ProductPriceListsPublish,
             ProductItemTypeManage,
+            ProductDimensionManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1331,6 +1340,7 @@ public static class ErpPermissions
             ProductPriceListsWrite,
             ProductPriceListsPublish,
             ProductItemTypeManage,
+            ProductDimensionManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,

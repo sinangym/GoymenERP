@@ -195,6 +195,8 @@ public sealed partial class InventoryStore(
                 RequiredDocumentsJson = JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
                 // B-03: a Manufacturing output label is born classified; every other new label stays null (unknown).
                 Classification = label.Classification is { } classification ? (int)classification : null,
+                // STK-S9 (BS-5): only a Manufacturing usable-remnant output label is born with a production status.
+                ProductionStatus = label.ProductionStatus is { } productionStatus ? (int)productionStatus : null,
                 Version = 1,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
@@ -897,7 +899,8 @@ public sealed partial class InventoryStore(
             row.HeatNumber, row.CoilNumber,
             prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
             documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment),
-            row.Classification is null ? null : (LabelClassification)row.Classification.Value));
+            row.Classification is null ? null : (LabelClassification)row.Classification.Value,
+            row.ProductionStatus is null ? null : (LabelProductionStatus)row.ProductionStatus.Value));
     }
 
     private void AddPrints(MaterialLabel label, int fromSequence)
@@ -1094,6 +1097,11 @@ public sealed partial class InventoryStore(
             label.Classify((LabelClassification)classification);
         }
 
+        if (row.ProductionStatus is { } productionStatus)
+        {
+            label.MarkProductionStatus((LabelProductionStatus)productionStatus);
+        }
+
         return label;
     }
 
@@ -1284,6 +1292,7 @@ public sealed partial class InventoryStore(
         label.ProductVersion,
         label.LotId,
         classification = label.Classification?.ToString(),
+        productionStatus = label.ProductionStatus?.ToString(),
         requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
         documentStatus = label.DocumentStatus.ToString(),
         prints = label.Prints.Count,

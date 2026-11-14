@@ -38,6 +38,9 @@ public static class ProductPriceListHostComposition
         // answer 503 and the Settings line tax port reads "unavailable").
         services.TryAddScoped<IProductItemTypeServiceV1, UnavailableProductItemTypeService>();
         services.TryAddScoped<IProductItemTypeReaderV1, UnavailableProductItemTypeService>();
+        // BS-9: the "Ebat/kalınlık" row lives in the same context: the routes answer 503 and the read port "unavailable".
+        services.TryAddScoped<IProductDimensionServiceV1, UnavailableProductDimensionService>();
+        services.TryAddScoped<IProductDimensionReaderV1, UnavailableProductDimensionService>();
         return services;
     }
 }
@@ -61,6 +64,29 @@ internal sealed class UnavailableProductItemTypeService : IProductItemTypeServic
     {
         cancellationToken.ThrowIfCancellationRequested();
         return new ProductItemTypeException(StatusCodes.Status503ServiceUnavailable, ProductItemTypeProblemCodesV1.ProviderUnavailable);
+    }
+}
+
+internal sealed class UnavailableProductDimensionService : IProductDimensionServiceV1, IProductDimensionReaderV1
+{
+    public Task<ProductDimensionViewV1> GetAsync(Guid productId, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductDimensionViewV1>(Unavailable(cancellationToken));
+
+    public Task<ProductDimensionResultV1> SetAsync(Guid productId, SetProductDimensionRequestV1 request,
+        ProductDimensionCommandMetadataV1 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductDimensionResultV1>(Unavailable(cancellationToken));
+
+    Task<ProductDimensionReadV1> IProductDimensionReaderV1.GetAsync(Guid productId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.Unavailable));
+    }
+
+    private static ProductDimensionException Unavailable(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return new ProductDimensionException(StatusCodes.Status503ServiceUnavailable,
+            ProductDimensionProblemCodesV1.ProviderUnavailable);
     }
 }
 

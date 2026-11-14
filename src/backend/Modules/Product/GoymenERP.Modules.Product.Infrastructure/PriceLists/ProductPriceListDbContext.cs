@@ -16,7 +16,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// never stored. The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// The Product card and Organization's company table are mapped read-only for foreign keys and checks. One exception to the
 /// company scope (SAT-D149, EK20): the item type of the SHARED product card (<c>ProductCardItemTypes</c>) is keyed by the product
-/// alone, written only from a resolved company (recorded as the acting company) under its own write guard.
+/// alone, written only from a resolved company (recorded as the acting company) under its own write guard. The "Ebat/kalınlık"
+/// row of the shared card (BS-9, <c>ProductCardDimensions</c>) follows the same rule.
 /// Migrations have their own history table so that this context never shares one with <c>ProductDbContext</c>.
 /// </summary>
 public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListDbContext> options, ICompanyContext companyContext)
@@ -27,6 +28,26 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
     public const string IdentityCollation = "Latin1_General_100_BIN2";
     public const string NameCollation = "Turkish_100_CI_AS";
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>BS-9: each section kind holds exactly the measures its formula family needs (ProductDimensionSectionKindsV1).</summary>
+    internal const string DimensionShapeCheck =
+        "([SectionKind] = 'Sheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL "
+        + "AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [KgPerMetre] IS NULL) "
+        + "OR ([SectionKind] = 'Coil' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL "
+        + "AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [KgPerMetre] IS NULL) "
+        + "OR ([SectionKind] = 'RoundTube' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL "
+        + "AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL "
+        + "AND 2 * [WallThicknessMm] <= [OuterDiameterMm]) "
+        + "OR ([SectionKind] = 'Profile' AND [ThicknessMm] IS NULL AND [LengthMm] IS NULL AND [OuterDiameterMm] IS NULL "
+        + "AND [WidthMm] IS NOT NULL AND [HeightMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND [KgPerMetre] IS NOT NULL "
+        + "AND 2 * [WallThicknessMm] <= [WidthMm] AND 2 * [WallThicknessMm] <= [HeightMm])";
+
+    /// <summary>Every stored measure is positive; a missing one is NULL, never zero.</summary>
+    internal const string DimensionMeasureCheck =
+        "([ThicknessMm] IS NULL OR [ThicknessMm] > 0) AND ([WidthMm] IS NULL OR [WidthMm] > 0) "
+        + "AND ([LengthMm] IS NULL OR [LengthMm] > 0) AND ([HeightMm] IS NULL OR [HeightMm] > 0) "
+        + "AND ([OuterDiameterMm] IS NULL OR [OuterDiameterMm] > 0) AND ([WallThicknessMm] IS NULL OR [WallThicknessMm] > 0) "
+        + "AND ([KgPerMetre] IS NULL OR [KgPerMetre] > 0)";
 
     internal DbSet<PriceListRow> PriceLists => Set<PriceListRow>();
 
@@ -41,6 +62,10 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
     internal DbSet<ProductCardItemTypeRow> ItemTypes => Set<ProductCardItemTypeRow>();
 
     internal DbSet<ProductItemTypeAttemptRow> ItemTypeAttempts => Set<ProductItemTypeAttemptRow>();
+
+    internal DbSet<ProductCardDimensionRow> Dimensions => Set<ProductCardDimensionRow>();
+
+    internal DbSet<ProductDimensionAttemptRow> DimensionAttempts => Set<ProductDimensionAttemptRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +87,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureLines(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureItemTypes(modelBuilder);
+        ConfigureDimensions(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -266,6 +292,60 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// BS-9: the "Ebat/kalınlık" row of the SHARED product card (keyed by the product alone, no company filter, like the item type)
+    /// and its command answers (company-scoped). Measures are millimetres (three decimals) and kg/m (six decimals); the density is
+    /// the company Settings value and is not stored here.
+    /// </summary>
+    private void ConfigureDimensions(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ProductCardDimensionRow>();
+        entity.ToTable("ProductCardDimensions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductCardDimensions_Identity",
+                $"[ProductId] <> {EmptyGuid} AND [UpdatedInCompanyId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_ProductCardDimensions_Shape", DimensionShapeCheck);
+            table.HasCheckConstraint("CK_ProductCardDimensions_Measures", DimensionMeasureCheck);
+            table.HasCheckConstraint("CK_ProductCardDimensions_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+        });
+        entity.HasKey(x => x.ProductId);
+        entity.Property(x => x.ProductId).ValueGeneratedNever();
+        entity.Property(x => x.SectionKind).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ThicknessMm).HasPrecision(18, 3);
+        entity.Property(x => x.WidthMm).HasPrecision(18, 3);
+        entity.Property(x => x.LengthMm).HasPrecision(18, 3);
+        entity.Property(x => x.HeightMm).HasPrecision(18, 3);
+        entity.Property(x => x.OuterDiameterMm).HasPrecision(18, 3);
+        entity.Property(x => x.WallThicknessMm).HasPrecision(18, 3);
+        entity.Property(x => x.KgPerMetre).HasPrecision(18, 6);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
+        entity.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.UpdatedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var attempt = modelBuilder.Entity<ProductDimensionAttemptRow>();
+        attempt.ToTable("ProductDimensionAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductDimensionAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_ProductDimensionAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_ProductDimensionAttempts_Answer",
+                "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         foreach (var entry in ChangeTracker.Entries<AuditEvent>())
@@ -315,6 +395,38 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                     property.IsModified && !property.Metadata.IsConcurrencyToken && !allowed.Contains(property.Metadata.Name)))
             {
                 throw new InvalidOperationException("Ürün kartının kalem tipinde yalnız tip ve güncelleme bilgisi değişir.");
+            }
+        }
+
+        // BS-9: the shared card's "Ebat/kalınlık" row follows the item type's rule: written only from a resolved company (recorded
+        // as the acting company), never deleted, and only the section, the measures and the update facts move.
+        foreach (var entry in ChangeTracker.Entries<ProductCardDimensionRow>())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted || !companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
+                || entry.Entity.UpdatedInCompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Ürün kartının ebat/kalınlık satırı silinmez ve yalnız aktif şirket bağlamında, o şirket adına yazılır.");
+            }
+
+            string[] allowed =
+            [
+                nameof(ProductCardDimensionRow.SectionKind), nameof(ProductCardDimensionRow.ThicknessMm),
+                nameof(ProductCardDimensionRow.WidthMm), nameof(ProductCardDimensionRow.LengthMm),
+                nameof(ProductCardDimensionRow.HeightMm), nameof(ProductCardDimensionRow.OuterDiameterMm),
+                nameof(ProductCardDimensionRow.WallThicknessMm), nameof(ProductCardDimensionRow.KgPerMetre),
+                nameof(ProductCardDimensionRow.UpdatedAtUtc), nameof(ProductCardDimensionRow.UpdatedBy),
+                nameof(ProductCardDimensionRow.UpdatedInCompanyId),
+            ];
+            if (entry.State == EntityState.Modified && entry.Properties.Any(property =>
+                    property.IsModified && !property.Metadata.IsConcurrencyToken && !allowed.Contains(property.Metadata.Name)))
+            {
+                throw new InvalidOperationException("Ürün kartının ebat/kalınlık satırında yalnız ölçüler ve güncelleme bilgisi değişir.");
             }
         }
 

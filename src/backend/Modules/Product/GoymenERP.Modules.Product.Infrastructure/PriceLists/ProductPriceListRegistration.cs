@@ -54,6 +54,12 @@ public static class ProductPriceListRegistration
             serviceProvider.GetRequiredService<ProductItemTypeService>());
         services.AddScoped<IProductItemTypeReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductItemTypeService>());
+        // BS-9: the shared card's "Ebat/kalınlık" row and its read port for the U-08 conversion (same context).
+        services.AddScoped(CreateDimensionService);
+        services.AddScoped<IProductDimensionServiceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductDimensionService>());
+        services.AddScoped<IProductDimensionReaderV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductDimensionService>());
         return services;
     }
 
@@ -92,6 +98,14 @@ public static class ProductPriceListRegistration
         serviceProvider.GetService<IProductPriceListCustomerPortV1>());
 
     private static ProductItemTypeService CreateItemTypeService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
+
+    private static ProductDimensionService CreateDimensionService(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
         serviceProvider.GetRequiredService<ICompanyContext>(),
         serviceProvider.GetRequiredService<ICurrentUser>(),

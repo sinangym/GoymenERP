@@ -494,6 +494,7 @@ app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
 app.MapProductItemTypeEndpoints();
+app.MapProductDimensionEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
