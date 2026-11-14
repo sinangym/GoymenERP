@@ -292,4 +292,10 @@ describe('S-04 customer risk card (API-06 / UI-15)', () => {
     const section = await loaded()
     expect(within(section).getByTestId('sales-risk-result').getAttribute('data-result')).toBe('Unavailable')
   })
+
+  it('names the FIN-S1 credit-limit reasons in Turkish instead of as unknown codes', () => {
+    for (const code of ['finance_credit_limit_not_set', 'finance_credit_limit_unreadable', 'finance_customer_unidentified']) {
+      expect(riskReasonText(code)).not.toBe(T.unknownReason(code))
+    }
+  })
 })

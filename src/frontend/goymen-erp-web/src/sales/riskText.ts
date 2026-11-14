@@ -108,7 +108,10 @@ export const RISK_CHECK_TEXT = {
     credit_limit_not_defined: 'Kredi limiti tek bir tutar olarak tanımlı değil; limitsiz ya da sıfır sayılmaz.',
     limit_currency_unavailable: 'Kredi limitinin para biriminin ölçeği okunamadı.',
     // The Finance owner (`FinanceSalesPartyRiskReadPortV1`).
+    // Kept for older answers; FIN-S1 answers `finance_credit_limit_not_set` once the credit-limit master exists.
     finance_credit_limit_owner_missing: 'Kredi limiti tanımı (Finans) henüz yok.',
+    finance_credit_limit_not_set: 'Bu cari hesap için Finans\'ta geçerli bir kredi limiti yok; sıfır ya da limitsiz sayılmaz.',
+    finance_credit_limit_unreadable: 'Kredi limiti kaydı (Finans) tam okunamadı; limit kıyası yapılmaz.',
     finance_collateral_owner_missing: 'Teminat tanımı (Finans) henüz yok.',
     finance_open_item_unreadable: 'Açık kalemlerden biri okunamadı; kısmi toplam gösterilmez.',
     finance_customer_unidentified: 'Müşteri Finans tarafında tanımlanamadı.',
