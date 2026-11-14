@@ -484,6 +484,11 @@ public sealed partial class InventoryStore
             label.Classify((LabelClassification)classification);
         }
 
+        if (row.ProductionStatus is { } productionStatus)
+        {
+            label.MarkProductionStatus((LabelProductionStatus)productionStatus);
+        }
+
         return label;
     }
 

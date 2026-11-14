@@ -40,6 +40,12 @@ internal sealed class LabelRow : IInventoryTenantRow
     public string? HeatNumber { get; set; }
     public string? CoilNumber { get; set; }
     public int? Classification { get; set; }
+
+    /// <summary>
+    /// STK-S9 (BS-5): the label's production status (1 = UsableRemnant), written once when a Manufacturing output
+    /// creates the label and never modified (it is not in the label's modifiable columns). Null for every other label.
+    /// </summary>
+    public int? ProductionStatus { get; set; }
     public string RequiredDocumentsJson { get; set; } = "[]";
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
