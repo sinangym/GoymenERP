@@ -9,6 +9,7 @@
 
 import { SITE_TYPE, WORK_CENTER_KIND } from './contract'
 import type { CommandFailure, CommandUnknown } from './commandApi'
+import { CALENDAR_LIMITS } from './workCenterCalendarContract'
 
 /**
  * `SiteType` enum names as they reach the wire. An UNKNOWN token is shown verbatim
@@ -404,4 +405,86 @@ export function masterFailureText(
     default:
       return failureText(failure)
   }
+}
+
+/**
+ * B-15 — the work centre's shift/calendar section on the ORG-04 card. Labels only; no capacity, load or termin is
+ * stated, because URT-D29 keeps that computation out of v1 and nothing here derives one.
+ */
+export const WORK_CENTER_CALENDAR_TEXT = {
+  heading: 'Vardiya ve çalışma takvimi',
+  lead:
+    'Haftalık çalışma vardiyaları ve kapalı günler. Bu bilgi ana veridir; kapasite veya termin hesaplanmaz.',
+  sourceDefault:
+    'Bu iş merkezi için kayıtlı takvim yok; aşağıdaki varsayılan takvim geçerli. İlk kayıt bu iş merkezine özel ' +
+    'takvimi oluşturur.',
+  sourceWorkCenter: 'Bu iş merkezine özel kayıtlı takvim geçerli.',
+  timeZone: 'Saat dilimi',
+  day: 'Gün',
+  shifts: 'Vardiyalar',
+  start: 'Başlangıç',
+  end: 'Bitiş',
+  closed: 'Kapalı',
+  closedDates: 'Kapalı günler (tatil, duruş)',
+  noClosedDates: 'Kapalı gün girilmemiş.',
+  subject: 'iş merkezi takvimi',
+  edit: 'Takvimi düzenle',
+  addShift: 'Vardiya ekle',
+  removeShift: 'Vardiyayı kaldır',
+  addClosedDate: 'Kapalı gün ekle',
+  removeClosedDate: 'Kapalı günü kaldır',
+  closedDate: 'Kapalı gün',
+  shiftRow: (index: number) => `Vardiya ${index}`,
+  closedDateRow: (index: number) => `Kapalı gün ${index}`,
+  help:
+    'Kaydetme takvimin tamamını yeni bir sürüm olarak yazar; önceki sürüm silinmez. Değişiklik gerekçesiyle ' +
+    'birlikte audit kaydına yazılır. Gece yarısını geçen vardiya bu sürümde tanımlanamaz.',
+  noShift: 'En az bir vardiya girilmelidir.',
+  tooManyShifts:
+    `Bir gün için en fazla ${CALENDAR_LIMITS.shiftsPerDay}, toplamda en fazla ${CALENDAR_LIMITS.shifts} ` +
+    'vardiya girilebilir.',
+  shiftInvalid: 'Başlangıç ve bitiş saati SS:dd biçiminde olmalı ve bitiş başlangıçtan sonra gelmelidir.',
+  shiftsOverlap: 'Aynı gündeki vardiyalar çakışamaz.',
+  dateInvalid: 'Kapalı gün geçerli bir tarih olmalıdır.',
+  tooManyClosedDates: `En fazla ${CALENDAR_LIMITS.closedDates} kapalı gün girilebilir.`,
+  duplicateClosedDate: 'Aynı kapalı gün birden fazla girilemez.',
+  savedTitle: 'Takvim kaydedildi',
+  savedDetail: 'Sunucu isteği kabul etti. Takvim güncel kayıttan yenilendi.',
+  conflictReloadedTitle: 'Güncel takvim yüklendi',
+  conflictReloadedDetail:
+    'Girdiğiniz vardiya ve kapalı günler korundu. Kaydederseniz değişikliğiniz güncel sürüm üzerinden yeni bir ' +
+    'işlem olarak gönderilir.',
+} as const
+
+const CALENDAR_DAY_LABEL: Record<string, string> = {
+  Monday: 'Pazartesi',
+  Tuesday: 'Salı',
+  Wednesday: 'Çarşamba',
+  Thursday: 'Perşembe',
+  Friday: 'Cuma',
+  Saturday: 'Cumartesi',
+  Sunday: 'Pazar',
+}
+
+/** The Turkish weekday name of a wire token; an unknown token is shown verbatim, never guessed. */
+export function calendarDayLabel(day: string): string {
+  return CALENDAR_DAY_LABEL[day] ?? day
+}
+
+/** A refusal of the calendar command. Only the validation text differs from the master edit's. */
+export function calendarFailureText(failure: CommandFailure): { title: string; detail: string } {
+  if (failure.kind === 'validation') {
+    return {
+      title: 'İşlem kabul edilmedi',
+      detail: 'Sunucu takvimi geçersiz buldu. Vardiyaları, kapalı günleri ve gerekçeyi gözden geçirin; kayıt yapılmadı.',
+    }
+  }
+  return masterFailureText(failure)
+}
+
+/** The notice after an accepted calendar save (204): accepted, or an earlier identical command replayed. */
+export function calendarSavedNotice(replayed: boolean): { title: string; detail: string; outcome: string } {
+  return replayed
+    ? { title: MASTER_TEXT.replayedTitle, detail: MASTER_TEXT.replayedDetail, outcome: 'replayed' }
+    : { title: WORK_CENTER_CALENDAR_TEXT.savedTitle, detail: WORK_CENTER_CALENDAR_TEXT.savedDetail, outcome: 'saved' }
 }

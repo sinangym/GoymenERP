@@ -20,6 +20,14 @@ public static class ErpPermissions
     public const string OrganizationLocationsWrite = "organization.locations.write";
     public const string OrganizationWorkCentersWrite = "organization.work-centers.write";
 
+    /// <summary>
+    /// B-15 work-centre calendar master (URT-D11 "hat bazında değiştirilebilir"): PUT
+    /// /api/v1/organization/work-centers/{id}/calendar, the owner's OrganizationPermissionManifestV1 name. Scoped like
+    /// <see cref="OrganizationWorkCentersWrite"/> (site / location / work-centre). Not Critical. Registered, not granted:
+    /// which persona holds it is a human gate.
+    /// </summary>
+    public const string OrganizationWorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
+
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
     public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
@@ -1126,6 +1134,7 @@ public static class ErpPermissions
             OrganizationSitesWrite,
             OrganizationLocationsWrite,
             OrganizationWorkCentersWrite,
+            OrganizationWorkCenterCalendarsWrite,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,

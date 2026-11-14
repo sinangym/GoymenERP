@@ -292,7 +292,8 @@ describe('ORG-04 work centre card', () => {
       held[0].release(json(workCenterDetail(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1')))
     })
     expect(await screen.findByText('BY-01')).toBeTruthy()
-    expect(within(frame).queryByRole('status')).toBeNull()
+    // The B-15 calendar section mounts with the card and settles on its own read.
+    await waitFor(() => expect(within(frame).queryByRole('status')).toBeNull())
     expect(frame.querySelector(`[data-work-center="${WC_PAINT}"]`)).not.toBeNull()
   })
 

@@ -26,7 +26,20 @@ public sealed class OrganizationDbContext(
 
     public DbSet<WorkCenter> WorkCenters => Set<WorkCenter>();
 
+    public DbSet<WorkCenterCalendar> WorkCenterCalendars => Set<WorkCenterCalendar>();
+
+    public DbSet<WorkCenterCalendarShiftRecord> WorkCenterCalendarShifts => Set<WorkCenterCalendarShiftRecord>();
+
+    public DbSet<WorkCenterCalendarClosedDateRecord> WorkCenterCalendarClosedDates =>
+        Set<WorkCenterCalendarClosedDateRecord>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
+    internal const string WorkCenterCalendarVersionCheck = "[Version] >= 1";
+    internal const string WorkCenterCalendarShiftRevisionCheck = "[Revision] >= 1";
+    internal const string WorkCenterCalendarShiftDayCheck = "[Day] BETWEEN 0 AND 6";
+    internal const string WorkCenterCalendarShiftWindowCheck = "[StartTime] < [EndTime]";
+    internal const string WorkCenterCalendarClosedDateRevisionCheck = "[Revision] >= 1";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +49,7 @@ public sealed class OrganizationDbContext(
         ConfigureSite(modelBuilder);
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
+        ConfigureWorkCenterCalendar(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -136,6 +150,64 @@ public sealed class OrganizationDbContext(
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// B-15: one calendar head per work centre (unique on the company and work centre) and append-only revision rows.
+    /// Every table carries the company, its composite foreign keys stay inside the company, and the query filter fences
+    /// reads like every other Organization table.
+    /// </summary>
+    private void ConfigureWorkCenterCalendar(ModelBuilder modelBuilder)
+    {
+        var calendar = modelBuilder.Entity<WorkCenterCalendar>();
+        calendar.ToTable("WorkCenterCalendars", "organization", table =>
+            table.HasCheckConstraint("CK_WorkCenterCalendars_Version", WorkCenterCalendarVersionCheck));
+        calendar.HasKey(x => x.Id);
+        calendar.Property(x => x.Id).ValueGeneratedNever();
+        calendar.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        calendar.Property(x => x.Version).IsConcurrencyToken();
+        calendar.Property(x => x.RowVersion).IsRowVersion();
+        calendar.HasIndex(x => new { x.CompanyId, x.WorkCenterId }).IsUnique();
+        calendar.HasOne<WorkCenter>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.WorkCenterId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        calendar.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var shift = modelBuilder.Entity<WorkCenterCalendarShiftRecord>();
+        shift.ToTable("WorkCenterCalendarShifts", "organization", table =>
+        {
+            table.HasCheckConstraint("CK_WorkCenterCalendarShifts_Revision", WorkCenterCalendarShiftRevisionCheck);
+            table.HasCheckConstraint("CK_WorkCenterCalendarShifts_Day", WorkCenterCalendarShiftDayCheck);
+            table.HasCheckConstraint("CK_WorkCenterCalendarShifts_Window", WorkCenterCalendarShiftWindowCheck);
+        });
+        shift.HasKey(x => x.Id);
+        shift.Property(x => x.Id).ValueGeneratedNever();
+        shift.Property(x => x.StartTime).HasColumnType("time(0)");
+        shift.Property(x => x.EndTime).HasColumnType("time(0)");
+        shift.HasIndex(x => new { x.CompanyId, x.CalendarId, x.Revision, x.Day, x.StartTime }).IsUnique();
+        shift.HasOne<WorkCenterCalendar>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CalendarId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        shift.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var closedDate = modelBuilder.Entity<WorkCenterCalendarClosedDateRecord>();
+        closedDate.ToTable("WorkCenterCalendarClosedDates", "organization", table =>
+            table.HasCheckConstraint(
+                "CK_WorkCenterCalendarClosedDates_Revision",
+                WorkCenterCalendarClosedDateRevisionCheck));
+        closedDate.HasKey(x => x.Id);
+        closedDate.Property(x => x.Id).ValueGeneratedNever();
+        closedDate.HasIndex(x => new { x.CompanyId, x.CalendarId, x.Revision, x.Date }).IsUnique();
+        closedDate.HasOne<WorkCenterCalendar>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CalendarId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        closedDate.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private static void ConfigureTenantEntity<TEntity>(
         Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity> entity,
         string tableName)
@@ -194,6 +266,48 @@ public sealed class OrganizationDbContext(
             if (entry.State == EntityState.Modified)
             {
                 entry.Entity.Touch(now);
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<ICompanyOwnedRecord>())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted
+                || (entry.State == EntityState.Modified && entry.Entity is not WorkCenterCalendar))
+            {
+                // A calendar head is never deleted and a revision row is append-only: a change is a new revision.
+                throw new InvalidOperationException(
+                    "İş merkezi takvimi kayıtları silinemez; takvim satırları değiştirilemez.");
+            }
+
+            if (entry.Entity.CompanyId == Guid.Empty)
+            {
+                throw new InvalidOperationException("Kritik organizasyon kaydı CompanyId olmadan yazılamaz.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && entry.Property(nameof(ICompanyOwnedRecord.CompanyId)).IsModified)
+            {
+                throw new InvalidOperationException("Bir organizasyon kaydının CompanyId değeri değiştirilemez.");
+            }
+
+            if (!bootstrapWriteScope.IsActive)
+            {
+                if (!companyContext.IsResolved)
+                {
+                    throw new InvalidOperationException(
+                        "Organizasyon yazma işlemi için aktif şirket bağlamı zorunludur.");
+                }
+
+                if (entry.Entity.CompanyId != companyContext.CompanyId)
+                {
+                    throw new InvalidOperationException(
+                        "Organizasyon kaydının CompanyId değeri aktif şirket bağlamıyla eşleşmelidir.");
+                }
             }
         }
 

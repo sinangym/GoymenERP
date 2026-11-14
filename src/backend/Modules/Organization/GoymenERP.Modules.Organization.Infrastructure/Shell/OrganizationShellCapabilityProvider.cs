@@ -17,7 +17,9 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     // 1.2 -> 1.3 (master edit): five controls — site create/edit, location create, location edit, work-centre create,
     // work-centre edit — each on its screen's own parent and each adding its record kind's own write permission. The
     // same cascade: the accepted authority constants move with it in the central round.
-    public const string OwnerContractVersion = "1.3";
+    // 1.3 -> 1.4 (B-15): the work-centre calendar edit control on the work-centre card, adding the calendar's own write
+    // permission. The same cascade: the accepted authority constants move with it in the central round.
+    public const string OwnerContractVersion = "1.4";
     public const string ListCapabilityId = "organization.sites.list";
     public const string DetailCapabilityId = "organization.locations.detail";
     public const string SitesReadCapabilityId = "organization.sites.read";
@@ -29,6 +31,7 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     public const string LocationEditCapabilityId = "organization.locations.edit";
     public const string WorkCenterCreateCapabilityId = "organization.work-centers.create";
     public const string WorkCenterEditCapabilityId = "organization.work-centers.edit";
+    public const string WorkCenterCalendarEditCapabilityId = "organization.work-centers.calendar.edit";
 
     public string Owner => OwnerId;
     public string ContractVersion => OwnerContractVersion;
@@ -143,6 +146,16 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
                 ParentCapabilityId = WorkCenterDetailCapabilityId,
                 RequiredPermissions =
                     [ErpPermissions.OrganizationWorkCentersRead, OrganizationPermissionManifestV1.WorkCentersWrite],
+            },
+            workCenterDetail with
+            {
+                CapabilityId = WorkCenterCalendarEditCapabilityId,
+                ParentCapabilityId = WorkCenterDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.OrganizationWorkCentersRead,
+                    OrganizationPermissionManifestV1.WorkCenterCalendarsWrite,
+                ],
             },
         ];
     }
