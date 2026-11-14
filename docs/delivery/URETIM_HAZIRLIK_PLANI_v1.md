@@ -241,8 +241,15 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 
 ### 5.3a Çıktı sınıfı → Stok etiket sınıfı eşlemesi (API-27, URT-D8/D14, DEC-PRDCT-007)
 
-Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): eşleme yapılandırılabilir 1:1 tablo olur, koda gömülmez; taslağı
-Üretim yazar, Stok onaylar. Stok 2026-11-11'de OC-1, OC-2, OC-4 ve OC-5'i ve kuralları onayladı; OC-3 NEEDS-SINAN (#66).
+**Sinan kararı URT-D43 (2026-11-13, `docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md`):** eşleme **sabittir ve her
+şirkette aynıdır**; şirket başına ayar tablosu veya ayar ekranı yoktur. Üretim çıkış kaydında varsayılan sınıf
+`GoodProduct` (standart) gelir; 2. kalite veya hurda çıkarsa kullanıcı onu seçer, stok etiketi seçilen sınıfla açılır.
+Bu karar aşağıdaki koordinatör kararının "yapılandırılabilir 1:1 tablo olur, koda gömülmez" kısmının ve "Kurallar"daki
+şirket başına tablo ifadesinin yerine geçer; tablodaki değerler (OC-1, OC-2, OC-4, OC-5) değişmez.
+
+Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): ~~eşleme yapılandırılabilir 1:1 tablo olur, koda gömülmez;~~
+(URT-D43 ile aşıldı) taslağı Üretim yazar, Stok onaylar. Stok 2026-11-11'de OC-1, OC-2, OC-4 ve OC-5'i ve kuralları
+onayladı; OC-3 NEEDS-SINAN (#66).
 
 | Üretim `OutputClass` | Stok `InventoryLabelClassificationV1` | Stok etiketi | Varsayım |
 |---|---|---|---|
@@ -252,9 +259,15 @@ Koordinatör kararı (2026-11-11, Sinan yetkisiyle, #66): eşleme yapılandırı
 | `Scrap` | `Scrap` | evet (sınıf yalnız betimleyici; satılabilirlik ayrıca belirlenir) | OC-4 (Stok onayı) |
 | `ProcessLoss` | – | hayır, stok dışı (talaş/proses kaybı) | OC-5 (Stok onayı) |
 
-Kurallar: tablo şirket başına bir satır kümesi; her `OutputClass` en çok bir sınıfa eşlenir; `ProcessLoss` hiçbir
-zaman etiket üretmez. Eşleme eksikse çıktı fail-closed reddedilir (sınıf tahmin edilmez). Tablo Stok'ta (Inventory) durur
-(hedef değerler Inventory'nin enum'u); Üretim sürümlü bir okuma portuyla okur (ad Stok'ta, B-03 sonrası).
+Kurallar (URT-D43 ile güncellendi): eşleme sabittir ve her şirkette aynıdır (şirket başına satır kümesi ve ayar ekranı
+yoktur); her `OutputClass` en çok bir sınıfa eşlenir; `ProcessLoss` hiçbir zaman etiket üretmez. Eşleme eksikse çıktı
+fail-closed reddedilir (sınıf tahmin edilmez). Hedef değerler Inventory'nin enum'udur. Seçilen çıktı sınıfı API'de
+açıkça taşınır; ekran `GoodProduct`'u (standart) önceden seçer (uygulama ayrıntısı, geri alınabilir). Önceki metindeki
+"tablo şirket başına bir satır kümesi" ifadesi URT-D43 ile aşıldı. Sabit eşlemenin kodda hangi modülde durduğu ve
+Üretim'in onu nasıl okuduğu (önceki metin: "Tablo Stok'ta (Inventory) durur … Üretim sürümlü bir okuma portuyla okur")
+kod şeridinin uygulama ayrıntısıdır; modül sınırı korunur. `UsableRemnant` satırındaki ve yukarıdaki "OC-3
+NEEDS-SINAN" notları bu düzenlemenin kapsamı dışındadır ve burada güncellenmedi (OC-3 sonradan BS-5/BS-14 ile
+cevaplandı: `docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md`).
 
 ## 6. Diğer modüllerle eksik ilişkiler (MOD)
 

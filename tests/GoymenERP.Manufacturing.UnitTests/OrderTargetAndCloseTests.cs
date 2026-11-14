@@ -319,8 +319,10 @@ public sealed class OrderTargetAndCloseTests
     }
 
     [Fact]
-    public void Rolls_never_offset_and_a_negative_difference_requires_review_not_approval()
+    public void Rolls_never_offset_and_output_above_input_on_one_roll_refuses_the_close_while_the_order_total_balances()
     {
+        // URT-D42 (1): measured per parent roll. The order total is 2,000 in and 2,000 out, yet the master roll has
+        // 10 kg more output than input: that alone refuses the close (URT-D41 (1)).
         var order = Order(null,
             new PlannedInput(MasterRoll, Kg(1_000m)), new PlannedInput(OtherRoll, Kg(1_000m)));
         order.Issue(MasterRoll, Kg(1_000m));
@@ -330,14 +332,17 @@ public sealed class OrderTargetAndCloseTests
 
         var assessment = order.AssessClosure(Tolerance(1m), [Fire(OtherRoll, 10m, 1_000m)]);
 
-        Assert.Equal(ClosureDispositionV1.ReviewRequired, assessment.Disposition);
-        Assert.Equal((ClosureDispositionV1.ReviewRequired, -10m,
-                ClosureAssessmentCodesV1.NegativeDifferenceReview),
+        Assert.Equal((ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.OutputExceedsInput, (string?)null),
+            (assessment.Disposition, assessment.Code, assessment.RefusedParameter));
+        Assert.Equal((ClosureDispositionV1.Refused, -10m, ClosureAssessmentCodesV1.OutputExceedsInput),
             (assessment.Rolls[0].Disposition, assessment.Rolls[0].DifferenceKg, assessment.Rolls[0].Code));
         Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, (decimal?)null),
             (assessment.Rolls[1].Disposition, assessment.Rolls[1].DifferenceKg, assessment.Rolls[1].FirePercent));
+        Assert.Equal(ClosureAssessmentCodesV1.OutputExceedsInput, Assert.Throws<ManufacturingRuleException>(
+            () => order.CloseWithPolicy(order.Version, Closer, CloseAt, Tolerance(1m), null)).Code);
         Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
             () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
+        Assert.Equal(OrderStatus.Open, order.Status);
     }
 
     [Theory]
