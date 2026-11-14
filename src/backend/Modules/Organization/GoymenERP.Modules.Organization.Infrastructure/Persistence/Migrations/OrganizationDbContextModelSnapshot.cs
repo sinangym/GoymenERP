@@ -484,8 +484,6 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("CompanyId", "Id");
-
                     b.HasIndex("CompanyId", "Code")
                         .IsUnique();
 
@@ -494,6 +492,110 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompanyId", "LocationId");
 
                     b.ToTable("WorkCenters", "organization");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "WorkCenterId")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCalendars", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkCenterCalendars_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarClosedDateRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CalendarId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CalendarId", "Revision", "Date")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCalendarClosedDates", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkCenterCalendarClosedDates_Revision", "[Revision] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarShiftRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CalendarId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Day")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time(0)");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time(0)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CalendarId", "Revision", "Day", "StartTime")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCalendarShifts", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Day", "[Day] BETWEEN 0 AND 6");
+
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Revision", "[Revision] >= 1");
+
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Window", "[StartTime] < [EndTime]");
+                        });
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Locations.Location", b =>
@@ -520,6 +622,36 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Organization.Domain.Locations.Location", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "LocationId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenter", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "WorkCenterId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarClosedDateRecord", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CalendarId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarShiftRecord", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CalendarId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();

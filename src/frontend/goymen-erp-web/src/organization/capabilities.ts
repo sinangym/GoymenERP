@@ -116,6 +116,8 @@ export const ORGANIZATION_CAPABILITY = {
    *   organization.locations.edit      <- locations.read + organization.locations.write (ORG-02)
    *   organization.work-centers.create <- work-centers.read + locations.read + organization.work-centers.write (ORG-03)
    *   organization.work-centers.edit   <- work-centers.read + organization.work-centers.write (ORG-04)
+   *   organization.work-centers.calendar.edit
+   *                                    <- work-centers.read + organization.work-centers.calendar.write (B-15)
    *
    * The create controls also need the list they pick a parent from (sites for a location, locations for a work
    * centre), which is why those reads are part of their grant.
@@ -125,6 +127,11 @@ export const ORGANIZATION_CAPABILITY = {
   locationEdit: 'organization.locations.edit',
   workCenterCreate: 'organization.work-centers.create',
   workCenterEdit: 'organization.work-centers.edit',
+  /**
+   * B-15 — the work centre's shift/calendar edit on the ORG-04 card. A control, like the master edit, on its own
+   * write permission: the calendar READ is part of the card and needs only the card's grant.
+   */
+  workCenterCalendarEdit: 'organization.work-centers.calendar.edit',
 } as const
 
 export type OrganizationCapabilityId =
