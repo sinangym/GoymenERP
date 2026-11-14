@@ -322,8 +322,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F-020: +3 loading-instruction cancel SQL facts (576e58f6... -> 991fa70f...).
             // F-020 review fixes: +9 cancel SQL facts (absent line, released limits, weighing row kept, three races, route grant and
             // company refusal) and one renamed fact, kept ordinal-sorted (991fa70f... -> 15a22a9f...).
+            // RCSI deadlock-victim read closure: +3 SQL facts (the aggregate instructed and loaded SUM reads, one transfer
+            // outgoing-document Serializable read), kept ordinal-sorted (15a22a9f... -> 82e1c19f...).
             ["tools/relational_inventory/logistics.txt"] =
-                "15a22a9fe83690729d368c5b808485f886b53bcc59958632d0edf7775dbe45e5",
+                "82e1c19f55af284e57fb30e0f06d8329f8a9456ef1430ca7e0d0ab6dde221c36",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -1637,7 +1639,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // opens no direct connection or command outside the company-filtered Logistics context.
                 [ReviewedLogisticsTransferOutgoingDocumentStorePath] =
                     new(
-                        "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
+                        // Re-fingerprinted for the read-phase deadlock closure: a SQL 1205 raised by a read inside the
+                        // Serializable section maps to ConcurrentChange; no new database API and SqlClient count unchanged.
+                        "a89ec49c4342b7f753a079ef14231ecb3bfe9a4115f1e725563ac25285907753",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1670,7 +1674,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // no new database API and SqlClient count unchanged.
                         // Re-fingerprinted for the F-020 review fixes: the aggregate instructed and loaded limits leave cancelled
                         // instructions out and the rebuild comparison covers CancelledAtUtc; no new database API, SqlClient count unchanged.
-                        "f6256b174193626723fc65e9d2e7be43732f4debc840a097dba096a5a1ad5ccc",
+                        // Re-fingerprinted for the read-phase deadlock closure: a SQL 1205 raised by an aggregate SUM read inside
+                        // the Serializable section maps to ConcurrentChange; no new database API and SqlClient count unchanged.
+                        "7045422ac4a58e63b1ba040bf4c509184ecb2dd7bebdbc780063092e1b38868d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

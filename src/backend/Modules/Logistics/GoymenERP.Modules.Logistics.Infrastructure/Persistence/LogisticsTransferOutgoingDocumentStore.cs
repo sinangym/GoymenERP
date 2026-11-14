@@ -73,10 +73,11 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
             await transaction.CommitAsync(cancellationToken);
             return new(document, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
-        catch
+        catch (Exception exception)
         {
             await RollbackAsync(transaction, cancellationToken);
             dbContext.ChangeTracker.Clear();
+            if (IsDeadlockVictim(exception)) throw LostSerializationRead(exception);
             throw;
         }
     }
@@ -134,10 +135,11 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
             await transaction.CommitAsync(cancellationToken);
             return new(before, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
-        catch
+        catch (Exception exception)
         {
             await RollbackAsync(transaction, cancellationToken);
             dbContext.ChangeTracker.Clear();
+            if (IsDeadlockVictim(exception)) throw LostSerializationRead(exception);
             throw;
         }
     }
@@ -306,6 +308,14 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
         try { await transaction.RollbackAsync(cancellationToken); }
         catch { }
     }
+
+    // A read inside the Serializable section can be the deadlock victim before SaveAsync (which maps its own 1205).
+    private static bool IsDeadlockVictim(Exception exception) =>
+        exception is not LogisticsStoreException && ContainsSqlException(exception, 1205);
+
+    private static LogisticsStoreException LostSerializationRead(Exception exception) =>
+        Refused(LogisticsStoreCodes.ConcurrentChange,
+            "Transfer cikis belgesi okuma yarisi kaybedildi; hicbir sey kaydedilmedi.", exception);
 
     private static bool ContainsSqlException(Exception exception, int number)
     {
