@@ -573,9 +573,9 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 
 - **Core:** `Domain/Costing/AverageCostCalculator` is deterministic. A purchase receipt recomputes the average; a transfer
   enters the target at the source average; a production receipt never enters the average (the position becomes
-  Unreadable `mixed_source_undecided`). Negative stock, unit conversion, foreign currency, landed/additional cost, returns
-  and stock the ledger never costed are NOT decided: each answers Unreadable with its own code and an
-  `OPEN-INV-AVGCOST-*` comment in the code. Unreadable is sticky (leaving it would be a policy choice).
+  Unreadable `mixed_source_undecided`). Negative stock, unit conversion, foreign currency, returns and stock the ledger
+  never costed have no figure: each answers Unreadable with its own code. Unreadable is sticky (leaving it would be a
+  policy choice).
 - **Ledger:** `inventory.AverageCostLedger` (`AddInventoryAverageCostLedger`), company-filtered, unique per position,
   `Version` + `RowVersion` concurrency, state check `CK_AverageCostLedger_State`. `Down` refuses (THROW 51250) while any
   row exists (forward fix).
@@ -584,6 +584,18 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
   position becomes sticky Unreadable `zero_cost_receipt` (reason 9) and the zero never enters the average. Migration
   `RelaxInventoryAverageCostReasonToZeroCostReceipt` widens the reason check to 1..9; its `Down` refuses (THROW 51258)
   while a reason 9 row exists. Purchase-line price input, USD/TL and unit conversion stay open (NEEDS-SINAN, Issue #66).
+- **Sinan 2026-11-11 (SAT-D302, `docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`):**
+  additional cost (freight, customs) never enters the v1 average. The receipt entering at its own purchase price, with
+  `AverageCostMovement.AdditionalCostPerStockKg` kept apart, is the implementation reading of that decision (reversible);
+  reason 4 / `additional_cost_undecided` is no longer produced, its number and wire code stay reserved for the later
+  setting (ALS-D80). No migration: the reason check and the read contract V1 are unchanged. The domain field does not
+  decide the Purchasing→Inventory contract: per the ALS-D80 implementation reading, that cross-module K3 slice decides
+  how additional cost is carried (a separate field, a flag or nothing), and so that SAT-D302 (1) holds it must make sure
+  `UnitCostPerStockKg` is the purchase price alone.
+- **Sinan 2026-11-13 (SAT-D318, SAT-D323, `docs/decisions/SINAN_KARARLARI_2026-11-13_URETIM_MALIYETI_VE_EKSI_STOK.md`):**
+  stock never goes below zero, so `negative_stock` (reason 1) marks an invariant breach; SAT-D301 (2) ("giriş gelince
+  düzelir") is superseded by SAT-D323 (1) and no recovery formula is written. Keeping the breach fail-closed and sticky
+  is the decision file's author reading; the safety behaviour for a violated record is NEEDS-SINAN.
 - **No price input source is connected yet** (Purchasing price input is NEEDS-SINAN, Issue #66 comment 6760990097), so
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).
