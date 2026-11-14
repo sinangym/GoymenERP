@@ -1970,6 +1970,45 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task Output_above_input_is_refused_before_any_exception_step_with_or_without_a_reason()
+    {
+        // URT-D41 (1)-(2), URT-D42 (2): 1 kg (1 %) more output than input is inside the 2 % tolerance and is still
+        // refused; a reason does not open the approval path and the dedicated exception permission is never asked.
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with
+        {
+            MaximumFirePercent = 5m,
+            MassBalanceDifferenceTolerancePercent = 2m,
+        };
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(101m), At);
+
+        var plain = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version), "close-plus-plain", ClosePermission,
+            CloseExceptionPermission, CancellationToken.None);
+        var reasoned = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "SENTETIK tartim teyidi"), "close-plus-reasoned",
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        foreach (var refused in new[] { plain, reasoned })
+        {
+            Assert.Equal((ManufacturingApiStatus.Unprocessable, ClosureAssessmentCodesV1.OutputExceedsInput, false),
+                (refused.Status, refused.Code, refused.IsReplay));
+            Assert.Null(refused.Resource);
+        }
+
+        Assert.Equal(2, fixture.Settings.ToleranceAsked);
+        Assert.DoesNotContain(CloseExceptionPermission, fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosureExceptionApproval);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
     public async Task A_reasoned_close_replay_remeasures_exception_authority_before_returning_its_immutable_answer()
     {
         const string key = "close-approved";
