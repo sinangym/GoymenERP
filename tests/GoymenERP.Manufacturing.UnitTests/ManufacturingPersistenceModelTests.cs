@@ -128,6 +128,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanInputAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanSalesOrderLinks", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanDueDate", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -191,6 +193,36 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
             { Table: "Plans", Name: "SalesOrderLineId" });
+    }
+
+    [Fact]
+    public void The_plan_termin_is_a_nullable_day_counted_by_its_revision_and_its_rollback_refuses_while_one_was_entered()
+    {
+        // Üretim F-010a (URT-D29): the hand-entered termin is a nullable `date` (no time); its revision starts at 0 and is
+        // at least 1 while a termin is held. Up is pure DDL; Down refuses (THROW 51281) while any plan holds or ever held a
+        // termin (forward fix).
+        using var context = Context();
+        var plan = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PlanRow))!;
+        var dueDate = plan.FindProperty(nameof(PlanRow.RequestedDueDate))!;
+        Assert.True(dueDate.IsNullable);
+        Assert.Equal("date", dueDate.GetColumnType());
+        var revision = plan.FindProperty(nameof(PlanRow.DueDateRevision))!;
+        Assert.False(revision.IsNullable);
+        Assert.Equal(0L, revision.GetDefaultValue());
+        Assert.Equal(ManufacturingDbContext.PlanDueDateRevisionCheck,
+            plan.GetCheckConstraints().Single(check => check.Name == "CK_Plans_DueDateRevision").Sql);
+
+        var migration = new AddManufacturingPlanDueDate();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51281", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[Plans]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DueDateRevision] > 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Plans", Name: "RequestedDueDate" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Plans", Name: "DueDateRevision" });
     }
 
     [Fact]

@@ -144,6 +144,23 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder,
     ];
 
+    // Üretim F-010a (URT-D29): the hand-entered termin's own 409 and 422 sets — a moved termin revision is a conflict; a
+    // cancelled plan, a closed order and no change are refusals. Declared on that endpoint only, so no existing endpoint's
+    // contract moves.
+    private static readonly string[] PlanDueDateConflictCodes =
+    [
+        .. ConflictCodes,
+        ManufacturingRuleCodes.PlanDueDateChanged,
+    ];
+
+    private static readonly string[] PlanDueDateUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanCancelled,
+        ManufacturingRuleCodes.PlanDueDateOrderClosed,
+        ManufacturingRuleCodes.PlanDueDateNoChange,
+    ];
+
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
@@ -341,6 +358,32 @@ public static class ManufacturingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(PlanSalesOrderLinkConflictCodes)
             .ProducesErpUnprocessableEntity(PlanSalesOrderLinkUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
+        // Üretim F-010a (URT-D29): enters, changes or removes (null) the plan's hand-entered termin — a calendar day, never
+        // computed — under the plan's write grant. The plan's version does not move; its termin revision does (409 when it
+        // moved). ADR-011 as the other plan commands.
+        group.MapPost("/plans/{planId:guid}/due-date", async (
+                Guid planId,
+                ChangePlanDueDateRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ChangePlanDueDateAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansWrite, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansWrite)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ChangeManufacturingPlanDueDateV1")
+            .Accepts<ChangePlanDueDateRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(PlanDueDateConflictCodes)
+            .ProducesErpUnprocessableEntity(PlanDueDateUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();

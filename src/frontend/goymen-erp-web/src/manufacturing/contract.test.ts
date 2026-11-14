@@ -560,6 +560,30 @@ describe('decodePlan', () => {
     }
   })
 
+  it('reads the F-010a hand-entered termin as a calendar day with its revision and refuses any other shape', () => {
+    const dated = decodePlan(plan({ requestedDueDate: '2026-12-31', dueDateRevision: 1 }))
+    expect(dated).toMatchObject({ requestedDueDate: '2026-12-31', dueDateRevision: 1 })
+    // Legacy JSON without the members is no termin; a removed termin keeps its revision.
+    const legacy: Record<string, unknown> = plan()
+    delete legacy.requestedDueDate
+    delete legacy.dueDateRevision
+    expect(decodePlan(legacy)).toMatchObject({ requestedDueDate: null, dueDateRevision: 0 })
+    expect(decodePlan(plan({ requestedDueDate: null, dueDateRevision: 3 }))).toMatchObject({
+      requestedDueDate: null,
+      dueDateRevision: 3,
+    })
+    // A termin never comes with revision 0 (CK_Plans_DueDateRevision), nor a broken revision.
+    expect(decodePlan(plan({ requestedDueDate: '2026-12-31', dueDateRevision: 0 }))).toBeNull()
+    for (const revision of [-1, 1.5, '1', null]) {
+      expect(decodePlan(plan({ dueDateRevision: revision }))).toBeNull()
+    }
+    // Only a real calendar day without a time: never a timestamp, an impossible day or the default day.
+    for (const day of ['2026-12-31T00:00:00', '2026-02-29', '2026-13-01', '31.12.2026', '0001-01-01', '', 20261231]) {
+      expect(decodePlan(plan({ requestedDueDate: day, dueDateRevision: 1 }))).toBeNull()
+    }
+    expect(decodePlan(plan({ requestedDueDate: '2028-02-29', dueDateRevision: 1 }))?.requestedDueDate).toBe('2028-02-29')
+  })
+
   it.each([
     ['an empty line list', { lines: [], windingTargetKg: null }],
     ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],

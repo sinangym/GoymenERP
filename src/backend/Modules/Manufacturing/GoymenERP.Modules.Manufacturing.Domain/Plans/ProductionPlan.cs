@@ -190,6 +190,17 @@ public sealed class ProductionPlan
     /// <summary>Üretim U2-b / API-16: how many times the sales order link was set or removed (0 = never linked).</summary>
     public long SalesOrderLinkRevision { get; private set; }
 
+    /// <summary>
+    /// Üretim F-010a (URT-D29): the due date (termin) a user entered by hand, a calendar day without a time, or null. The
+    /// system never computes it from line speed, a calendar or capacity. Not part of the plan's content and not a change
+    /// of the plan (its version does not move): the termin has its own revision (<see cref="DueDateRevision"/>), which
+    /// every set, change or removal advances.
+    /// </summary>
+    public DateOnly? RequestedDueDate { get; private set; }
+
+    /// <summary>Üretim F-010a (URT-D29): how many times the termin was set, changed or removed (0 = never entered).</summary>
+    public long DueDateRevision { get; private set; }
+
     /// <summary>The longest preparer identity the store keeps (the actor id column's length).</summary>
     public const int PreparedByMaximumLength = 128;
 
@@ -265,7 +276,9 @@ public sealed class ProductionPlan
         PlanProcessSpec? processSpec = null,
         string? preparedBy = null,
         PlanSalesOrderLink? salesOrderLink = null,
-        long salesOrderLinkRevision = 0)
+        long salesOrderLinkRevision = 0,
+        DateOnly? requestedDueDate = null,
+        long dueDateRevision = 0)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -444,6 +457,17 @@ public sealed class ProductionPlan
         }
 
         plan.SalesOrderLinkRevision = salesOrderLinkRevision;
+
+        // F-010a (URT-D29): the termin is not a step of the plan either; it is set after the replay, and every stored termin
+        // was counted by its revision.
+        if (dueDateRevision < 0 || (requestedDueDate is not null && dueDateRevision < 1))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı terminin revizyonu geçersiz.");
+        }
+
+        plan.RequestedDueDate = requestedDueDate;
+        plan.DueDateRevision = dueDateRevision;
         return plan;
     }
 
@@ -612,6 +636,46 @@ public sealed class ProductionPlan
 
         SalesOrderLink = link;
         SalesOrderLinkRevision++;
+    }
+
+    /// <summary>
+    /// Üretim F-010a (URT-D29): enters, changes or removes (<paramref name="dueDate"/> null) the termin by hand. The plan's
+    /// version does not move; the termin revision advances by one. No date is computed and no date rule is chosen here
+    /// (a past or weekend day is the user's entry). In order, and nothing is applied on a refusal: the version fence;
+    /// cancelled (<see cref="ManufacturingRuleCodes.PlanCancelled"/>); the termin revision the caller read
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateChanged"/>); the plan's order is closed
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateOrderClosed"/>); no change
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateNoChange"/>).
+    /// </summary>
+    public void ChangeDueDate(long expectedVersion, long expectedDueDateRevision, DateOnly? dueDate, bool orderClosed)
+    {
+        RequireFence(expectedVersion);
+        if (Status == PlanStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanCancelled,
+                "İptal edilmiş planın termini değişmez.");
+        }
+
+        if (expectedDueDateRevision != DueDateRevision)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateChanged,
+                "Planın termini siz okuduktan sonra değişti; planı yeniden okuyun.");
+        }
+
+        if (orderClosed)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateOrderClosed,
+                "Planın emri kapanmış; termin artık değişmez.");
+        }
+
+        if (dueDate == RequestedDueDate)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateNoChange,
+                "İstek planın termininde hiçbir şeyi değiştirmiyor.");
+        }
+
+        RequestedDueDate = dueDate;
+        DueDateRevision++;
     }
 
     /// <summary>

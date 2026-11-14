@@ -254,6 +254,13 @@ export interface ProductionPlanView {
   readonly salesOrderLink: PlanSalesOrderLinkView | null
   /** U2-b: how many times the link was set or removed; the next link request sends it back. 0 for legacy JSON. */
   readonly salesOrderLinkRevision: number
+  /**
+   * F-010a (URT-D29): the termin a user entered by hand, a calendar day (`yyyy-MM-dd`, no time); never computed. Null
+   * when none or legacy JSON.
+   */
+  readonly requestedDueDate: string | null
+  /** F-010a: how many times the termin was set, changed or removed; the next termin request sends it back. 0 for legacy JSON. */
+  readonly dueDateRevision: number
 }
 
 /** U2-b: the sales order line as Sales answered for it when the link was made, and who linked it, when (an id only). */
@@ -333,7 +340,8 @@ function snapshotMeasure(value: unknown): string | null {
   return separator < 0 || decoded.length - separator - 1 <= 3 ? decoded : null
 }
 
-function calendarDate(value: unknown): value is string {
+/** A real calendar day `yyyy-MM-dd` (no time, not the default 0001-01-01). */
+export function calendarDate(value: unknown): value is string {
   if (typeof value !== 'string') return false
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (match === null) return false
@@ -768,6 +776,17 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
       && body.salesOrderLinkRevision >= 0
       ? body.salesOrderLinkRevision
       : undefined
+  // F-010a (URT-D29): additive members; absent on legacy JSON.
+  const requestedDueDate = body.requestedDueDate === undefined || body.requestedDueDate === null
+    ? null
+    : calendarDate(body.requestedDueDate)
+      ? body.requestedDueDate
+      : undefined
+  const dueDateRevision = body.dueDateRevision === undefined
+    ? 0
+    : typeof body.dueDateRevision === 'number' && Number.isSafeInteger(body.dueDateRevision) && body.dueDateRevision >= 0
+      ? body.dueDateRevision
+      : undefined
   if (
     planId === null ||
     companyId === null ||
@@ -787,6 +806,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     preparedBy === undefined ||
     salesOrderLink === undefined ||
     salesOrderLinkRevision === undefined ||
+    requestedDueDate === undefined ||
+    dueDateRevision === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved' && body.status !== 'Cancelled') ||
@@ -804,6 +825,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   if ((body.status === 'Cancelled') !== (cancellation !== null)) return null
   // CK_Plans_SalesOrderLinkRevision: a link exists only after at least one link change.
   if (salesOrderLink !== null && salesOrderLinkRevision === 0) return null
+  // CK_Plans_DueDateRevision: a termin exists only after at least one termin change.
+  if (requestedDueDate !== null && dueDateRevision === 0) return null
   const inputs: PlannedInput[] = []
   for (const raw of body.inputs) {
     const input = decodePlannedInput(raw)
@@ -848,6 +871,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     preparedBy,
     salesOrderLink,
     salesOrderLinkRevision,
+    requestedDueDate,
+    dueDateRevision,
   }
 }
 

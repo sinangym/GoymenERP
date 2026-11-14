@@ -32,6 +32,13 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 {
     public const string Schema = "manufacturing";
 
+    /// <summary>
+    /// Üretim F-010a (URT-D29): the termin revision is never negative and counts every stored termin (a termin was set at
+    /// least once).
+    /// </summary>
+    internal const string PlanDueDateRevisionCheck =
+        "[DueDateRevision] >= 0 AND ([RequestedDueDate] IS NULL OR [DueDateRevision] >= 1)";
+
     private const string TechnicalSnapshotCheck =
         "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL "
         + "AND [TechnicalFamilyId] IS NULL AND [TechnicalFamilyCode] IS NULL AND [TechnicalFamilySourceRevision] IS NULL "
@@ -219,6 +226,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 + "AND [SalesOrderLinkedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_Plans_SalesOrderLinkRevision",
                 "[SalesOrderLinkRevision] >= 0 AND ([SalesOrderLineId] IS NULL OR [SalesOrderLinkRevision] >= 1)");
+            // F-010a (URT-D29): every stored termin is counted by its revision.
+            table.HasCheckConstraint("CK_Plans_DueDateRevision", PlanDueDateRevisionCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -233,6 +242,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.CreatedBy).HasMaxLength(ProductionPlan.PreparedByMaximumLength);
         entity.Property(x => x.SalesOrderLinkedBy).HasMaxLength(PlanSalesOrderLink.LinkedByMaximumLength);
         entity.Property(x => x.SalesOrderLinkRevision).HasDefaultValue(0L);
+        entity.Property(x => x.RequestedDueDate).HasColumnType("date");
+        entity.Property(x => x.DueDateRevision).HasDefaultValue(0L);
         // U2-b / API-16: Sales' linked-supply read asks by (company, sales order).
         entity.HasIndex(x => new { x.CompanyId, x.SalesOrderId })
             .HasDatabaseName("IX_Plans_SalesOrder")
@@ -748,7 +759,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                         nameof(PlanRow.SalesCustomerPartyId), nameof(PlanRow.SalesCustomerAccountId),
                         nameof(PlanRow.SalesProductId), nameof(PlanRow.SalesOrderLineRevision),
                         nameof(PlanRow.SalesOrderLinkedBy), nameof(PlanRow.SalesOrderLinkedAtUtc),
-                        nameof(PlanRow.SalesOrderLinkRevision)],
+                        nameof(PlanRow.SalesOrderLinkRevision),
+                        // F-010a (URT-D29): the hand-entered termin and its own revision move together.
+                        nameof(PlanRow.RequestedDueDate), nameof(PlanRow.DueDateRevision)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
                         nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc)],
                     // MFG-PLAN-EDIT: a revision is APPEND-ONLY — it adds its rows and moves only the plan's version and
