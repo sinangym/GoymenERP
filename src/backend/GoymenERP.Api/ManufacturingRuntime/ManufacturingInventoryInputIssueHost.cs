@@ -334,8 +334,9 @@ internal sealed class ManufacturingInventoryInputIssueHost(
 
     /// <summary>
     /// SAT-D318: carries Inventory's shortfall only on its physical-stock conflict and only when it names exactly this
-    /// input issue: the order, the issue fact, the parent label and the requested kilograms. Anything else, or a
-    /// detail that cannot be carried, leaves the refusal plain; its status and code stay the reason either way.
+    /// input issue: the order, the issue fact, the parent label and the requested kilograms. Inventory's usable
+    /// kilograms are carried as computed there, never recomputed here. Anything else, or a detail that cannot be
+    /// carried, leaves the refusal plain; its status and code stay the reason either way.
     /// </summary>
     internal static ManufacturingInventoryStockShortfallV1? StockShortfall(
         InventoryManufacturingRealizationException refusal, ManufacturingInventoryInputIssuePortCommandV1 command)
@@ -358,7 +359,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
             return new ManufacturingInventoryStockShortfallV1(shortfall.MovementKind.ToString(), shortfall.SourceKind,
                 shortfall.SourceId, shortfall.SourceLineId, shortfall.LabelId, shortfall.ProductId,
                 shortfall.LocationId, new Kilograms(shortfall.RequestedKg.Value),
-                new Kilograms(shortfall.AvailableKg.Value),
+                new Kilograms(shortfall.AvailableKg.Value), new Kilograms(shortfall.FreePhysicalKg.Value),
                 shortfall.ReservedKg is { } reserved ? new Kilograms(reserved.Value) : null);
         }
         catch (Exception exception) when (exception is ArgumentException or ManufacturingRuleException)

@@ -48,8 +48,10 @@ public static partial class ErpOpenApiContract
                 + "zero (SAT-D318). movementKind is Inventory's movement kind name; sourceKind, sourceId and "
                 + "sourceLineId name the order and its issue; labelId and productId name the parent label and its "
                 + "product; locationId is the stored location of the label's stock, null when the label holds none. "
-                + "requestedKg is the issue's lossless invariant kilogram text. Available and reserved kilograms "
-                + "are not part of this view. It records nothing: the refusal is not stored.";
+                + "requestedKg is the issue's lossless invariant kilogram text. availableKg is, in the same text "
+                + "form, the usable kilograms the issue could have taken there: the free physical kilograms less "
+                + "other demands' active reservations, never negative and always less than requestedKg. Reserved "
+                + "kilograms are not part of this view. It records nothing: the refusal is not stored.";
         }
 
         return Task.CompletedTask;

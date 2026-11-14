@@ -1181,9 +1181,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 // Re-fingerprinted for SAT-D318: Inventory's physical-stock refusal carries its shortfall to the port only
                 // when it names exactly this input issue; same token count (33399d74 -> 091796f7).
+                // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the shortfall also carries Inventory's usable kg
+                // as computed there, never recomputed here; same token count (091796f7 -> 63ba7632).
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "091796f742d2b83ab860e719932947f84419b5ff84cdee633b2d8351f1741999",
+                        "63ba7632fb210c72332ff025ca0956ef918c1539d52dae58e63be283331a1598",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1699,7 +1701,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for B-01: partial class, plan-allocation interface, issue consumes its own plan's allocation, legacy-stable issue hash; provider tokens unchanged.
                         // Re-fingerprinted for SAT-D318: the input issue's physical-stock refusal (pre-check and ledger fallback)
                         // names the issue, label, place and checked kg; provider tokens unchanged (72ba6be8 -> 02a98e75).
-                        "02a98e75712c7765a2a049d6d2c5677c4aa4c133567191d6ccaeb2214eb347b7",
+                        // Re-fingerprinted for SAT-D318 / SINAN-CEVAP (8) Q5: the pre-check hands the free physical kg to
+                        // the shortfall, which derives the usable kg; provider tokens unchanged (02a98e75 -> 4c1a5d57).
+                        "4c1a5d57b4344276cbc7b6dd7a05bb4388f74a0e8504e8183158dc46fe18d0d6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,

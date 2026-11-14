@@ -11,7 +11,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// SAT-D318 (owner decision of 2026-11-13): an input issue Inventory refused because it would take physical stock below
 /// zero says which issue it was and where. The refusal stays what it was: the same status and code, not terminal, so
 /// nothing is recorded and a retry of the same key is decided again. A stored, won or fenced answer never carries the
-/// detail, and the public view never carries Inventory's available or reserved kilograms.
+/// detail. The public view carries Inventory's usable kilograms with the requested ones (owner answer of 2026-11-13 on
+/// Issue #66, SINAN-CEVAP (8) question 5), never its free physical or reserved kilograms.
 /// </summary>
 public sealed partial class ManufacturingCommandServiceTests
 {
@@ -33,7 +34,7 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Conflict, PhysicalStockCode, false, (OrderViewV1?)null),
             (refused.Status, refused.Code, refused.IsReplay, refused.Resource));
         Assert.Equal(new ManufacturingStockShortfallViewV1("Issue", InputIssueSourceKind, order.Id, issueId, Roll,
-            Product, Location, "12.5"), refused.StockShortfall);
+            Product, Location, "12.5", "2"), refused.StockShortfall);
         Assert.Empty(order.Issues);
         Assert.Empty(fixture.Store.Commands);
         Assert.Empty(fixture.Store.AuditEvents);
@@ -119,7 +120,7 @@ public sealed partial class ManufacturingCommandServiceTests
     }
 
     [Fact]
-    public void The_port_shortfall_names_real_identities_trimmed_kind_names_and_a_positive_request()
+    public void The_port_shortfall_names_real_identities_trimmed_kind_names_a_positive_request_and_usable_kg_below_it()
     {
         var order = Guid.NewGuid();
         var issue = Guid.NewGuid();
@@ -128,48 +129,62 @@ public sealed partial class ManufacturingCommandServiceTests
         foreach (var name in new[] { "", " ", " Issue", "Issue " })
         {
             Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1(name,
-                InputIssueSourceKind, order, issue, Roll, Product, Location, ten, Kilograms.Zero, null));
+                InputIssueSourceKind, order, issue, Roll, Product, Location, ten, Kilograms.Zero, Kilograms.Zero, null));
             Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1("Issue", name, order,
-                issue, Roll, Product, Location, ten, Kilograms.Zero, null));
+                issue, Roll, Product, Location, ten, Kilograms.Zero, Kilograms.Zero, null));
         }
 
         Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, Guid.Empty, issue, Roll, Product, Location, ten, Kilograms.Zero, null));
+            InputIssueSourceKind, Guid.Empty, issue, Roll, Product, Location, ten, Kilograms.Zero, Kilograms.Zero, null));
         Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, order, Guid.Empty, Roll, Product, Location, ten, Kilograms.Zero, null));
+            InputIssueSourceKind, order, Guid.Empty, Roll, Product, Location, ten, Kilograms.Zero, Kilograms.Zero, null));
         Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, order, issue, Guid.Empty, Product, Location, ten, Kilograms.Zero, null));
+            InputIssueSourceKind, order, issue, Guid.Empty, Product, Location, ten, Kilograms.Zero, Kilograms.Zero, null));
         Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, order, issue, Roll, Guid.Empty, Location, ten, Kilograms.Zero, null));
+            InputIssueSourceKind, order, issue, Roll, Guid.Empty, Location, ten, Kilograms.Zero, Kilograms.Zero, null));
         Assert.Throws<ArgumentException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, order, issue, Roll, Product, Guid.Empty, ten, Kilograms.Zero, null));
+            InputIssueSourceKind, order, issue, Roll, Product, Guid.Empty, ten, Kilograms.Zero, Kilograms.Zero, null));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, order, issue, Roll, Product, Location, Kilograms.Zero, Kilograms.Zero, null));
+            InputIssueSourceKind, order, issue, Roll, Product, Location, Kilograms.Zero, Kilograms.Zero, Kilograms.Zero, null));
+
+        // Inventory computes the usable kg; a figure no shortfall could carry is refused, not trusted.
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
+            InputIssueSourceKind, order, issue, Roll, Product, Location, ten, ten, ten, null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
+            InputIssueSourceKind, order, issue, Roll, Product, Location, ten, new Kilograms(12m), new Kilograms(20m),
+            null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ManufacturingInventoryStockShortfallV1("Issue",
+            InputIssueSourceKind, order, issue, Roll, Product, Location, ten, new Kilograms(4m), new Kilograms(3m),
+            null));
+        var usable = new ManufacturingInventoryStockShortfallV1("Issue", InputIssueSourceKind, order, issue, Roll,
+            Product, Location, ten, new Kilograms(9.999m), new Kilograms(15m), new Kilograms(5.001m));
+        Assert.Equal((9.999m, 15m, 5.001m),
+            (usable.AvailableKg.Value, usable.FreePhysicalKg.Value, usable.ReservedKg!.Value.Value));
 
         // A label holding no stock anywhere has no place to name; a source without a line is still a source.
         var nowhere = new ManufacturingInventoryStockShortfallV1("Issue", InputIssueSourceKind, order, null, Roll,
-            Product, null, ten, Kilograms.Zero, new Kilograms(3m));
+            Product, null, ten, Kilograms.Zero, Kilograms.Zero, new Kilograms(3m));
         Assert.Null(nowhere.SourceLineId);
         Assert.Null(nowhere.LocationId);
         Assert.Equal(3m, nowhere.ReservedKg!.Value.Value);
     }
 
     [Fact]
-    public void The_public_view_keeps_the_identities_and_the_lossless_requested_text_and_drops_the_stock_figures()
+    public void The_public_view_keeps_the_identities_and_the_lossless_requested_and_usable_text_and_drops_the_rest()
     {
         var order = Guid.NewGuid();
         var issue = Guid.NewGuid();
 
         var view = ManufacturingCommandService.StockShortfallView(new ManufacturingInventoryStockShortfallV1("Issue",
-            InputIssueSourceKind, order, issue, Roll, Product, null, new Kilograms(12.500m), new Kilograms(4m),
-            new Kilograms(9m)));
+            InputIssueSourceKind, order, issue, Roll, Product, null, new Kilograms(12.500m), new Kilograms(3.500m),
+            new Kilograms(13m), new Kilograms(9.5m)));
 
         Assert.Null(ManufacturingCommandService.StockShortfallView(null));
         Assert.Equal(new ManufacturingStockShortfallViewV1("Issue", InputIssueSourceKind, order, issue, Roll, Product,
-            null, "12.5"), view);
+            null, "12.5", "3.5"), view);
         Assert.Equal(
-            ["LabelId", "LocationId", "MovementKind", "ProductId", "RequestedKg", "SourceId", "SourceKind",
-                "SourceLineId"],
+            ["AvailableKg", "LabelId", "LocationId", "MovementKind", "ProductId", "RequestedKg", "SourceId",
+                "SourceKind", "SourceLineId"],
             typeof(ManufacturingStockShortfallViewV1).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Select(property => property.Name).Order(StringComparer.Ordinal));
     }
@@ -185,7 +200,7 @@ public sealed partial class ManufacturingCommandServiceTests
         var plain = new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Conflict, null, false,
             PhysicalStockCode);
         var detail = new ManufacturingStockShortfallViewV1("Issue", InputIssueSourceKind, Guid.NewGuid(),
-            Guid.NewGuid(), Roll, Product, Location, "1");
+            Guid.NewGuid(), Roll, Product, Location, "1", "0");
         var detailed = plain with { StockShortfall = detail };
         Assert.Equal(JsonSerializer.Serialize(plain, web), JsonSerializer.Serialize(detailed, web));
 
@@ -201,8 +216,10 @@ public sealed partial class ManufacturingCommandServiceTests
         new(ManufacturingApiStatus.Conflict, PhysicalStockCode,
             stockShortfall: PortShortfall(orderId, issueId, requestedKg));
 
-    /// <summary>Inventory's detail as the host hands it over: 4 kg on the place, 2 kg of it held by other demands.</summary>
+    /// <summary>
+    /// Inventory's detail as the host hands it over: 4 kg on the place, 2 kg of it held by other demands, 2 kg usable.
+    /// </summary>
     private static ManufacturingInventoryStockShortfallV1 PortShortfall(Guid orderId, Guid issueId, decimal requestedKg) =>
         new("Issue", InputIssueSourceKind, orderId, issueId, Roll, Product, Location, new Kilograms(requestedKg),
-            new Kilograms(4m), new Kilograms(2m));
+            new Kilograms(2m), new Kilograms(4m), new Kilograms(2m));
 }

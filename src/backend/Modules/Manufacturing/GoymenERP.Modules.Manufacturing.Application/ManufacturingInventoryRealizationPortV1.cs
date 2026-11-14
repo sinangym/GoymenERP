@@ -151,15 +151,17 @@ public sealed class ManufacturingInventoryRealizationPortException(
 /// identities without interpreting them, as it does for <see cref="ManufacturingInventoryPositionSnapshotV1"/>.
 /// <para>
 /// Version 1 of this shape: a changed shape is a new type, never an edited one, and a refusal without it stays exactly
-/// as it was. <see cref="AvailableKg"/> and <see cref="ReservedKg"/> stay in process for the later refused-attempt
-/// record; the public API does not disclose them while the owner has not decided who may see them.
+/// as it was. <see cref="AvailableKg"/> is disclosed with the requested kg (owner answer of 2026-11-13 on Issue #66,
+/// SINAN-CEVAP (8) question 5: the message shows the kg on hand and the kg asked for together).
+/// <see cref="FreePhysicalKg"/> and <see cref="ReservedKg"/> stay in process for the later refused-attempt record; the
+/// public API does not disclose them.
 /// </para>
 /// </summary>
 public sealed record ManufacturingInventoryStockShortfallV1
 {
     public ManufacturingInventoryStockShortfallV1(string movementKind, string sourceKind, Guid sourceId,
         Guid? sourceLineId, Guid labelId, Guid productId, Guid? locationId, Kilograms requestedKg,
-        Kilograms availableKg, Kilograms? reservedKg)
+        Kilograms availableKg, Kilograms freePhysicalKg, Kilograms? reservedKg)
     {
         MovementKind = RequireName(movementKind, nameof(movementKind));
         SourceKind = RequireName(sourceKind, nameof(sourceKind));
@@ -173,8 +175,16 @@ public sealed record ManufacturingInventoryStockShortfallV1
             throw new ArgumentOutOfRangeException(nameof(requestedKg), "A refused operation always asks for a positive mass.");
         }
 
+        // Inventory computes the usable kg; Manufacturing only refuses a figure that could not be a shortfall's.
+        if (availableKg.Value >= requestedKg.Value || availableKg.Value > freePhysicalKg.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(availableKg),
+                "The usable kg of a shortfall are less than the requested kg and never more than the free physical kg.");
+        }
+
         RequestedKg = requestedKg;
         AvailableKg = availableKg;
+        FreePhysicalKg = freePhysicalKg;
         ReservedKg = reservedKg;
     }
 
@@ -202,8 +212,14 @@ public sealed record ManufacturingInventoryStockShortfallV1
     /// <summary>What the refused line asked for.</summary>
     public Kilograms RequestedKg { get; }
 
-    /// <summary>In process only: what the location held before the refused line.</summary>
+    /// <summary>
+    /// Disclosed: the usable kg the refused line could have taken there, after other demands' active reservations;
+    /// always less than <see cref="RequestedKg"/>.
+    /// </summary>
     public Kilograms AvailableKg { get; }
+
+    /// <summary>In process only: what the location held before the refused line.</summary>
+    public Kilograms FreePhysicalKg { get; }
 
     /// <summary>In process only: what other demands held there, when a reservation decided the refusal.</summary>
     public Kilograms? ReservedKg { get; }

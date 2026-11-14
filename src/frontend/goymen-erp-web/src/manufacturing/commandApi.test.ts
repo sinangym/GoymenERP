@@ -191,7 +191,7 @@ describe('recordFact — SAT-D318 physical-stock refusal detail', () => {
   const PLAIN = { type: 'failed', replayed: false, failure: { kind: 'rule', code: CODE } }
 
   function detail(overrides: Record<string, unknown> = {}) {
-    return stockShortfall(SNAPSHOT.factId, '900.5', overrides)
+    return stockShortfall(SNAPSHOT.factId, '900.5', '480.25', overrides)
   }
 
   function withoutMember(name: string): Record<string, unknown> {
@@ -223,6 +223,19 @@ describe('recordFact — SAT-D318 physical-stock refusal detail', () => {
     })
   })
 
+  it.each([
+    ['nothing usable', '0'],
+    ['a whole number', '900'],
+    ['just below the request', '900.499'],
+    ['the finest server figure below it', '900.4999999'],
+  ])('keeps the usable kilograms the server computed when they are %s', async (_case, availableKg) => {
+    answer(problem(409, { code: CODE, stockShortfall: detail({ availableKg }) }))
+
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toMatchObject({
+      failure: { kind: 'rule', code: CODE, stockShortfall: { requestedKg: '900.5', availableKg } },
+    })
+  })
+
   it('keeps a detail with no place when the label holds no stock anywhere', async () => {
     answer(problem(409, { code: CODE, stockShortfall: detail({ locationId: null }) }))
 
@@ -244,8 +257,17 @@ describe('recordFact — SAT-D318 physical-stock refusal detail', () => {
   })
 
   it.each([
-    ['an undeclared stock figure', detail({ availableKg: '50' })],
+    ['an undeclared free physical figure', detail({ freePhysicalKg: '1000' })],
     ['a reserved figure', detail({ reservedKg: '1000' })],
+    ['no usable member', withoutMember('availableKg')],
+    ['a null usable figure', detail({ availableKg: null })],
+    ['a numeric usable figure', detail({ availableKg: 480.25 })],
+    ['a negative usable figure', detail({ availableKg: '-1' })],
+    ['a padded usable figure', detail({ availableKg: '480.250' })],
+    ['a grouped usable figure', detail({ availableKg: '1,000' })],
+    ['usable kg equal to the request', detail({ availableKg: '900.5' })],
+    ['usable kg just above the request', detail({ availableKg: '900.5000001' })],
+    ['usable kg above the request in the whole part', detail({ availableKg: '1000' })],
     ['no place member', withoutMember('locationId')],
     ['no quantity member', withoutMember('requestedKg')],
     ['a null detail', null],

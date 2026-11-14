@@ -5,7 +5,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// SAT-D318 (owner decision of 2026-11-13): the input issue's 409 names the issue Inventory refused for physical
 /// stock in an optional <c>stockShortfall</c> member. The documented body is the shared coded problem plus that one
-/// optional member, and the member carries identities and the requested kilograms only.
+/// optional member, and the member carries identities, the requested kilograms and the usable kilograms (owner answer
+/// of 2026-11-13 on Issue #66, SINAN-CEVAP (8) question 5) only.
 /// </summary>
 public sealed partial class OpenApiContractGenerationTests
 {
@@ -34,7 +35,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("stockShortfall", $"oneOf:ref:{StockShortfallView}|type:null")),
                 [StockShortfallView] = ObjectSchema(
                     ["movementKind", "sourceKind", "sourceId", "sourceLineId", "labelId", "productId", "locationId",
-                        "requestedKg"],
+                        "requestedKg", "availableKg"],
                     ("movementKind", "type:string"),
                     ("sourceKind", "type:string"),
                     ("sourceId", "type:string;format:uuid"),
@@ -42,7 +43,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("labelId", "type:string;format:uuid"),
                     ("productId", "type:string;format:uuid"),
                     ("locationId", "type:null|string;format:uuid"),
-                    ("requestedKg", "type:string")),
+                    ("requestedKg", "type:string"),
+                    ("availableKg", "type:string")),
             };
 
     private static void AssertManufacturingStockShortfallSchemas(JsonElement schemas)
@@ -64,12 +66,14 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal(descriptor, inputIssueProperties[name]);
         }
 
-        // Disclosure (NEEDS-SINAN): the record-facts caller sees no label stock elsewhere in the input-issue flow,
-        // so the view names identities and the request only; balances and other demands stay out of the contract.
+        // Disclosure (SINAN-CEVAP (8) question 5): the usable kilograms are shown with the requested ones; the
+        // reserved kilograms, the free physical kilograms and balances stay out of the contract.
         var viewProperties = PropertyDescriptors(schemas.GetProperty(StockShortfallView));
+        Assert.Equal("type:string", viewProperties["availableKg"]);
         Assert.DoesNotContain(viewProperties.Keys, name =>
-            name.Contains("available", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("reserved", StringComparison.OrdinalIgnoreCase)
+            name.Contains("reserved", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("physical", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("free", StringComparison.OrdinalIgnoreCase)
             || name.Contains("balance", StringComparison.OrdinalIgnoreCase));
     }
 

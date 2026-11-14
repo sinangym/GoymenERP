@@ -304,9 +304,10 @@ const RULE_TEXT: Record<string, string> = {
 
 /**
  * SAT-D318 (owner decision of 2026-11-13): the input issue's physical-stock refusal, told with what the server named —
- * the refused issue, its parent label, the place of the label's stock and the requested kilograms. The label's stock
- * figures are not part of the refusal (NEEDS-SINAN), so the sentence never states or guesses an available or reserved
- * kilogram; the ids are shown as the server sent them.
+ * the refused issue, its parent label, the place of the label's stock, and, by SINAN-CEVAP (8) question 5 on Issue
+ * #66, the usable and the requested kilograms together. The usable kilograms are the server's figure, shown as sent;
+ * reserved kilograms are not part of the refusal, so the sentence never states or guesses one. The ids are shown as
+ * the server sent them.
  */
 export function stockShortfallText(shortfall: StockShortfallView): string {
   const place =
@@ -318,7 +319,7 @@ export function stockShortfallText(shortfall: StockShortfallView): string {
     `İşlem: girdi çıkışı (olgu ${shortfall.sourceLineId}).`,
     `Ana rulo etiketi: ${shortfall.labelId}.`,
     place,
-    `İstenen miktar: ${shortfall.requestedKg} kg; ana ruloda bu kadar serbest fiziksel stok yok.`,
+    `Etikette kullanılabilir ${shortfall.availableKg} kg var, ${shortfall.requestedKg} kg istendi.`,
   ].join(' ')
 }
 

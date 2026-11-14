@@ -35,17 +35,27 @@ public sealed class ManufacturingInventoryInputIssueStockShortfallTests
         Assert.Equal((Order, (Guid?)Issue, Label, Product, (Guid?)Location),
             (carried.SourceId, carried.SourceLineId, carried.LabelId, carried.ProductId, carried.LocationId));
         Assert.Equal(new ManufacturingKilograms(12.5m), carried.RequestedKg);
-        Assert.Equal(new ManufacturingKilograms(4m), carried.AvailableKg);
+        // Inventory's usable kg (4 kg free less 2 kg held by other demands) are carried as Inventory computed them.
+        Assert.Equal(new ManufacturingKilograms(2m), carried.AvailableKg);
+        Assert.Equal(new ManufacturingKilograms(4m), carried.FreePhysicalKg);
         Assert.Equal(new ManufacturingKilograms(2m), carried.ReservedKg);
 
         // The ledger's own refusal counts no reservation, and a label that holds no stock has no location.
         var ledger = ManufacturingInventoryInputIssueHost.StockShortfall(
-            Refusal(new Parts { LocationId = null, AvailableKg = InventoryKilograms.Zero }.Build()), Command(12.5m));
+            Refusal(new Parts { LocationId = null, FreePhysicalKg = InventoryKilograms.Zero }.Build()), Command(12.5m));
 
         Assert.NotNull(ledger);
         Assert.Null(ledger.LocationId);
         Assert.Null(ledger.ReservedKg);
-        Assert.Equal(ManufacturingKilograms.Zero, ledger.AvailableKg);
+        Assert.Equal((ManufacturingKilograms.Zero, ManufacturingKilograms.Zero),
+            (ledger.AvailableKg, ledger.FreePhysicalKg));
+
+        // Without a reservation the usable kg are the free physical kg.
+        var unreserved = ManufacturingInventoryInputIssueHost.StockShortfall(Refusal(new Parts().Build()), Command(12.5m));
+
+        Assert.NotNull(unreserved);
+        Assert.Equal((new ManufacturingKilograms(4m), new ManufacturingKilograms(4m)),
+            (unreserved.AvailableKg, unreserved.FreePhysicalKg));
     }
 
     [Fact]
@@ -139,10 +149,10 @@ public sealed class ManufacturingInventoryInputIssueStockShortfallTests
         public Guid LabelId { get; init; } = Label;
         public Guid? LocationId { get; init; } = Location;
         public InventoryKilograms RequestedKg { get; init; } = InventoryKilograms.Positive(12.5m);
-        public InventoryKilograms AvailableKg { get; init; } = InventoryKilograms.Of(4m);
+        public InventoryKilograms FreePhysicalKg { get; init; } = InventoryKilograms.Of(4m);
         public InventoryKilograms? ReservedKg { get; init; }
 
         public InventoryManufacturingStockShortfallV1 Build() => new(MovementKind, SourceKind, SourceId, SourceLineId,
-            LabelId, Product, LocationId, RequestedKg, AvailableKg, ReservedKg);
+            LabelId, Product, LocationId, RequestedKg, FreePhysicalKg, ReservedKg);
     }
 }

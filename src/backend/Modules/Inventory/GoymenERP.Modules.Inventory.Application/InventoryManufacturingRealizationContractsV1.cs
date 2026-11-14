@@ -247,19 +247,21 @@ public sealed class InventoryManufacturingRealizationException : Exception
 /// operation takes physical stock below zero, and the refusal says which operation and where). It names the causing
 /// source and its line, the label with its product, and the stored location when the label still has one.
 /// <para>
-/// <see cref="AvailableKg"/> is the physical kg of the bucket the line would take from, just before it.
+/// <see cref="FreePhysicalKg"/> is the physical kg of the bucket the line would take from, just before it.
 /// <see cref="ReservedKg"/> is set only when the refusing check counted other demands' active reservations against
 /// that bucket (zero when it found none); a refusal from the stock ledger itself counts no reservation and leaves it
-/// null. These quantities are Inventory's own figures for the participant's host: whether a caller may see them is the
-/// host's disclosure decision, not this contract's. Building one records nothing; a durable record of the refused
-/// attempt is a later slice.
+/// null. <see cref="AvailableKg"/> is what the line could have taken: the free physical kg less those reservations,
+/// never below zero (<see cref="StockAllocation.Unreserved"/>, the rule allocation creation and the stock position read
+/// use), and always less than <see cref="RequestedKg"/>. These quantities are Inventory's own figures for the
+/// participant's host: whether a caller may see them is the host's disclosure decision, not this contract's. Building
+/// one records nothing; a durable record of the refused attempt is a later slice.
 /// </para>
 /// </summary>
 public sealed record InventoryManufacturingStockShortfallV1
 {
     public InventoryManufacturingStockShortfallV1(StockMovementKind movementKind, string sourceKind, Guid sourceId,
         Guid? sourceLineId, Guid labelId, Guid productId, Guid? locationId, Kilograms requestedKg,
-        Kilograms availableKg, Kilograms? reservedKg)
+        Kilograms freePhysicalKg, Kilograms? reservedKg)
     {
         if (!Enum.IsDefined(movementKind))
         {
@@ -283,7 +285,7 @@ public sealed record InventoryManufacturingStockShortfallV1
             throw new ArgumentOutOfRangeException(nameof(requestedKg), "A refused line always asks for a positive mass.");
         }
 
-        var usable = reservedKg is { } reserved ? StockAllocation.Unreserved(availableKg, reserved) : availableKg;
+        var usable = reservedKg is { } reserved ? StockAllocation.Unreserved(freePhysicalKg, reserved) : freePhysicalKg;
         if (usable >= requestedKg)
         {
             throw new ArgumentOutOfRangeException(nameof(requestedKg),
@@ -298,7 +300,8 @@ public sealed record InventoryManufacturingStockShortfallV1
         ProductId = productId;
         LocationId = locationId;
         RequestedKg = requestedKg;
-        AvailableKg = availableKg;
+        AvailableKg = usable;
+        FreePhysicalKg = freePhysicalKg;
         ReservedKg = reservedKg;
     }
 
@@ -320,7 +323,10 @@ public sealed record InventoryManufacturingStockShortfallV1
 
     public Kilograms RequestedKg { get; }
 
+    /// <summary>The usable kg the line could have taken: free physical less other demands' active reservations.</summary>
     public Kilograms AvailableKg { get; }
+
+    public Kilograms FreePhysicalKg { get; }
 
     public Kilograms? ReservedKg { get; }
 }

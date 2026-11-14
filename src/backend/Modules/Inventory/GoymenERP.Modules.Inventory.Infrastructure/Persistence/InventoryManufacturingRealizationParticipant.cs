@@ -331,7 +331,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw free.Length == 0
                 ? InputIssueShortfall(source, label,
                     rows.Where(row => row.QuantityKg > 0m).Select(row => (Guid?)row.LocationId).FirstOrDefault(),
-                    quantity, availableKg: 0m, reservedKg: null)
+                    quantity, freePhysicalKg: 0m, reservedKg: null)
                 : Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
         }
 
@@ -371,14 +371,14 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// without it; the refusal itself never changes.
     /// </summary>
     private static InventoryManufacturingRealizationException InputIssueShortfall(StockSourceReference source,
-        MaterialLabel label, Guid? locationId, Kilograms requested, decimal availableKg, decimal? reservedKg)
+        MaterialLabel label, Guid? locationId, Kilograms requested, decimal freePhysicalKg, decimal? reservedKg)
     {
         try
         {
             return InventoryManufacturingRealizationException.Refused(409,
                 InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
                 new InventoryManufacturingStockShortfallV1(StockMovementKind.Issue, source.Kind, source.Id,
-                    source.LineId, label.Id, label.ProductId, locationId, requested, Kilograms.Of(availableKg),
+                    source.LineId, label.Id, label.ProductId, locationId, requested, Kilograms.Of(freePhysicalKg),
                     reservedKg is { } reserved ? Kilograms.Of(reserved) : null));
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)

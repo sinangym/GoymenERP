@@ -315,14 +315,16 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     const name = 'ManufacturingStockShortfallViewV1'
     const problemName = 'ManufacturingInputIssueConflictProblemContract'
     const issueId = 'f0000000-0000-4000-8000-000000000001'
-    const fixture = stockShortfall(issueId, '900.5')
+    const fixture = stockShortfall(issueId, '900.5', '480.25')
     expect(Object.keys(fixture).sort()).toEqual(names(name))
     expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
-    // No stock figure is declared: the screen has none to show (NEEDS-SINAN).
-    expect(names(name)).not.toContain('availableKg')
+    // SINAN-CEVAP (8) question 5: the usable kilograms are declared beside the requested ones; reserved stay out.
+    expect(names(name)).toContain('availableKg')
     expect(names(name)).not.toContain('reservedKg')
+    expect(names(name)).not.toContain('freePhysicalKg')
     expect(schema(name).properties?.locationId).toEqual({ type: ['null', 'string'], format: 'uuid' })
     expect(schema(name).properties?.requestedKg).toEqual({ type: 'string' })
+    expect(schema(name).properties?.availableKg).toEqual({ type: 'string' })
     // Optional and nullable: absent on every other code, on a replay and from an older server.
     expect(schema(problemName).properties?.stockShortfall).toEqual({
       oneOf: [{ type: 'null' }, { $ref: `#/components/schemas/${name}` }],
@@ -344,7 +346,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
       expect(JSON.stringify(document.paths[`${root}/orders/{orderId}/${kind}`]), kind).not.toContain(problemName)
     }
     expect(decodeStockShortfall(fixture, { orderId: ORDER, issueId, labelId: ROLL_1, kg: '900.5' })).toEqual(fixture)
-    expect(decodeStockShortfall(stockShortfall(issueId, '900.5', { locationId: null }),
+    expect(decodeStockShortfall(stockShortfall(issueId, '900.5', '0', { locationId: null }),
       { orderId: ORDER, issueId, labelId: ROLL_1, kg: '900.5' })?.locationId).toBeNull()
   })
 

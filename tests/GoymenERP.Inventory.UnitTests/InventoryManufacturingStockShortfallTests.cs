@@ -22,7 +22,7 @@ public sealed class InventoryManufacturingStockShortfallTests
     [Fact]
     public void The_shortfall_rides_only_on_the_physical_stock_refusal_and_leaves_its_status_and_code_unchanged()
     {
-        var shortfall = Shortfall(requested: 5m, available: 4m, reserved: null);
+        var shortfall = Shortfall(requested: 5m, freePhysical: 4m, reserved: null);
 
         var refusal = InventoryManufacturingRealizationException.Refused(409,
             InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, shortfall);
@@ -44,11 +44,12 @@ public sealed class InventoryManufacturingStockShortfallTests
     public void A_shortfall_names_only_real_identities_and_a_request_its_usable_kg_cannot_cover()
     {
         // 10 kg on the bucket and 4 kg held by other demands leave 6 kg usable.
-        Assert.Equal(6.001m, Shortfall(requested: 6.001m, available: 10m, reserved: 4m).RequestedKg.Value);
-        Assert.Throws<ArgumentOutOfRangeException>(() => Shortfall(requested: 6m, available: 10m, reserved: 4m));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Shortfall(requested: 5m, available: 5m, reserved: null));
+        Assert.Equal(6.001m, Shortfall(requested: 6.001m, freePhysical: 10m, reserved: 4m).RequestedKg.Value);
+        Assert.Throws<ArgumentOutOfRangeException>(() => Shortfall(requested: 6m, freePhysical: 10m, reserved: 4m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Shortfall(requested: 5m, freePhysical: 5m, reserved: null));
         // Reservations above the physical kg leave nothing usable, never a negative figure.
-        Assert.Equal(7m, Shortfall(requested: 1m, available: 3m, reserved: 7m).ReservedKg!.Value.Value);
+        Assert.Equal(7m, Shortfall(requested: 1m, freePhysical: 3m, reserved: 7m).ReservedKg!.Value.Value);
+        Assert.Throws<ArgumentOutOfRangeException>(() => Shortfall(requested: 1m, freePhysical: 8m, reserved: 7m));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => new InventoryManufacturingStockShortfallV1(
             StockMovementKind.Issue, IssueSource, Order, IssueLine, Label1, BandProduct, Warehouse1, Kilograms.Zero,
@@ -81,6 +82,27 @@ public sealed class InventoryManufacturingStockShortfallTests
     }
 
     [Fact]
+    public void The_available_kg_are_the_usable_kg_free_physical_less_other_demands_reservations_and_never_negative()
+    {
+        // SINAN-CEVAP (8) question 5 discloses this figure with the requested kg: what the line could have taken.
+        var reservedPart = Shortfall(requested: 6.001m, freePhysical: 10m, reserved: 4m);
+        Assert.Equal((6m, 10m, 4m), (reservedPart.AvailableKg.Value, reservedPart.FreePhysicalKg.Value,
+            reservedPart.ReservedKg!.Value.Value));
+
+        var overReserved = Shortfall(requested: 1m, freePhysical: 3m, reserved: 7m);
+        Assert.Equal((0m, 3m), (overReserved.AvailableKg.Value, overReserved.FreePhysicalKg.Value));
+
+        var noneCounted = Shortfall(requested: 5m, freePhysical: 4m, reserved: null);
+        Assert.Equal((4m, 4m), (noneCounted.AvailableKg.Value, noneCounted.FreePhysicalKg.Value));
+
+        var noneFound = Shortfall(requested: 5m, freePhysical: 4m, reserved: 0m);
+        Assert.Equal(4m, noneFound.AvailableKg.Value);
+
+        var empty = Shortfall(requested: 5m, freePhysical: 0m, reserved: null);
+        Assert.Equal(0m, empty.AvailableKg.Value);
+    }
+
+    [Fact]
     public void The_ledger_fallback_carries_the_ledger_shortfall_of_the_input_issue_without_a_reservation()
     {
         var refusal = InventoryManufacturingRealizationParticipant.NegativeStockRefusal(LedgerShortfall(),
@@ -98,6 +120,7 @@ public sealed class InventoryManufacturingStockShortfallTests
         Assert.Equal(Warehouse1, detail.LocationId);
         Assert.Equal(100.5m, detail.RequestedKg.Value);
         Assert.Equal(100m, detail.AvailableKg.Value);
+        Assert.Equal(100m, detail.FreePhysicalKg.Value);
         Assert.Null(detail.ReservedKg);
     }
 
@@ -118,9 +141,9 @@ public sealed class InventoryManufacturingStockShortfallTests
 
     private static Kilograms One => Kilograms.Positive(1m);
 
-    private static InventoryManufacturingStockShortfallV1 Shortfall(decimal requested, decimal available,
+    private static InventoryManufacturingStockShortfallV1 Shortfall(decimal requested, decimal freePhysical,
         decimal? reserved) => new(StockMovementKind.Issue, IssueSource, Order, IssueLine, Label1, BandProduct,
-        Warehouse1, Kilograms.Positive(requested), Kilograms.Of(available),
+        Warehouse1, Kilograms.Positive(requested), Kilograms.Of(freePhysical),
         reserved is { } held ? Kilograms.Of(held) : null);
 
     /// <summary>The ledger's own refusal of an input issue asking 100.5 kg of a 100 kg bucket.</summary>

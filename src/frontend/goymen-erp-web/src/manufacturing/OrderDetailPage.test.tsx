@@ -1021,7 +1021,7 @@ describe('fact forms', () => {
     expect(await screen.findByText('İşlem reddedildi (manufacturing_new_rule).')).toBeTruthy()
   })
 
-  it('names the refused input issue, its parent label, the place and the requested kg on a physical-stock refusal (SAT-D318)', async () => {
+  it('names the refused input issue, its parent label, the place and the usable and requested kg on a physical-stock refusal (SAT-D318)', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
       commands: [
@@ -1030,14 +1030,14 @@ describe('fact forms', () => {
           const sent = JSON.parse(String(init?.body)) as { issueId: string }
           return problem(409, {
             code: 'inventory_manufacturing_physical_stock_insufficient',
-            stockShortfall: stockShortfall(sent.issueId, '250.5'),
+            stockShortfall: stockShortfall(sent.issueId, '500', '480'),
           })
         },
       ],
     })
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
-    await fillFact(user)
+    await fillFact(user, { kg: '500' })
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
 
     const alert = await screen.findByText(/fiziksel stok sıfırın altına düşürülemez/)
@@ -1046,9 +1046,10 @@ describe('fact forms', () => {
     expect(alert.textContent).toContain(`olgu ${issueId}`)
     expect(alert.textContent).toContain(`Ana rulo etiketi: ${ROLL_1}.`)
     expect(alert.textContent).toContain(`Konum: ${SHORTFALL_LOCATION}.`)
-    expect(alert.textContent).toContain('İstenen miktar: 250.5 kg')
-    // NEEDS-SINAN: the input-issue caller is not shown stock figures it could not already read.
-    expect(alert.textContent).not.toMatch(/mevcut|rezerve/i)
+    // SINAN-CEVAP (8) question 5, in the owner's example words: the usable and the requested kg together.
+    expect(alert.textContent).toContain('Etikette kullanılabilir 480 kg var, 500 kg istendi.')
+    // Reserved kilograms stay in the server: the sentence states no other stock figure.
+    expect(alert.textContent).not.toMatch(/mevcut|rezerve|serbest/i)
     expect(alert.closest('[data-outcome="failed"]')?.getAttribute('data-failure')).toBe('rule')
   })
 

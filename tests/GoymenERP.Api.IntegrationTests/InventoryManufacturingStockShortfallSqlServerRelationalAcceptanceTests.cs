@@ -12,8 +12,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// SAT-D318 (owner decision of 2026-11-13): no operation takes physical stock below zero, and the refusal says which
 /// operation and where. On real SQL Server the input issue's physical-stock refusal names the refused issue, its label
-/// with the product, the stored place of the label's stock and the kilograms its check saw; the status and code stay
-/// the same and nothing is written.
+/// with the product, the stored place of the label's stock and the kilograms its check saw, with the usable kilograms
+/// the issue could have taken (the figure SINAN-CEVAP (8) question 5 discloses); the status and code stay the same and
+/// nothing is written.
 /// </summary>
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
@@ -26,10 +27,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var small = await SeedManufacturingParentAsync(run, "SYN-MFG-SHORTFALL-FREE", 10m);
         var overFree = IssueRequest(Guid.NewGuid(), small.Label.Id, "2", "10.001");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overFree, "shortfall-free"),
-            overFree, small.Label, small.LocationId, availableKg: 10m, reservedKg: 0m);
+            overFree, small.Label, small.LocationId, availableKg: 10m, freePhysicalKg: 10m,
+            reservedKg: 0m);
         await AssertNothingIssuedAsync(run, overFree, labelVersion: 2L);
 
-        // A Sales reservation of 15 kg leaves 5 kg of a 20 kg Free label to the issue; both figures are reported.
+        // A Sales reservation of 15 kg leaves 5 kg of a 20 kg Free label to the issue; every figure is reported.
         var reserved = await SeedManufacturingParentAsync(run, "SYN-MFG-SHORTFALL-RESERVED", 20m);
         await using (var scope = run.Store(CompanyA))
         {
@@ -39,7 +41,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         var overReserved = IssueRequest(Guid.NewGuid(), reserved.Label.Id, "3", "5.001");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overReserved, "shortfall-reserved"),
-            overReserved, reserved.Label, reserved.LocationId, availableKg: 20m, reservedKg: 15m);
+            overReserved, reserved.Label, reserved.LocationId, availableKg: 5m,
+            freePhysicalKg: 20m, reservedKg: 15m);
         await AssertNothingIssuedAsync(run, overReserved, labelVersion: 3L);
 
         // All of the label's stock is blocked: no Free kg, and the place is where its blocked stock lies.
@@ -49,7 +52,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var overBlocked = IssueRequest(Guid.NewGuid(), blocked.Label.Id,
             blockedVersion.ToString(CultureInfo.InvariantCulture), "1");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overBlocked, "shortfall-blocked"),
-            overBlocked, blocked.Label, blocked.LocationId, availableKg: 0m, reservedKg: null);
+            overBlocked, blocked.Label, blocked.LocationId, availableKg: 0m, freePhysicalKg: 0m,
+            reservedKg: null);
         await AssertNothingIssuedAsync(run, overBlocked, blockedVersion);
 
         // A label already issued to zero holds no stock anywhere, so the refusal names no place.
@@ -59,7 +63,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ManufacturingMetadata(run, "shortfall-emptying"))).ParentLabelVersion);
         var overEmpty = IssueRequest(Guid.NewGuid(), emptied.Label.Id, "3", "0.001");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overEmpty, "shortfall-empty"),
-            overEmpty, emptied.Label, locationId: null, availableKg: 0m, reservedKg: null);
+            overEmpty, emptied.Label, locationId: null, availableKg: 0m, freePhysicalKg: 0m,
+            reservedKg: null);
         await AssertNothingIssuedAsync(run, overEmpty, labelVersion: 3L);
     }
 
@@ -84,17 +89,21 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var version = await LabelVersionAsync(run, parent.Label.Id);
         var labelVersion = version.ToString(CultureInfo.InvariantCulture);
 
-        // The plan's own 60 kg count as available to its issue; only Sales' 40 kg are reserved against it.
+        // The plan's own 60 kg count as available to its issue; only Sales' 40 kg are reserved against it, so 50 kg
+        // of the 90 kg Free are usable.
         var overAllocated = IssueRequest(Guid.NewGuid(), parent.Label.Id, labelVersion, "55")
             with { AllocationId = allocationId, PlanId = planId };
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overAllocated, "shortfall-plan-over"),
-            overAllocated, parent.Label, parent.LocationId, availableKg: 90m, reservedKg: 40m);
+            overAllocated, parent.Label, parent.LocationId, availableKg: 50m,
+            freePhysicalKg: 90m, reservedKg: 40m);
         await AssertNothingIssuedAsync(run, overAllocated, version);
 
-        // Without the allocation every active reservation of the position counts, here more than its Free kg.
+        // Without the allocation every active reservation of the position counts, here more than its Free kg: none
+        // is usable.
         var unallocated = IssueRequest(Guid.NewGuid(), parent.Label.Id, labelVersion, "1");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, unallocated, "shortfall-plan-unallocated"),
-            unallocated, parent.Label, parent.LocationId, availableKg: 90m, reservedKg: 100m);
+            unallocated, parent.Label, parent.LocationId, availableKg: 0m,
+            freePhysicalKg: 90m, reservedKg: 100m);
         await AssertNothingIssuedAsync(run, unallocated, version);
 
         Assert.Equal((1, 60m), (
@@ -122,7 +131,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
     private static void AssertInputIssueShortfall(InventoryManufacturingRealizationException refusal,
         InventoryManufacturingInputIssueRequestV1 request, MaterialLabel label, Guid? locationId,
-        decimal availableKg, decimal? reservedKg)
+        decimal availableKg, decimal freePhysicalKg, decimal? reservedKg)
     {
         Assert.Equal((409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient),
             (refusal.Status, refusal.Code));
@@ -136,8 +145,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             (shortfall.LabelId, shortfall.ProductId, shortfall.LocationId));
         Assert.Equal(decimal.Parse(request.QuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture),
             shortfall.RequestedKg.Value);
-        Assert.Equal(availableKg, shortfall.AvailableKg.Value);
-        Assert.Equal(reservedKg, shortfall.ReservedKg?.Value);
+        Assert.Equal((availableKg, freePhysicalKg, reservedKg),
+            (shortfall.AvailableKg.Value, shortfall.FreePhysicalKg.Value, shortfall.ReservedKg?.Value));
     }
 
     /// <summary>The refusal is not recorded (a later slice): no movement, no command and an unchanged label.</summary>

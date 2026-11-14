@@ -10,8 +10,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// SAT-D318 (owner decision of 2026-11-13): no operation takes physical stock below zero, and the refusal says which
 /// operation and where. Through the real host on real SQL Server the input issue's 409 keeps its status and code and
 /// adds the optional <c>stockShortfall</c> member: the refused issue, its parent label with the product, the stored
-/// place and the requested kilograms, never the label's stock figures. The refusal is not terminal: the same key and
-/// body are decided again. Another company's caller never reaches it.
+/// place, the requested kilograms and the usable kilograms the issue could have taken (owner answer of 2026-11-13 on
+/// Issue #66, SINAN-CEVAP (8) question 5), never the free physical or reserved kilograms. The refusal is not terminal:
+/// the same key and body are decided again. Another company's caller never reaches it.
 /// </summary>
 public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 {
@@ -22,7 +23,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
         var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, AllWrites);
         var (orderId, roll) = await run.OpenOrderAsync(userA);
-        // A quality block leaves 50 kg of the roll's 1000.125 kg Free, under the plan's 1000 kg allocation.
+        // A quality block leaves 50 kg of the roll's 1000.125 kg Free, under the plan's 1000 kg allocation. The
+        // allocation is the issue's own, so no other demand holds any of the 50 kg: all 50 kg are usable.
         await run.BlockAsync(roll, 950.125m);
         var location = await run.ScalarAsync<Guid>(
             "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
@@ -46,13 +48,14 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 Assert.Equal(
                     new[]
                     {
-                        "labelId", "locationId", "movementKind", "productId", "requestedKg", "sourceId", "sourceKind",
-                        "sourceLineId",
+                        "availableKg", "labelId", "locationId", "movementKind", "productId", "requestedKg", "sourceId",
+                        "sourceKind", "sourceLineId",
                     },
                     shortfall.EnumerateObject().Select(member => member.Name).Order(StringComparer.Ordinal));
-                Assert.Equal(("Issue", InventoryManufacturingRealizationContractV1.InputIssueSourceKind, "100"),
+                Assert.Equal(("Issue", InventoryManufacturingRealizationContractV1.InputIssueSourceKind, "100", "50"),
                     (shortfall.GetProperty("movementKind").GetString(), shortfall.GetProperty("sourceKind").GetString(),
-                        shortfall.GetProperty("requestedKg").GetString()));
+                        shortfall.GetProperty("requestedKg").GetString(),
+                        shortfall.GetProperty("availableKg").GetString()));
                 Assert.Equal((orderId, issueId, roll, run.ProductFixture.ProductId, location),
                     (shortfall.GetProperty("sourceId").GetGuid(), shortfall.GetProperty("sourceLineId").GetGuid(),
                         shortfall.GetProperty("labelId").GetGuid(), shortfall.GetProperty("productId").GetGuid(),
