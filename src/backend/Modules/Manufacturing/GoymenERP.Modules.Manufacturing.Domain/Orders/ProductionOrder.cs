@@ -113,9 +113,12 @@ public sealed class ProductionOrder
     /// replayed through the same methods that recorded them — issues first, then returns, outputs
     /// and WIP readings, each in time order — so every rule (fact identity, parent roll, return
     /// bound, latest WIP reading) holds again, and a stored close is replayed through
-    /// <see cref="Close"/>, so a closed order must still reconcile roll by roll. A stored record
-    /// that breaks a rule is refused, not repaired; the stored version must be exactly the one its
-    /// facts add up to.
+    /// <see cref="Close"/> (no stored policy: a closed order must still reconcile roll by roll) or
+    /// through <see cref="CloseWithPolicy"/> under the rule the close was written with: URT-D42 (3)
+    /// — "Kural yeni kapanışlara uygulanır" — so an order closed before URT-D41 with output above
+    /// input on a roll stays readable as it is; it is listed by the read-only report, never reopened
+    /// or changed. A stored record that breaks a rule is refused, not repaired; the stored version
+    /// must be exactly the one its facts add up to.
     /// </summary>
     public static ProductionOrder Restore(
         Guid id,
@@ -189,7 +192,8 @@ public sealed class ProductionOrder
             }
             else
             {
-                order.CloseWithPolicy(order.Version, closedBy, closedAt, closurePolicy, closureExceptionApproval);
+                order.CloseWithPolicy(order.Version, closedBy, closedAt, closurePolicy, closureExceptionApproval,
+                    replayingStoredClose: true);
             }
         }
         else if (closedByUserId is not null || closedAtUtc is not null)
@@ -350,22 +354,31 @@ public sealed class ProductionOrder
     /// plus ProcessLoss over issued minus returned. A caller cannot substitute a class or denominator.
     /// </summary>
     public OrderClosureAssessmentV1 AssessClosure(ClosureTolerancePolicySnapshotV1 policy) =>
-        AssessClosure(policy, _plannedInputs.Select(input =>
+        AssessClosure(policy, DerivedScrapPercentInputs());
+
+    private RollScrapPercentInputV1[] DerivedScrapPercentInputs() =>
+        _plannedInputs.Select(input =>
         {
             var balance = BalanceOf(input.ParentRollId);
             return new RollScrapPercentInputV1(input.ParentRollId, new(
                 balance.OutputOf(OutputClass.Scrap).Value + balance.OutputOf(OutputClass.ProcessLoss).Value,
                 balance.NetIssued.Value));
-        }).ToArray());
+        }).ToArray();
 
     /// <summary>
     /// The policy-backed close used by the runtime. It persists the exact Settings snapshot and accepts an
-    /// out-of-tolerance result only with immutable evidence created after the application freshly proved the
+    /// out-of-tolerance shortfall only with immutable evidence created after the application freshly proved the
     /// dedicated approval permission. The evidence is checked again here against this company, order, actor,
-    /// pre-close order version and policy version; it never supplies authority by itself.
+    /// pre-close order version and policy version; it never supplies authority by itself. Output above input on a
+    /// planned parent roll is refused whatever the tolerance or approval
+    /// (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>, URT-D41 (1)-(2), URT-D42 (1)-(2)).
     /// </summary>
     public void CloseWithPolicy(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
-        ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval)
+        ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval) =>
+        CloseWithPolicy(expectedVersion, closedByUserId, closedAt, policy, exceptionApproval, replayingStoredClose: false);
+
+    private void CloseWithPolicy(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
+        ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval, bool replayingStoredClose)
     {
         RequireClosable(expectedVersion);
         RequireId(closedByUserId, nameof(closedByUserId));
@@ -386,7 +399,8 @@ public sealed class ProductionOrder
                 "Kapanış istisna onayı kapanış anından sonra olamaz.");
         }
 
-        var assessment = AssessClosure(policy);
+        var assessment = OrderClosureAssessmentCalculatorV1.Assess(this, policy, DerivedScrapPercentInputs(),
+            replayingStoredClose);
         switch (assessment.Disposition)
         {
             case ClosureDispositionV1.Balanced when exceptionApproval is not null:
