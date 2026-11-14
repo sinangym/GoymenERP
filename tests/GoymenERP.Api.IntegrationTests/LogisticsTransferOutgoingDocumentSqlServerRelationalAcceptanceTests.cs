@@ -1,3 +1,4 @@
+using System.Data;
 using GoymenERP.Api.LogisticsRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -8,6 +9,7 @@ using GoymenERP.Modules.Logistics.Domain.Transfers;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -193,17 +195,75 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'logistics') AND name = N'TransferOutgoingDocuments'"));
     }
 
-    private static TransferDocumentScope TransferStore(Run run, Guid companyId)
+    [SqlServerFact]
+    public async Task Transfer_outgoing_document_deadlock_victim_on_a_serializable_read_is_a_concurrent_change_that_writes_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var documentId = Guid.NewGuid();
+        var transferId = Guid.NewGuid();
+        var draft = TransferOutgoingDocument.Create(CompanyA, documentId, transferId, [Guid.NewGuid()], null, run.Actor, T0);
+
+        var createVictim = new DeadlockVictimOnFirstRead("[logistics].[TransferOutgoingDocuments]");
+        await using (var owner = TransferStore(run, CompanyA, createVictim))
+        {
+            Task<TransferOutgoingDocumentStoreResultV1> CreateAsync() => owner.Store.StoreDraftAsync(
+                run.Envelope("deadlock-doc-create"), Hash("deadlock-doc-create"), draft, _ => Task.CompletedTask);
+
+            var refusal = await Assert.ThrowsAsync<LogisticsStoreException>(() => CreateAsync());
+            Assert.Equal((IsolationLevel.Serializable, LogisticsStoreCodes.ConcurrentChange, true),
+                (createVictim.ObservedIsolation, refusal.Code, CarriesDeadlockVictim(refusal)));
+            Assert.Equal((0, 0, 0, 0), await TransferWritesAsync(run, documentId));
+            Assert.Equal(LogisticsWriteOutcome.Recorded, (await CreateAsync()).Outcome);
+        }
+
+        var finalizeVictim = new DeadlockVictimOnFirstRead("[logistics].[TransferOutgoingDocumentLines]");
+        await using (var owner = TransferStore(run, CompanyA, finalizeVictim))
+        {
+            Task<TransferOutgoingDocumentStoreResultV1> FinalizeAsync() => owner.Store.MutateAsync(
+                run.Envelope("deadlock-doc-finalize"), Hash("deadlock-doc-finalize"),
+                LogisticsTransferOutgoingDocumentCommandsV1.Finalize, documentId,
+                (item, now) => item.Finalize(1, run.Actor, now), _ => Task.CompletedTask);
+
+            var refusal = await Assert.ThrowsAsync<LogisticsStoreException>(() => FinalizeAsync());
+            Assert.Equal((IsolationLevel.Serializable, LogisticsStoreCodes.ConcurrentChange, true),
+                (finalizeVictim.ObservedIsolation, refusal.Code, CarriesDeadlockVictim(refusal)));
+            Assert.Equal((1, 1, 1, 1), await TransferWritesAsync(run, documentId));
+            var effective = await FinalizeAsync();
+            Assert.Equal((LogisticsWriteOutcome.Recorded, TransferOutgoingDocumentStatus.Effective, 2),
+                (effective.Outcome, effective.Document.Status, effective.Document.Version));
+        }
+
+        Assert.Equal((1, 2, 2, 2), await TransferWritesAsync(run, documentId));
+    }
+
+    /// <summary>(document rows, version, attempts, audit events) the real SQL holds for one transfer outgoing document.</summary>
+    private static async Task<(int Documents, int Version, int Attempts, int AuditEvents)> TransferWritesAsync(
+        Run run, Guid documentId) =>
+        (await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM logistics.TransferOutgoingDocuments WHERE DocumentId = @id", ("@id", documentId)),
+            await run.ScalarAsync<int>(
+                "SELECT COALESCE(MAX(Version), 0) FROM logistics.TransferOutgoingDocuments WHERE DocumentId = @id",
+                ("@id", documentId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM logistics.TransferOutgoingDocumentAttempts WHERE DocumentId = @id", ("@id", documentId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", ("@id", documentId.ToString("D"))));
+
+    private static TransferDocumentScope TransferStore(Run run, Guid companyId, IInterceptor? extra = null)
     {
         var company = new CompanyContext();
         company.Set(companyId);
         var collector = new AuditEventCollector();
-        var options = new DbContextOptionsBuilder<LogisticsDbContext>()
+        var builder = new DbContextOptionsBuilder<LogisticsDbContext>()
             .UseSqlServer(run.Factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
-            .AddInterceptors(new AuditSaveChangesInterceptor(collector, company))
-            .Options;
-        var context = new LogisticsDbContext(options, company);
+            .AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
+        if (extra is not null)
+        {
+            builder.AddInterceptors(extra);
+        }
+
+        var context = new LogisticsDbContext(builder.Options, company);
         var store = new LogisticsTransferOutgoingDocumentStore(context, company, collector, TimeProvider.System);
         return new(context, store, new InventoryTransferOutgoingDocumentProofAdapter(store));
     }

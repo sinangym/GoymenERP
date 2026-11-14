@@ -79,7 +79,14 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         await using IDbContextTransaction? aggregateTransaction = limits.Count > 0 && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
             : null;
-        await RequireAggregateLimitsAsync(companyId, instruction, limits, cancellationToken);
+        try
+        {
+            await RequireAggregateLimitsAsync(companyId, instruction, limits, cancellationToken);
+        }
+        catch (Exception exception) when (IsDeadlockVictim(exception))
+        {
+            throw LostAggregateRead(exception);
+        }
 
         var now = timeProvider.GetUtcNow();
         dbContext.Instructions.Add(new LoadingInstructionRow
@@ -250,8 +257,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
 
     public async Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
         string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
-        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default) =>
-        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, cancellationToken);
+        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default)
+    {
+        // The Serializable section's reads can be chosen as the deadlock victim before SaveAsync runs; the core's
+        // transaction is already disposed (rolled back) when this filter runs, so the loser gets the same refusal.
+        try
+        {
+            return await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, cancellationToken);
+        }
+        catch (Exception exception) when (IsDeadlockVictim(exception))
+        {
+            throw LostAggregateRead(exception);
+        }
+    }
 
     private async Task<LogisticsStoreResult?> MutateInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
@@ -1201,6 +1219,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
+    }
+
+    /// <summary>
+    /// SQL 1205 raised by a read inside a Serializable aggregate section (SaveAsync maps its own 1205 and is left out);
+    /// SQL Server has already rolled the victim's transaction back.
+    /// </summary>
+    private static bool IsDeadlockVictim(Exception exception) =>
+        exception is not LogisticsStoreException && ContainsSqlException(exception, 1205);
+
+    private LogisticsStoreException LostAggregateRead(Exception exception)
+    {
+        dbContext.ChangeTracker.Clear();
+        return Refused(LogisticsStoreCodes.ConcurrentChange, "Aggregate okuma yarışı kaybedildi; hiçbir şey kaydedilmedi.", exception);
     }
 
     private static bool ContainsSqlException(Exception exception, int number)
