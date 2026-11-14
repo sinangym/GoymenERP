@@ -135,6 +135,9 @@ Bugünkü `ErpPermissions.Critical`
 (`src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs`):
 `identity.access.approve`, `identity.roles.manage`, `identity.audit.read`, `identity.assignments.read`,
 `finance.bank-account.propose`, `finance.bank-account.approve`,
+`finance.cash-account.propose`, `finance.cash-account.approve`,
+`finance.cash-account.passivation.propose`, `finance.cash-account.passivation.approve`,
+`finance.cash-account.reactivation.propose`, `finance.cash-account.reactivation.approve`,
 `counterparty.parties.tax-identity.approve`. Sinan'ın "finans onayı" ifadesi
 `finance.official-invoice-import.approve`, `finance.manual-receipt.*` gibi şu an Critical olmayan adları da
 kapsıyor olabilir. **Karar (KIM-D9, 10. tur, #66 `6820237902`; Sinan: "Bilemiyorum ama bence şuanda hiçbiri"):**

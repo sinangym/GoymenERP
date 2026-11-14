@@ -187,6 +187,31 @@ public static class ErpPermissions
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
     /// <summary>
+    /// Finance cash account (kasa) master (API-30): aligned with the bank-account master's names
+    /// (<c>finance.bank-account.*</c>). Registering them makes them KNOWN, not granted: no role and no user
+    /// receives them here, and who holds which is a human gate. All three are company-wide only: a cash
+    /// account belongs to the server-resolved company and has no site, location or work-center dimension.
+    /// Propose and approve are Critical, as the bank master's pair (user decision of 13 November 2026 on
+    /// Issue #66); read is not. Approval and rejection are maker-checker in the service and the database
+    /// regardless.
+    /// </summary>
+    public const string FinanceCashAccountRead = "finance.cash-account.read";
+    public const string FinanceCashAccountPropose = "finance.cash-account.propose";
+    public const string FinanceCashAccountApprove = "finance.cash-account.approve";
+
+    /// <summary>
+    /// Passivation and reactivation of a cash account (user decision of 13 November 2026 on Issue #66,
+    /// comment 6857269313): the same two-person flow as opening one. Each has its own propose/approve pair so
+    /// that who may passivate and who may reactivate stay separate grants (ASSUMPTION-API30-4); a rejection is
+    /// the other answer of the approve authority. Critical by that decision; company-wide only; granted to no
+    /// role and no user here (grant is a human gate).
+    /// </summary>
+    public const string FinanceCashAccountPassivationPropose = "finance.cash-account.passivation.propose";
+    public const string FinanceCashAccountPassivationApprove = "finance.cash-account.passivation.approve";
+    public const string FinanceCashAccountReactivationPropose = "finance.cash-account.reactivation.propose";
+    public const string FinanceCashAccountReactivationApprove = "finance.cash-account.reactivation.approve";
+
+    /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
     /// measurable and grants nothing. Both are company-wide because the batch belongs to the
     /// server-resolved company and has no narrower scope dimension. They are not Critical; the
@@ -1148,6 +1173,13 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountRead,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
+            FinanceCashAccountPassivationPropose,
+            FinanceCashAccountPassivationApprove,
+            FinanceCashAccountReactivationPropose,
+            FinanceCashAccountReactivationApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,
@@ -1206,6 +1238,12 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
+            FinanceCashAccountPassivationPropose,
+            FinanceCashAccountPassivationApprove,
+            FinanceCashAccountReactivationPropose,
+            FinanceCashAccountReactivationApprove,
             CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
@@ -1325,6 +1363,13 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountRead,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
+            FinanceCashAccountPassivationPropose,
+            FinanceCashAccountPassivationApprove,
+            FinanceCashAccountReactivationPropose,
+            FinanceCashAccountReactivationApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,

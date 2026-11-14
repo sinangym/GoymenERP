@@ -987,6 +987,40 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/finance/bank-accounts/currency-candidates", "GetFinanceBankAccountCurrencyCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/finance/cash-accounts", "ProposeFinanceCashAccountV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountProposeRequest"),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/approval", "ApproveFinanceCashAccountV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountApprovalBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/rejection", "RejectFinanceCashAccountV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountRejectionBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/cash-accounts", "GetFinanceCashAccountsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/finance/cash-accounts/{accountId}", "GetFinanceCashAccountV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:accountId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/cash-accounts/currency-candidates", "GetFinanceCashAccountCurrencyCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/passivation", "ProposeFinanceCashAccountPassivationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountStateChangeBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/passivation/approval", "ApproveFinanceCashAccountPassivationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountStateChangeBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/passivation/rejection", "RejectFinanceCashAccountPassivationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountRejectionBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/reactivation", "ProposeFinanceCashAccountReactivationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountStateChangeBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/reactivation/approval", "ApproveFinanceCashAccountReactivationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountStateChangeBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/cash-accounts/{accountId}/reactivation/rejection", "RejectFinanceCashAccountReactivationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CashAccountRejectionBody", ["path:accountId:true:type:string;format:uuid"]),
         new("get", "/api/v1/logistics/loading-instructions", "GetLoadingInstructionsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
@@ -1680,6 +1714,18 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveFinanceBankAccountIbanChangeV1"] = "ref:BankAccountCommandResult",
             ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
             ["GetFinanceBankAccountCurrencyCandidatesV1"] = "ref:BankAccountCurrencyCandidates",
+            ["ProposeFinanceCashAccountV1"] = "ref:CashAccountCommandResult",
+            ["ApproveFinanceCashAccountV1"] = "ref:CashAccountCommandResult",
+            ["RejectFinanceCashAccountV1"] = "ref:CashAccountCommandResult",
+            ["GetFinanceCashAccountsV1"] = "ref:CashAccountMasterPage",
+            ["GetFinanceCashAccountV1"] = "ref:CashAccountView",
+            ["GetFinanceCashAccountCurrencyCandidatesV1"] = "ref:CashAccountCurrencyCandidates",
+            ["ProposeFinanceCashAccountPassivationV1"] = "ref:CashAccountCommandResult",
+            ["ApproveFinanceCashAccountPassivationV1"] = "ref:CashAccountCommandResult",
+            ["RejectFinanceCashAccountPassivationV1"] = "ref:CashAccountCommandResult",
+            ["ProposeFinanceCashAccountReactivationV1"] = "ref:CashAccountCommandResult",
+            ["ApproveFinanceCashAccountReactivationV1"] = "ref:CashAccountCommandResult",
+            ["RejectFinanceCashAccountReactivationV1"] = "ref:CashAccountCommandResult",
             ["GetLoadingInstructionsV1"] = "ref:LoadingInstructionListResponse",
             ["CreateLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
             ["GetLoadingInstructionV1"] = "ref:LoadingInstructionDetailView",
@@ -2042,6 +2088,18 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountIbanChangeV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
+        "ProposeFinanceCashAccountV1",
+        "ApproveFinanceCashAccountV1",
+        "RejectFinanceCashAccountV1",
+        "GetFinanceCashAccountsV1",
+        "GetFinanceCashAccountV1",
+        "GetFinanceCashAccountCurrencyCandidatesV1",
+        "ProposeFinanceCashAccountPassivationV1",
+        "ApproveFinanceCashAccountPassivationV1",
+        "RejectFinanceCashAccountPassivationV1",
+        "ProposeFinanceCashAccountReactivationV1",
+        "ApproveFinanceCashAccountReactivationV1",
+        "RejectFinanceCashAccountReactivationV1",
         "GetLoadingInstructionsV1",
         "CreateLoadingInstructionV1",
         "GetLoadingInstructionV1",
@@ -2294,6 +2352,15 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
         "ApproveFinanceBankAccountIbanChangeV1",
+        "ProposeFinanceCashAccountV1",
+        "ApproveFinanceCashAccountV1",
+        "RejectFinanceCashAccountV1",
+        "ProposeFinanceCashAccountPassivationV1",
+        "ApproveFinanceCashAccountPassivationV1",
+        "RejectFinanceCashAccountPassivationV1",
+        "ProposeFinanceCashAccountReactivationV1",
+        "ApproveFinanceCashAccountReactivationV1",
+        "RejectFinanceCashAccountReactivationV1",
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "CancelLoadingInstructionV1",
@@ -2596,6 +2663,15 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["ProposeFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["ApproveFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ProposeFinanceCashAccountV1"] = [StatusCodes.Status200OK],
+                ["ApproveFinanceCashAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["RejectFinanceCashAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ProposeFinanceCashAccountPassivationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ApproveFinanceCashAccountPassivationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["RejectFinanceCashAccountPassivationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ProposeFinanceCashAccountReactivationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ApproveFinanceCashAccountReactivationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["RejectFinanceCashAccountReactivationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 // INV-OPEN-1 part 2: the count (200 on a replay) and the recorded terminal refusals (§7).
                 ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["CreateInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
@@ -2877,6 +2953,18 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountIbanChangeV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
+        "ProposeFinanceCashAccountV1",
+        "ApproveFinanceCashAccountV1",
+        "RejectFinanceCashAccountV1",
+        "GetFinanceCashAccountsV1",
+        "GetFinanceCashAccountV1",
+        "GetFinanceCashAccountCurrencyCandidatesV1",
+        "ProposeFinanceCashAccountPassivationV1",
+        "ApproveFinanceCashAccountPassivationV1",
+        "RejectFinanceCashAccountPassivationV1",
+        "ProposeFinanceCashAccountReactivationV1",
+        "ApproveFinanceCashAccountReactivationV1",
+        "RejectFinanceCashAccountReactivationV1",
         "RecordInventoryOpeningCountV1",
         "GetLoadingInstructionsV1",
         "CreateLoadingInstructionV1",
@@ -2962,6 +3050,7 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
         "GetFinanceOpenItemV1:404",
+        "GetFinanceCashAccountV1:404",
         "GetWorkApprovalsV1:404",
         "GetWorkApprovalV1:404",
         "GetOrganizationLocationV1:404",
@@ -3234,6 +3323,18 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountIbanChangeV1:400",
         "GetFinanceBankAccountMasterV1:400",
         "GetFinanceBankAccountCurrencyCandidatesV1:400",
+        "ProposeFinanceCashAccountV1:400",
+        "ApproveFinanceCashAccountV1:400",
+        "RejectFinanceCashAccountV1:400",
+        "GetFinanceCashAccountsV1:400",
+        "GetFinanceCashAccountV1:400",
+        "GetFinanceCashAccountCurrencyCandidatesV1:400",
+        "ProposeFinanceCashAccountPassivationV1:400",
+        "ApproveFinanceCashAccountPassivationV1:400",
+        "RejectFinanceCashAccountPassivationV1:400",
+        "ProposeFinanceCashAccountReactivationV1:400",
+        "ApproveFinanceCashAccountReactivationV1:400",
+        "RejectFinanceCashAccountReactivationV1:400",
         "ProposeAccountingPeriodV1:400",
         "ApproveAccountingPeriodV1:400",
         "CloseAccountingPeriodV1:400",
@@ -5225,6 +5326,44 @@ public sealed partial class OpenApiContractGenerationTests
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
                     ("items", "type:array;items:ref:BankAccountMasterItem")),
+                ["CashAccountCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:CashAccountView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["CashAccountCurrencyCandidate"] = ObjectSchema(
+                    ["currencyId", "code", "displayLabel"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("displayLabel", "type:string")),
+                ["CashAccountCurrencyCandidates"] = ObjectSchema(
+                    ["companyId", "items"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:CashAccountCurrencyCandidate")),
+                // API-30: no balance and no opening balance; FNS-D32 decided there is no responsible person field.
+                // pendingChange is the passivation or reactivation awaiting a decision (ASSUMPTION-API30-9).
+                ["CashAccountView"] = ObjectSchema(
+                    ["id", "companyId", "currencyId", "displayName", "status", "isActive", "rejectionReason",
+                        "pendingChange", "version"],
+                    ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"), ("displayName", "type:string"),
+                    ("status", "ref:CashAccountStatus"), ("isActive", "type:boolean"),
+                    ("rejectionReason", "type:null|string"),
+                    ("pendingChange", "oneOf:ref:CashAccountStateChange|type:null"), ("version", "type:string")),
+                ["CashAccountStatus"] = ScalarSchema("enum:Proposed|Approved|Rejected|Passive"),
+                // Emitted only as a nullable property, so the generator lists null among its values.
+                ["CashAccountStateChange"] = ScalarSchema("enum:Passivation|Reactivation|"),
+                ["CashAccountMasterItem"] = ObjectSchema(
+                    ["account", "isOwnProposal", "isOwnPendingChange"],
+                    ("account", "ref:CashAccountView"),
+                    ("isOwnProposal", "type:boolean"),
+                    ("isOwnPendingChange", "type:boolean")),
+                ["CashAccountMasterPage"] = ObjectSchema(
+                    ["companyId", "items"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:CashAccountMasterItem")),
                 ["SalesDraftDeliverySliceV1"] = ObjectSchema(
                     ["sliceId", "orderUnitId", "quantity", "requestedDeliveryDate"],
                     ("sliceId", "type:string;format:uuid"),
@@ -9069,6 +9208,20 @@ public sealed partial class OpenApiContractGenerationTests
                 ["BankAccountApprovalBody"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
+                ["CashAccountApprovalBody"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["CashAccountRejectionBody"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string")),
+                ["CashAccountStateChangeBody"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["CashAccountProposeRequest"] = ObjectSchema(
+                    ["displayName", "currencyId"],
+                    ("displayName", "type:string"),
+                    ("currencyId", "type:string;format:uuid")),
                 ["BankAccountIbanChangeBody"] = ObjectSchema(
                     ["expectedVersion", "iban", "reason"],
                     ("expectedVersion", "type:string"),
@@ -10954,6 +11107,7 @@ public sealed partial class OpenApiContractGenerationTests
         AssertNativeApprovalPolymorphism(schemas);
         AssertSuccessComponentSchemas(schemas);
         AssertProductSchemas(schemas);
+        AssertManufacturingStockShortfallSchemas(schemas);
         AssertDispatchNoteRequestBounds(schemas);
         var mutationAccounts = schemas
             .GetProperty("CounterpartyMutationView")
@@ -12129,9 +12283,11 @@ public sealed partial class OpenApiContractGenerationTests
             return;
         }
 
-        var expectedReference = CodeLessProblemResponses.Contains(responseKey)
-            ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
-            : "#/components/schemas/ErpProblemDetailsContract";
+        var expectedReference = EndpointProblemResponses.TryGetValue(responseKey, out var endpointReference)
+            ? endpointReference
+            : CodeLessProblemResponses.Contains(responseKey)
+                ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                : "#/components/schemas/ErpProblemDetailsContract";
         Assert.Equal(expectedReference, schema.GetProperty("$ref").GetString());
         Assert.False(schema.TryGetProperty("oneOf", out _));
     }

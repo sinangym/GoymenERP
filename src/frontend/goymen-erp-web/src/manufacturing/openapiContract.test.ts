@@ -18,6 +18,7 @@ import {
   decodeOrder,
   decodeOrderList,
   decodePlan,
+  decodeStockShortfall,
   decodeTechnicalSnapshot,
   FACT_KINDS,
   OUTPUT_CLASSES,
@@ -31,6 +32,7 @@ import {
   cutToLengthSpec,
   massBalance,
   order,
+  ORDER,
   orderList,
   orderSummary,
   parameterSnapshot,
@@ -43,6 +45,7 @@ import {
   revisionInput,
   roll,
   ROLL_1,
+  stockShortfall,
   technicalSnapshot,
 } from './testHarness'
 
@@ -306,6 +309,45 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
         [...request.properties].sort(),
       )
     }
+  })
+
+  it('reads the SAT-D318 stock shortfall exactly as declared: an optional member of the input issue 409 only', () => {
+    const name = 'ManufacturingStockShortfallViewV1'
+    const problemName = 'ManufacturingInputIssueConflictProblemContract'
+    const issueId = 'f0000000-0000-4000-8000-000000000001'
+    const fixture = stockShortfall(issueId, '900.5', '480.25')
+    expect(Object.keys(fixture).sort()).toEqual(names(name))
+    expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    // SINAN-CEVAP (8) question 5: the usable kilograms are declared beside the requested ones; reserved stay out.
+    expect(names(name)).toContain('availableKg')
+    expect(names(name)).not.toContain('reservedKg')
+    expect(names(name)).not.toContain('freePhysicalKg')
+    expect(schema(name).properties?.locationId).toEqual({ type: ['null', 'string'], format: 'uuid' })
+    expect(schema(name).properties?.requestedKg).toEqual({ type: 'string' })
+    expect(schema(name).properties?.availableKg).toEqual({ type: 'string' })
+    // Optional and nullable: absent on every other code, on a replay and from an older server.
+    expect(schema(problemName).properties?.stockShortfall).toEqual({
+      oneOf: [{ type: 'null' }, { $ref: `#/components/schemas/${name}` }],
+    })
+    expect(schema(problemName).required ?? []).not.toContain('stockShortfall')
+    const root = MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')
+    const conflict = (document.paths[`${root}/orders/{orderId}/input-issues`]?.post as
+      | {
+          readonly responses?: Record<string, {
+            readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }>
+            readonly 'x-erp-problem-codes'?: readonly string[]
+          }>
+        }
+      | undefined)?.responses?.['409']
+    expect(conflict?.content?.['application/problem+json']?.schema?.$ref).toBe(`#/components/schemas/${problemName}`)
+    expect(conflict?.['x-erp-problem-codes']).toContain('inventory_manufacturing_physical_stock_insufficient')
+    // The other realization routes keep the shared problem: only the input issue names a shortfall.
+    for (const kind of ['input-returns', 'outputs']) {
+      expect(JSON.stringify(document.paths[`${root}/orders/{orderId}/${kind}`]), kind).not.toContain(problemName)
+    }
+    expect(decodeStockShortfall(fixture, { orderId: ORDER, issueId, labelId: ROLL_1, kg: '900.5' })).toEqual(fixture)
+    expect(decodeStockShortfall(stockShortfall(issueId, '900.5', '0', { locationId: null }),
+      { orderId: ORDER, issueId, labelId: ROLL_1, kg: '900.5' })?.locationId).toBeNull()
   })
 
   it('calls routes the API declares: the order read, the plan read and one POST per fact kind', () => {
