@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Work.Infrastructure.Outbox;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
@@ -48,7 +49,9 @@ public static class WorkModuleExtensions
     /// <summary>
     /// Registers the ERP-000F outbox dispatcher. OFF by default: nothing runs unless
     /// <c>Work:OutboxDispatcher:Enabled</c> is true (production activation is a human gate). Call after
-    /// <see cref="AddWorkModule"/>; sources, consumers and the company directory are registered by their owners.
+    /// <see cref="AddWorkModule"/>; sources and consumers are registered by their owners with
+    /// <see cref="AddWorkOutboxEventSource{TSource}"/> and <see cref="AddWorkInboxConsumer{TConsumer}"/>, the company
+    /// directory by Organization.
     /// </summary>
     public static IServiceCollection AddWorkOutboxDispatcher(
         this IServiceCollection services,
@@ -74,6 +77,45 @@ public static class WorkModuleExtensions
             services.AddHostedService<WorkOutboxDispatcherHostedService>();
         }
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a module outbox as a dispatcher source under <paramref name="sourceName"/> (registration contract v1,
+    /// F-021). The name is unique, lower-case ASCII and is the cursor/inbox key, so it must never be renamed once
+    /// deliveries exist. Registering a source does not enable the dispatcher.
+    /// </summary>
+    public static IServiceCollection AddWorkOutboxEventSource<TSource>(
+        this IServiceCollection services,
+        string sourceName,
+        params WorkOutboxEventTypeV1[] publishes)
+        where TSource : class, IWorkOutboxEventSourceV1
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        var registration = WorkOutboxRegistry.GetOrAdd(services).AddSource(sourceName, typeof(TSource), publishes);
+        services.TryAddScoped<TSource>();
+        services.AddScoped<IOutboxSourceV1>(sp =>
+            new WorkOutboxEventSourceAdapter(registration, sp.GetRequiredService<TSource>()));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a module handler as an inbox consumer under <paramref name="consumerName"/> (registration contract v1,
+    /// F-021). The dedup key is (company, consumer name, event id), so the name must never be renamed once deliveries
+    /// exist. Every subscription must name a registered source and an event it declares; that is checked at host start.
+    /// Registering a consumer does not enable the dispatcher.
+    /// </summary>
+    public static IServiceCollection AddWorkInboxConsumer<TConsumer>(
+        this IServiceCollection services,
+        string consumerName,
+        params WorkInboxSubscriptionV1[] subscriptions)
+        where TConsumer : class, IWorkInboxConsumerV1
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        var registration = WorkOutboxRegistry.GetOrAdd(services).AddConsumer(consumerName, typeof(TConsumer), subscriptions);
+        services.TryAddScoped<TConsumer>();
+        services.AddScoped<IOutboxConsumerV1>(sp =>
+            new WorkInboxConsumerAdapter(registration, () => sp.GetRequiredService<TConsumer>()));
         return services;
     }
 

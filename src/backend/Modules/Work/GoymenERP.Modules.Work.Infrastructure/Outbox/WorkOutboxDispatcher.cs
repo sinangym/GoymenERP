@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Diagnostics.Metrics;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.BuildingBlocks.Messaging;
@@ -12,27 +12,33 @@ using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Modules.Work.Infrastructure.Outbox;
 
-public sealed record WorkOutboxDispatchSummary(int Delivered, int Retrying, int Poisoned, int Duplicates, int Companies, int InvalidEnvelopes = 0);
+public sealed record WorkOutboxDispatchSummary(
+    int Delivered,
+    int Retrying,
+    int Poisoned,
+    int Duplicates,
+    int Companies,
+    int InvalidEnvelopes = 0,
+    int CrossSourceDuplicates = 0,
+    int Unrouted = 0);
 
 /// <summary>
 /// ERP-000F core (B-24). Reads versioned messages from registered module sources, delivers them at-least-once to
 /// registered consumers with an inbox/dedup record, retries with backoff and records poison. State lives only in
 /// Work-owned tables (cursor + delivery); source outboxes and consumer tables are never written here. Per company the
-/// order of a source is kept: a retrying delivery holds the cursor, a poisoned one releases it.
+/// order of a source is kept: a retrying delivery holds the cursor, a poisoned one releases it. The inbox/dedup key
+/// is (company, consumer, message id): a message id already recorded for a consumer is never handed to it again, even
+/// when another source returns it (registration contract v1, F-021). Source and consumer names must be unique within a
+/// company scope; a duplicate name fails the source without moving its cursor.
 /// </summary>
 public sealed class WorkOutboxDispatcher
 {
-    internal const string MeterName = "GoymenERP.Work.OutboxDispatcher";
+    internal const string MeterName = WorkOutboxDispatcherMetrics.MeterName;
     internal const string ConsumerExceptionCode = "consumer_exception";
     internal const string PayloadMismatchCode = "payload_mismatch";
     internal const int MaxPositionLength = 256;
     internal const int MaxEventTypeLength = 160;
     internal const int MaxNameLength = 128;
-    private static readonly Meter Meter = new Meter(MeterName);
-    private static readonly Counter<long> DeliveredCounter = Meter.CreateCounter<long>("work_outbox_delivered");
-    private static readonly Counter<long> RetryCounter = Meter.CreateCounter<long>("work_outbox_retry");
-    private static readonly Counter<long> PoisonCounter = Meter.CreateCounter<long>("work_outbox_poison");
-    private static readonly Counter<long> InvalidEnvelopeCounter = Meter.CreateCounter<long>("work_outbox_invalid_envelope");
 
     private readonly IServiceScopeFactory scopes;
     private readonly WorkOutboxDispatcherSettings settings;
@@ -58,6 +64,19 @@ public sealed class WorkOutboxDispatcher
     internal TimeSpan PollInterval => settings.PollInterval;
 
     public async Task<WorkOutboxDispatchSummary> RunOnceAsync(CancellationToken cancellationToken)
+    {
+        var started = time.GetTimestamp();
+        try
+        {
+            return await RunCycleAsync(cancellationToken);
+        }
+        finally
+        {
+            WorkOutboxDispatcherMetrics.RecordCycleDuration(time.GetElapsedTime(started));
+        }
+    }
+
+    private async Task<WorkOutboxDispatchSummary> RunCycleAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<Guid> companyIds;
         await using (var directoryScope = scopes.CreateAsyncScope())
@@ -88,7 +107,9 @@ public sealed class WorkOutboxDispatcher
             scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(companyId);
             var db = scope.ServiceProvider.GetRequiredService<WorkDbContext>();
             var consumers = scope.ServiceProvider.GetServices<IOutboxConsumerV1>().ToArray();
-            foreach (var source in scope.ServiceProvider.GetServices<IOutboxSourceV1>())
+            var sources = scope.ServiceProvider.GetServices<IOutboxSourceV1>().ToArray();
+            var duplicateSourceNames = DuplicateNames(sources.Select(s => s.SourceName));
+            foreach (var source in sources)
             {
                 var failureKey = (companyId, source.SourceName ?? string.Empty);
                 if (sourceFailures.TryGetValue(failureKey, out var failed) && failed.Until > time.GetUtcNow())
@@ -98,7 +119,7 @@ public sealed class WorkOutboxDispatcher
 
                 try
                 {
-                    await DispatchSourceAsync(db, source, consumers, companyId, total, cancellationToken);
+                    await DispatchSourceAsync(db, source, consumers, duplicateSourceNames, companyId, total, cancellationToken);
                     sourceFailures.TryRemove(failureKey, out _);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -110,6 +131,8 @@ public sealed class WorkOutboxDispatcher
                     // One bad source or company must not stop the others; the cursor was not advanced past it.
                     logger.LogError(exception, "Outbox source {Source} failed for company {CompanyId}; retried next cycle.",
                         source.SourceName, companyId);
+                    WorkOutboxDispatcherMetrics.RecordSourceFailure(
+                        IsStoredName(source.SourceName) ? source.SourceName : WorkOutboxDispatcherMetrics.InvalidSourceName);
                     db.ChangeTracker.Clear();
                     var failures = (sourceFailures.TryGetValue(failureKey, out var previous) ? previous.Failures : 0) + 1;
                     sourceFailures[failureKey] = (failures, time.GetUtcNow() + settings.BackoffAfter(failures));
@@ -118,13 +141,15 @@ public sealed class WorkOutboxDispatcher
         }
 
         return new WorkOutboxDispatchSummary(
-            total.Delivered, total.Retrying, total.Poisoned, total.Duplicates, walked, total.Invalid);
+            total.Delivered, total.Retrying, total.Poisoned, total.Duplicates, walked, total.Invalid,
+            total.CrossSourceDuplicates, total.Unrouted);
     }
 
     private async Task DispatchSourceAsync(
         WorkDbContext db,
         IOutboxSourceV1 source,
         IOutboxConsumerV1[] consumers,
+        IReadOnlySet<string> duplicateSourceNames,
         Guid companyId,
         Tally tally,
         CancellationToken cancellationToken)
@@ -135,12 +160,24 @@ public sealed class WorkOutboxDispatcher
             throw new InvalidOperationException("Outbox source name is empty, too long or not printable ASCII.");
         }
 
+        if (duplicateSourceNames.Contains(sourceName))
+        {
+            // Two sources under one name would share one cursor; neither may move it.
+            throw new InvalidOperationException("Outbox source name is registered more than once.");
+        }
+
         foreach (var consumer in consumers)
         {
             if (!IsStoredName(consumer.ConsumerName))
             {
                 throw new InvalidOperationException("Outbox consumer name is empty, too long or not printable ASCII.");
             }
+        }
+
+        if (DuplicateNames(consumers.Select(c => c.ConsumerName)).Count > 0)
+        {
+            // Two consumers under one name would share one inbox key; the second would never see a message.
+            throw new InvalidOperationException("Outbox consumer name is registered more than once.");
         }
 
         var cursor = await db.OutboxSourceCursors.SingleOrDefaultAsync(x => x.SourceName == sourceName, cancellationToken);
@@ -166,19 +203,28 @@ public sealed class WorkOutboxDispatcher
                     "Outbox source {Source} returned an invalid envelope at position {Position} for company {CompanyId}; skipped.",
                     sourceName, message.Position, companyId);
                 tally.Invalid++;
-                InvalidEnvelopeCounter.Add(1);
+                WorkOutboxDispatcherMetrics.RecordInvalidEnvelope(sourceName);
                 resolvedPosition = message.Position;
                 continue;
             }
 
             var held = false;
+            var routed = false;
             foreach (var consumer in consumers.Where(c => c.Subscriptions.Any(s =>
                          s.SourceName == sourceName && s.EventType == message.EventType && s.SchemaVersion == message.SchemaVersion)))
             {
+                routed = true;
                 if (!await DeliverAsync(db, consumer, message, tally, cancellationToken))
                 {
                     held = true;
                 }
+            }
+
+            if (!routed)
+            {
+                // No subscriber is not an error (a later consumer starts from its own first delivery), but it is visible.
+                tally.Unrouted++;
+                WorkOutboxDispatcherMetrics.RecordUnrouted(sourceName);
             }
 
             if (held)
@@ -232,14 +278,27 @@ public sealed class WorkOutboxDispatcher
         var consumerName = consumer.ConsumerName;
         var messageId = message.MessageId;
         var sourceName = message.SourceName;
+        var eventType = message.EventType;
         var payloadHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(message.PayloadJson)));
         var row = await db.OutboxDeliveries.SingleOrDefaultAsync(
-            x => x.SourceName == sourceName && x.ConsumerName == consumerName && x.MessageId == messageId,
+            x => x.ConsumerName == consumerName && x.MessageId == messageId,
             cancellationToken);
         var now = time.GetUtcNow();
 
         if (row is not null)
         {
+            if (!string.Equals(row.SourceName, sourceName, StringComparison.Ordinal))
+            {
+                // The consumer already has an inbox record of this message id from another source. The first record is
+                // the evidence and stays untouched; the handler is not called again for the same event.
+                logger.LogError(
+                    "Outbox message {MessageId} from {Source} was already recorded for {Consumer} from another source; not redelivered.",
+                    messageId, sourceName, consumerName);
+                tally.CrossSourceDuplicates++;
+                WorkOutboxDispatcherMetrics.RecordCrossSourceDuplicate(sourceName, consumerName, eventType);
+                return true;
+            }
+
             if (!string.Equals(row.PayloadSha256, payloadHash, StringComparison.Ordinal))
             {
                 logger.LogError("Outbox message {MessageId} of {Source} changed after first read for {Consumer}.",
@@ -252,9 +311,11 @@ public sealed class WorkOutboxDispatcher
                     row.NextAttemptAtUtc = null;
                     row.LastErrorCode = PayloadMismatchCode;
                     // The stored hash is the first-read evidence and stays; the guard forbids changing it.
-                    await SaveRowAsync(db, sourceName, consumerName, messageId, false, cancellationToken);
-                    tally.Poisoned++;
-                    PoisonCounter.Add(1);
+                    if (await SaveRowAsync(db, consumerName, messageId, false, cancellationToken))
+                    {
+                        tally.Poisoned++;
+                        WorkOutboxDispatcherMetrics.RecordPoison(sourceName, consumerName, eventType);
+                    }
                 }
 
                 return true;
@@ -263,6 +324,7 @@ public sealed class WorkOutboxDispatcher
             if (row.Status != (int)WorkOutboxDeliveryStatus.Failing)
             {
                 tally.Duplicates++;
+                WorkOutboxDispatcherMetrics.RecordDuplicate(sourceName, consumerName, eventType);
                 return true;
             }
 
@@ -276,9 +338,12 @@ public sealed class WorkOutboxDispatcher
         var attempt = (row?.AttemptCount ?? 0) + 1;
         string? errorCode = null;
         var permanent = false;
+        var handlerStarted = time.GetTimestamp();
         try
         {
             await consumer.HandleAsync(message, cancellationToken);
+            WorkOutboxDispatcherMetrics.RecordHandlerDuration(
+                time.GetElapsedTime(handlerStarted), sourceName, consumerName, eventType, WorkOutboxDispatcherMetrics.OutcomeSucceeded);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -286,6 +351,8 @@ public sealed class WorkOutboxDispatcher
         }
         catch (OutboxPermanentFailureException failure)
         {
+            WorkOutboxDispatcherMetrics.RecordHandlerDuration(
+                time.GetElapsedTime(handlerStarted), sourceName, consumerName, eventType, WorkOutboxDispatcherMetrics.OutcomeRefused);
             errorCode = failure.Code;
             permanent = true;
             logger.LogError(failure, "Outbox consumer {Consumer} refused message {MessageId} permanently ({Code}).",
@@ -293,6 +360,8 @@ public sealed class WorkOutboxDispatcher
         }
         catch (Exception failure)
         {
+            WorkOutboxDispatcherMetrics.RecordHandlerDuration(
+                time.GetElapsedTime(handlerStarted), sourceName, consumerName, eventType, WorkOutboxDispatcherMetrics.OutcomeFailed);
             errorCode = ConsumerExceptionCode;
             logger.LogWarning(failure, "Outbox consumer {Consumer} failed message {MessageId} on attempt {Attempt}.",
                 consumerName, messageId, attempt);
@@ -338,7 +407,7 @@ public sealed class WorkOutboxDispatcher
             db.OutboxDeliveries.Add(row);
         }
 
-        if (!await SaveRowAsync(db, sourceName, consumerName, messageId, insert, cancellationToken))
+        if (!await SaveRowAsync(db, consumerName, messageId, insert, cancellationToken))
         {
             return false;
         }
@@ -347,28 +416,30 @@ public sealed class WorkOutboxDispatcher
         {
             case Outcome.Delivered:
                 tally.Delivered++;
-                DeliveredCounter.Add(1);
+                WorkOutboxDispatcherMetrics.RecordDelivered(sourceName, consumerName, eventType);
                 break;
             case Outcome.Poisoned:
                 tally.Poisoned++;
-                PoisonCounter.Add(1);
+                WorkOutboxDispatcherMetrics.RecordPoison(sourceName, consumerName, eventType);
                 break;
             default:
                 tally.Retrying++;
-                RetryCounter.Add(1);
+                WorkOutboxDispatcherMetrics.RecordRetry(sourceName, consumerName, eventType);
                 break;
         }
 
         return resolved;
     }
 
+    // The race check uses the inbox/dedup key (company via the query filter, consumer, message id): a row of the same
+    // message written first by another dispatcher, from any source, is a conflict and not a storage error.
     private Task<bool> SaveRowAsync(
-        WorkDbContext db, string sourceName, string consumerName, Guid messageId, bool insert, CancellationToken cancellationToken) =>
+        WorkDbContext db, string consumerName, Guid messageId, bool insert, CancellationToken cancellationToken) =>
         SaveOrConflictAsync(
             db,
             ct => insert
                 ? db.OutboxDeliveries.AsNoTracking().AnyAsync(
-                    x => x.SourceName == sourceName && x.ConsumerName == consumerName && x.MessageId == messageId, ct)
+                    x => x.ConsumerName == consumerName && x.MessageId == messageId, ct)
                 : Task.FromResult(false),
             cancellationToken);
 
@@ -407,7 +478,14 @@ public sealed class WorkOutboxDispatcher
 
     private static bool IsPrintableAscii(string value) => value.All(c => c is >= '!' and <= '~');
 
-    private static bool IsStoredName(string? value) =>
+    private static HashSet<string> DuplicateNames(IEnumerable<string?> names) =>
+        names.Where(n => n is not null)
+            .GroupBy(n => n!, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static bool IsStoredName([NotNullWhen(true)] string? value) =>
         !string.IsNullOrEmpty(value) && value.Length <= MaxNameLength && IsPrintableAscii(value);
 
     private static bool IsValidPosition(string? value) =>
@@ -438,5 +516,7 @@ public sealed class WorkOutboxDispatcher
         public int Poisoned;
         public int Duplicates;
         public int Invalid;
+        public int CrossSourceDuplicates;
+        public int Unrouted;
     }
 }

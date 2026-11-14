@@ -398,6 +398,10 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
 
                     b.HasKey("CompanyId", "SourceName", "ConsumerName", "MessageId");
 
+                    b.HasIndex("CompanyId", "ConsumerName", "MessageId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkOutboxDeliveries_ConsumerMessage");
+
                     b.HasIndex("CompanyId", "Status", "LastAttemptAtUtc")
                         .HasDatabaseName("IX_WorkOutboxDeliveries_Open")
                         .HasFilter("[Status] <> 1");

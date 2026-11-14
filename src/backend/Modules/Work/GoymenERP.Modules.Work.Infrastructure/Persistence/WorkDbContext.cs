@@ -161,6 +161,8 @@ public sealed class WorkDbContext(
         + "OR ([Status] = 2 AND [DeliveredAtUtc] IS NULL AND [NextAttemptAtUtc] IS NOT NULL AND [LastErrorCode] IS NOT NULL) "
         + "OR ([Status] = 3 AND [DeliveredAtUtc] IS NULL AND [NextAttemptAtUtc] IS NULL AND [LastErrorCode] IS NOT NULL))";
 
+    internal const string ConsumerMessageIndexName = "UX_WorkOutboxDeliveries_ConsumerMessage";
+
     private void ConfigureOutboxDispatch(ModelBuilder modelBuilder)
     {
         var cursor = modelBuilder.Entity<WorkOutboxSourceCursorRow>();
@@ -193,6 +195,10 @@ public sealed class WorkDbContext(
         delivery.HasIndex(x => new { x.CompanyId, x.Status, x.LastAttemptAtUtc })
             .HasFilter("[Status] <> 1")
             .HasDatabaseName("IX_WorkOutboxDeliveries_Open");
+        // Registration contract v1 (F-021): the inbox/dedup key is (company, consumer, message id), whatever the source.
+        delivery.HasIndex(x => new { x.CompanyId, x.ConsumerName, x.MessageId })
+            .IsUnique()
+            .HasDatabaseName(ConsumerMessageIndexName);
         delivery.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         delivery.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
