@@ -857,6 +857,17 @@ public static class ErpPermissions
     public const string PurchasingOrdersPriceRead = "purchasing.orders.price.read";
 
     /// <summary>
+    /// A3 API-30 (ALS-D94, EK16; plan API-12/API-17 name): revise an existing purchase order — today only a line's delivery
+    /// schedule (termin dilimleri), which on an APPROVED order needs no re-approval when the total and the price stay (ALS-D94);
+    /// the header/line revision with Rev+1 and re-approval (ALS-D9, API-12) and the breakdown (API-17) take the same name when
+    /// they come. The Purchasing owner's name (PurchasingPermissionManifestV1.OrdersRevise), apart from entering, approving,
+    /// receiving and cancelling; none confers another. Sinan (#66 6824883445): no other name is opened for the schedule.
+    /// Registered, not granted: no role, seed or user receives it here (only SENTETIK browser-suite personas in disposable
+    /// stacks); the persona card and any real grant stay a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingOrdersRevise = "purchasing.orders.revise";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1130,6 +1141,7 @@ public static class ErpPermissions
             PurchasingRequestsWithdraw,
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
+            PurchasingOrdersRevise,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1307,6 +1319,7 @@ public static class ErpPermissions
             PurchasingRequestsWithdraw,
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
+            PurchasingOrdersRevise,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

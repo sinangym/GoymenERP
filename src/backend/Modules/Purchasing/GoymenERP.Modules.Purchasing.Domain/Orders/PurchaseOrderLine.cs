@@ -75,6 +75,24 @@ public sealed class PurchaseOrderLine
     /// </summary>
     public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity).Subtract(CancelledQuantity);
 
+    /// <summary>
+    /// A3 API-30 (ALS-D33): the line's current delivery schedule (termin dilimleri), empty until one is recorded; its slices sum to
+    /// <see cref="Quantity"/>. Only <see cref="PurchaseOrder.SetLineDeliverySchedule"/> replaces it, always as a whole set.
+    /// </summary>
+    public IReadOnlyList<PurchaseOrderDeliverySlice> DeliverySchedule { get; private set; } = [];
+
+    internal void ReplaceDeliverySchedule(IReadOnlyList<PurchaseOrderDeliverySlice> slices)
+    {
+        if (Kind != PurchaseOrderLineKind.General || slices.Count == 0
+            || slices.Aggregate(Quantity.Zero(Quantity.Unit), (sum, slice) => sum.Add(slice.Quantity)).Value != Quantity.Value)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: termin dilimleri genel satırın sipariş miktarına eşit değil.");
+        }
+
+        DeliverySchedule = slices.ToArray();
+    }
+
     internal void AddTechnicalSlice(Quantity slice)
     {
         var next = TechnicalQuantity.Add(slice);

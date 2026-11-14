@@ -94,6 +94,29 @@ public static class PurchasingRuleCodes
 
     /// <summary>A1-3: the order's remainder was cancelled; no acceptance share or breakdown is added to it.</summary>
     public const string OrderCancelled = "purchasing_order_cancelled";
+
+    /// <summary>A3 API-30 (ALS-D33): a delivery schedule is recorded on a general line; a technical line's quantity is counted in its general line's schedule.</summary>
+    public const string ScheduleOnTechnicalLine = "purchasing_schedule_on_technical_line";
+
+    /// <summary>A3 API-30: a delivery schedule has at least one slice (a schedule is replaced as a whole, never emptied).</summary>
+    public const string ScheduleEmpty = "purchasing_schedule_empty";
+
+    /// <summary>A3 API-30: a line's schedule holds at most <see cref="Orders.PurchaseOrder.MaximumScheduleSlices"/> slices.</summary>
+    public const string ScheduleTooManySlices = "purchasing_schedule_too_many_slices";
+
+    /// <summary>A3 API-30: the same slice id twice in one schedule.</summary>
+    public const string ScheduleDuplicateSliceId = "purchasing_schedule_duplicate_slice_id";
+
+    /// <summary>A3 API-30: every delivery slice carries a quantity above zero.</summary>
+    public const string ScheduleSliceNotPositive = "purchasing_schedule_slice_not_positive";
+
+    /// <summary>A3 API-30 (plan API-30 "toplam = satır miktarı"): the slices together equal the line's ordered quantity exactly.</summary>
+    public const string ScheduleTotalMismatch = "purchasing_schedule_total_mismatch";
+
+    /// <summary>A3 API-30, ALS-D81 (Sinan #66 6816723313 madde 3): after a partial acceptance only the remaining quantity's termin
+    /// changes; a new schedule that moves, re-dates, renames or shrinks below the received part a slice the acceptance covers is refused.</summary>
+    public const string ScheduleReceivedPortionLocked = "purchasing_schedule_received_portion_locked";
+
     public const string DuplicateLineId = "purchasing_duplicate_line_id";
     public const string LineNotFound = "purchasing_line_not_found";
     public const string TechnicalLineNotBreakable = "purchasing_technical_line_not_breakable";

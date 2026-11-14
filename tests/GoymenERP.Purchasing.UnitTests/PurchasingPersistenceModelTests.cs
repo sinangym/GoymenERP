@@ -202,7 +202,10 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(8, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(9, PurchasingPermissionManifestV1.Names.Count);
+        // A3 API-30 (ALS-D94): the revise name measures the schedule command only; the schedule screen (UI-07) brings its control.
+        Assert.Contains("purchasing.orders.revise", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
         // A2a-1 (PRS-02): the price read governs disclosure only; no shell control or route is measured with it.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead));
@@ -233,14 +236,15 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_and_A2a_5a_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_and_A3_API_30_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
         Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
                 "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
                 "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale",
-                "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval"],
-            context.Database.GetMigrations().TakeLast(8));
+                "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
+                "20261112014446_AddPurchaseOrderLineDeliverySchedule"],
+            context.Database.GetMigrations().TakeLast(9));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -381,6 +385,43 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("THROW 51172", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[ApprovedBy] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_A3_API_30_delivery_slices_are_an_append_only_tenant_table_bound_to_the_line_with_a_Down_that_refuses_while_a_slice_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var slices = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseOrderLineDeliverySliceRow))!;
+        Assert.Equal(("PurchaseOrderLineDeliverySlices", PurchasingDbContext.Schema), (slices.GetTableName(), slices.GetSchema()));
+        Assert.Equal([nameof(PurchaseOrderLineDeliverySliceRow.CompanyId), nameof(PurchaseOrderLineDeliverySliceRow.OrderId),
+                nameof(PurchaseOrderLineDeliverySliceRow.OrderVersionAfter), nameof(PurchaseOrderLineDeliverySliceRow.SliceNo)],
+            slices.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal((18, 3), (slices.FindProperty(nameof(PurchaseOrderLineDeliverySliceRow.Quantity))!.GetPrecision(),
+            slices.FindProperty(nameof(PurchaseOrderLineDeliverySliceRow.Quantity))!.GetScale()));
+        Assert.Equal("date", slices.FindProperty(nameof(PurchaseOrderLineDeliverySliceRow.DeliveryDate))!.GetColumnType());
+        var checks = slices.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal("[Quantity] > 0", checks["CK_PurchaseOrderLineDeliverySlices_Quantity"]);
+        Assert.Equal("[SliceNo] >= 1 AND [SliceNo] <= 500", checks["CK_PurchaseOrderLineDeliverySlices_SliceNo"]);
+        Assert.Equal("[OrderVersionAfter] >= 2", checks["CK_PurchaseOrderLineDeliverySlices_Version"]);
+        Assert.Contains("[SliceId] <> '00000000-0000-0000-0000-000000000000'", checks["CK_PurchaseOrderLineDeliverySlices_Identity"], StringComparison.Ordinal);
+        Assert.Contains("LEN([RecordedBy]) > 0", checks["CK_PurchaseOrderLineDeliverySlices_Text"], StringComparison.Ordinal);
+        // Bound to the order and to the line of the same company; the slice id is unique within one revision.
+        Assert.Contains(slices.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PurchaseOrderLineRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual([nameof(PurchaseOrderLineDeliverySliceRow.CompanyId),
+                nameof(PurchaseOrderLineDeliverySliceRow.OrderId), nameof(PurchaseOrderLineDeliverySliceRow.LineId)]));
+        Assert.Contains(slices.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PurchaseOrderRow));
+        Assert.All(slices.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Contains(slices.GetIndexes(), index => index.IsUnique && index.GetDatabaseName() == "UX_PurchaseOrderLineDeliverySlices_SliceId");
+
+        // Up creates the table (no SQL, nothing backfilled); Down refuses (51173) before the drop while a slice exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderLineDeliverySchedule();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51173", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseOrderLineDeliverySlices]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[^1]);
     }
 
     [Fact]

@@ -1095,6 +1095,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/purchasing/orders/{id}/cancellation", "CancelPurchaseOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/CancelPurchaseOrderRequest", ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule", "SetPurchaseOrderLineScheduleV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SetPurchaseOrderLineScheduleRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/orders/{id}/goods-receipts", "GetPurchaseGoodsReceiptsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid", "query:limit:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$"]),
@@ -1713,6 +1716,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetPurchaseOrderTotalsV1"] = "ref:PurchaseOrderTotalsView",
             ["GetPurchaseOrderCancelImpactV1"] = "ref:PurchaseOrderCancelImpactView",
             ["CancelPurchaseOrderV1"] = "ref:PurchaseOrderResponse",
+            ["SetPurchaseOrderLineScheduleV1"] = "ref:PurchaseOrderResponse",
             ["GetPurchaseGoodsReceiptsV1"] = "ref:PurchaseGoodsReceiptPageV1",
             ["GetPurchaseGoodsReceiptV1"] = "ref:PurchaseGoodsReceiptDetailV1",
             ["GetPurchaseGoodsReceiptQuantityComparisonV1"] = "ref:PurchaseGoodsReceiptQuantityComparisonV1",
@@ -2075,6 +2079,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseOrderTotalsV1",
         "GetPurchaseOrderCancelImpactV1",
         "CancelPurchaseOrderV1",
+        "SetPurchaseOrderLineScheduleV1",
         "GetPurchaseGoodsReceiptsV1",
         "GetPurchaseGoodsReceiptV1",
         "GetPurchaseGoodsReceiptQuantityComparisonV1",
@@ -2316,6 +2321,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreatePurchaseOrderV1",
         "ApprovePurchaseOrderV1",
         "CancelPurchaseOrderV1",
+        "SetPurchaseOrderLineScheduleV1",
         "RecordPurchaseGoodsReceiptV1",
         "ProposeAccountingPeriodV1",
         "ApproveAccountingPeriodV1",
@@ -2629,6 +2635,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["ApprovePurchaseOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CancelPurchaseOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["SetPurchaseOrderLineScheduleV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordPurchaseGoodsReceiptV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["ProposeAccountingPeriodV1"] = [StatusCodes.Status201Created],
                 ["ApproveAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
@@ -2904,6 +2911,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreatePurchaseOrderV1",
         "ApprovePurchaseOrderV1",
         "CancelPurchaseOrderV1",
+        "SetPurchaseOrderLineScheduleV1",
         "RecordPurchaseGoodsReceiptV1",
         "GetPurchasingProductCandidatesV1",
         "ProposeAccountingPeriodV1",
@@ -3119,6 +3127,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseOrderTotalsV1:404",
         "GetPurchaseOrderCancelImpactV1:404",
         "CancelPurchaseOrderV1:404",
+        "SetPurchaseOrderLineScheduleV1:404",
         "GetPurchaseGoodsReceiptsV1:404",
         "GetPurchaseGoodsReceiptV1:404",
         "GetPurchaseGoodsReceiptQuantityComparisonV1:404",
@@ -3913,6 +3922,9 @@ public sealed partial class OpenApiContractGenerationTests
                 "version_conflict"],
             ["CancelPurchaseOrderV1:422"] = ["purchasing_order_cancellation_reason_required", "purchasing_order_cancellation_reason_too_long",
                 "validation_failed"],
+            ["SetPurchaseOrderLineScheduleV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["SetPurchaseOrderLineScheduleV1:409"] = ["concurrent_change", "purchasing_order_state", "same_key_payload_mismatch", "version_conflict"],
+            ["SetPurchaseOrderLineScheduleV1:422"] = ["unsupported_unit", "validation_failed"],
             ["GetPurchaseGoodsReceiptsV1:400"] = ["validation_failed"],
             ["GetPurchaseGoodsReceiptV1:400"] = ["validation_failed"],
             ["RecordPurchaseGoodsReceiptV1:400"] =
@@ -4912,7 +4924,15 @@ public sealed partial class OpenApiContractGenerationTests
                     // A1-3 (No.161 §2): the unaccepted remainder cancelled with the order, "0" until then.
                     ("cancelled", "type:string"),
                     // A2a-1: the line's price, null when it has none ("fiyat bekliyor") or when it is withheld (PRS-02).
-                    ("price", "oneOf:ref:PurchaseOrderLinePriceView|type:null")),
+                    ("price", "oneOf:ref:PurchaseOrderLinePriceView|type:null"),
+                    // A3 API-30 (ALS-D21): the line's current delivery schedule, empty until one is recorded.
+                    ("deliverySchedule", "type:array;items:ref:PurchaseOrderDeliverySliceView")),
+                ["PurchaseOrderDeliverySliceView"] = ObjectSchema(
+                    ["sliceId", "sliceNo", "quantity", "deliveryDate"],
+                    ("sliceId", "type:string;format:uuid"),
+                    ("sliceNo", "type:integer|string;format:int32"),
+                    ("quantity", "type:string"),
+                    ("deliveryDate", "type:string;format:date")),
                 ["PurchaseOrderResponse"] = ObjectSchema(
                     ["detail", "isReplay", "originalCorrelationId"],
                     ("detail", "ref:PurchaseOrderDetailView"),
@@ -8846,6 +8866,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion", "reason"],
                     ("expectedVersion", "type:string"),
                     ("reason", "type:string")),
+                // A3 API-30 (ALS-D33, ALS-D21): the line's delivery schedule, replaced whole.
+                ["SetPurchaseOrderLineScheduleRequest"] = ObjectSchema(
+                    ["expectedVersion", "slices"],
+                    ("expectedVersion", "type:string"),
+                    ("slices", "type:array;items:ref:PurchaseOrderDeliverySliceRequest")),
+                ["PurchaseOrderDeliverySliceRequest"] = ObjectSchema(
+                    ["sliceId", "quantity", "deliveryDate"],
+                    ("sliceId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("deliveryDate", "type:string;format:date")),
                 ["RecordPurchaseGoodsReceiptV1"] = ObjectSchema(
                     ["expectedPurchaseOrderVersion", "expectedProductVersion", "acceptanceId", "acceptedQuantity", "measuredQuantityKg", "locationId", "lotId", "labelId", "labelCode", "heatNumber", "coilNumber", "movementId", "occurredAtUtc"],
                     ("expectedPurchaseOrderVersion", "type:string"),

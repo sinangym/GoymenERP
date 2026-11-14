@@ -106,6 +106,17 @@ public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 /// </summary>
 public sealed record CancelPurchaseOrderRequest(string ExpectedVersion, string Reason);
 
+/// <summary>
+/// A3 API-30 (ALS-D33, ALS-D21 "sıra"): POST …/orders/{id}/lines/{lineId}/schedule — the line's delivery schedule (termin
+/// dilimleri) at the expected version, replacing the previous one whole: 1..500 slices with distinct client ids, each a positive
+/// quantity in the line's unit with its delivery date; their sum is exactly the line's ordered quantity. The previous schedule
+/// stays as a revision of the earlier order version (append only).
+/// </summary>
+public sealed record SetPurchaseOrderLineScheduleRequest(string ExpectedVersion, IReadOnlyList<PurchaseOrderDeliverySliceRequest> Slices);
+
+/// <summary>A3 API-30: one delivery slice — the client's slice id, the quantity as exact decimal text (the line's unit) and the date.</summary>
+public sealed record PurchaseOrderDeliverySliceRequest(Guid SliceId, string Quantity, DateOnly DeliveryDate);
+
 // ---- views --------------------------------------------------------------------------------------
 
 /// <summary>
@@ -201,7 +212,16 @@ public sealed record PurchaseOrderLineView(
     /// withheld when it is <c>Withheld</c> (PRS-02). A technical line is never priced (its quantity is priced on its general line).
     /// </summary>
     public PurchaseOrderLinePriceView? Price { get; init; }
+
+    /// <summary>
+    /// A3 API-30 (ALS-D21): the line's current delivery schedule in slice order — empty until one is recorded; a technical line
+    /// has none (its quantity is scheduled on its general line).
+    /// </summary>
+    public IReadOnlyList<PurchaseOrderDeliverySliceView> DeliverySchedule { get; init; } = [];
 }
+
+/// <summary>A3 API-30: one delivery slice of a line's current schedule, its quantity as exact text in the line's unit.</summary>
+public sealed record PurchaseOrderDeliverySliceView(Guid SliceId, int SliceNo, string Quantity, DateOnly DeliveryDate);
 
 /// <summary>
 /// A2a-1 (TEK-01, API-20): a priced line's price as exact text in the order's currency — the unit price and its price unit, the
@@ -588,7 +608,8 @@ public sealed record PurchasingServiceBindings(
     string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove,
     string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw,
     string? OrderCancelPermission = PurchasingPermissionManifestV1.OrdersCancel,
-    string? PriceReadPermission = PurchasingPermissionManifestV1.OrdersPriceRead);
+    string? PriceReadPermission = PurchasingPermissionManifestV1.OrdersPriceRead,
+    string? RevisePermission = PurchasingPermissionManifestV1.OrdersRevise);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -607,6 +628,7 @@ public static class PurchasingApiV1
     public const string OrderCancelImpactPath = "/api/v1/purchasing/orders/{id}/cancel-impact";
     public const string OrderTotalsPath = "/api/v1/purchasing/orders/{id}/totals";
     public const string OrderCancellationPath = "/api/v1/purchasing/orders/{id}/cancellation";
+    public const string OrderLineSchedulePath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string CurrencyCandidatesPath = "/api/v1/purchasing/references/currencies";
     public const string IdempotencyHeader = "Idempotency-Key";
@@ -796,6 +818,35 @@ public static class PurchasingJson
         if (request.Reason is null)
         {
             throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>
+    /// A3 API-30: the shape only — 1..500 slices, non-empty distinct slice ids, exact decimal quantity text above zero (a zero
+    /// quantity text such as <c>"0"</c> is refused here, a 400, like every other shape refusal). Whether each quantity fits the
+    /// unit's scale and the slices sum to the line's quantity is the service's and the domain's 422.
+    /// </summary>
+    public static SetPurchaseOrderLineScheduleRequest ReadSetLineSchedule(string json)
+    {
+        var request = JsonSerializer.Deserialize<SetPurchaseOrderLineScheduleRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Slices is null || request.Slices.Count < 1 || request.Slices.Count > Domain.Orders.PurchaseOrder.MaximumScheduleSlices)
+        {
+            throw new JsonException("Invalid slices.");
+        }
+
+        var ids = new HashSet<Guid>();
+        foreach (var slice in request.Slices)
+        {
+            if (slice is null || slice.SliceId == Guid.Empty || !ids.Add(slice.SliceId) || slice.DeliveryDate == default)
+            {
+                throw new JsonException("Invalid slice fields.");
+            }
+
+            RequireDecimalShape(slice.Quantity);
         }
 
         return request;
