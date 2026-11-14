@@ -54,6 +54,8 @@ const MOVEMENT_KIND_TEXT = {
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
 
+const GENEALOGY_KIND_TEXT = { Split: 'Bölme', Merge: 'Birleştirme', Manufacturing: 'Üretim' } as const
+
 export function InventoryLabelDetailPage() {
   const shell = useShellState()
   const key = contextKey(shell)
@@ -230,7 +232,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
           <thead><tr><th>İşlem</th><th>Tür</th><th>Zaman</th><th>Kaynak</th><th>Çıktı</th></tr></thead>
           <tbody>{genealogy.edges.map((edge) => <tr key={`${edge.transformationId}:${edge.sourceLabelId}:${edge.outputLabelId}`}>
             <td className={styles.mono}>…{edge.transformationId.slice(-8)}</td>
-            <td>{edge.kind === 'Split' ? 'Bölme' : 'Birleştirme'}</td>
+            <td>{GENEALOGY_KIND_TEXT[edge.kind]}</td>
             <td>{edge.occurredAtUtc}</td>
             <td>{canReadLabel
               ? <Link to={inventoryLabelDetailPath(edge.sourceLabelId)}>{edge.sourceCode}</Link>

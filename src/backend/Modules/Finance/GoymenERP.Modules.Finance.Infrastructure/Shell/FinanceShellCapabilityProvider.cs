@@ -38,11 +38,16 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// <c>/cari/hesap-takibi</c>). Neither is a new master; amounts stay the endpoint's separate
 /// <c>finance.party-ledger.amount.read</c> decision, not a route gate.
 /// </para>
+/// <para>
+/// <b>1.8 (API-23):</b> the reversal of a recorded payment is two controls of the payment detail (no new route):
+/// propose under <c>finance.manual-bank-payment.reverse.propose</c> and approve / reject under
+/// <c>finance.manual-bank-payment.reverse.approve</c>. The approver must be another user (service and database).
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -100,6 +105,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ManualBankPaymentDetailRoutePath = "/finans/odemeler/:paymentId";
     public const string ManualBankPaymentApproveCapabilityId = "finance.manual-bank-payments.approve";
     public const string ManualBankPaymentRecordCapabilityId = "finance.manual-bank-payments.record";
+    public const string ManualBankPaymentReverseProposeCapabilityId = "finance.manual-bank-payments.reverse.propose";
+    public const string ManualBankPaymentReverseApproveCapabilityId = "finance.manual-bank-payments.reverse.approve";
     public const string AllocationListScreenId = "F-03";
     public const string AllocationListCapabilityId = "finance.allocations.list";
     public const string AllocationListRouteId = "finance.allocations.list";
@@ -204,6 +211,24 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 [
                     FinancePermissionNames.ManualBankPaymentDraftRead,
                     FinancePermissionNames.ManualBankPaymentRecord,
+                    ErpPermissions.AccountingPeriodsRead,
+                ],
+            },
+            manualBankPaymentDetail with
+            {
+                CapabilityId = ManualBankPaymentReverseProposeCapabilityId,
+                ParentCapabilityId = ManualBankPaymentDetailCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.PaymentReversePropose],
+            },
+            manualBankPaymentDetail with
+            {
+                CapabilityId = ManualBankPaymentReverseApproveCapabilityId,
+                ParentCapabilityId = ManualBankPaymentDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    FinancePermissionNames.ManualBankPaymentDraftRead,
+                    FinancePermissionNames.PaymentReverseApprove,
                     ErpPermissions.AccountingPeriodsRead,
                 ],
             },

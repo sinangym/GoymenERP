@@ -38,6 +38,16 @@ public sealed class InventoryLabelGenealogyTests
         Assert.Single(transformation.Outputs);
     }
 
+    [Fact]
+    public void A_split_or_merge_can_never_be_recorded_with_the_manufacturing_kind()
+    {
+        Assert.Equal(3, (int)InventoryLabelTransformationKind.Manufacturing);
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Manufacturing,
+            [Source("SRC-1", 4m), Source("SRC-2", 6m)], [Output("OUT", 10m)]));
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Manufacturing,
+            [Source("SRC", 10m)], [Output("OUT-1", 4m), Output("OUT-2", 6m)]));
+    }
+
     [Theory]
     [InlineData(InventoryLabelTransformationKind.Split, 2, 1)]
     [InlineData(InventoryLabelTransformationKind.Merge, 1, 2)]

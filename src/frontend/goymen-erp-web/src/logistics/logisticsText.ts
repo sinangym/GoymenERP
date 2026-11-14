@@ -17,6 +17,7 @@ import {
 export const INSTRUCTION_STATUS_TEXT: Record<InstructionStatus, string> = {
   [INSTRUCTION_STATUS.draft]: 'Taslak',
   [INSTRUCTION_STATUS.issued]: 'Yayımlandı',
+  [INSTRUCTION_STATUS.cancelled]: 'İptal edildi',
 }
 
 export const MEASUREMENT_TEXT: Record<Measurement, string> = {
@@ -128,6 +129,11 @@ export const INSTRUCTION_DETAIL_TEXT = {
   backToList: 'Yükleme talimatları',
   heading: 'Yükleme talimatı',
   status: 'Durum',
+  cancelledNotice: 'Bu talimat iptal edildi. Kayıtlar yalnız görüntülenir; yeni işlem yapılamaz.',
+  /** F-020: the stored cancel facts of a Cancelled instruction (the canceller is a user id; no name lookup). */
+  cancelledBy: 'İptal eden',
+  cancelledAt: 'İptal zamanı',
+  cancelReason: 'İptal nedeni',
   version: 'Kayıt sürümü',
   effectiveOn: 'İş tarihi',
   createdAt: 'Oluşturulma',

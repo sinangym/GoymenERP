@@ -137,6 +137,20 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
     }
 
     [Fact]
+    public async Task A_refund_whose_payment_reversal_was_approved_gave_nothing_back_and_is_not_netted()
+    {
+        // API-23: the refund of 100.00 was reversed (approved), so the 100.00 advance is deducted in full again; a refund
+        // of another company's reversal row changes nothing here.
+        var refund = Outgoing("100.00");
+        var kept = Outgoing("30.00");
+        await using var run = await Run.CreateAsync([Row("125.50", "125.50")], payments: [Payment(Guid.NewGuid(), "100.00")],
+            outgoing: [refund, kept], paymentReversals: [PaymentReversal(refund)]);
+
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 55.50m)],
+            (await run.Port(Company).ReadPartyRiskAsync(Party, Account)).OpenReceivables.Amounts);
+    }
+
+    [Fact]
     public async Task An_unreadable_payment_or_allocation_state_makes_the_receivables_unavailable_never_a_wrong_deduction()
     {
         var source = Guid.NewGuid();
@@ -306,6 +320,26 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         CorrelationId = "SENTETIK-correlation",
     };
 
+    private static OutgoingMoneyEventReversalRow PaymentReversal(OutgoingMoneyEventRow original) => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = original.CompanyId,
+        PaymentId = original.PaymentId,
+        OriginalEventId = original.Id,
+        ProposalId = Guid.NewGuid(),
+        PartyId = original.PartyId,
+        CompanyAccountId = original.CompanyAccountId,
+        TreasuryAccountId = original.TreasuryAccountId,
+        CurrencyId = original.CurrencyId,
+        AmountText = original.AmountText,
+        ProfileId = original.ProfileId,
+        ProfileVersion = original.ProfileVersion,
+        OccurredOn = new DateOnly(2026, 10, 28),
+        RecordedAtUtc = new DateTimeOffset(2026, 10, 28, 9, 0, 0, TimeSpan.Zero),
+        RecordedBy = "SENTETIK-checker",
+        CorrelationId = "SENTETIK-correlation",
+    };
+
     private static FinanceSourceAllocationStateRow State(Guid sourceId, string original, string unallocated, Guid? currency = null) => new()
     {
         CompanyId = Company,
@@ -343,7 +377,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
 
         public static async Task<Run> CreateAsync(FinanceOpenItemRow[] rows, MoneyEventRow[] payments,
             FinanceSourceAllocationStateRow[]? states = null, ReversalProposalRow[]? reversals = null,
-            OutgoingMoneyEventRow[]? outgoing = null)
+            OutgoingMoneyEventRow[]? outgoing = null, OutgoingMoneyEventReversalRow[]? paymentReversals = null)
         {
             var run = new Run();
             var companies = rows.Select(row => row.CompanyId).Concat(payments.Select(row => row.CompanyId))
@@ -358,6 +392,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 db.SourceAllocationStates.AddRange((states ?? []).Where(row => row.CompanyId == company));
                 db.ReversalProposals.AddRange((reversals ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEvents.AddRange((outgoing ?? []).Where(row => row.CompanyId == company));
+                db.OutgoingMoneyEventReversals.AddRange((paymentReversals ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
             }
 

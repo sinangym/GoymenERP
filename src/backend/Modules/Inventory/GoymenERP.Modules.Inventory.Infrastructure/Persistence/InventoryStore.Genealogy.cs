@@ -498,6 +498,100 @@ public sealed partial class InventoryStore
         }
     }
 
+    /// <summary>
+    /// B-03 (DEC-PRDCT-003): adds, without saving, the Manufacturing genealogy of one output label: one transformation
+    /// of kind <see cref="InventoryLabelTransformationKind.Manufacturing"/> whose inputs are the given input labels
+    /// (raw kilograms, no share) and whose single output is the output label. The caller's single save flushes it
+    /// together with the output receipt and its command row; the caller owns the edge set and never re-derives it on
+    /// a replay. At least one input is required, so an output label never has an empty genealogy.
+    /// </summary>
+    internal void StageManufacturingGenealogy(
+        Guid transformationId,
+        DateTimeOffset occurredAtUtc,
+        IReadOnlyList<ManufacturingGenealogyInput> inputs,
+        Guid outputLabelId,
+        long outputLabelVersion,
+        Kilograms outputQuantity,
+        InventoryCommandMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        RequireResolvedCompany();
+        var companyId = companyContext.CompanyId;
+        if (transformationId == Guid.Empty || outputLabelId == Guid.Empty || outputLabelVersion < 1
+            || occurredAtUtc.Offset != TimeSpan.Zero || inputs.Count == 0
+            || inputs.Any(input => input.LabelId == Guid.Empty || input.LabelId == outputLabelId
+                || input.LabelVersion < 1 || input.Quantity.Value <= 0m)
+            || inputs.Select(input => input.LabelId).Distinct().Count() != inputs.Count)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.MissingReference,
+                "Üretim soy ağacı en az bir girdi etiketi ve tek çıktı etiketi ister.");
+        }
+
+        var payloadHash = GenealogyPayloadHash(new
+        {
+            transformationId,
+            kind = (int)InventoryLabelTransformationKind.Manufacturing,
+            sources = inputs.Select(input => new
+            {
+                input.LabelId,
+                input.LabelVersion,
+                quantityKg = input.Quantity.ToString(),
+            }),
+            outputs = new[]
+            {
+                new { LabelId = outputLabelId, LabelVersion = outputLabelVersion, quantityKg = outputQuantity.ToString() },
+            },
+            occurredAtUtc,
+            reason = ManufacturingGenealogyReason,
+        });
+        var transformationRow = new LabelTransformationRow
+        {
+            Id = transformationId,
+            CompanyId = companyId,
+            Kind = (int)InventoryLabelTransformationKind.Manufacturing,
+            OccurredAtUtc = occurredAtUtc,
+            Reason = ManufacturingGenealogyReason,
+            PayloadHash = payloadHash,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+            RecordedBy = metadata.ActorId.Trim(),
+            CorrelationId = metadata.CorrelationId.Trim(),
+        };
+        dbContext.LabelTransformations.Add(transformationRow);
+        var sequence = 0;
+        foreach (var input in inputs)
+        {
+            dbContext.LabelTransformationInputs.Add(new LabelTransformationInputRow
+            {
+                CompanyId = companyId,
+                TransformationId = transformationId,
+                Sequence = ++sequence,
+                LabelId = input.LabelId,
+                LabelVersion = input.LabelVersion,
+                QuantityKg = input.Quantity.Value,
+            });
+        }
+
+        dbContext.LabelTransformationOutputs.Add(new LabelTransformationOutputRow
+        {
+            CompanyId = companyId,
+            TransformationId = transformationId,
+            Sequence = 1,
+            LabelId = outputLabelId,
+            LabelVersion = outputLabelVersion,
+            QuantityKg = outputQuantity.Value,
+        });
+        var view = TransformationView(transformationRow, inputs.Select(input => input.LabelId).ToArray(),
+            [outputLabelId]);
+        Audit(metadata, companyId, "Inventory.LabelTransformation", transformationId,
+            "inventory.label-transformation.recorded.v1", nameof(InventoryLabelTransformationKind.Manufacturing),
+            null, 1, "{}", JsonSerializer.Serialize(view, Json), ManufacturingGenealogyReason);
+    }
+
+    /// <summary>The fixed reason of a Manufacturing genealogy transformation (its source is the output declaration).</summary>
+    internal const string ManufacturingGenealogyReason = "manufacturing.output-declaration";
+
+    internal sealed record ManufacturingGenealogyInput(Guid LabelId, long LabelVersion, Kilograms Quantity);
+
     private static string GenealogyHash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 

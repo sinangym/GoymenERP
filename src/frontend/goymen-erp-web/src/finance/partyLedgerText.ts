@@ -48,6 +48,7 @@ export const KIND_LABEL: Readonly<Record<PartyLedgerEntryKind, string>> = {
   PayableOpenItem: 'Alış faturası taksiti (borç)',
   OpenItemCancellation: 'Satış faturası iptali (ters kayıt)',
   PayableOpenItemCancellation: 'Alış faturası iptali (ters kayıt)',
+  ManualBankPaymentReversal: 'Ödeme ters kaydı',
 }
 
 /** Borçlu / alacaklı from the company's view of the party's account. */
@@ -65,6 +66,7 @@ export const OPEN_ORIGINAL = 'Ters kaydedilen tahsilatı aç'
 export const OPEN_INSTRUMENT = 'Çek/senedi aç'
 export const OPEN_COLLECTION_RECEIPT = 'Tahsilat kaydını aç'
 export const OPEN_PAYMENT = 'Ödemeyi aç'
+export const OPEN_REVERSED_PAYMENT = 'Ters kaydedilen ödemeyi aç'
 /** An admitted open item has no detail screen yet: its official document is shown by reference only. */
 export const OPEN_ITEM_NO_SCREEN = 'Resmî belge (ayrıntı ekranı yok)'
 

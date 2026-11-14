@@ -44,6 +44,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) "
         + "OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 9 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
 
+    /// <summary>
+    /// B-03: Split (1), Merge (2) and Manufacturing (3, an output label's descent from its order's net-issued input
+    /// labels). Compared by the persistence-model test.
+    /// </summary>
+    internal const string LabelTransformationKindCheck = "[Kind] IN (1, 2, 3)";
+
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
     internal DbSet<LabelRow> Labels => Set<LabelRow>();
@@ -257,7 +263,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         {
             table.HasCheckConstraint("CK_LabelTransformations_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_LabelTransformations_Kind", "[Kind] IN (1, 2)");
+            table.HasCheckConstraint("CK_LabelTransformations_Kind", LabelTransformationKindCheck);
             table.HasCheckConstraint("CK_LabelTransformations_Text",
                 "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([PayloadHash]) = 64");
         });

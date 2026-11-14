@@ -7,9 +7,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
 /// <summary>
 /// DEC-SAL-005 ("irsaliyesiz yükleme"): the Logistics-owned answer to the Sales-declared <see cref="ISalesOrderLoadingReadPortV1"/>
-/// — per Sales order line (the D4 binding every loading-instruction line carries) and unit, how many instruction lines Logistics
-/// holds for it, in any instruction state (Logistics has no cancellation of an instruction on main), and their instructed,
-/// loaded, shipped and delivered totals. It complements the AT-024 <see cref="LogisticsSalesOrderDeliveryReadPort"/> (definite
+/// — per Sales order line (the D4 binding every loading-instruction line carries) and unit, how many active instruction lines
+/// Logistics holds for it (a draft or issued instruction; F-020: the lines of a cancelled instruction are no longer bound, so an
+/// order line whose only instructions are cancelled is absent — the contract's valid zero), and their instructed, loaded,
+/// shipped and delivered totals. It complements the AT-024 <see cref="LogisticsSalesOrderDeliveryReadPort"/> (definite
 /// totals only) with the lines that are only instructed or loaded. It reads Logistics's own company-filtered lines only
 /// (another company's are invisible, never a 403), untracked, and creates nothing. The totals are the stored share totals
 /// (<c>CK_LoadingInstructionLines_Shares</c>: delivered ≤ shipped ≤ loaded ≤ instructed). The same Logistics-owned answer also
@@ -41,8 +42,16 @@ internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbCo
             return new SalesOrderLoadingReadAnswerV1(companyId, orderId, []);
         }
 
-        var totals = await dbContext.Lines.AsNoTracking()
-            .Where(line => line.CompanyId == companyId && line.SourceOrderId == orderId)
+        // F-020 ("plana yalnız aktif talimat satırları girer"): the lines of a cancelled instruction are left out altogether, so
+        // the count and the instructed total move together (Sales refuses an answer whose count and instructed disagree). A
+        // cancel is refused once a shipment exists, so a cancelled instruction never carries shipped or delivered quantity.
+        var totals = await (
+                from line in dbContext.Lines.AsNoTracking()
+                join instruction in dbContext.Instructions.AsNoTracking()
+                    on new { line.CompanyId, line.InstructionId } equals new { instruction.CompanyId, InstructionId = instruction.Id }
+                where line.CompanyId == companyId && line.SourceOrderId == orderId
+                    && instruction.Status != (int)LoadingInstructionStatus.Cancelled
+                select line)
             .GroupBy(line => new { line.SourceOrderLineId, line.UnitId })
             .Select(group => new
             {

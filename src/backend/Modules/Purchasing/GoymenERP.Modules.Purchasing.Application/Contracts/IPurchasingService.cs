@@ -46,6 +46,14 @@ public interface IPurchasingService
     Task<PurchaseOrderResponse> CancelOrderAsync(Guid orderId, CancelPurchaseOrderRequest request, PurchasingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// A3 API-30 (ALS-D33, ALS-D21): records a Draft or Approved order's general line delivery schedule (termin dilimleri) under
+    /// <c>purchasing.orders.revise</c> (ALS-D94) — slices that sum exactly to the line's ordered quantity, replacing the previous
+    /// schedule as a new revision at the next order version.
+    /// </summary>
+    Task<PurchaseOrderResponse> SetOrderLineScheduleAsync(Guid orderId, Guid lineId, SetPurchaseOrderLineScheduleRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     /// <summary>A1-3 (plan API-10): the cancellation's impact preview under <c>purchasing.orders.cancel</c>; reads only.</summary>
     Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default);
 

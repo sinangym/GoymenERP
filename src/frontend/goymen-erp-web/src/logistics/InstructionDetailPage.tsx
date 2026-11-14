@@ -21,6 +21,7 @@
  * AT-055 adds the dispatch-note (irsaliye) DRAFT (DispatchNoteCommand.tsx): the drafts and their lines are shown to every
  * reader; the form offers the definite shipments not on a live note (a shipment is linked to at most one non-cancelled note);
  * each note can be approved (the server numbers it), cancelled with a reason (releasing its shipments) and given its e-İrsaliye no.
+ * F-020 (LOJ-D6…D8): a cancelled instruction is read only — it shows who cancelled it, when and why, and offers no command.
  */
 
 import { useRef, useState } from 'react'
@@ -130,7 +131,8 @@ export function InstructionDetailPage() {
       detail={detail}
       backLink={backLink}
       commands={
-        companyId === null ? null : (
+        // F-020: no command applies to a cancelled instruction (the server refuses every one), so none is offered.
+        companyId === null || detail.instruction.status === INSTRUCTION_STATUS.cancelled ? null : (
           <>
             {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
                 section, or the notice of the command that caused the version step would vanish with it. */}
@@ -359,6 +361,7 @@ export function InstructionView({
   readonly commands?: React.ReactNode
 }) {
   const { instruction, lines, shares } = detail
+  const cancelled = instruction.status === INSTRUCTION_STATUS.cancelled
   const lineNo = (lineId: string) => lines.find((line) => line.lineId === lineId)?.lineNo ?? '?'
   return (
     <article className={styles.page} aria-labelledby="logistics-detail-heading">
@@ -373,16 +376,39 @@ export function InstructionView({
           </p>
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
-        <span className={styles.badge} data-testid="logistics-instruction-status">
+        <span className={cancelled ? `${styles.badge} ${styles.blocked}` : styles.badge} data-testid="logistics-instruction-status">
           {INSTRUCTION_STATUS_TEXT[instruction.status]}
         </span>
       </header>
+
+      {cancelled ? (
+        <p className={styles.notice} role="status" data-testid="logistics-instruction-cancelled">
+          {T.cancelledNotice}
+        </p>
+      ) : null}
 
       <dl className={styles.facts}>
         <div>
           <dt>{T.status}</dt>
           <dd>{INSTRUCTION_STATUS_TEXT[instruction.status]}</dd>
         </div>
+        {/* F-020: the stored cancel facts, verbatim — the canceller is the recorded user id (no name lookup), the reason as typed. */}
+        {!cancelled || instruction.cancelledBy === null || instruction.cancelledAtUtc === null || instruction.cancelReason === null ? null : (
+          <>
+            <div>
+              <dt>{T.cancelledBy}</dt>
+              <dd className={styles.identifier} data-testid="logistics-instruction-cancelled-by">{instruction.cancelledBy}</dd>
+            </div>
+            <div>
+              <dt>{T.cancelledAt}</dt>
+              <dd data-testid="logistics-instruction-cancelled-at">{formatInstant(instruction.cancelledAtUtc)}</dd>
+            </div>
+            <div>
+              <dt>{T.cancelReason}</dt>
+              <dd data-testid="logistics-instruction-cancel-reason">{instruction.cancelReason}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>{T.version}</dt>
           <dd data-testid="logistics-instruction-version">{instruction.version}</dd>

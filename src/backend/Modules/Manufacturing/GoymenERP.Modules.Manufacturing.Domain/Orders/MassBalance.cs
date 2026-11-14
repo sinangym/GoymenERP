@@ -66,6 +66,16 @@ public sealed record MassBalance(
 
     public bool IsFullyAccounted => Reconciliation.IsFullyAccounted;
 
+    /// <summary>
+    /// URT-D41 (1), URT-D42 (1): more mass is accounted on this parent roll than was issued to it (BAL-003 below zero).
+    /// The one definition the close (<see cref="OrderClosureAssessmentCalculatorV1"/>) and the read-only report of
+    /// earlier closes use. "Output" here is the whole BAL-003 accounted mass (every output class, the latest WIP reading
+    /// and the recorded corrections, none of which can be recorded yet) — never less than good + second + scrap + process
+    /// loss, so it refuses at least every case that narrower reading would. Where usable remnant, WIP and a correction
+    /// belong in that comparison (DEC-PRDCT-006) is not decided yet.
+    /// </summary>
+    public bool OutputExceedsInput => Unexplained < 0m;
+
     public Kilograms OutputOf(OutputClass outputClass) =>
         OutputsByClass.TryGetValue(outputClass, out var mass) ? mass : Kilograms.Zero;
 }
