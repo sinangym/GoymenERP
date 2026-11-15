@@ -325,25 +325,13 @@ internal sealed partial class CounterpartyCommandService(
                 return ResolveExistingExecution(winner, requestHash, metadata);
             }
 
-            var currentVersion = concurrencyContext switch
-            {
-                PartyConcurrencyContext => await ReadFencedPartyVersionAsync(
-                    metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
-                CustomerGroupConcurrencyContext => await ReadCustomerGroupVersionAsync(
-                    metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
-                EDocumentProfileConcurrencyContext => await ReadEDocumentProfileVersionAsync(
-                    concurrencyContext.PartyId, cancellationToken),
-                _ => await dbContext.CompanyPartyAccounts
-                    .AsNoTracking()
-                    .Where(x =>
-                        x.CompanyId == metadata.CompanyId
-                        && x.PartyId == concurrencyContext.PartyId)
-                    .Select(x => (long?)x.Version)
-                    .SingleOrDefaultAsync(cancellationToken),
-            };
+            var (expectedVersion, currentVersion) = concurrencyContext is PartyMergeConcurrencyContext mergeContext
+                ? await ReadPartyMergeConflictAsync(metadata.CompanyId, mergeContext, cancellationToken)
+                : (concurrencyContext.ExpectedVersion, await ReadConcurrencyContextVersionAsync(
+                    concurrencyContext, metadata.CompanyId, cancellationToken));
             var terminalResponse = currentVersion.HasValue
                 ? Responses.VersionConflict(
-                    concurrencyContext.ExpectedVersion,
+                    expectedVersion,
                     currentVersion.Value)
                 : Responses.NotFound();
             return await CompleteCommandAsync(
@@ -375,6 +363,29 @@ internal sealed partial class CounterpartyCommandService(
 
             return ResolveExistingExecution(winner, requestHash, metadata);
         }
+    }
+
+    private async Task<long?> ReadConcurrencyContextVersionAsync(
+        ConcurrencyContext concurrencyContext,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        return concurrencyContext switch
+        {
+            PartyConcurrencyContext => await ReadFencedPartyVersionAsync(
+                companyId, concurrencyContext.PartyId, cancellationToken),
+            CustomerGroupConcurrencyContext => await ReadCustomerGroupVersionAsync(
+                companyId, concurrencyContext.PartyId, cancellationToken),
+            EDocumentProfileConcurrencyContext => await ReadEDocumentProfileVersionAsync(
+                concurrencyContext.PartyId, cancellationToken),
+            _ => await dbContext.CompanyPartyAccounts
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId
+                    && x.PartyId == concurrencyContext.PartyId)
+                .Select(x => (long?)x.Version)
+                .SingleOrDefaultAsync(cancellationToken),
+        };
     }
 
     private Task<CommandExecution?> FindCommandExecutionAsync(

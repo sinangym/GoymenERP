@@ -81,6 +81,14 @@ public static class ErpPermissions
     public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
 
     /// <summary>
+    /// F-027 / EK-18 #76 (SINAN_KARARLARI_2026-10-21): approve the merge of a duplicate Cari party into a surviving party
+    /// at group level — the Counterparty owner's name (CounterpartyPartyMergePermissionsV1). Catalogue registration only:
+    /// no role, seed or user receives it here (the group-manager persona grant is a human gate). Company-wide only, and
+    /// the merge command measures it in every company that holds an account for either party. Not Critical (#76).
+    /// </summary>
+    public const string CounterpartyPartiesMergeApprove = "counterparty.parties.merge.approve";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -1202,6 +1210,7 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesMergeApprove,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1412,6 +1421,7 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesMergeApprove,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

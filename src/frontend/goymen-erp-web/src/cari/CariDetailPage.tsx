@@ -33,6 +33,7 @@ import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
 import { CariTradeNamePanel } from './CariTradeNamePanel'
 import { CariLegalNamePanel } from './CariLegalNamePanel'
+import { CariMergePanel } from './CariMergePanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
 import {
@@ -422,6 +423,17 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             companyId={activeCompanyId}
             namespace={namespace}
             contractContext={contractContext}
+          />
+        ) : null}
+        {/* F-027 / EK-18 #76-#77: same-VKN duplicates merged into this card by the group manager's approval (no
+            unmerge). Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariMergePanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onChanged={onNamesChanged}
           />
         ) : null}
       </section>

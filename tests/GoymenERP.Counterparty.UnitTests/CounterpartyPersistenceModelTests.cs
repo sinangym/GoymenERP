@@ -341,8 +341,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261031143822_AddCustomerEDocumentProfiles",
             dbContext.Database.GetMigrations());
+        Assert.Contains(
+            "20261115132003_AddCounterpartyOutbox",
+            dbContext.Database.GetMigrations());
         Assert.EndsWith(
-            "_AddCounterpartyOutbox",
+            "_AddCounterpartyPartyMerge",
             dbContext.Database.GetMigrations().Last(),
             StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
@@ -492,6 +495,227 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             migration.DownOperations,
             operation => operation is DropTableOperation { Name: "OutboxMessages", Schema: "counterparty" });
+    }
+
+    [Fact]
+    public void Party_merge_is_a_group_level_append_only_record_and_a_merged_party_points_at_another_party()
+    {
+        // F-027 / EK-18 #76-#77: Party is global, so the merge record carries no company query filter; it names the
+        // company the approval was given in. A duplicate is merged at most once; nothing cascades.
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var party = dbContext.Model.FindEntityType(typeof(Party))!;
+        Assert.Equal(
+            CounterpartyDbContext.PartyMergedIntoCheck,
+            party.GetCheckConstraints().Single(check => check.Name == "CK_Parties_MergedInto").Sql);
+        Assert.True(party.FindProperty(nameof(Party.MergedIntoPartyId))!.IsNullable);
+        var selfLink = Assert.Single(
+            party.GetForeignKeys(),
+            foreignKey => foreignKey.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(Party.MergedIntoPartyId)]));
+        Assert.Same(party, selfLink.PrincipalEntityType);
+        Assert.Equal(DeleteBehavior.Restrict, selfLink.DeleteBehavior);
+        var mergedIndex = Assert.Single(
+            party.GetIndexes(),
+            index => index.Properties.Select(property => property.Name).SequenceEqual([nameof(Party.MergedIntoPartyId)]));
+        Assert.False(mergedIndex.IsUnique);
+        Assert.Equal("[MergedIntoPartyId] IS NOT NULL", mergedIndex.GetFilter());
+
+        var merge = dbContext.Model.FindEntityType(typeof(PartyMerge))!;
+        Assert.Equal("counterparty", merge.GetSchema());
+        Assert.Equal("PartyMerges", merge.GetTableName());
+        Assert.Empty(merge.GetDeclaredQueryFilters());
+        Assert.Equal(ValueGenerated.Never, merge.FindPrimaryKey()!.Properties.Single().ValueGenerated);
+        Assert.Equal(
+            ["CK_PartyMerges_Identity", "CK_PartyMerges_Text", "CK_PartyMerges_Version"],
+            merge.GetCheckConstraints().Select(check => check.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            CounterpartyDbContext.PartyMergeIdentityCheck,
+            merge.GetCheckConstraints().Single(check => check.Name == "CK_PartyMerges_Identity").Sql);
+        Assert.Equal(
+            CounterpartyDbContext.PartyMergeVersionCheck,
+            merge.GetCheckConstraints().Single(check => check.Name == "CK_PartyMerges_Version").Sql);
+        Assert.Equal(
+            CounterpartyDbContext.PartyMergeTextCheck,
+            merge.GetCheckConstraints().Single(check => check.Name == "CK_PartyMerges_Text").Sql);
+        Assert.Equal(PartyMerge.ReasonMaximumLength, merge.FindProperty(nameof(PartyMerge.Reason))!.GetMaxLength());
+        Assert.Equal(PartyMerge.ActorMaximumLength, merge.FindProperty(nameof(PartyMerge.ApprovedBy))!.GetMaxLength());
+        Assert.Equal(
+            "Latin1_General_100_BIN2",
+            merge.FindProperty(nameof(PartyMerge.CorrelationId))!.GetCollation());
+
+        var unique = Assert.Single(merge.GetIndexes(), index => index.IsUnique);
+        Assert.Equal("UX_PartyMerges_MergedParty", unique.GetDatabaseName());
+        Assert.Equal([nameof(PartyMerge.MergedPartyId)], unique.Properties.Select(property => property.Name));
+        Assert.Equal(3, merge.GetForeignKeys().Count());
+        Assert.All(merge.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
+        Assert.Contains(
+            merge.GetForeignKeys(),
+            foreignKey => foreignKey.Properties.Select(property => property.Name)
+                    .SequenceEqual([nameof(PartyMerge.ApprovalCompanyId)])
+                && foreignKey.PrincipalEntityType.GetTableName() == "Companies"
+                && foreignKey.PrincipalEntityType.GetSchema() == "organization");
+    }
+
+    [Fact]
+    public void SaveChanges_admits_a_merge_only_with_its_record_and_the_other_companies_notifications()
+    {
+        // The guard lets the whole merge through; the (absent) database is what fails next, not the guard.
+        var companyId = Guid.NewGuid();
+        var otherCompanyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var (survivor, duplicate) = AttachedPair(dbContext, 31);
+        var record = MergeRecord(companyId, survivor, duplicate);
+        duplicate.MergeInto(survivor, DateTimeOffset.UtcNow);
+        dbContext.Entry(survivor).Property(value => value.MergedIntoPartyId).IsModified = true;
+        dbContext.PartyMerges.Add(record);
+        dbContext.OutboxMessages.Add(MergeNotification(companyId, record.Id));
+        dbContext.OutboxMessages.Add(MergeNotification(otherCompanyId, record.Id));
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("birleştir", passed.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("olay kutusu", passed.Message, StringComparison.Ordinal);
+
+        // Without the record naming this pair, the duplicate's merge columns may not move.
+        dbContext.ChangeTracker.Clear();
+        (survivor, duplicate) = AttachedPair(dbContext, 33);
+        duplicate.MergeInto(survivor, DateTimeOffset.UtcNow);
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
+
+        // A record naming another survivor does not admit it either.
+        dbContext.ChangeTracker.Clear();
+        (survivor, duplicate) = AttachedPair(dbContext, 35);
+        var stranger = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000037"), PartyKind.LegalEntity, "Başka Cari");
+        dbContext.PartyMerges.Add(MergeRecord(companyId, stranger, duplicate));
+        duplicate.MergeInto(survivor, DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        // A notification for another company with no merge record beside it is refused.
+        dbContext.ChangeTracker.Clear();
+        dbContext.OutboxMessages.Add(MergeNotification(otherCompanyId, Guid.NewGuid()));
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("olay kutusu", refused.Message, StringComparison.Ordinal);
+
+        // Nor may a passive flag or a name ride along with the merge.
+        dbContext.ChangeTracker.Clear();
+        (survivor, duplicate) = AttachedPair(dbContext, 38);
+        dbContext.PartyMerges.Add(MergeRecord(companyId, survivor, duplicate));
+        duplicate.MergeInto(survivor, DateTimeOffset.UtcNow);
+        dbContext.Entry(duplicate).Property(value => value.LegalName).CurrentValue = "Gizli Unvan";
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_unmerge_a_redirect_a_merged_new_party_and_a_merge_record_edit()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+
+        // EK-18 #77: no unmerge, no reactivation, no redirect in place.
+        var survivor = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000041"), PartyKind.LegalEntity, "Kalan Cari");
+        var merged = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000042"), PartyKind.LegalEntity, "Mükerrer Cari");
+        merged.MergeInto(survivor, DateTimeOffset.UtcNow);
+        dbContext.Parties.Attach(merged);
+        dbContext.Entry(merged).Property(value => value.MergedIntoPartyId).CurrentValue = null;
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.Parties.Attach(merged);
+        dbContext.Entry(merged).Property(value => value.IsActive).CurrentValue = true;
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.Parties.Attach(merged);
+        var redirect = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000043"), PartyKind.LegalEntity, "Yeni Hedef");
+        dbContext.PartyMerges.Add(MergeRecord(companyId, redirect, merged));
+        dbContext.Entry(merged).Property(value => value.MergedIntoPartyId).CurrentValue = redirect.Id;
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        // A party is never created already merged.
+        dbContext.ChangeTracker.Clear();
+        var born = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000044"), PartyKind.LegalEntity, "Doğuştan Birleşik");
+        born.MergeInto(survivor, DateTimeOffset.UtcNow);
+        dbContext.Parties.Add(born);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        // The merge record is append-only and is recorded in the active company only.
+        dbContext.ChangeTracker.Clear();
+        var record = MergeRecord(companyId, survivor, merged);
+        dbContext.PartyMerges.Attach(record);
+        dbContext.Entry(record).Property(value => value.Reason).CurrentValue = "Değiştirilmiş neden";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("birleştirme kaydı", refused.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.PartyMerges.Attach(record);
+        dbContext.PartyMerges.Remove(record);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.PartyMerges.Add(MergeRecord(Guid.NewGuid(), survivor, merged));
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("aktif şirket", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_a_merge_record_without_a_resolved_company_before_the_database_call()
+    {
+        using var dbContext = CreateContext();
+        var survivor = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000045"), PartyKind.LegalEntity, "Kalan");
+        var merged = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000046"), PartyKind.LegalEntity, "Mükerrer");
+        dbContext.PartyMerges.Add(MergeRecord(Guid.NewGuid(), survivor, merged));
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void Party_merge_migration_Up_is_pure_DDL_and_its_Down_first_refuses_while_merges_exist()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddCounterpartyPartyMerge();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51453", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[PartyMerges]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[MergedIntoPartyId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains(
+            migration.DownOperations,
+            operation => operation is DropTableOperation { Name: "PartyMerges", Schema: "counterparty" });
+        Assert.Contains(
+            migration.DownOperations,
+            operation => operation is DropColumnOperation { Name: "MergedIntoPartyId", Table: "Parties" });
+    }
+
+    private static (Party Survivor, Party Duplicate) AttachedPair(CounterpartyDbContext dbContext, int sequence)
+    {
+        var survivor = new Party(
+            Guid.NewGuid(), PartyCode.FromSequence(sequence), PartyKind.LegalEntity, "Kalan Cari A.Ş.");
+        var duplicate = new Party(
+            Guid.NewGuid(), PartyCode.FromSequence(sequence + 1), PartyKind.LegalEntity, "Mükerrer Cari A.Ş.");
+        dbContext.Parties.Attach(survivor);
+        dbContext.Parties.Attach(duplicate);
+        return (survivor, duplicate);
+    }
+
+    private static PartyMerge MergeRecord(Guid companyId, Party survivor, Party duplicate) =>
+        new(
+            Guid.NewGuid(),
+            companyId,
+            survivor.Id,
+            survivor.Version,
+            duplicate.Id,
+            duplicate.Version + 1,
+            "Aynı firma iki kez açılmış.",
+            "unit-approver",
+            DateTimeOffset.UtcNow,
+            "unit-correlation");
+
+    private static CounterpartyOutboxRow MergeNotification(Guid companyId, Guid mergeId)
+    {
+        var row = OutboxRow(companyId);
+        row.EventType = GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyPartyMergedOutboxV1.EventType;
+        row.AggregateId = mergeId;
+        return row;
     }
 
     private static CounterpartyOutboxRow OutboxRow(Guid companyId)

@@ -390,6 +390,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<Guid?>("MergedIntoPartyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -419,6 +422,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("IsActive");
 
+                    b.HasIndex("MergedIntoPartyId")
+                        .HasFilter("[MergedIntoPartyId] IS NOT NULL");
+
                     b.HasIndex("TaxIdentityNumber")
                         .HasFilter("[TaxIdentityNumber] IS NOT NULL");
 
@@ -428,9 +434,70 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Parties_Kind", "[Kind] IN (N'LegalEntity', N'NaturalPerson')");
 
+                            t.HasCheckConstraint("CK_Parties_MergedInto", "[MergedIntoPartyId] IS NULL OR ([MergedIntoPartyId] <> [Id] AND [IsActive] = 0)");
+
                             t.HasCheckConstraint("CK_Parties_TaxIdentityNumber", "[TaxIdentityNumber] IS NULL OR (LEN([TaxIdentityNumber]) IN (10, 11) AND DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber]) AND [TaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%')");
 
                             t.HasCheckConstraint("CK_Parties_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyMerge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApprovalCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("MergedPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MergedPartyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("SurvivorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("SurvivorPartyVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalCompanyId");
+
+                    b.HasIndex("MergedPartyId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PartyMerges_MergedParty");
+
+                    b.HasIndex("SurvivorPartyId");
+
+                    b.ToTable("PartyMerges", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyMerges_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ApprovalCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SurvivorPartyId] <> [MergedPartyId]");
+
+                            t.HasCheckConstraint("CK_PartyMerges_Text", "LEN([Reason]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PartyMerges_Version", "[SurvivorPartyVersion] >= 1 AND [MergedPartyVersion] >= 1");
                         });
                 });
 
@@ -725,6 +792,35 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.Party", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("MergedIntoPartyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyMerge", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovalCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("MergedPartyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("SurvivorPartyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

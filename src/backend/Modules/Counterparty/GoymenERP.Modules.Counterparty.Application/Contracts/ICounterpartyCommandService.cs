@@ -111,6 +111,15 @@ public enum CounterpartyCommandResult
     /// e-belge profile (422).
     /// </summary>
     EDocumentAccountInactive = 21,
+
+    /// <summary>EK-18 #76: the duplicate was already merged into a party; a merge happens once, never again (409).</summary>
+    PartyAlreadyMerged = 22,
+
+    /// <summary>EK-18 #76: the surviving party was itself merged away, so it cannot receive a merge (409).</summary>
+    PartyMergeTargetMerged = 23,
+
+    /// <summary>EK-18 #76: both parties carry a VKN/TCKN and the numbers differ, so they are not duplicates (409).</summary>
+    PartyMergeTaxIdentityMismatch = 24,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -166,6 +175,13 @@ public static class CounterpartyProblemCodesV1
     /// <summary>ASSUMPTION-CARI-EDOC-4: a passive account does not change the shared e-belge profile.</summary>
     public const string EDocumentAccountInactive = "e_document_account_inactive";
 
+    /// <summary>EK-18 #76 party merge refusals.</summary>
+    public const string PartyAlreadyMerged = "party_already_merged";
+
+    public const string PartyMergeTargetMerged = "party_merge_target_merged";
+
+    public const string PartyMergeTaxIdentityMismatch = "party_merge_tax_identity_mismatch";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -189,6 +205,9 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.EInvoiceScenarioNotListed => EInvoiceScenarioNotListed,
             CounterpartyCommandResult.EDocumentTaxIdentityRequired => EDocumentTaxIdentityRequired,
             CounterpartyCommandResult.EDocumentAccountInactive => EDocumentAccountInactive,
+            CounterpartyCommandResult.PartyAlreadyMerged => PartyAlreadyMerged,
+            CounterpartyCommandResult.PartyMergeTargetMerged => PartyMergeTargetMerged,
+            CounterpartyCommandResult.PartyMergeTaxIdentityMismatch => PartyMergeTaxIdentityMismatch,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

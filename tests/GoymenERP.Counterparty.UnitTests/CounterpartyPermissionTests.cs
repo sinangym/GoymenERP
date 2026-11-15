@@ -30,6 +30,18 @@ public sealed class CounterpartyPermissionTests
     }
 
     [Fact]
+    public void PartyMergeApprovePermission_IsARegisteredNonCriticalCompanyWideName()
+    {
+        // F-027 / EK-18 #76: catalogue registration only, no Critical flag; it is not widened from any edit grant.
+        Assert.Equal(ErpPermissions.CounterpartyPartiesMergeApprove, CounterpartyPartyMergePermissionsV1.Approve);
+        Assert.True(ErpPermissions.IsKnown(CounterpartyPartyMergePermissionsV1.Approve));
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(CounterpartyPartyMergePermissionsV1.Approve));
+        Assert.False(ErpPermissions.IsCritical(CounterpartyPartyMergePermissionsV1.Approve));
+        Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, CounterpartyPartyMergePermissionsV1.Approve);
+        Assert.NotEqual(ErpPermissions.CounterpartyPartiesLegalNameUpdate, CounterpartyPartyMergePermissionsV1.Approve);
+    }
+
+    [Fact]
     public void PartyReadPermission_IsKnownAndRequiresCompanyWideScope()
     {
         Assert.True(ErpPermissions.IsKnown(ErpPermissions.CounterpartyPartiesRead));

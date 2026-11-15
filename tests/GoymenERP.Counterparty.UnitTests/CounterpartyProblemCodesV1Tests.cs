@@ -32,9 +32,12 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.EInvoiceScenarioNotListed,
             CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired,
             CounterpartyProblemCodesV1.EDocumentAccountInactive,
+            CounterpartyProblemCodesV1.PartyAlreadyMerged,
+            CounterpartyProblemCodesV1.PartyMergeTargetMerged,
+            CounterpartyProblemCodesV1.PartyMergeTaxIdentityMismatch,
         };
 
-        Assert.Equal(23, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(26, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -72,6 +75,11 @@ public sealed class CounterpartyProblemCodesV1Tests
         CounterpartyCommandResult.EDocumentTaxIdentityRequired,
         CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)]
     [InlineData(CounterpartyCommandResult.EDocumentAccountInactive, CounterpartyProblemCodesV1.EDocumentAccountInactive)]
+    [InlineData(CounterpartyCommandResult.PartyAlreadyMerged, CounterpartyProblemCodesV1.PartyAlreadyMerged)]
+    [InlineData(CounterpartyCommandResult.PartyMergeTargetMerged, CounterpartyProblemCodesV1.PartyMergeTargetMerged)]
+    [InlineData(
+        CounterpartyCommandResult.PartyMergeTaxIdentityMismatch,
+        CounterpartyProblemCodesV1.PartyMergeTaxIdentityMismatch)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)
