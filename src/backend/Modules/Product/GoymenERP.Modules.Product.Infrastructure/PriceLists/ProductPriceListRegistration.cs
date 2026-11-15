@@ -60,6 +60,8 @@ public static class ProductPriceListRegistration
             serviceProvider.GetRequiredService<ProductDimensionService>());
         services.AddScoped<IProductDimensionReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductDimensionService>());
+        // KLN-D54: the company's structural profile weight table (versioned, source-labelled, admin import; same context).
+        services.AddScoped<IProductProfileWeightTableServiceV1>(CreateProfileWeightTableService);
         return services;
     }
 
@@ -106,6 +108,14 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<TimeProvider>());
 
     private static ProductDimensionService CreateDimensionService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
+
+    private static ProductProfileWeightTableService CreateProfileWeightTableService(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
         serviceProvider.GetRequiredService<ICompanyContext>(),
         serviceProvider.GetRequiredService<ICurrentUser>(),

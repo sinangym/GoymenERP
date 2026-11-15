@@ -539,16 +539,36 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("MeshSpacingMm")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<decimal?>("OuterDiameterMm")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
-                    b.Property<string>("SectionKind")
-                        .IsRequired()
+                    b.Property<string>("ProfileSeries")
+                        .HasMaxLength(8)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(8)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ProfileSize")
                         .HasMaxLength(16)
                         .IsUnicode(false)
                         .HasColumnType("varchar(16)")
                         .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SectionKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SurfaceFinish")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<decimal?>("ThicknessMm")
                         .HasPrecision(18, 3)
@@ -585,9 +605,11 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         {
                             t.HasCheckConstraint("CK_ProductCardDimensions_Identity", "[ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UpdatedInCompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_ProductCardDimensions_Measures", "([ThicknessMm] IS NULL OR [ThicknessMm] > 0) AND ([WidthMm] IS NULL OR [WidthMm] > 0) AND ([LengthMm] IS NULL OR [LengthMm] > 0) AND ([HeightMm] IS NULL OR [HeightMm] > 0) AND ([OuterDiameterMm] IS NULL OR [OuterDiameterMm] > 0) AND ([WallThicknessMm] IS NULL OR [WallThicknessMm] > 0) AND ([KgPerMetre] IS NULL OR [KgPerMetre] > 0)");
+                            t.HasCheckConstraint("CK_ProductCardDimensions_Measures", "([ThicknessMm] IS NULL OR [ThicknessMm] > 0) AND ([WidthMm] IS NULL OR [WidthMm] > 0) AND ([LengthMm] IS NULL OR [LengthMm] > 0) AND ([HeightMm] IS NULL OR [HeightMm] > 0) AND ([OuterDiameterMm] IS NULL OR [OuterDiameterMm] > 0) AND ([WallThicknessMm] IS NULL OR [WallThicknessMm] > 0) AND ([KgPerMetre] IS NULL OR [KgPerMetre] > 0) AND ([MeshSpacingMm] IS NULL OR [MeshSpacingMm] > 0)");
 
-                            t.HasCheckConstraint("CK_ProductCardDimensions_Shape", "([SectionKind] = 'Sheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [KgPerMetre] IS NULL) OR ([SectionKind] = 'Coil' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [KgPerMetre] IS NULL) OR ([SectionKind] = 'RoundTube' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND 2 * [WallThicknessMm] <= [OuterDiameterMm]) OR ([SectionKind] = 'Profile' AND [ThicknessMm] IS NULL AND [LengthMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND [KgPerMetre] IS NOT NULL AND 2 * [WallThicknessMm] <= [WidthMm] AND 2 * [WallThicknessMm] <= [HeightMm])");
+                            t.HasCheckConstraint("CK_ProductCardDimensions_Shape", "([SectionKind] = 'Sheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'Coil' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'RoundTube' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND [MeshSpacingMm] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND 2 * [WallThicknessMm] <= [OuterDiameterMm]) OR ([SectionKind] = 'Profile' AND [ThicknessMm] IS NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL AND [HeightMm] IS NOT NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NOT NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NOT NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND 2 * [WallThicknessMm] <= [WidthMm] AND 2 * [WallThicknessMm] <= [HeightMm]) OR ([SectionKind] = 'EqualAngle' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND [ThicknessMm] < [WidthMm]) OR ([SectionKind] = 'UnequalAngle' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NOT NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND [ThicknessMm] < [WidthMm] AND [ThicknessMm] < [HeightMm]) OR ([SectionKind] = 'FlatBar' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND [ThicknessMm] <= [WidthMm]) OR ([SectionKind] = 'NarrowFlatBar' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND [ThicknessMm] <= [WidthMm]) OR ([SectionKind] = 'RoundBar' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'SquareBar' AND [ThicknessMm] IS NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'HexBar' AND [ThicknessMm] IS NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'TeeBar' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [HeightMm] IS NOT NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND [ThicknessMm] < [WidthMm] AND [ThicknessMm] < [HeightMm]) OR ([SectionKind] = 'StructuralProfile' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NOT NULL AND [ProfileSize] IS NOT NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'Rebar' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'WireRod' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'WeldedMesh' AND [ThicknessMm] IS NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NOT NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND [OuterDiameterMm] < [MeshSpacingMm]) OR ([SectionKind] = 'ChequeredSheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'PerforatedSheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'CorrugatedSheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL) OR ([SectionKind] = 'ErwTube' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND [MeshSpacingMm] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND 2 * [WallThicknessMm] <= [OuterDiameterMm]) OR ([SectionKind] = 'ErwProfile' AND [ThicknessMm] IS NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL AND [HeightMm] IS NOT NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NOT NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NOT NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NULL AND 2 * [WallThicknessMm] <= [WidthMm] AND 2 * [WallThicknessMm] <= [HeightMm]) OR ([SectionKind] = 'PaintedErwTube' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND [MeshSpacingMm] IS NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NOT NULL AND 2 * [WallThicknessMm] <= [OuterDiameterMm]) OR ([SectionKind] = 'PaintedErwProfile' AND [ThicknessMm] IS NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL AND [HeightMm] IS NOT NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NOT NULL AND [MeshSpacingMm] IS NULL AND [KgPerMetre] IS NOT NULL AND [ProfileSeries] IS NULL AND [ProfileSize] IS NULL AND [SurfaceFinish] IS NOT NULL AND 2 * [WallThicknessMm] <= [WidthMm] AND 2 * [WallThicknessMm] <= [HeightMm])");
+
+                            t.HasCheckConstraint("CK_ProductCardDimensions_Text", "([ProfileSeries] IS NULL OR [ProfileSeries] IN ('UPN', 'NPI', 'IPE', 'HEA', 'HEB', 'HEM')) AND ([ProfileSize] IS NULL OR (LEN([ProfileSize]) > 0 AND [ProfileSize] NOT LIKE '%[^A-Z0-9.]%')) AND ([SurfaceFinish] IS NULL OR LEN([SurfaceFinish]) > 0)");
 
                             t.HasCheckConstraint("CK_ProductCardDimensions_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
                         });
@@ -748,6 +770,138 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("AnswerJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.ToTable("ProductProfileWeightAttempts", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductProfileWeightAttempts_Answer", "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+
+                            t.HasCheckConstraint("CK_ProductProfileWeightAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_ProductProfileWeightAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("TableVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ProfileSeries")
+                        .HasMaxLength(8)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(8)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ProfileSize")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal>("KgPerMetre")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.HasKey("CompanyId", "TableVersion", "ProfileSeries", "ProfileSize");
+
+                    b.ToTable("ProductProfileWeightRows", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductProfileWeightRows_Row", "[ProfileSeries] IN ('UPN', 'NPI', 'IPE', 'HEA', 'HEB', 'HEM') AND LEN([ProfileSize]) > 0 AND [ProfileSize] NOT LIKE '%[^A-Z0-9.]%' AND [KgPerMetre] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightTableRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("ImportedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ImportedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("RowCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceLabel")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.ToTable("ProductProfileWeightTables", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductProfileWeightTables_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1");
+
+                            t.HasCheckConstraint("CK_ProductProfileWeightTables_RowCount", "[RowCount] >= 1");
+
+                            t.HasCheckConstraint("CK_ProductProfileWeightTables_Text", "LEN([SourceLabel]) > 0 AND LEN([Reason]) > 0 AND LEN([ImportedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListAttemptRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
@@ -837,6 +991,33 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightTableRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TableVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightTableRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
                         .WithMany()
