@@ -392,6 +392,15 @@ public static class ErpPermissions
     public const string FinanceManualBankPaymentReverseApprove = "finance.manual-bank-payment.reverse.approve";
 
     /// <summary>
+    /// FNS-D25 (API-25): the payment not tied to a party — one expense item kept by identity and a mandatory
+    /// description. Company-wide, not Critical; registration grants nothing (grants are a human gate).
+    /// </summary>
+    public const string FinanceExpensePaymentDraftSave = "finance.expense-payment.draft.save";
+    public const string FinanceExpensePaymentDraftRead = "finance.expense-payment.draft.read";
+    public const string FinanceExpensePaymentApprove = "finance.expense-payment.approve";
+    public const string FinanceExpensePaymentRecord = "finance.expense-payment.record";
+
+    /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
     /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
     /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
@@ -1249,6 +1258,10 @@ public static class ErpPermissions
         FinanceManualBankPaymentRecord,
         FinanceManualBankPaymentReversePropose,
         FinanceManualBankPaymentReverseApprove,
+        FinanceExpensePaymentDraftSave,
+        FinanceExpensePaymentDraftRead,
+        FinanceExpensePaymentApprove,
+        FinanceExpensePaymentRecord,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1446,6 +1459,10 @@ public static class ErpPermissions
         FinanceManualBankPaymentRecord,
         FinanceManualBankPaymentReversePropose,
         FinanceManualBankPaymentReverseApprove,
+        FinanceExpensePaymentDraftSave,
+        FinanceExpensePaymentDraftRead,
+        FinanceExpensePaymentApprove,
+        FinanceExpensePaymentRecord,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,

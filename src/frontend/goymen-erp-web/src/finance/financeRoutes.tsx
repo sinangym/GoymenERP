@@ -42,6 +42,8 @@ import { PartyLedgerWorkspacePage } from './PartyLedgerWorkspacePage'
 import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CARI } from './partyLedgerText'
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
+import { ExpensePaymentPage } from './ExpensePaymentPage'
+import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -75,6 +77,17 @@ function PartyLedgerWorkspaceRoute({ base, title }: { readonly base: string; rea
   return context === null
     ? <StateBlock state={{ kind: 'not-found' }} subject={WORKSPACE_NEEDS_COMPANY} />
     : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} />
+}
+
+/** F-25 (FNS-D25): the expense-payment workspace; it needs a single active company. Each control has its own gate. */
+function ExpensePaymentRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={EXPENSE_PAYMENT_TEXT.subject} />
+  return <ExpensePaymentPage companyId={context.companyId} actorId={context.userId}
+    canDraft={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsDraft)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsApprove)}
+    canRecord={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsRecord)} />
 }
 
 function ManualBankPaymentListRoute() {
@@ -207,6 +220,10 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.allocationsList.slice(1),
     element: gate(FINANCE_CAPABILITY.allocationsList, <AllocationPage />),
+  },
+  {
+    path: FINANCE_ROUTE.expensePayments.slice(1),
+    element: gate(FINANCE_CAPABILITY.expensePaymentsWorkspace, <ExpensePaymentRoute />),
   },
   { path: FINANCE_ROUTE.openItemsList.slice(1), element: gate(FINANCE_CAPABILITY.openItemsList, <OpenItemListPage />) },
   {

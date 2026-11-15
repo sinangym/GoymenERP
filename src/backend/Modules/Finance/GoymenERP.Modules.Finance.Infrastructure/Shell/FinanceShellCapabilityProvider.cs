@@ -43,11 +43,17 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// propose under <c>finance.manual-bank-payment.reverse.propose</c> and approve / reject under
 /// <c>finance.manual-bank-payment.reverse.approve</c>. The approver must be another user (service and database).
 /// </para>
+/// <para>
+/// <b>1.9 (FNS-D25, API-25):</b> the payment not tied to a party opens at <c>/finans/masraf-odemeleri</c> under
+/// <c>finance.expense-payment.draft.read</c>; preparing, approving (another user) and the final record are controls
+/// of that workspace under their own narrow names. The record also needs the Accounting period read, like every
+/// Finance record.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -107,6 +113,13 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ManualBankPaymentRecordCapabilityId = "finance.manual-bank-payments.record";
     public const string ManualBankPaymentReverseProposeCapabilityId = "finance.manual-bank-payments.reverse.propose";
     public const string ManualBankPaymentReverseApproveCapabilityId = "finance.manual-bank-payments.reverse.approve";
+    public const string ExpensePaymentWorkspaceScreenId = "F-25-EXPENSE-PAYMENTS";
+    public const string ExpensePaymentWorkspaceCapabilityId = "finance.expense-payments.workspace";
+    public const string ExpensePaymentWorkspaceRouteId = "finance.expense-payments.workspace";
+    public const string ExpensePaymentWorkspaceRoutePath = "/finans/masraf-odemeleri";
+    public const string ExpensePaymentDraftCapabilityId = "finance.expense-payments.draft";
+    public const string ExpensePaymentApproveCapabilityId = "finance.expense-payments.approve";
+    public const string ExpensePaymentRecordCapabilityId = "finance.expense-payments.record";
     public const string AllocationListScreenId = "F-03";
     public const string AllocationListCapabilityId = "finance.allocations.list";
     public const string AllocationListRouteId = "finance.allocations.list";
@@ -144,6 +157,9 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             ManualBankPaymentDetailRouteId, ManualBankPaymentDetailRoutePath, ManualBankPaymentDetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             [FinancePermissionNames.ManualBankPaymentDraftRead]);
+        var expensePayments = Declaration(ExpensePaymentWorkspaceCapabilityId, ExpensePaymentWorkspaceRouteId,
+            ExpensePaymentWorkspaceRoutePath, ExpensePaymentWorkspaceScreenId, ShellCapabilityRoutePrecedence.Static,
+            [FinancePermissionNames.ExpensePaymentDraftRead]);
         return
         [
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
@@ -229,6 +245,33 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 [
                     FinancePermissionNames.ManualBankPaymentDraftRead,
                     FinancePermissionNames.PaymentReverseApprove,
+                    ErpPermissions.AccountingPeriodsRead,
+                ],
+            },
+            // FNS-D25: the workspace lists; each command is a control of it under its own narrow name.
+            expensePayments,
+            expensePayments with
+            {
+                CapabilityId = ExpensePaymentDraftCapabilityId,
+                ParentCapabilityId = ExpensePaymentWorkspaceCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentDraftSave],
+            },
+            expensePayments with
+            {
+                CapabilityId = ExpensePaymentApproveCapabilityId,
+                ParentCapabilityId = ExpensePaymentWorkspaceCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentApprove],
+            },
+            expensePayments with
+            {
+                CapabilityId = ExpensePaymentRecordCapabilityId,
+                ParentCapabilityId = ExpensePaymentWorkspaceCapabilityId,
+                RequiredPermissions =
+                [
+                    FinancePermissionNames.ExpensePaymentDraftRead,
+                    FinancePermissionNames.ExpensePaymentRecord,
                     ErpPermissions.AccountingPeriodsRead,
                 ],
             },

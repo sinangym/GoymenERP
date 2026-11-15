@@ -634,6 +634,180 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ExpensePaymentCommandRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "PaymentId");
+
+                    b.HasIndex("CompanyId", "CommandName", "IdempotencyKeyHash")
+                        .IsUnique();
+
+                    b.ToTable("ExpensePaymentCommands", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_ExpensePaymentCommands_Content", "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_ExpensePaymentCommands_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND ([PaymentId] IS NULL OR [PaymentId] <> '00000000-0000-0000-0000-000000000000')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ExpensePaymentRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AmountText")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(max)");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("ExpenseItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("OccurredOn")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("PaymentConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ProfileId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(36)");
+
+                    b.Property<string>("ProfileVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset?>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("SourceKind")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TreasuryAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("ValueOn")
+                        .HasColumnType("date");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "PreparedAtUtc", "Id");
+
+                    b.HasIndex("CompanyId", "SourceKind", "TreasuryAccountId", "Status");
+
+                    b.ToTable("ExpensePayments", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_ExpensePayments_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
+
+                            t.HasCheckConstraint("CK_ExpensePayments_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [ExpenseItemId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_ExpensePayments_SourceKind", "[SourceKind] IN (0, 1)");
+
+                            t.HasCheckConstraint("CK_ExpensePayments_Status", "([Status] = 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RecordedBy] IS NULL AND [RecordedAtUtc] IS NULL AND [PaymentConfirmed] = 0) OR ([Status] = 1 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NULL AND [RecordedAtUtc] IS NULL AND [PaymentConfirmed] = 0) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0 AND [RecordedAtUtc] IS NOT NULL AND [PaymentConfirmed] = 1)");
+
+                            t.HasCheckConstraint("CK_ExpensePayments_Text", "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0 AND LEN(LTRIM(RTRIM([Description]))) > 0 AND ([Reference] IS NULL OR LEN(LTRIM(RTRIM([Reference]))) > 0)");
+
+                            t.HasCheckConstraint("CK_ExpensePayments_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceAllocationRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2481,6 +2655,30 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "CollectionSourceId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ExpensePaymentCommandRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ExpensePaymentRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PaymentId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ExpensePaymentRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceAllocationRow", b =>

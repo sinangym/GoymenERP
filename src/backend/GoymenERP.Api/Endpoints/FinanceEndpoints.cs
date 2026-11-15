@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
@@ -23,6 +24,9 @@ public static class FinanceEndpoints
     public const string CashAccountCurrencyCandidatesPath = "/api/v1/finance/cash-accounts/currency-candidates";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string PaymentReversalProposalsPath = "/api/v1/finance/manual-bank-payments/reversal-proposals";
+    public const string ExpensePaymentsPath = "/api/v1/finance/expense-payments";
+    public const string ExpenseItemsPath = "/api/v1/finance/expense-payments/expense-items";
+    public const string ExpensePaymentDraftContextPath = "/api/v1/finance/expense-payments/draft-context";
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string PaymentAllocationsPath = "/api/v1/finance/payment-allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
@@ -89,6 +93,7 @@ public static class FinanceEndpoints
 
         MapManualReceiptEndpoints(endpoints);
         MapManualBankPaymentEndpoints(endpoints);
+        MapExpensePaymentEndpoints(endpoints);
         MapFinanceAllocationEndpoints(endpoints);
         MapFinancePaymentAllocationEndpoints(endpoints);
         MapCustomerInstrumentEndpoints(endpoints);
@@ -1320,6 +1325,175 @@ public static class FinanceEndpoints
             .WithName("GetFinanceManualBankPaymentV1")
             .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
             .Produces<ManualBankPaymentView>().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// FNS-D25 (API-25): the payment not tied to a party over HTTP, shaped like the manual bank payment: strict body,
+    /// the route id equal to the body id, the module's (A) idempotency reader, code-less 400/401/403/404/503.
+    /// </summary>
+    private static void MapExpensePaymentEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(ExpensePaymentsPath, async (
+                HttpContext httpContext,
+                IExpensePaymentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<ExpensePaymentDraftSaveRequest>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.DraftSaveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("SaveFinanceExpensePaymentDraftV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ExpensePaymentDraftSaveRequest>("application/json")
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status200OK)
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(ExpensePaymentsPath + "/{paymentId:guid}/approval", async (
+                Guid paymentId, HttpContext httpContext, IExpensePaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<ApproveExpensePaymentRequest>(httpContext, cancellationToken)
+                    is not { } request || request.PaymentId != paymentId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceExpensePaymentV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ApproveExpensePaymentRequest>("application/json")
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status200OK)
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(ExpensePaymentsPath + "/{paymentId:guid}/record", async (
+                Guid paymentId, HttpContext httpContext, IExpensePaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<RecordExpensePaymentRequest>(httpContext, cancellationToken)
+                    is not { } request || request.PaymentId != paymentId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.RecordAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RecordFinanceExpensePaymentV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<RecordExpensePaymentRequest>("application/json")
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status200OK)
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<ExpensePaymentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(ExpensePaymentsPath, async (
+                [FromQuery] string? cursor, HttpContext httpContext, IExpensePaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var result = await service.ListAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    cursor, cancellationToken);
+                return result.Outcome == ReadOutcome.NotFound
+                    ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                    : Read(result);
+            })
+            .WithName("GetFinanceExpensePaymentsV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<ExpensePaymentPage>().ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        // Registered before the {paymentId:guid} detail route; the literal segment is not a guid, so the two never meet.
+        endpoints.MapGet(ExpenseItemsPath, async (
+                HttpContext httpContext, IExpensePaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ExpenseItemsAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinanceExpenseItemsV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<ExpenseItemCatalogView>().ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable();
+
+        // The source account's currency and money profile for a new draft; registered before the detail route.
+        endpoints.MapGet(ExpensePaymentDraftContextPath, async (
+                [FromQuery] string? sourceKind, [FromQuery] string? treasuryAccountId, [FromQuery] string? occurredOn,
+                HttpContext httpContext, IExpensePaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadExpenseSourceKind(sourceKind, out var kind)
+                    || !Guid.TryParseExact(treasuryAccountId, "D", out var accountId) || accountId == Guid.Empty
+                    || !DateOnly.TryParseExact(occurredOn, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out var date))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                return Read(await service.DraftContextAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), kind, accountId, date, cancellationToken));
+            })
+            .WithName("GetFinanceExpensePaymentDraftContextV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<ExpensePaymentDraftContextView>().ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody().ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(ExpensePaymentsPath + "/{paymentId:guid}", async (
+                Guid paymentId, HttpContext httpContext, IExpensePaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.DetailAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), paymentId, cancellationToken));
+            })
+            .WithName("GetFinanceExpensePaymentV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<ExpensePaymentView>().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
     }
 
@@ -2582,6 +2756,18 @@ public static class FinanceEndpoints
     }
 
     /// <summary>Exactly one Idempotency-Key: non-blank, canonical (no surrounding whitespace), at most 128 characters.</summary>
+    /// <summary>Only the two exact enum names; a number or another casing is a bad request.</summary>
+    private static bool TryReadExpenseSourceKind(string? value, out ExpensePaymentSourceKind kind)
+    {
+        kind = value switch
+        {
+            nameof(ExpensePaymentSourceKind.Bank) => ExpensePaymentSourceKind.Bank,
+            nameof(ExpensePaymentSourceKind.Cash) => ExpensePaymentSourceKind.Cash,
+            _ => (ExpensePaymentSourceKind)(-1),
+        };
+        return Enum.IsDefined(kind);
+    }
+
     private static bool TryReadIdempotencyKey(IHeaderDictionary headers, out string idempotencyKey)
     {
         idempotencyKey = string.Empty;
