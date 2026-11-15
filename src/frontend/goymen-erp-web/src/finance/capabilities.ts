@@ -66,6 +66,12 @@ export const FINANCE_CAPABILITY = {
   partyLedgerAccounting: 'finance.party-ledger.accounting',
   /** B-05 (KLN-D3, C-04) Cari > Cari Hesap Takibi — the same party-ledger read, entered from Cari. */
   partyLedgerCari: 'finance.party-ledger.cari',
+  /** F-018 L1 Kredi Limitleri — the company accounts' credit limits, under `finance.credit-limits.read`. */
+  creditLimitsList: 'finance.credit-limits.list',
+  /** FNS-D45: propose a set, change or removal (control of the list; nothing changes until another person approves). */
+  creditLimitsPropose: 'finance.credit-limits.propose',
+  /** FNS-D45 / FNS-D46: approve or reject another person's proposal (control of the list; the server refuses a self-decision). */
+  creditLimitsApprove: 'finance.credit-limits.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -90,6 +96,7 @@ export const FINANCE_ROUTE = {
   openItemsDetail: '/finans/acik-kalemler/:openItemId',
   partyLedgerAccounting: '/muhasebe/cari-hesaplar',
   partyLedgerCari: '/cari/hesap-takibi',
+  creditLimitsList: '/finans/kredi-limitleri',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`

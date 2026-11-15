@@ -170,8 +170,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         // AddInvoiceCancellations, F3a's AddPaymentAllocations, API-23's AddPaymentReversals, F-005 D1's
         // AddOfficialSalesInvoices, API-30's AddCashAccounts and AddCashAccountStateChanges, FNS-D39's
         // AddOfficialSalesInvoiceRejectionAndWithdrawal, API-85a's AddPartyCreditLimits, F-019's AddCustomerReturnCredits
-        // and FNS-D25's AddExpensePayments Downs on an empty store; the reapply ends with the newest one.
-        Assert.EndsWith("_AddExpensePayments",
+        // FNS-D25's AddExpensePayments and FNS-D45's RequirePartyCreditLimitSecondPerson Downs on an empty store; the
+        // reapply ends with the newest one.
+        Assert.EndsWith("_RequirePartyCreditLimitSecondPerson",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
     }
 

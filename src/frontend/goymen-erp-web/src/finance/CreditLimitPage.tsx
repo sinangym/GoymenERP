@@ -1,15 +1,17 @@
 /**
- * API-85a — Finans → Cari kredi limitleri (F018 plan §L1; FNS-D27 / FNS-D27a).
+ * API-85a — Finans → Cari kredi limitleri (F018 plan §L1; FNS-D27a / FNS-D45 / FNS-D46).
  *
  * A credit limit is a MASTER record: one currency and one amount per company account, or "limit yok". This screen
  * shows the server's reads and sends the server's commands; it works out no risk, no balance and no comparison.
  *
- * - An approver (`finance.credit-limits.approve`) sets, changes or removes a limit in ONE step (FNS-D27). Every such
- *   command names the account revision the person looked at; a change in between is a server-side conflict.
- * - A proposer (`finance.credit-limits.propose`) proposes; the proposal changes nothing until an approver OTHER than
- *   the proposer approves it (FNS-D27a). The server refuses a self-decision; the screen only hides the buttons for the
- *   caller's own pending proposal, it is not the guard.
- * - The two authority flags are passed in by the route owner; the server checks every command on its own.
+ * - FNS-D45: every set, change and removal — whatever the amount — is a PROPOSAL (`finance.credit-limits.propose`)
+ *   that changes nothing until a person OTHER than the proposer approves it (`finance.credit-limits.approve`). The
+ *   approver's one-step set and removal no longer exist; this screen offers no such path. A proposal names the account
+ *   revision the person looked at; a change in between is a server-side conflict.
+ * - The server refuses a self-decision; the screen only hides the decision buttons for the caller's own pending
+ *   proposal, it is not the guard.
+ * - The two authority flags are passed in by the route owner from the shell's capability answers; the server checks
+ *   every command on its own. FNS-D46 classifies the approve permission as Critical; that changes no screen rule.
  *
  * A removed limit is "limit yok", never zero and never unlimited. A company, actor or session change remounts the
  * screen, so no answer of the previous context is drawn.
@@ -173,11 +175,11 @@ function CreditLimitScreen({ canPropose, canApprove }: CreditLimitPageProps) {
     return frame(<StateBlock state={state as RemoteViewState<unknown>} subject={T.subject} onRetry={() => void list.refetch()} />)
   }
 
-  const editor = canApprove || canPropose
-  const newAccount = creating && editor
+  // FNS-D45: only a proposal can give an account its first limit.
+  const newAccount = creating && canPropose
     ? <NewAccountLimit binding={attemptBinding} scope={scope} candidates={candidates.data}
-        canApprove={canApprove} onRetryCandidates={() => void candidates.refetch()} onClose={() => setCreating(false)} />
-    : editor
+        onRetryCandidates={() => void candidates.refetch()} onClose={() => setCreating(false)} />
+    : canPropose
       ? <div className={styles.actions}>
           <Button type="button" variant="secondary" onClick={() => setCreating(true)}>{T.newHeading}</Button>
         </div>
@@ -282,17 +284,11 @@ function AccountDetail({ companyAccountId, binding, scope, names, candidates, on
     </dl>
     {decide && pending !== null ? <ProposalDecision binding={binding} scope={scope} proposal={pending}
       target={current.companyAccountId} /> : null}
-    {canApprove
-      ? <LimitForm mode="set" binding={binding} scope={scope} target={current} candidates={candidates}
-          onRetryCandidates={onRetryCandidates} />
-      : null}
-    {canApprove && current.effective?.kind === 'Set'
-      ? <RemoveLimit binding={binding} scope={scope} target={current} />
-      : null}
     {canPropose && pending === null
-      ? <LimitForm mode="propose" binding={binding} scope={scope} target={current} candidates={candidates}
+      ? <LimitForm binding={binding} scope={scope} target={current} candidates={candidates}
           onRetryCandidates={onRetryCandidates} />
       : null}
+    {canApprove && !canPropose && pending === null ? <p className={styles.hint}>{T.approverOnly}</p> : null}
     <HistoryTable outcome={history.data} names={names} onRetry={() => void history.refetch()} />
   </>)
 }
@@ -314,7 +310,6 @@ function HistoryTable({ outcome, names, onRetry }: {
       <th scope="col">{T.column.kind}</th>
       <th scope="col">{T.column.limit}</th>
       <th scope="col">{T.column.status}</th>
-      <th scope="col">{T.column.direct}</th>
       <th scope="col">{T.column.proposedAt}</th>
       <th scope="col">{T.column.decidedAt}</th>
       <th scope="col">{T.column.reason}</th>
@@ -324,7 +319,6 @@ function HistoryTable({ outcome, names, onRetry }: {
         <td>{CREDIT_LIMIT_KIND[record.kind]}</td>
         <td>{record.kind === 'Set' ? <LimitValue record={record} names={names} /> : T.noLimit}</td>
         <td>{CREDIT_LIMIT_STATUS[record.status]}</td>
-        <td>{record.isDirect ? T.directRecord : T.proposalRecord}</td>
         <td><Instant value={record.proposedAtUtc} /></td>
         <td>{record.decidedAtUtc === null ? '' : <Instant value={record.decidedAtUtc} />}</td>
         <td>{record.rejectionReason ?? ''}</td>
@@ -333,7 +327,7 @@ function HistoryTable({ outcome, names, onRetry }: {
   </table>
 }
 
-/** What a set or proposal names: the account and the revision the person looked at. */
+/** What a proposal names: the account and the revision the person looked at. */
 interface LimitTarget {
   readonly partyId: string
   readonly companyAccountId: string
@@ -422,8 +416,8 @@ function CurrencyField({ id, candidates, value, onChange, onRetry, error }: {
   </div>
 }
 
-function LimitForm({ mode, binding, scope, target, candidates, onRetryCandidates, idPrefix = 'credit-limit' }: {
-  readonly mode: 'set' | 'propose'
+/** FNS-D45: a set, change or removal is always a proposal for a second person to decide. */
+function LimitForm({ binding, scope, target, candidates, onRetryCandidates, idPrefix = 'credit-limit' }: {
   readonly binding: CreditLimitAttemptBinding
   readonly scope: QueryScope
   readonly target: LimitTarget
@@ -431,7 +425,7 @@ function LimitForm({ mode, binding, scope, target, candidates, onRetryCandidates
   readonly onRetryCandidates: () => void
   readonly idPrefix?: string
 }) {
-  const attempt = useCreditLimitAttempt(binding, mode, target.companyAccountId, useSettled(scope))
+  const attempt = useCreditLimitAttempt(binding, 'propose', target.companyAccountId, useSettled(scope))
   const reload = useReload(scope)
   const [kind, setKind] = useState<CreditLimitKind>('Set')
   const [currencyId, setCurrencyId] = useState('')
@@ -439,8 +433,8 @@ function LimitForm({ mode, binding, scope, target, candidates, onRetryCandidates
   const [currencyError, setCurrencyError] = useState<string | null>(null)
   const [amountError, setAmountError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState(false)
-  const base = `${idPrefix}-${mode}`
-  const removing = mode === 'propose' && kind === 'Remove'
+  const base = `${idPrefix}-propose`
+  const removing = kind === 'Remove'
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -458,30 +452,26 @@ function LimitForm({ mode, binding, scope, target, candidates, onRetryCandidates
       setCurrencyError(currencyOk ? null : T.currencyRequired)
       setAmountError(parsed.ok ? null : T.amountError[parsed.error])
       if (!parsed.ok || !currencyOk) return
-      command = mode === 'set'
-        ? { operation: 'set' as const,
-            body: { partyId: target.partyId, companyAccountId: target.companyAccountId, currencyId, amount: parsed.wire,
-              expectedRevision: target.revision } }
-        : { operation: 'propose' as const,
-            body: { partyId: target.partyId, companyAccountId: target.companyAccountId, kind: 'Set' as const, currencyId,
-              amount: parsed.wire, expectedRevision: target.revision } }
+      command = {
+        operation: 'propose' as const,
+        body: { partyId: target.partyId, companyAccountId: target.companyAccountId, kind: 'Set' as const, currencyId,
+          amount: parsed.wire, expectedRevision: target.revision },
+      }
     }
     if (await attempt.submit(command) === 'blocked') setBlocked(true)
   }
 
   const busy = attempt.state.phase === 'submitting'
   return <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate
-    aria-labelledby={`${base}-heading`} data-form={mode}>
-    <h3 id={`${base}-heading`}>{mode === 'set' ? T.setHeading : T.proposeHeading}</h3>
-    {mode === 'propose'
-      ? <fieldset className={styles.field}>
-          <legend>{T.proposeKind}</legend>
-          <label><input type="radio" name={`${base}-kind`} checked={kind === 'Set'} onChange={() => setKind('Set')} />
-            {T.proposeKindSet}</label>
-          <label><input type="radio" name={`${base}-kind`} checked={kind === 'Remove'} onChange={() => setKind('Remove')} />
-            {T.proposeKindRemove}</label>
-        </fieldset>
-      : null}
+    aria-labelledby={`${base}-heading`} data-form="propose">
+    <h3 id={`${base}-heading`}>{T.proposeHeading}</h3>
+    <fieldset className={styles.field}>
+      <legend>{T.proposeKind}</legend>
+      <label><input type="radio" name={`${base}-kind`} checked={kind === 'Set'} onChange={() => setKind('Set')} />
+        {T.proposeKindSet}</label>
+      <label><input type="radio" name={`${base}-kind`} checked={kind === 'Remove'} onChange={() => setKind('Remove')} />
+        {T.proposeKindRemove}</label>
+    </fieldset>
     {removing
       ? <p className={styles.hint}>{T.removeHint}</p>
       : <>
@@ -498,40 +488,12 @@ function LimitForm({ mode, binding, scope, target, candidates, onRetryCandidates
         </>}
     <div className={styles.actions}>
       <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
-        {mode === 'set' ? T.setSubmit : T.proposeSubmit}
+        {T.proposeSubmit}
       </Button>
     </div>
     {blocked ? <p className={styles.error} role="alert">{T.blocked}</p> : null}
-    <AttemptPanel attempt={attempt} operation={mode} onReload={reload} />
+    <AttemptPanel attempt={attempt} operation="propose" onReload={reload} />
   </form>
-}
-
-function RemoveLimit({ binding, scope, target }: {
-  readonly binding: CreditLimitAttemptBinding
-  readonly scope: QueryScope
-  readonly target: LimitTarget
-}) {
-  const attempt = useCreditLimitAttempt(binding, 'remove', target.companyAccountId, useSettled(scope))
-  const reload = useReload(scope)
-  const [blocked, setBlocked] = useState(false)
-  const busy = attempt.state.phase === 'submitting'
-  const remove = async () => {
-    setBlocked(false)
-    const result = await attempt.submit({
-      operation: 'remove',
-      body: { partyId: target.partyId, companyAccountId: target.companyAccountId, expectedRevision: target.revision },
-    })
-    if (result === 'blocked') setBlocked(true)
-  }
-  return <div className={styles.command} data-form="remove">
-    <h3>{T.removeHeading}</h3>
-    <p className={styles.hint}>{T.removeHint}</p>
-    <Button type="button" variant="danger" disabled={busy} aria-busy={busy} onClick={() => void remove()}>
-      {T.removeSubmit}
-    </Button>
-    {blocked ? <p className={styles.error} role="alert">{T.blocked}</p> : null}
-    <AttemptPanel attempt={attempt} operation="remove" onReload={reload} />
-  </div>
 }
 
 function ProposalDecision({ binding, scope, proposal, target }: {
@@ -588,13 +550,12 @@ function ProposalDecision({ binding, scope, proposal, target }: {
 /**
  * An account with no limit yet: Cari owns parties and accounts, so this screen offers no picker and names the two
  * identities as typed. The server checks that the account belongs to the party and may carry a limit; revision "0"
- * says "no limit was ever effective here".
+ * says "no limit was ever effective here". The first limit is a proposal like every other change (FNS-D45).
  */
-function NewAccountLimit({ binding, scope, candidates, canApprove, onRetryCandidates, onClose }: {
+function NewAccountLimit({ binding, scope, candidates, onRetryCandidates, onClose }: {
   readonly binding: CreditLimitAttemptBinding
   readonly scope: QueryScope
   readonly candidates: ViewOutcome<CreditLimitCurrencyCandidates> | undefined
-  readonly canApprove: boolean
   readonly onRetryCandidates: () => void
   readonly onClose: () => void
 }) {
@@ -637,7 +598,7 @@ function NewAccountLimit({ binding, scope, candidates, canApprove, onRetryCandid
           </div>
         </form>
       : <>
-          <LimitForm mode={canApprove ? 'set' : 'propose'} binding={binding} scope={scope} target={target}
+          <LimitForm binding={binding} scope={scope} target={target}
             candidates={candidates} onRetryCandidates={onRetryCandidates} idPrefix="credit-limit-new" />
           <div className={styles.actions}>
             <Button type="button" variant="ghost" onClick={onClose}>{T.close}</Button>

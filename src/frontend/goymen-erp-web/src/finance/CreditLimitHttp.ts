@@ -7,9 +7,7 @@
  * | `fetchCreditLimitAccount` | `GET /finance/credit-limits/accounts/{companyAccountId}` |
  * | `fetchCreditLimitHistory` | `GET /finance/credit-limits/accounts/{companyAccountId}/history` |
  * | `fetchCreditLimitCurrencyCandidates` | `GET /finance/credit-limits/currency-candidates` |
- * | `set` | `POST /finance/credit-limits` with `Idempotency-Key` (FNS-D27, approver, one step) |
- * | `remove` | `POST /finance/credit-limits/removals` with `Idempotency-Key` (FNS-D27) |
- * | `propose` | `POST /finance/credit-limits/proposals` with `Idempotency-Key` (FNS-D27a) |
+ * | `propose` | `POST /finance/credit-limits/proposals` with `Idempotency-Key` (FNS-D27a; a set, change or removal) |
  * | `approve` | `POST …/proposals/{proposalId}/approval` with `Idempotency-Key` |
  * | `reject` | `POST …/proposals/{proposalId}/rejection` with `Idempotency-Key` |
  *
@@ -17,6 +15,9 @@
  * Commands answer the `CommandResult` body on 200 / 409 / 422; a replay (200 or a recorded refusal) carries
  * `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`, which must agree with the body. 403 is a
  * definite refusal. 503, no reply or an undecodable body is an UNKNOWN outcome: the caller retries with the SAME key.
+ *
+ * FNS-D45: every set, change and removal is a proposal decided by a second person; the approver's one-step set and
+ * removal routes are closed, so this client has no call for them.
  *
  * The company is only the verified shell company in `X-Company-Id`; it is never put into a body.
  */
@@ -37,8 +38,6 @@ import {
   type CreditLimitListPage,
   type CreditLimitProposeBody,
   type CreditLimitRejectionBody,
-  type CreditLimitRemoveBody,
-  type CreditLimitSetBody,
 } from './CreditLimitContract'
 import { API_BASE, devHeaders } from './http'
 import type { Decoded } from './contract'
@@ -104,8 +103,6 @@ export function fetchCreditLimitCurrencyCandidates(companyId: string,
 // ---------------------------------------------------------------------------------
 
 export type CreditLimitCommand =
-  | { readonly operation: 'set'; readonly body: CreditLimitSetBody }
-  | { readonly operation: 'remove'; readonly body: CreditLimitRemoveBody }
   | { readonly operation: 'propose'; readonly body: CreditLimitProposeBody }
   | { readonly operation: 'approve'; readonly proposalId: string; readonly body: CreditLimitApprovalBody }
   | { readonly operation: 'reject'; readonly proposalId: string; readonly body: CreditLimitRejectionBody }
@@ -125,10 +122,6 @@ export type CreditLimitCommandReply =
 export function creditLimitCommandUrl(command: CreditLimitCommand): string {
   const base = `${API_BASE}${CREDIT_LIMITS_PATH}`
   switch (command.operation) {
-    case 'set':
-      return base
-    case 'remove':
-      return `${base}/removals`
     case 'propose':
       return `${base}/proposals`
     case 'approve':

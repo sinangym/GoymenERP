@@ -2506,101 +2506,15 @@ public static class FinanceEndpoints
     }
 
     /// <summary>
-    /// API-85a (F018 §L1; FNS-D27/D27a): the party credit limit master. A holder of the approve authority
-    /// sets (<c>POST /</c>) or removes (<c>POST /removals</c>) an account's limit in one step; a holder of the
-    /// propose authority proposes (<c>POST /proposals</c>) and a different approver approves or rejects it. Every
-    /// write names the account's limit revision (or the proposal's version): a stale one is a recorded 409. The
-    /// proposer's own decision is Denied (403). Reads: the list, one account, its history and Settings' money
-    /// currency candidates. 401/403/404/503 are code-less.
+    /// API-85a (F018 §L1; FNS-D27a/D45): the party credit limit master. Every change — set, change or removal —
+    /// is a proposal (<c>POST /proposals</c>, the propose authority) that a different holder of the approve
+    /// authority approves or rejects (FNS-D45: no one-step direct path, no amount threshold). Every write names the
+    /// account's limit revision (or the proposal's version): a stale one is a recorded 409. The proposer's own
+    /// decision is Denied (403). Reads: the list, one account, its history and Settings' money currency
+    /// candidates. 401/403/404/503 are code-less.
     /// </summary>
     private static void MapCreditLimitEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(CreditLimitsPath, async (
-                HttpContext httpContext,
-                IFinancePartyCreditLimitMaster master,
-                ICompanyContext companyContext,
-                ICurrentUser currentUser,
-                ICorrelationContext correlation,
-                CancellationToken cancellationToken) =>
-            {
-                SetPrivateNoStore(httpContext);
-                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
-                {
-                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
-                }
-
-                if (await ReadBodyAsync<PartyCreditLimitSetRequest>(httpContext, cancellationToken) is not { } body)
-                {
-                    return httpContext.Request.HasJsonContentType()
-                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
-                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
-                }
-
-                var result = await master.SetAsync(Context(companyContext, currentUser, correlation),
-                    new CommandMetadata(key), body, cancellationToken);
-                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
-            })
-            .WithName("SetFinancePartyCreditLimitV1")
-            .WithTags("Finance")
-            .RequireAuthorization()
-            .RequireCompanyContext()
-            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
-            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
-                StatusCodes.Status422UnprocessableEntity)
-            .Accepts<PartyCreditLimitSetRequest>("application/json")
-            .Produces<PartyCreditLimitCommandResult>(StatusCodes.Status200OK)
-            .Produces<PartyCreditLimitCommandResult>(StatusCodes.Status422UnprocessableEntity)
-            .Produces<PartyCreditLimitCommandResult>(StatusCodes.Status409Conflict)
-            .ProducesErpAuthenticatedProblems()
-            .ProducesErpBadRequest()
-            .AllowsEmptyErpBadRequestBody()
-            .AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType()
-            .ProducesErpServiceUnavailable();
-
-        endpoints.MapPost(CreditLimitsPath + "/removals", async (
-                HttpContext httpContext,
-                IFinancePartyCreditLimitMaster master,
-                ICompanyContext companyContext,
-                ICurrentUser currentUser,
-                ICorrelationContext correlation,
-                CancellationToken cancellationToken) =>
-            {
-                SetPrivateNoStore(httpContext);
-                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
-                {
-                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
-                }
-
-                if (await ReadBodyAsync<PartyCreditLimitRemoveRequest>(httpContext, cancellationToken) is not { } body)
-                {
-                    return httpContext.Request.HasJsonContentType()
-                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
-                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
-                }
-
-                var result = await master.RemoveAsync(Context(companyContext, currentUser, correlation),
-                    new CommandMetadata(key), body, cancellationToken);
-                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
-            })
-            .WithName("RemoveFinancePartyCreditLimitV1")
-            .WithTags("Finance")
-            .RequireAuthorization()
-            .RequireCompanyContext()
-            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
-            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
-                StatusCodes.Status422UnprocessableEntity)
-            .Accepts<PartyCreditLimitRemoveRequest>("application/json")
-            .Produces<PartyCreditLimitCommandResult>(StatusCodes.Status200OK)
-            .Produces<PartyCreditLimitCommandResult>(StatusCodes.Status422UnprocessableEntity)
-            .Produces<PartyCreditLimitCommandResult>(StatusCodes.Status409Conflict)
-            .ProducesErpAuthenticatedProblems()
-            .ProducesErpBadRequest()
-            .AllowsEmptyErpBadRequestBody()
-            .AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType()
-            .ProducesErpServiceUnavailable();
-
         endpoints.MapPost(CreditLimitsPath + "/proposals", async (
                 HttpContext httpContext,
                 IFinancePartyCreditLimitMaster master,

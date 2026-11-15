@@ -2,22 +2,25 @@ using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Finance.Contracts;
 
-// API-85a (F018 plan §L1; FNS-D27/D27a): the Finance party credit limit master. One limit per company
+// API-85a (F018 plan §L1; FNS-D27a/D45): the Finance party credit limit master. One limit per company
 // account (cari hesap) of the server-resolved company, in ONE currency (a Settings money currency
 // candidate, FNS-D24), as exact decimal text (> 0, never rounded, never converted). It moves no money.
 //
-// FNS-D27: a holder of the APPROVE authority sets, changes or removes a limit in ONE step: the record is
-// approved at once and audited with its old and new value. FNS-D27a: a holder of only the PROPOSE
-// authority proposes; a holder of the approve authority approves the proposal or rejects it with a
-// reason. A proposer never decides their own proposal (service and database, binary collation).
+// FNS-D45 (replaces FNS-D27's one-step path): EVERY change (set, change or removal) is a proposal by one
+// person, decided by another: a holder of the PROPOSE authority proposes, a holder of the APPROVE
+// authority approves someone else's proposal or rejects it with a reason. There is no one-step direct
+// change, for any amount (no threshold). A proposer never decides their own proposal (service and
+// database, binary collation), whatever authorities they hold. Each approval is audited with the old and
+// the new value.
 //
 // History is append-only: each approved record supersedes the account's previous effective record, and
-// the effective limit is the account's one approved record. At most one proposal is pending per account;
-// a direct change by an approver supersedes it. An approved Remove means "no limit": the Sales risk port
-// answers NoSource (finance_credit_limit_not_set), never zero and never unlimited.
+// the effective limit is the account's one approved record. At most one proposal is pending per account.
+// An approved Remove means "no limit": the Sales risk port answers NoSource (finance_credit_limit_not_set),
+// never zero and never unlimited.
 //
-// NOT built (open): the second approval above an amount threshold (F018 N-3, OPEN-009) and whether Cari
-// stores the limit (F018 N-2): Finance owns it and Cari only shows it, as SAT-D51 says.
+// NOT built (open): the real amount/role/currency approval matrix (OPEN-009 stays open; FNS-D45 answers
+// only the credit limit's approval step) and whether Cari stores the limit (F018 N-2): Finance owns it and
+// Cari only shows it, as SAT-D51 says.
 
 [JsonConverter(typeof(JsonStringEnumConverter<PartyCreditLimitKind>))]
 public enum PartyCreditLimitKind { Set, Remove }
@@ -27,11 +30,6 @@ public enum PartyCreditLimitStatus { Proposed, Approved, Rejected, Superseded }
 
 // ExpectedRevision is the ACCOUNT's limit revision: "0" while the account never had an approved record,
 // then the revision of its latest approved record (see PartyCreditLimitAccountView.Revision).
-public sealed record PartyCreditLimitSetRequest(Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, string Amount,
-    string ExpectedRevision);
-
-public sealed record PartyCreditLimitRemoveRequest(Guid PartyId, Guid CompanyAccountId, string ExpectedRevision);
-
 // A Set proposal names the currency and the amount; a Remove proposal names neither (both null).
 public sealed record PartyCreditLimitProposeRequest(Guid PartyId, Guid CompanyAccountId, PartyCreditLimitKind Kind,
     Guid? CurrencyId, string? Amount, string ExpectedRevision);
@@ -46,9 +44,11 @@ public sealed record PartyCreditLimitApprovalBody(string ExpectedVersion);
 
 public sealed record PartyCreditLimitRejectionBody(string ExpectedVersion, string Reason);
 
-// One record of an account's limit history. IsDirect: set by an approver in one step (FNS-D27). Revision:
-// the account revision an approved record carries (null for a proposal never approved). No actor id is
-// disclosed; a screen learns only whether a proposal is the caller's own.
+// One record of an account's limit history; every record is a proposal decided by another person (FNS-D45).
+// IsDirect is always false since FNS-D45 closed the one-step path (the database refuses a direct record,
+// CK_PartyCreditLimits_Decision); the member stays so the V1 shape and stored command results keep reading.
+// Revision: the account revision an approved record carries (null for a proposal never approved). No actor
+// id is disclosed; a screen learns only whether a proposal is the caller's own.
 public sealed record PartyCreditLimitRecordView(
     Guid Id,
     Guid CompanyId,
@@ -67,8 +67,8 @@ public sealed record PartyCreditLimitRecordView(
     string Version);
 
 // The account's effective record (an approved Set or Remove; null when none was ever approved), its
-// pending proposal (shown only to a caller who may propose or approve), the revision the next direct
-// change or proposal must name, and whether the pending proposal is the caller's own.
+// pending proposal (shown only to a caller who may propose or approve), the revision the next proposal
+// must name, and whether the pending proposal is the caller's own.
 public sealed record PartyCreditLimitAccountView(
     Guid CompanyId,
     Guid PartyId,
@@ -97,18 +97,12 @@ public sealed record PartyCreditLimitCurrencyCandidates(Guid CompanyId, IReadOnl
 // Every command checks fresh company/action authority, including a replay.
 public interface IFinancePartyCreditLimitMaster
 {
-    // FNS-D27: approve authority; approved at once.
-    Task<PartyCreditLimitCommandResult> SetAsync(FinanceContext context, CommandMetadata metadata,
-        PartyCreditLimitSetRequest request, CancellationToken cancellationToken);
-
-    // FNS-D27: approve authority; an approved Remove ("no limit") at once.
-    Task<PartyCreditLimitCommandResult> RemoveAsync(FinanceContext context, CommandMetadata metadata,
-        PartyCreditLimitRemoveRequest request, CancellationToken cancellationToken);
-
-    // FNS-D27a: propose authority; the effective limit does not change until a different actor approves.
+    // FNS-D45: propose authority, for a set, a change and a removal alike; the effective limit does not
+    // change until a different actor approves.
     Task<PartyCreditLimitCommandResult> ProposeAsync(FinanceContext context, CommandMetadata metadata,
         PartyCreditLimitProposeRequest request, CancellationToken cancellationToken);
 
+    // FNS-D45: approve authority, on someone else's proposal only.
     Task<PartyCreditLimitCommandResult> ApproveAsync(FinanceContext context, CommandMetadata metadata,
         PartyCreditLimitApproveRequest request, CancellationToken cancellationToken);
 

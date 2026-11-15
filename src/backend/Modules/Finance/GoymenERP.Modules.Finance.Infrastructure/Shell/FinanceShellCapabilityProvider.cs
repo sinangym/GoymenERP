@@ -49,11 +49,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// of that workspace under their own narrow names. The record also needs the Accounting period read, like every
 /// Finance record.
 /// </para>
+/// <para>
+/// <b>1.10 (F-018 L1; FNS-D27a / FNS-D45 / FNS-D46):</b> the company accounts' credit limits open at
+/// <c>/finans/kredi-limitleri</c> under <c>finance.credit-limits.read</c>. Proposing (any set, change or removal) and
+/// deciding another person's proposal are two controls of that route under their own narrow names; there is no
+/// one-step change. The approve name is Critical in the manifest (FNS-D46), which changes no route rule; no role or
+/// user receives any of these names here.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.9";
+    public const string OwnerContractVersion = "1.10";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -142,6 +149,12 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string PartyLedgerCariCapabilityId = "finance.party-ledger.cari";
     public const string PartyLedgerCariRouteId = "finance.party-ledger.cari";
     public const string PartyLedgerCariRoutePath = "/cari/hesap-takibi";
+    public const string CreditLimitListScreenId = "F-18-CREDIT-LIMITS";
+    public const string CreditLimitListCapabilityId = "finance.credit-limits.list";
+    public const string CreditLimitListRouteId = "finance.credit-limits.list";
+    public const string CreditLimitListRoutePath = "/finans/kredi-limitleri";
+    public const string CreditLimitProposeCapabilityId = "finance.credit-limits.propose";
+    public const string CreditLimitApproveCapabilityId = "finance.credit-limits.approve";
 
     public string Owner => OwnerId;
 
@@ -160,6 +173,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
         var expensePayments = Declaration(ExpensePaymentWorkspaceCapabilityId, ExpensePaymentWorkspaceRouteId,
             ExpensePaymentWorkspaceRoutePath, ExpensePaymentWorkspaceScreenId, ShellCapabilityRoutePrecedence.Static,
             [FinancePermissionNames.ExpensePaymentDraftRead]);
+        var creditLimits = Declaration(CreditLimitListCapabilityId, CreditLimitListRouteId, CreditLimitListRoutePath,
+            CreditLimitListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]);
         return
         [
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
@@ -301,6 +316,21 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(PartyLedgerCariCapabilityId, PartyLedgerCariRouteId, PartyLedgerCariRoutePath,
                 PartyLedgerCariScreenId, ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.PartyLedgerRead]),
+            // 1.10 (FNS-D45): every change is a proposal; deciding it is another person's control (the server and the
+            // database refuse a self-decision regardless).
+            creditLimits,
+            creditLimits with
+            {
+                CapabilityId = CreditLimitProposeCapabilityId,
+                ParentCapabilityId = CreditLimitListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsPropose],
+            },
+            creditLimits with
+            {
+                CapabilityId = CreditLimitApproveCapabilityId,
+                ParentCapabilityId = CreditLimitListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove],
+            },
         ];
     }
 

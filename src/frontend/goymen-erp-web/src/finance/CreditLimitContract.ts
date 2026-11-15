@@ -1,5 +1,5 @@
 /**
- * API-85a — the party credit limit master's wire shapes (F018 plan §L1; FNS-D27/D27a), decoded strictly like
+ * API-85a — the party credit limit master's wire shapes (F018 plan §L1; FNS-D27/D27a/D45), decoded strictly like
  * ./contract.ts: exact member sets, the verified shell company, bound identities, decimals as TEXT. An answer that
  * does not decode is never shown as data.
  *
@@ -7,9 +7,11 @@
  *
  * - A record is one entry of an account's limit history: a Set carries a currency and an amount (> 0, exact text,
  *   never rounded); a Remove carries neither ("no limit" — never zero, never unlimited).
- * - `revision` on an account is the number the next direct change or proposal must name ("0" before the account ever
+ * - `revision` on an account is the number the next proposal must name ("0" before the account ever
  *   had an approved record). An approved record carries the revision it made; a proposal carries none.
  * - `version` is the record's own concurrency token (canonical positive int64 text), named by approve/reject.
+ * - FNS-D45: every record is a proposal decided by a second person. The wire still names `isDirect`, and it is always
+ *   `false`; a record that says otherwise does not decode (an approver's one-step change no longer exists).
  * - The screen learns no actor id; only whether the pending proposal is the caller's own.
  */
 
@@ -36,7 +38,6 @@ export interface CreditLimitRecord {
   readonly currencyId: string | null
   readonly amount: string | null
   readonly status: CreditLimitStatus
-  readonly isDirect: boolean
   readonly revision: string | null
   readonly rejectionReason: string | null
   readonly proposedAtUtc: string
@@ -87,20 +88,6 @@ export type CreditLimitCurrencyCandidates = CurrencyCandidates
 // ---------------------------------------------------------------------------------
 // Requests (camelCase members of the C# request records; the company is never in a body)
 // ---------------------------------------------------------------------------------
-
-export interface CreditLimitSetBody {
-  readonly partyId: string
-  readonly companyAccountId: string
-  readonly currencyId: string
-  readonly amount: string
-  readonly expectedRevision: string
-}
-
-export interface CreditLimitRemoveBody {
-  readonly partyId: string
-  readonly companyAccountId: string
-  readonly expectedRevision: string
-}
 
 export interface CreditLimitProposeBody {
   readonly partyId: string
@@ -166,7 +153,8 @@ function decodeRecord(value: unknown, companyId: string): CreditLimitRecord | nu
   if (!isBoundUuid(id) || !isBoundUuid(partyId) || !isBoundUuid(companyAccountId)) return null
   if (typeof kind !== 'string' || !KINDS.includes(kind)) return null
   if (typeof status !== 'string' || !STATUSES.includes(status)) return null
-  if (typeof isDirect !== 'boolean' || !isPositiveInt64Text(version)) return null
+  // FNS-D45: no record is ever a one-step change.
+  if (isDirect !== false || !isPositiveInt64Text(version)) return null
   if (!isInstant(proposedAtUtc) || !isNullableInstant(decidedAtUtc) || !isNullableInstant(supersededAtUtc)) return null
   if (revision !== null && !isPositiveInt64Text(revision)) return null
 
@@ -178,15 +166,13 @@ function decodeRecord(value: unknown, companyId: string): CreditLimitRecord | nu
   // Only a rejection carries a reason; the stage stamps must agree with the status.
   if (status === 'Rejected') {
     if (typeof rejectionReason !== 'string' || rejectionReason.trim().length === 0) return null
-    if (revision !== null || decidedAtUtc === null || supersededAtUtc !== null || isDirect) return null
+    if (revision !== null || decidedAtUtc === null || supersededAtUtc !== null) return null
   } else if (rejectionReason !== null) {
     return null
   }
-  if (status === 'Proposed' && (revision !== null || decidedAtUtc !== null || supersededAtUtc !== null || isDirect)) return null
+  if (status === 'Proposed' && (revision !== null || decidedAtUtc !== null || supersededAtUtc !== null)) return null
   if (status === 'Approved' && (revision === null || decidedAtUtc === null || supersededAtUtc !== null)) return null
   if (status === 'Superseded' && supersededAtUtc === null) return null
-  // A direct change is approved at once: it always made a revision.
-  if (isDirect && revision === null) return null
 
   return {
     id,
@@ -197,7 +183,6 @@ function decodeRecord(value: unknown, companyId: string): CreditLimitRecord | nu
     currencyId: currencyId as string | null,
     amount: amount as string | null,
     status: status as CreditLimitStatus,
-    isDirect,
     revision,
     rejectionReason: rejectionReason as string | null,
     proposedAtUtc,

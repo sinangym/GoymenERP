@@ -19,6 +19,7 @@ import {
   historyPage,
   jsonResponse,
   listPage,
+  proposedSet,
   refusal,
   succeeded,
 } from './creditLimitFixtures'
@@ -28,9 +29,10 @@ import {
 
 const KEY = '0123456789abcdef0123456789abcdef'
 
-const setCommand: CreditLimitCommand = {
-  operation: 'set',
-  body: { partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, currencyId: CL_CURRENCY, amount: '150000.50', expectedRevision: '0' },
+// FNS-D45: a set is a proposal; there is no one-step set or removal call.
+const proposeCommand: CreditLimitCommand = {
+  operation: 'propose',
+  body: { partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, kind: 'Set', currencyId: CL_CURRENCY, amount: '150000.50', expectedRevision: '0' },
 }
 
 interface Seen {
@@ -98,9 +100,7 @@ describe('credit limit reads', () => {
 describe('credit limit command routes', () => {
   it('maps every operation to its route', () => {
     const proposal = clId(2)
-    expect(creditLimitCommandUrl(setCommand)).toMatch(/\/finance\/credit-limits$/)
-    expect(creditLimitCommandUrl({ operation: 'remove', body: { partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, expectedRevision: '1' } }))
-      .toMatch(/\/finance\/credit-limits\/removals$/)
+    expect(creditLimitCommandUrl(proposeCommand)).toMatch(/\/finance\/credit-limits\/proposals$/)
     expect(creditLimitCommandUrl({
       operation: 'propose',
       body: { partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, kind: 'Remove', currencyId: null, amount: null, expectedRevision: '1' },
@@ -114,13 +114,13 @@ describe('credit limit command routes', () => {
 
 describe('credit limit commands', () => {
   it('sends the key and the company in headers, never the company in the body', async () => {
-    const seen = stubFetch(() => jsonResponse(succeeded(approvedSet())))
-    const reply = await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)
+    const seen = stubFetch(() => jsonResponse(succeeded(proposedSet())))
+    const reply = await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)
     expect(reply.kind).toBe('answered')
     expect(seen[0].method).toBe('POST')
     expect(seen[0].headers['Idempotency-Key']).toBe(KEY)
     expect(seen[0].headers['X-Company-Id']).toBe(CL_COMPANY)
-    expect(JSON.parse(seen[0].body ?? '{}')).toEqual(setCommand.body)
+    expect(JSON.parse(seen[0].body ?? '{}')).toEqual(proposeCommand.body)
     expect(seen[0].body).not.toContain(CL_COMPANY)
   })
 
@@ -128,63 +128,63 @@ describe('credit limit commands', () => {
     const replay = succeeded(approvedSet(), { isReplay: true, originalCorrelationId: 'corr-first' })
     stubFetch(() => jsonResponse(replay, 200,
       { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'corr-first' }))
-    expect((await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).kind).toBe('answered')
+    expect((await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).kind).toBe('answered')
 
     stubFetch(() => jsonResponse(replay, 200,
       { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'corr-other' }))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
 
     stubFetch(() => jsonResponse(replay))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
 
     stubFetch(() => jsonResponse(succeeded(approvedSet()), 200, { 'Idempotency-Replayed': 'true' }))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
   })
 
   it('requires the status to match the outcome', async () => {
     stubFetch(() => jsonResponse(refusal('ValidationFailed', [{ field: 'amount', code: 'credit_limit_amount_invalid' }]), 200))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
 
     stubFetch(() => jsonResponse(refusal('ValidationFailed', [{ field: 'amount', code: 'credit_limit_amount_invalid' }]), 422))
-    expect((await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).kind).toBe('answered')
+    expect((await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).kind).toBe('answered')
 
     stubFetch(() => jsonResponse(refusal('VersionConflict', [{ field: 'expectedRevision', code: 'version_conflict' }]), 409))
-    expect((await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).kind).toBe('answered')
+    expect((await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).kind).toBe('answered')
 
     stubFetch(() => jsonResponse(refusal('ValidationFailed'), 409))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
 
     stubFetch(() => jsonResponse(succeeded(approvedSet()), 422))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
   })
 
   it('treats a success for another company or an unparsable body as unknown', async () => {
     stubFetch(() => jsonResponse(succeeded(approvedSet({ companyId: CL_OTHER_COMPANY }))))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
     stubFetch(() => new Response('not json', { status: 200, headers: { 'Content-Type': 'application/json' } }))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
   })
 
   it('maps 5xx, a thrown fetch and an unexpected status to unknown, and 4xx platform problems to refused', async () => {
     stubFetch(() => new Response(null, { status: 503 }))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'service-unavailable' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'service-unavailable' })
 
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('SENTETIK network') }))
-    const reply = await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)
+    const reply = await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)
     expect(reply.kind).toBe('unknown')
 
     stubFetch(() => new Response(null, { status: 302 }))
-    expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'unexpected-status' })
+    expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'unexpected-status' })
 
     for (const status of [400, 401, 403, 404, 415]) {
       stubFetch(() => new Response(null, { status }))
-      expect(await sendCreditLimitCommand(CL_COMPANY, setCommand, KEY)).toEqual({ kind: 'refused', status })
+      expect(await sendCreditLimitCommand(CL_COMPANY, proposeCommand, KEY)).toEqual({ kind: 'refused', status })
     }
   })
 
   it('does not send for an unbound company', async () => {
-    const seen = stubFetch(() => jsonResponse(succeeded(approvedSet())))
-    expect(await sendCreditLimitCommand('', setCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
+    const seen = stubFetch(() => jsonResponse(succeeded(proposedSet())))
+    expect(await sendCreditLimitCommand('', proposeCommand, KEY)).toEqual({ kind: 'unknown', reason: 'undecodable' })
     expect(seen).toHaveLength(0)
   })
 })

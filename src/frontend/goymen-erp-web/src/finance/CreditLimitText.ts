@@ -1,5 +1,5 @@
 /**
- * Turkish text for API-85a — Cari kredi limitleri (F018 plan §L1; FNS-D27/D27a).
+ * Turkish text for API-85a — Cari kredi limitleri (F018 plan §L1; FNS-D27a/D45).
  *
  * Same rule as ./financeText.ts: chosen from a decoded state or a stable code, never parsed from server prose. A limit
  * is a MASTER record: no text may suggest a balance, a risk figure or a money movement. A removed limit is "limit
@@ -17,8 +17,8 @@ export const CREDIT_LIMIT_TEXT = {
   currencySubject: 'para birimi adayları',
   notice:
     'Kredi limiti cari hesap başına tek para biriminde tutulan bir tanımdır; para hareketi veya bakiye göstermez. ' +
-    'Onay yetkilisi limiti tek adımda tanımlar, değiştirir veya kaldırır. Öneri yetkilisinin önerisi, önerenden farklı ' +
-    'bir onay yetkilisi onaylayana kadar geçerli limiti değiştirmez.',
+    'Limitin her tanımlanması, değiştirilmesi veya kaldırılması bir öneridir; öneri, önerenden farklı bir onay ' +
+    'yetkilisi onaylayana kadar geçerli limiti değiştirmez.',
   empty: 'Bu şirkette tanımlı kredi limiti veya bekleyen öneri yok.',
   tableCaption: 'Cari hesap kredi limitleri',
   historyCaption: 'Kredi limiti geçmişi',
@@ -31,7 +31,6 @@ export const CREDIT_LIMIT_TEXT = {
     action: 'İşlem',
     kind: 'İşlem türü',
     status: 'Durum',
-    direct: 'Kayıt şekli',
     proposedAt: 'Öneri zamanı',
     decidedAt: 'Karar zamanı',
     reason: 'Ret gerekçesi',
@@ -42,10 +41,9 @@ export const CREDIT_LIMIT_TEXT = {
   noLimitRemoved: 'Limit yok — kaldırıldı',
   noLimitNever: 'Limit tanımlanmamış',
   noPending: 'Yok',
-  directRecord: 'Onay yetkilisi tek adımda',
-  proposalRecord: 'Öneri ve onay',
   ownPending: 'Sizin öneriniz — önerenden farklı bir onay yetkilisi karar vermeli.',
   pendingHidden: 'Bekleyen öneriler yalnız öneri veya onay yetkisi olana gösterilir.',
+  approverOnly: 'Onay yetkisi yalnız başka bir kişinin önerisine karar verir; limit değişikliği öneri yetkisiyle önerilir.',
   detailHeading: 'Hesap ayrıntısı',
   effectiveHeading: 'Geçerli limit',
   pendingHeading: 'Bekleyen öneri',
@@ -65,11 +63,7 @@ export const CREDIT_LIMIT_TEXT = {
     'not-positive': 'Tutar sıfırdan büyük olmalı.',
   },
   currencyRequired: 'Para birimi seçin.',
-  setHeading: 'Limiti tanımla veya değiştir',
-  setSubmit: 'Limiti kaydet',
-  removeHeading: 'Limiti kaldır',
   removeHint: 'Kaldırılan limit "limit yok" demektir; sıfır veya sınırsız anlamına gelmez.',
-  removeSubmit: 'Limiti kaldır',
   proposeHeading: 'Limit öner',
   proposeKind: 'Öneri türü',
   proposeKindSet: 'Limit tanımla veya değiştir',
@@ -106,8 +100,6 @@ export const CREDIT_LIMIT_TEXT = {
 } as const
 
 export const CREDIT_LIMIT_SUCCESS: Readonly<Record<CreditLimitOperation, string>> = {
-  set: 'Limit kaydedildi ve hemen geçerli oldu.',
-  remove: 'Limit kaldırıldı; hesap için limit yok.',
   propose: 'Öneri gönderildi; onaylanana kadar geçerli limit değişmez.',
   approve: 'Öneri onaylandı ve geçerli oldu.',
   reject: 'Öneri gerekçesiyle reddedildi.',
