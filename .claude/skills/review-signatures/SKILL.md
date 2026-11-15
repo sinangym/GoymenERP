@@ -109,7 +109,11 @@ after a merge.
 the receipt (build, relevant unit/architecture tests, generator exit 0); their GitHub CI run is not required and may be
 cancelled. The train → main PR regenerates the pins once and needs green full required CI on its head plus this Faz 0
 check; a GOV-D7-mechanical difference from the work PRs' signed heads needs no new review, hand resolution in `src/**`,
-`tests/**` or a migration falls back to GOV-D1/GOV-D6. The #66 receipt lists the work PRs and their review links. P3: the
+`tests/**` or a migration falls back to GOV-D1/GOV-D6. The #66 receipt lists the work PRs and their review links.
+**GOV-D9** (`docs/decisions/SINAN_KARARLARI_2026-11-14_KOD_ONCE_GOV_D9.md`; author reading, reversible) moves the work
+PR's own review gate of GOV-D8 to the train → main stage: code lands on the train and team branches without per-work
+PR, CI or test run; the reviews (K3 two full, K1/K2 one, governance two DOCS) happen on the train head together with
+the full required CI. Review level and count do not change. P3: the
 squash `sha=` parameter checks only the head, not the base, so a seconds-wide race remains between this check and the
 merge call; if main moved in between, re-run the check. GitHub "Require branches to be up to date" stays off (GOV-D3).
 
