@@ -32,20 +32,39 @@ internal sealed class ActorSessionBindingResolver(
             return null;
         }
 
+        var schemeName = scheme.Name;
         if (string.Equals(
-                scheme.Name,
-                DevelopmentAuthenticationHandler.SchemeName,
+                schemeName,
+                ErpAuthenticationExtensions.ProviderSelectorScheme,
                 StringComparison.Ordinal))
         {
-            return ResolveDevelopmentBinding(httpContext.User, scheme.Name);
+            // ID-6: behind the provider selector the binding follows the scheme that actually authenticated this
+            // request; without a recorded result there is no binding.
+            schemeName = httpContext.Features
+                .Get<IAuthenticateResultFeature>()?
+                .AuthenticateResult?
+                .Ticket?
+                .AuthenticationScheme;
+            if (schemeName is null)
+            {
+                return null;
+            }
         }
 
         if (string.Equals(
-                scheme.Name,
+                schemeName,
+                DevelopmentAuthenticationHandler.SchemeName,
+                StringComparison.Ordinal))
+        {
+            return ResolveDevelopmentBinding(httpContext.User, schemeName);
+        }
+
+        if (string.Equals(
+                schemeName,
                 JwtBearerDefaults.AuthenticationScheme,
                 StringComparison.Ordinal))
         {
-            return ResolveBearerBinding(httpContext, scheme.Name);
+            return ResolveBearerBinding(httpContext, schemeName);
         }
 
         return null;
