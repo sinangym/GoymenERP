@@ -681,6 +681,28 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).
 
+## Future supply allocation (F-017 F017-b, STOK_F017 §3.2/§4, KLN-D26)
+
+- **Tables:** `inventory.FutureSupplyAllocations` (one allocation of a Sales order line's demand onto an approved purchase
+  order line; Active 1 / Consumed 2 / Released 3; quantities `decimal(18,3)`, refused never rounded beyond three decimals)
+  and `inventory.FutureSupplyLines` (the per purchase line ledger: `ActiveAllocated <= AllocatableSnapshot`, the snapshot
+  being the allocatable amount read under the lock). Checks: `CK_FutureSupplyAllocations_Identity/_Kinds/_Quantity/_Release`
+  and `CK_FutureSupplyLines_Ledger`; the allocation's FK to its ledger row is `Restrict`. Both tables carry `CompanyId` and
+  the company query filter.
+- **Writer (no route yet; endpoint, OpenAPI and permission are F017-b2):** replay → transaction → Sales line lock, then
+  purchase line lock → fence → demand and supply reads → product match → ledger reserve (insufficient 409, other rule
+  422) → demand cap → allocation + command attempt + audit + outbox in one save. The Sales line lock
+  (`goymen:sales-order-line:{company:N}:{line:N}`, `sp_getapplock` Exclusive/Transaction) is a host adapter until Sales
+  owns it.
+- **Ports:** `IInventoryFutureAllocationReadPortV1` (active allocated sum in the purchase unit; Unreadable when the ledger
+  disagrees with Σ active remaining, never the ledger's figure) and `IInventoryFutureAllocationReleasePortV1` (a session
+  on the caller's open connection and transaction; the caller commits; no Inventory idempotency row). Defaults are
+  fail-closed until the host replaces them (identity-only unit conversion, purchase source unavailable).
+- **Migration:** `AddInventoryFutureSupplyAllocations` creates both tables. Its `Down` refuses (THROW 51460) while any
+  allocation or ledger row exists, then drops (forward fix).
+- **Open (NEEDS-SINAN):** the demand open quantity definition (ordered − shipped, cancelled → 0), unit conversion beyond
+  the identity, and the release reason code list are the author's reading or format-only; no grant is added.
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.

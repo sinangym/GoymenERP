@@ -494,6 +494,181 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyAllocationRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AllocatedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DemandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DemandKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("DemandLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ManualSequence")
+                        .HasColumnType("int");
+
+                    b.Property<long>("ObservedPurchaseOrderVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProductVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("PurchaseOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PurchaseOrderLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PurchaseUnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ReleaseOrigin")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("ReleaseReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ReleaseReasonCode")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset?>("ReleasedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("ReleasedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("RemainingQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "PurchaseOrderId", "PurchaseOrderLineId");
+
+                    b.HasIndex("CompanyId", "PurchaseOrderLineId", "Status")
+                        .HasDatabaseName("IX_FutureSupplyAllocations_PurchaseLine");
+
+                    b.HasIndex("CompanyId", "DemandKind", "DemandId", "DemandLineId", "Status")
+                        .HasDatabaseName("IX_FutureSupplyAllocations_Demand");
+
+                    b.ToTable("FutureSupplyAllocations", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_FutureSupplyAllocations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseOrderId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseUnitId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [DemandId] <> '00000000-0000-0000-0000-000000000000' AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_FutureSupplyAllocations_Kinds", "[SourceKind] = 'purchasing.order-line' AND [DemandKind] = 'sales.order-line' AND LEN([ProductVersion]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND [Version] >= 1 AND [ObservedPurchaseOrderVersion] >= 0 AND ([ManualSequence] IS NULL OR [ManualSequence] >= 1)");
+
+                            t.HasCheckConstraint("CK_FutureSupplyAllocations_Quantity", "[AllocatedQuantity] > 0 AND [RemainingQuantity] >= 0 AND [ReleasedQuantity] >= 0 AND [RemainingQuantity] + [ReleasedQuantity] <= [AllocatedQuantity] AND (([Status] = 1 AND [RemainingQuantity] > 0) OR ([Status] = 2 AND [RemainingQuantity] = 0 AND [ReleasedQuantity] < [AllocatedQuantity]) OR ([Status] = 3 AND [RemainingQuantity] = 0 AND [ReleasedQuantity] = [AllocatedQuantity]))");
+
+                            t.HasCheckConstraint("CK_FutureSupplyAllocations_Release", "([ReleasedQuantity] = 0 AND [ReleaseReasonCode] IS NULL AND [ReleaseOrigin] IS NULL AND [ReleaseReason] IS NULL AND [ReleasedAtUtc] IS NULL) OR ([ReleasedQuantity] > 0 AND [ReleaseReasonCode] IS NOT NULL AND LEN([ReleaseReasonCode]) > 0 AND [ReleaseOrigin] IS NOT NULL AND [ReleaseOrigin] IN ('inventory', 'purchasing', 'sales') AND [ReleaseReason] IS NOT NULL AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0 AND [ReleasedAtUtc] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PurchaseOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PurchaseOrderLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ActiveAllocated")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("AllocatableSnapshot")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PurchaseUnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "PurchaseOrderId", "PurchaseOrderLineId");
+
+                    b.HasIndex("CompanyId", "PurchaseOrderLineId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_FutureSupplyLines_PurchaseLine");
+
+                    b.ToTable("FutureSupplyLines", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_FutureSupplyLines_Ledger", "[AllocatableSnapshot] >= 0 AND [ActiveAllocated] >= 0 AND [ActiveAllocated] <= [AllocatableSnapshot] AND [Version] >= 1 AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseOrderId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseUnitId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryCommandRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1936,6 +2111,30 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationLocationReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyAllocationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PurchaseOrderId", "PurchaseOrderLineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

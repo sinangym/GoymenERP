@@ -59,6 +59,50 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     /// </summary>
     internal const string LabelTransformationKindCheck = "[Kind] IN (1, 2, 3)";
 
+    /// <summary>F-017 STOK §3.2 (F017-b): no empty identity on a future supply allocation.</summary>
+    internal const string FutureSupplyAllocationIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PurchaseOrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PurchaseUnitId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [DemandId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>F017-b: the only source is a purchase line and the only demand a Sales order line; versions are positive.</summary>
+    internal const string FutureSupplyAllocationKindsCheck =
+        "[SourceKind] = 'purchasing.order-line' AND [DemandKind] = 'sales.order-line' "
+        + "AND LEN([ProductVersion]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 "
+        + "AND [Version] >= 1 AND [ObservedPurchaseOrderVersion] >= 0 "
+        + "AND ([ManualSequence] IS NULL OR [ManualSequence] >= 1)";
+
+    /// <summary>
+    /// F-017 STOK §3.3: remaining + released never exceed allocated; Active (1) holds a positive remainder, Consumed (2) none with
+    /// something consumed, Released (3) none with everything released.
+    /// </summary>
+    internal const string FutureSupplyAllocationQuantityCheck =
+        "[AllocatedQuantity] > 0 AND [RemainingQuantity] >= 0 AND [ReleasedQuantity] >= 0 "
+        + "AND [RemainingQuantity] + [ReleasedQuantity] <= [AllocatedQuantity] "
+        + "AND (([Status] = 1 AND [RemainingQuantity] > 0) "
+        + "OR ([Status] = 2 AND [RemainingQuantity] = 0 AND [ReleasedQuantity] < [AllocatedQuantity]) "
+        + "OR ([Status] = 3 AND [RemainingQuantity] = 0 AND [ReleasedQuantity] = [AllocatedQuantity]))";
+
+    /// <summary>F-017 STOK §3.3: a release names its code, origin, reason and time; nothing released names none of them.</summary>
+    internal const string FutureSupplyAllocationReleaseCheck =
+        "([ReleasedQuantity] = 0 AND [ReleaseReasonCode] IS NULL AND [ReleaseOrigin] IS NULL AND [ReleaseReason] IS NULL "
+        + "AND [ReleasedAtUtc] IS NULL) "
+        + "OR ([ReleasedQuantity] > 0 AND [ReleaseReasonCode] IS NOT NULL AND LEN([ReleaseReasonCode]) > 0 "
+        + "AND [ReleaseOrigin] IS NOT NULL AND [ReleaseOrigin] IN ('inventory', 'purchasing', 'sales') "
+        + "AND [ReleaseReason] IS NOT NULL AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0 AND [ReleasedAtUtc] IS NOT NULL)";
+
+    /// <summary>F-017 STOK §3.2 step 4: the ledger never holds more than the allocatable snapshot it was checked against.</summary>
+    internal const string FutureSupplyLineLedgerCheck =
+        "[AllocatableSnapshot] >= 0 AND [ActiveAllocated] >= 0 AND [ActiveAllocated] <= [AllocatableSnapshot] "
+        + "AND [Version] >= 1 AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PurchaseOrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PurchaseUnitId] <> '00000000-0000-0000-0000-000000000000'";
+
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
     internal DbSet<LabelRow> Labels => Set<LabelRow>();
@@ -115,6 +159,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<InventoryTransferAcceptanceRow> TransferAcceptances => Set<InventoryTransferAcceptanceRow>();
 
+    internal DbSet<FutureSupplyAllocationRow> FutureSupplyAllocations => Set<FutureSupplyAllocationRow>();
+
+    internal DbSet<FutureSupplyLineRow> FutureSupplyLines => Set<FutureSupplyLineRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -138,6 +186,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureStockCounts(modelBuilder);
         ConfigureStockScraps(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
+        ConfigureFutureSupply(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1017,6 +1066,62 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .OnDelete(DeleteBehavior.Restrict);
     }
 
+    /// <summary>
+    /// F-017 STOK §3.2 (F017-b): future supply allocations and their per purchase line ledger. The purchase line and the Sales line
+    /// are other modules' records, referenced by identity only (no foreign key across modules). Every allocation names its ledger
+    /// row (company, purchase order, purchase line); both rows are company-filtered and never deleted.
+    /// </summary>
+    private void ConfigureFutureSupply(ModelBuilder modelBuilder)
+    {
+        var ledger = modelBuilder.Entity<FutureSupplyLineRow>();
+        ledger.ToTable("FutureSupplyLines", Schema, table =>
+            table.HasCheckConstraint("CK_FutureSupplyLines_Ledger", FutureSupplyLineLedgerCheck));
+        ledger.HasKey(x => new { x.CompanyId, x.PurchaseOrderId, x.PurchaseOrderLineId });
+        ledger.Property(x => x.AllocatableSnapshot).HasPrecision(18, 3);
+        ledger.Property(x => x.ActiveAllocated).HasPrecision(18, 3);
+        ledger.Property(x => x.RowVersion).IsRowVersion();
+        ledger.HasIndex(x => new { x.CompanyId, x.PurchaseOrderLineId })
+            .IsUnique()
+            .HasDatabaseName("UX_FutureSupplyLines_PurchaseLine");
+        ledger.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        ledger.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var entity = modelBuilder.Entity<FutureSupplyAllocationRow>();
+        entity.ToTable("FutureSupplyAllocations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_FutureSupplyAllocations_Identity", FutureSupplyAllocationIdentityCheck);
+            table.HasCheckConstraint("CK_FutureSupplyAllocations_Kinds", FutureSupplyAllocationKindsCheck);
+            table.HasCheckConstraint("CK_FutureSupplyAllocations_Quantity", FutureSupplyAllocationQuantityCheck);
+            table.HasCheckConstraint("CK_FutureSupplyAllocations_Release", FutureSupplyAllocationReleaseCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.SourceKind).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.DemandKind).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.ProductVersion).HasMaxLength(128).IsUnicode(false);
+        entity.Property(x => x.AllocatedQuantity).HasPrecision(18, 3);
+        entity.Property(x => x.RemainingQuantity).HasPrecision(18, 3);
+        entity.Property(x => x.ReleasedQuantity).HasPrecision(18, 3);
+        entity.Property(x => x.Reason).HasMaxLength(1000);
+        entity.Property(x => x.ReleaseReasonCode).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.ReleaseOrigin).HasMaxLength(16).IsUnicode(false);
+        entity.Property(x => x.ReleaseReason).HasMaxLength(1000);
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.PurchaseOrderLineId, x.Status })
+            .HasDatabaseName("IX_FutureSupplyAllocations_PurchaseLine");
+        entity.HasIndex(x => new { x.CompanyId, x.DemandKind, x.DemandId, x.DemandLineId, x.Status })
+            .HasDatabaseName("IX_FutureSupplyAllocations_Demand");
+        entity.HasOne<FutureSupplyLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PurchaseOrderId, x.PurchaseOrderLineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.PurchaseOrderId, x.PurchaseOrderLineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         InventoryAuditEventTenantGuard.Validate(this, companyContext);
@@ -1068,6 +1173,21 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),
                         // B-01: a plan-input release records the kg it returned to free stock.
                         nameof(AllocationRow.ReleasedKg),
+                    ],
+                    // F-017 STOK §3.3: a release moves the remainder and records its reason; identity and demand never move.
+                    FutureSupplyAllocationRow =>
+                    [
+                        nameof(FutureSupplyAllocationRow.RemainingQuantity),
+                        nameof(FutureSupplyAllocationRow.ReleasedQuantity), nameof(FutureSupplyAllocationRow.Status),
+                        nameof(FutureSupplyAllocationRow.ReleaseReasonCode), nameof(FutureSupplyAllocationRow.ReleaseOrigin),
+                        nameof(FutureSupplyAllocationRow.ReleaseReason), nameof(FutureSupplyAllocationRow.Version),
+                        nameof(FutureSupplyAllocationRow.UpdatedAtUtc), nameof(FutureSupplyAllocationRow.ReleasedAtUtc),
+                    ],
+                    // F-017 STOK §3.2 step 4: the ledger's sums move; its purchase line identity and unit never do.
+                    FutureSupplyLineRow =>
+                    [
+                        nameof(FutureSupplyLineRow.AllocatableSnapshot), nameof(FutureSupplyLineRow.ActiveAllocated),
+                        nameof(FutureSupplyLineRow.Version), nameof(FutureSupplyLineRow.UpdatedAtUtc),
                     ],
                     InventoryTransferRow =>
                     [

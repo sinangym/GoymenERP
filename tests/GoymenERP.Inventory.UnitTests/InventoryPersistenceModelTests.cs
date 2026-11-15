@@ -29,6 +29,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(InventoryTransferRow), typeof(InventoryTransferLineRow),
             typeof(InventoryTransferDispatchRow), typeof(InventoryTransferDispatchLineRow),
             typeof(InventoryTransferBucketRow), typeof(InventoryTransferAcceptanceRow), typeof(AverageCostLedgerRow),
+            typeof(FutureSupplyAllocationRow), typeof(FutureSupplyLineRow),
         ];
 
     [Fact]
@@ -189,7 +190,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryTransferDispatchDocumentVersion", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryLabelProductionStatus", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryManufacturingOutputReversal", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryManufacturingOutputReversal", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryFutureSupplyAllocations", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -505,6 +508,50 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("THROW 51291", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[Labels]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[ProductionStatus] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_future_supply_tables_carry_the_reviewed_checks_keys_and_indexes_and_their_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryFutureSupplyAllocations();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var allocations = model.FindEntityType(typeof(FutureSupplyAllocationRow))!;
+        var ledger = model.FindEntityType(typeof(FutureSupplyLineRow))!;
+
+        Assert.Equal(("FutureSupplyAllocations", "FutureSupplyLines"), (allocations.GetTableName(), ledger.GetTableName()));
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["CK_FutureSupplyAllocations_Identity"] = InventoryDbContext.FutureSupplyAllocationIdentityCheck,
+                ["CK_FutureSupplyAllocations_Kinds"] = InventoryDbContext.FutureSupplyAllocationKindsCheck,
+                ["CK_FutureSupplyAllocations_Quantity"] = InventoryDbContext.FutureSupplyAllocationQuantityCheck,
+                ["CK_FutureSupplyAllocations_Release"] = InventoryDbContext.FutureSupplyAllocationReleaseCheck,
+            },
+            allocations.GetCheckConstraints().ToDictionary(check => check.Name!, check => (string?)check.Sql));
+        Assert.Equal(InventoryDbContext.FutureSupplyLineLedgerCheck,
+            Assert.Single(ledger.GetCheckConstraints(), check => check.Name == "CK_FutureSupplyLines_Ledger").Sql);
+        Assert.Equal(new[] { "CompanyId", "PurchaseOrderId", "PurchaseOrderLineId" },
+            ledger.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(ledger.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PurchaseOrderLineId"]));
+        Assert.Contains(allocations.GetIndexes(), index => !index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PurchaseOrderLineId", "Status"]));
+        Assert.Contains(allocations.GetIndexes(), index => !index.IsUnique
+            && index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "DemandKind", "DemandId", "DemandLineId", "Status"]));
+        Assert.Contains(allocations.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FutureSupplyLineRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "PurchaseOrderId", "PurchaseOrderLineId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Equal((3, 3, 3), (allocations.FindProperty("AllocatedQuantity")!.GetScale(),
+            allocations.FindProperty("RemainingQuantity")!.GetScale(), ledger.FindProperty("ActiveAllocated")!.GetScale()));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51460", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[FutureSupplyAllocations]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[FutureSupplyLines]", guard.Sql, StringComparison.Ordinal);
         Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
